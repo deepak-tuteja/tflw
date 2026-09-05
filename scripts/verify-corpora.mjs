@@ -30,12 +30,13 @@ import { fileURLToPath } from 'node:url'
 
 import { CORPORA as SCRUB_CORPORA } from './gen-decisions.mjs'
 import { CORPORA as LEDGER_CORPORA, closeClaims, planClaims } from './verify-ledger.mjs'
+import { CORPORA as LANG_BUILD_CORPORA } from './verify-lang-build.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const LEDGER = join(ROOT, 'REVIEW_FINDINGS.md')
 
 /** Every declaration in the repository. One import per guard that has taken `M171`'s shape. */
-export const CORPORA = [...LEDGER_CORPORA, ...SCRUB_CORPORA]
+export const CORPORA = [...LEDGER_CORPORA, ...SCRUB_CORPORA, ...LANG_BUILD_CORPORA]
 
 /**
  * The checkout, when `git` can enumerate it, and `null` when it cannot.

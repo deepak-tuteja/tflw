@@ -8022,6 +8022,17 @@ identically and the artifacts stay what they claim to be. Redaction is `/home/<u
 rule does not match at all — deliberately not the placeholder account name the rule *allows*, since
 that would put a plausible real path back into a published record.
 
+### D886
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
+
+**`D886` — `M165-01` is repaired by a staleness guard, and the two costs the row names are both
+declined.** The row offers a `pretest` build in `packages/runtime` (a `tsc` on every run of a suite
+usually unaffected by lang, and pure waste in CI, which already builds before it tests) or pointing
+the runtime tests at `../../lang/src/index.js` (zero cost, but they then exercise something CI does
+not ship, so an `exports`-map mistake or a build-only failure goes invisible in exactly the suite that
+would have caught it — one silent green traded for another).
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -11179,5 +11190,15 @@ file spells `tflw <id>`; `verify-provenance.mjs` says the same rule in the same 
 The sibling's half of `M164-09`. This repository is public and, until this stage, had **no**
 mechanical reader of what it publishes at all — the only one lived in tflw and read one region of
 one file there.
+
+### M172d
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
+
+**`M172d` — built 2026-09-05**
+
+Closes `M165-01`. **Decisions taken:** `D886` — a lang-bundle staleness guard, both of the row's
+named costs declined; `D887` — the guard is wired to the root `npm test` and not to a workspace
+`pretest`, because a `pretest` fires inside the mutation sweep.
 
 <!-- GENERATED:decisions:end -->

@@ -259,6 +259,39 @@ claimed 191 CLI tests against an expected 196, and never reached `@tflw/docs-sit
 `scripts/` suite (162) at all. Before diagnosing a failure you did not expect, reproduce it under
 `npm test` — a suite that never reported is not a suite that passed.
 
+### A `@tflw/lang` edit is not visible to `@tflw/runtime` until you rebuild
+
+`packages/lang/package.json` publishes `./dist/index.js`, and `node_modules/@tflw/lang` is a
+workspace symlink at the *package* root. So `import { validateConfig } from '@tflw/lang'` inside
+`packages/runtime/test/**` — 61 import sites — resolves to `packages/lang/dist/index.js`, the
+**previous build**. `packages/lang`'s own tests import `../src/index.js` and are unaffected, which
+is what makes this hard to notice: the suite that would have caught it is the one that does not read
+the bundle.
+
+The failure mode is the expensive one. Those runtime tests do not go stale, they go **green** — they
+pass or fail against code you did not write, and say nothing either way.
+
+**So run `npm run build` before `npm test`, or at least `npm run build -w @tflw/lang` after touching
+`packages/lang/src/**`.** The root `npm test` refuses to start when the bundle is older than any
+source under it (`scripts/verify-lang-build.mjs`, `M172d`/`D886`), naming the command and the files.
+
+**This repository accepts that a runtime test does not observe lang source, and gates the
+consequence instead** (`D886`). The two alternatives were both declined and the reasons are worth
+knowing, because they look cheaper than they are. A `pretest` build in `packages/runtime` puts a
+`tsc` in front of every run of a suite that lang usually does not touch, and is pure waste in CI,
+which already builds before it tests. Pointing the runtime tests at `../../lang/src/index.js` costs
+nothing and is worse: they would then exercise something CI does not ship, so an `exports`-map
+mistake or a build-only failure goes invisible in exactly the suite that would have caught it — one
+silent green traded for another.
+
+**If the guard ever becomes noise you learn to ignore, the answer is the `pretest` build, not a
+looser guard.** Recorded so it is not re-derived.
+
+**It also fires after a rebase, a branch switch or a stash pop, and that is not a false positive.**
+Git rewrites the working-tree files it changes, so their mtimes become *now* even when the content
+you end up with is identical — and `dist/` is gitignored, so it does not move with them. The bundle
+really was built from a different tree. Rebuild; do not reach for `touch`.
+
 ## The cross-repo pair
 
 **A tflw milestone that assigns a `TF0xx` code is not done until its companion PR in

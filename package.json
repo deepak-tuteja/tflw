@@ -33,6 +33,7 @@
     "verify:mutations": "node scripts/mutate.mjs",
     "verify:ledger": "node scripts/verify-ledger.mjs",
     "verify:corpora": "node scripts/verify-corpora.mjs",
+    "verify:lang-build": "node scripts/verify-lang-build.mjs",
     "verify:decisions": "node scripts/gen-decisions.mjs --check",
     "verify:citations": "node scripts/verify-citations.mjs",
     "verify:anchors": "node scripts/verify-anchors.mjs",

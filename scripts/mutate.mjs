@@ -3158,6 +3158,25 @@ const REGISTRY = [
     find: '    const source = scope === undefined ? whole : (endpoints.get(scope) ?? { histogram: empty, successHistogram: empty, failures: 0 });',
     replace: '    const source = whole;',
   },
+  {
+    id: 'lang-build-guard-goes-quiet-when-the-bundle-is-absent',
+    milestone: 'm172d',
+    pkg: ROOT_SUITE,
+    file: 'scripts/verify-lang-build.mjs',
+    // `M165-01`/`D886`. The guard's own design note argues that an absent bundle must FAIL rather
+    // than skip, and the argument is measured: `dist/` is gitignored, so a fresh clone has none,
+    // and the same fact means `@tflw/lang` does not resolve at all — the runtime suite dies at 61
+    // import sites either way, and the only thing the guard changes there is which sentence the
+    // reader gets. An argument in a comment is not a check, so this is the check.
+    //
+    // The mutation is `D880`'s defect planted in a brand-new guard: the one state where the thing
+    // being guarded is missing is the one state it reports clean. Killed by
+    // `verify-corpora.test.mjs` through the declaration's own plant — which is the point of
+    // `M171a`'s third assertion, since a corpus nothing can be planted inside is a sentence.
+    what: 'the staleness guard answers `fresh` when `packages/lang/dist/index.js` does not exist at all, so the one state in which EVERY runtime test is about to fail at its import sites is the one state the guard calls clean. `D880`\'s shape in the guard written to avoid it',
+    find: "  if (bundleMtimeMs === null) return { kind: 'absent', stale: srcs.map((s) => s.path) }",
+    replace: "  if (bundleMtimeMs === null) return { kind: 'fresh', stale: [] }",
+  },
 ];
 
 /**
