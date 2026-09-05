@@ -176,7 +176,7 @@ here.
 
 ### P#12
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN.md`</sub>
 
 12. **Stack** — TypeScript/Node monorepo; hand-rolled lexer + recursive-descent parser (full
     ownership of diagnostics and error recovery — a pillar, so no parser generator, no tree-sitter).
@@ -2390,7 +2390,7 @@ resolution is reported.**
 
 ### D12
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/scripts/verify-notation-parity.mjs +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Artifacts & report (D12) — report becomes a directory**
 
@@ -2438,7 +2438,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D15
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Visual-regression baselines (D15)**
 
@@ -3494,7 +3494,7 @@ CLI, typecheck, build).
 
 ### D93
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +3 more · lifted from `PLAN_UNIFIED_TEST_WORKLOAD.md`</sub>
 
 - **D93 — single DSL keyword.** `scenario` and its mandatory `as load` clause are removed entirely.
   Every top-level block is `test "name" { ... }`. Breaking change, no deprecation period (project is
@@ -4637,7 +4637,7 @@ yet consuming it):
 
 ### D318
 
-<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/verify-notation-parity.mjs +1 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D318 — three milestones, and the config lines land on the far side of the tflw merge**
 
@@ -5990,7 +5990,7 @@ merges if they keep listing commands.
 
 ### D511
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-construct-coverage.mjs, tflw-tests/scripts/verify-contributing.mjs +2 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-construct-coverage.mjs +4 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **D511 — tflw merges first, and the two PRs are chained**
 
@@ -6354,7 +6354,7 @@ repository's CI has ever checked out the sibling.
 
 ### D711
 
-<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/refresh-own-identifiers.mjs +3 more · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
 
 **`D711` — both repositories number their milestones from 1, and 297 citations sit on the collision**
 
@@ -7903,13 +7903,23 @@ it is a step someone can run rather than a property someone hopes for.
 
 ### D860
 
-<sub>cited from tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+<sub>cited from tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-notation-parity.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
 
 **`D860` — the corpus excludes the gate's own tests, by name and with the reason at the exclusion.**
 `scripts/gen-decisions.test.mjs` cites `D888`, `D999` and `M9a2` *because they do not resolve*. An
 exclusion list that did not say so would read as an oversight the next time someone widened it.
 Follows `D-M164-06-1`'s form: exclusion with a stated reason per exclusion, never an extension
 allowlist.
+
+### D861
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`D861` — `M164-08`'s grammar repair is a prerequisite, not a follow-up.** Widening the demand
+before fixing `RANGE` means the first run reports 258 invented identifiers as dead pointers. The
+repair is the one `M164-08` already specifies — `RANGE` must not expand inside a corpus it did not
+author, and a citation abutting `+`, `/` or `=` is not a citation — plus the possessive shape §2.4
+found: a trailing `s` on an otherwise bare `M<n>` is not a sub-milestone.
 
 ### D864
 
@@ -7982,6 +7992,16 @@ parts (`a`, `g`, `x`) never did. This was not in the row.
 The row said *most of them fixture addresses* and did not separate the reserved from the registered,
 and the second group is the one that is a real address a real repository publishes.
 
+### D880
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`D880` — the tracked sweep announces that it could not run, rather than reporting a clean tree.**
+`git ls-files` is the only enumerator of this corpus and the offload driver's copy of the tree has
+no `.git/`. An unenumerable corpus and an empty one otherwise print the same number, which is the
+sentence this repository has now had to learn in five instruments (`D527`, `D683`, `D855`, `D874`,
+here). Both success lines carry the size of what they read: *575 tracked files swept*.
+
 ### D882
 
 <sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
@@ -8032,6 +8052,18 @@ usually unaffected by lang, and pure waste in CI, which already builds before it
 the runtime tests at `../../lang/src/index.js` (zero cost, but they then exercise something CI does
 not ship, so an `exports`-map mistake or a build-only failure goes invisible in exactly the suite that
 would have caught it — one silent green traded for another).
+
+### D895
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`D895` — a hand-maintained corpus that detects its own incompleteness is not an instance of this
+property, and is better than a declaration.** The axis in §11.2 had two answers, *enumerated* and
+*listed*, and a declaration as the mitigation. There is a third and it is stronger: a list that
+**fails loudly on a member it does not know**. `enumerated` never goes stale; `listed` + *declared*
+goes stale silently and says so only in prose a reader must find; `listed` + *self-policing* goes
+stale **loudly, at the moment it happens**. The keyword rule in §11.2 could not see it, because
+these guards write *"fail loudly instead"* rather than *"deliberately"*.
 
 ### M0
 
@@ -10258,7 +10290,7 @@ question.
 
 ### M138b
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs +2 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **`M138b` — testFlow-tests**
 
@@ -10290,7 +10322,7 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 ### M141
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +29 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +30 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **M141 — two answers to one question (Order 1 of the ledger drawdown)**
 
@@ -10487,7 +10519,7 @@ have a destination that elaborates rather than a chapter chosen arbitrarily.
 
 ### M149f
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-construct-coverage.mjs · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-construct-coverage.mjs +1 more · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **M149f — the guard, the gates and the PR**
 
@@ -11012,7 +11044,7 @@ line; restate the count; delete the no-op perturbation. Keep all 54 `find` patte
 
 ### M164
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +11 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +12 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`M164` — the roster plants must be shown to discriminate**
 
@@ -11147,6 +11179,17 @@ first: **there is no sibling ledger.** `testFlow-tests` has no `REVIEW_FINDINGS.
 the only one, which is why `M164-03` — a row about a sibling *plant* — sits in it.
 Gitignored by `.gitignore:35`.
 
+### M169a
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`M169a` — the grammar (tflw). BUILT 2026-09-03/04, merged `d0f6465`.**
+
+`D861`: `RANGE` scoped to the corpus that
+authored it *and* held to one sequence with a tight dash, the `+`/`=` boundary on both sides
+(`/` measured and refused, above), the possessive shape. Negative controls for all five shapes in
+§2.4. Closes `M164-08`. Nothing else moves; `DECISIONS.md` must be byte-identical after it.
+
 ### M169d3
 
 <sub>cited from CONTRIBUTING.md · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
@@ -11167,6 +11210,18 @@ The half that touches this repository. `D862`, `D863`, `D864` above; one tarball
 of the wrong index?* They were — not as whole identifiers, which the manifest does stop, but as
 **sites**. `refresh-sibling-citations.mjs` filters a claimed identifier's code sites by whether that
 file spells `tflw <id>`; `verify-provenance.mjs` says the same rule in the same shape.
+
+### M171
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`M171` — every guard declares its corpus**
+
+**Status:** **`M171a`, `M171b`, `M171b2` BUILT and merged; `M171c` MEASURED 2026-09-05 (§11);
+`M171d` BUILT 2026-09-05 (§12.0), sibling PR pending its `D511` pair; `M171e` remains.** Written out of a grilling that answered
+`PLAN_M170` §7's own question — *is the recurrence worth a milestone of its own?* — **yes**. This
+plan takes ownership of the property; `M170` keeps one stage (`M164-05`) and is downstream of this
+one.
 
 ### M171b
 
@@ -11191,9 +11246,15 @@ The sibling's half of `M164-09`. This repository is public and, until this stage
 mechanical reader of what it publishes at all — the only one lived in tflw and read one region of
 one file there.
 
+### M171d
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-notation-parity.mjs +1 more · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`M171d` — BUILT 2026-09-05, sibling PR pending. The row it is aimed at is `M164-12`.**
+
 ### M172d
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
 
 **`M172d` — built 2026-09-05**
 
