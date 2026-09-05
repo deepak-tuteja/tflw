@@ -3134,6 +3134,49 @@ const REGISTRY = [
     find: 'export function acquireInsecureTls(): void {\n  if (refCount === 0) {',
     replace: 'export function acquireInsecureTls(): void {\n  if (refCount > 0) {',
   },
+  {
+    id: 'threshold-scope-falls-back-to-the-whole-histogram',
+    milestone: 'm172a',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    // `M169-05`/`D885`. Nothing in this registry touched `evaluateThresholds`' endpoint lookup
+    // before this entry: 15 of the 326 ids name a threshold or a scope, and every one of them is
+    // about the POPULATION a threshold reads (`successHistogram` vs `histogram`, `D-M89-0`) or
+    // about the comparison (`D809`/`D810`) — never about which bucket the scope resolves to. So
+    // the repaired assertion had no mutation grading it, which is `M168`'s carry verbatim: a kill
+    // is not coverage, and neither is a repair.
+    //
+    // Deliberately NOT the population swap (`successHistogram` -> `histogram`) here. This
+    // fixture's requests all succeed, so the two histograms hold identical samples and that
+    // mutation would SURVIVE — the claim is owned at `:1662` and `:1814`, where the fixture fails
+    // requests on purpose.
+    //
+    // `@tflw/runtime`'s test script is `node --import tsx --test`, which strips types without
+    // checking them (`M155-01`), so the `empty` local this replacement leaves unread does not
+    // redden the sweep the way it would redden `npm run typecheck`.
+    what: 'a scoped threshold stops resolving its endpoint and evaluates against the scenario-wide histogram, so `threshold p95 duration for "checkout"` silently becomes a second copy of the unscoped threshold beside it. Both still fail here and both still report a number, which is why the assertion this replaces — a strict inequality between the two — could not tell the defect from a tie: `M169-05` recorded one red and two green on byte-identical code',
+    find: '    const source = scope === undefined ? whole : (endpoints.get(scope) ?? { histogram: empty, successHistogram: empty, failures: 0 });',
+    replace: '    const source = whole;',
+  },
+  {
+    id: 'lang-build-guard-goes-quiet-when-the-bundle-is-absent',
+    milestone: 'm172d',
+    pkg: ROOT_SUITE,
+    file: 'scripts/verify-lang-build.mjs',
+    // `M165-01`/`D886`. The guard's own design note argues that an absent bundle must FAIL rather
+    // than skip, and the argument is measured: `dist/` is gitignored, so a fresh clone has none,
+    // and the same fact means `@tflw/lang` does not resolve at all — the runtime suite dies at 61
+    // import sites either way, and the only thing the guard changes there is which sentence the
+    // reader gets. An argument in a comment is not a check, so this is the check.
+    //
+    // The mutation is `D880`'s defect planted in a brand-new guard: the one state where the thing
+    // being guarded is missing is the one state it reports clean. Killed by
+    // `verify-corpora.test.mjs` through the declaration's own plant — which is the point of
+    // `M171a`'s third assertion, since a corpus nothing can be planted inside is a sentence.
+    what: 'the staleness guard answers `fresh` when `packages/lang/dist/index.js` does not exist at all, so the one state in which EVERY runtime test is about to fail at its import sites is the one state the guard calls clean. `D880`\'s shape in the guard written to avoid it',
+    find: "  if (bundleMtimeMs === null) return { kind: 'absent', stale: srcs.map((s) => s.path) }",
+    replace: "  if (bundleMtimeMs === null) return { kind: 'fresh', stale: [] }",
+  },
 ];
 
 /**
@@ -3396,10 +3439,17 @@ function repairStaleJournal() {
 // killed in a later step with the work done and thrown away.
 //
 // A bigger number would be the third application of a fix that has not held twice, and `M114`'s
-// rule forbids the cheap structural one — scoping the sweep on PRs is how `M122-01` stayed
-// invisible, a merged registry entry leaving one mutation not merely surviving but *absent*, with
-// every scoped run green about a mutation that no longer existed. So: every mutation still runs on
-// every pull request, and what changes is how many machines run them.
+// rule forbids the cheap structural one: a sweep scoped to the milestone under review is green
+// about every mutation it did not run, and a control that has stopped killing reddens nothing while
+// it stays unrun. So: every mutation still runs on every pull request, and what changes is how many
+// machines run them.
+//
+// `M172c` (`M161-02`) — this paragraph cited `M122-01` until 2026-09-05, and that case does not
+// support the rule: a mutation inside the scope is found by a scoped run and an unscoped one alike,
+// and what made `M122-01` invisible is that its object was built and never registered, which
+// `registryProblem()` above is what actually catches. `ci.yml`'s unscoped note carries the full
+// correction. The row named two sites; there were THREE, this being the copy nobody had counted —
+// which is the row's own warning about reusing an example rather than re-checking it, paid twice.
 //
 // WHAT A SHARD MUST NOT BE ABLE TO DO. Splitting a sweep introduces exactly one new way to be
 // green about nothing — a mutation that lands in no shard, or a shard that runs zero mutations and

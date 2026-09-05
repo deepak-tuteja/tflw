@@ -228,7 +228,12 @@ jobs:
   # measured **1h13m11s** (run 31540764432), having gone 51m → 53m → 55m → 59m → 69m → 71m → 73m in
   # about two days: 17 minutes of headroom, and the estimate that called it "roughly eleven more
   # milestones" had bought five. A fourth larger number is not a fix, and `M114`'s rule forbids the
-  # cheap structural one — scoping the sweep on PRs is how `M122-01` stayed invisible.
+  # cheap structural one: a sweep scoped to the milestone under review is green about every mutation
+  # it did not run, and a control that has stopped killing reddens nothing while it stays unrun.
+  #
+  # `M172c` (`M161-02`) — this sentence used to cite `M122-01`, which does not support it. The
+  # correction is written once, at the `Mutation controls` step's own unscoped note below, rather
+  # than twice here; reusing an example instead of re-checking it is what put it in two places.
   #
   # So the registry is dealt across six machines and every mutation still runs on every pull
   # request. Six from the measurement rather than taste: the cost is per *package* (a baseline is
@@ -432,9 +437,26 @@ jobs:
       # which is how M98c's `isUnlexable` control went vacuous in the first place, and how the `#`
       # case was still uncovered five milestones later.
       #
-      # Unscoped, and that is `M114`'s rule rather than a default: a scoped sweep is how `M122-01`
-      # stayed invisible — a merged registry entry left one mutation not merely surviving but
-      # *absent*, and every scoped run was green about a mutation that no longer existed.
+      # Unscoped, and that is `M114`'s rule rather than a default. The case for it is the vacuous
+      # control directly above: a control that stops killing reddens nothing, so a sweep scoped to
+      # the milestone under review is green about every mutation it did not run, and the only thing
+      # that can notice a control going quiet is running all of them every time.
+      #
+      # `M172c` (`M161-02`) — this sentence and its twin at the re-shard note above used to cite
+      # `M122-01`, and that case does not support the rule. `M122-01`'s own ledger row says so in as
+      # many words: *"`M114`'s run-it-unscoped rule did not help and could not: the surviving object
+      # carried `milestone: 'm121'`, so scoping and not scoping showed the same thing."* A mutation
+      # inside the scope is found by a scoped run and an unscoped one alike. What made `M122-01`
+      # invisible is that its object was built and never registered — a `},` missing between two
+      # entries merges them and the earlier mutation stops existing — which no run of any width can
+      # reach. What caught it is `registryProblem()` in `mutate.mjs`, a static refusal comparing the
+      # count of `id:` keys written against the count of mutation objects built, and that is the
+      # case that belongs to it.
+      #
+      # The rule is not reopened and `M114` is not touched. A load-bearing rule resting on a
+      # misattributed example is one re-reading away from being dropped as unfounded, which is the
+      # whole of `M161-02` — and the row had already paid once, in that the example reached two
+      # sentences arguing different things before anybody re-checked it.
       #
       # A shard is not a scope. `--shard=i/23` is a slice of the *whole* registry — the union of the
       # twenty-three is the registry, and `mutation controls` below is what proves that rather than
@@ -518,5 +540,23 @@ jobs:
           exit 1
 
       # And then coverage, which is the half no individual shard can attest to.
+      #
+      # `M172b` (`M169-02`) — `always()`, and the step above is deliberately NOT reordered. Its
+      # argument is good and survives: a survivor is more useful at the top of a failure than a
+      # coverage sum. What was wrong is that it ends in `exit 1`, so it was not merely *first*, it
+      # was a gate on whether this step ran at all — and `M148` later put `checkShardCost` in this
+      # script for the *cost* failure. A shard that dies of cost is a shard that failed, so the one
+      # condition the telemetry exists to explain was the one condition that guaranteed its silence.
+      # Measured on run 33811712276: shards 16 and 17 killed at `timeout-minutes: 30`, shard 18 at
+      # the suite fence, and this job lived SIX SECONDS — long enough to download the manifests and
+      # print the collapsed matrix result, not long enough to read one of them.
+      #
+      # There is something to read on a red sweep, which is what makes `always()` worth more than a
+      # second error message: the shard's upload step above is `always()` for the neighbouring
+      # reason, so a sweep that found survivors still leaves all 23 manifests and both halves of
+      # this script run over a complete set. A shard the runner *killed* leaves none, and that lands
+      # on the reassembly check instead — `verify-shards.mjs`'s own docblock calls that a worse
+      # message for the same problem, and a worse message is still not six seconds of silence.
       - name: Every mutation was run by some shard
+        if: always()
         run: node scripts/verify-shards.mjs shards --of=23

@@ -66,6 +66,7 @@
 // invokes the root `npm test`, which in any case refuses to run while a journal is open. So this
 // adds nothing to `verify:mutations`' cost and does not move `M131-06`'s shard headroom.
 import { spawn } from 'node:child_process';
+import { check as langBuildCheck, problem as langBuildProblem } from './verify-lang-build.mjs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -188,6 +189,24 @@ try {
 }
 if (openSweep) {
   console.error(`✗ ${openJournalWarning(openSweep)}`);
+  process.exit(2);
+}
+
+// `M172d` (`M165-01`, `D886`/`D887`) — the lang bundle is not older than the sources it was built
+// from. Here rather than in `packages/runtime`'s `pretest`, and that placement was measured rather
+// than preferred: `mutate.mjs` runs every mutation as `npm test -w <pkg>`, so a `pretest` fires
+// inside the sweep, and the sweep rewrites `packages/lang/src/**` for each of its 111 lang
+// mutations — the first of which is the FIRST entry in the registry, with all 115 runtime mutations
+// after it. A `pretest` guard would have gone red on every one of them and been scored a KILL, the
+// vacuous-instrument shape this repository has already hit four times. The root `npm test` is the
+// one command the sweep never invokes (it refuses while a journal is open, three lines above), and
+// it is what a contributor runs, which is the loop the row is actually about.
+//
+// Before `test:raw`, not after: a stale bundle makes the runtime suite's result meaningless, and a
+// meaningless green printed first is what `M165-01` is.
+const langBuild = langBuildProblem(langBuildCheck());
+if (langBuild !== null) {
+  console.error(`✗ ${langBuild}`);
   process.exit(2);
 }
 
