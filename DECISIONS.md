@@ -5990,7 +5990,7 @@ merges if they keep listing commands.
 
 ### D511
 
-<sub>cited from tflw-tests/scripts/verify-construct-coverage.mjs, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-construct-coverage.mjs, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **D511 — tflw merges first, and the two PRs are chained**
 
@@ -7938,6 +7938,89 @@ whole point, and committing one that names a commit nobody can fetch is what `D7
 **`D866` — qualification is a property of a site, not of the corpus.** `D864`'s third term is
 written *"`tflw <id>` **at a site**"*, and `D-M164-06-8` calls it *"the per-site override"*. Both
 implementations built it as one set over the whole corpus:
+
+### D875
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-scrub.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`D875` — a scrub rule declares the corpus it covers, as data, beside the subject it claims.**
+The rule set is no longer a list of patterns with a paragraph over it saying how far they reach.
+Each entry carries `corpus` and `subject`, `scrub(text, region)` runs a rule only when the region
+lies inside that rule's corpus, and `verify-corpora.mjs` holds the declaration to the three
+assertions `M171a` established — it resolves, it is non-empty, and every plant lands.
+
+### D876
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-scrub.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`D876` — the host rule stays at `generated`. This half of `M164-09` is a narrowing, and the
+widening it looks like it is asking for is refused.** Nine tracked files here name the build host,
+and four are provenance comments in shipped `src` — `diagnostic.ts:344`, `parser.ts:4877`,
+`eval.ts:547`, `interpreter.ts:2061` — whose entire job is to tell a reader *this number was not
+measured on your machine*. Anonymising those makes them weaker, not safer. The rule's real subject
+was always the generated block, where a hostname arrives **by lift** rather than by someone typing
+it, and where `D669` already says the repair is to reword the record and regenerate. Widening it
+would have reddened nine legitimate files, and a gate red on legitimate files is a gate that gets
+deleted.
+
+### D878
+
+<sub>cited from tflw-tests/scripts/verify-scrub.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`D878` — a fixture address belongs on a reserved TLD, and the reserved TLDs are allowed.**
+RFC 2606 and RFC 6761 set aside `.test`, `.invalid`, `.example` and `.localhost` so a fixture need
+not borrow a domain somebody owns. Eleven hits were already on them (`alice@example.test`,
+`t@example.invalid`, `tflw@example.invalid`, `a@b.test`) and are now allowed rather than tolerated;
+**fifteen were on `x.com`, `y.com` and `b.com`, which are registered to strangers**, and moved onto
+the matching reserved TLD with the local part unchanged — `x.com`→`x.test`, `b.com`→`b.test`,
+`y.com`→`y.test` — across `data-tables.test.ts`, `symbols.test.ts` and both `browser-steps.test.ts`.
+**This block cannot quote the addresses themselves**, and finding that out is the decision proving
+itself: `D878` is lifted into `DECISIONS.md` by `D669`, so the four literals that were written here
+to record the repair were published by the first run that published the decision — four hits, caught
+by this milestone's own scrub gate on `DECISIONS.md`. The domains carry the whole claim; the local
+parts (`a`, `g`, `x`) never did. This was not in the row.
+The row said *most of them fixture addresses* and did not separate the reserved from the registered,
+and the second group is the one that is a real address a real repository publishes.
+
+### D882
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`D882` — the sibling's gate imports tflw's rule set; it does not carry a copy.** The rules are
+declared once, in `gen-decisions.mjs`, where each states the corpus it covers as data (`D875`).
+A second copy here would be two implementations of one grammar with nothing holding them together —
+which is `M164-12` exactly, created on purpose in the middle of the milestone about guards whose
+corpus does not match the subject they claim. The import goes through `siblingRoot()`, the resolver
+this repository already uses to read tflw's mutation registry: one answer to *where is the sibling*,
+not a second one invented beside it. And it **does not skip when the sibling is missing** — it runs
+in the one CI job that checks out both repositories, the job `verify:contributing` already states
+that rule for, and a publication gate that goes quiet when it cannot find its rules reports a clean
+repository it never read.
+
+### D883
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-scrub.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`D883` — the exemption list is per repository, because the corpus is.** Two entries here, both
+lockfiles, both npm's own registry metadata: a lockfile records the maintainer address the registry
+publishes for a package. It is not this repository's text to edit and not its leak. The alternative
+considered and rejected was an allow-list entry in the shared rule, which would have blinded the
+email rule in **both** repositories to a real address in order to excuse one file in one of them —
+a corpus-wide override spent on a per-site problem, which is `D866` under a different name. Both
+entries are held to `D879`'s non-vacuity check by tflw's own `staleExemptions`.
+
+### D884
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-scrub.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`D884` — a committed measurement artifact may be redacted in place when the redacted field is not
+an input to anything derived from it, and that has to be checked rather than assumed.** The 25 paths
+live in `tflw.entry` and in error strings under `legs.ladder.rungs[].runners[].error` and
+`regressions[].detail`. What reads these five files is `derive-perf-bands.mjs`, which takes rps and
+p95 numbers; `baseline.json` names its sources by filename, not by digest. So the bands re-derive
+identically and the artifacts stay what they claim to be. Redaction is `/home/<user>/`, which the
+rule does not match at all — deliberately not the placeholder account name the rule *allows*, since
+that would put a plausible real path back into a published record.
 
 ### M0
 
@@ -10800,7 +10883,7 @@ allowed to claim.
 
 ### M160d
 
-<sub>cited from tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/perf-conformance.mjs, tflw-tests/scripts/verify-artifact-contract.mjs +1 more · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/derive-perf-bands.mjs +4 more · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
 
 **`M160d` — `D811`, in `testFlow-tests`.** Re-run the ladder, re-derive the bands, record the
 unblocked count.
@@ -10918,7 +11001,7 @@ line; restate the count; delete the no-op perturbation. Keep all 54 `find` patte
 
 ### M164
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +10 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +11 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`M164` — the roster plants must be shown to discriminate**
 
@@ -11073,5 +11156,28 @@ The half that touches this repository. `D862`, `D863`, `D864` above; one tarball
 of the wrong index?* They were — not as whole identifiers, which the manifest does stop, but as
 **sites**. `refresh-sibling-citations.mjs` filters a claimed identifier's code sites by whether that
 file spells `tflw <id>`; `verify-provenance.mjs` says the same rule in the same shape.
+
+### M171b
+
+<sub>cited from tflw-tests/scripts/verify-scrub.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`M171b` — BUILT 2026-09-05**
+
+`SCRUB` now states, per rule and as data, the corpus it covers. Two corpora, nested:
+
+| corpus | what it is | which rules | measured |
+|---|---|---|---|
+| `generated` | the block between the two GENERATED markers in `DECISIONS.md` | all three | 10 993 lines |
+| `tracked` | every tracked text file, `git ls-files` | email, home path | 575 files |
+
+### M171b2
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-scrub.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+
+**`M171b2` — BUILT 2026-09-05**
+
+The sibling's half of `M164-09`. This repository is public and, until this stage, had **no**
+mechanical reader of what it publishes at all — the only one lived in tflw and read one region of
+one file there.
 
 <!-- GENERATED:decisions:end -->
