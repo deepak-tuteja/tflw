@@ -31,6 +31,9 @@ import {
   parseIndex,
   parseStamp,
   planClaims,
+  closeClaims,
+  stampProblems,
+  maskCodeSpans,
   newestPublishedTally,
   staleReport,
 } from './verify-ledger.mjs'
@@ -1004,4 +1007,108 @@ test('an unescaped `|` still ends a cell — the fix does not make malformed row
   const parsed = parseIndex(ledger({ rows }))
   assert.equal(parsed.length, 1)
   assert.notEqual(classify(parsed[0].status), 'closed')
+})
+
+// ---- M171a — the two guards' corpora (`M169-07`, `M169-08`) ----------------------------------
+//
+// Both defects fail open, so every case here has to assert that something is now *said*. A test
+// that only pinned the happy answer would pass against both the old code and the new one on any
+// input either of them reads — which is the shape of the defect, written as a test.
+
+test('`parseStamp` reads the newest stamp when the newer one is appended below', () => {
+  const st = parseStamp(
+    'open — **rv 2026-08-01 @aaaaaaa reproduces** · `a/b.ts:1` · first' +
+      ' · **rv 2026-09-01 @bbbbbbb drifted** · `a/c.ts:2` · second',
+  )
+  assert.equal(st.date, '2026-09-01')
+  assert.equal(st.verdict, 'drifted')
+  // The evidence is the newest stamp's own, not the union: a stamp certified by a path cited under
+  // an older measurement is the fail-open this repair is for.
+  assert.deepEqual(st.paths, ['a/c.ts'])
+})
+
+test('`parseStamp` reads the newest stamp when it is written at the front', () => {
+  // The live corpus's actual shape on 2026-09-05: 19 multi-stamp rows, every newest at the front,
+  // because writing it there was the workaround for the first-match bug. `read the last` would have
+  // certified all nineteen at their oldest measurement.
+  const st = parseStamp(
+    'open — **rv 2026-09-01 @bbbbbbb drifted** · `a/c.ts:2` · newest' +
+      ' · prior stamp, kept verbatim: **rv 2026-08-01 @aaaaaaa reproduces** · `a/b.ts:1`',
+  )
+  assert.equal(st.date, '2026-09-01')
+  assert.deepEqual(st.paths, ['a/c.ts'])
+})
+
+test('a mis-spelled stamp is reported rather than silently not counted', () => {
+  const bad = stampProblems('open — **rv 2026-08-30 @566cc5d**, no verdict word ever follows')
+  assert.equal(bad.length, 1)
+  assert.match(bad[0], /rv 2026-08-30 @566cc5d/)
+})
+
+test('a mis-spelled stamp inside a code span is a quotation, not an instance', () => {
+  // Two real rows quote the malformed stamp that produced them, as their own evidence. A guard that
+  // reads a quotation as an instance reports the specimen instead of the disease.
+  assert.deepEqual(stampProblems('open — the row below spells `**rv 2026-08-30 @566cc5d**,` wrongly'), [])
+})
+
+test('`maskCodeSpans` preserves every index', () => {
+  const t = 'a `b c` d'
+  assert.equal(maskCodeSpans(t).length, t.length)
+  assert.equal(maskCodeSpans(t), 'a       d')
+})
+
+test('a citation carrying a line range is read as a path', () => {
+  const st = parseStamp('open — **rv 2026-09-05 @7b2617a drifted** · `tests/mixed/storefront.tflw:336-379`')
+  assert.deepEqual(st.paths, ['tests/mixed/storefront.tflw'])
+})
+
+test('a close-claim and a declined row on one line are two clauses, not one', () => {
+  // `PLAN_M158` and `PLAN_M162` both write these on a single line. A line-granular rule reads a row
+  // the plan explicitly declined to close as a row it claimed.
+  const claims = closeClaims('**Closes:** `M154-01` (S3). **Disposes without closing:** `M149f-01` (S4)')
+  assert.equal(claims.length, 1)
+  assert.deepEqual(claims[0].ids, ['M154-01'])
+})
+
+test('a close-claim quoted inside a code span is not a claim', () => {
+  assert.deepEqual(closeClaims('because `PLAN_M160` wrote `**Closes:** M154f-13` on line 16'), [])
+})
+
+test('an unbolded `Closes` still states a claim', () => {
+  assert.deepEqual(closeClaims('Closes `FU-01`, `V2-01`. **Unblocks the freeze**')[0].ids, ['FU-01', 'V2-01'])
+})
+
+/** A plan whose only close-claim is written past the twelve-line window, with no marker. */
+function belowWindow(claim = '**Closes:** `B3-04`') {
+  const text = ['# PLAN_M901', ...Array.from({ length: 18 }, () => ''), claim].join('\n')
+  return { file: 'PLAN_M901_PLANTED.md', milestone: '901', ids: planClaims(text), claims: closeClaims(text) }
+}
+
+test('a close-claim below the window, on a shipped milestone, over an open row fails by name', () => {
+  const { problems } = check(sound({ plans: [belowWindow()], shipped: new Set(['901']) }))
+  assert.equal(problems.length, 1, problems.join('\n'))
+  assert.match(problems[0], /`planClaims` cannot read that claim/)
+  assert.match(problems[0], /plan:closes B3-04/)
+})
+
+test('the same claim over a row that is already closed is announced, not failed', () => {
+  // The claim was kept: silence is the right answer, and the count is still published so the size of
+  // the blind spot is a number somebody can read rather than one they have to go and measure.
+  const { problems, unreadClaims } = check(sound({ plans: [belowWindow('**Closes:** `A3-05`')], shipped: new Set(['901']) }))
+  assert.deepEqual(problems, [], problems.join('\n'))
+  assert.equal(unreadClaims.length, 1)
+  assert.match(unreadClaims[0], /PLAN_M901_PLANTED\.md:20 `A3-05`/)
+})
+
+test('a close-claim on an unshipped milestone is announced and not failed', () => {
+  const { problems, unreadClaims } = check(sound({ plans: [belowWindow()], shipped: new Set([]) }))
+  assert.deepEqual(problems, [], problems.join('\n'))
+  assert.equal(unreadClaims.length, 1)
+})
+
+test('a claim the marker already carries is neither failed nor announced', () => {
+  const text = ['# PLAN_M902', '<!-- plan:closes B3-04 -->', ...Array.from({ length: 18 }, () => ''), '**Closes:** `B3-04`'].join('\n')
+  const plan = { file: 'PLAN_M902.md', milestone: '902', ids: planClaims(text), claims: closeClaims(text) }
+  const { unreadClaims } = check(sound({ plans: [plan], shipped: new Set(['902']) }))
+  assert.deepEqual(unreadClaims, [])
 })

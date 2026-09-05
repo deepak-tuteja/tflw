@@ -118,6 +118,14 @@ jobs:
       # mutation pass. Before `npm test` would be wrong: a red suite is the more useful signal.
       - run: npm run verify:observability
 
+      # Every guard declares the corpus it reads, and the declaration is checked (`M171a`, `D874`).
+      # Two tiers on purpose, and this is the half that can run here: the plants are synthetic, so
+      # they need no records and prove the thing a docblock cannot — that a violation placed inside
+      # a declared corpus is actually caught. The *resolution* tier needs the gitignored records and
+      # says out loud that it did not run, which is `D683`'s shape and `M171`'s own subject: a gate
+      # whose corpus is narrower than its subject reports a clean number, never a smaller one.
+      - run: npm run verify:corpora
+
       # `DECISIONS.md` is the resolution target for the private notation this repo is written in —
       # `P#43`, `D318`, `M137d`, roughly 730 citations of records `.gitignore` excludes (M152/`D666`).
       # THIS STEP RUNS ONLY HALF THE CHECK, and says so rather than printing a bare green. Both

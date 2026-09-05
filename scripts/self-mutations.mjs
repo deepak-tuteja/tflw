@@ -234,8 +234,71 @@ export const SELF_MUTATIONS = [
     file: 'scripts/verify-ledger.mjs',
     what: "off a git checkout the plan↔ledger check goes back to treating every plan as shipped. It does not fail quietly: it names a row and a line and asserts the milestone is on `main`, and the cheapest way to make it green is to close a row that is still open — the guard talking a reader into the corruption it exists to catch",
     edits: [
-      ['    if (!planClaimsChecked) break\n', ''],
+      ['    if (!planClaimsChecked) continue\n', ''],
       ['    if (!shipped.has(gate)) continue', '    if (shipped && !shipped.has(gate)) continue'],
+    ],
+  },
+  // --- M171a (`M169-07`, `M169-08`) -------------------------------------------------------------
+  //
+  // Two mutations on the two guards `M171a` repaired, each restoring the exact pre-fix code rather
+  // than a neighbour of it — the same discipline `plan-claims-guessed-when-git-is-absent` above
+  // states, and for the same reason: what a restoration proves is the reported defect.
+  //
+  // Both fail **open**, which is `M171`'s whole subject. Neither mutation makes the gate say
+  // anything wrong; each makes it say nothing, about a row it is still certifying.
+  {
+    id: 'the-stamp-read-is-the-first-one-written',
+    milestone: 'm171a',
+    pkg: ROOT_SUITE,
+    file: 'scripts/verify-ledger.mjs',
+    what: "`parseStamp` goes back to reading the first stamp in the cell instead of the newest. Measured at 3 rows and 5 uncounted re-verifications when `M169-07` was filed, and the corpus has since inverted — 19 of the 31 open rows carry more than one stamp and every one of them writes the newest at the FRONT, because that was the workaround. So this mutation is silent on today's ledger and would come back the first time somebody appends one, which is exactly how it survived the first time",
+    edits: [
+      ['  for (const g of good) if (g.date >= newest.date) newest = g\n', ''],
+    ],
+  },
+  {
+    id: 'a-close-claim-below-the-window-is-not-seen-at-all',
+    milestone: 'm171a',
+    pkg: ROOT_SUITE,
+    file: 'scripts/verify-ledger.mjs',
+    what: "`closeClaims` stops reading anything past the twelfth line, which restores `M169-08`: a plan's `**Closes:** …` on line sixteen is not missed loudly, it is not seen, and the gate reports that every plan claim agrees. `PLAN_M160` wrote one there and made *verify-ledger shows it closed* its own acceptance clause — an acceptance criterion unsatisfiable by construction with nothing in a position to say so",
+    edits: [
+      ["  text.split('\\n').forEach((raw, i) => {", "  text.split('\\n').slice(0, 12).forEach((raw, i) => {"],
+    ],
+  },
+  // --- M171b (`M164-09`) ------------------------------------------------------------------------
+  //
+  // Three mutations, and only the first restores the reported defect: `M171b` is mostly a
+  // *narrowing*, so two of its three claims are negative ones and the mutation that proves a
+  // negative claim has to make the guard do MORE, not less.
+  {
+    id: 'the-scrub-gate-reads-one-region-of-one-file',
+    milestone: 'm171b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "the two rules whose declared corpus is the tracked tree stop covering it, which restores `M164-09` exactly: `scrub` still runs all three rules over `DECISIONS.md`'s generated block and the sweep still walks all 575 tracked files, and finds nothing in any of them. Fails **open** in the loudest possible way — the run prints `575 tracked files swept clean`, a green line naming a corpus it did not read. The 25 published `/home/<account>/` paths in the sibling that this rule's docblock always claimed to cover were invisible for this reason and no other",
+    edits: [
+      ["const WITHIN = { generated: ['generated', 'tracked'], tracked: ['tracked'] };", "const WITHIN = { generated: ['generated', 'tracked'], tracked: [] };"],
+    ],
+  },
+  {
+    id: 'an-exemption-outlives-its-specimen',
+    milestone: 'm171b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "`SCRUB_EXEMPT`'s non-vacuity check goes away, so an exemption goes on excusing a whole file from a rule after the specimen it was written for has left. This is the defect one level in: the exemption list is itself a corpus declaration, and an entry nobody can see expiring blinds the sweep in exactly the direction `M171` is about. Fails open and stays green forever, because the thing it stops reporting is the file the gate is no longer reading",
+    edits: [
+      ['  return { ran: true, files: files.length, dirt, stale: staleExemptions(hits, new Set(files)) };', '  return { ran: true, files: files.length, dirt, stale: [] };'],
+    ],
+  },
+  {
+    id: 'the-host-rule-widens-past-its-declared-corpus',
+    milestone: 'm171b',
+    pkg: ROOT_SUITE,
+    file: 'scripts/gen-decisions.mjs',
+    what: "the build-host rule's corpus widens from the generated block to the whole tracked tree — the widening `M164-09` looks like it is asking for, and the one `D876` refuses. Nine tracked files name the host, four of them provenance comments in shipped `src` whose entire job is to say *this number was not measured on your machine*. The kill is the point: a narrowing is a claim like any other, and if nothing fails when the corpus grows then the declaration was decoration. This is the only mutation here that fails LOUD, which is why it needs a test at all — a red gate on nine legitimate files is repaired by deleting the rule",
+    edits: [
+      ["    corpus: 'generated',\n    subject: 'the build host named inside a generated record block',", "    corpus: 'tracked',\n    subject: 'the build host named inside a generated record block',"],
     ],
   },
   // --- M147f (`M147-06`) --------------------------------------------------------------------

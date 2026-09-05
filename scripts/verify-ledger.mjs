@@ -99,10 +99,63 @@ export function isWellFormed(status) {
  * corpus's existing `✅ **fixed \`M<N>\`**` idiom already carries that. So the vocabulary is exactly
  * the two states an open row can be in: it still does the thing, or it does a different thing.
  */
-const STAMP = /\brv (\d{4}-\d{2}-\d{2}) @([0-9a-f]{7,40}) (reproduces|drifted)\b/
+const STAMP = /\brv (\d{4}-\d{2}-\d{2}) @([0-9a-f]{7,40}) (reproduces|drifted)\b/g
 
 /**
- * A backticked token that could be a path: ends in an extension, optionally with a `:<line>` suffix.
+ * The same grammar, anchored nowhere, used to find a cell's *intent* to carry a stamp: `rv `
+ * followed by a date, through any emphasis in between. What it matches and `STAMP` does not is a
+ * stamp somebody meant to write and mis-spelled — which is the whole of `M169-07` (`D869`).
+ */
+const STAMP_CANDIDATE = /\brv (?=[\s*_]*\d{4}-\d{2}-\d{2})/g
+
+/**
+ * The stamp grammar's corpus, stated as data rather than as prose (`D867`): **a status cell's own
+ * text, with code spans removed.**
+ *
+ * A code span in this ledger is a quotation — the two rows `M169-07` was found on quote the
+ * malformed stamp that made them, verbatim, as their evidence — and a guard that reads a quotation
+ * as an instance reports the specimen instead of the disease. Spaces, not deletion, so every index
+ * this returns is an index into the original cell and evidence can be sliced from the real text.
+ */
+export function maskCodeSpans(text) {
+  return text.replace(/`[^`]*`/g, (m) => ' '.repeat(m.length))
+}
+
+/**
+ * Every stamp in a status cell: the well-formed ones in the order they are written, and the
+ * mis-spelled ones as text (`D869`).
+ *
+ * Both halves are returned because the caller needs both and neither implies the other. A cell can
+ * carry three good stamps and one malformed one, and before `M171a` that cell was certified at the
+ * first of the three with nothing said about the fourth.
+ */
+export function allStamps(status) {
+  const masked = maskCodeSpans(status)
+  const good = [...masked.matchAll(STAMP)].map((m) => ({
+    index: m.index,
+    length: m[0].length,
+    date: m[1],
+    commit: m[2],
+    verdict: m[3],
+  }))
+  const malformed = [...masked.matchAll(STAMP_CANDIDATE)]
+    .map((m) => m.index)
+    .filter((i) => !good.some((g) => g.index === i))
+    .map((i) => status.slice(i, i + 48).replace(/\s+/g, ' '))
+  return { good, malformed }
+}
+
+/** The stamps a cell meant to carry and mis-spelled. Empty is the normal answer. */
+export function stampProblems(status) {
+  return allStamps(status).malformed
+}
+
+/**
+ * A backticked token that could be a path: ends in an extension, optionally with a `:<line>` or
+ * `:<line>-<line>` suffix. The range half is `M171a`'s: three of the nine rows re-stamped on
+ * 2026-09-05 cited a whole test as `` `tests/mixed/storefront.tflw:336-379` ``, and every one of
+ * them read as citing **no path at all** — a stamp whose evidence the gate could not see, in a
+ * check whose entire subject is evidence the gate can see (`D870`).
  * Whitespace is excluded, which is what keeps a backticked *command* — `env -u DISPLAY node
  * scripts/verify-watch.mjs` — from being read as a citation. That matters: `D526` requires the stamp
  * to name the source the behaviour lives in, never the command that showed it, because a command is
@@ -113,7 +166,7 @@ const STAMP = /\brv (\d{4}-\d{2}-\d{2}) @([0-9a-f]{7,40}) (reproduces|drifted)\b
  * The cost of the looser rule is that prose tokens like `body.id` are also *candidates* — harmless,
  * since resolution is what decides, and the failure message names everything it tried.
  */
-const CITED = /`([^`\s]+\.[A-Za-z0-9]+)(?::\d+)?`/g
+const CITED = /`([^`\s]+\.[A-Za-z0-9]+)(?::\d+(?:-\d+)?)?`/g
 
 /**
  * A `filedRow` pointer as `packages/lang/src/conformance.ts` writes one (`M147a`, `M147-01`).
@@ -144,15 +197,40 @@ const FILED_ROW = /^\s*filedRow: '([^']+)'/gm
  *  looks like; see `FILED_ROW` above for why that has to be asked separately from the count. */
 const FILED_ROW_DECLARED = /^\s*filedRow\?: string/m
 
-/** Parse a status cell's stamp. Returns null when there is none — the caller decides if that is fatal. */
+/**
+ * The cell's **current** re-verification. Null when there is none — the caller decides if that is
+ * fatal.
+ *
+ * **Newest by date, not by position** (`D868`). This read `status.match(STAMP)` — the first match —
+ * against a convention that appends, so a row carrying a newer measurement went on being certified
+ * at an older one: `M169-07`, measured at 3 rows and 5 uncounted re-verifications. The obvious
+ * repair is *read the last*, and it is wrong, which is the part worth keeping. The nine rows
+ * re-stamped on 2026-09-05 were written at the **front** precisely to defeat the first-match bug, so
+ * by the time the repair was built the live corpus was 19 multi-stamp rows with the newest at the
+ * front and **none** with it at the back — the fix stated in `PLAN_M171` §4 would have certified
+ * every one of them at its oldest stamp. Position was never the fact; the date is, and a date is
+ * what the convention was always writing down.
+ *
+ * Ties resolve to the later-written stamp: two measurements on one day are one day's answer, and the
+ * second one is the one somebody bothered to add.
+ *
+ * The evidence read is the text from this stamp to the **next** stamp, not to the end of the cell.
+ * That is what makes the answer the newest stamp's own rather than the union of every stamp's — and
+ * it is a narrowing, so it is the half of this repair that can turn a row red. It did, three times,
+ * and all three were true: two stamps citing no path at all (`M149f-01`, `M159-01`), and one whose
+ * citation the *other* half of this milestone could not read (`M154h-01`, a `:336-379` range).
+ */
 export function parseStamp(status) {
-  const m = status.match(STAMP)
-  if (!m) return null
-  const evidence = status.slice(m.index + m[0].length)
+  const { good } = allStamps(status)
+  if (!good.length) return null
+  let newest = good[0]
+  for (const g of good) if (g.date >= newest.date) newest = g
+  const next = good.find((g) => g.index > newest.index)
+  const evidence = status.slice(newest.index + newest.length, next ? next.index : status.length)
   return {
-    date: m[1],
-    commit: m[2],
-    verdict: m[3],
+    date: newest.date,
+    commit: newest.commit,
+    verdict: newest.verdict,
     paths: [...new Set([...evidence.matchAll(CITED)].map((c) => c[1]))],
   }
 }
@@ -238,6 +316,50 @@ export function planClaims(text, headerLines = 12) {
   if (explicit) return [...new Set([...explicit[1].matchAll(ROW_ID_BARE)].map((m) => m[1]))]
   const head = text.split('\n').slice(0, headerLines).join('\n')
   return [...new Set([...head.matchAll(ROW_ID)].map((m) => m[1]))]
+}
+
+/**
+ * Every close-claim a plan states in prose, wherever it is written (`D871`).
+ *
+ * `planClaims` above decides what the gate *reads*; this decides what the plan *said*. They are two
+ * different questions and the whole of `M169-08` is that nothing had ever asked the second one: a
+ * `**Closes:** …` on line sixteen of a marker-less plan is not missed loudly, it is not seen at all,
+ * and the gate goes on reporting that every plan claim agrees. `PLAN_M160` wrote exactly that, and
+ * made *"verify-ledger shows it closed"* its own acceptance clause 7 — an acceptance criterion
+ * unsatisfiable by construction, with nothing in a position to say so.
+ *
+ * **The claim's corpus is the clause, not the line** (`D872`), and that is not a nicety: the two
+ * plans this fires on today write `**Closes:** …` and `**Disposes without closing:** …` *on one
+ * line*, so a line-granular rule reads a row a plan explicitly declined to close as a row it
+ * claimed. Segments are split at bold runs and attributed to the label that opens them; a bare
+ * `Closes` before the first bold run opens its own segment, because three of this corpus's oldest
+ * plans state the verb unbolded.
+ *
+ * Detection runs over `maskCodeSpans`, ids come from the real text at the same indices. A close
+ * verb inside a code span is a **quotation** — `PLAN_M171` quotes `PLAN_M160`'s defective line
+ * while describing it — and quoting a defect must not commit one.
+ */
+export function closeClaims(text) {
+  const out = []
+  text.split('\n').forEach((raw, i) => {
+    const masked = maskCodeSpans(raw)
+    const bolds = [...masked.matchAll(/\*\*([^*]+)\*\*/g)]
+    const marks = [{ label: null, from: 0 }, ...bolds.map((b) => ({ label: b[1], from: b.index + b[0].length }))]
+    marks.forEach((mark, k) => {
+      const to = k < bolds.length ? bolds[k].index : raw.length
+      let { label, from } = mark
+      if (label === null) {
+        const bare = masked.slice(from, to).search(/\bCloses\b/)
+        if (bare < 0) return
+        from += bare
+        label = 'Closes'
+      }
+      if (!/\bcloses\b/i.test(label) || /without closing/i.test(label)) return
+      const ids = [...new Set([...raw.slice(from, to).matchAll(ROW_ID_BARE)].map((m) => m[1]))]
+      if (ids.length) out.push({ line: i + 1, ids, text: raw.slice(from, to).trim() })
+    })
+  })
+  return out
 }
 
 /**
@@ -381,6 +503,17 @@ export function check({ ledger, plans, shipped, resolve = () => 'here', manifest
     // about the code. `🟨` classifies open and is therefore included, which is right — a partial is
     // a live claim about the half that did not ship.
     if (classify(r.status) !== 'open') continue
+    // `D869`. A mis-spelled stamp used to be invisible: it did not match, so it did not count, and
+    // the row went on being certified at whatever older stamp was still well-formed. Loud, and
+    // before the missing-stamp branch, because "you wrote one and it is wrong" is a different
+    // instruction from "you wrote none".
+    for (const bad of stampProblems(r.status))
+      problems.push(
+        `§6:${r.line} \`${r.id}\` carries a re-verification stamp the grammar cannot read, so it does ` +
+          `not count and the row is certified at an older one — write ` +
+          `\`rv <date> @<commit> reproduces|drifted\`, or put the specimen in a code span if you are ` +
+          `quoting one: "${bad}"`,
+      )
     const stamp = parseStamp(r.status)
     if (!stamp) {
       problems.push(
@@ -423,12 +556,35 @@ export function check({ ledger, plans, shipped, resolve = () => 'here', manifest
   // could not look, and the summary line drops its conformance-pointer clause when no manifest was
   // read. The idea was never missing here; this was the one check that inverted it.
   const planClaimsChecked = shipped !== null
-  for (const { file, milestone, closesAt, ids } of plans) {
-    if (!planClaimsChecked) break
+  // `D871`/`D873`. Every close-claim a plan states that `planClaims` does not return, announced
+  // whether or not git could answer — the count is the size of the blind spot and it is knowable
+  // without a repository. The *failure* underneath it needs both git and an open row, and is
+  // guarded accordingly.
+  const unreadClaims = []
+  for (const { file, milestone, closesAt, ids, claims = [] } of plans) {
     // A staged plan is finished by its last stage, not its first. Without `closesAt` this asks
     // "has anything called M125 shipped?", which `M125b1` answers yes to while `M125c`/`d`/`e` are
     // still unwritten — so every row those stages owe reads as stale the day the first stage merges.
     const gate = closesAt ?? milestone
+    for (const c of claims) {
+      for (const id of c.ids) {
+        if (ids.includes(id)) continue
+        const row = byId.get(id)
+        // Not a row in this corpus: a plan's prose cites ids from the sibling and from decision
+        // tables (`D-M91-3` reads as `M91-3`), and inventing a subject for those is how a guard
+        // starts maintaining a wordlist.
+        if (!row) continue
+        unreadClaims.push(`${file}:${c.line} \`${id}\``)
+        if (!planClaimsChecked || !shipped.has(gate)) continue
+        if (classify(row.status) === 'open' && !row.status.startsWith('🟨'))
+          problems.push(
+            `${file}:${c.line} states that M${milestone} closes \`${id}\` and M${gate} is on main, but ` +
+              `\`planClaims\` cannot read that claim and §6:${row.line} still reads "${row.status.slice(0, 40)}" ` +
+              `— add \`<!-- plan:closes ${id} -->\` so the claim is read where it is made`,
+          )
+      }
+    }
+    if (!planClaimsChecked) continue
     if (!shipped.has(gate)) continue
     for (const id of ids) {
       const row = byId.get(id)
@@ -495,7 +651,7 @@ export function check({ ledger, plans, shipped, resolve = () => 'here', manifest
           `the tally published for ${published.milestone} says ${k}=${published[k]}; the status column says ${k}=${derived[k]}`,
         )
 
-  return { problems, derived, published, rows, planClaimsChecked, unresolvable }
+  return { problems, derived, published, rows, planClaimsChecked, unresolvable, unreadClaims }
 }
 
 /**
@@ -671,6 +827,124 @@ export function staleReport(rows, root) {
   return { lines, openRows, cited, checked, unread: cited - checked }
 }
 
+/**
+ * `M171`'s subject, applied to this file's own two guards (`D867`).
+ *
+ * Each entry states the corpus a guard reads **as data** — a function that resolves it against the
+ * live records and returns the units found — beside the one-line subject the guard's docblock
+ * claims. `verify-corpora.mjs` then asserts three things per entry: the corpus resolves, it is
+ * non-empty, and every plant lands. The third clause is the one that makes this more than a
+ * docblock convention, and it is `M168`'s rule (*a vacuity control must mutate what the code
+ * ignores*) pointed at the corpus rather than at the assertion: a declared corpus nothing can be
+ * planted inside is a sentence, not a guard.
+ *
+ * A plant returns `true` when the guard **caught** it. Negative controls are plants too, and say so
+ * in their own name — a corpus is defined as much by what it refuses as by what it reads, and the
+ * two quotation rules here (`D867`, `D872`) are exactly the refusals `M169-07` and `M169-08` needed.
+ */
+export const CORPORA = [
+  {
+    id: 'verify-ledger/stamp-grammar',
+    subject: "every re-verification stamp written in an open row's status cell, newest first",
+    needs: ['ledger'],
+    resolve: ({ ledger }) => {
+      const cells = parseIndex(ledger).filter((r) => classify(r.status) === 'open')
+      const n = cells.reduce((a, r) => {
+        const { good, malformed } = allStamps(r.status)
+        return a + good.length + malformed.length
+      }, 0)
+      return { units: n, describe: `${n} stamp(s) across ${cells.length} open row(s)` }
+    },
+    plants: [
+      {
+        what: 'a newer stamp appended below an older one is the one read',
+        run: () => {
+          const cell =
+            'open — **rv 2026-08-01 @aaaaaaa reproduces** · `a/b.ts:1` · first' +
+            ' · **rv 2026-09-01 @bbbbbbb drifted** · `a/c.ts:2` · second'
+          const st = parseStamp(cell)
+          return st?.date === '2026-09-01' && st.paths.length === 1 && st.paths[0] === 'a/c.ts'
+        },
+      },
+      {
+        what: 'a newer stamp written at the front is the one read',
+        run: () => {
+          const cell =
+            'open — **rv 2026-09-01 @bbbbbbb drifted** · `a/c.ts:2` · newest' +
+            ' · prior stamp, kept verbatim: **rv 2026-08-01 @aaaaaaa reproduces** · `a/b.ts:1`'
+          return parseStamp(cell)?.date === '2026-09-01'
+        },
+      },
+      {
+        what: 'a mis-spelled stamp is reported rather than skipped',
+        run: () => stampProblems('open — **rv 2026-08-30 @566cc5d**, no verdict word').length === 1,
+      },
+      {
+        what: 'NEGATIVE CONTROL — a mis-spelled stamp inside a code span is a quotation, not an instance',
+        run: () => stampProblems('open — the row below spells `**rv 2026-08-30 @566cc5d**,` wrongly').length === 0,
+      },
+      {
+        what: 'a citation carrying a line range is evidence, not silence',
+        run: () =>
+          parseStamp('open — **rv 2026-09-05 @7b2617a drifted** · `tests/mixed/storefront.tflw:336-379`')
+            ?.paths.length === 1,
+      },
+    ],
+  },
+  {
+    id: 'verify-ledger/plan-close-claims',
+    subject: 'every close-claim a plan states, wherever in the record it is written',
+    needs: ['plans'],
+    resolve: ({ plans }) => {
+      const n = plans.reduce((a, p) => a + (p.claims?.length ?? 0), 0)
+      return { units: n, describe: `${n} close-claim clause(s) across ${plans.length} plan record(s)` }
+    },
+    plants: [
+      {
+        what: 'a close-claim below the twelve-line window, on a shipped milestone, over an open row',
+        run: () => {
+          const { problems } = checkPlanted({ line: 20, label: '**Closes:**' })
+          return problems.some((p) => /planClaims` cannot read that claim/.test(p))
+        },
+      },
+      {
+        what: 'NEGATIVE CONTROL — the same id under `Disposes without closing:` is not a claim',
+        run: () => {
+          const { problems } = checkPlanted({ line: 20, label: '**Disposes without closing:**' })
+          return problems.length === 0
+        },
+      },
+      {
+        what: 'NEGATIVE CONTROL — a close-claim quoted inside a code span is not a claim',
+        run: () => checkPlanted({ line: 20, label: null }).problems.length === 0,
+      },
+    ],
+  },
+]
+
+/**
+ * One planted plan, run through the real `check` (`D867`). Written here rather than in the test
+ * file on purpose: a corpus declaration whose plant is proved somewhere else is a corpus
+ * declaration nobody can read, and the plant is the load-bearing half.
+ */
+function checkPlanted({ line, label }) {
+  const claim = label ? `${label} \`X-01\`` : 'a plan wrote `**Closes:** X-01` and was wrong to'
+  const text = ['# PLAN_M900', ...Array.from({ length: line - 2 }, () => ''), claim].join('\n')
+  return check({
+    ledger: [
+      '**Ledger: 1 open — S2 0 · S3 1 · S4 0 — 0 closed, 0 deferred, 0 withdrawn, 1 total.**',
+      '<!-- tally:current -->',
+      '',
+      '## 6. Full index',
+      '| id | sev | claim | status |',
+      '|---|---|---|---|',
+      '| `X-01` | S3 | a claim | open — **rv 2026-09-01 @aaaaaaa reproduces** · `a/b.ts:1` |',
+    ].join('\n'),
+    plans: [{ file: 'PLAN_M900_PLANTED.md', milestone: '900', ids: planClaims(text), claims: closeClaims(text) }],
+    shipped: new Set(['900']),
+  })
+}
+
 /** Collect the shipped plans from the repo root. */
 function loadPlans(root) {
   return readdirSync(root)
@@ -683,6 +957,7 @@ function loadPlans(root) {
         milestone: f.match(/^PLAN_M(\d+)_/)[1],
         closesAt: text.match(CLOSES_AT)?.[1] ?? null,
         ids: planClaims(text),
+        claims: closeClaims(text),
       }
     })
 }
@@ -714,7 +989,7 @@ function main() {
     else missing.push(rel)
   }
   const shipped = shippedMilestones()
-  const { problems, derived, rows, planClaimsChecked, unresolvable } = check({
+  const { problems, derived, rows, planClaimsChecked, unresolvable, unreadClaims } = check({
     ledger,
     plans: loadPlans(ROOT),
     shipped,
@@ -740,6 +1015,16 @@ function main() {
       `${manifests.length ? ', every conformance pointer' : ''} ` +
       "and every open row's stamp all agree",
   )
+
+  // `D873`. Announced, never silent, and deliberately not a failure on its own: a close-claim the
+  // gate cannot read is a *readability* defect, and it only costs something when the row it names is
+  // still open. Printing the count keeps the blind spot's size a published number instead of a thing
+  // somebody has to go and measure again — `D527`'s rule, applied to the claim side.
+  if (unreadClaims.length)
+    console.log(
+      `  · ${unreadClaims.length} prose close-claim${unreadClaims.length === 1 ? '' : 's'} \`planClaims\` ` +
+        `does not read: ${unreadClaims.join(', ')}`,
+    )
 
   if (!planClaimsChecked)
     console.log(

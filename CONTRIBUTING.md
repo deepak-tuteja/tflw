@@ -65,6 +65,7 @@ npm run build
 npm run typecheck
 xvfb-run -a npm test
 npm run verify:observability
+npm run verify:corpora
 npm run verify:decisions                # ※ does less in CI than it does here
 npm run verify:citations
 npm run verify:anchors
@@ -91,6 +92,13 @@ npm run verify:ledger                  # § never runs in CI, by decision
   optional: without a display the headed suites **hang** rather than fail.
 - **`npm run verify:observability`** — a test naming a `TF0xx` its harness cannot emit is a passing
   test of nothing. Static, seconds.
+- **`npm run verify:corpora`** — every guard states, as data, the corpus it reads, and this plants a
+  violation inside each declared corpus to check the guard actually catches it. The point is the
+  direction these things fail: a guard whose corpus is narrower than its subject does not report a
+  smaller number, it reports a **clean** one, so nothing above it can tell the difference between
+  *checked and fine* and *never looked*. Same split as `verify:decisions` below — the plants are
+  synthetic and run identically in CI, while resolving each corpus against the design records needs
+  files `.gitignore` excludes, so a runner does half and says which half. Static, seconds.
 - **`npm run verify:decisions`** — **※ it does less in CI than it does here, by design.** `DECISIONS.md`
   is the resolution target for the notation this repo is written in: `P#43`, `D318`, `M137d` are
   cited roughly 730 times in tracked prose and every one of them names a block in a file
