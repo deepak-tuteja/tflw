@@ -68,6 +68,9 @@ import { collectCitations } from './gen-decisions.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'scripts', 'sibling-citations.json');
 
+/** The sibling's generated statement of what it has a check-phase fixture for (`M172e`). */
+const COVERAGE_FILE = 'scripts/check-fixture-coverage.json';
+
 /** The sibling, named here rather than derived: this repository's `origin` is not it. */
 export const SIBLING = 'deepak-tuteja/tflw-tests';
 
@@ -329,6 +332,57 @@ for (const id of [...codeCited.keys()].sort()) {
   if (!citations[id]) { citations[id] = sites; fromCode++; continue; }
   citations[id] = [...new Set([...citations[id], ...sites])];
 }
+/**
+ * The sibling's check-phase fixture coverage (`M172e`, closing `M155-02`).
+ *
+ * WHY THE PIN GREW A FIELD THAT IS NOT A CITATION. Everything else in this file answers *which of
+ * this repository's identifiers does the sibling cite*. This answers the opposite kind of question
+ * — *what does the sibling already have a fixture for* — and it is here rather than in a pin of its
+ * own because the two want the identical machinery: a commit, a tarball, one request, and a value
+ * that must come from a published ref rather than from somebody's working tree (`D710`).
+ *
+ * WHAT IT IS FOR. `testFlow-tests`' `verify-check-diagnostics.mjs` demands a fixture for every
+ * check-phase `TF0xx` code the installed tflw assigns. That rule is real and enforced, and it is
+ * enforced **one repository away from the change that breaks it** — assign a code here, merge green
+ * here, and the sibling's `main` goes red on its next run with no warning to whoever caused it.
+ * `M155-02` calls that asymmetry the finding. `verify-check-coverage.mjs` is the answer, and this
+ * field is what it reads.
+ *
+ * ABSENT IS A HARD ERROR, NOT AN OMITTED FIELD. A pin that quietly drops the field would leave
+ * `verify-check-coverage.mjs` with nothing to compare and — if that gate were written to shrug —
+ * green about a repository it never read (`D880`). It is not written to shrug, and this end refuses
+ * too, so the two failures name the same cause from both sides. A ref predating the sibling's half
+ * of this milestone genuinely cannot be pinned, and saying so is the correct answer.
+ */
+const coverageRaw = tree.read(COVERAGE_FILE);
+if (coverageRaw === null) {
+  throw new Error(
+    `${SIBLING}@${sha.slice(0, 7)} (${ref}) has no ${COVERAGE_FILE}.\n` +
+    `  That file is generated there by \`node scripts/verify-check-diagnostics.mjs --write\` and is what\n` +
+    `  this repository's verify:check-coverage reads. A ref from before the sibling's half of M172e\n` +
+    `  cannot be pinned: merge that half, or pin the branch carrying it (--ref <branch>).`,
+  );
+}
+let checkFixtures;
+try {
+  const parsed = JSON.parse(coverageRaw.toString('utf8'));
+  checkFixtures = parsed.codes;
+} catch (e) {
+  throw new Error(`${COVERAGE_FILE} at ${sha.slice(0, 7)} is not JSON: ${e.message}`);
+}
+// Shape, not trust. The sibling generates this file and its own gate compares it against the
+// fixture tables every run — but a pin is read by a guard that fails closed, so a malformed value
+// arriving as `undefined` would reach `verify-check-coverage.mjs` as *no coverage at all* and
+// redden this repository for a defect that is not in it. Refuse it here, where the cause is legible.
+if (!Array.isArray(checkFixtures) || !checkFixtures.length
+    || !checkFixtures.every((c) => typeof c === 'string' && /^TF\d{3}$/.test(c))) {
+  throw new Error(
+    `${COVERAGE_FILE} at ${sha.slice(0, 7)} does not carry a non-empty \`codes\` array of TF0xx strings.\n` +
+    `  Its shape changed on the sibling's side; read that file before changing this check.`,
+  );
+}
+checkFixtures = [...new Set(checkFixtures)].sort();
+
 tree.done();
 
 const corpus = {
@@ -338,7 +392,8 @@ const corpus = {
     + 'what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a '
     + 'site qualifies as `tflw <id>`. Never hand-edit — refresh with '
     + '`node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling\'s own '
-    + '`verify:provenance` is what fails when this goes stale.',
+    + '`verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind '
+    + 'of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).',
   repo: SIBLING,
   ref: local ? `${ref} (local checkout)` : ref,
   sha,
@@ -348,6 +403,7 @@ const corpus = {
     : `https://github.com/${SIBLING}/tree/${sha}`,
   files: paths,
   codeFiles: codeFiles.length,
+  checkFixtures,
   citations,
 };
 
@@ -360,7 +416,8 @@ console.log(
     || codeCited.get(id).sites.some((s) => qualifiesAt(s.file, id)))).length} asked of this index ` +
   `(${claimed.size} claimed by the sibling, ${unresolvable.size} declared unresolvable there, ` +
   `${[...qualifiedAt.values()].reduce((n, s) => n + s.size, 0)} \`tflw <id>\` override(s) at ${qualifiedAt.size} site(s), D866)\n` +
-  `  ${fromCode} identifier(s) reach the index only through code`,
+  `  ${fromCode} identifier(s) reach the index only through code\n` +
+  `  fixtures: ${checkFixtures.length} check-phase TF0xx code(s) the sibling covers (M172e)`,
 );
 if (local) {
   console.log(

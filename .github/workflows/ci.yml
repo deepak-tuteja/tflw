@@ -126,6 +126,25 @@ jobs:
       # whose corpus is narrower than its subject reports a clean number, never a smaller one.
       - run: npm run verify:corpora
 
+      # `M172e` (`M155-02`). The one gate here whose subject is the OTHER repository's build. A
+      # check-phase `TF0xx` code assigned in this repository is a breaking change for
+      # `testFlow-tests`' `main` with no additive path, and until now nothing on this side read that
+      # rule: `M165` assigned `TF081`, merged green here as `cb42cce`, and the sibling's next run
+      # failed on a code it had never heard of. The author of the breaking commit was never the one
+      # who saw the red, which is the asymmetry the row files.
+      #
+      # It compares this build's manifest against `scripts/sibling-citations.json`'s `checkFixtures`
+      # — a pin rather than a checkout, because `D710` refuses adding a sibling checkout to this
+      # repository's CI and `D511` fixes the merge order regardless. So it reads a snapshot, and it
+      # can therefore only see the failure that travels in THIS direction: a code added here. A
+      # fixture removed there is the sibling's own assertion, over there, against its real tree.
+      #
+      # Needs `packages/lang/dist` — the `build` step above — because it reads the manifest out of
+      # the bundle a user would install, which is the same artifact the sibling's `assignedCodes()`
+      # reads. Reading `spec-data.ts` instead would let the two repositories disagree about what
+      # tflw assigns while each was right about its own input.
+      - run: npm run verify:check-coverage
+
       # `DECISIONS.md` is the resolution target for the private notation this repo is written in —
       # `P#43`, `D318`, `M137d`, roughly 730 citations of records `.gitignore` excludes (M152/`D666`).
       # THIS STEP RUNS ONLY HALF THE CHECK, and says so rather than printing a bare green. Both

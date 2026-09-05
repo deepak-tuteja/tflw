@@ -3177,6 +3177,26 @@ const REGISTRY = [
     find: "  if (bundleMtimeMs === null) return { kind: 'absent', stale: srcs.map((s) => s.path) }",
     replace: "  if (bundleMtimeMs === null) return { kind: 'fresh', stale: [] }",
   },
+  {
+    id: 'coverage-gate-goes-quiet-when-the-pin-says-nothing',
+    milestone: 'm172e',
+    pkg: ROOT_SUITE,
+    file: 'scripts/verify-check-coverage.mjs',
+    // `M155-02`. The same `D880` defect as the entry above, one stage later, and it is planted here
+    // because this gate is *more* exposed to it than that one was: the state it refuses arrives
+    // with no code change at all. An old pin, a hand-edit, or a refresh against a ref that predates
+    // the sibling's half of `M172e` all produce a `checkFixtures` that is absent, and a gate that
+    // read that as "nothing to compare, carry on" would be green about a repository it never read.
+    //
+    // The mutation is the shape the honest-looking version of this code takes — `if (unknown)
+    // return null`, i.e. *skip when there is no data* — which is `M131-03`'s refused skip-if-absent
+    // wearing different clothes. Killed by `verify-corpora.test.mjs` through two of the
+    // declaration's plants, the absent case and the empty-array case, which are the same state
+    // arriving by two different accidents.
+    what: 'the cross-repository coverage gate returns `null` when the pin carries no `checkFixtures` at all, so a pin nobody refreshed reads exactly like a sibling that covers every code — the one state where the comparison did not happen is the one state it reports clean',
+    find: '  if (unknown) return coverageUnknown()',
+    replace: '  if (unknown) return null',
+  },
 ];
 
 /**

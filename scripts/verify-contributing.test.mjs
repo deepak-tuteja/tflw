@@ -103,6 +103,14 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:check-coverage',
+    class: 'gate',
+    local: 'npm run verify:check-coverage',
+    why: "`M172e`/`M155-02` — the only gate here whose subject is the OTHER repository's build. A check-phase `TF0xx` code assigned here is a breaking change for `testFlow-tests`' `main` with no additive path, and until this existed nothing on this side read that rule: the author of the breaking commit was never the one who saw the red. It compares this build's manifest against `sibling-citations.json`'s pinned `checkFixtures`, so it needs `packages/lang/dist` — the `build` step — and no network. Static, seconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:decisions',
     class: 'gate',
     local: 'npm run verify:decisions',
