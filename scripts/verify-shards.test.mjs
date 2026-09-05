@@ -214,13 +214,21 @@ test('a shard past the re-shard trigger fails, and one under it does not', () =>
   assert.ok(trigger < SHARD_BUDGET_SECONDS, 'the trigger must be strictly below the limit');
 });
 
-test('a SUITE_SECONDS entry that has gone light fails; one that has gone heavy is only reported', () => {
+test('a SUITE_SECONDS entry that disagrees with the run fails; one that has gone heavy is only reported', () => {
   const manifests = [{ shard: 1, of: 1, actualSeconds: 60, costs: { '@tflw/slow': 108, '@tflw/fast': 4 } }];
 
-  // Light: this is M147-11 itself, 31 against a measured 108.
+  // 31 against a measured 108 — `M147-11` itself.
+  //
+  // THIS ASSERTION USED TO READ `3.5× light`, AND CHANGING IT IS PART OF `M175e`. "Light" is a
+  // diagnosis: it says the constant is wrong. `M169-01` is the row saying this gate cannot know
+  // that — a stale entry and a slow runner produce the identical overrun — and `M172e`'s 24-shard
+  // run measured a case that read as the first and was the second. So the message states the
+  // disagreement and the spread and names no cause, and this test pins that it does not.
   const light = checkShardCost(manifests, { '@tflw/slow': 31, '@tflw/fast': 4 });
   assert.equal(light.problems.length, 1);
-  assert.match(light.problems[0], /is 31s and its baseline measured 108s — 3\.5× light/);
+  assert.match(light.problems[0], /says 31s and this run measured 108s — 3\.5× at the worst shard/);
+  assert.doesNotMatch(light.problems[0], /\blight\b/, 'the gate no longer says which of the two causes it is');
+  assert.match(light.problems[0], /does not say which of the two it is/);
 
   // Heavy is safe: it over-provisions. Reported so it can be corrected, never red.
   const heavy = checkShardCost(manifests, { '@tflw/slow': 300, '@tflw/fast': 4 });
@@ -288,4 +296,44 @@ test('SHARD_COUNT is the shard job\'s matrix, and the balance probe measures tha
   // The matrix is 1..N with no gaps — a hole would upload no manifest for that index, and
   // `mutation controls` reads a missing manifest as *the sweep did not cover the registry*.
   assert.deepEqual(m[1].split(',').map((s) => Number(s.trim())), Array.from({ length: declared }, (_, i) => i + 1));
+});
+
+test('the within-run spread is reported, and it is the whole of what M175e adds', () => {
+  // `M172e`'s 24-shard run: nine shards each carrying five root-suite mutations came in at
+  // 7m58s-12m08s, i.e. 80-121s per root-suite run against a `SUITE_SECONDS` of 108. Collapsing
+  // that to a max — which is what this gate did — throws away the only evidence a reader has about
+  // *which* explanation to look at first. It is offered, never interpreted.
+  const manifests = [
+    { shard: 1, of: 3, actualSeconds: 500, costs: { '@tflw/root': 80 } },
+    { shard: 2, of: 3, actualSeconds: 700, costs: { '@tflw/root': 121 } },
+    { shard: 3, of: 3, actualSeconds: 600, costs: { '@tflw/root': 104 } },
+  ];
+
+  // Inside the drift bar: nothing fails, and the disagreement between shards is still surfaced,
+  // because an instrument nobody sees on a quiet day is one nobody trusts on a loud one.
+  const ok = checkShardCost(manifests, { '@tflw/root': 108 });
+  assert.deepEqual(ok.problems, []);
+  assert.equal(ok.notes.length, 1);
+  assert.match(ok.notes[0], /80-121s across the 3 shards that ran it/);
+  assert.match(ok.notes[0], /a property of the runner rather than of the constant/);
+
+  // Over the bar: the spread travels into the failure, so the reader sees one slow shard among
+  // three rather than a bare maximum.
+  const over = checkShardCost(manifests, { '@tflw/root': 20 });
+  assert.equal(over.problems.length, 1);
+  assert.match(over.problems[0], /80-121s across the 3 shards that ran it/);
+
+  // A package measured once says so rather than pretending to a range.
+  const single = checkShardCost([{ shard: 1, of: 1, actualSeconds: 60, costs: { '@tflw/one': 90 } }], { '@tflw/one': 20 });
+  assert.match(single.problems[0], /measured 90s —/);
+  assert.doesNotMatch(single.problems[0], /across the/);
+
+  // And identical readings across shards are a different sentence from a range — that is the
+  // signature the row hoped would discriminate, so it must at least be legible even though
+  // `M172e` withdrew the inference drawn from it.
+  const flat = checkShardCost(
+    [{ shard: 1, of: 2, actualSeconds: 60, costs: { '@tflw/flat': 90 } }, { shard: 2, of: 2, actualSeconds: 60, costs: { '@tflw/flat': 90 } }],
+    { '@tflw/flat': 20 },
+  );
+  assert.match(flat.problems[0], /90s on all 2 shards that ran it/);
 });
