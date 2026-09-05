@@ -70,6 +70,7 @@ npm run verify:check-coverage
 npm run verify:decisions                # ※ does less in CI than it does here
 npm run verify:citations
 npm run verify:anchors
+npm run verify:sibling-pin              # ¶ needs a credential; never runs in CI
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
 node scripts/mutate.mjs <milestone>    # ‡ the CI form is different
@@ -233,6 +234,26 @@ npm run verify:ledger                  # § never runs in CI, by decision
   names a different package than its file on purpose (`M147e`'s LSP anchor, where the row is an
   agreement between two surfaces and only the LSP suite reads both), so "file inside pkg" is not an
   invariant. Check it by hand when a `SURVIVED` surprises you.
+- **`npm run verify:sibling-pin`** — **¶ it needs a credential, so it never runs in CI, and that is
+  the same decision as the two above rather than a new one.** `scripts/sibling-citations.json`
+  records the sibling commit whose prose this index publishes (`D709`/`D710`) as a `ref`, a `sha` and
+  a `source` URL, and until `M175a` **nothing checked that any of the three still resolved**
+  (`M172-01`). The clause that matters is ancestry: a squash-merge leaves the branch commit as a
+  reachable *object* while removing it from every line of history anybody reads, so a pin can name a
+  tree that exists and is on no branch. The gate was written against a pin in exactly that state —
+  merging the sibling's `#82` had deleted the branch its `ref` named twenty minutes earlier — which
+  is also why it is a **read-time** check and not only a write-time one: the pin was valid when
+  written and was invalidated later, by a merge in the other repository. Where `gh` cannot answer it
+  prints the three clauses it did not check and exits 0 (`D683`); the offline clause — `source` must
+  name the sha the pin records — always runs, because a disagreement between two fields of one file
+  needs no network and is what a hand-edit produces.
+
+  Re-pinning **regenerates `DECISIONS.md` in the same process** (`M162-04`). That is not tidiness:
+  the pin carries which sibling file cites each identifier, and the index prints it as each entry's
+  `cited from` line, so a re-pin moves lines that contain no identifier at all. CI cannot catch the
+  omission — `verify:decisions` runs a reduced tier on a runner because the records are gitignored —
+  and the first real re-pin after this repair moved **8 lines**, every one an attribution.
+
 - **`npm run verify:ledger`** — **§ it never runs in CI, and that is a decision.** Its corpus,
   `REVIEW_FINDINGS.md`, is gitignored on purpose, so in CI its input is simply absent — and a check
   that skips when its input is missing is green about nothing, which is the exact failure it was
