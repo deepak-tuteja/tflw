@@ -517,6 +517,43 @@ const roadmap = checkRoadmapClaims();
 const coverage = checkConstructCoverage();
 const notation = checkPrivateNotation();
 
+/**
+ * `M175f` / `D898` — `M149f-01`'s reopening condition, as an assertion instead of a sentence.
+ *
+ * The row is a `D622` condition row: `onlyGenerated` is **reported and deliberately not enforced**,
+ * because at the time its members were the `random …`/`unique …` generator phrases whose home *is*
+ * `reference/generators.md`'s generated table, and failing on them would demand prose the guide has
+ * no reason to carry. The reopening condition it states is exact — *"when the only-tabulated list
+ * names a construct outside the generator families"* — and it was checked by a person reading gate
+ * output. **It moved 6 → 7 unread.** That is the finding this assertion closes: not that the list
+ * grew, but that nothing could tell anyone it had.
+ *
+ * The rule is a family prefix and nothing cleverer, because that is precisely what the row says.
+ * A construct outside `generator:` that appears only in a machine-generated table is a construct
+ * with a chapter that owns it and no sentence in it — the `M149d` shape — and it turns this build
+ * red carrying the row's own words.
+ *
+ * NOT GENERALISED, AND THE CORPUS IS THE REASON (`D898`). The obvious next step is to express every
+ * `D622` closing condition as data, the `M171a` mechanism applied to conditions rather than corpora.
+ * Measured 2026-09-06: 12 rows cite `D622`, 6 of them open, and four of the six are scheduled for
+ * repair elsewhere and cite it incidentally. The corpus for a mechanism is **2** — `M149f-01` and
+ * `M153a-02` — which is below the bar. One assertion here, and the refusal recorded with its number
+ * so a later reader can re-measure rather than re-argue.
+ */
+const GENERATOR_FAMILY = 'generator:';
+if (coverage !== null) {
+  const outside = coverage.onlyGenerated.filter((id) => !id.startsWith(GENERATOR_FAMILY));
+  if (outside.length > 0) {
+    fail(
+      "the only-tabulated list names a construct outside the generator families (M149f-01's reopening condition)",
+      `${outside.length} construct(s) appear only in a generated reference table and are not generators: ${outside.join(', ')}`,
+      'M149f-01 reads: "a construct with a chapter that owns it and no sentence in it, which is the M149d shape".\n' +
+        'Write the sentence, or — if this construct genuinely belongs in a generated table the way the\n' +
+        'generator phrases do — say so by widening this rule, in an edit that has to name the family.',
+    );
+  }
+}
+
 const count = (kind) => blocks.filter((b) => b.kind === kind).length;
 const files = new Set(blocks.map((b) => b.file)).size;
 const declaredBy = new Map();
