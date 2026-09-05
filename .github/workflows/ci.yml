@@ -518,5 +518,23 @@ jobs:
           exit 1
 
       # And then coverage, which is the half no individual shard can attest to.
+      #
+      # `M172b` (`M169-02`) — `always()`, and the step above is deliberately NOT reordered. Its
+      # argument is good and survives: a survivor is more useful at the top of a failure than a
+      # coverage sum. What was wrong is that it ends in `exit 1`, so it was not merely *first*, it
+      # was a gate on whether this step ran at all — and `M148` later put `checkShardCost` in this
+      # script for the *cost* failure. A shard that dies of cost is a shard that failed, so the one
+      # condition the telemetry exists to explain was the one condition that guaranteed its silence.
+      # Measured on run 33811712276: shards 16 and 17 killed at `timeout-minutes: 30`, shard 18 at
+      # the suite fence, and this job lived SIX SECONDS — long enough to download the manifests and
+      # print the collapsed matrix result, not long enough to read one of them.
+      #
+      # There is something to read on a red sweep, which is what makes `always()` worth more than a
+      # second error message: the shard's upload step above is `always()` for the neighbouring
+      # reason, so a sweep that found survivors still leaves all 23 manifests and both halves of
+      # this script run over a complete set. A shard the runner *killed* leaves none, and that lands
+      # on the reassembly check instead — `verify-shards.mjs`'s own docblock calls that a worse
+      # message for the same problem, and a worse message is still not six seconds of silence.
       - name: Every mutation was run by some shard
+        if: always()
         run: node scripts/verify-shards.mjs shards --of=23
