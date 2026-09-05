@@ -11218,7 +11218,7 @@ file spells `tflw <id>`; `verify-provenance.mjs` says the same rule in the same 
 **`M171` — every guard declares its corpus**
 
 **Status:** **`M171a`, `M171b`, `M171b2` BUILT and merged; `M171c` MEASURED 2026-09-05 (§11);
-`M171d` BUILT 2026-09-05 (§12.0), sibling PR pending its `D511` pair; `M171e` remains.** Written out of a grilling that answered
+`M171d` BUILT 2026-09-05 (§12.0), sibling PR pending its `D511` pair; **`M171e` BUILT 2026-09-05 (§13.4), closing `M164-01`** — `M171` is complete per `D894`.** Written out of a grilling that answered
 `PLAN_M170` §7's own question — *is the recurrence worth a milestone of its own?* — **yes**. This
 plan takes ownership of the property; `M170` keeps one stage (`M164-05`) and is downstream of this
 one.
