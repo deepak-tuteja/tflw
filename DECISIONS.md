@@ -5990,7 +5990,7 @@ merges if they keep listing commands.
 
 ### D511
 
-<sub>cited from tflw-tests/scripts/verify-construct-coverage.mjs, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-construct-coverage.mjs, tflw-tests/scripts/verify-contributing.mjs +2 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **D511 — tflw merges first, and the two PRs are chained**
 
@@ -6333,7 +6333,7 @@ files that mostly are not.
 
 ### D709
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/refresh-own-identifiers.mjs +2 more · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/refresh-own-identifiers.mjs +3 more · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
 
 **`D709` — the sibling's citations do not resolve today, and the repair is the index's input set**
 
@@ -6344,7 +6344,7 @@ resolvable. Measured against the published index, **that sentence would be false
 
 ### D710
 
-<sub>cited from tflw-tests/scripts/refresh-own-identifiers.mjs · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
 
 **`D710` — the sibling's citation set is pinned in this repository, not checked out by CI**
 
@@ -10620,7 +10620,7 @@ purpose.
 
 ### M155
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +4 more · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +7 more · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
 
 **`M155` — `timeout` learns which transport it is bounding**
 
@@ -11200,5 +11200,13 @@ one file there.
 Closes `M165-01`. **Decisions taken:** `D886` — a lang-bundle staleness guard, both of the row's
 named costs declined; `D887` — the guard is wired to the root `npm test` and not to a workspace
 `pretest`, because a `pretest` fires inside the mutation sweep.
+
+### M172e
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/check-fixture-coverage.json, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
+
+**`M172e` — built 2026-09-05**
+
+Closes `M155-02`. The last stage, and the only one crossing the repository boundary.
 
 <!-- GENERATED:decisions:end -->

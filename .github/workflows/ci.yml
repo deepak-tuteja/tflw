@@ -126,6 +126,25 @@ jobs:
       # whose corpus is narrower than its subject reports a clean number, never a smaller one.
       - run: npm run verify:corpora
 
+      # `M172e` (`M155-02`). The one gate here whose subject is the OTHER repository's build. A
+      # check-phase `TF0xx` code assigned in this repository is a breaking change for
+      # `testFlow-tests`' `main` with no additive path, and until now nothing on this side read that
+      # rule: `M165` assigned `TF081`, merged green here as `cb42cce`, and the sibling's next run
+      # failed on a code it had never heard of. The author of the breaking commit was never the one
+      # who saw the red, which is the asymmetry the row files.
+      #
+      # It compares this build's manifest against `scripts/sibling-citations.json`'s `checkFixtures`
+      # — a pin rather than a checkout, because `D710` refuses adding a sibling checkout to this
+      # repository's CI and `D511` fixes the merge order regardless. So it reads a snapshot, and it
+      # can therefore only see the failure that travels in THIS direction: a code added here. A
+      # fixture removed there is the sibling's own assertion, over there, against its real tree.
+      #
+      # Needs `packages/lang/dist` — the `build` step above — because it reads the manifest out of
+      # the bundle a user would install, which is the same artifact the sibling's `assignedCodes()`
+      # reads. Reading `spec-data.ts` instead would let the two repositories disagree about what
+      # tflw assigns while each was right about its own input.
+      - run: npm run verify:check-coverage
+
       # `DECISIONS.md` is the resolution target for the private notation this repo is written in —
       # `P#43`, `D318`, `M137d`, roughly 730 citations of records `.gitignore` excludes (M152/`D666`).
       # THIS STEP RUNS ONLY HALF THE CHECK, and says so rather than printing a bare green. Both
@@ -395,8 +414,43 @@ jobs:
   #
   # The knee rule from `M137a` and `M151` therefore needs one word added: take the knee **that the
   # packer can reach levelly**. A plateau bought with a lopsided split is not a knee.
+  #
+  # RE-SHARDED 23 -> 24 at `M171c`, and the cause was not growth. The `M172e` run failed this job
+  # with shard 3 at **22m36s** against the 20m trigger while all 23 shards passed and every mutation
+  # ran correctly — `SUITE_SECONDS['root:test:scripts']` was **108s against a re-measured 174s**,
+  # and `partition()` packs by that number, so a light entry decides which mutations share a bin.
+  #
+  # THE FIRST VERSION OF THIS NOTE NAMED THE WRONG CAUSE AND IS CORRECTED IN PLACE. It said the
+  # constant was stale rather than the runner sick, arguing from history: that suite is
+  # `node --test "scripts/*.test.mjs"` and it went from **9 test files to 16** since 108 was set
+  # (`M148`, 2026-08-21). The 24-shard run this re-shard produced refutes it — nine of its shards
+  # hold five root-suite mutations each and came in at **7m58s to 12m08s**, which is
+  # `(5+1) x 80..121s`. So 108 was about right, the runner that overran was slow, and `node --test`
+  # runs its files concurrently, so seven more small files need not move wall clock at all.
+  # **Growth in files is not growth in seconds.** `M169-01` says one run cannot separate a stale
+  # constant from a sick runner; it was reproduced twice in one afternoon, once by this gate and
+  # once by the person reading it. 174 stays on the `tflw: 185` precedent — two samples, take the
+  # larger, because the number's job is to stop a shard overrunning, not to predict its median.
+  #
+  # MEASURED against the corrected table, registry 334 — same three columns as above:
+  #
+  #   n=21 1218s / 101% / 1.810 · n=22 1218s / 101% / 5.366 · n=23 1110s / 93% / 1.649
+  #   **n=24 1044s / 87% / 1.551** · n=25 1044s / 87% / 4.599 · n=26 1044s / 87% / 1.551
+  #   n=32+ 870s / 73% / 8.447 and worse
+  #
+  # VERIFIED on the 24-shard run: 334 of 334 mutations, each run exactly once, longest shard
+  # **17m59s** against the 20m trigger. The model now reads *heavy* for the root-suite shards
+  # (17m24s modelled against 8-12m actual) and about right for the rest — the safe direction, and
+  # the reason 174 stays: over-provisioning costs CPU, under-provisioning costs a red build.
+  #
+  # **24.** Only 24 and 26 are level under the 1.7 bar and they share a max, so 24 dominates. 23 is
+  # level too and still models under the trigger — and is refused on this log's own sentence: *93%
+  # modelled was a legal plan and it still overran*. At 1.10x, 23 lands at 1221s and over the
+  # trigger; 24 lands at 1148s and under it. 1044s is a floor (`6 x 174` — five root-suite mutations
+  # and a baseline), not a choice, and the lever when 24 comes due is the cost of that suite rather
+  # than the count.
   mutations:
-    name: mutation controls (shard ${{ matrix.shard }}/23)
+    name: mutation controls (shard ${{ matrix.shard }}/24)
     runs-on: ubuntu-latest
     # Mirrored by `SHARD_BUDGET_SECONDS` in `scripts/mutate.mjs`, and asserted equal by
     # `verify-workflow.test.mjs`. Two numbers in two files describing one limit is exactly the drift
@@ -408,7 +462,7 @@ jobs:
       # turn a precise "these mutations survived" into "the sweep did not cover the registry".
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
     steps:
       - uses: actions/checkout@v4
 
@@ -458,11 +512,11 @@ jobs:
       # whole of `M161-02` — and the row had already paid once, in that the example reached two
       # sentences arguing different things before anybody re-checked it.
       #
-      # A shard is not a scope. `--shard=i/23` is a slice of the *whole* registry — the union of the
-      # twenty-three is the registry, and `mutation controls` below is what proves that rather than
+      # A shard is not a scope. `--shard=i/24` is a slice of the *whole* registry — the union of the
+      # twenty-four is the registry, and `mutation controls` below is what proves that rather than
       # assumes it. `mutate.mjs` refuses `--shard` combined with a scope for exactly this reason.
       - name: Mutation controls
-        run: xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/23 --manifest=shard-${{ matrix.shard }}.json
+        run: xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/24 --manifest=shard-${{ matrix.shard }}.json
 
       # `always()` because a shard that found a survivor still has to say what it ran. Otherwise a
       # red shard and a shard that never started are the same missing file, and the job below cannot
@@ -484,8 +538,8 @@ jobs:
   # never applied. Every one of those jobs is telling the truth.
   #
   #   1. `shard:` — the matrix
-  #   2. `--shard=i/23` — what each job actually runs
-  #   3. `--of=23` — this job's reassembly
+  #   2. `--shard=i/24` — what each job actually runs
+  #   3. `--of=24` — this job's reassembly
   #   4. the shard job's `name:` — the only copy a reader sees, in the checks list
   #   5. `verify-contributing.test.mjs`'s CLASSIFIED entry, which quotes the command verbatim
   #   6. `CONTRIBUTING.md`'s own prose, which describes the split in words — and is the one copy no
@@ -559,4 +613,4 @@ jobs:
       # message for the same problem, and a worse message is still not six seconds of silence.
       - name: Every mutation was run by some shard
         if: always()
-        run: node scripts/verify-shards.mjs shards --of=23
+        run: node scripts/verify-shards.mjs shards --of=24

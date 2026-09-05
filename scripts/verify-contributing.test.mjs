@@ -103,6 +103,14 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:check-coverage',
+    class: 'gate',
+    local: 'npm run verify:check-coverage',
+    why: "`M172e`/`M155-02` — the only gate here whose subject is the OTHER repository's build. A check-phase `TF0xx` code assigned here is a breaking change for `testFlow-tests`' `main` with no additive path, and until this existed nothing on this side read that rule: the author of the breaking commit was never the one who saw the red. It compares this build's manifest against `sibling-citations.json`'s pinned `checkFixtures`, so it needs `packages/lang/dist` — the `build` step — and no network. Static, seconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:decisions',
     class: 'gate',
     local: 'npm run verify:decisions',
@@ -143,7 +151,7 @@ const CLASSIFIED = [
     why: 'GATES since `M86` put `check-coverage` in `.c8rc.json`. Conditional in YAML (`if: matrix.node-version == 22`), which is why it carries a footnote marker rather than a checked sentence',
   },
 
-  // --- ci.yml, job `mutations` (23 shards) ------------------------------------------------------
+  // --- ci.yml, job `mutations` (24 shards) ------------------------------------------------------
   { wf: 'ci.yml', job: 'mutations', cmd: 'npm ci', class: 'setup', why: 'dependency install, again — this job is a fresh runner' },
   { wf: 'ci.yml', job: 'mutations', cmd: 'npx playwright install chromium firefox', class: 'setup', why: 'the sweep baselines `tflw`, whose cli suite launches real headed Chromium. `M143a` dropped `--with-deps` here first: this step stalled at 30m on nine of the then-twelve shards of run 32272901684, which applied zero mutations between them' },
   {
@@ -156,7 +164,7 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'mutations',
-    cmd: 'xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/23 --manifest=shard-${{ matrix.shard }}.json',
+    cmd: 'xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/24 --manifest=shard-${{ matrix.shard }}.json',
     class: 'gate',
     local: 'node scripts/mutate.mjs <milestone>',
     why: 'the CI form is a shard of the whole registry and is NOT what anybody types locally: `--shard` is a slice, `--scope` is not a flag, and a bare `npm run verify:mutations` runs the entire registry (tens of minutes). Locally you run the milestone you just wrote. This divergence is the reason `local` exists as a field',
@@ -174,9 +182,9 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'mutation-controls',
-    cmd: 'node scripts/verify-shards.mjs shards --of=23',
+    cmd: 'node scripts/verify-shards.mjs shards --of=24',
     class: 'ci-only',
-    why: 'reads the twenty-three uploaded shard manifests and asserts their union is the registry, and \u2014 since M148 \u2014 that the cost model they were packed by still describes what they cost. Locally the sweep is one process and covers itself',
+    why: 'reads the twenty-four uploaded shard manifests and asserts their union is the registry, and \u2014 since M148 \u2014 that the cost model they were packed by still describes what they cost. Locally the sweep is one process and covers itself',
   },
 
   // --- docs.yml, job `build` --------------------------------------------------------------------

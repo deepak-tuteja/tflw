@@ -66,6 +66,7 @@ npm run typecheck
 xvfb-run -a npm test
 npm run verify:observability
 npm run verify:corpora
+npm run verify:check-coverage
 npm run verify:decisions                # ※ does less in CI than it does here
 npm run verify:citations
 npm run verify:anchors
@@ -99,6 +100,19 @@ npm run verify:ledger                  # § never runs in CI, by decision
   *checked and fine* and *never looked*. Same split as `verify:decisions` below — the plants are
   synthetic and run identically in CI, while resolving each corpus against the design records needs
   files `.gitignore` excludes, so a runner does half and says which half. Static, seconds.
+- **`npm run verify:check-coverage`** — the only gate in this list whose subject is the *other*
+  repository's build. `testFlow-tests` demands a fixture for every check-phase `TF0xx` code the
+  installed tflw assigns, and that rule is enforced one repository away from the change that breaks
+  it: assign a code here, pass everything here, merge, and the sibling's `main` goes red with no
+  warning to whoever caused it. This reads the same fact before the merge, comparing the built
+  manifest against `scripts/sibling-citations.json`'s pinned `checkFixtures` — a pin rather than a
+  checkout, for `D710`'s reason. It needs `npm run build` above (it reads the bundle a user
+  installs, which is the artifact the sibling reads too) and no network. **It is green today and
+  will be until a seventieth check-phase code is assigned** — the sibling's own completeness
+  assertions force the two sets equal whenever its `main` is green — so it is a guard you will
+  probably never see fire, and the day it does is the day it is worth its whole cost. When it does:
+  add the fixture in the sibling on a branch, `npm run refresh:check-coverage` there, re-pin here
+  from that branch, and merge this repository first (`D511`). Static, seconds.
 - **`npm run verify:decisions`** — **※ it does less in CI than it does here, by design.** `DECISIONS.md`
   is the resolution target for the notation this repo is written in: `P#43`, `D318`, `M137d` are
   cited roughly 730 times in tracked prose and every one of them names a block in a file
@@ -191,7 +205,7 @@ npm run verify:ledger                  # § never runs in CI, by decision
   lower it to make a red run green** — write the test the uncovered line is asking for. In CI it
   runs on the Node 22 leg only, since it is the same source under either runtime.
 - **`node scripts/mutate.mjs <milestone>`** — **‡ the CI form is different, deliberately.** CI runs
-  `--shard=i/23` across twenty-three machines, and a twenty-fourth job proves the shards' union is the
+  `--shard=i/24` across twenty-four machines, and a twenty-fifth job proves the shards' union is the
   whole registry — and, since `M148`, that the cost model those shards were packed by still describes what
   they actually cost. Locally you run the milestone you just wrote: `node scripts/mutate.mjs m98d`, or one
   mutation by id. A bare `npm run verify:mutations` runs the **entire** registry and takes tens of
