@@ -190,14 +190,24 @@ export const SUITE_SECONDS = {
   // Two samples, 169s and 185s. The larger, because `tflw` is the second-heaviest package and this
   // number's job is to stop a shard overrunning, not to predict its median.
   tflw: 185,
-  // `M171c` re-measured. `M148` set this to 108 on 2026-08-21; the aggregate job's own
-  // re-measurement read **174s** on the `M172e` run and called it 1.6x light. That is real growth
-  // and not a slow runner, and the evidence is history rather than a second sample: this suite is
-  // `node --test "scripts/*.test.mjs"` and it went from **9 test files to 16** between those two
-  // dates — `gen-decisions`, `github-slug`, `test-concurrency`, `verify-anchors`, `verify-citations`,
-  // `verify-corpora` and `verify-test-observability` all arrived after the number was taken.
-  // `M169-01` says one run cannot separate a stale constant from a sick runner. It cannot; the file
-  // count can, and it is free.
+  // TWO SAMPLES, AND THE LARGER IS TAKEN — the same rule as `tflw: 185` above, for the same reason:
+  // this number's job is to stop a shard overrunning, not to predict its median.
+  //
+  // `M148` set 108 on 2026-08-21. The aggregate job re-measured **174s** on the `M172e` run that
+  // overran, and the very next run — the 24-shard one, nine shards each holding 5 root-suite
+  // mutations — implies **80-121s** per run (`(n+1) x cost`, 7m58s to 12m08s). So 108 was close to
+  // the truth, 174 was a slow runner, and the honest reading is a suite whose cost varies more than
+  // 2x across runners rather than one that grew.
+  //
+  // **`M169-01` was NOT resolved here, and the first version of this comment claimed it was.** It
+  // argued the constant was stale rather than the runner sick, from history: this suite is
+  // `node --test "scripts/*.test.mjs"` and it went from 9 test files to 16 since 108 was taken.
+  // The file growth is real. The inference from it is not — `node --test` runs files concurrently,
+  // so seven more small files need not move wall clock at all, and the next run says they did not.
+  // Growth in *files* is not growth in *seconds*, and reading one as the other is this row's own
+  // trap wearing different clothes. The constant stays at 174 because over-provisioning is the safe
+  // direction (see above) and because at 24 shards it models 17m24s against a 17m59s actual on the
+  // longest shard, not because 174 is the cost.
   [ROOT_SUITE]: 174,
 };
 

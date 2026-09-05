@@ -419,16 +419,29 @@ jobs:
   # with shard 3 at **22m36s** against the 20m trigger while all 23 shards passed and every mutation
   # ran correctly — `SUITE_SECONDS['root:test:scripts']` was **108s against a re-measured 174s**,
   # and `partition()` packs by that number, so a light entry decides which mutations share a bin.
-  # The constant was stale rather than the runner sick, and the evidence is history rather than a
-  # second sample: that suite is `node --test "scripts/*.test.mjs"` and it went from **9 test files
-  # to 16** between the day 108 was measured (`M148`, 2026-08-21) and now. `M169-01` says one run
-  # cannot separate those two causes. It cannot; the file count can, and it is free.
+  #
+  # THE FIRST VERSION OF THIS NOTE NAMED THE WRONG CAUSE AND IS CORRECTED IN PLACE. It said the
+  # constant was stale rather than the runner sick, arguing from history: that suite is
+  # `node --test "scripts/*.test.mjs"` and it went from **9 test files to 16** since 108 was set
+  # (`M148`, 2026-08-21). The 24-shard run this re-shard produced refutes it — nine of its shards
+  # hold five root-suite mutations each and came in at **7m58s to 12m08s**, which is
+  # `(5+1) x 80..121s`. So 108 was about right, the runner that overran was slow, and `node --test`
+  # runs its files concurrently, so seven more small files need not move wall clock at all.
+  # **Growth in files is not growth in seconds.** `M169-01` says one run cannot separate a stale
+  # constant from a sick runner; it was reproduced twice in one afternoon, once by this gate and
+  # once by the person reading it. 174 stays on the `tflw: 185` precedent — two samples, take the
+  # larger, because the number's job is to stop a shard overrunning, not to predict its median.
   #
   # MEASURED against the corrected table, registry 334 — same three columns as above:
   #
   #   n=21 1218s / 101% / 1.810 · n=22 1218s / 101% / 5.366 · n=23 1110s / 93% / 1.649
   #   **n=24 1044s / 87% / 1.551** · n=25 1044s / 87% / 4.599 · n=26 1044s / 87% / 1.551
   #   n=32+ 870s / 73% / 8.447 and worse
+  #
+  # VERIFIED on the 24-shard run: 334 of 334 mutations, each run exactly once, longest shard
+  # **17m59s** against the 20m trigger. The model now reads *heavy* for the root-suite shards
+  # (17m24s modelled against 8-12m actual) and about right for the rest — the safe direction, and
+  # the reason 174 stays: over-provisioning costs CPU, under-provisioning costs a red build.
   #
   # **24.** Only 24 and 26 are level under the 1.7 bar and they share a max, so 24 dominates. 23 is
   # level too and still models under the trigger — and is refused on this log's own sentence: *93%
