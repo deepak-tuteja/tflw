@@ -414,8 +414,30 @@ jobs:
   #
   # The knee rule from `M137a` and `M151` therefore needs one word added: take the knee **that the
   # packer can reach levelly**. A plateau bought with a lopsided split is not a knee.
+  #
+  # RE-SHARDED 23 -> 24 at `M171c`, and the cause was not growth. The `M172e` run failed this job
+  # with shard 3 at **22m36s** against the 20m trigger while all 23 shards passed and every mutation
+  # ran correctly — `SUITE_SECONDS['root:test:scripts']` was **108s against a re-measured 174s**,
+  # and `partition()` packs by that number, so a light entry decides which mutations share a bin.
+  # The constant was stale rather than the runner sick, and the evidence is history rather than a
+  # second sample: that suite is `node --test "scripts/*.test.mjs"` and it went from **9 test files
+  # to 16** between the day 108 was measured (`M148`, 2026-08-21) and now. `M169-01` says one run
+  # cannot separate those two causes. It cannot; the file count can, and it is free.
+  #
+  # MEASURED against the corrected table, registry 334 — same three columns as above:
+  #
+  #   n=21 1218s / 101% / 1.810 · n=22 1218s / 101% / 5.366 · n=23 1110s / 93% / 1.649
+  #   **n=24 1044s / 87% / 1.551** · n=25 1044s / 87% / 4.599 · n=26 1044s / 87% / 1.551
+  #   n=32+ 870s / 73% / 8.447 and worse
+  #
+  # **24.** Only 24 and 26 are level under the 1.7 bar and they share a max, so 24 dominates. 23 is
+  # level too and still models under the trigger — and is refused on this log's own sentence: *93%
+  # modelled was a legal plan and it still overran*. At 1.10x, 23 lands at 1221s and over the
+  # trigger; 24 lands at 1148s and under it. 1044s is a floor (`6 x 174` — five root-suite mutations
+  # and a baseline), not a choice, and the lever when 24 comes due is the cost of that suite rather
+  # than the count.
   mutations:
-    name: mutation controls (shard ${{ matrix.shard }}/23)
+    name: mutation controls (shard ${{ matrix.shard }}/24)
     runs-on: ubuntu-latest
     # Mirrored by `SHARD_BUDGET_SECONDS` in `scripts/mutate.mjs`, and asserted equal by
     # `verify-workflow.test.mjs`. Two numbers in two files describing one limit is exactly the drift
@@ -427,7 +449,7 @@ jobs:
       # turn a precise "these mutations survived" into "the sweep did not cover the registry".
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
     steps:
       - uses: actions/checkout@v4
 
@@ -477,11 +499,11 @@ jobs:
       # whole of `M161-02` — and the row had already paid once, in that the example reached two
       # sentences arguing different things before anybody re-checked it.
       #
-      # A shard is not a scope. `--shard=i/23` is a slice of the *whole* registry — the union of the
-      # twenty-three is the registry, and `mutation controls` below is what proves that rather than
+      # A shard is not a scope. `--shard=i/24` is a slice of the *whole* registry — the union of the
+      # twenty-four is the registry, and `mutation controls` below is what proves that rather than
       # assumes it. `mutate.mjs` refuses `--shard` combined with a scope for exactly this reason.
       - name: Mutation controls
-        run: xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/23 --manifest=shard-${{ matrix.shard }}.json
+        run: xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/24 --manifest=shard-${{ matrix.shard }}.json
 
       # `always()` because a shard that found a survivor still has to say what it ran. Otherwise a
       # red shard and a shard that never started are the same missing file, and the job below cannot
@@ -503,8 +525,8 @@ jobs:
   # never applied. Every one of those jobs is telling the truth.
   #
   #   1. `shard:` — the matrix
-  #   2. `--shard=i/23` — what each job actually runs
-  #   3. `--of=23` — this job's reassembly
+  #   2. `--shard=i/24` — what each job actually runs
+  #   3. `--of=24` — this job's reassembly
   #   4. the shard job's `name:` — the only copy a reader sees, in the checks list
   #   5. `verify-contributing.test.mjs`'s CLASSIFIED entry, which quotes the command verbatim
   #   6. `CONTRIBUTING.md`'s own prose, which describes the split in words — and is the one copy no
@@ -578,4 +600,4 @@ jobs:
       # message for the same problem, and a worse message is still not six seconds of silence.
       - name: Every mutation was run by some shard
         if: always()
-        run: node scripts/verify-shards.mjs shards --of=23
+        run: node scripts/verify-shards.mjs shards --of=24

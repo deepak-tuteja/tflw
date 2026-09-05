@@ -190,7 +190,15 @@ export const SUITE_SECONDS = {
   // Two samples, 169s and 185s. The larger, because `tflw` is the second-heaviest package and this
   // number's job is to stop a shard overrunning, not to predict its median.
   tflw: 185,
-  [ROOT_SUITE]: 108,
+  // `M171c` re-measured. `M148` set this to 108 on 2026-08-21; the aggregate job's own
+  // re-measurement read **174s** on the `M172e` run and called it 1.6x light. That is real growth
+  // and not a slow runner, and the evidence is history rather than a second sample: this suite is
+  // `node --test "scripts/*.test.mjs"` and it went from **9 test files to 16** between those two
+  // dates — `gen-decisions`, `github-slug`, `test-concurrency`, `verify-anchors`, `verify-citations`,
+  // `verify-corpora` and `verify-test-observability` all arrived after the number was taken.
+  // `M169-01` says one run cannot separate a stale constant from a sick runner. It cannot; the file
+  // count can, and it is free.
+  [ROOT_SUITE]: 174,
 };
 
 // The two adjacent branches in `parsePrimary`'s number path, verbatim, so the ordering mutation is a
@@ -1958,7 +1966,7 @@ const REGISTRY = [
     // some of the six copies and not the rest, so the mutant should look exactly like a
     // half-finished widen. This entry is itself a seventh copy — it is the one that fails loudly
     // and immediately when the workflow moves without it, which is why it is not held by a guard.
-    find: 'verify-shards.mjs shards --of=23',
+    find: 'verify-shards.mjs shards --of=24',
     replace: 'verify-shards.mjs shards --of=20',
   },
 
@@ -3645,12 +3653,32 @@ export const RESHARD_AT = 2 / 3;
  * *below* it, because it pays each package's baseline in far fewer bins (262 CPU-minutes against
  * LPT's 308). The probe was reporting a genuinely lopsided deal in a configuration nobody runs.
  *
+ * 23 -> 24 at `M171c`, and **not** because the registry grew. `SUITE_SECONDS['root:test:scripts']`
+ * was 1.6x light (108 against a re-measured 174), and a light entry does not merely mispredict a
+ * shard — it decides which mutations go in it. Corrected, the same 334 mutations repack and every
+ * count moves. Re-measured against the corrected table, in `ci.yml`'s own three columns:
+ *
+ *     n=21 1218s/101%/1.810 · n=22 1218s/101%/5.366 · n=23 1110s/93%/1.649
+ *     **n=24 1044s/87%/1.551** · n=25 1044s/87%/4.599 · n=26 1044s/87%/1.551 · n>=32 870s/73%/8.447+
+ *
+ * Only **24** and **26** are level under the 1.7 bar, and they share a max, so 24 dominates. 23 is
+ * still level and still under the trigger *in the model* — and is refused anyway, because
+ * `ci.yml`'s re-shard log says in its own words that **93% modelled was a legal plan and it still
+ * overran**: the split is planned on modelled seconds and the gate fires on actual ones. At the
+ * log's own 1.10x, 23 lands at 1221s and over the 1200s trigger; 24 lands at 1148s and under it.
+ *
+ * 1044s is a floor, not a choice: it is `6 x 174`, one shard holding five root-suite mutations plus
+ * its baseline. Nothing below it is reachable without cutting that chunk finer, which is what takes
+ * the ratio to 8.447 at 32. The lever, when 24 comes due, is the cost of `root:test:scripts`
+ * itself rather than the count — every root-suite mutation pays a full run of a suite that has
+ * grown from 9 test files to 16.
+ *
  * 20 -> 23 at `M169b`, and the balance probe this constant feeds is what chose 23 over the count
  * with the lowest max. See `ci.yml`'s re-shard log: the max plateaus at 756s from 25 onward, but
  * only by splitting the widest chunk three ways beside 3-mutation bins, which takes the probe's
  * ratio from 1.212 to 3.330 against its 1.7 bar. 23 is the last count that is both cheap and level.
  */
-export const SHARD_COUNT = 23;
+export const SHARD_COUNT = 24;
 
 /** Estimated wall-clock seconds for a shard, for `--list`'s benefit. The same model `partition()`
  *  packs by, so a listing that looks unbalanced *is* the balance the packer achieved. */
