@@ -95,6 +95,14 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:corpora',
+    class: 'gate',
+    local: 'npm run verify:corpora',
+    why: "`M171a`/`D874` — every guard's declared corpus, checked by planting a violation inside it. Same shape as `verify:decisions` above and for the same reason: the plants are synthetic and run identically in both places, while corpus *resolution* needs the gitignored records, so a runner checks half and says so. The contributor's run is the only one that can catch a declared corpus that has quietly gone empty. Static, seconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:decisions',
     class: 'gate',
     local: 'npm run verify:decisions',

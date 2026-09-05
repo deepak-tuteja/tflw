@@ -44,6 +44,8 @@ import {
   pickAnchor,
   publishedIds,
   scrub,
+  scrubTracked,
+  staleExemptions,
 } from './gen-decisions.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -501,6 +503,122 @@ test('the scrub gate allows the addresses that are legitimately public', () => {
   // written against, would be switched off within a week — and a gate nobody runs guards nothing.
   assert.deepEqual(scrub('reach the maintainers at hello@tflw.dev'), []);
   assert.deepEqual(scrub('post to https://api.example.com and mail user@example.org'), []);
+});
+
+// --- D875, the corpus each scrub rule declares ----------------------------------------------------
+//
+// THIS FILE IS THE ONE `SCRUB_EXEMPT` NAMES, and the tests below are why. The tracked sweep reads
+// every tracked text file; the specimens a scrub test needs are, by construction, exactly the things
+// the sweep must report. So the exemption is per-file and per-rule, it carries its reason in the
+// declaration, and `staleExemptions` fails the gate if the specimens ever leave — an exemption that
+// stops exempting anything is a line that blinds a whole file for a reason that is no longer true.
+
+test('a rule runs over a region only when the region lies inside its declared corpus', () => {
+  // The host rule's corpus is `generated`; the other two cover the whole tracked tree. `generated`
+  // lies inside `tracked`, so the generated block is subject to all three and an ordinary tracked
+  // file is subject to two. This is the entire content of `M164-09`'s repair, in one assertion.
+  assert.deepEqual(scrub('measured on fedora-box', 'generated').map((d) => d.id), ['host']);
+  assert.deepEqual(scrub('measured on fedora-box', 'tracked').map((d) => d.id), []);
+  assert.deepEqual(scrub('mail someone@gmail.com', 'generated').map((d) => d.id), ['email']);
+  assert.deepEqual(scrub('mail someone@gmail.com', 'tracked').map((d) => d.id), ['email']);
+});
+
+test('the default region is the narrower one, so an unannotated call runs more rules and not fewer', () => {
+  // A default that widened the region would quietly disarm the host rule at every existing call
+  // site. Failing closed is the only defensible direction for a default on a publication gate.
+  assert.deepEqual(scrub('measured on fedora-box'), scrub('measured on fedora-box', 'generated'));
+  assert.notDeepEqual(scrub('measured on fedora-box'), scrub('measured on fedora-box', 'tracked'));
+});
+
+test('an unknown region throws rather than matching nothing', () => {
+  // `WITHIN[region]` would be `undefined` and the filter would return no rules at all — a clean
+  // green over a corpus nobody declared, which is the failure this milestone is named after.
+  assert.throws(() => scrub('measured on fedora-box', 'everything'), /unknown region/);
+});
+
+test('an npm coordinate is a version, not an address (`D877`)', () => {
+  // Eleven of the 41 hits the email rule returned over the tracked corpus were these. No allow-list
+  // separates them by domain, because what distinguishes them is that a version is not a hostname.
+  assert.deepEqual(scrub('tflw-monorepo@0.1.0 depends on lang@0.1.0 and tflw@0.1.0', 'tracked'), []);
+  assert.equal(scrub('sha512-Xg+M7w== is a hash tail', 'tracked').length, 0);
+});
+
+test('a fixture address on a reserved TLD is allowed and one on a registered domain is not (`D878`)', () => {
+  // RFC 2606 reserves `.test` and `.invalid` precisely so a fixture need not borrow a real domain.
+  assert.deepEqual(scrub('alice@example.test wrote to t@example.invalid', 'tracked'), []);
+  assert.deepEqual(scrub('a@x.com wrote to g@y.com', 'tracked').map((d) => d.hit), ['a@x.com', 'g@y.com']);
+});
+
+test('the account the PR history already publishes is allowed, and a personal one is not', () => {
+  assert.deepEqual(scrub('33311251+deepak-tuteja@users.noreply.github.com', 'tracked'), []);
+  assert.deepEqual(scrub('someone@gmail.com', 'tracked').map((d) => d.hit), ['someone@gmail.com']);
+});
+
+test('a placeholder home directory names nobody; a real account does', () => {
+  assert.deepEqual(scrub('/home/user/project and /home/runner/work/x', 'tracked'), []);
+  assert.deepEqual(scrub('/home/deepaktuteja/git', 'tracked').map((d) => d.hit), ['/home/deepaktuteja/']);
+  assert.deepEqual(scrub('/Users/someone/Documents', 'tracked').map((d) => d.hit), ['/Users/someone/']);
+});
+
+test('an exemption that no longer exempts anything is a failure, not a shrug (`D879`)', () => {
+  const exempt = [{ file: 'a/b.mjs', rules: ['email', 'home'], why: 'x' }];
+  const tracked = new Set(['a/b.mjs']);
+  assert.equal(staleExemptions(new Map(), tracked, exempt).length, 2);
+  assert.deepEqual(
+    staleExemptions(new Map([['a/b.mjs email', 1]]), tracked, exempt),
+    [{ file: 'a/b.mjs', rule: 'home' }],
+  );
+  // An exemption for a file this tree does not track is inapplicable to this sweep, not stale —
+  // otherwise every fixture tree in this file would report the real repository's exemption list.
+  assert.deepEqual(staleExemptions(new Map(), new Set(), exempt), []);
+});
+
+test('the tracked sweep says it could not run rather than reporting a clean tree (`D880`)', () => {
+  // `git ls-files` is the only enumerator of this corpus, and the offload driver's tree has no
+  // `.git` at all. An unenumerable corpus and an empty one otherwise print the same number.
+  const notARepo = mkdtempSync(join(tmpdir(), 'tflw-not-a-repo-'));
+  temps.push(notARepo);
+  const r = scrubTracked(notARepo);
+  assert.equal(r.ran, false);
+  assert.match(r.why, /could not be enumerated/);
+});
+
+test('a personal address in a tracked file fails the check, though the generated block is clean', () => {
+  const dir = fixture({ code: { 'src/mailer.ts': 'export const OWNER = "someone@gmail.com";\n' } });
+  run(dir);
+  const check = run(dir, ['--check']);
+  assert.equal(check.code, 1, 'a tracked file is published as surely as the generated block is');
+  assert.match(check.stderr, /tracked files must not be published/);
+  assert.match(check.stderr, /src\/mailer\.ts/);
+  assert.match(check.stderr, /someone@gmail\.com/);
+});
+
+test('a home path naming a real account in a tracked file fails the check', () => {
+  const dir = fixture({ code: { 'src/paths.ts': 'export const ROOT = "/home/deepaktuteja/git/tflw";\n' } });
+  run(dir);
+  const check = run(dir, ['--check']);
+  assert.equal(check.code, 1);
+  assert.match(check.stderr, /\/home\/deepaktuteja\//);
+});
+
+test('the build host in a tracked file does NOT fail the check — that rule declares a narrower corpus (`D876`)', () => {
+  // The load-bearing negative control for the narrowing half of `M171b`. Four provenance comments in
+  // shipped `src` name the host on purpose: their job is to tell a reader *this number was not
+  // measured on your machine*. A rule that fired on them would be deleted, and the generated block
+  // — where a hostname arrives by lift rather than by someone typing it — would lose its only guard.
+  const dir = fixture({ code: { 'src/perf.ts': '// measured on fedora-box, not on your machine\n' } });
+  run(dir);
+  const check = run(dir, ['--check']);
+  assert.equal(check.code, 0, check.stderr);
+  assert.match(check.stdout, /tracked files swept/);
+});
+
+test('a clean tree says how many tracked files it swept, so the green states what it read', () => {
+  const dir = fixture();
+  run(dir);
+  const check = run(dir, ['--check']);
+  assert.equal(check.code, 0, check.stderr);
+  assert.match(check.stdout, /\d+ tracked files swept/);
 });
 
 // --- D683, the tier that must announce its own absence ---------------------------------------------

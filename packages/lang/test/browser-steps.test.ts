@@ -194,7 +194,7 @@ test('expect subjects: button/field/text/list/css/xpath all parse as LocatorSubj
 });
 
 test('`expect field "..." has value "..."` and `has count N` parse against a locator subject', () => {
-  const hasValue = firstStep('test "ok"\n  expect field "Email" has value "a@b.com"\n') as { matcher: { name: string } };
+  const hasValue = firstStep('test "ok"\n  expect field "Email" has value "a@b.test"\n') as { matcher: { name: string } };
   assert.equal(hasValue.matcher.name, 'hasValue');
   const hasCount = firstStep('test "ok"\n  expect list "Cart items" has count 3\n') as { matcher: { name: string } };
   assert.equal(hasCount.matcher.name, 'hasCount');

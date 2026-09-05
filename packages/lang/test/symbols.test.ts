@@ -151,7 +151,7 @@ test('collectSymbols: a session ref resolves against a separately-parsed tflw.co
 });
 
 test('collectSymbols: a 4-column inline table header collects one def per column with precise spans', () => {
-  const source = `with each\n  | role | email | active | note |\n  | "admin" | "a@x.com" | true | "n/a" |\ntest "invite {role}"\n  api GET /health\n`;
+  const source = `with each\n  | role | email | active | note |\n  | "admin" | "a@x.test" | true | "n/a" |\ntest "invite {role}"\n  api GET /health\n`;
   const { program } = parseSource(source);
   const table = collectSymbols(program, source);
   const columns = ['role', 'email', 'active', 'note'];

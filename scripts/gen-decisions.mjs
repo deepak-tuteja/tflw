@@ -677,7 +677,7 @@ export function collectLegacy(planText) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The scrub gate (D676)
+// The scrub gate (D676), and the corpus each of its rules covers (D875)
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -686,28 +686,260 @@ export function collectLegacy(planText) {
  * one personal email that is not this repository's, and 42 mentions of the internal build host.
  * A public commit is irreversible, so this is a gate and not a review step.
  *
- * The email pattern allows the repo's own address — it appears legitimately in `CONTRIBUTING.md`
- * and in git trailers, and a rule that fired on it would be turned off within a week.
+ * **Each rule now declares the corpus it covers, as data** (`D875`, `M171b`). Until then that
+ * sentence was this docblock's alone: all three rules ran over the generated region of
+ * `DECISIONS.md` and over nothing else, while the paragraph above said *a public commit*. Both
+ * statements were here, one in prose and one in code, and nothing compared them — `M164-09`, and
+ * the sixth instance of `M167`'s shape. Two corpora, nested, `generated` inside `tracked`:
+ *
+ * - `generated` — the region between the two GENERATED markers in `DECISIONS.md`. Text this
+ *   repository *emits*, and the only text `docs:decisions` can repair by regenerating (`D669`).
+ * - `tracked` — every tracked text file, enumerated by `git ls-files`. Text this repository
+ *   *publishes*.
+ *
+ * A rule runs over a region when that region lies inside the rule's declared corpus, so all three
+ * run over the generated block and only the `tracked` ones sweep the repository. `scrub`'s default
+ * region is the narrower one, which is the failing-closed direction: a call that does not say what
+ * it is scrubbing runs more rules, never fewer.
+ *
+ * **What no corpus here can cover, stated so it is not claimed** (`D876`): the commit itself. Over
+ * half of this repository's 314 commits carry a personal `gmail.com` address in their author field
+ * — the era before the PR workflow, when the local git config supplied it — and no rule over file
+ * *content* can ever see one, because git metadata is not a tracked file. So each rule's `subject`
+ * below says *text this repository publishes*, not *a public commit*. The old wording claimed a
+ * reach the mechanism never had, which is the defect this milestone is named after.
  */
 export const SCRUB = [
-  { name: 'a personal email that is not this repository\'s', re: /\b[\w.+-]+@(?!tflw\.dev\b)[\w-]+\.[\w.]{2,}\b/g, allow: /@example\.(com|org)\b|@tflw\.dev\b/ },
-  { name: 'the internal build host', re: /\bfedora[-.]?(?:box|local)\b/gi },
-  { name: 'an absolute home path', re: /\/(?:Users|home)\/[a-z][\w.-]*\//gi },
+  {
+    id: 'email',
+    name: 'a personal email that is not this repository\'s',
+    corpus: 'tracked',
+    subject: 'an address that reaches a person, in text this repository publishes',
+    // The domain must end in an alphabetic TLD (`D877`). Without that clause eleven of the 41 hits
+    // this rule returned over the tracked corpus were npm coordinates — `lang@0.1.0`,
+    // `tflw-monorepo@0.1.0`, `tflw@0.1.0` — which no allow-list can separate from an address by
+    // domain, because the thing that distinguishes them is that a version is not a hostname.
+    re: /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b/g,
+    // The repo's own contact address, the RFC 2606 example domains the docs are written against,
+    // the RFC 2606/6761 reserved TLDs fixtures belong on (`D878`), and the GitHub account's noreply
+    // address, which is what all 151 commits of the PR era already publish as their author.
+    allow: /@(?:example\.(?:com|org|net)|tflw\.dev|users\.noreply\.github\.com)\b|@[\w-]+\.(?:test|invalid|example|localhost)\b/,
+  },
+  {
+    id: 'host',
+    name: 'the internal build host',
+    corpus: 'generated',
+    subject: 'the build host named inside a generated record block',
+    // Deliberately NOT widened to `tracked` (`D876`). Nine tracked source files name the host, and
+    // four of them are provenance comments in shipped `src` — `diagnostic.ts`, `parser.ts`,
+    // `eval.ts`, `interpreter.ts` — whose whole job is to tell a reader *this number was not
+    // measured on your machine*. Anonymising those makes them weaker, not safer. The rule's real
+    // subject was always the generated block, where a hostname arrives by lift rather than by
+    // someone writing it, and where `D669` says the repair is to reword the record and regenerate.
+    re: /\bfedora[-.]?(?:box|local)\b/gi,
+  },
+  {
+    id: 'home',
+    name: 'an absolute home path',
+    corpus: 'tracked',
+    subject: 'a filesystem path naming a real account, in text this repository publishes',
+    re: /\/(?:Users|home)\/[a-z][\w.-]*\//gi,
+    // `user` and `runner` name nobody: the first is the placeholder two synthetic-filesystem tests
+    // walk up from, the second is what every GitHub Actions runner's home is called. The allow-list
+    // is exactly these two on purpose — the subject is a path that identifies a person, and a set
+    // that grew to cover `someone` would swallow this gate's own specimens.
+    allow: /^\/(?:Users|home)\/(?:user|runner)\/$/i,
+  },
 ];
 
-/** @param {string} text @returns {{name: string, hit: string, line: number}[]} */
-export function scrub(text) {
+/**
+ * Which rules a given region is subject to. `generated` lies inside `tracked` because the generated
+ * block is part of a tracked file, so scrubbing it runs the repository-wide rules as well.
+ */
+const WITHIN = { generated: ['generated', 'tracked'], tracked: ['tracked'] };
+
+/**
+ * @param {string} text
+ * @param {'generated'|'tracked'} region what this text *is*, which decides which rules cover it
+ * @returns {{id: string, name: string, hit: string, line: number}[]}
+ */
+export function scrub(text, region = 'generated') {
+  const covers = WITHIN[region];
+  if (!covers) throw new Error(`scrub: unknown region ${JSON.stringify(region)} — declare it in WITHIN, or D875 does not mean anything`);
+  const rules = SCRUB.filter((r) => covers.includes(r.corpus));
   const out = [];
   text.split('\n').forEach((ln, i) => {
-    for (const rule of SCRUB) {
+    for (const rule of rules) {
       for (const m of ln.matchAll(rule.re)) {
         if (rule.allow && rule.allow.test(m[0])) continue;
-        out.push({ name: rule.name, hit: m[0], line: i + 1 });
+        out.push({ id: rule.id, name: rule.name, hit: m[0], line: i + 1 });
       }
     }
   });
   return out;
 }
+
+/**
+ * Files the tracked sweep does not read, per rule, with the reason kept in the record (`D879`).
+ *
+ * An exemption is checked for being *non-vacuous*: if an exempt file is tracked and no longer
+ * produces the hit it was exempted for, that is a failure. An exemption outliving its specimen is
+ * this milestone's own property inside the exemption list — a line that goes on excusing a whole
+ * file from a rule for a reason that stopped being true, silently, and only ever fails open.
+ */
+export const SCRUB_EXEMPT = [
+  {
+    file: 'scripts/gen-decisions.test.mjs',
+    rules: ['email', 'home'],
+    why: 'the scrub rules\' own specimens live here — the addresses and home paths the tests assert are caught. A sweep that read this file would report its negative controls as leaks, and the honest way to say so is a named exemption rather than an allow-list entry that would blind the rules everywhere.',
+  },
+];
+
+const BINARY = /\.(png|jpe?g|gif|ico|webp|bmp|woff2?|ttf|eot|otf|pdf|zip|gz|tgz|wasm|mp4|webm|mp3|wav|ogg)$/i;
+
+/**
+ * The `tracked` corpus, swept. Returns `ran: false` rather than an empty result when `git ls-files`
+ * cannot answer — an empty corpus and an unenumerable one report the same clean number otherwise,
+ * and that is the failure mode this whole milestone exists to stop (`D880`, and `D683`'s shape).
+ *
+ * @param {string} root
+ */
+export function scrubTracked(root) {
+  let files;
+  try {
+    files = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      .split('\0').filter(Boolean);
+  } catch {
+    return { ran: false, why: '`git ls-files` did not answer in this tree, so the tracked corpus could not be enumerated' };
+  }
+  const dirt = [];
+  const hits = new Map();
+  for (const f of files) {
+    if (BINARY.test(f)) continue;
+    let text;
+    try { text = readFileSync(join(root, f), 'utf8'); } catch { continue; }
+    if (text.includes('\0')) continue;
+    for (const d of scrub(text, 'tracked')) {
+      const key = `${f} ${d.id}`;
+      hits.set(key, (hits.get(key) ?? 0) + 1);
+      if (!SCRUB_EXEMPT.some((e) => e.file === f && e.rules.includes(d.id))) dirt.push({ ...d, file: f });
+    }
+  }
+  return { ran: true, files: files.length, dirt, stale: staleExemptions(hits, new Set(files)) };
+}
+
+/**
+ * Which exemptions no longer exempt anything, given what the sweep actually found.
+ *
+ * Separate from `scrubTracked` so it can be planted without a repository (`D879`). An exemption
+ * naming a file this tree does not track is *inapplicable* to the sweep, not stale — a fixture tree
+ * tracks none of them, and reporting all of them there would make the rule unusable where it is
+ * cheapest to test.
+ *
+ * @param {Map<string, number>} hits keyed `${file} ${ruleId}`
+ * @param {Set<string>} tracked
+ */
+export function staleExemptions(hits, tracked, exempt = SCRUB_EXEMPT) {
+  const stale = [];
+  for (const e of exempt) {
+    if (!tracked.has(e.file)) continue;
+    for (const id of e.rules) if (!hits.get(`${e.file} ${id}`)) stale.push({ file: e.file, rule: id });
+  }
+  return stale;
+}
+
+/**
+ * `M171`'s subject, applied to this file's own scrub gate (`D875`, `M171b`).
+ *
+ * Two declarations because the gate has two corpora, and the whole finding in `M164-09` was that
+ * it published one number for both. Each states, as data, the corpus a rule set reads and the
+ * one-line subject it claims; `verify-corpora.mjs` asserts the corpus resolves, is non-empty, and
+ * that every plant lands.
+ *
+ * **A guard whose corpus contains its own source cannot spell its own specimens.** The two positive
+ * plants below are assembled from pieces rather than written out, because a literal personal
+ * address or a literal home path in this file would be a real hit in the tracked sweep — this file
+ * is tracked. That is `SCRUB_EXEMPT`'s reason arriving a second time, one level in, and the honest
+ * response is to keep the specimen unspellable rather than to exempt the implementation from the
+ * rule it implements.
+ */
+const specimen = (...parts) => parts.join('');
+
+export const CORPORA = [
+  {
+    id: 'gen-decisions/scrub-generated',
+    subject: 'the generated block of DECISIONS.md, which every rule covers — the build host included',
+    needs: [],
+    resolve: ({ root }) => {
+      const text = readFileSync(join(root, OUTPUT), 'utf8');
+      const i = text.indexOf(START);
+      if (i < 0) throw new Error(`${OUTPUT} carries no generated block`);
+      const n = text.slice(i).split('\n').length;
+      return { units: n, describe: `${n} line(s) of generated block in ${OUTPUT}, covered by all ${SCRUB.length} rule(s)` };
+    },
+    plants: [
+      {
+        what: 'the build host inside the generated block is caught',
+        run: () => scrub('measured on fedora-box overnight', 'generated').some((d) => d.id === 'host'),
+      },
+      {
+        what: 'a personal address inside the generated block is caught too, because generated lies inside tracked',
+        run: () => scrub(specimen('mail someone', '@gmail.com', ' about it'), 'generated').some((d) => d.id === 'email'),
+      },
+      {
+        what: 'NEGATIVE CONTROL — the build host in an ordinary tracked file is outside this rule\'s declared corpus',
+        run: () => scrub('measured on fedora-box overnight', 'tracked').length === 0,
+      },
+    ],
+  },
+  {
+    id: 'gen-decisions/scrub-tracked',
+    subject: 'every tracked text file — an address that reaches a person, or a path naming a real account',
+    // `git ls-files` is the only enumerator of this corpus, and the offload driver's copy of this
+    // tree has no `.git/`. Declared as a need so that machine reports it *skipped, by name* rather
+    // than resolving it to zero — the same sentence `D880` makes the gate itself say.
+    needs: ['repo'],
+    resolve: ({ repo }) => {
+      const s = scrubTracked(repo);
+      if (!s.ran) throw new Error(s.why);
+      return {
+        units: s.files,
+        describe: `${s.files} tracked file(s), ${SCRUB_EXEMPT.length} named exemption(s), ${s.dirt.length} unexcused hit(s)`,
+      };
+    },
+    plants: [
+      {
+        what: 'a personal address in a tracked file is caught',
+        run: () => scrub(specimen('mail someone', '@gmail.com', ' about it'), 'tracked').some((d) => d.id === 'email'),
+      },
+      {
+        what: 'a home path naming a real account is caught',
+        run: () => scrub(specimen('/home/', 'deepaktuteja', '/git/tflw'), 'tracked').some((d) => d.id === 'home'),
+      },
+      {
+        what: 'NEGATIVE CONTROL — an npm coordinate is a version, not an address',
+        run: () => scrub('installed tflw-monorepo@0.1.0 and lang@0.1.0', 'tracked').length === 0,
+      },
+      {
+        what: 'NEGATIVE CONTROL — a fixture on an RFC 2606 reserved TLD is not a leak',
+        run: () => scrub('alice@example.test wrote to t@example.invalid', 'tracked').length === 0,
+      },
+      {
+        what: 'NEGATIVE CONTROL — a placeholder home directory names nobody',
+        run: () => scrub('/home/user/project and /home/runner/work', 'tracked').length === 0,
+      },
+      {
+        what: 'an exemption whose specimen is gone is reported',
+        run: () => staleExemptions(new Map(), new Set(SCRUB_EXEMPT.map((e) => e.file))).length ===
+          SCRUB_EXEMPT.reduce((a, e) => a + e.rules.length, 0),
+      },
+      {
+        what: 'NEGATIVE CONTROL — an exemption naming a file this tree does not track is inapplicable, not stale',
+        run: () => staleExemptions(new Map(), new Set()).length === 0,
+      },
+    ],
+  },
+];
 
 // ---------------------------------------------------------------------------------------------
 // Rendering
@@ -1292,7 +1524,11 @@ function main() {
   const text = readFileSync(outPath, 'utf8');
   const published = publishedIds(text);
   const { missing, orphan } = conformance(citedIds, published);
-  const dirt = scrub(text.slice(text.indexOf(START)));
+  const dirt = scrub(text.slice(text.indexOf(START)), 'generated');
+  // The other half of `D875`: the two rules whose declared corpus is the whole tracked tree are
+  // swept over it here. This is tier 1 — both sides are tracked — but it needs `git`, which the
+  // offload driver's tree does not have, so it announces its own absence rather than passing.
+  const sweep = scrubTracked(ROOT);
   let failed = false;
 
   if (missing.length) {
@@ -1316,12 +1552,34 @@ function main() {
       `  Fix the block in the design record it was lifted from, then regenerate (D669). Editing\n` +
       `  ${OUTPUT} by hand puts the leak back on the next run.`);
   }
+  if (sweep.ran && sweep.stale.length) {
+    failed = true;
+    console.error(`✗ ${sweep.stale.length} scrub exemption(s) no longer exempt anything:\n` +
+      sweep.stale.map((t) => `    ${t.file} · rule ${t.rule}`).join('\n') + '\n' +
+      `  Each of those lines excuses a file from a rule for a reason that has stopped being true,\n` +
+      `  and an exemption nobody can see expiring is the defect this gate is named after (D879).\n` +
+      `  Delete the entry, or narrow it to the rules the file still needs.`);
+  }
+  if (sweep.ran && sweep.dirt.length) {
+    failed = true;
+    const shown = sweep.dirt.slice(0, 8).map((d) => `    ${d.file}:${d.line}: ${d.name} — ${JSON.stringify(d.hit)}`);
+    console.error(`✗ ${sweep.dirt.length} thing(s) in tracked files must not be published:\n${shown.join('\n')}\n` +
+      `  These are committed files, not the generated block, so regenerating fixes nothing: edit the\n` +
+      `  file. A fixture address belongs on an RFC 2606 reserved TLD (.test/.invalid/.example), not\n` +
+      `  on a domain somebody owns (D878).`);
+  }
+  if (!sweep.ran) {
+    console.log(`gen-decisions --check: NOT CHECKED HERE: ${sweep.why}. The two rules whose corpus is\n` +
+      `  the tracked tree (D875) did not run; only the generated block was scrubbed. This line exists\n` +
+      `  so an unenumerable corpus and an empty one do not report the same clean number (D880).`);
+  }
   if (failed) return 1;
 
   // --- tier 2: needs the records, and says so when it cannot run ---
   if (!haveRecords) {
     console.log(
-      `gen-decisions --check: ${published.size} entries, ${citedIds.size} cited identifiers — conformance and scrub pass.\n` +
+      `gen-decisions --check: ${published.size} entries, ${citedIds.size} cited identifiers — conformance and scrub pass` +
+      `${sweep.ran ? `, ${sweep.files} tracked files swept clean` : ''}.\n` +
       `  NOT CHECKED HERE: that each entry still matches the record it was lifted from. The design\n` +
       `  records are gitignored (D668), so no CI runner can compare them. That half is checked on a\n` +
       `  developer machine and by review — not by this run, which is why this line exists (D683).`);
@@ -1343,7 +1601,8 @@ function main() {
       `  design record the block was lifted from (D669); then run \`npm run docs:decisions\`.`);
     return 1;
   }
-  console.log(`gen-decisions --check: ${published.size} entries match the design records; ${citedIds.size} cited identifiers all resolve; scrub clean.`);
+  console.log(`gen-decisions --check: ${published.size} entries match the design records; ${citedIds.size} cited identifiers all resolve; scrub clean`
+    + `${sweep.ran ? `, ${sweep.files} tracked files swept` : ''}.`);
   // The demand half runs last because it is the newer and weaker claim: `D858` buys resolution and
   // declines publication, so a finding here never means `DECISIONS.md` is wrong. Reported after the
   // line above rather than instead of it, so a red demand check cannot be misread as a red index.

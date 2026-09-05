@@ -335,7 +335,7 @@ test('open + click + fill (labelled) + fill (placeholder cascade) + select + che
   const { report } = await run(`test "storefront basics"
   open "/"
   click button "Add to cart"
-  fill field "Email" with "a@b.com"
+  fill field "Email" with "a@b.test"
   fill field "Search" with "widget"
   select "Small" from field "Size"
   tick field "Accept terms"
@@ -367,7 +367,7 @@ test('a browser action invoked via a bare `CallStmt` shares its caller\'s browse
 
 test "checkout via a shared browser action"
   addToCart()
-  fill field "Email" with "a@b.com"
+  fill field "Email" with "a@b.test"
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
   const steps = report.tests[0]!.steps;
@@ -378,12 +378,12 @@ test('`fill form` runs each row as its own reported sub-step', async () => {
   const { report } = await run(`test "fill form"
   open "/"
   fill form
-    | "Email" | "x@y.com" |
+    | "Email" | "x@y.test" |
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
   const steps = report.tests[0]!.steps;
   assert.equal(steps[1]!.kind, 'fill');
-  assert.match(steps[1]!.detail ?? '', /Email.*x@y\.com/);
+  assert.match(steps[1]!.detail ?? '', /Email.*x@y\.test/);
 });
 
 test('ambiguity (D7): two equally-named buttons is a hard error listing candidates, never "take the first"', async () => {

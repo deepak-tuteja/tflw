@@ -67,7 +67,7 @@ test "invite {role}"
 
 test('a file-backed `with each from "./x.csv"` table binds one case per data row', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-table-csv-'));
-  await writeFile(join(dir, 'invites.csv'), 'role,email\nadmin,a@x.com\nguest,g@x.com\n');
+  await writeFile(join(dir, 'invites.csv'), 'role,email\nadmin,a@x.test\nguest,g@x.test\n');
   const server = await startFixtureServer({ '/invites': (_req, res) => json(res, 201, { ok: true }) });
 
   const source = `with each from "./invites.csv"
@@ -82,7 +82,7 @@ test "invite {role} ({email})"
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
   assert.deepEqual(
     report.tests.map((t) => t.name),
-    ['invite admin (a@x.com)', 'invite guest (g@x.com)'],
+    ['invite admin (a@x.test)', 'invite guest (g@x.test)'],
   );
 
   await rm(dir, { recursive: true, force: true });
@@ -91,7 +91,7 @@ test "invite {role} ({email})"
 
 test('a file-backed `with each from "./x.json"` table binds one case per array element', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-table-json-'));
-  await writeFile(join(dir, 'invites.json'), JSON.stringify([{ role: 'admin', email: 'a@x.com' }, { role: 'guest', email: 'g@x.com' }]));
+  await writeFile(join(dir, 'invites.json'), JSON.stringify([{ role: 'admin', email: 'a@x.test' }, { role: 'guest', email: 'g@x.test' }]));
   const server = await startFixtureServer({ '/invites': (_req, res) => json(res, 201, { ok: true }) });
 
   const source = `with each from "./invites.json"
@@ -106,7 +106,7 @@ test "invite {role} ({email})"
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
   assert.deepEqual(
     report.tests.map((t) => t.name),
-    ['invite admin (a@x.com)', 'invite guest (g@x.com)'],
+    ['invite admin (a@x.test)', 'invite guest (g@x.test)'],
   );
 
   await rm(dir, { recursive: true, force: true });
@@ -156,7 +156,7 @@ test "qty {qty} matches the real JSON number"
 
 test('a CSV row with the wrong cell count is a clear runtime error, not silent padding/truncation (decision 65)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-table-csv-badrow-'));
-  await writeFile(join(dir, 'invites.csv'), 'role,email\nadmin,a@x.com\nguest\n');
+  await writeFile(join(dir, 'invites.csv'), 'role,email\nadmin,a@x.test\nguest\n');
   const server = await startFixtureServer({ '/invites': (_req, res) => json(res, 201, { ok: true }) });
 
   const source = `with each from "./invites.csv"
@@ -267,7 +267,7 @@ test "row {nmae}"
 
 test('with no near spelling, it lists the row\'s columns and names the file they came from', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-table-far-'));
-  await writeFile(join(dir, 'rows.csv'), 'name,email\nalice,a@x.com\n');
+  await writeFile(join(dir, 'rows.csv'), 'name,email\nalice,a@x.test\n');
   const source = `with each from "./rows.csv"
 test "row {quantity}"
   api GET /health

@@ -28,7 +28,7 @@
     "url": "https://github.com/deepak-tuteja/tflw/issues"
   },
   "license": "MIT",
-  "author": "Deepak Tuteja <tuteja123@gmail.com>",
+  "author": "Deepak Tuteja <33311251+deepak-tuteja@users.noreply.github.com>",
   "scripts": {
     "build": "npm run bundle",
     "typecheck": "tsc -p tsconfig.json --noEmit",
