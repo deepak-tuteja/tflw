@@ -363,6 +363,21 @@ export function planClaims(text, headerLines = 12) {
 export function closeClaims(text) {
   const out = []
   text.split('\n').forEach((raw, i) => {
+    // A BLOCKQUOTE IS A QUOTATION, NEVER A CLAIM (`M176a`, `D912`).
+    //
+    // `D900`'s argument, one construct over: a fence is an illustration and so is a `>` line. A plan
+    // that quotes another document's header in order to *explain what is wrong with it* was reading
+    // as a plan that closes those rows. `M177` shipped `D909`'s sentence asymmetry and this fired on
+    // `M177`'s own plan the first time the plan-claims tier could see it — the day it reached `main`,
+    // against `PLAN_M177:27`, which quotes `PLAN_M175`'s defective header verbatim as its worked
+    // example. The gate's advice was to add a `plan:closes` marker for `M149f-01`, which `M177` does
+    // not close and `M175` explicitly declined to close; the cheapest way to satisfy it would have
+    // been to write a false claim into the record, which is `M166`'s failing-plausibly shape.
+    //
+    // Measured over all 108 records before taking it: **3 of 50 close-claims sit inside a
+    // blockquote, carrying 5 id-mentions, and all three are quotations of other documents.** None is
+    // a claim any plan makes about its own work, so the rule subtracts exactly the illustrations.
+    if (/^\s*>/.test(raw)) return
     const masked = maskCodeSpans(raw)
     const bolds = [...masked.matchAll(/\*\*([^*]+)\*\*/g)]
     const marks = [{ label: null, from: 0 }, ...bolds.map((b) => ({ label: b[1], from: b.index + b[0].length }))]
@@ -817,25 +832,49 @@ export function availability(path, root) {
  *     (`D14`) and is cited by an open row, so `HEAD:<rel>` does not resolve for it. The log
  *     question returns empty there, as it always has.
  */
-function changedSince({ dir, rel, sibling }, { commit, date }) {
+export function changedSince({ dir, rel }, { commit, date }) {
   const git = (...args) =>
     execFileSync('git', args, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
 
-  if (!sibling) {
+  // `M176-02`. **Ask the repository, do not infer from the path.** This branched on `sibling` and
+  // fell straight to the date question for every sibling citation, on the stated ground that *"the
+  // stamped sha is a tflw commit and means nothing in testFlow-tests"* (`D529`). That was true when
+  // it was written and the ledger was mostly this repository's. Measured 2026-09-06 over every open
+  // row: **9 of 19 stamps name a commit that resolves in the sibling and not here**, because a
+  // sibling-side row is re-verified against the sibling's head and records that head — and 18 of the
+  // 19 open rows are the sibling's. For those nine the exact question was always askable, in the very
+  // checkout the path lives in, and this asked the coarse one instead.
+  //
+  // Worse than coarse: the line it printed gave a reason it had never tested — *"the sha is not a ref
+  // in that repo"* — about `4594dd9`, which is that repository's `main` head. The consequence is
+  // `D527`'s own named failure applied to the live ledger, since a report with routine false
+  // positives is the report people skim.
+  //
+  // So the question is `cat-file -e` in `dir`, and the answer decides both the method and what the
+  // caller is allowed to say. `how` travels with the verdict for exactly that reason: the previous
+  // shape let the caller derive the reason from `sibling`, which is a fact about the path and not
+  // about what was measured.
+  let resolves = true
+  try {
+    git('cat-file', '-e', `${commit}^{commit}`)
+  } catch {
+    resolves = false
+  }
+
+  if (resolves) {
     try {
-      // Throws when the sha is not a ref here, or when the path did not exist at either end —
-      // all three are "cannot answer exactly", and all three fall through on purpose.
-      return git('rev-parse', `${commit}:${rel}`) !== git('rev-parse', `HEAD:${rel}`)
+      // Throws when the path did not exist at either end — "cannot answer exactly", so fall through.
+      return { moved: git('rev-parse', `${commit}:${rel}`) !== git('rev-parse', `HEAD:${rel}`), how: 'blob' }
     } catch {
-      // fall through to the history question
+      // fall through to the history question, still inside this repository
     }
   }
 
-  const range = sibling ? [`--since=${date} 00:00`] : [`${commit}..HEAD`]
+  const range = resolves ? [`${commit}..HEAD`] : [`--since=${date} 00:00`]
   try {
-    return git('log', '--format=%h', '-1', ...range, '--', rel).length > 0
+    return { moved: git('log', '--format=%h', '-1', ...range, '--', rel).length > 0, how: resolves ? 'log' : 'date' }
   } catch {
-    return null // no git here, or the stamped commit is not in this checkout
+    return null // no git here at all
   }
 }
 
@@ -870,13 +909,14 @@ export function staleReport(rows, root) {
       cited++
       const at = locate(path, root)
       if (!at) continue
-      const moved = changedSince(at, stamp)
-      if (moved === null) continue
+      const answer = changedSince(at, stamp)
+      if (answer === null) continue
       checked++
-      if (moved)
+      if (answer.moved)
         lines.push(
           `  · \`${r.id}\` — \`${path}\` has changed since ${stamp.commit}` +
-            `${at.sibling ? ` (by date: anything after ${stamp.date}, the sha is not a ref in that repo)` : ''}`,
+            // `M176-02` — the qualifier states what was measured, not what the path implies.
+            `${answer.how === 'date' ? ` (by date: anything after ${stamp.date}; ${stamp.commit} names no commit in that checkout)` : ''}`,
         )
     }
   }
