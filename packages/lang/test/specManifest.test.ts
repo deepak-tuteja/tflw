@@ -33,6 +33,10 @@ import {
   SPEC_MANIFEST_VERSION,
   specConstructs,
   CLI_FLAGS,
+  SUBJECTS,
+  SUBJECT_FORMS,
+  SUBJECT_OPENING_WORDS,
+  type Subject,
 } from '../src/index.js';
 
 const constructs = specConstructs();
@@ -62,6 +66,7 @@ test('every source table reaches the manifest, by count', () => {
   const count = (family: string) => constructs.filter((c) => c.family === family).length;
   assert.equal(count('declaration'), DECLARATIONS.length, 'DECLARATIONS');
   assert.equal(count('step'), STEP_KEYWORDS.length, 'STEP_KEYWORDS');
+  assert.equal(count('subject'), Object.keys(SUBJECTS).length, 'SUBJECTS');
   assert.equal(count('matcher'), MATCHERS.length, 'MATCHERS');
   assert.equal(count('generator'), GENERATORS.length, 'GENERATORS');
   assert.equal(count('locator'), LOCATORS.length, 'LOCATORS');
@@ -69,8 +74,8 @@ test('every source table reaches the manifest, by count', () => {
   assert.equal(count('diagnostic'), DIAGNOSTICS.length, 'DIAGNOSTICS');
   assert.equal(
     constructs.length,
-    DECLARATIONS.length + STEP_KEYWORDS.length + MATCHERS.length + GENERATORS.length + LOCATORS.length + CONFIG_KEYWORDS.length + DIAGNOSTICS.length,
-    'the manifest is exactly the seven tables and nothing else',
+    DECLARATIONS.length + STEP_KEYWORDS.length + Object.keys(SUBJECTS).length + MATCHERS.length + GENERATORS.length + LOCATORS.length + CONFIG_KEYWORDS.length + DIAGNOSTICS.length,
+    'the manifest is exactly the eight tables and nothing else',
   );
 });
 
@@ -296,4 +301,113 @@ test('phase is derived from the row, not stored beside it', () => {
     assert.equal(row.probes, undefined, `${code} is phase \`run\` and still carries probes`);
     assert.ok(row.runtime?.test && row.runtime.name, `${code} is phase \`run\` and names no runtime test`);
   }
+});
+
+
+// ---------------------------------------------------------------------------
+// `M174` — the `subject` family (`D903`-`D907`). Closes `M159-01`.
+//
+// The exhaustiveness half is not here and cannot be: `SUBJECTS` is typed
+// `Record<Subject['type'], SubjectEntry>`, so a seventeenth subject node type is a compile error in
+// `spec-data.ts` and a row for a retired one is a compile error too. What is here is everything
+// `tsc` cannot see — that the words in the table are words the parser actually dispatches on, and
+// that they reach the node type the table files them under.
+//
+// The distinction matters because it is exactly the one `M159-01` was about. A type and a table
+// agreeing proves someone edited both. Only parsing proves the language.
+// ---------------------------------------------------------------------------
+
+/** `expect <subject> …` for a form, parsed, with the subject node the parser produced. */
+function subjectOf(form: string): { type: string | null; codes: string[] } {
+  const { program, diagnostics } = parseSource(`test "t"\n  expect ${form} equals "x"\n`);
+  const stmt = program.tests[0]?.body[0] as { subject?: { type: string } } | undefined;
+  return { type: stmt?.subject?.type ?? null, codes: diagnostics.map((d) => d.code) };
+}
+
+test('every subject row parses, and reaches the node type it is filed under', () => {
+  // One source per row, held to the parser rather than to the union — `D736`'s rule, applied to the
+  // family that did not have it. The forms come from the table's own `example`, minus the step
+  // keyword, so a row whose example is wrong fails here rather than teaching a wrong spelling.
+  const FORMS: Readonly<Record<Subject['type'], string>> = {
+    StatusSubject: 'status',
+    DurationSubject: 'duration',
+    HeaderSubject: 'header "content-type"',
+    BodySubject: 'body.total',
+    BodyTextSubject: 'body text',
+    BodyBytesSubject: 'body bytes',
+    BodyCsvSubject: 'body csv',
+    BodyPdfTextSubject: 'body pdf text',
+    RequestSubject: 'request',
+    NetworkRequestSubject: 'request to "https://example.test/orders"',
+    LocatorSubject: 'button "Submit"',
+    PageSubject: 'page',
+    ResponseSubject: 'response',
+    DialogMessageSubject: 'dialog message',
+    DialogTypeSubject: 'dialog type',
+    ValueSubject: '{orderId}',
+  };
+  for (const [nodeType, form] of Object.entries(FORMS)) {
+    const { type, codes } = subjectOf(form);
+    assert.deepEqual(codes, [], `\`${form}\` should parse cleanly in subject position, got ${codes.join(', ')}`);
+    assert.equal(type, nodeType, `\`${form}\` is filed under ${nodeType} and the parser produced ${type}`);
+  }
+  // Not vacuous: the map is typed by the union, so this loop covers every subject the language has.
+  assert.equal(Object.keys(FORMS).length, Object.keys(SUBJECTS).length);
+});
+
+test('every word the manifest says opens a subject actually opens one', () => {
+  // The direction that catches a manifest inventing a spelling. A word that does not dispatch
+  // produces `TF013` and no subject at all — which is what `dialog` did in the *other* direction
+  // before `M174` (`M174-01`): dispatched, and named by nothing.
+  for (const word of SUBJECT_OPENING_WORDS) {
+    const { codes } = subjectOf(word === 'header' || SUBJECTS.LocatorSubject.opens.includes(word) ? `${word} "x"` : word === 'dialog' ? 'dialog message' : word);
+    assert.ok(!codes.includes('TF013'), `\`${word}\` is listed as opening a subject and the parser does not dispatch on it`);
+  }
+});
+
+test('no subject keyword is missing from the words `TF013` offers', () => {
+  // `M174-01`, as a standing check rather than as a repair. Every opening word must be reachable
+  // from the forms a user is shown — either it is one, or it is the first word of one. Before
+  // `M174` `dialog` satisfied neither, and the hint told the user so.
+  for (const word of SUBJECT_OPENING_WORDS) {
+    assert.ok(
+      SUBJECT_FORMS.some((form) => form === word || form.startsWith(`${word} `)),
+      `\`${word}\` opens a subject and no form in SUBJECT_FORMS begins with it — TF013 would tell a user it is not a subject`,
+    );
+  }
+});
+
+test('every offered form is a form, not a fragment', () => {
+  // `M174-02`'s other direction: a label an editor inserts verbatim must open a real subject. This
+  // is what refuses a bare `dialog` as a candidate — `D798` makes it an error to write, so offering
+  // it would be a completion that produces a diagnostic.
+  for (const form of SUBJECT_FORMS) {
+    const opener = form.split(' ')[0]!;
+    assert.ok(SUBJECT_OPENING_WORDS.includes(opener), `\`${form}\` is offered and \`${opener}\` opens nothing`);
+    if (form.includes(' ')) {
+      const { codes } = subjectOf(form);
+      assert.ok(!codes.includes('TF013'), `\`${form}\` is offered as a whole phrase and does not parse as one`);
+    }
+  }
+  assert.ok(!SUBJECT_FORMS.includes('dialog'), 'bare `dialog` is an error to write (D798) and must not be offered');
+});
+
+test('the subject family is in the manifest, and is 16 rows', () => {
+  const subjects = constructs.filter((c) => c.family === 'subject');
+  assert.equal(subjects.length, Object.keys(SUBJECTS).length);
+  assert.equal(subjects.length, 16);
+  // The fold drops a table silently when it fails; every other family is asserted present by count
+  // here for that reason, and this one joins them (`M141`/`D538`).
+  assert.ok(subjects.every((c) => c.status === 'shipped'));
+  assert.deepEqual(
+    subjects.map((c) => c.id).slice().sort(),
+    Object.values(SUBJECTS).map((s) => `subject:${s.id}`).sort(),
+  );
+});
+
+test('the manifest version moved with the shape', () => {
+  // `D538`. Not a tautology against the constant: this asserts the number is past 1, which is the
+  // version every consumer written before the `subject` family pinned. If a later shape change
+  // forgets to bump, the sibling buckets by `family` and silently drops a whole family's worth.
+  assert.ok(SPEC_MANIFEST_VERSION >= 2, 'adding the subject family is a shape change and must be visible as one');
 });

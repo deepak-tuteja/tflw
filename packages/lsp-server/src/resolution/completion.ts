@@ -1,16 +1,25 @@
 // Autocomplete candidates (PLAN_M13_LSP.md Phase 2, design decision 3): given the grammar-shape
 // `CompletionContext` `@tflw/lang`'s `getCompletionContext` already computed (Phase 1), produce
-// the candidate list for it. `step`/`subject` are fixed, tiny keyword sets; `matcher`/`unique`/
-// `random` are backed by `spec-data.ts` (the same manifest hover.ts and the docs site use);
-// `session` is symbol-name completion — its candidates (the project's declared session names)
-// come from the caller (Phase 3's I/O layer resolves `tflw.config`; `packages/lang` has no
-// notion of "the project" to fetch them itself).
+// the candidate list for it. `step`/`subject` are `STEP_KEYWORDS`/`SUBJECT_FORMS`;
+// `matcher`/`unique`/`random` are backed by `spec-data.ts` (the same manifest hover.ts and the
+// docs site use); `session` is symbol-name completion — its candidates (the project's declared
+// session names) come from the caller (Phase 3's I/O layer resolves `tflw.config`;
+// `packages/lang` has no notion of "the project" to fetch them itself).
+//
+// THE SUBJECT LIST WAS A COPY UNTIL `M174`, AND THE SENTENCE THAT MADE IT ONE IS WORTH KEEPING.
+// This header used to read *"`step`/`subject` are fixed, tiny keyword sets"*, and on that basis
+// this file carried its own twelve words against the language's nineteen forms — no `response`,
+// no `dialog message`/`dialog type`, none of the four `body` sub-forms (`M174-02`). Small and
+// fixed is what a vocabulary is right up until the language grows, and what let it go unnoticed
+// through four milestones is that the manifest had no `subject` family to check it against; that
+// is `M159-01`, and `M174` is the milestone that closes it.
 
 import {
   CONFIG_KEYWORDS,
   GENERATORS,
   MATCHERS,
   STEP_KEYWORDS,
+  SUBJECT_FORMS,
   configKeyAllowedIn,
   type CompletionContext,
   type ConfigBlockKind,
@@ -57,7 +66,6 @@ export interface CompletionSources {
 // through to `parseStep()`'s completion gate anyway, so `kind: 'step'` is what a user typing inside
 // any `test` body actually gets. Offering them here is the same over-broad-but-harmless tradeoff
 // that already offers a browser step inside a `before` hook.
-const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page'] as const;
 
 /** Plain typeable matcher keyword → the `spec-data.ts` `MatcherEntry.id` supplying its detail
  * text. Not 1:1 with `MatcherEntry` rows (`is greater than`/`is less than` share one row; the five
@@ -213,7 +221,7 @@ export function getCompletions(ctx: CompletionContext, sources: CompletionSource
     // applies already puts `status` the response subject above someone's `let status = …`.
     case 'subject':
       return [
-        ...SUBJECT_KEYWORDS.filter(byPrefix).map((label) => ({ label })),
+        ...SUBJECT_FORMS.filter(byPrefix).map((label) => ({ label })),
         ...(sources.knownVariables ?? [])
           .filter(byPrefix)
           .map((name) => ({ label: `{${name}}`, filterText: name, detail: 'value bound with `let`/`capture`' })),

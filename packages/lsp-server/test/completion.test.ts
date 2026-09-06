@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getCompletionContext, parseSource, collectSymbols } from '@tflw/lang';
+import { getCompletionContext, parseSource, collectSymbols, SUBJECT_FORMS } from '@tflw/lang';
 import { getCompletions, variablesInScopeAt } from '../src/index.js';
 
 test('getCompletions: step kind returns keyword candidates filtered by prefix', () => {
@@ -25,12 +25,33 @@ test('getCompletions: matcher kind attaches spec-data.ts detail text', () => {
 });
 
 test('getCompletions: subject kind includes `request` (decision 18)', () => {
+  // `M174`. This asserted `['request']` and was green for as long as `response` was missing from
+  // the candidate list — a test written to prove completion works, freezing the one word it did not
+  // offer (`M174-02`). The list is `SUBJECT_FORMS` now, so the expectation is derived from the same
+  // place the feature is and cannot pin an omission again.
   const source = 'test "ok"\n  expect r';
   const ctx = getCompletionContext(source, source.length)!;
   assert.deepEqual(
     getCompletions(ctx).map((c) => c.label),
-    ['request'],
+    SUBJECT_FORMS.filter((f) => f.startsWith('r')),
   );
+  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['request', 'response']);
+});
+
+test('getCompletions: every subject the language has is offered (M174, M174-02)', () => {
+  // The control the twelve-word list never had. Prefix-free, so it is the whole vocabulary, and it
+  // is compared against `SUBJECT_FORMS` rather than a list written here — a second list in a test
+  // is the same defect one layer down. The named spot-checks are the four kinds that were missing:
+  // a bare subject (`response`), both dialog forms, and a `body` sub-form.
+  const source = 'test "ok"\n  expect ';
+  const ctx = getCompletionContext(source, source.length)!;
+  const labels = getCompletions(ctx).map((c) => c.label);
+  assert.deepEqual(labels, [...SUBJECT_FORMS]);
+  for (const form of ['response', 'dialog message', 'dialog type', 'body text']) {
+    assert.ok(labels.includes(form), `completion does not offer \`${form}\``);
+  }
+  // `D798` makes a bare `dialog` an error to write, so offering it would complete to a diagnostic.
+  assert.ok(!labels.includes('dialog'), 'bare `dialog` is not a subject and must not be offered');
 });
 
 test('getCompletions: matcher kind includes `connects`/`fails` with their own spec-data.ts detail text, not the state-word one (decision 18)', () => {
@@ -323,7 +344,7 @@ test('getCompletions: no variables in scope changes nothing (M96)', () => {
   // subject-completion behaviour is untouched.
   const source = 'test "ok"\n  expect r';
   const ctx = getCompletionContext(source, source.length)!;
-  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['request']);
+  assert.deepEqual(getCompletions(ctx).map((c) => c.label), ['request', 'response']);
 });
 
 // ---- M96/D134: what is actually in scope at the cursor ---------------------

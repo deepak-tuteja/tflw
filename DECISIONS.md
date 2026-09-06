@@ -11294,6 +11294,20 @@ named costs declined; `D887` — the guard is wired to the root `npm test` and n
 
 Closes `M155-02`. The last stage, and the only one crossing the repository boundary.
 
+### M174
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M174_SUBJECT_FAMILY.md`</sub>
+
+**`M174` — the manifest gains a `subject` family**
+
+**Status:** **BUILDING 2026-09-06.** Scoped 2026-09-05; measured on the build box 2026-09-06 (§2, §3);
+decided (§5), `D903`–`D906`. Spun out of `PLAN_M172_TFLW_LEDGER_FIVE.md` §1.
+Closes `M159-01`.
+It files and closes `M174-01`, `M174-02` and `M174-03`, all three found by §2's measurement
+and by reviewing the diffs it caused.
+The sibling half is handed to `M176` under `D511`, which fixes the merge order: tflw first, an
+accepted red window on the sibling's `main`.
+
 ### M175a
 
 <sub>cited from CONTRIBUTING.md · lifted from `PLAN_M175_GATE_REACH.md`</sub>

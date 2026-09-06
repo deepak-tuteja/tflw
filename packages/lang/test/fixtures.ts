@@ -923,6 +923,19 @@ export const INVALID: readonly Fixture[] = [
 `,
   },
   {
+    // `M174`/`M174-01`. The *other* branch of `TF013`, and until now the one no golden held: with no
+    // near spelling to suggest, the hint enumerates what a subject may be — and from `M159` until
+    // 2026-09-06 that enumeration was thirteen of the sixteen and omitted `dialog`, so a user who
+    // mistyped `dialog message` was told by name that it was not a subject. Snapshotted because the
+    // list is now derived from `SUBJECTS`: a subject added without a form to write it in is a diff
+    // line here, which is the whole point of a reviewed artifact.
+    name: 'unknown-subject-no-suggestion',
+    source: `test "bad subject"
+  api GET /health
+  expect nonesuch equals 200
+`,
+  },
+  {
     name: 'missing-path',
     source: `test "no path"
   api GET

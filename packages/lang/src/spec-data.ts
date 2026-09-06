@@ -7,6 +7,11 @@
 // to be hand-maintained prose tables); `packages/docs-site`'s Reference pages and a later LSP's
 // hover/signature-help (PLAN_ENTERPRISE.md decision 17.7) import this module directly.
 
+// `M174`/`D904`. The only import this module has, and it is `import type` — `ast.ts` imports one
+// type from `token.ts` and nothing else, so this adds no runtime edge and cannot become the cycle
+// `parser.ts` would be. It is what makes `SUBJECTS` below exhaustive by `tsc` rather than by a test.
+import type { Subject } from './ast.js';
+
 /**
  * Which *kind* of subject a matcher may stand against (M97b, D140). Five kinds, deliberately
  * coarse — this axis is decidable from the AST alone, and nothing finer is.
@@ -674,6 +679,115 @@ export const LOCATORS: readonly LocatorEntry[] = [
   { id: 'xpath', syntax: '`xpath "<expr>"`', summary: 'a raw XPath expression, the last resort when neither semantics nor CSS reach it', example: '`click xpath "//tr[2]/td[1]"`' },
 ] as const;
 
+export interface SubjectEntry {
+  readonly id: string;
+  /** The word(s) `parseSubject` may dispatch on to reach this row — `body` for all five body
+   * forms, `dialog` for both dialog forms, the six locator words for `locator`, and **nothing** for
+   * `value`, which is reached by one token of `{` lookahead and no keyword at all (`D129`).
+   * `SUBJECT_OPENING_WORDS` is the deduplicated union, and it is what the did-you-mean corrects
+   * against: a typo is one token, so `dialogue` must be able to reach `dialog`. */
+  readonly opens: readonly string[];
+  /** The labels an editor may insert verbatim in subject position, and the forms `TF013` names when
+   * it tells a user what a subject is. Not the same list as `opens`, and the difference is the
+   * whole of `M174-02`: bare `dialog` is a **dispatch** word and an **error** to write (`D798`), so
+   * it opens two rows and completes neither; `body text` completes but opens nothing; and
+   * `network-request` and `value` complete nothing at all, because what follows `request to` and
+   * what stands inside `{…}` are a string and a bound name, neither of which a fixed label can
+   * carry. */
+  readonly completes: readonly string[];
+  /** `api` for what an api step's response carries, `browser` for what a page or a network request
+   * does, `value` for the one subject that comes from the variable scope. The same three words
+   * `STEP_KEYWORDS` already uses, so a consumer grouping by `group` across families gets one
+   * vocabulary rather than two. */
+  readonly group: 'api' | 'browser' | 'value';
+  readonly syntax: string;
+  readonly summary: string;
+  readonly example: string;
+}
+
+/**
+ * What may stand in subject position — the left-hand side of every assertion in the language
+ * (`M174`, `D903`-`D907`). Closes `M159-01`, which is the row for this table not existing: until it
+ * did, `D724`'s *no construct without a row* had no row to demand, and three subjects entered the
+ * language with nothing noticing.
+ *
+ * WHY THE KEY IS AN AST NODE TYPE (`D903`, `D904`). One subject construct is one `Subject` union
+ * member, and `Record<Subject['type'], SubjectEntry>` is what holds the two together: a seventeenth
+ * member is a **compile error here**, and a row for a member that was retired is one too. Every
+ * other table in this file is held to the parser by a test, because `spec-data.ts` cannot import
+ * `parser.ts`; this one can do better, because the thing it must not drift from is a *type*.
+ *
+ * That mechanism is three commits old. It needs `tsconfig.test.json` to reach `test/`, which is
+ * `M173b` — before that, `specManifest.test.ts` was type-stripped and never checked, so a claim
+ * made in the type system would have been enforced over `src` only.
+ *
+ * The behavioural half stays regardless (`D736`): `specManifest.test.ts` parses one source per row
+ * and asserts the parser produces exactly that node type. A table and a type agreeing proves only
+ * that someone edited both.
+ *
+ * WHY `locator` IS ONE ROW AND NOT SIX (`D903`), AND WHY IT IS ROSTERED AT ALL (`D906`). Six
+ * spellings open a locator and all six are already rostered as `locator:*`. A locator in *subject*
+ * position is a different admission from the same locator in action position — `pollable()` and the
+ * matcher-compatibility check judge the first and never see the second — so it is one construct
+ * here, not six, and not zero.
+ *
+ * WHY TWO ROWS SPELL OUT `expect` AND FOURTEEN DO NOT (`D907`). A `syntax` cell is compiled into
+ * the regex `packages/docs-site` uses to decide whether a construct is documented. Fourteen of these
+ * spellings are legal nowhere else in the grammar, so the bare form identifies them. `locator` and
+ * `value` are not: `click button "Add to cart"` and `open "/orders/{orderId}"` are both legal and
+ * neither is a subject, so a bare cell would let an action-position use stand as documentation of
+ * the subject-position construct — a rule that is always green and checks nothing, which is `D792`'s
+ * own failure class and the reason this family exists.
+ */
+export const SUBJECTS: Readonly<Record<Subject['type'], SubjectEntry>> = {
+  StatusSubject: { id: 'status', opens: ['status'], completes: ['status'], group: 'api', syntax: '`status [of request to "<url>"]`', summary: 'the response status code — the api step\'s, or a named browser network request\'s (`M3d`)', example: '`expect status equals 201`' },
+  DurationSubject: { id: 'duration', opens: ['duration'], completes: ['duration'], group: 'api', syntax: '`duration`', summary: 'wall time of the request in milliseconds, compared unrounded (`D807`/`D810`) — a regression tripwire, not perf testing', example: '`expect duration is less than 500ms`' },
+  HeaderSubject: { id: 'header', opens: ['header'], completes: ['header'], group: 'api', syntax: '`header "<name>" [of request to "<url>"]`', summary: 'one response header, by name', example: '`expect header "content-type" contains "json"`' },
+  BodySubject: { id: 'body', opens: ['body'], completes: ['body'], group: 'api', syntax: '`body[.<path>]`', summary: 'the JSON response body, whole or addressed by dot/index path', example: '`expect body.items[0].price equals 42`' },
+  BodyTextSubject: { id: 'body-text', opens: ['body'], completes: ['body text'], group: 'api', syntax: '`body text`', summary: 'the raw response body as a string, for the non-JSON responses a JSON path cannot address', example: '`expect body text contains "healthy"`' },
+  BodyBytesSubject: { id: 'body-bytes', opens: ['body'], completes: ['body bytes'], group: 'api', syntax: '`body bytes`', summary: 'the untouched response body, for binary responses `body text` would irreversibly UTF-8-corrupt; `matches file` is its one dedicated matcher', example: '`expect body bytes matches file "./fixtures/report.pdf"`' },
+  BodyCsvSubject: { id: 'body-csv', opens: ['body'], completes: ['body csv'], group: 'api', syntax: '`body csv[.<path>]`', summary: 'the response body parsed as RFC 4180 CSV, addressed through the same path machinery as `body`', example: '`expect any body csv.status equals "delivered"`' },
+  BodyPdfTextSubject: { id: 'body-pdf-text', opens: ['body'], completes: ['body pdf text'], group: 'api', syntax: '`body pdf text`', summary: 'text extracted from a PDF response body — a flat string, every page, no path', example: '`expect body pdf text contains "Invoice"`' },
+  RequestSubject: { id: 'request', opens: ['request'], completes: ['request'], group: 'api', syntax: '`request`', summary: 'the connection attempt itself rather than any response; only `connects`/`fails` apply, and it is not capturable', example: '`expect request fails`' },
+  NetworkRequestSubject: { id: 'network-request', opens: ['request'], completes: [], group: 'browser', syntax: '`request to "<url>"`', summary: 'a browser network request addressed by URL — lexically similar to `request` and semantically distinct (`M3d`)', example: '`expect request to "/api/orders" was made`' },
+  LocatorSubject: { id: 'locator', opens: ['button', 'field', 'text', 'list', 'css', 'xpath'], completes: ['button', 'field', 'text', 'list', 'css', 'xpath'], group: 'browser', syntax: '`expect button "<name>" …` / `expect field "<label>" …` / `expect text "<content>" …` / `expect list "<name>" …` / `expect css "<selector>" …` / `expect xpath "<expr>" …`', summary: 'a page element in subject position — the admission `pollable()` and the matcher-compatibility check judge, which the same locator in action position never reaches (`D906`)', example: '`expect button "Submit" is enabled`' },
+  PageSubject: { id: 'page', opens: ['page'], completes: ['page'], group: 'browser', syntax: '`page`', summary: 'the active browser page as a whole rather than one element; its meaning comes entirely from the matcher after it', example: '`expect page has no critical a11y violations`' },
+  ResponseSubject: { id: 'response', opens: ['response'], completes: ['response'], group: 'api', syntax: '`response`', summary: "the last api step's response scanned whole rather than addressed — what a hygiene scan takes; not capturable (`TF053`)", example: '`expect response has no serious security violations`' },
+  DialogMessageSubject: { id: 'dialog-message', opens: ['dialog'], completes: ['dialog message'], group: 'browser', syntax: '`dialog message`', summary: 'the text the last native dialog showed', example: '`expect dialog message equals "Really delete?"`' },
+  DialogTypeSubject: { id: 'dialog-type', opens: ['dialog'], completes: ['dialog type'], group: 'browser', syntax: '`dialog type`', summary: 'which kind the last native dialog was — a closed set: `alert`, `confirm`, `prompt`, `beforeunload`', example: '`expect dialog type equals "confirm"`' },
+  ValueSubject: { id: 'value', opens: [], completes: [], group: 'value', syntax: '`expect {<name>} …` / `check {<name>} …`', summary: 'a value bound by `let`, `capture` or an action parameter, asserted on directly (`M96`/`D129`); braces are required, and `capture` refuses it', example: '`expect {orderId} matches "^ord_"`' },
+};
+
+/**
+ * The words `parseSubject` dispatches on, deduplicated, in manifest order (`M174`, `D905`).
+ *
+ * `parser.ts` held its own copy of this list until `M174` and it was **13 of the 14** — `dialog`
+ * was missing, so from `M159` until 2026-09-06 `TF013` told a user, by name, that `dialog` was not
+ * a subject while `parseSubject` accepted `dialog message` and `dialog type` (`M174-01`). The list
+ * is derived rather than asserted because it can be: `parser.ts` already imports this module for
+ * `listConfigDirectives`, so the dependency runs the right way and there is no second list left to
+ * drift. `STEP_KEYWORDS`/`LOCATOR_KEYWORDS` stay held-by-test because for those the parser's copy
+ * is the *ground truth* and this file's table is the derived one; here it is the other way round.
+ */
+export const SUBJECT_OPENING_WORDS: readonly string[] =
+  [...new Set(Object.values(SUBJECTS).flatMap((s) => s.opens))];
+
+/**
+ * What a user may write in subject position, spelled out — nineteen forms (`M174`, `D905`).
+ *
+ * Used for two different jobs that were one list before `M174`: the *"expected a subject (…)"* half
+ * of every `TF013`, and the editor's completion candidates. Both are answers to "what do I write
+ * here", which is why they are the same list; the did-you-mean is not, and uses
+ * `SUBJECT_OPENING_WORDS` instead, because it corrects a single mistyped token.
+ *
+ * The LSP held its own copy and it was **12 of the 19**, missing `response` outright and every
+ * dialog and body sub-form (`M174-02`); its own comment called the list *"load-bearing, not
+ * polish"*, which it is — `FU-11`'s finding was that a subject a user cannot discover is a subject
+ * they route around permanently.
+ */
+export const SUBJECT_FORMS: readonly string[] =
+  [...new Set(Object.values(SUBJECTS).flatMap((s) => s.completes))];
+
 export interface DeclarationEntry {
   readonly id: string;
   /** `declaration` — a word `parseProgram` dispatches on at the top level. `header` — a clause
@@ -718,7 +832,7 @@ export const DECLARATIONS: readonly DeclarationEntry[] = [
  * five step families including `workload`, because `WORKLOAD_DIRECTIVES` and `STEP_KEYWORDS`'
  * `workload` family are the same seven words (asserted, not assumed — `specManifest.test.ts`), and
  * emitting both would put two ids on one construct. */
-export type SpecConstructFamily = 'declaration' | 'step' | 'matcher' | 'generator' | 'locator' | 'config' | 'diagnostic';
+export type SpecConstructFamily = 'declaration' | 'step' | 'subject' | 'matcher' | 'generator' | 'locator' | 'config' | 'diagnostic';
 
 export interface SpecConstruct {
   /** The key a coverage manifest keys on. **Opaque**: the only thing promised about it is that it
@@ -760,8 +874,14 @@ export interface SpecConstruct {
 
 /** The manifest's own version, bumped when the *shape* changes — not when a construct is added or
  * removed, which is the whole point of the thing. A consumer pins this so a shape change is a loud
- * failure rather than a silently-empty gate (the `M141`/`D538` class). */
-export const SPEC_MANIFEST_VERSION = 1;
+ * failure rather than a silently-empty gate (the `M141`/`D538` class).
+ *
+ * **2 since `M174`**: the `subject` family. Adding a family is the shape change this number was
+ * reserved for — a consumer that buckets by `family` and has never heard of `subject` silently
+ * drops sixteen constructs, which is the exact failure `D538` exists to make loud. `M174` §3 lists
+ * what moved on this side; the sibling pins nothing and so breaks on its next `refresh-tflw`
+ * instead, which is `D511`'s accepted red window. */
+export const SPEC_MANIFEST_VERSION = 2;
 
 /** Assembled fresh on each call rather than frozen at module scope: this runs once per
  * `tflw spec` invocation, and a shared frozen array is a thing a consumer can mutate. */
@@ -776,6 +896,12 @@ export function specConstructs(): readonly SpecConstruct[] {
     ...STEP_KEYWORDS.map((k): SpecConstruct => ({
       id: `step:${k.id}`, family: 'step', group: k.family, name: k.id, status: 'shipped',
       syntax: k.syntax, summary: k.summary, example: k.example,
+    })),
+    // `M174`. Between `step` and `matcher` because that is the order an assertion is read in —
+    // `expect <subject> <matcher>` — and the fold's own comment says it reads outside-in.
+    ...Object.values(SUBJECTS).map((s): SpecConstruct => ({
+      id: `subject:${s.id}`, family: 'subject', group: s.group, name: s.id, status: 'shipped',
+      syntax: s.syntax, summary: s.summary, example: s.example,
     })),
     ...MATCHERS.map((m): SpecConstruct => ({
       id: `matcher:${m.id}`, family: 'matcher', group: 'matcher', name: m.id, status: m.status,

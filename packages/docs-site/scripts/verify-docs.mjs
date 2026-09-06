@@ -416,10 +416,18 @@ function checkConstructCoverage() {
   const constructs = manifests.specConstructs();
   // `D538`'s class: a consumer that reads a manifest without pinning its shape is a gate that goes
   // quietly empty when the shape changes. The version is the pin; the count is not, and must not be.
-  if (manifests.SPEC_MANIFEST_VERSION !== 1) {
+  // Moved 1 -> 2 by `M174`, the `subject` family, and the re-read `D790` demands was done rather
+  // than assumed: `constructMatchers` is generic over every non-`config`, non-`diagnostic` family
+  // and needed no change, because a subject row carries a `syntax` cell like a step or a matcher
+  // does. What did need thought is that two of the sixteen — `subject:locator` and `subject:value`
+  // — are spelled with words that are legal outside subject position, so their cells carry the
+  // `expect` that puts them in it (`D907`). Without that, `click button "Add to cart"` would stand
+  // as documentation of a construct it is not an instance of: a rule that is always green, which is
+  // the whole failure class this gate exists to remove.
+  if (manifests.SPEC_MANIFEST_VERSION !== 2) {
     fail(
       'spec-data.ts',
-      `the construct manifest is at version ${manifests.SPEC_MANIFEST_VERSION}, and this gate was written against 1`,
+      `the construct manifest is at version ${manifests.SPEC_MANIFEST_VERSION}, and this gate was written against 2`,
       'Re-read constructMatchers against the new shape before bumping the number here — see D790.',
     );
   }
