@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "main",
-  "sha": "4594dd9e9cd4f302d0e718da73f2c76ad8c23c68",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/4594dd9e9cd4f302d0e718da73f2c76ad8c23c68",
+  "ref": "m176-sibling-gate-reach",
+  "sha": "4ac634e88e6ee2f28aaa2a16d6bae839dbea4ba9",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/4ac634e88e6ee2f28aaa2a16d6bae839dbea4ba9",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -20,7 +20,7 @@
     "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
     "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
   ],
-  "codeFiles": 766,
+  "codeFiles": 768,
   "checkFixtures": [
     "TF001",
     "TF002",
@@ -349,6 +349,7 @@
       "VULNS.md",
       ".gitignore",
       "scripts/lib/constructs.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/regression.mjs",
       "scripts/sweep-input-volume.mjs",
       "scripts/verify-input-acceptance.mjs",
@@ -564,6 +565,7 @@
     "D538": [
       "CONSTRUCTS.md",
       ".github/workflows/ci.yml",
+      "scripts/lib/tflw-provenance.mjs",
       "scripts/verify-construct-coverage.mjs",
       "scripts/verify-contributing.mjs",
       "webV2/admin/src/views/products/list.ejs"
@@ -629,6 +631,7 @@
     "D711": [
       "CONTRIBUTING.md",
       ".github/workflows/ci.yml",
+      "scripts/lib/tflw-provenance.mjs",
       "scripts/refresh-own-identifiers.mjs",
       "scripts/verify-contributing.mjs",
       "scripts/verify-notation-parity.mjs",
@@ -667,6 +670,7 @@
     "D724": [
       "CONSTRUCTS.md",
       "scripts/lib/constructs.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/verify-construct-coverage.mjs",
       "scripts/verify-input-acceptance.mjs",
       "scripts/verify-security-acceptance.mjs"
@@ -757,6 +761,7 @@
       "CONTRIBUTING.md",
       ".github/workflows/ci.yml",
       "scripts/lib/constructs.mjs",
+      "scripts/lib/tflw-provenance.mjs",
       "scripts/verify-construct-coverage.mjs",
       "scripts/verify-contributing.mjs"
     ],
@@ -834,6 +839,7 @@
     "D752": [
       "CONSTRUCTS.md",
       "scripts/lib/constructs.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/verify-check-diagnostics.mjs",
       "scripts/verify-input-acceptance.mjs",
       "scripts/verify-redaction.mjs",
@@ -890,6 +896,7 @@
     "D764": [
       "CONSTRUCTS.md",
       "scripts/lib/constructs.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/list-mutation-candidates.mjs",
       "scripts/regression.mjs",
       "scripts/verify-input-acceptance.mjs",
@@ -898,7 +905,7 @@
     "D765": [
       "CONSTRUCTS.md",
       "scripts/lib/constructs.mjs",
-      "scripts/lib/plants.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/regression.mjs",
       "scripts/verify-input-acceptance.mjs"
     ],
@@ -907,11 +914,15 @@
       "CONTRIBUTING.md",
       ".github/workflows/ci.yml",
       "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/lib/mutation-covers.mjs",
       "scripts/lib/mutations.mjs",
+      "scripts/lib/tflw-provenance.mjs",
       "scripts/read-mutation-matrix.mjs",
       "scripts/regression.mjs",
+      "scripts/verify-construct-acceptance.mjs",
       "scripts/verify-contributing.mjs",
+      "scripts/verify-redaction.mjs",
       "scripts/verify-sweep-size.mjs"
     ],
     "D768": [
@@ -1126,6 +1137,12 @@
       "CONTRIBUTING.md",
       "scripts/verify-scrub.mjs"
     ],
+    "D906": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.checkonly/subject-position-locator.tflw"
+    ],
     "D93": [
       "CONTRIBUTING.md",
       "scripts/verify-notation-parity.mjs",
@@ -1321,6 +1338,7 @@
       "CONSTRUCTS.md",
       "VULNS.md",
       "scripts/lib/constructs.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/lib/plants.mjs",
       "scripts/list-mutation-candidates.mjs",
       "scripts/regression.mjs",
@@ -1370,6 +1388,7 @@
       "CONSTRUCTS.md",
       "VULNS.md",
       "scripts/lib/constructs.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/lib/plants.mjs",
       "scripts/regression.mjs",
       "scripts/verify-construct-acceptance.mjs",
@@ -1389,6 +1408,7 @@
       "scripts/lib/perf-ladder.mjs",
       "scripts/lib/regression-shared.mjs",
       "scripts/lib/tflw-bin.mjs",
+      "scripts/lib/tflw-provenance.mjs",
       "scripts/perf-conformance.mjs",
       "scripts/regression-smoke.mjs",
       "scripts/regression.mjs",
@@ -1517,6 +1537,7 @@
       "ops/systemd/tflw-perf.service",
       "scripts/derive-perf-bands.mjs",
       "scripts/lib/constructs.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/lib/mutation-covers.mjs",
       "scripts/lib/perf-ladder.mjs",
       "scripts/measure-construct-evidence.mjs",
@@ -1549,7 +1570,7 @@
       ".github/workflows/ci.yml",
       "apiV2/src/lifecycle/lifecycle.constants.ts",
       "scripts/lib/constructs.mjs",
-      "scripts/lib/plants.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/lib/regression-shared.mjs",
       "scripts/list-mutation-candidates.mjs",
       "scripts/measure-construct-evidence.mjs",
@@ -1671,6 +1692,7 @@
     "M162": [
       "CONTRIBUTING.md",
       "scripts/discover-mutation-kills.mjs",
+      "scripts/verify-construct-acceptance.mjs",
       "tests/mixed/storefront.tflw",
       "tests/ui/storefront/review-submission.tflw"
     ],
@@ -1697,6 +1719,7 @@
       "scripts/lib/constructs.mjs",
       "scripts/lib/mutation-covers.mjs",
       "scripts/lib/mutations.mjs",
+      "scripts/lib/tflw-provenance.mjs",
       "scripts/measure-construct-evidence.mjs",
       "scripts/perf-conformance.mjs",
       "scripts/refresh-own-identifiers.mjs",
@@ -1727,9 +1750,20 @@
     "M166": [
       "CONTRIBUTING.md",
       ".github/workflows/ci.yml",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/read-mutation-matrix.mjs",
       "scripts/regression.mjs",
+      "scripts/verify-construct-acceptance.mjs",
       "scripts/verify-contributing.mjs",
       "scripts/verify-sweep-size.mjs"
+    ],
+    "M170": [
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/perf-conformance.mjs",
+      "scripts/verify-contributing.mjs"
     ],
     "M172e": [
       "CONTRIBUTING.md",
@@ -2387,7 +2421,6 @@
       "scripts/measure-construct-evidence.mjs"
     ],
     "D828": [
-      "scripts/lib/plants.mjs",
       "scripts/list-mutation-candidates.mjs",
       "scripts/regression.mjs"
     ],
@@ -2480,7 +2513,11 @@
       "scripts/verify-scrub.mjs"
     ],
     "D895": [
-      "scripts/verify-notation-parity.mjs"
+      "scripts/lib/graders.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-external-targets.mjs",
+      "scripts/verify-notation-parity.mjs",
+      "scripts/verify-redaction.mjs"
     ],
     "D9": [
       "scripts/lib/tflw-bin.mjs",
@@ -2488,6 +2525,9 @@
       "scripts/verify-input-acceptance.mjs",
       "scripts/verify-provenance.mjs",
       "scripts/verify-security-acceptance.mjs"
+    ],
+    "D904": [
+      "scripts/lib/constructs.mjs"
     ],
     "D96": [
       "tests/.checkonly/crawl-body-not-an-assertion.tflw"
@@ -2641,20 +2681,28 @@
     ],
     "M162b": [
       "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
       "tests/mixed/storefront.tflw"
     ],
     "M162e": [
       "tests/mixed/storefront.tflw"
     ],
     "M163": [
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/lib/plants.mjs",
-      "scripts/list-mutation-candidates.mjs"
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/list-mutation-candidates.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-contributing.mjs",
+      "scripts/verify-security-acceptance.mjs"
     ],
     "M163d": [
       "scripts/measure-construct-evidence.mjs"
     ],
     "M163e": [
-      "scripts/lib/plants.mjs",
+      "scripts/lib/graders.mjs",
       "scripts/regression.mjs"
     ],
     "M164a": [
@@ -2692,8 +2740,14 @@
     "M169d5": [
       "scripts/verify-provenance.mjs"
     ],
+    "M170a": [
+      "scripts/verify-contributing.mjs"
+    ],
     "M171": [
-      "scripts/verify-notation-parity.mjs"
+      "scripts/verify-external-targets.mjs",
+      "scripts/verify-notation-parity.mjs",
+      "scripts/verify-provenance.mjs",
+      "scripts/verify-redaction.mjs"
     ],
     "M171b": [
       "scripts/verify-scrub.mjs"
@@ -2710,6 +2764,43 @@
     ],
     "M172d": [
       "scripts/verify-notation-parity.mjs"
+    ],
+    "M174": [
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/verify-construct-coverage.mjs"
+    ],
+    "M176": [
+      "scripts/check-acceptance.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-construct-coverage.mjs"
+    ],
+    "M176b": [
+      ".github/workflows/ci.yml"
+    ],
+    "M176c": [
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-construct-coverage.mjs"
+    ],
+    "M176d": [
+      "scripts/check-acceptance.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/verify-construct-coverage.mjs"
+    ],
+    "M176e": [
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/lib/plants.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-external-targets.mjs",
+      "scripts/verify-provenance.mjs",
+      "scripts/verify-redaction.mjs"
+    ],
+    "M176f": [
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-provenance.mjs"
     ],
     "M19": [
       "tests/api/mechanics/body-types.tflw"
