@@ -55,13 +55,27 @@ const PARSER_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', '
  *   `A`  a string literal inside an array literal — the 24 vocabulary arrays
  *   `K`  a string argument to `expectKw(…)` / `isKw(…)` — inline words that live in no array
  *   `V`  a `<expr>.value === '…'` comparison — 13 words, including every generator word
+ *   `S`  a `case '…':` label in a `switch` whose subject ends in `.value` — the same semantic test
+ *        as `V` in the other syntax, added by `M174` (`M174-03`)
+ *
+ * `S` is the fifth shape, and it was found the way the fourth was: not by review, but by a word
+ * going missing. `parseSubject` dispatches on `switch (tok.value)`, and `page` and `response` were
+ * reachable *only* through the vocabulary array beside it — so when `M174` deleted that array as a
+ * duplicate of the manifest, two words the parser plainly recognises left this golden with the
+ * diff reading like a deliberate retirement. The docblock above already said this in general terms
+ * about `BOUND_SECOND_WORDS`: *reachable through some array as well … is a coincidence, not a
+ * property*. It cost two words to find out it was the same coincidence twice.
+ *
+ * The discrimination is exact rather than heuristic, which is why this is added here instead of
+ * being filed: `switch (tok.value)` is vocabulary and `switch (tok.type)` is token kinds, and the
+ * two are told apart by the property name the AST already carries.
  *
  * Deliberately dumb: it matches syntax, and knows nothing whatever about tflw. Every word it finds
  * that is not really vocabulary is visible in the golden and carries a written reason in
  * `semanticTokens.ts`'s exemption lists — the cost of an extractor with no judgement in it, paid
  * once and in the open, rather than a smarter one whose judgement can silently be wrong.
  */
-export type Mechanism = 'A' | 'K' | 'V';
+export type Mechanism = 'A' | 'K' | 'V' | 'S';
 
 /** The name a call is made through, whether `isKw(…)` or `this.isKw(…)`. */
 function calleeName(expr: ts.Expression): string | undefined {
@@ -90,6 +104,16 @@ export function extractVocabulary(source: string): Map<string, Set<Mechanism>> {
       if (name === 'expectKw' || name === 'isKw') {
         for (const arg of node.arguments) if (ts.isStringLiteral(arg)) add(arg.text, 'K');
       }
+    } else if (ts.isSwitchStatement(node)) {
+      // Top-down rather than from the `CaseClause` up: `setParentNodes` is off by design (a pure
+      // syntactic parse of one file), so a case label cannot ask which switch it belongs to. The
+      // switch can always ask its own subject.
+      const subject = node.expression;
+      if (ts.isPropertyAccessExpression(subject) && subject.name.text === 'value') {
+        for (const clause of node.caseBlock.clauses) {
+          if (ts.isCaseClause(clause) && ts.isStringLiteral(clause.expression)) add(clause.expression.text, 'S');
+        }
+      }
     } else if (
       ts.isBinaryExpression(node) &&
       (node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
@@ -110,9 +134,12 @@ export function extractVocabulary(source: string): Map<string, Set<Mechanism>> {
   return found;
 }
 
-/** `A`/`K`/`V` in a fixed order, so a word's flags never reorder between runs. */
+/** `A`/`K`/`V`/`S` in a fixed order, so a word's flags never reorder between runs. The pad stays at
+ * three, the width `M142` chose: `AKS` is the widest combination any word carries, and widening the
+ * column to fit a hypothetical `AKVS` would have reformatted all 249 lines — turning the one diff
+ * this golden exists to make readable into a whole-file rewrite. */
 function flagsOf(mechanisms: Set<Mechanism>): string {
-  return (['A', 'K', 'V'] as const).filter((m) => mechanisms.has(m)).join('');
+  return (['A', 'K', 'V', 'S'] as const).filter((m) => mechanisms.has(m)).join('');
 }
 
 export function renderVocabulary(found: Map<string, Set<Mechanism>>): string {
@@ -125,6 +152,7 @@ export function renderVocabulary(found: Map<string, Set<Mechanism>>): string {
     '#   A  a string literal in an array literal',
     "#   K  a string argument to expectKw(…) / isKw(…)",
     "#   V  a `<expr>.value === '…'` comparison",
+    "#   S  a `case '…':` label in a switch on `<expr>.value`",
     '#',
     `# ${words.length} words`,
     '',

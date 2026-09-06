@@ -1,0 +1,7 @@
+error[TF013]: unknown subject `nonesuch`
+ --> unknown-subject-no-suggestion.tflw:3:10
+  |
+3 |   expect nonesuch equals 200
+  |          ^^^^^^^^
+  |
+  = help: expected one of: status, duration, header, body, body text, body bytes, body csv, body pdf text, request, button, field, text, list, css, xpath, page, response, dialog message, dialog type — or, if `nonesuch` is a value you bound with `let`/`capture`, write `{nonesuch}`

@@ -158,7 +158,7 @@ import type {
   WorkersDecl,
 } from './ast.js';
 import { pollable, quantifiable } from './ast.js';
-import { type ConfigDirective, listConfigDirectives } from './spec-data.js';
+import { type ConfigDirective, listConfigDirectives, SUBJECT_FORMS, SUBJECT_OPENING_WORDS } from './spec-data.js';
 
 export interface ParseResult {
   readonly program: Program;
@@ -413,11 +413,16 @@ export const REFUSED_WORDS: Readonly<Record<RefusedSpelling, RefusedWord>> = {
  * through a spelling that is itself an error. */
 export const RETIRED_STATEMENT_KEYWORDS: readonly string[] = REFUSED_SPELLINGS.filter((w) => REFUSED_WORDS[w].position === 'step');
 const SUGGESTABLE_STATEMENT_KEYWORDS = STATEMENT_KEYWORDS.filter((k) => !RETIRED_STATEMENT_KEYWORDS.includes(k));
-const SUBJECT_KEYWORDS = ['status', 'duration', 'header', 'body', 'request', 'button', 'field', 'text', 'list', 'css', 'xpath', 'page', 'response'] as const;
+/** `M174`/`D905`. This file held its own thirteen-word copy of the subject vocabulary until
+ * 2026-09-06, and `dialog` was not in it — so from `M159` onward every `TF013` told a user that
+ * `dialog` was not a subject while `parseSubject` twenty lines below accepted `dialog message` and
+ * `dialog type` (`M174-01`). There is no copy now: both lists are read off `SUBJECTS`, which this
+ * module can already reach (`listConfigDirectives`, above), and a seventeenth subject is a compile
+ * error in the manifest rather than a wordlist someone forgets. */
 /** What may stand in subject position, for the "expected …" half of every `TF013`. `{variable}` is
  * *not* a keyword (M96/`FU-11`, D129 — one token of lookahead distinguishes it), so it cannot be
  * appended to the joined list; it is named separately here so the two error sites can't drift. */
-const SUBJECT_EXPECTATION = `expected a subject (${SUBJECT_KEYWORDS.join(', ')}) or a \`{variable}\``;
+const SUBJECT_EXPECTATION = `expected a subject (${SUBJECT_FORMS.join(', ')}) or a \`{variable}\``;
 /** The six words that may open a locator. Exported for the same reason `STATEMENT_KEYWORDS`
  * and `CONFIG_KEYS` are (D277, D444): `spec-data.ts`'s `LOCATORS` table is asserted against this
  * list rather than against prose, so a seventh locator with no manifest row — and a manifest row
@@ -4012,7 +4017,7 @@ class Parser {
         return { type: 'ResponseSubject', span: this.spanFrom(start) };
       }
       default: {
-        const hint = suggest(tok.value, SUBJECT_KEYWORDS);
+        const hint = suggest(tok.value, SUBJECT_OPENING_WORDS);
         this.error(
           Codes.UNKNOWN_SUBJECT,
           `unknown subject \`${tok.value}\``,
@@ -4022,7 +4027,7 @@ class Parser {
           // not a variable — so the brace hint is offered only when nothing was close enough.
           hint
             ? `did you mean \`${hint}\`?`
-            : `expected one of: ${SUBJECT_KEYWORDS.join(', ')} — or, if \`${tok.value}\` is a value you bound with \`let\`/\`capture\`, write \`{${tok.value}}\``,
+            : `expected one of: ${SUBJECT_FORMS.join(', ')} — or, if \`${tok.value}\` is a value you bound with \`let\`/\`capture\`, write \`{${tok.value}}\``,
         );
         return null;
       }

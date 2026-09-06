@@ -378,6 +378,28 @@ a different thing depending on which matcher a file happened to use.
   than filtering by family, so the twelve new ids reach it as an unaccounted-construct failure
   naming each one — a louder and more precise red than a version mismatch would have produced.
 
+### Added — the `subject` family in the construct manifest (M174)
+
+- **`tflw spec` gains a `subject` family — 16 constructs, and `SPEC_MANIFEST_VERSION` moves 1 → 2.**
+  The left-hand side of every assertion in the language was outside the manifest: `status`,
+  `duration`, `header "…"`, the five `body` forms, `request`, `request to "…"`, a locator in subject
+  position, `page`, `response`, `dialog message`, `dialog type` and the `{value}` subject were in
+  none of the seven families. A conformance gate keyed on the manifest could not demand any of them.
+- **This *is* a version bump, where adding twelve declarations in `M154c` was not.** Adding a family
+  changes the document's shape, and a consumer that buckets by `family` and has never heard of
+  `subject` drops sixteen constructs while staying green — the exact failure the number exists to
+  make loud.
+- **Two hand-maintained copies of the subject vocabulary are deleted, not corrected.** `parser.ts`
+  held thirteen of the sixteen and `packages/lsp-server` twelve of the nineteen written forms. Both
+  now read the manifest, which they could always have done — the parser already imports it. What a
+  user sees: `TF013`'s *"expected one of …"* names every subject rather than omitting `dialog`, and
+  editor completion offers `response`, `dialog message`, `dialog type` and the four `body`
+  sub-forms it never had.
+- **The roster is held to the AST by the compiler.** The table is typed
+  `Record<Subject['type'], SubjectEntry>`, so a seventeenth subject is a compile error rather than a
+  wordlist someone forgets; each row is *additionally* parsed and asked what node it produced,
+  because a table and a type agreeing proves only that both were edited.
+
 ### Added — `tflw spec`, the construct manifest (M154a)
 
 - **New subcommand `tflw spec [--json]`** — prints the construct manifest of *this build*: every
