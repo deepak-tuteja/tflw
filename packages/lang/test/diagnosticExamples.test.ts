@@ -153,7 +153,12 @@ test('the config probe harness runs what `tflw check` runs, or says which passes
   const start = cli.indexOf('const configEnvDiags = [');
   assert.notStrictEqual(start, -1, "loadAndValidate's config composition could not be located in cli.ts — it was renamed, and this test is the thing that was supposed to notice");
   const block = cli.slice(start, cli.indexOf('\n  ];', start));
-  const called = new Set([...block.matchAll(/\.\.\.\(?(?:await )?(check[A-Za-z]+)\(/g)].map((m) => m[1]));
+  // `flatMap` over the guard rather than `m[1]!`: under `noUncheckedIndexedAccess` a capture group reads
+  // as `string | undefined`, and a match that somehow carried no name is not a call — dropping it is the
+  // behaviour, so it is written rather than asserted away. (`M173b` wired this suite into `typecheck`.)
+  const called = new Set(
+    [...block.matchAll(/\.\.\.\(?(?:await )?(check[A-Za-z]+)\(/g)].flatMap((m) => (m[1] ? [m[1]] : [])),
+  );
 
   assert.ok(called.size > 0, 'the composition block was found but no calls were read out of it — the regex and the source have drifted apart');
 
