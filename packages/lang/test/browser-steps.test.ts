@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkProgram, parseSource } from '../src/index.js';
+import { asNode } from './__helpers__/only.js';
 
 function firstStep(source: string) {
   const { program, diagnostics } = parseSource(source);
@@ -13,19 +14,13 @@ function firstStep(source: string) {
 }
 
 test('`open "..."` parses as an OpenStmt carrying a StringLit path', () => {
-  const step = firstStep('test "ok"\n  open "/orders/{orderId}"\n') as { type: string; path: { value: string; parts: unknown[] } };
-  assert.equal(step.type, 'OpenStmt');
+  const step = asNode(firstStep('test "ok"\n  open "/orders/{orderId}"\n'), 'OpenStmt');
   assert.equal(step.path.value, '/orders/{orderId}');
   assert.ok(step.path.parts.some((p) => (p as { kind: string }).kind === 'interp'));
 });
 
 test('`click button "..."` parses a single-click on a button locator', () => {
-  const step = firstStep('test "ok"\n  click button "Add to cart"\n') as {
-    type: string;
-    kind: string;
-    locator: { kind: string; value: { value: string } };
-  };
-  assert.equal(step.type, 'ClickStmt');
+  const step = asNode(firstStep('test "ok"\n  click button "Add to cart"\n'), 'ClickStmt');
   assert.equal(step.kind, 'single');
   assert.equal(step.locator.kind, 'button');
   assert.equal(step.locator.value.value, 'Add to cart');
@@ -39,22 +34,16 @@ test('`double click`/`right click` set ClickStmt.kind accordingly', () => {
 });
 
 test('`fill field "..." with ...` parses a FillStmt', () => {
-  const step = firstStep('test "ok"\n  fill field "Email" with {email}\n') as {
-    type: string;
-    locator: { kind: string; value: { value: string } };
-    value: { type: string };
-  };
-  assert.equal(step.type, 'FillStmt');
+  const step = asNode(firstStep('test "ok"\n  fill field "Email" with {email}\n'), 'FillStmt');
   assert.equal(step.locator.kind, 'field');
   assert.equal(step.locator.value.value, 'Email');
   assert.equal(step.value.type, 'Interp');
 });
 
 test('`fill form` parses an indented `| "Field" | value |` table into FillFormStmt.rows', () => {
-  const step = firstStep(
+  const step = asNode(firstStep(
     'test "ok"\n  fill form\n    | "Name" | "Widget" |\n    | "Email" | unique email |\n',
-  ) as { type: string; rows: { field: { value: string }; value: { type: string } }[] };
-  assert.equal(step.type, 'FillFormStmt');
+  ), 'FillFormStmt');
   assert.equal(step.rows.length, 2);
   assert.equal(step.rows[0]!.field.value, 'Name');
   assert.equal(step.rows[0]!.value.type, 'StringLit');
@@ -68,59 +57,42 @@ test('`fill form` with no indented rows is an error, not a silent empty step', (
 });
 
 test('`select "..." from field "..."` parses a SelectStmt', () => {
-  const step = firstStep('test "ok"\n  select "Widget" from field "Size"\n') as {
-    type: string;
-    locator: { kind: string; value: { value: string } };
-    value: { value: string };
-  };
-  assert.equal(step.type, 'SelectStmt');
+  const step = asNode(firstStep('test "ok"\n  select "Widget" from field "Size"\n'), 'SelectStmt');
   assert.equal(step.locator.kind, 'field');
   assert.equal(step.locator.value.value, 'Size');
-  assert.equal(step.value.value, 'Widget');
+  // `M173b` — `step.value` is a `Value` union and `.value` is not on every member. The ad-hoc cast
+  // this replaced asserted the shape it wanted; narrowing says which member it requires.
+  assert.equal(asNode(step.value, 'StringLit').value, 'Widget');
 });
 
 test('`untick field "..."` always parses as the action (no assertion form exists)', () => {
-  const step = firstStep('test "ok"\n  untick field "Accept terms"\n') as { type: string; locator: { kind: string } };
-  assert.equal(step.type, 'UntickStmt');
+  const step = asNode(firstStep('test "ok"\n  untick field "Accept terms"\n'), 'UntickStmt');
   assert.equal(step.locator.kind, 'field');
 });
 
 test('`hover button "..."` parses a HoverStmt', () => {
-  const step = firstStep('test "ok"\n  hover button "Menu"\n') as { type: string; locator: { kind: string } };
-  assert.equal(step.type, 'HoverStmt');
+  const step = asNode(firstStep('test "ok"\n  hover button "Menu"\n'), 'HoverStmt');
 });
 
 test('`scroll to list "..."` parses a ScrollStmt', () => {
-  const step = firstStep('test "ok"\n  scroll to list "Cart items"\n') as { type: string; locator: { kind: string } };
-  assert.equal(step.type, 'ScrollStmt');
+  const step = asNode(firstStep('test "ok"\n  scroll to list "Cart items"\n'), 'ScrollStmt');
   assert.equal(step.locator.kind, 'list');
 });
 
 test('`press "..."` (page-level) parses a PressStmt with a null locator', () => {
-  const step = firstStep('test "ok"\n  press "Enter"\n') as { type: string; keys: { value: string }; locator: unknown };
-  assert.equal(step.type, 'PressStmt');
+  const step = asNode(firstStep('test "ok"\n  press "Enter"\n'), 'PressStmt');
   assert.equal(step.keys.value, 'Enter');
   assert.equal(step.locator, null);
 });
 
 test('`press "..." on field "..."` parses a PressStmt scoped to a locator', () => {
-  const step = firstStep('test "ok"\n  press "Enter" on field "Search"\n') as {
-    type: string;
-    keys: { value: string };
-    locator: { kind: string; value: { value: string } } | null;
-  };
-  assert.equal(step.type, 'PressStmt');
+  const step = asNode(firstStep('test "ok"\n  press "Enter" on field "Search"\n'), 'PressStmt');
   assert.equal(step.locator?.kind, 'field');
   assert.equal(step.locator?.value.value, 'Search');
 });
 
 test('`within <locator>` + an indented block parses a WithinBlock with a nested body', () => {
-  const step = firstStep('test "ok"\n  within list "Cart items"\n    click button "Remove"\n    expect text "Removed" is visible\n') as {
-    type: string;
-    locator: { kind: string };
-    body: { type: string }[];
-  };
-  assert.equal(step.type, 'WithinBlock');
+  const step = asNode(firstStep('test "ok"\n  within list "Cart items"\n    click button "Remove"\n    expect text "Removed" is visible\n'), 'WithinBlock');
   assert.equal(step.locator.kind, 'list');
   assert.deepEqual(
     step.body.map((s) => s.type),
@@ -154,28 +126,20 @@ test('an unknown locator keyword is a diagnosed error with a suggestion, not a s
 // ---- `check` is the soft assertion only (SPEC §9.1, FS-04) -----------------
 
 test('`tick <locator>` with nothing after it is the checkbox action (TickStmt)', () => {
-  const step = firstStep('test "ok"\n  tick field "Accept terms"\n') as { type: string; locator: { kind: string; value: { value: string } } };
-  assert.equal(step.type, 'TickStmt');
+  const step = asNode(firstStep('test "ok"\n  tick field "Accept terms"\n'), 'TickStmt');
   assert.equal(step.locator.kind, 'field');
   assert.equal(step.locator.value.value, 'Accept terms');
 });
 
 test('`check <locator> is <matcher>` is the soft assertion (ExpectStmt, soft: true)', () => {
-  const step = firstStep('test "ok"\n  check field "Accept terms" is checked\n') as {
-    type: string;
-    soft: boolean;
-    subject: { type: string };
-    matcher: { name: string };
-  };
-  assert.equal(step.type, 'ExpectStmt');
+  const step = asNode(firstStep('test "ok"\n  check field "Accept terms" is checked\n'), 'ExpectStmt');
   assert.equal(step.soft, true);
   assert.equal(step.subject.type, 'LocatorSubject');
   assert.equal(step.matcher.name, 'checked');
 });
 
 test('`check status equals 200` (a non-locator subject) is unaffected — still requires a matcher', () => {
-  const step = firstStep('test "ok"\n  check status equals 200\n') as { type: string; soft: boolean; subject: { type: string } };
-  assert.equal(step.type, 'ExpectStmt');
+  const step = asNode(firstStep('test "ok"\n  check status equals 200\n'), 'ExpectStmt');
   assert.equal(step.soft, true);
   assert.equal(step.subject.type, 'StatusSubject');
 });
@@ -203,19 +167,12 @@ test('`expect field "..." has value "..."` and `has count N` parse against a loc
 // ---- M3b: frames / tabs / downloads / drag-drop / wait until <ui> ---------
 
 test('`within <locator>` (no `frame`) parses WithinBlock with frame: false', () => {
-  const step = firstStep('test "ok"\n  within list "Cart items"\n    click button "Remove"\n') as { type: string; frame: boolean };
-  assert.equal(step.type, 'WithinBlock');
+  const step = asNode(firstStep('test "ok"\n  within list "Cart items"\n    click button "Remove"\n'), 'WithinBlock');
   assert.equal(step.frame, false);
 });
 
 test('`within frame <locator>` sets WithinBlock.frame: true', () => {
-  const step = firstStep('test "ok"\n  within frame css "#payment-frame"\n    click button "Pay"\n') as {
-    type: string;
-    frame: boolean;
-    locator: { kind: string; value: { value: string } };
-    body: { type: string }[];
-  };
-  assert.equal(step.type, 'WithinBlock');
+  const step = asNode(firstStep('test "ok"\n  within frame css "#payment-frame"\n    click button "Pay"\n'), 'WithinBlock');
   assert.equal(step.frame, true);
   assert.equal(step.locator.kind, 'css');
   assert.equal(step.locator.value.value, '#payment-frame');
@@ -226,8 +183,7 @@ test('`within frame <locator>` sets WithinBlock.frame: true', () => {
 });
 
 test('`switch to new tab` + an indented block parses a SwitchToNewTabBlock with a nested body', () => {
-  const step = firstStep('test "ok"\n  switch to new tab\n    click text "Open in new tab"\n') as { type: string; body: { type: string }[] };
-  assert.equal(step.type, 'SwitchToNewTabBlock');
+  const step = asNode(firstStep('test "ok"\n  switch to new tab\n    click text "Open in new tab"\n'), 'SwitchToNewTabBlock');
   assert.deepEqual(
     step.body.map((s) => s.type),
     ['ClickStmt'],
@@ -235,23 +191,16 @@ test('`switch to new tab` + an indented block parses a SwitchToNewTabBlock with 
 });
 
 test('`switch to tab N` parses a SwitchToTabStmt carrying the 1-based index', () => {
-  const step = firstStep('test "ok"\n  switch to tab 2\n') as { type: string; index: number };
-  assert.equal(step.type, 'SwitchToTabStmt');
+  const step = asNode(firstStep('test "ok"\n  switch to tab 2\n'), 'SwitchToTabStmt');
   assert.equal(step.index, 2);
 });
 
 test('`close tab` parses a zero-field CloseTabStmt', () => {
-  const step = firstStep('test "ok"\n  close tab\n') as { type: string };
-  assert.equal(step.type, 'CloseTabStmt');
+  const step = asNode(firstStep('test "ok"\n  close tab\n'), 'CloseTabStmt');
 });
 
 test('`download as <name>` + an indented block parses a DownloadBlock', () => {
-  const step = firstStep('test "ok"\n  download as file\n    click text "Download report"\n') as {
-    type: string;
-    name: string;
-    body: { type: string }[];
-  };
-  assert.equal(step.type, 'DownloadBlock');
+  const step = asNode(firstStep('test "ok"\n  download as file\n    click text "Download report"\n'), 'DownloadBlock');
   assert.equal(step.name, 'file');
   assert.deepEqual(
     step.body.map((s) => s.type),
@@ -265,12 +214,7 @@ test('`download as <name>` with no indented body is an error, not a silent empty
 });
 
 test('`drag <locator> to <locator>` parses a DragStmt with both locators', () => {
-  const step = firstStep('test "ok"\n  drag text "First item" to text "Second item"\n') as {
-    type: string;
-    from: { kind: string; value: { value: string } };
-    to: { kind: string; value: { value: string } };
-  };
-  assert.equal(step.type, 'DragStmt');
+  const step = asNode(firstStep('test "ok"\n  drag text "First item" to text "Second item"\n'), 'DragStmt');
   assert.equal(step.from.kind, 'text');
   assert.equal(step.from.value.value, 'First item');
   assert.equal(step.to.kind, 'text');
@@ -278,24 +222,14 @@ test('`drag <locator> to <locator>` parses a DragStmt with both locators', () =>
 });
 
 test('`drop file "..." onto <locator>` parses a DropFileStmt', () => {
-  const step = firstStep('test "ok"\n  drop file "./receipt.txt" onto css "#dropzone"\n') as {
-    type: string;
-    filePath: { value: string };
-    locator: { kind: string; value: { value: string } };
-  };
-  assert.equal(step.type, 'DropFileStmt');
+  const step = asNode(firstStep('test "ok"\n  drop file "./receipt.txt" onto css "#dropzone"\n'), 'DropFileStmt');
   assert.equal(step.filePath.value, './receipt.txt');
   assert.equal(step.locator.kind, 'css');
   assert.equal(step.locator.value.value, '#dropzone');
 });
 
 test('`wait until <locator> <matcher>` parses a WaitUntilUiStmt (not the api form)', () => {
-  const step = firstStep('test "ok"\n  wait until button "Submit" is enabled\n') as {
-    type: string;
-    subject: { type: string; locator: { kind: string; value: { value: string } } };
-    matcher: { name: string };
-  };
-  assert.equal(step.type, 'WaitUntilUiStmt');
+  const step = asNode(firstStep('test "ok"\n  wait until button "Submit" is enabled\n'), 'WaitUntilUiStmt');
   assert.equal(step.subject.type, 'LocatorSubject');
   assert.equal(step.subject.locator.kind, 'button');
   assert.equal(step.subject.locator.value.value, 'Submit');
@@ -316,8 +250,7 @@ test('`wait until` against a subject that cannot change between polls is a diagn
 });
 
 test('`wait until api …` still parses as WaitUntilApiStmt (unaffected by the `wait until <ui>` dispatch)', () => {
-  const step = firstStep('test "ok"\n  wait until api GET /orders/{orderId}\n    expect body.status equals "shipped"\n') as { type: string };
-  assert.equal(step.type, 'WaitUntilApiStmt');
+  const step = asNode(firstStep('test "ok"\n  wait until api GET /orders/{orderId}\n    expect body.status equals "shipped"\n'), 'WaitUntilApiStmt');
 });
 
 // ---- FS-05 (milestone B1): `wait until … for <duration>` -------------------
@@ -329,12 +262,7 @@ test('`wait until api …` still parses as WaitUntilApiStmt (unaffected by the `
 // reach at all (pacing and TTL are not conditions, so no amount of polling expresses them).
 
 test('FS-05: `wait until <locator> <matcher> for <duration>` parses, carrying the hold window in ms', () => {
-  const step = firstStep('test "ok"\n  wait until text "Error" is hidden for 2s\n') as {
-    type: string;
-    matcher: { name: string };
-    holdMs: number | null;
-  };
-  assert.equal(step.type, 'WaitUntilUiStmt');
+  const step = asNode(firstStep('test "ok"\n  wait until text "Error" is hidden for 2s\n'), 'WaitUntilUiStmt');
   assert.equal(step.matcher.name, 'hidden');
   assert.equal(step.holdMs, 2000);
 });
@@ -375,8 +303,7 @@ test('FS-05: `for <duration>` on the `api` form is refused by name, saying what 
 // ---- M3c: `screenshot "<name>"` --------------------------------------------
 
 test('`screenshot "..."` parses a ScreenshotStmt carrying a StringLit name', () => {
-  const step = firstStep('test "ok"\n  screenshot "checkout-step-2"\n') as { type: string; name: { value: string } };
-  assert.equal(step.type, 'ScreenshotStmt');
+  const step = asNode(firstStep('test "ok"\n  screenshot "checkout-step-2"\n'), 'ScreenshotStmt');
   assert.equal(step.name.value, 'checkout-step-2');
 });
 
@@ -437,12 +364,10 @@ test('`header "..." of request to "..."` parses a HeaderSubject carrying the `of
 });
 
 test('`body.<path> of request to "..."` and `body text of request to "..."` carry the `of` ref', () => {
-  const body = firstStep('test "ok"\n  expect body.id of request to "/api/orders" equals "abc"\n') as {
-    subject: { type: string; path: { name: string }[]; of: { urlPattern: { value: string } } | null };
-  };
-  assert.equal(body.subject.type, 'BodySubject');
-  assert.deepEqual(body.subject.path, [{ kind: 'prop', name: 'id' }]);
-  assert.equal(body.subject.of?.urlPattern.value, '/api/orders');
+  const body = asNode(firstStep('test "ok"\n  expect body.id of request to "/api/orders" equals "abc"\n'), 'ExpectStmt');
+  const subject = asNode(body.subject, 'BodySubject');
+  assert.deepEqual(subject.path, [{ kind: 'prop', name: 'id' }]);
+  assert.equal(subject.of?.urlPattern.value, '/api/orders');
 
   const text = firstStep('test "ok"\n  expect body text of request to "/api/orders" contains "ok"\n') as {
     subject: { type: string; of: { urlPattern: { value: string } } | null };
@@ -463,14 +388,7 @@ test('`of request` with no `to` is a diagnosed error, not a silent parse', () =>
 });
 
 test('`stub <METHOD> "<url>" respond status <code>` parses a StubStmt with no body', () => {
-  const step = firstStep('test "ok"\n  stub GET "/api/orders/**" respond status 500\n') as {
-    type: string;
-    method: string;
-    urlPattern: { value: string };
-    status: { value: number };
-    body: unknown;
-  };
-  assert.equal(step.type, 'StubStmt');
+  const step = asNode(firstStep('test "ok"\n  stub GET "/api/orders/**" respond status 500\n'), 'StubStmt');
   assert.equal(step.method, 'GET');
   assert.equal(step.urlPattern.value, '/api/orders/**');
   assert.equal(step.status.value, 500);
@@ -478,14 +396,12 @@ test('`stub <METHOD> "<url>" respond status <code>` parses a StubStmt with no bo
 });
 
 test('`stub` with `body {...}` parses the object literal onto StubStmt.body', () => {
-  const step = firstStep('test "ok"\n  stub POST "/api/payments/**" respond status 200 body { approved: true }\n') as {
-    type: string;
-    method: string;
-    body: { fields: { key: string }[] } | null;
-  };
-  assert.equal(step.type, 'StubStmt');
+  const step = asNode(firstStep('test "ok"\n  stub POST "/api/payments/**" respond status 200 body { approved: true }\n'), 'StubStmt');
   assert.equal(step.method, 'POST');
-  assert.equal(step.body?.fields[0]?.key, 'approved');
+  // `step.body` is `ObjectLit | ArrayLit`; only the former has `fields`. The test is about an
+  // object literal, so it says so.
+  assert.ok(step.body);
+  assert.equal(asNode(step.body, 'ObjectLit').fields[0]?.key, 'approved');
 });
 
 test('`stub` with an unknown HTTP method is a diagnosed error with a suggestion', () => {
@@ -530,8 +446,7 @@ test('`expect page not has no critical a11y violations` negates via the ordinary
 });
 
 test('`check page has no a11y violations` parses as the soft ExpectStmt form, same as any other subject', () => {
-  const step = firstStep('test "ok"\n  check page has no a11y violations\n') as { type: string; soft: boolean };
-  assert.equal(step.type, 'ExpectStmt');
+  const step = asNode(firstStep('test "ok"\n  check page has no a11y violations\n'), 'ExpectStmt');
   assert.equal(step.soft, true);
 });
 
@@ -581,12 +496,7 @@ test('one or more trailing `mask <locator>` clauses parse into ExpectStmt.masks,
 });
 
 test('`mask <locator>` is also accepted after `check ... matches snapshot`, the soft ExpectStmt form', () => {
-  const step = firstStep('test "ok"\n  check page matches snapshot "checkout-page" mask css ".timestamp"\n') as {
-    type: string;
-    soft: boolean;
-    masks: readonly unknown[];
-  };
-  assert.equal(step.type, 'ExpectStmt');
+  const step = asNode(firstStep('test "ok"\n  check page matches snapshot "checkout-page" mask css ".timestamp"\n'), 'ExpectStmt');
   assert.equal(step.soft, true);
   assert.equal(step.masks.length, 1);
 });
@@ -631,8 +541,7 @@ test('a bare `dialog` subject is refused, naming both halves rather than default
 // ---- M159c/D800: `accept dialog with` ------------------------------------------------------
 
 test('`accept dialog with` carries the prompt answer, and a bare arming carries none', () => {
-  const withText = firstStep('test "ok"\n  accept dialog with "Blue"\n') as { type: string; text?: { type: string; value: string } };
-  assert.equal(withText.type, 'AcceptDialogStmt');
+  const withText = asNode(firstStep('test "ok"\n  accept dialog with "Blue"\n'), 'AcceptDialogStmt');
   assert.equal(withText.text?.type, 'StringLit');
   assert.equal(withText.text?.value, 'Blue');
   // `undefined`, not `''`. The distinction is what lets `TF080` fire only where an answer was

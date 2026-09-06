@@ -16,6 +16,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseConfigSource, Codes } from '../src/index.js';
+import { only } from './__helpers__/only.js';
 
 const dupes = (source: string) => {
   const { diagnostics } = parseConfigSource(source);
@@ -26,15 +27,15 @@ const dupes = (source: string) => {
 
 test('a key declared twice in one block is `TF081`, reported at the second line', () => {
   const diags = dupes('defaults\n  timeout step 10s\n  timeout step 30s\n');
-  assert.equal(diags.length, 1);
-  assert.equal(diags[0].severity, 'error');
-  assert.equal(diags[0].message, 'duplicate config key `timeout step`');
+  const diag = only(diags);
+  assert.equal(diag.severity, 'error');
+  assert.equal(diag.message, 'duplicate config key `timeout step`');
   // The *second* line, which is the one to delete — not the first, and not the block.
-  assert.equal(diags[0].span.start.line, 3);
+  assert.equal(diag.span.start.line, 3);
 });
 
 test('the hint names the key, the block, and what the second line did to the first', () => {
-  const [diag] = dupes('env ci default\n  api "http://a"\n  api "http://b"\n');
+  const diag = only(dupes('env ci default\n  api "http://a"\n  api "http://b"\n'));
   assert.match(diag.hint ?? '', /`env ci` sets `api` once/);
   assert.match(diag.hint ?? '', /discarded without a word/);
 });

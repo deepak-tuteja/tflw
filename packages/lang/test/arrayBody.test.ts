@@ -38,6 +38,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource, checkUnknownVariables } from '../src/index.js';
+import { asNode } from './__helpers__/only.js';
 
 /** Diagnostic codes from a parse of a whole file. */
 const codes = (source: string): string[] => parseSource(source).diagnostics.map((d) => d.code);
@@ -59,21 +60,18 @@ test('an inline api body may be a top-level array', () => {
 
 test('the array reaches the AST as an ArrayLit, not as an object with no fields', () => {
   const { program } = parseSource('test "t"\n  api POST /o body [1, 2]\n');
-  const step = program.tests[0]?.body[0];
-  assert.equal(step?.type, 'ApiStep');
-  const body = (step as { body: { type: string; value: { type: string; elements: unknown[] } } }).body;
-  assert.equal(body.type, 'InlineBody');
-  assert.equal(body.value.type, 'ArrayLit');
-  assert.equal(body.value.elements.length, 2);
+  const step = asNode(program.tests[0]!.body[0]!, 'ApiStep');
+  const body = asNode(step.body!, 'InlineBody');
+  const value = asNode(body.value, 'ArrayLit');
+  assert.equal(value.elements.length, 2);
 });
 
 test('the object form is unchanged, and still lands on the same field', () => {
   assert.deepEqual(stepCodes('api POST /o body { a: 1 }'), []);
   const { program } = parseSource('test "t"\n  api POST /o body { a: 1 }\n');
-  const step = program.tests[0]?.body[0];
-  const body = (step as { body: { value: { type: string; fields: unknown[] } } }).body;
-  assert.equal(body.value.type, 'ObjectLit');
-  assert.equal(body.value.fields.length, 1);
+  const step = asNode(program.tests[0]!.body[0]!, 'ApiStep');
+  const value = asNode(asNode(step.body!, 'InlineBody').value, 'ObjectLit');
+  assert.equal(value.fields.length, 1);
 });
 
 test('a stubbed response body may be a top-level array — the site the row did not name', () => {

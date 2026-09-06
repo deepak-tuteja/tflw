@@ -7,6 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource, checkWorkloadTests } from '../src/index.js';
+import { asNode } from './__helpers__/only.js';
 
 function parseWorkloadTest(source: string) {
   const { program, diagnostics } = parseSource(source);
@@ -41,14 +42,13 @@ test('`step users` with a single `to N for <dur>` stage parses as StepUsersWorkl
   assert.deepEqual(t.workload, {
     ...t.workload,
     type: 'StepUsersWorkload',
-    stages: [{ ...(t.workload as { stages: unknown[] }).stages[0]!, type: 'Stage', mode: 'jump', target: 10, durationMs: 10_000 }],
+    stages: [{ ...asNode(t.workload!, 'StepUsersWorkload').stages[0]!, type: 'Stage', mode: 'jump', target: 10, durationMs: 10_000 }],
   });
 });
 
 test('`step rps` with multiple stages parses each in order as StepRpsWorkload', () => {
   const t = parseWorkloadTest('test "S"\n  step rps\n    to 50 for 10s\n    to 100 for 10s\n    to 150 for 10s\n  api GET /health\n');
-  const w = t.workload as { type: string; stages: { mode: string; target: number; durationMs: number }[] };
-  assert.equal(w.type, 'StepRpsWorkload');
+  const w = asNode(t.workload!, 'StepRpsWorkload');
   assert.deepEqual(
     w.stages.map((s) => ({ mode: s.mode, target: s.target, durationMs: s.durationMs })),
     [
@@ -75,8 +75,7 @@ test('`spike users` with a baseline/ramp-up/hold/ramp-down schedule parses as Sp
   const t = parseWorkloadTest(
     'test "S"\n  spike users\n    hold 5 for 5s\n    to 100 over 5s\n    hold 100 for 10s\n    to 5 over 5s\n  api GET /health\n',
   );
-  const w = t.workload as { type: string; stages: { mode: string; target: number; durationMs: number }[] };
-  assert.equal(w.type, 'SpikeUsersWorkload');
+  const w = asNode(t.workload!, 'SpikeUsersWorkload');
   assert.deepEqual(
     w.stages.map((s) => ({ mode: s.mode, target: s.target, durationMs: s.durationMs })),
     [

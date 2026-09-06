@@ -17,6 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource, parseConfigSource, checkProgram, checkConfigDeclaredEnvRefs, checkConfigBracedEnvRefs, Codes } from '../src/index.js';
+import { only } from './__helpers__/only.js';
 
 const check = (source: string, requiredEnv?: readonly string[]) =>
   checkProgram(parseSource(source).program, requiredEnv === undefined ? {} : { requiredEnv });
@@ -32,10 +33,11 @@ const READS_A_SECRET = 'test "t"\n  api GET /health\n  expect body.status equals
 test('an `env()` no `require env` line declares is `TF077`, an error, at the reference', () => {
   const diags = check(READS_A_SECRET, []);
   assert.deepEqual(diags.map((d) => d.code), [Codes.UNDECLARED_ENV_REF]);
-  assert.equal(diags[0].severity, 'error');
-  assert.match(diags[0].message, /`P_ROGUE` is read here but no `require env` line declares it/);
+  const diag = only(diags);
+  assert.equal(diag.severity, 'error');
+  assert.match(diag.message, /`P_ROGUE` is read here but no `require env` line declares it/);
   // The reference's own line, which is the one to look at — not the file, not the config.
-  assert.equal(diags[0].span.start.line, 3);
+  assert.equal(diag.span.start.line, 3);
 });
 
 test('a declared reference is silent — the positive control for every negative below', () => {
@@ -61,18 +63,18 @@ test('a declared name nothing reads stays silent, permanently (`D776`)', () => {
 });
 
 test('a near-miss against a declared name is offered as the repair', () => {
-  const [diag] = check('test "t"\n  api GET /x\n  expect body.k equals env(API_KEYY)\n', ['API_KEY']);
+  const diag = only(check('test "t"\n  api GET /x\n  expect body.k equals env(API_KEYY)\n', ['API_KEY']));
   assert.match(diag.hint ?? '', /did you mean `API_KEY`\?/);
 });
 
 test('with no `require env` line at all the hint says so, and names the line to add', () => {
-  const [diag] = check(READS_A_SECRET, []);
+  const diag = only(check(READS_A_SECRET, []));
   assert.match(diag.hint ?? '', /this config has no `require env` line/);
   assert.match(diag.hint ?? '', /require env P_ROGUE/);
 });
 
 test('with declarations present the hint lists them, and says what the run does without one', () => {
-  const [diag] = check(READS_A_SECRET, ['A_TOKEN', 'B_TOKEN']);
+  const diag = only(check(READS_A_SECRET, ['A_TOKEN', 'B_TOKEN']));
   assert.match(diag.hint ?? '', /today declares: A_TOKEN, B_TOKEN/);
   assert.match(diag.hint ?? '', /dies at this step, mid-suite/);
 });
@@ -110,8 +112,9 @@ test('the config dialect is checked too — the position the rule was built from
 
 test('`"{env(NAME)}"` in a string is `TF078`, a warning, and names the variable', () => {
   const parsed = parseConfigSource('defaults\n  header "X-Token" is "{env(P_TOKEN)}"\n');
-  const [diag, ...rest] = checkConfigBracedEnvRefs(parsed.config);
-  assert.deepEqual(rest, []);
+  // `assert.deepEqual(rest, [])` said "exactly one" in a second statement; `only` says it in the
+  // same one, and reports the count when it is wrong instead of throwing on `undefined`.
+  const diag = only(checkConfigBracedEnvRefs(parsed.config));
   assert.equal(diag.code, Codes.BRACED_ENV_REF);
   assert.equal(diag.severity, 'warning');
   assert.match(diag.message, /`\{env\(P_TOKEN\)\}` inside a string is literal text, not a secret/);

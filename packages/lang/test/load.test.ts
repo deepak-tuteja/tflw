@@ -169,7 +169,12 @@ test('`M157c` (`D781`): `cleanup` is refused by name, not by falling through to 
   // No `tflw migrate` payload, and that is `D781`'s deliberate choice rather than an omission: the
   // other three retirements are word-for-word swaps, this one is a deletion, and `migrate` splices
   // the payload over the word's own span — an empty splice is a shape nothing here has shipped.
-  assert.equal(refusal.replacement, undefined);
+  //
+  // `M173b`: this read `refusal.replacement`, which `Diagnostic` does not have — the field is
+  // `deprecation.replacement` (`diagnostic.ts:39`). So it compared `undefined` to `undefined` and
+  // passed no matter what the checker did: `M141`'s vacuous-assertion class, sitting under a comment
+  // that states exactly the claim it was failing to make.
+  assert.equal(refusal.deprecation, undefined);
   // The line is consumed, so the `api` step after it still parses and the workload line still
   // registers. A refusal that also derailed the rest of the block would report one mistake as
   // several, which is the failure mode `TF011`'s cascade is filed for.

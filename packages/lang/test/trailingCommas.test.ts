@@ -21,6 +21,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '../src/index.js';
+import { asNode } from './__helpers__/only.js';
 
 /** Diagnostic codes from a parse of a whole file. */
 const codes = (source: string): string[] => parseSource(source).diagnostics.map((d) => d.code);
@@ -35,10 +36,8 @@ test('a call argument list accepts a trailing comma', () => {
 
 test('the trailing comma does not become an argument', () => {
   const { program } = parseSource('test "t"\n  let a = sign("x",)\n');
-  const decl = program.tests[0]?.body[0];
-  assert.equal(decl?.type, 'LetStmt');
-  const value = (decl as { value: { type: string; args: unknown[] } }).value;
-  assert.equal(value.type, 'CallExpr');
+  const decl = asNode(program.tests[0]!.body[0]!, 'LetStmt');
+  const value = asNode(decl.value, 'CallExpr');
   assert.equal(value.args.length, 1, 'the comma is a separator, not an empty slot');
 });
 
