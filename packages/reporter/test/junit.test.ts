@@ -187,7 +187,11 @@ test('each suite times its own testcases; the root reports the run wall clock, n
 
 // -- M56 (Phase 3, D119): a WorkloadTestResult entry, folded in from the old load-junit.ts --------
 
-const emptyMetrics = { iterations: 0, failures: 0, errorRate: 0, durations: { min: 0, max: 0, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 }, histogram: [], timeline: [] };
+// `M173a` — `assertions` and `successful` are required on `LoadMetrics` and this fixture had
+// neither, so it rendered `assertions: undefined` (`M173-01`). A workload scope that asserted
+// nothing is `0`; `null` would mean "this scope cannot answer", which is endpoint scope only.
+const zeroDurations = { min: 0, max: 0, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 };
+const emptyMetrics = { iterations: 0, failures: 0, assertions: 0, errorRate: 0, durations: zeroDurations, histogram: [], timeline: [], successful: { iterations: 0, durations: zeroDurations, histogram: [] } };
 
 const workloadTest: WorkloadTestResult = {
   kind: 'workload',

@@ -47,8 +47,15 @@ test('M121/D208: the pool is unbounded — a bounded one would queue arrivals in
   // let queues form at the *target*.
   assert.equal(agents.http.maxSockets, Infinity, 'a capped http pool queues open-model arrivals in the client');
   assert.equal(agents.https.maxSockets, Infinity, 'a capped https pool queues open-model arrivals in the client');
-  assert.equal(agents.http.options.keepAlive, true);
-  assert.equal(agents.https.options.keepAlive, true);
+  // `M173d3` — `Agent#options` exists at runtime and `@types/node` does not declare it, so this is
+  // a cast at the boundary of a third-party type rather than a claim about our own. Kept as an
+  // assertion because `keepAlive` is the other half of the decision above: an unbounded pool that
+  // does not reuse connections re-opens a socket per arrival, which lands in the same measured
+  // window `maxSockets` is here to keep clear.
+  const agentOptions = (a: typeof agents.http | typeof agents.https): { keepAlive?: boolean } =>
+    (a as unknown as { options: { keepAlive?: boolean } }).options;
+  assert.equal(agentOptions(agents.http).keepAlive, true);
+  assert.equal(agentOptions(agents.https).keepAlive, true);
 
   destroyKeepAliveAgents(agents);
 });

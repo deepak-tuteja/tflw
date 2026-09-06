@@ -240,7 +240,18 @@ async function run(source: string, cfg: ResolvedConfig = resolved()): Promise<Ru
   assert.deepEqual(diagnostics, [], `fixture did not parse:\n${source}`);
   const { report } = await runProgram(program, cfg, {
     source,
-    reproSink: { finding: (f) => findings.push(f) },
+    reproSink: {
+      // `M173d3` — the sink's parameter is `ReproSubject`, which is
+      // `AuthzFinding | InputHandlingFinding`, and this file's assertions read `AuthzFinding`
+      // fields (`principal`, `owners`). Every case here provokes an authorization finding, so the
+      // narrowing is true; it had just never been *stated*, and an input-handling finding arriving
+      // on this channel would have reached `assert.deepEqual(r.findings[0]!.owners, ['shopper'])`
+      // as `undefined` and read as a wrong owner rather than as the wrong kind of finding.
+      finding: (f) => {
+        assert.equal(f.kind, 'authorization', `this file reads AuthzFinding fields, and got a ${f.kind} finding`);
+        findings.push(f as AuthzFinding);
+      },
+    },
     scanSink,
   });
   const t = report.tests[0]!;

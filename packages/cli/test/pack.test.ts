@@ -131,7 +131,7 @@ test('the tarball attributes every third-party package its own bundles inlined (
   // naming the dropped package). The tarball-member assertion above covers the other direction —
   // the file existing but never being packaged.
   const meta = JSON.parse(await readFile(join(cliRoot, '.bundle-meta.json'), 'utf8')) as { inputs: Record<string, unknown> };
-  const expected = collectNotices(meta as never).map((n) => n.name);
+  const expected = collectNotices(meta as never).map((n: { name: string }) => n.name);
   assert.ok(expected.length > 0, 'the metafile should report inlined packages — a zero here means the guard is measuring nothing');
 
   const { stdout: notices } = await execFileAsync('tar', ['-xzOf', tarballPath, 'package/THIRD-PARTY-NOTICES.md'], { maxBuffer: 4 * 1024 * 1024 });

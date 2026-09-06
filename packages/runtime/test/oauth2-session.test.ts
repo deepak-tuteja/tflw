@@ -12,6 +12,7 @@ import { runProgram, SessionCache } from '../src/interpreter.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import type { ResolvedConfig } from '../src/types.js';
 import { startFixtureServer, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 function configWithOauth2Session(baseUrl: string, tokenPath = '/oauth/token'): ResolvedConfig {
   const configSource = `env test default
@@ -167,7 +168,7 @@ test('an oauth2 token request that fails (non-2xx) fails every test opting into 
     const { report } = await runProgram(program, config, { source });
 
     assert.equal(report.ok, false);
-    assert.match(report.tests[0]!.error ?? '', /session "admin" failed to establish/);
+    assert.match(asEntry(report.tests[0], 'functional').error ?? '', /session "admin" failed to establish/);
     assert.equal(server.received.has('/orders'), false, 'the test body must never run once its session fails');
 
     await server.close();
@@ -185,7 +186,7 @@ test('a token response missing `access_token` fails the session clearly', () =>
     const { report } = await runProgram(program, config, { source });
 
     assert.equal(report.ok, false);
-    assert.match(report.tests[0]!.error ?? '', /access_token/);
+    assert.match(asEntry(report.tests[0], 'functional').error ?? '', /access_token/);
 
     await server.close();
   }));

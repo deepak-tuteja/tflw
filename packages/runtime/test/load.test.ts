@@ -909,11 +909,11 @@ test('mergeLoadShardReports: pools iterations/failures across shards and re-eval
   for (const v of [500, 520, 510]) slowHistogram.record(v);
 
   const shardFast: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), successful: allSucceeded(fastHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: fastHistogram.count, failures: 0, sum: fastHistogram.sum, min: fastHistogram.min, max: fastHistogram.max, histogram: fastHistogram.toBuckets(), successful: allSucceeded(fastHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, assertions: 0, teardownSkipped: 0, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const shardSlow: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), successful: allSucceeded(slowHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: slowHistogram.count, failures: 0, sum: slowHistogram.sum, min: slowHistogram.min, max: slowHistogram.max, histogram: slowHistogram.toBuckets(), successful: allSucceeded(slowHistogram), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, assertions: 0, teardownSkipped: 0, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
 
@@ -930,13 +930,46 @@ test('mergeLoadShardReports: pools iterations/failures across shards and re-eval
   assert.equal(s.metrics.iterations, 8, 'both shards\' iterations land in the merged scenario row');
 });
 
+test('mergeLoadShardReports: `assertions` and `teardownSkipped` are summed across shards, not taken from one', () => {
+  // `M173d2`. `LoadShardScenarioResult` requires both fields (`interpreter.ts:1903`/`:1906`) and
+  // every shard fixture in this file omitted both, because nothing typechecked these literals
+  // (`M155-01`). `mergeLoadShardReports` sums them unguarded — `assertions += match.assertions` —
+  // so each of those fixtures was feeding `0 + undefined` into `buildLoadMetrics` and every merged
+  // report they built carried `metrics.assertions: NaN`. Nothing noticed: the four assertions on
+  // `metrics.assertions` in this file are all on the single-process path, and the three on
+  // `teardownSkipped` are too. **The shard-merge sum of either field was asserted nowhere.**
+  //
+  // `teardownSkipped` survived its own `NaN` by accident and not by design: `finalizeScenario`
+  // writes the field only when `teardownSkipped > 0`, and `NaN > 0` is false, so the field was
+  // omitted rather than wrong. That is a guard against a value it was never meant to see.
+  //
+  // The two shards carry DIFFERENT counts on purpose. Equal counts would pass against a merge that
+  // read one shard and ignored the other, which is the failure this is here to catch; and the two
+  // sums (11 and 3) are distinct from each other and from `iterations` (8), so no assertion here
+  // can be satisfied by the wrong number.
+  const source = 'test "S"\n  ramp to 1 users over 1s\n  api GET /health\n  expect status equals 200\n';
+  const { program } = parseSource(source);
+  const h = new LatencyHistogram();
+  for (const v of [10, 11, 12, 13]) h.record(v);
+  const shard = (assertions: number, teardownSkipped: number): LoadShardResult => ({
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 4, failures: 0, sum: h.sum, min: h.min, max: h.max, histogram: h.toBuckets(), successful: allSucceeded(h), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, assertions, teardownSkipped, endpoints: [] }],
+    selfDiagnosis: HEALTHY_DIAGNOSIS,
+  });
+
+  const merged = mergeLoadShardReports(program, [shard(7, 2), shard(4, 1)], { startedAt: new Date().toISOString(), durationMs: 1000, seed: 42, now: new Date().toISOString() });
+  const s = merged.scenarios[0]!;
+  assert.equal(s.metrics.iterations, 8, 'the control: iterations pool, so both shards were read');
+  assert.equal(s.metrics.assertions, 11, 'every shard asserted its own share and the run\'s count is the total');
+  assert.equal(s.teardownSkipped, 3, '`D785` — each shard skipped its own teardowns, and the run skipped both lots');
+});
+
 test('mergeLoadShardReports: a shard missing a scenario entirely (its striped share rounded to 0) is tolerated, not an error', () => {
   const source = 'test "A"\n  ramp to 1 users over 1s\n  api GET /health\n\ntest "B"\n  ramp to 1 users over 1s\n  api GET /health\n';
   const { program } = parseSource(source);
   const hA = new LatencyHistogram();
   hA.record(5);
   const shardWithOnlyA: LoadShardResult = {
-    scenarios: [{ name: 'A', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), successful: allSucceeded(hA), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'A', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: hA.toBuckets(), successful: allSucceeded(hA), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, assertions: 0, teardownSkipped: 0, endpoints: [] }],
     selfDiagnosis: HEALTHY_DIAGNOSIS,
   };
   const merged = mergeLoadShardReports(program, [shardWithOnlyA], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -954,7 +987,7 @@ test('mergeLoadShardReports: selfDiagnosis.saturated is true if any shard satura
   const empty = new LatencyHistogram();
   empty.record(1);
   const shard = (saturated: boolean): LoadShardResult => ({
-    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), successful: allSucceeded(empty), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: empty.toBuckets(), successful: allSucceeded(empty), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, assertions: 0, teardownSkipped: 0, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated },
   });
   const merged = mergeLoadShardReports(program, [shard(false), shard(true)], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -987,6 +1020,12 @@ test('a workload run reports a plausible selfDiagnosis (single-process, unsharde
   const source = 'test "S"\n  ramp to 1 users over 50ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
+  // `M173d2` — this test is named for `selfDiagnosis` being *reported* and only ever asserted its
+  // contents. `RunReport.selfDiagnosis` is optional (`types.ts:711`, present only when a run had a
+  // workload-bearing test that got to run), so an absent one would have made the three assertions
+  // below throw a `TypeError` rather than fail a claim, and read as a broken test rather than a
+  // report that lost a field. The presence claim is the title's own half.
+  assert.ok(report.selfDiagnosis, 'a workload run had a workload-bearing test, so it must carry a diagnosis');
   assert.equal(typeof report.selfDiagnosis.saturated, 'boolean');
   assert.ok(report.selfDiagnosis.avgEventLoopLagMs >= 0);
   assert.ok(report.selfDiagnosis.cpuPercent >= 0);
@@ -1020,6 +1059,7 @@ test('a workload run: inconclusive mirrors selfDiagnosis.saturated', async () =>
   const source = 'test "S"\n  ramp to 1 users over 20ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
+  assert.ok(report.selfDiagnosis, 'the mirroring claim below is vacuous without one to mirror');
   assert.equal(report.inconclusive, report.selfDiagnosis.saturated);
   assert.equal(report.aborted, undefined, 'a run that reaches its planned end must not be flagged aborted');
   await server.close();
@@ -1031,7 +1071,7 @@ test('mergeLoadShardReports: inconclusive mirrors the merged selfDiagnosis.satur
   const h = new LatencyHistogram();
   h.record(1);
   const shard: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), successful: allSucceeded(h), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 1, min: 1, max: 1, histogram: h.toBuckets(), successful: allSucceeded(h), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, assertions: 0, teardownSkipped: 0, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
   };
   const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -1055,7 +1095,7 @@ test('`M146-01` (`M147f`): the two ungradability channels compose, and neither o
   h.record(5);
   const noneSucceeded: SerializedHistogram = { iterations: 0, sum: 0, min: 0, max: 0, histogram: new LatencyHistogram().toBuckets() };
   const shard: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 1, sum: 5, min: 5, max: 5, histogram: h.toBuckets(), successful: noneSucceeded, timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 1, sum: 5, min: 5, max: 5, histogram: h.toBuckets(), successful: noneSucceeded, timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, assertions: 1, teardownSkipped: 0, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
   };
   const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });
@@ -1076,7 +1116,7 @@ test('`M146-01` (`M147f`): a saturated run does NOT flip a threshold it can grad
   const h = new LatencyHistogram();
   h.record(5);
   const shard: LoadShardResult = {
-    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: h.toBuckets(), successful: allSucceeded(h), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, endpoints: [] }],
+    scenarios: [{ name: 'S', workload: { shape: 'ramp', model: 'closed', target: 1, overMs: 1000 }, iterations: 1, failures: 0, sum: 5, min: 5, max: 5, histogram: h.toBuckets(), successful: allSucceeded(h), timeline: [], early: { count: 0, sum: 0 }, late: { count: 0, sum: 0 }, assertions: 1, teardownSkipped: 0, endpoints: [] }],
     selfDiagnosis: { ...HEALTHY_DIAGNOSIS, saturated: true },
   };
   const merged = mergeLoadShardReports(program, [shard], { startedAt: new Date().toISOString(), durationMs: 100, seed: 1, now: new Date().toISOString() });

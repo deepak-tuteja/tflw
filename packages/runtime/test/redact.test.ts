@@ -10,6 +10,7 @@ import { runProgram } from '../src/interpreter.js';
 import { Redactor, redactEvent, redactReport } from '../src/redact.js';
 import { exhaustiveEntry, type RunEvent, type RunReport } from '../src/types.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('Redactor.redact masks a registered secret wherever it appears verbatim', () => {
   const r = new Redactor();
@@ -57,7 +58,7 @@ test('a secret appearing in an early response is masked by the final report pass
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source, environ });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const whoamiStep = report.tests[0]!.steps.find((s) => s.detail?.includes('/whoami'))!;
+  const whoamiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.detail?.includes('/whoami'))!;
   assert.doesNotMatch(whoamiStep.response!.bodyText, /p@ssw0rd-xyz/, 'the final report pass must retroactively mask the earlier response');
   assert.match(whoamiStep.response!.bodyText, /•••\(ADMIN_PW\)/);
 
@@ -80,7 +81,7 @@ test('`require env` pre-registers a secret at run start, masking a response that
   const { report } = await runProgram(program, config, { source, environ });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const whoamiStep = report.tests[0]!.steps.find((s) => s.detail?.includes('/whoami'))!;
+  const whoamiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.detail?.includes('/whoami'))!;
   assert.doesNotMatch(whoamiStep.response!.bodyText, /p@ssw0rd-xyz/);
   assert.match(whoamiStep.response!.bodyText, /•••\(ADMIN_PW\)/);
 
@@ -99,7 +100,7 @@ test('an env() secret with a quote in it stays redacted end-to-end through a JSO
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source, environ });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.doesNotMatch(apiStep.request!.body ?? '', /w\\word/);
   assert.match(apiStep.request!.body ?? '', /•••\(ADMIN_PW\)/);
 
@@ -235,7 +236,7 @@ test('a short `env()` secret is named in the report, and a long one alongside it
 
   // The claim the warning makes has to be true, or it is worse than no warning at all: the short
   // value really is in the clear, and the long one really is masked.
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.match(apiStep.request!.body ?? '', /hunt2/, 'the short secret must genuinely be present — otherwise this test proves nothing');
   assert.doesNotMatch(apiStep.request!.body ?? '', /hunter2extended/);
 
@@ -273,7 +274,7 @@ test('a short secret is never registered end-to-end, so an unrelated response fi
   const { report } = await runProgram(program, config, { source, environ });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.match(apiStep.response!.bodyText, /"orderId":3001/, 'the unrelated orderId field must not be redacted just because it matches a short secret');
 
   await server.close();
@@ -301,10 +302,10 @@ test('a secret that only appears in a discarded-until-now failing retry attempt 
   const config = { ...testConfig(server.baseUrl), requiredEnv: ['ADMIN_PW'] };
   const { report } = await runProgram(program, config, { source, environ });
 
-  assert.equal(report.tests[0]!.attempts?.length, 2, 'sanity: attempt 1 failed, attempt 2 passed');
+  assert.equal(asEntry(report.tests[0], 'functional').attempts?.length, 2, 'sanity: attempt 1 failed, attempt 2 passed');
   const serialized = JSON.stringify(report.tests[0]);
   assert.doesNotMatch(serialized, /p@ssw0rd-xyz/, 'the secret must not leak from the discarded-until-now failing attempt');
-  assert.match(JSON.stringify(report.tests[0]!.attempts![0]), /•••\(ADMIN_PW\)/, 'the masked placeholder should appear inside attempt 1 specifically');
+  assert.match(JSON.stringify(asEntry(report.tests[0], 'functional').attempts![0]), /•••\(ADMIN_PW\)/, 'the masked placeholder should appear inside attempt 1 specifically');
 
   await server.close();
 });

@@ -23,6 +23,27 @@ const repoRoot = join(here, '..', '..', '..');
 const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'cli.cjs');
 const execFileAsync = promisify(execFile);
 
+/**
+ * `M173a` — one shape for "the CLI ran", instead of five partial views of it.
+ *
+ * `execFileAsync` RESOLVES `{ stdout, stderr }` and REJECTS with an error carrying `code`, `stdout`
+ * and `stderr`. Fifteen call sites here wrote `.then(withCode).catch((e) => e as CliOutcome)` naming whichever fields
+ * that test happened to read — five different shapes — so the awaited expression's type was a union
+ * of the success object and one narrow view of the failure. Reading `.code` off that union is
+ * `TS2339`, twelve times, and nothing said so because `tsx` strips types without checking them
+ * (`M155-01`).
+ *
+ * The three fields exist in both arms; only the exit code differs, and on the resolve path it is 0
+ * by definition. So the union is not a fact about the CLI, it is an artefact of each site declaring
+ * only what it wanted. `withCode` supplies the missing field on the success arm and `CliOutcome`
+ * names the whole thing once.
+ *
+ * A test that expected a failure and got a success now reads `0` where it used to read `undefined`.
+ * Both fail the assertion; the new one says what happened.
+ */
+export type CliOutcome = { code: number; stdout: string; stderr: string };
+const withCode = (r: { stdout: string; stderr: string }): CliOutcome => ({ code: 0, ...r });
+
 before(() => {
   execFileSync('npm', ['run', 'build'], { cwd: repoRoot, stdio: 'pipe' });
 });
@@ -369,7 +390,13 @@ test('…and the reverse: every flag `tflw --help` shows is in CLI_FLAGS (M62)',
   const undocumented = new Set<string>();
   for (const line of stdout.split('\n')) {
     if (!/^\s{2}tflw /.test(line)) continue;
-    for (const m of line.matchAll(/(--[a-z][a-z-]*)/g)) if (!documented.has(m[1])) undocumented.add(m[1]);
+    // `m[1]` is `string | undefined` to the compiler even though a matched group is always present:
+    // `RegExpMatchArray` is indexed as `string[]` under `noUncheckedIndexedAccess`. Named rather than
+    // asserted, so the reader sees the guard is about the type and not about the regex.
+    for (const m of line.matchAll(/(--[a-z][a-z-]*)/g)) {
+      const flag = m[1];
+      if (flag && !documented.has(flag)) undocumented.add(flag);
+    }
   }
   assert.deepEqual([...undocumented], [], 'every flag `--help` prints must be in CLI_FLAGS, which the reference page generates from');
 });
@@ -2910,7 +2937,7 @@ test('`tflw run --failed` re-runs only the previous run\'s failing tests (decisi
 
       await assert.rejects(execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }));
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }).catch((e) => e as { stdout: string });
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.match(stdout, /1\/1 passed, 0 failed|0\/1 passed, 1 failed/);
       assert.doesNotMatch(stdout, /passes/);
       assert.match(stdout, /fails/);
@@ -2935,7 +2962,7 @@ test('`FU-23`/D250: `--failed` says what it is replaying, and says when the last
       assert.equal(full.filter, undefined, 'an unfiltered run records no filter');
 
       // Replaying it names the count, and says nothing about a filter, because there was none.
-      const replay = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }).catch((e) => e as { stdout: string });
+      const replay = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.match(replay.stdout, /re-running 1 test that failed in the last run/);
       assert.doesNotMatch(replay.stdout, /which was filtered by/);
 
@@ -2962,7 +2989,7 @@ test('`FU-23`: the "which was filtered by" clause fires when the replayed record
       await writeFile(join(dir, 'b.tflw'), `@smoke\ntest "fails"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
 
       await assert.rejects(execFileAsync('node', [cliEntry, 'run', '--tag', 'smoke', '--no-color'], { cwd: dir }));
-      const replay = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }).catch((e) => e as { stdout: string });
+      const replay = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.match(replay.stdout, /re-running 1 test that failed in the last run — which was filtered by `--tag smoke`, not the whole suite/);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -3019,7 +3046,7 @@ test('--bail stops the run after the first failing test — a later file never s
       await writeFile(join(dir, 'a-fails.tflw'), `test "a fails"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
       await writeFile(join(dir, 'b-should-not-run.tflw'), `test "b should not run"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
 
-      const err = await execFileAsync('node', [cliEntry, 'run', '--bail', '--no-color'], { cwd: dir }).catch((e) => e as { stdout: string; code: number });
+      const err = await execFileAsync('node', [cliEntry, 'run', '--bail', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(err.code, 1);
       assert.match(err.stdout, /a fails/);
       assert.doesNotMatch(err.stdout, /b should not run/);
@@ -3480,7 +3507,7 @@ test('`tflw run --browser <bogus>` is a usage error, not a silent fall-back to c
       await writeFile(join(dir, 'tflw.config'), `env local default\n  web "${baseUrl}"\n`, 'utf8');
       await writeFile(join(dir, 'ui.tflw'), `test "storefront"\n  open "/"\n`, 'utf8');
 
-      const failure = await execFileAsync('node', [cliEntry, 'run', '--browser', 'edge', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      const failure = await execFileAsync('node', [cliEntry, 'run', '--browser', 'edge', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(failure.code, 2);
       assert.match(failure.stderr, /--browser expects one of chromium, firefox, webkit, got "edge"/);
       await assert.rejects(access(join(dir, 'report', 'report.html')), 'no report should be written for a usage error');
@@ -3768,7 +3795,7 @@ test('`tflw run` runs two `parallel`-tagged workload-bearing tests concurrently:
         'utf8',
       );
 
-      const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
+      const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(failure.code, 1);
       assert.match(failure.stdout, /scenario "healthy"/);
       assert.match(failure.stdout, /scenario "unhealthy"/);
@@ -3806,7 +3833,7 @@ test('`tflw load` exits 1 and reports a breached threshold without throwing', as
       'utf8',
     );
 
-    const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
+    const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
     assert.equal(failure.code, 1);
     assert.match(failure.stdout, /FAIL 0\/1 passed, 1 failed/);
 
@@ -4096,7 +4123,7 @@ test('`tflw load --workers 2` still fails the run (exit 1) when the merged, pool
       'utf8',
     );
 
-    const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--workers', '2', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
+    const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--workers', '2', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
     assert.equal(failure.code, 1);
     assert.match(failure.stdout, /FAIL 0\/1 passed, 1 failed/);
 
@@ -4119,7 +4146,7 @@ test('`tflw load --workers 0` (or any non-positive-integer) is a usage error, sa
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(join(dir, 'load.tflw'), 'test "S"\n  ramp to 1 users over 50ms\n  api GET /health\n', 'utf8');
 
-      const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--workers', '0', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--workers', '0', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(failure.code, 2);
       assert.match(failure.stderr, /--workers expects a positive integer, got "0"/);
     } finally {
@@ -4260,7 +4287,7 @@ test('`tflw load`: a genuinely saturated generator exits 3 (inconclusive) and ma
       'utf8',
     );
 
-    const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string });
+    const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
     assert.equal(failure.code, 3);
     assert.match(failure.stdout, /⚠ tflw itself is the bottleneck/);
     assert.match(failure.stdout, /⚠ inconclusive/);
@@ -4370,7 +4397,7 @@ test('`tflw run` refuses a workload-bearing test with no `threshold` instead of 
       // Every iteration fails: /nope-not-a-real-route 404s and the expectation demands 999.
       await writeFile(join(dir, 'load.tflw'), 'test "load no threshold"\n  run 5 iterations across 1 users\n  api GET /nope-not-a-real-route\n  expect status equals 999\n', 'utf8');
 
-      const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stdout: string; stderr: string });
+      const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(failure.code, 2, 'a load test that cannot fail must not be runnable');
       assert.doesNotMatch(failure.stdout ?? '', /PASS/);
       assert.match(failure.stderr, /has no `threshold`, so it can never fail/);
@@ -4388,7 +4415,7 @@ test('`tflw check` catches a duplicate `action` name instead of letting the run 
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(join(dir, 'a.tflw'), 'action fetch it()\n  log "FIRST"\n  give 1\n\naction fetch it()\n  log "SECOND"\n  give 2\n\ntest "t"\n  fetch it()\n', 'utf8');
 
-      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(failure.code, 2, '`tflw check` used to print "no problems found" for this file');
       assert.match(failure.stderr, /duplicate action "fetch it"/);
       assert.match(failure.stderr, /already declared at line 1/, 'the diagnostic must carry a source location — the runtime crash carried none');
@@ -4411,7 +4438,7 @@ test('`tflw check` catches a browser step reached through an `action` from a wor
         'utf8',
       );
 
-      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(failure.code, 2);
       assert.match(failure.stderr, /browser steps aren't supported inside a workload-bearing `test`/);
       assert.match(failure.stderr, /`openIt` \(line 2\) contains a browser step/);
@@ -4429,7 +4456,7 @@ test('`tflw check` catches a `pause` reached through an `action` from a function
       // A4-02's repro B: this functional test slept for two real seconds and reported PASS.
       await writeFile(join(dir, 't.tflw'), 'action helper()\n  api GET /health\n  pause 2s\n\ntest "t"\n  helper()\n  api GET /health\n  expect status equals 200\n', 'utf8');
 
-      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(failure.code, 2);
       assert.match(failure.stderr, /`pause` is only legal inside a workload-bearing `test`/);
       assert.match(failure.stderr, /`helper` \(line 3\) contains a `pause`/);
@@ -4453,7 +4480,7 @@ test('`tflw check` resolves an imported action and reports a wrong-arity call ag
       await writeFile(join(dir, 'shared', 'orders.tflw'), 'action create order(name)\n  api GET /health\n  expect status equals 200\n', 'utf8');
       await writeFile(join(dir, 't.tflw'), 'import "./shared/orders.tflw"\n\ntest "t"\n  create order("Widget", "extra")\n', 'utf8');
 
-      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).catch((e) => e as { code: number; stderr: string });
+      const failure = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(failure.code, 2);
       assert.match(failure.stderr, /TF038/);
       assert.match(failure.stderr, /action "create order" expects 1 argument, got 2/);

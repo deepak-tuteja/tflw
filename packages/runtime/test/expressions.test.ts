@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('arithmetic respects * / over + -, and unary minus works on a variable', async () => {
   const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 201, { ok: true }) });
@@ -61,7 +62,7 @@ test('division by zero is a clear runtime error, not NaN/Infinity', async () => 
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /division by zero/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /division by zero/);
 });
 
 test('arithmetic on a non-number is a clear runtime error', async () => {
@@ -72,7 +73,7 @@ test('arithmetic on a non-number is a clear runtime error', async () => {
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /cannot apply '-' to number and a string/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /cannot apply '-' to number and a string/);
 });
 
 test('date math + format render a calendar date offset from `today`', async () => {
@@ -107,5 +108,5 @@ test('`format` on a non-date value is a clear runtime error', async () => {
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /needs a date value/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /needs a date value/);
 });

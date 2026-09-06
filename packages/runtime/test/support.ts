@@ -114,6 +114,13 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     requiredEnv: [],
     exclude: [],
     sessions: new Map(),
+    // `M173d3` — `M147d`/`D642` added this and the fixture never gained it, so **every runtime test
+    // has run against an incomplete `ResolvedConfig`**. Nothing broke, because its only consumer is
+    // `TF028` in the checker and the runtime never reads it. Worth naming anyway: the comment nine
+    // lines below says `authorizedTargets` is stated so that "a fixture config is a complete
+    // `ResolvedConfig` rather than one that happens to compile", and this file was neither — it was
+    // one that happened to *run*, since nothing typechecked it (`M155-01`).
+    sessionsOutOfScope: new Map(),
     mtls: null,
     allowHosts: null,
     // M128b — the runtime never reads this (D291 is enforced by the checker, and the CLI is what

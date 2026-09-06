@@ -4,9 +4,16 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { RunReport, WorkloadTestResult } from '@tflw/runtime';
+import type { RunReport, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { resolveReportAssets } from '../src/assets.js';
 import { renderReportHtml } from '../src/html.js';
+
+/**
+ * `M173a` — named with its member type. `RunReport.tests` is `readonly ReportEntry[]`, a three-member
+ * union, so `{ ...baseReport.tests[0]!, warnings: [...] }` spreads a union and lands on no member.
+ * The two warning tests below both did that. Construction side of `entry-kind.ts`'s discipline.
+ */
+const healthCheck: TestResult = { kind: 'functional', name: 'health check', ok: true, durationMs: 12, steps: [] };
 
 const baseReport: RunReport = {
   ok: true,
@@ -20,7 +27,7 @@ const baseReport: RunReport = {
   now: '2026-07-05T00:00:00.000Z',
   insecure: false,
   tests: [
-    { kind: 'functional', name: 'health check', ok: true, durationMs: 12, steps: [] },
+    healthCheck,
     { kind: 'functional', name: 'plain failure', ok: false, durationMs: 8, steps: [], error: 'expected 200, got 500' },
   ],
 };
@@ -327,7 +334,16 @@ test('report.browserEngine renders a small header badge; its absence renders not
 
 const zeroDurations = { min: 0, max: 0, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 };
 // M89a — `successful` is the successful-only duration population every `LoadMetrics` now carries.
-const emptyMetrics = { iterations: 0, failures: 0, errorRate: 0, durations: zeroDurations, histogram: [], timeline: [], successful: { iterations: 0, durations: zeroDurations, histogram: [] } };
+// `M173a` — `assertions` is REQUIRED on `LoadMetrics` and every fixture here omitted it, so these
+// objects were `undefined` where the type says `number | null` and both renderers branch on the
+// value. `cli-summary.ts` asks `=== null` and `html.ts` also asks `=== 0`; `undefined` is neither,
+// so the summary rendered `assertions: undefined` and the zero sentence never fired. `M173-01`.
+//
+// TWO FIXTURES PER SHAPE, BECAUSE ONE CANNOT BE BOTH. `assertions` is `null` at **endpoint** scope
+// — "this scope cannot answer", since an assertion names no endpoint — and a real count at scenario
+// and combined scope. Each of these was used at both scopes, so any single value would have been
+// wrong at one of them. That is the fixture defect underneath the type error.
+const emptyMetrics = { iterations: 0, failures: 0, errorRate: 0, assertions: 0, durations: zeroDurations, histogram: [], timeline: [], successful: { iterations: 0, durations: zeroDurations, histogram: [] } };
 const metricsWithData = {
   iterations: 10,
   failures: 1,
@@ -336,8 +352,14 @@ const metricsWithData = {
   histogram: [{ value: 5, count: 3 }],
   timeline: [{ offsetSeconds: 0, count: 5, failures: 1, rps: 5, errorRate: 0.2, min: 5, mean: 50, max: 100, p50: 40, p95: 90, p99: 100 }],
   // 10 iterations, 1 failure -> 9 successful, and their percentiles are the ones the threshold read.
+  // A scenario that asserted things — the third of the three renderings, and the ordinary one.
+  assertions: 24,
   successful: { iterations: 9, durations: { min: 5, max: 500, avg: 82, p50: 52, p90: 205, p95: 300, p99: 480 }, histogram: [{ value: 5, count: 3 }] },
 };
+
+/** The same two at ENDPOINT scope, where the count is `null` rather than a number. */
+const endpointEmpty = { ...emptyMetrics, assertions: null };
+const endpointWithData = { ...metricsWithData, assertions: null };
 
 const workloadTest: WorkloadTestResult = {
   kind: 'workload',
@@ -407,8 +429,8 @@ test('a workload entry with endpoints renders one collapsed <details> per identi
   const withEndpoints: WorkloadTestResult = {
     ...workloadTest,
     endpoints: [
-      { identity: 'GET /products', metrics: emptyMetrics },
-      { identity: 'checkout <fast>', metrics: metricsWithData },
+      { identity: 'GET /products', metrics: endpointEmpty },
+      { identity: 'checkout <fast>', metrics: endpointWithData },
     ],
   };
   const html = renderReportHtml({ ...baseReport, tests: [withEndpoints] });
@@ -614,7 +636,7 @@ test('a runtime warning renders inside its own test panel, above the steps', () 
     ...baseReport,
     tests: [
       {
-        ...baseReport.tests[0]!,
+        ...healthCheck,
         warnings: [{ code: 'TF080', message: 'answered an `alert`, which takes no text', line: 3, source: '  accept dialog with "Blue"' }],
       },
     ],
@@ -628,11 +650,46 @@ test('a runtime warning is escaped, like every other run-supplied string in the 
     ...baseReport,
     tests: [
       {
-        ...baseReport.tests[0]!,
+        ...healthCheck,
         warnings: [{ code: 'TF080', message: '<script>alert(1)</script>', line: 1, source: '<b>x</b>' }],
       },
     ],
   });
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.match(html, /&lt;script&gt;/);
+});
+
+// -------------------------------------------------------------------------------------------
+// `M173a` / `M173-01` — the zero sentence, which no fixture could reach
+// -------------------------------------------------------------------------------------------
+
+/**
+ * `html.ts` renders an extra sentence when `assertions` is exactly `0`: *"this workload asserted
+ * nothing, so every figure above describes tflw sending requests rather than the target answering
+ * correctly"*. Every fixture in this file omitted the field, so the value was `undefined`, so
+ * `=== 0` was false and that sentence had never been rendered in a test — nor had the `=== null`
+ * branch that suppresses the row entirely.
+ */
+const workloadAsserting = (assertions: number | null): WorkloadTestResult => ({
+  ...workloadTest,
+  metrics: { ...metricsWithData, assertions },
+});
+
+test('the HTML says so when a workload asserted nothing', () => {
+  const html = renderReportHtml({ ...baseReport, tests: [workloadAsserting(0)] });
+  assert.match(html, /<th>assertions<\/th>/);
+  assert.match(html, /this workload asserted nothing/);
+});
+
+test('a workload that asserted things shows the count and not the sentence', () => {
+  const html = renderReportHtml({ ...baseReport, tests: [workloadAsserting(24)] });
+  assert.match(html, /<th>assertions<\/th><td colspan="5">24<\/td>/);
+  assert.doesNotMatch(html, /this workload asserted nothing/);
+});
+
+test('a scope that cannot answer renders no assertions row at all', () => {
+  const html = renderReportHtml({ ...baseReport, tests: [workloadAsserting(null)] });
+  assert.doesNotMatch(html, /<th>assertions<\/th>/);
+  // Control: the surrounding table is still there, so the absence is the row and not the section.
+  assert.match(html, /<th>iterations<\/th>/);
 });

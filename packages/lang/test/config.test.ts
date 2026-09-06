@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { parseConfigSource, parseSource, renderDiagnostics, checkSessionBody, Codes } from '../src/index.js';
 import { CONFIG_INVALID, CONFIG_VALID } from './fixtures.js';
 import { assertGolden, astJson } from './helpers.js';
+import type { StringLit } from '../src/ast.js';
 
 for (const fixture of CONFIG_VALID) {
   test(`config valid: ${fixture.name} parses clean`, () => {
@@ -61,8 +62,18 @@ test('A2-12: an interpolation in `report` survives into the AST, as it does for 
   const web = config!.envs[0]!.entries.find((e) => e.type === 'WebDecl');
   assert.ok(web && web.type === 'WebDecl');
 
-  const interpNames = (lit: { parts: readonly { kind: string; ref?: readonly { name?: string }[] }[] }) =>
-    lit.parts.filter((p) => p.kind === 'interp').map((p) => p.ref?.[0]?.name);
+  // `M173b` — typed as `StringLit` rather than as an ad-hoc `{ parts: … }`. The invented shape did
+  // not match the real one (`TS2345` at both call sites below), and a helper that accepts a shape
+  // the AST does not produce cannot notice the AST changing.
+  const interpNames = (lit: StringLit) =>
+    lit.parts.flatMap((p) => {
+      if (p.kind !== 'interp') return [];
+      const head = p.ref?.[0];
+      // `PathSegment` is `{kind:'prop',name}` | `{kind:'index',index}` — an env interpolation's head
+      // is always a prop, and saying so is what makes this read type-check against the real AST
+      // rather than against a shape with an optional `name` on every member.
+      return head?.kind === 'prop' ? [head.name] : [];
+    });
 
   assert.deepEqual(interpNames(report.dir), ['BUILD_ID'], '`report` must keep its interpolation, same as `web` keeps its own');
   assert.deepEqual(interpNames(web.url), ['HOST']);

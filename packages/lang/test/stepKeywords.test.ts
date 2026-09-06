@@ -16,7 +16,12 @@ import { DELIBERATELY_UNCOLOURED, REFUSED_ON_PURPOSE, COLOURED_VOCABULARY } from
 
 const ids = STEP_KEYWORDS.map((k) => k.id);
 const documented = new Set(ids);
-const expected = [...STATEMENT_KEYWORDS.filter((k) => !RETIRED_STATEMENT_KEYWORDS.includes(k)), ...WORKLOAD_DIRECTIVES];
+// `M173b` — `readonly string[]` rather than the inferred literal union. Both lists are compared
+// against `STEP_KEYWORDS`' ids, which are plain strings, and `.includes(someString)` on a
+// literal-union array is `TS2345`. Widening here says the comparison is between two vocabularies,
+// which is what the two tests below are about; narrowing the id instead would have asserted that
+// the manifest cannot contain a word the parser has never heard of, which is the thing being tested.
+const expected: readonly string[] = [...STATEMENT_KEYWORDS.filter((k) => !(RETIRED_STATEMENT_KEYWORDS as readonly string[]).includes(k)), ...WORKLOAD_DIRECTIVES];
 
 test('every keyword the parser dispatches on has a manifest entry', () => {
   const missing = expected.filter((k) => !documented.has(k));

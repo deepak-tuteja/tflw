@@ -23,6 +23,7 @@ import { runProgram } from '../src/interpreter.js';
 import { BrowserManager } from '../src/browser.js';
 import { startFixtureServer, testConfig, json, type FixtureServer } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const HOME_HTML = `<!doctype html><html><head><title>home</title></head><body><h1>Home</h1></body></html>`;
 
@@ -84,7 +85,7 @@ test('`open` on a host outside `allow hosts` is refused, and the page never load
   const { report } = await run(`test "navigate to an unlisted host"\n  open "/"\n`, config);
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /the browser tried to open "http:\/\/localhost:\d+\/"/);
   assert.match(error, /host "localhost" is not in `allow hosts` \(127\.0\.0\.1\)/);
   // A blocked navigation reaches the interpreter as Playwright's own `net::ERR_FAILED` — true, and
@@ -108,7 +109,7 @@ test('a page\'s own XHR to an unlisted host is refused too, not just what tflw n
   );
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /the page at "http:\/\/127\.0\.0\.1:\d+\/xhr/, 'the refusal names the page that made the call');
   assert.match(error, /requested "http:\/\/localhost:\d+\/api\/data" \(fetch\)/);
   assert.match(error, /this call came from the page, not from a step/);

@@ -29,7 +29,10 @@ import { ARTIFACT_CONTRACT } from '../src/artifact-contract.js';
 // `ajv` is CJS with both a `module.exports` and a `.default`; which one an ESM default import lands
 // on depends on the interop, and getting it wrong fails as `Ajv is not a constructor` rather than as
 // anything readable. Accept either.
-const Ajv = ((AjvModule as unknown as { default?: unknown }).default ?? AjvModule) as typeof AjvModule;
+// `M173a` — the cast landed on `typeof AjvModule`, which under this interop is the module object
+// and not the class, so `new Ajv(...)` was `TS2351: not constructable`. Naming the class type is
+// what the sentence above always meant; the runtime behaviour is unchanged.
+const Ajv = ((AjvModule as unknown as { default?: unknown }).default ?? AjvModule) as unknown as typeof import('ajv').default;
 
 const SCHEMA = JSON.parse(readFileSync(new URL('./fixtures/sarif-schema-2.1.0.json', import.meta.url), 'utf8')) as object;
 
@@ -39,7 +42,7 @@ function validate(log: Log): void {
   const ajv = new Ajv({ strict: false, allErrors: true });
   const check = ajv.compile(SCHEMA);
   if (!check(log)) {
-    assert.fail(`SARIF document is invalid:\n${(check.errors ?? []).map((e) => `  ${e.instancePath || '/'} ${e.message}`).join('\n')}`);
+    assert.fail(`SARIF document is invalid:\n${(check.errors ?? []).map((e: { instancePath?: string; message?: string }) => `  ${e.instancePath || '/'} ${e.message}`).join('\n')}`);
   }
 }
 
@@ -184,7 +187,12 @@ test('writeSarif writes nothing when the run did not scan, and returns undefined
 test('writeSarif writes findings.sarif when it did', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-sarif-'));
   const path = await writeSarif(report(), dir, { version: '0.1.0' });
-  assert.ok(path?.endsWith(SARIF_FILE));
+  // `M173a` — `writeSarif` returns `string | undefined` and `assert.ok(path?.endsWith(…))` does not
+  // narrow it, so the `readFile` below was typed against `undefined`. Split so the assertion that
+  // there IS a path is its own claim with its own message, which is also what a reader wants when
+  // it fails: "no file was written" and "the wrong file was written" are different failures.
+  assert.ok(path, 'writeSarif returned no path, so nothing was written to validate');
+  assert.ok(path.endsWith(SARIF_FILE));
   validate(JSON.parse(await readFile(path, 'utf8')) as Log);
 });
 

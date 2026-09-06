@@ -14,6 +14,7 @@ import { runProgram } from '../src/interpreter.js';
 import { BrowserManager } from '../src/browser.js';
 import { startFixtureServer, testConfig, type FixtureServer } from './support.js';
 import type { ResolvedConfig, ResolvedTimeouts } from '../src/types.js';
+import { asEntry } from './__helpers__/entry.js';
 
 // Two `Save` buttons the suggestion renderer cannot tell apart, which the DOM can tell apart three
 // ways: a `data-testid`, an `id`, and an enclosing labelled section.
@@ -100,7 +101,7 @@ after(async () => {
 test('each ambiguous match carries the first discriminator the page offers (D267)', async () => {
   // Before: two lines, both `1. "Save"` / `2. "Save"`, carrying zero bits for choosing between them.
   const { report } = await run('test "amb"\n  open "/dup-save"\n  click button "Save"\n', configWith({}));
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /matched 2 elements:/);
   assert.match(error, /1\. "Save" — data-testid="save-profile"/);
   assert.match(error, /2\. "Save" — id="save-billing"/);
@@ -108,7 +109,7 @@ test('each ambiguous match carries the first discriminator the page offers (D267
 
 test('with no attribute to use, it falls back to the enclosing container’s heading', async () => {
   const { report } = await run('test "amb"\n  open "/many-cart"\n  click button "Add to cart"\n', configWith({}));
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /matched 12 elements:/);
   assert.match(error, /1\. "Add to cart" — in "Product 1"/);
   assert.match(error, /5\. "Add to cart" — in "Product 5"/);
@@ -119,7 +120,7 @@ test('with no attribute to use, it falls back to the enclosing container’s hea
 
 test('when the page offers nothing at all, the ordinal stands alone rather than a css path (M119-01/M120)', async () => {
   const { report } = await run('test "amb"\n  open "/bare-dup"\n  click button "Go"\n', configWith({}));
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /^ {2}1\. "Go"$/m);
   assert.match(error, /^ {2}2\. "Go"$/m);
   assert.doesNotMatch(error, /css "/);
@@ -133,7 +134,7 @@ test('byte-identical suggestions collapse to one, and it says why it is not read
   // list SPEC §9.3 calls ready-to-paste. A short typo like "Sav" does not reach this path at all:
   // Playwright's role-name matching is substring-based, so a truncation is a match, not a miss.
   const { report } = await run('test "typo"\n  open "/dup-save"\n  click button "Saev"\n', configWith({ browser: 4000 }));
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /nearest matches on the page:/);
   assert.equal(error.match(/button "Save"/g)?.length, 1, `expected one deduped suggestion, got:\n${error}`);
   assert.match(error, /2 elements render this same locator/);
@@ -143,7 +144,7 @@ test('deduping frees the slots duplicates used to consume, so a distinct candida
   // Twelve identical near-misses filled all five slots; `button "Add to bag"` could not be shown
   // no matter how relevant it was. This is the crowding-out half, at the browser level.
   const { report } = await run('test "typo"\n  open "/many-cart"\n  click button "Add to crat"\n', configWith({ browser: 4000 }));
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /button "Add to cart"/);
   assert.match(error, /12 elements render this same locator/);
   assert.match(error, /button "Add to bag"/);
@@ -188,6 +189,6 @@ test('the deadline does not move: an app that renders at 4s still passes, having
   const { result, stderr } = await captureStderr(() =>
     run('test "slow"\n  open "/slow"\n  click button "Checkout"\n', configWith({ browser: 8000 })),
   );
-  assert.equal(result.report.ok, true, result.report.tests[0]?.error ?? '');
+  assert.equal(result.report.ok, true, asEntry(result.report.tests[0], 'functional').error ?? '');
   assert.match(stderr, /still nothing matching `button "Checkout"` after 3s/);
 });

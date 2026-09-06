@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('a passing `check` behaves like `expect` when nothing fails', async () => {
   const server = await startFixtureServer({ '/profile': (_req, res) => json(res, 200, { name: 'Widget', active: true }) });
@@ -18,7 +19,7 @@ test('a passing `check` behaves like `expect` when nothing fails', async () => {
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  assert.ok(report.tests[0]!.steps.every((s) => s.kind !== 'expect' || s.ok));
+  assert.ok(asEntry(report.tests[0], 'functional').steps.every((s) => s.kind !== 'expect' || s.ok));
 
   await server.close();
 });
@@ -43,11 +44,11 @@ test('a failed `check` does not stop the test — later steps still run', async 
   assert.equal(report.ok, false);
   // the whole run failed (a check failed) but every step still executed, including the api call after the checks
   assert.equal(server.received.get('/audit')!.length, 1);
-  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  const kinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(kinds, ['api', 'check', 'check', 'check', 'api', 'expect']);
-  const checkSteps = report.tests[0]!.steps.filter((s) => s.kind === 'check');
+  const checkSteps = asEntry(report.tests[0], 'functional').steps.filter((s) => s.kind === 'check');
   assert.deepEqual(checkSteps.map((s) => s.ok), [true, false, true]);
-  assert.match(report.tests[0]!.error ?? '', /widget@example.com/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /widget@example.com/);
 
   await server.close();
 });
@@ -64,7 +65,7 @@ test('multiple failed checks all surface in the test error, not just the first',
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /Gadget/);
   assert.match(error, /false/);
 
@@ -97,16 +98,16 @@ test "runs an action with a soft check failure inside, then keeps going"
 
   assert.equal(report.ok, false, JSON.stringify(report.tests[0], null, 2));
   assert.equal(server.received.get('/audit')!.length, 1, 'steps after the action call must still run, not abort');
-  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  const kinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(kinds, ['api', 'check', 'check', 'capture', 'give', 'call', 'api', 'expect']);
-  const checkSteps = report.tests[0]!.steps.filter((s) => s.kind === 'check');
+  const checkSteps = asEntry(report.tests[0], 'functional').steps.filter((s) => s.kind === 'check');
   assert.deepEqual(checkSteps.map((s) => s.ok), [true, false], 'both of the action\'s own checks must be visible, spliced into the caller\'s report');
   assert.equal(
-    report.tests[0]!.steps.find((s) => s.kind === 'call')!.ok,
+    asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'call')!.ok,
     false,
     'the call step itself is flagged failed too, so a manual QA scanning the timeline sees it at a glance',
   );
-  assert.match(report.tests[0]!.error ?? '', /widget@example.com/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /widget@example.com/);
 
   await server.close();
 });
@@ -128,7 +129,7 @@ test('a hard `expect` after a passing `check` still fails fast as usual', async 
 
   assert.equal(report.ok, false);
   assert.equal(server.received.has('/unreached'), false);
-  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  const kinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(kinds, ['api', 'check', 'expect']);
 
   await server.close();

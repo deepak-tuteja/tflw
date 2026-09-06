@@ -21,6 +21,7 @@ import { resolveWebUrl, requireAllowHostsForAbsolute, resolveBaseUrl, runProgram
 import { AllowHostsError } from '../src/allowHosts.js';
 import { RuntimeError } from '../src/eval.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const WEB = (webBaseUrl: string | null, allowHosts: string[] | null = ['example.com', 'localhost']) => ({
   ...testConfig('http://localhost:4001'),
@@ -171,7 +172,7 @@ test('END TO END — with no `allow hosts`, the same program is refused before a
     const { program } = parseSource(source);
     const { report } = await runProgram(program, config, { source });
     assert.equal(report.ok, false);
-    assert.match(report.tests[0]!.error ?? '', /declares no `allow hosts`/);
+    assert.match(asEntry(report.tests[0], 'functional').error ?? '', /declares no `allow hosts`/);
     assert.equal(other.received.has('/orders'), false, 'the request was sent despite the refusal');
   } finally {
     await other.close();

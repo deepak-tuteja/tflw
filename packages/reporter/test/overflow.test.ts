@@ -34,13 +34,18 @@ test('the embedded stylesheet wraps every free-form-text container that can carr
   for (const selector of ['.detail', '.error', '.phead', 'table.headers td']) {
     const rule = style.match(new RegExp(`${selector.replace(/[.[\]]/g, '\\$&')}\\{([^}]*)\\}`));
     assert.ok(rule, `expected a CSS rule for ${selector}`);
-    assert.match(rule[1], /overflow-wrap:anywhere/, `${selector} should set overflow-wrap:anywhere so an unbroken token wraps instead of overflowing`);
+    // `M173a` — `assert.ok` narrows `rule` away from `null` but a capture group is still
+    // `string | undefined` under `noUncheckedIndexedAccess`, so the body is named and asserted
+    // rather than indexed inline. The guard is about the index, not about the regex.
+    const body = rule[1] ?? '';
+    assert.match(body, /overflow-wrap:anywhere/, `${selector} should set overflow-wrap:anywhere so an unbroken token wraps instead of overflowing`);
   }
 
   // pre.body is the one container that must NOT get this — it's formatted JSON with its own
   // overflow-x:auto scroll, wrapping it would break the intentional raw formatting.
   const preBodyRule = style.match(/pre\.body\{([^}]*)\}/);
   assert.ok(preBodyRule, 'expected a CSS rule for pre.body');
-  assert.doesNotMatch(preBodyRule[1], /overflow-wrap/, 'pre.body must stay unwrapped (overflow-x:auto instead) — it renders formatted JSON verbatim');
-  assert.match(preBodyRule[1], /overflow-x:auto/);
+  const preBody = preBodyRule[1] ?? '';
+  assert.doesNotMatch(preBody, /overflow-wrap/, 'pre.body must stay unwrapped (overflow-x:auto instead) — it renders formatted JSON verbatim');
+  assert.match(preBody, /overflow-x:auto/);
 });

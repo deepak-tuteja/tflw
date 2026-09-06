@@ -12,6 +12,7 @@ import { runProgram, SessionCache } from '../src/interpreter.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import type { ResolvedConfig } from '../src/types.js';
 import { startFixtureServer, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 function configWithSession(baseUrl: string, sessionBody = `  api POST /auth/login body { user: "a", pass: "b" }\n  capture body.token as token\n  header "Authorization" is "Bearer {token}"\n`): ResolvedConfig {
   const configSource = `env test default\n  api "${baseUrl}"\n\nsession admin\n${sessionBody}`;
@@ -109,10 +110,10 @@ test "second" as admin
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
   assert.equal(server.received.get('/auth/login')!.length, 1, 'the session login must run exactly once');
 
-  const firstKinds = report.tests[0]!.steps.map((s) => s.kind);
+  const firstKinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(firstKinds, ['api', 'capture', 'header', 'api', 'expect', 'expect']);
 
-  const secondKinds = report.tests[1]!.steps.map((s) => s.kind);
+  const secondKinds = asEntry(report.tests[1], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(secondKinds, ['api', 'expect', 'expect'], 'the second test must not re-show the session\'s steps');
 
   await server.close();
@@ -133,7 +134,7 @@ test('a session that fails to establish fails every test opting into it, with a 
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /session "admin" failed to establish/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /session "admin" failed to establish/);
   assert.equal(server.received.has('/orders'), false, 'the test body must never run once its session fails');
 
   await server.close();
@@ -167,7 +168,7 @@ test('a session that fails once then succeeds lets a `retry`ing test pass (decis
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  assert.equal(report.tests[0]!.flaky, true, 'the first attempt failed (session down), so the eventual pass must be flagged flaky');
+  assert.equal(asEntry(report.tests[0], 'functional').flaky, true, 'the first attempt failed (session down), so the eventual pass must be flagged flaky');
   assert.equal(loginAttempts, 2, 'the session must be re-attempted on the retry, not permanently cached as failed');
 
   await server.close();
@@ -198,10 +199,10 @@ test('a retried session-authenticated test keeps the session\'s steps as evidenc
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  assert.equal(report.tests[0]!.flaky, true, 'attempt 1 must have failed its own expect for this test to be flaky');
+  assert.equal(asEntry(report.tests[0], 'functional').flaky, true, 'attempt 1 must have failed its own expect for this test to be flaky');
   assert.equal(server.received.get('/auth/login')!.length, 1, 'the session must still only log in once');
 
-  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  const kinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(kinds, ['api', 'capture', 'header', 'api', 'expect', 'expect'], 'the surviving (last) attempt must still carry the session\'s own steps as evidence it ran');
 
   await server.close();
@@ -238,7 +239,7 @@ test('a test referencing an unknown session fails clearly at runtime (defensive 
   const { report } = await runProgram(bad, config, { source: '' });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /unknown session "ghost"/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /unknown session "ghost"/);
 
   await server.close();
 });
@@ -350,10 +351,10 @@ test "second" as admin, shopper
   assert.equal(server.received.get('/auth/login')!.length, 1, 'admin must log in exactly once, shared across both tests');
   assert.equal(server.received.get('/shopper/login')!.length, 1, 'shopper must log in exactly once');
 
-  const firstKinds = report.tests[0]!.steps.map((s) => s.kind);
+  const firstKinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(firstKinds, ['api', 'capture', 'header', 'api', 'expect'], '"first" owns admin\'s splice (it opted in first)');
 
-  const secondKinds = report.tests[1]!.steps.map((s) => s.kind);
+  const secondKinds = asEntry(report.tests[1], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(secondKinds, ['api', 'api', 'expect'], '"second" does not re-show admin\'s steps, but does own shopper\'s splice (a bare `api` step, no capture/header)');
 
   await server.close();
@@ -423,7 +424,7 @@ test('when re-establishing the session after a 401 itself fails, the original 40
 
   assert.equal(report.ok, false);
   assert.equal(loginCount, 2, 'establish once, one re-establish attempt on the 401 — never left uninvestigated');
-  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  const kinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.ok(kinds.includes('header'), 'a synthetic step records the failed re-establish attempt as evidence');
   assert.equal(server.received.get('/orders')!.length, 1, 'the re-establish itself failed, so the api step is never retried');
 
@@ -482,7 +483,7 @@ test('an unknown session among several opted into fails clearly, even when the o
   const { report } = await runProgram(bad, config, { source: '' });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /unknown session "ghost"/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /unknown session "ghost"/);
 
   await server.close();
 });
@@ -509,7 +510,7 @@ test('M102/A4-OS-11: a session `header` line interpolates its NAME, not only its
   const { program } = parseSource(source);
   const run = await runProgram(program, config, { source, seed: 1, sessionCache: new SessionCache() });
 
-  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(run.report.tests[0]!.steps));
+  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(asEntry(run.report.tests[0], 'functional').steps));
   await server.close();
 });
 
@@ -538,7 +539,10 @@ async function slowLoginFixture(work: (token: string) => Parameters<typeof start
       await new Promise((r) => setTimeout(r, B318_LOGIN_MS));
       json(res, 200, { token: validToken });
     },
-    '/work': (req, res) => work(validToken)(req, res),
+    // `M173d3` — `Handler` is `(req, res, body) => void` and this wrapper forwarded two of three.
+    // No test here reads the body, so nothing failed; the wrapper is still the one place a future
+    // `work` that does read it would silently receive `undefined`.
+    '/work': (req, res, body) => work(validToken)(req, res, body),
   });
   return { server, rotate: () => { validToken = 'rotated-away'; }, logins: () => loginCount };
 }
@@ -566,7 +570,7 @@ test('B3-18: a reactive 401 re-establish is not billed to the endpoint whose req
   assert.equal(rB.ok, true, JSON.stringify(rB.tests, null, 2));
   assert.equal(logins(), 2, 'the 401 must have triggered exactly one re-login');
 
-  const steps = rB.tests[0]!.steps;
+  const steps = asEntry(rB.tests[0], 'functional').steps;
   const workStep = steps.find((s) => s.kind === 'api' && s.endpoint === 'GET /work');
   const refreshStep = steps.find((s) => s.kind === 'header' && (s.detail ?? '').includes('re-established'));
 
@@ -599,7 +603,7 @@ test('B3-18 control: with no 401 the endpoint duration is measured from the star
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
   assert.equal(logins(), 1, 'the initial establish only — no reactive refresh in this run');
 
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.equal(steps.some((s) => s.kind === 'header' && (s.detail ?? '').includes('re-established')), false);
   const workStep = steps.find((s) => s.kind === 'api' && s.endpoint === 'GET /work');
   assert.ok(workStep, 'GET /work must be reported');
@@ -650,7 +654,7 @@ test('B3-18: when the re-establish itself fails, the 401 attempt is still not bi
   assert.equal(rB.ok, false, 'a persistent 401 with a broken re-establish still fails the test');
   assert.equal(loginCount, 2, 'exactly one re-establish attempt, and it failed');
 
-  const steps = rB.tests[0]!.steps;
+  const steps = asEntry(rB.tests[0], 'functional').steps;
   const failedRefresh = steps.find((s) => s.kind === 'header' && !s.ok);
   assert.ok(failedRefresh, `the failed re-establish reports itself: ${JSON.stringify(steps, null, 2)}`);
   assert.ok(

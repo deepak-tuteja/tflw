@@ -25,6 +25,7 @@ import { sendRequest } from '../src/http.js';
 import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest } from '../src/httpPinned.js';
 import { AllowHostsError, isHostAllowed } from '../src/allowHosts.js';
 import { startFixtureServer, testConfig, json, type FixtureServer } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const SOURCE = `test "health check"\n  api GET /health\n  expect status equals 200\n`;
 
@@ -59,7 +60,7 @@ test('a host not in `allow hosts` is refused before any network I/O reaches it',
   const { report } = await runProgram(program, config, { source: SOURCE });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /127\.0\.0\.1/);
   assert.match(error, /allow hosts/);
   assert.equal(server.received.has('/health'), false, 'a blocked request must never actually reach the server');
@@ -245,7 +246,7 @@ test('the refusal reaches the report as itself, not wrapped as a transport failu
   const { report } = await runProgram(program, config, { source: SOURCE });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /is not in `allow hosts`/);
   assert.doesNotMatch(error, /request failed/);
   assert.equal(target.received.has('/landing'), false);

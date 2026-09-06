@@ -82,7 +82,10 @@ test('both broken imports are named, not just the first', async () => {
   // broken imports told you about them one run at a time.
   const entry = 'import "./a.tflw"\nimport "./b.tflw"\n\ntest "t"\n  api GET /a\n  expect status equals 200\n';
   const { unparseable, diagnostics } = await resolve(entry, [['a.tflw', BROKEN], ['b.tflw', BROKEN]]);
-  assert.deepEqual(unparseable.sort(), ['./a.tflw', './b.tflw']);
+  // `M173d3` — `sort` mutates in place and `unparseable` is `readonly`: the test was reordering the
+  // very array it is inspecting. Harmless with two elements and nothing reading it afterwards, but
+  // it is the resolver's own array, not a copy the test owns.
+  assert.deepEqual([...unparseable].sort(), ['./a.tflw', './b.tflw']);
   assert.equal(diagnostics.filter((d) => d.code === Codes.IMPORT_PARSE_ERRORS).length, 2);
 });
 

@@ -9,6 +9,7 @@ import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { describe } from '../src/eval.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('`contains` matches a substring and an array element, and fails clearly otherwise', async () => {
   const server = await startFixtureServer({
@@ -31,7 +32,7 @@ test('`contains` matches a substring and an array element, and fails clearly oth
   const { program: p2 } = parseSource(failing);
   const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: failing });
   assert.equal(r2.ok, false);
-  assert.match(r2.tests[0]!.error ?? '', /expected body\.message to contain "shipped", but got "order created ok"/);
+  assert.match(asEntry(r2.tests[0], 'functional').error ?? '', /expected body\.message to contain "shipped", but got "order created ok"/);
 
   await server.close();
 });
@@ -63,7 +64,7 @@ test('`matches` with an invalid regex raises a clear runtime error, not a crash'
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /invalid regex in matcher/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /invalid regex in matcher/);
 
   await server.close();
 });
@@ -94,7 +95,7 @@ test('`is greater than` on a non-number subject is a clear runtime error', async
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /`is greater than` expects a number, got a string/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /`is greater than` expects a number, got a string/);
 
   await server.close();
 });
@@ -139,7 +140,7 @@ for (const [literal, described] of NON_NUMBERS) {
       const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
 
       assert.equal(report.ok, false, `${literal} was accepted by \`${matcher}\` instead of rejected`);
-      assert.equal(report.tests[0]!.error, `\`${matcher}\` expects a number, got ${described}`);
+      assert.equal(asEntry(report.tests[0], 'functional').error, `\`${matcher}\` expects a number, got ${described}`);
     });
   }
 }
@@ -200,7 +201,7 @@ test('the widened number test still refuses everything `B3-04` refuses', async (
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /expects a number, got/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /expects a number, got/);
 
   await server.close();
 });
@@ -215,7 +216,7 @@ test('`connects`/`fails` on a non-`request` subject is a clear runtime error nam
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /matcher `connects` is only valid on a `request` subject/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /matcher `connects` is only valid on a `request` subject/);
 
   await server.close();
 });
@@ -252,7 +253,7 @@ test('`has count` measures arrays and strings, and rejects everything else', asy
   const { program: p2 } = parseSource(invalid);
   const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: invalid });
   assert.equal(r2.ok, false);
-  assert.match(r2.tests[0]!.error ?? '', /`has count` expects an array \(or string, or `body bytes`\) subject, got number/);
+  assert.match(asEntry(r2.tests[0], 'functional').error ?? '', /`has count` expects an array \(or string, or `body bytes`\) subject, got number/);
 
   await server.close();
 });
@@ -354,7 +355,7 @@ test('`matches subset {...}` fails on a missing key or a mismatched value, with 
   const { program: p1 } = parseSource(missingKey);
   const { report: r1 } = await runProgram(p1, testConfig(server.baseUrl), { source: missingKey });
   assert.equal(r1.ok, false);
-  assert.match(r1.tests[0]!.error ?? '', /to match subset/);
+  assert.match(asEntry(r1.tests[0], 'functional').error ?? '', /to match subset/);
 
   const wrongValue = `test "wrong value"
   api GET /orders/missing
@@ -402,7 +403,7 @@ test('`matches subset {...}` on a non-object subject is a clear runtime error, n
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /`matches subset` expects an object subject, got a string/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /`matches subset` expects an object subject, got a string/);
 
   await server.close();
 });
@@ -441,7 +442,7 @@ test('`matches subset {...}` failure shows only the mismatched/missing keys, not
   const { program } = parseSource(missingAndWrong);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source: missingAndWrong });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   // The three real mismatches show up, correlated to their own (possibly nested) key path...
   assert.match(error, /"status":"pending"/);
   assert.match(error, /"customer\.vip":true/);
@@ -466,7 +467,7 @@ test('a large `equals`/`contains` failure is truncated with a clear marker, not 
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.ok(error.length < bigTag.length, 'the failure message must be materially shorter than the untruncated value');
   assert.match(error, /truncated, showing \d+ of \d+ chars/);
 
@@ -483,7 +484,7 @@ test('a negated `matches subset {...}` that unexpectedly matches shows the whole
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   // No "<missing>"/mismatch framing here — the raw subset check genuinely passed, so the fallback
   // is the ordinary whole-actual-object message every other matcher already uses.
   assert.match(error, /"status":"open"/);
@@ -511,7 +512,7 @@ test('`not` negates any matcher', async () => {
   const { program: p2 } = parseSource(failing);
   const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: failing });
   assert.equal(r2.ok, false);
-  assert.match(r2.tests[0]!.error ?? '', /expected body\.status not to equal "open", but got "open"/);
+  assert.match(asEntry(r2.tests[0], 'functional').error ?? '', /expected body\.status not to equal "open", but got "open"/);
 
   await server.close();
 });
@@ -559,7 +560,7 @@ test('`equals` compares two dates by instant, not by their (empty) key sets', as
   const { program: p3 } = parseSource(bogus);
   const { report: r3 } = await runProgram(p3, testConfig(server.baseUrl), { source: bogus, seed: 4242 });
   assert.equal(r3.ok, false);
-  assert.match(r3.tests[0]!.error ?? '', /expected past to equal "20\d\d-/);
+  assert.match(asEntry(r3.tests[0], 'functional').error ?? '', /expected past to equal "20\d\d-/);
 
   await server.close();
 });
@@ -616,7 +617,7 @@ test('`matches` tests a date subject as its canonical ISO-8601 form, and says so
   const { program: p2 } = parseSource(failing);
   const { report: r2 } = await runProgram(p2, testConfig(server.baseUrl), { source: failing });
   assert.equal(r2.ok, false);
-  const err = r2.tests[0]!.error ?? '';
+  const err = asEntry(r2.tests[0], 'functional').error ?? '';
   const got = /but got "([^"]*)"/.exec(err);
   assert.ok(got, `expected a quoted "got" value in: ${err}`);
   assert.doesNotMatch(got[1]!, /^ZZZ/, 'the printed subject must not satisfy the pattern it just failed');

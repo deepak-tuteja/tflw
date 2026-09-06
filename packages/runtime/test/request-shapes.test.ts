@@ -8,6 +8,7 @@ import { parseSource, parseConfigSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('a query string on the path reaches the server verbatim', async () => {
   const server = await startFixtureServer({
@@ -87,7 +88,7 @@ test('a header override is case-insensitive: it replaces, not duplicates, a diff
   const { report } = await runProgram(program, configWithDefault, { source });
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
 
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   const headerKeys = Object.keys(apiStep.request!.headers).filter((k) => k.toLowerCase() === 'content-type');
   assert.equal(headerKeys.length, 1, `expected exactly one content-type header entry, got: ${JSON.stringify(apiStep.request!.headers)}`);
   assert.equal(apiStep.request!.headers[headerKeys[0]!], 'application/vnd.api+json');
@@ -155,7 +156,7 @@ test('a `body.<path>` expect on a non-JSON response still fails fast with the `b
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /use `body text` for non-JSON/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /use `body text` for non-JSON/);
 
   await server.close();
 });
@@ -177,7 +178,7 @@ test('a response with two `Set-Cookie` headers keeps both — the last no longer
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
 
-  const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
+  const captureStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'capture')!;
   assert.match(captureStep.detail ?? '', /session=abc123/);
   assert.match(captureStep.detail ?? '', /csrf=xyz789/);
 

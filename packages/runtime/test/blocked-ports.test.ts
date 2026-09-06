@@ -20,6 +20,7 @@ import { runProgram } from '../src/interpreter.js';
 import { fetchErrorHint } from '../src/http.js';
 import { blockedPort, blockedPortList } from '../src/blockedPorts.js';
 import { testConfig } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 /** Does `fetch` refuse this port outright? A blocked port fails with no `code` on the cause and
  * without touching the network — no listener, no timeout, no egress. A port that is *not* blocked
@@ -111,7 +112,7 @@ test('the row itself: `api GET` against a blocked port is diagnosed end to end',
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:19'), { source });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /port 19 is on the fetch standard's blocked-ports list/, error);
 });
 
@@ -131,7 +132,7 @@ test('the control: an unblocked closed port still gets the connection-refused di
   const { report } = await runProgram(program, testConfig(`http://127.0.0.1:${port}`), { source });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /connection refused/, error);
   assert.doesNotMatch(error, /blocked-ports/, error);
 });

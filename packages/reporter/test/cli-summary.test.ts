@@ -9,8 +9,19 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { RunReport } from '@tflw/runtime';
+import type { AuthorizedTarget, LoadMetrics, RunReport, TestResult } from '@tflw/runtime';
 import { renderCliSummary } from '../src/cli-summary.js';
+
+/**
+ * `M173a` — named with its member type rather than written inline in the array.
+ *
+ * `RunReport.tests` is `readonly ReportEntry[]` and `ReportEntry` is a three-member union, so
+ * `{ ...healthCheck, warnings: [] }` spreads a UNION: the result carries every member's
+ * fields as optional and is assignable back to none of them. Naming the entry at construction keeps
+ * the member type, which is what `src` already does everywhere — this is the construction side of
+ * the discipline `entry-kind.ts` enforces on the reading side.
+ */
+const healthCheck: TestResult = { kind: 'functional', name: 'health check', ok: true, durationMs: 12, steps: [] };
 
 const baseReport: RunReport = {
   ok: true,
@@ -23,7 +34,7 @@ const baseReport: RunReport = {
   seed: 42,
   now: '2026-08-06T00:00:00.000Z',
   insecure: false,
-  tests: [{ kind: 'functional', name: 'health check', ok: true, durationMs: 12, steps: [] }],
+  tests: [healthCheck],
 };
 
 test('the summary names every var that was too short to mask (A12-01)', () => {
@@ -81,7 +92,20 @@ const abortedWorkload: RunReport = {
       name: 'burst',
       file: 'load/burst.tflw',
       workload: { shape: 'ramp', model: 'closed', target: 5, overMs: 30_000 },
-      metrics: { iterations: 151_695, failures: 0, errorRate: 0, durations: { min: 0, max: 11, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 }, histogram: [], timeline: [] },
+      // `M173a` — `assertions` and `successful` are required and both were absent, so this fixture
+      // rendered `assertions: undefined` into a summary nothing asserted on (`M173-01`). A
+      // scenario-scope run that asserted nothing is `0`, which the field's own doc calls "the whole
+      // point of the field, not an edge case".
+      metrics: {
+        iterations: 151_695,
+        failures: 0,
+        assertions: 0,
+        errorRate: 0,
+        durations: { min: 0, max: 11, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 },
+        histogram: [],
+        timeline: [],
+        successful: { iterations: 151_695, durations: { min: 0, max: 11, avg: 0, p50: 0, p90: 0, p95: 0, p99: 0 }, histogram: [] },
+      } satisfies LoadMetrics,
       thresholds: [{ label: 'error rate', op: 'lessThan', target: 0.5, actual: 0, ok: true }],
       ok: true,
       endpoints: [],
@@ -137,13 +161,33 @@ test('a completed run still ticks its thresholds and still prints PASS', () => {
 
 // --- `authorized target` (M128b, D291) --------------------------------------
 //
+/**
+ * `M173a` — `AuthorizedTarget`'s four `probe*` opt-ins are REQUIRED booleans and five fixtures here
+ * named none or one of them. `grantedProbeClauses` filters on truthiness, so `false` and `undefined`
+ * render identically and nothing was visibly wrong — which is the point: the type says a declaration
+ * states its position on all four, and these fixtures stated a position on none.
+ *
+ * `PROBE_CLAUSE_WORDS` is `satisfies Record<Exclude<keyof AuthorizedTarget, …>, string>` precisely so
+ * a fifth opt-in is a compile error until someone gives it a word. That completeness rule reaches the
+ * renderer and stopped at the fixtures, because nothing typechecked them (`M155-01`).
+ */
+const authorized = (target: string, reason: string, granted: Partial<AuthorizedTarget> = {}): AuthorizedTarget => ({
+  target,
+  reason,
+  probeMutating: false,
+  probeOversized: false,
+  probeTraversal: false,
+  probeCiphers: false,
+  ...granted,
+});
+
 // D291 requires that the reason travel with the evidence: whatever a run's security assertions
 // found, the artifact also records the claim that permitted them to run at all. That is only true
 // if the line is actually rendered, which is what these pin.
 
 test('the summary prints each authorized target with its reason (D291)', () => {
   const out = renderCliSummary(
-    { ...baseReport, authorizedTargets: [{ target: 'https://localhost:8443', reason: 'self-hosted test fixture' }] },
+    { ...baseReport, authorizedTargets: [authorized('https://localhost:8443', 'self-hosted test fixture')] },
     false,
   );
   assert.match(out, /ℹ authorized target https:\/\/localhost:8443 — self-hosted test fixture/);
@@ -156,8 +200,8 @@ test('every declaration is printed, not just the first', () => {
     {
       ...baseReport,
       authorizedTargets: [
-        { target: 'https://a.test', reason: 'ours' },
-        { target: 'https://b.test', reason: 'also ours' },
+        authorized('https://a.test', 'ours'),
+        authorized('https://b.test', 'also ours'),
       ],
     },
     false,
@@ -212,8 +256,8 @@ test('D330: `probe mutating` is shown on the target it was declared under', () =
     {
       ...baseReport,
       authorizedTargets: [
-        { target: 'https://a.test', reason: 'ours', probeMutating: true },
-        { target: 'https://b.test', reason: 'also ours', probeMutating: false },
+        authorized('https://a.test', 'ours', { probeMutating: true }),
+        authorized('https://b.test', 'also ours'),
       ],
     },
     false,
@@ -353,5 +397,71 @@ test('a runtime warning prints on a PASSING test — the condition it reports is
 
 test('a test with no warnings says nothing — the line must not be ambient', () => {
   assert.doesNotMatch(renderCliSummary(baseReport, false), /warning\[/);
-  assert.doesNotMatch(renderCliSummary({ ...baseReport, tests: [{ ...baseReport.tests[0]!, warnings: [] }] }, false), /warning\[/);
+  assert.doesNotMatch(renderCliSummary({ ...baseReport, tests: [{ ...healthCheck, warnings: [] }] }, false), /warning\[/);
+});
+
+// -------------------------------------------------------------------------------------------
+// `M173a` / `M173-01` — the three renderings `LoadMetrics.assertions` has, none of which had a test
+// -------------------------------------------------------------------------------------------
+
+/**
+ * The field's own documentation names three states and gives each a different meaning:
+ *
+ *   `n`     — a scenario or combined scope that asserted `n` things.
+ *   `0`     — "the whole point of the field, not an edge case": a load generator with a stopwatch.
+ *   `null`  — "this scope cannot answer". Endpoint scope only, because an assertion names no
+ *             endpoint and attributing one to the nearest preceding request would be a guess
+ *             rendered as a number (`D-M89-1`'s distinction).
+ *
+ * Every fixture in this package omitted the field, so the rendered value was `undefined` — which is
+ * neither `null` nor `0`, so the summary printed `assertions: undefined` and the HTML's zero
+ * sentence never fired. Nothing noticed, because no test in this package asserted on the text at
+ * all. `M146b` shipped the count in order that a reader could tell those runs apart, and until now
+ * the count itself was the untested part of it.
+ */
+const workloadWith = (assertions: number | null): RunReport => ({
+  ...baseReport,
+  tests: [
+    {
+      kind: 'workload',
+      name: 'checkout burst',
+      workload: { shape: 'ramp', model: 'closed', target: 10, overMs: 1000 },
+      metrics: {
+        iterations: 100,
+        failures: 0,
+        assertions,
+        errorRate: 0,
+        durations: { min: 1, max: 9, avg: 4, p50: 4, p90: 8, p95: 8, p99: 9 },
+        histogram: [],
+        timeline: [],
+        successful: { iterations: 100, durations: { min: 1, max: 9, avg: 4, p50: 4, p90: 8, p95: 8, p99: 9 }, histogram: [] },
+      } satisfies LoadMetrics,
+      thresholds: [],
+      ok: true,
+      endpoints: [],
+    },
+  ],
+});
+
+test('a workload that asserted things prints the count', () => {
+  assert.match(renderCliSummary(workloadWith(24), false), /assertions: 24/);
+});
+
+test('a workload that asserted NOTHING prints `assertions: 0`, not nothing and not `undefined`', () => {
+  const out = renderCliSummary(workloadWith(0), false);
+  assert.match(out, /assertions: 0/);
+  // The regression this row is about. `undefined` is what an omitted field rendered as, for as long
+  // as the field has existed, in every fixture in this package.
+  assert.doesNotMatch(out, /assertions: undefined/);
+  // And it is NOT dimmed away or rendered only when non-zero — `M146b`'s comment: "a count that
+  // appears only on the bad run is a count nobody learns to read".
+  assert.match(out, /iterations: 100.*assertions: 0.*error rate/);
+});
+
+test('a scope that cannot answer prints no count at all', () => {
+  const out = renderCliSummary(workloadWith(null), false);
+  assert.doesNotMatch(out, /assertions:/);
+  // The control: the line is still rendered, so the absence above is the count being omitted and
+  // not the whole line going missing.
+  assert.match(out, /iterations: 100/);
 });

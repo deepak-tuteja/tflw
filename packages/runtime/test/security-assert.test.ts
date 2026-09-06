@@ -11,6 +11,7 @@ import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
 import type { ReproSubject } from '../src/interpreter.js';
+import { asEntry } from './__helpers__/entry.js';
 
 /** A JSON route with no security headers at all — the §0 prediction's shape. */
 const bare: Handler = (_req, res) => json(res, 200, { ok: true });
@@ -184,11 +185,19 @@ function withWeakSession(config: ResolvedConfig): ResolvedConfig {
           name: 'admin',
           body: parseSource('test "s"\n  api POST /login\n').program.tests[0]!.body,
           oauth2: null,
+          // `M173d3` — `SessionDecl.envs` arrived with `M147d`/`D642` and this fixture predates it.
+          // `null` is not a filler: the field's own docblock says `null` means every env, which is
+          // exactly what a session written before the clause existed resolves to.
+          envs: null,
           privileged: false,
-          span: { start: { line: 1, col: 1, offset: 0 }, end: { line: 1, col: 1, offset: 0 } },
+          // `M173d3` — this span said `col`, and `Position`'s field is `column` (`token.ts:26`).
+          // The `as` cast below was what made it compile, and it was hiding a malformed node rather
+          // than bridging a real gap: with the field named correctly the literal *is* a
+          // `SessionDecl`, so the cast goes too.
+          span: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 1, offset: 0 } },
         },
       ],
-    ]) as ResolvedConfig['sessions'],
+    ]),
   };
 }
 
@@ -237,8 +246,8 @@ test('D287: a clean session contributes nothing', async () => {
 test('`capture response as x` is a runtime error naming the parts that can be bound', async () => {
   const report = await run({ '/a': bare }, T('  api GET /a\n  capture response as r'));
   assert.equal(report.tests[0]!.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /not a capturable value/);
-  assert.match(report.tests[0]!.error ?? '', /capture body/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /not a capturable value/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /capture body/);
 });
 
 // --- M128c: a passing negated assertion lists what it found ------------------

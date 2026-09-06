@@ -12,6 +12,7 @@ import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { fetchErrorHint } from '../src/http.js';
 import { testConfig } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 /** An ephemeral port that is guaranteed closed right now: bind it, note the port, close it
  * immediately — the OS won't hand it back out mid-test, so a connection to it is a real, immediate
@@ -34,7 +35,7 @@ test('a connection refused (closed local port) gets a named hint, not a bare "fe
   const { report } = await runProgram(program, testConfig(`http://127.0.0.1:${port}`), { source });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /connection refused/);
   assert.match(error, /listening at that host:port/);
 });
@@ -66,7 +67,7 @@ test('a typo under the reserved `tflw://` scheme is named, not handed to fetch (
   const { report } = await runProgram(program, testConfig('tflw://demoo'), { source });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /is not a real base URL/, error);
   assert.match(error, /the only address under the reserved/, error);
   assert.doesNotMatch(error, /fetch failed/, error);

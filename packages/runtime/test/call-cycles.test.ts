@@ -32,6 +32,7 @@ import { join } from 'node:path';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 /** The cross-file shape the checker structurally cannot see: `a` is here, `b` is imported, and `b`
  * calls back into `a`. `buildRegistry` resolves the import at run time, so the cycle is real. */
@@ -50,7 +51,7 @@ test('a cross-file cycle fails with a message naming it, not a RangeError', asyn
     const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
 
     assert.equal(report.ok, false);
-    const error = report.tests[0]!.error ?? '';
+    const error = asEntry(report.tests[0], 'functional').error ?? '';
     assert.match(error, /`a → b → a`/, 'the message must name the cycle it found');
     assert.match(error, /never terminates/);
     assert.doesNotMatch(error, /Maximum call stack/, 'the V8 overflow must never be what a user sees');
@@ -81,9 +82,9 @@ test('the whole report stays small — an end-to-end backstop, not a control', a
 
     // Measured before M97d on this exact shape: 14,505 characters on one line, 32,279-byte
     // results.json, 55,580-byte report.html.
-    assert.ok((report.tests[0]!.error ?? '').length < 500, `error message is ${(report.tests[0]!.error ?? '').length} chars`);
+    assert.ok((asEntry(report.tests[0], 'functional').error ?? '').length < 500, `error message is ${(asEntry(report.tests[0], 'functional').error ?? '').length} chars`);
     assert.ok(JSON.stringify(report).length < 8000, `report is ${JSON.stringify(report).length} bytes`);
-    for (const step of report.tests[0]!.steps) {
+    for (const step of asEntry(report.tests[0], 'functional').steps) {
       assert.ok((step.detail ?? '').length < 500, `a step detail is ${(step.detail ?? '').length} chars`);
     }
   } finally {
@@ -149,7 +150,7 @@ test "t"
 `;
     const { program } = parseSource(source);
     const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
-    const error = report.tests[0]!.error ?? '';
+    const error = asEntry(report.tests[0], 'functional').error ?? '';
     assert.match(error, /^action "fetch it" failed: /);
     assert.doesNotMatch(error, /call path/, 'one frame names no path — there is nothing to disambiguate');
   } finally {
@@ -164,7 +165,7 @@ test('a multi-frame failure names the root once and elides the middle of the pat
     const source = `${chain}\naction f8()\n  api GET /x\n  expect status equals 200\n\ntest "t"\n  f1()\n`;
     const { program } = parseSource(source);
     const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
-    const error = report.tests[0]!.error ?? '';
+    const error = asEntry(report.tests[0], 'functional').error ?? '';
 
     // The root reason appears exactly once. Before M97d it appeared once and was preceded by eight
     // `action "fN" failed: ` prefixes; the count is the property, not the length.
@@ -196,7 +197,7 @@ test "t"
     assert.equal(report.ok, false, 'the soft failure still fails the test');
     // Two requests: a hard failure would have aborted before the second.
     assert.equal(server.received.get('/x')!.length, 2);
-    assert.doesNotMatch(report.tests[0]!.error ?? '', /call path/);
+    assert.doesNotMatch(asEntry(report.tests[0], 'functional').error ?? '', /call path/);
   } finally {
     await server.close();
   }

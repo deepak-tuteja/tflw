@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 // Real binary content, not valid UTF-8 — a PNG's own magic header (`\x89PNG\r\n\x1a\n`) plus a
 // couple of arbitrary high bytes. `body text` decoding this produces U+FFFD replacement
@@ -57,7 +58,7 @@ test('`body bytes matches file` fails clearly on a real mismatch, naming the fil
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
 
   assert.equal(report.ok, false);
-  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  const expectStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!;
   assert.match(expectStep.detail!, /to match file "\.\/wrong\.bin"/);
   assert.match(expectStep.detail!, /<binary body, \d+ bytes>/);
 
@@ -79,7 +80,7 @@ test('`body bytes matches file` against a nonexistent file fails clearly, naming
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /could not read file ".\/does-not-exist\.bin" for `matches file`/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /could not read file ".\/does-not-exist\.bin" for `matches file`/);
 
   await server.close();
   await rm(dir, { recursive: true, force: true });
@@ -98,7 +99,7 @@ test('`matches file` on anything other than `body bytes` is a clear runtime erro
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /`matches file` is only valid on a `body bytes` subject/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /`matches file` is only valid on a `body bytes` subject/);
 
   await server.close();
 });
@@ -201,7 +202,7 @@ test('a failing `matches file` reports the interpolated path, not the literal th
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /could not read file ".\/receipt-9\.bin" for `matches file`/);
   assert.doesNotMatch(error, /\{slug\}/);
 

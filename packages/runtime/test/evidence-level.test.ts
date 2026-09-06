@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const SOURCE = `test "reads a user"\n  api GET /user\n  expect status equals 200\n  expect body.email equals "a@example.com"\n`;
 
@@ -23,7 +24,7 @@ test('`full` (the default) keeps headers and body in the report, unchanged from 
   const { report } = await runProgram(program, config, { source: SOURCE });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.match(apiStep.response!.bodyText, /a@example\.com/);
   assert.ok(Object.keys(apiStep.response!.headers).length > 0);
 
@@ -38,7 +39,7 @@ test('`headers-only` drops the body from the report but keeps headers, and asser
   const { report } = await runProgram(program, config, { source: SOURCE });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2)); // `expect body.email` still ran against the raw trace
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.doesNotMatch(apiStep.response!.bodyText, /a@example\.com/);
   assert.equal(apiStep.request!.body, undefined);
   assert.ok(Object.keys(apiStep.response!.headers).length > 0, 'headers must still be present at this level');
@@ -54,7 +55,7 @@ test('`none` drops both headers and body from the report, and assertions still p
   const { report } = await runProgram(program, config, { source: SOURCE });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.doesNotMatch(apiStep.response!.bodyText, /a@example\.com/);
   assert.deepEqual(apiStep.response!.headers, {});
   assert.deepEqual(apiStep.request!.headers, {});
@@ -94,12 +95,12 @@ test('`evidence none`: a captured secret and a failing assertion leak it into no
   // …but the report must still be *useful*. Dropping detail entirely below `full` was the rejected
   // alternative precisely because it would make `evidence none` useless for diagnosing a CI
   // failure: what was compared survives, what it was compared against does not.
-  const failing = report.tests[0]!.steps.filter((s) => s.kind === 'expect').at(-1)!;
+  const failing = asEntry(report.tests[0], 'functional').steps.filter((s) => s.kind === 'expect').at(-1)!;
   assert.equal(failing.ok, false);
   assert.match(failing.detail!, /body\.accessToken/, 'the failure must still name the subject it compared');
   assert.match(failing.detail!, /omitted by evidence level/, 'and say why the value is missing, not just omit it silently');
 
-  const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
+  const captureStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'capture')!;
   assert.match(captureStep.detail!, /^token = \[omitted by evidence level\] \(captured\)$/);
 
   await server.close();
@@ -112,7 +113,7 @@ test('`evidence full` (the default) is unchanged — capture and expect detail s
   const { program } = parseSource(SESSION_SOURCE);
   const { report } = await runProgram(program, config, { source: SESSION_SOURCE });
 
-  const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
+  const captureStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'capture')!;
   assert.match(captureStep.detail!, new RegExp(JWT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'FS-02 must not change the default level');
 
   await server.close();
@@ -135,7 +136,7 @@ test('`headers-only`: a header subject keeps its value in detail, a body subject
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const [headerCapture, bodyCapture] = report.tests[0]!.steps.filter((s) => s.kind === 'capture');
+  const [headerCapture, bodyCapture] = asEntry(report.tests[0], 'functional').steps.filter((s) => s.kind === 'capture');
   assert.match(headerCapture!.detail!, /eyJhbGciOiJIUzI1NiJ9/, 'the header is already printed in full in the header panel above');
   assert.match(bodyCapture!.detail!, /^b = \[omitted by evidence level\] \(captured\)$/);
 
@@ -149,7 +150,7 @@ test('`status` and `duration` survive at every level — they are the structure,
   const { program } = parseSource(source);
   const { report } = await runProgram(program, config, { source });
 
-  const failing = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  const failing = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!;
   assert.equal(failing.ok, false);
   assert.match(failing.detail!, /200/, 'a status code is never a secret, and a failure that hides it is unusable');
 

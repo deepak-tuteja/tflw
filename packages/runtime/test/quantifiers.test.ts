@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const ORDERS = {
   items: [
@@ -27,7 +28,7 @@ test('`any` passes when at least one element matches; `all` fails on the first m
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
-  const t = report.tests[0]!;
+  const t = asEntry(report.tests[0], 'functional');
   assert.equal(t.ok, false);
   assert.equal(t.steps[1]!.ok, true); // any body.items.name equals "Widget"
   assert.equal(t.steps[2]!.ok, true); // any body.tags equals "urgent"
@@ -67,7 +68,7 @@ test('`any` fails with a clear message when no element matches', async () => {
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.steps[1]!.detail ?? '', /expected any element in body\.items to match, but none of 1 did/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[1]!.detail ?? '', /expected any element in body\.items to match, but none of 1 did/);
 
   await server.close();
 });
@@ -119,7 +120,7 @@ test('`all` also treats a per-element navigation failure as that element failing
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /body\.items\[0\]\.tags\.name/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /body\.items\[0\]\.tags\.name/);
 
   await server.close();
 });
@@ -139,7 +140,7 @@ test('`any`/`all` extend to `body csv` (D19.8), same as `body.<path>`', async ()
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
-  const t = report.tests[0]!;
+  const t = asEntry(report.tests[0], 'functional');
   assert.equal(t.steps[1]!.ok, true); // any ... equals "delivered"
   assert.equal(t.steps[2]!.ok, false); // all ... equals "delivered" — row 2 is pending
   assert.match(t.steps[2]!.detail ?? '', /body csv\[1\]\.status/);

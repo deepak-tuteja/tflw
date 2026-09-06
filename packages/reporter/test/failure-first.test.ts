@@ -18,6 +18,13 @@ const response: ResponseTrace = {
   headers: { 'cf-ray': '8a1b2c3d4e5f', 'content-type': 'application/json' },
   bodyText: '{"error":"boom"}',
   bodyBytes: Buffer.from('{"error":"boom"}'),
+  // `M173a` — required on `ResponseTrace` and absent from both fixtures here. `finalUrl` is the
+  // request URL when nothing redirected, which is this fixture's case; `cookieEvents` empty is a
+  // response that set none. Stated rather than omitted, because an omitted `finalUrl` is not "no
+  // redirect", it is a trace that cannot say where the response came from.
+  durationMs: 42,
+  finalUrl: 'https://api.example.com/orders',
+  cookieEvents: [],
 };
 
 const step = (over: Partial<StepResult> = {}): StepResult =>
@@ -44,6 +51,9 @@ const okResponse: ResponseTrace = {
   headers: { 'cf-ray': '11112222aaaa', 'content-type': 'application/json' },
   bodyText: '{"ok":true}',
   bodyBytes: Buffer.from('{"ok":true}'),
+  durationMs: 12,
+  finalUrl: 'https://api.example.com/orders',
+  cookieEvents: [],
 };
 
 const failingRun = reportWith({
