@@ -11400,9 +11400,9 @@ A check that would not have caught that is not this stage.
 
 **`M176` — a gate's reach against its output's claim, one repository over**
 
-**Status: IN FLIGHT 2026-09-06.** The sibling-side milestone `D511` has been deferring since `M174`
+**Status: COMPLETE 2026-09-06.** The sibling-side milestone `D511` had been deferring since `M174`
 merged (`#177`, `44e2d79`). Measured while scoping (§4, §5); the cut is §6; the decisions it must
-take are §7.
+take are §7. Both halves are on `main`, and the window `M176c` opened on purpose is closed.
 
 ### M176b
 
