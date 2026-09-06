@@ -11300,8 +11300,9 @@ Closes `M155-02`. The last stage, and the only one crossing the repository bound
 
 **`M174` — the manifest gains a `subject` family**
 
-**Status:** **BUILDING 2026-09-06.** Scoped 2026-09-05; measured on the build box 2026-09-06 (§2, §3);
+**Status:** **COMPLETE 2026-09-06.** Scoped 2026-09-05; measured on the build box 2026-09-06 (§2, §3);
 decided (§5), `D903`–`D906`. Spun out of `PLAN_M172_TFLW_LEDGER_FIVE.md` §1.
+**Merged 2026-09-06 as `#177`, `44e2d79`**, onto `M173` (`#176`, `909d28c`).
 Closes `M159-01`.
 It files and closes `M174-01`, `M174-02` and `M174-03`, all three found by §2's measurement
 and by reviewing the diffs it caused.

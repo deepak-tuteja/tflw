@@ -1078,6 +1078,46 @@ test('an unbolded `Closes` still states a claim', () => {
   assert.deepEqual(closeClaims('Closes `FU-01`, `V2-01`. **Unblocks the freeze**')[0].ids, ['FU-01', 'V2-01'])
 })
 
+// `M177a`/`D909`. The four tests below bracket the sentence rule from both sides: two say what it
+// must now drop, two say what it must not start dropping — and what it must not start *adding*,
+// which is the half `M177`'s scoping measurement never asked and the half that was wrong.
+
+test('a second sentence stating what a plan FILED is not a close-claim', () => {
+  // `PLAN_M175`'s header, as originally written. Its `Files` sentence was read as part of the
+  // `Closes` list, which is `M175-02` — and is why that header had to be split across two lines to
+  // get the gate green. Red before the rule: the old segmentation returns `M175-01` here.
+  const claims = closeClaims('Closes `M169-03`, `M156-01`. Files `M175-01`.')
+  assert.deepEqual(claims.map((c) => c.ids), [['M169-03', 'M156-01']])
+})
+
+test('a second sentence carrying its own close verb is still a claim', () => {
+  // `PLAN_M104`, the one claim in 92 records a plain sentence split would have lost. The plan
+  // really does close both rows, and it says so twice.
+  const claims = closeClaims('Closes `M97c-03` (S2). Files and closes `M104-01` (S2), found while fixing it.')
+  assert.deepEqual(claims.map((c) => c.ids), [['M97c-03'], ['M104-01']])
+})
+
+test('a sentence cannot open a claim a label refused', () => {
+  // THE REJECTED DESIGN, PINNED. `M177`'s §1 proposed giving a sentence the same authority a bold
+  // label has. Measured over the corpus that drops the 17 ids it should and **admits 39 it should
+  // not** — this shape among them, where the governing label declined the row outright.
+  assert.deepEqual(closeClaims('**Disposes without closing:** `M149f-01` (S4). It closes `M130-07` in passing.'), [])
+})
+
+test('a defective claim quoted while being described is still not a claim', () => {
+  // `REVIEW_FINDINGS.md:6043` quotes `PLAN_M175`'s bad header inside the row that reports it.
+  // Quoting a defect must not commit one — and a sentence-as-opener rule commits this one.
+  const row = '**`M175-02`** — the header read *"Closes `M169-03`, and gates `M149f-01`\'s condition."*'
+  assert.deepEqual(closeClaims(row), [])
+})
+
+test('a period inside a code span or a bold run is not a sentence boundary', () => {
+  // Boundaries are found in the masked text for the same reason ids are read from the real one: a
+  // `.` in `v1.2` ends nothing, and `**Closes A. And B:**` is one label.
+  assert.deepEqual(closeClaims('Closes `M1-01` at `v1.2` and `M2-02`.')[0].ids, ['M1-01', 'M2-02'])
+  assert.deepEqual(closeClaims('**Closes, and also closes:** `M3-03`')[0].ids, ['M3-03'])
+})
+
 /** A plan whose only close-claim is written past the twelve-line window, with no marker. */
 function belowWindow(claim = '**Closes:** `B3-04`') {
   const text = ['# PLAN_M901', ...Array.from({ length: 18 }, () => ''), claim].join('\n')
