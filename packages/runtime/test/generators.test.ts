@@ -207,7 +207,12 @@ test('`unique like` renders the pattern and stays distinct across calls', async 
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const [a, b] = asEntry(report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail!);
+  const details = asEntry(report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail);
+  const [a, b] = details;
+  // Two steps with a detail each is this test's premise, not an incidental — `slice(0, 2)` on a
+  // report with one step yields one element, and the two `assert.match` calls below would then
+  // throw on `undefined` rather than fail a claim about generated values.
+  assert.ok(a && b, `expected two generated steps with details, got ${JSON.stringify(details)}`);
   assert.match(a, /^a = "ORD-\d{6}" \(unique\)$/);
   assert.match(b, /^b = "ORD-\d{6}" \(unique\)$/);
   assert.notEqual(a, b);

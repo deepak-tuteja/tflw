@@ -163,7 +163,13 @@ test('an author’s OWN shorter `timeout` on the poll still reports as a request
   const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 5000 }), { source });
 
   assert.equal(report.ok, false);
-  const detail = asEntry(report.tests[0], 'functional').steps[0]!.detail ?? asEntry(report.tests[0], 'functional').steps[0]!.error ?? '';
+  // `M173d3` — the second branch of this chain read `StepResult.error`, which does not exist:
+  // `error` is on `AttemptResult`, not on a step. So the fallback has always evaluated to
+  // `undefined` and the expression was `detail ?? ''` wearing a third option. Removed rather than
+  // repointed — if `detail` were ever absent the empty string fails the match below, which is the
+  // right outcome and is what was already happening.
+  const step = asEntry(report.tests[0], 'functional').steps[0]!;
+  const detail = step.detail ?? '';
   assert.match(detail, /request timed out after 100ms/);
 
   await server.close();

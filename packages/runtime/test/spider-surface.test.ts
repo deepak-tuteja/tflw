@@ -148,10 +148,17 @@ test('a POST form becomes a urlencoded request, and every field tflw filled in i
   // The document's own hidden token is carried, NOT invented — that distinction is the whole reason
   // `invented` exists, and a CSRF token counted as invented would make every finding on this route
   // read as resting on a value tflw made up.
-  assert.match(post.body ?? '', /_csrf=tok-123/);
+  // `M173d3` — `CrawlRequestPlan.body` is `unknown`, because the type serves two producers: the
+  // crawl synthesizes a JSON object and the spider a urlencoded string. That a *form* route carries
+  // a string is the claim this test is making about the spider, so it is asserted rather than cast
+  // — a body arriving as an object here would mean the urlencoding never happened, and
+  // `assert.match` against its `[object Object]` stringification would report a missing token.
+  assert.equal(typeof post.body, 'string', 'a discovered form is a urlencoded string body, not a JSON object');
+  const body = post.body as string;
+  assert.match(body, /_csrf=tok-123/);
   assert.deepEqual([...post.invented].sort(), ['form field `qty`', 'form field `title`']);
   // The submit button is not a field.
-  assert.ok(!(post.body ?? '').includes('Create'));
+  assert.ok(!body.includes('Create'));
 });
 
 test('a GET form is a query string, not a body — a browser would never send one as a body', async () => {

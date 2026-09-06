@@ -185,11 +185,19 @@ function withWeakSession(config: ResolvedConfig): ResolvedConfig {
           name: 'admin',
           body: parseSource('test "s"\n  api POST /login\n').program.tests[0]!.body,
           oauth2: null,
+          // `M173d3` — `SessionDecl.envs` arrived with `M147d`/`D642` and this fixture predates it.
+          // `null` is not a filler: the field's own docblock says `null` means every env, which is
+          // exactly what a session written before the clause existed resolves to.
+          envs: null,
           privileged: false,
-          span: { start: { line: 1, col: 1, offset: 0 }, end: { line: 1, col: 1, offset: 0 } },
+          // `M173d3` — this span said `col`, and `Position`'s field is `column` (`token.ts:26`).
+          // The `as` cast below was what made it compile, and it was hiding a malformed node rather
+          // than bridging a real gap: with the field named correctly the literal *is* a
+          // `SessionDecl`, so the cast goes too.
+          span: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 1, offset: 0 } },
         },
       ],
-    ]) as ResolvedConfig['sessions'],
+    ]),
   };
 }
 

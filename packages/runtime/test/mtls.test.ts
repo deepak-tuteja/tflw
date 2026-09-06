@@ -172,6 +172,7 @@ test('the `api` step itself still reports `ok: true` when it caught a connection
 
   const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.equal(apiStep.ok, true);
+  assert.ok(apiStep.detail, 'a step that caught a connection failure must say so in its detail');
   assert.match(apiStep.detail, /connection failed/);
 });
 

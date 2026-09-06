@@ -539,7 +539,10 @@ async function slowLoginFixture(work: (token: string) => Parameters<typeof start
       await new Promise((r) => setTimeout(r, B318_LOGIN_MS));
       json(res, 200, { token: validToken });
     },
-    '/work': (req, res) => work(validToken)(req, res),
+    // `M173d3` — `Handler` is `(req, res, body) => void` and this wrapper forwarded two of three.
+    // No test here reads the body, so nothing failed; the wrapper is still the one place a future
+    // `work` that does read it would silently receive `undefined`.
+    '/work': (req, res, body) => work(validToken)(req, res, body),
   });
   return { server, rotate: () => { validToken = 'rotated-away'; }, logins: () => loginCount };
 }
