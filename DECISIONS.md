@@ -6934,7 +6934,7 @@ exist in exactly one place, which is tflw.
 
 ### D764
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/graders.mjs +4 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/constructs.mjs +6 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D764` — a ratchet condition is audited against the decision it cites, never read as provenance.**
 Taken 2026-08-28 while judging acceptance clause 5. `D739` settled what a `RATCHET` entry *asserts*
@@ -6972,7 +6972,7 @@ address, and this one named no requirement at all.
 
 ### D767
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +11 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +13 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D767` — a count in prose is a copy with no guard, so `D504` deletes the number as well as the
 list.**
@@ -7582,7 +7582,7 @@ manually before a release" — that is the state the row is filed against, with 
 
 ### D826
 
-<sub>cited from tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/measure-construct-evidence.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+<sub>cited from tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/measure-construct-evidence.mjs, tflw-tests/scripts/verify-grader-reachability.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
 
 **D826 — `--probe` is deleted; the script keeps only the verb it implements**
 
@@ -7604,7 +7604,7 @@ required to kill a test. The sibling has no equivalent for its roster.
 
 ### D828
 
-<sub>cited from tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/regression.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/list-mutation-candidates.mjs +3 more · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
 
 **D828 — the sibling's own graders are audited against the rule both rows imply**
 
@@ -8070,7 +8070,7 @@ would have caught it — one silent green traded for another).
 
 ### D895
 
-<sub>cited from tflw-tests/scripts/lib/graders.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/scripts/verify-external-targets.mjs +2 more · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/graders.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +5 more · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
 
 **`D895` — a hand-maintained corpus that detects its own incompleteness is not an instance of this
 property, and is better than a declaration.** The axis in §11.2 had two answers, *enumerated* and
@@ -8921,7 +8921,7 @@ remaining untested candidate (`AbortSignal.timeout()` per-request overhead in `h
 
 ### M50
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PROGRESS.md`</sub>
 
 **M50 shipped 2026-08-02 — collapse `scenario` into `test`, kind inferred from a workload clause**
 
@@ -10292,7 +10292,7 @@ description of the work turned out to be incomplete.
 
 ### M137e
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs +12 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/VULNS.md +14 more · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 | milestone | repo | contents | codes | coupled |
 |---|---|---|---|---|
@@ -10361,7 +10361,7 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 ### M141
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +31 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +33 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **M141 — two answers to one question (Order 1 of the ledger drawdown)**
 
@@ -10667,7 +10667,7 @@ day and never visibly withdrawn.
 
 ### M154g
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +49 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +50 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154g` — the roster completion**
 
@@ -10994,6 +10994,12 @@ contradicting a stated `SPEC` guarantee (§2.4); reproduced at 167 draws / 84 di
 Sibling work gated on `D511` (tflw merges first).
 Gitignored by `.gitignore:35`.
 
+### M161f
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M161_VALUE_FORM.md`</sub>
+
+**`M161f` — `D817`, in `testFlow-tests`.** Three touchpoints, roster and ratchet re-run.
+
 ### M162
 
 <sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs +3 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
@@ -11035,7 +11041,7 @@ anything.
 
 ### M163
 
-<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/graders.mjs, tflw-tests/scripts/lib/plants.mjs +6 more · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/graders.mjs +9 more · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
 
 **`M163` — a grader that runs in no automated pass is not a grader**
 
@@ -11077,7 +11083,7 @@ line; restate the count; delete the no-op perturbation. Keep all 54 `find` patte
 
 ### M163e
 
-<sub>cited from tflw-tests/scripts/lib/graders.mjs, tflw-tests/scripts/regression.mjs · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/graders.mjs, tflw-tests/scripts/regression.mjs +1 more · lifted from `PLAN_M163_GRADERS_THAT_GRADE.md`</sub>
 
 **`M163e` — `D828`.** The grader audit, result written up either way.
 
@@ -11168,7 +11174,7 @@ behavioural test that resolves a doubled declaration of each key and asserts whi
 
 ### M166
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/tflw-provenance.mjs +5 more · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/tflw-provenance.mjs +6 more · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
 
 **`M166` — `verify:ledger` must not accuse the ledger of a defect it could not have seen**
 
@@ -11290,7 +11296,7 @@ discriminating, 13 flags each with a reader.**
 
 ### M171
 
-<sub>cited from tflw-tests/scripts/verify-external-targets.mjs, tflw-tests/scripts/verify-notation-parity.mjs, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+<sub>cited from tflw-tests/scripts/measure-construct-evidence.mjs, tflw-tests/scripts/verify-external-targets.mjs, tflw-tests/scripts/verify-notation-parity.mjs +2 more · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
 
 **`M171` — every guard declares its corpus**
 
@@ -11350,7 +11356,7 @@ named costs declined; `D887` — the guard is wired to the root `npm test` and n
 
 ### M172e
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/check-fixture-coverage.json, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/check-fixture-coverage.json, tflw-tests/scripts/verify-check-diagnostics.mjs +2 more · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
 
 **`M172e` — built 2026-09-05**
 
@@ -11358,7 +11364,7 @@ Closes `M155-02`. The last stage, and the only one crossing the repository bound
 
 ### M174
 
-<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs +1 more · lifted from `PLAN_M174_SUBJECT_FAMILY.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +2 more · lifted from `PLAN_M174_SUBJECT_FAMILY.md`</sub>
 
 **`M174` — the manifest gains a `subject` family**
 
@@ -11396,7 +11402,7 @@ A check that would not have caught that is not this stage.
 
 ### M176
 
-<sub>cited from tflw-tests/scripts/check-acceptance.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/read-mutation-matrix.mjs +1 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/check-acceptance.mjs, tflw-tests/scripts/lib/constructs.mjs +4 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
 
 **`M176` — a gate's reach against its output's claim, one repository over**
 
@@ -11414,7 +11420,7 @@ take are §7. Both halves are on `main`, and the window `M176c` opened on purpos
 
 ### M176c
 
-<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/scripts/verify-construct-coverage.mjs · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/measure-construct-evidence.mjs +2 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
 
 | stage | repo | state |
 |---|---|---|
@@ -11438,10 +11444,34 @@ take are §7. Both halves are on `main`, and the window `M176c` opened on purpos
 
 ### M176f
 
-<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/scripts/verify-provenance.mjs, tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
 
 | stage | repo | state |
 |---|---|---|
 | `M176f` | tests | **built** `4ac634e` — both decisions taken on measurements |
+
+### M178
+
+<sub>cited from tflw-tests/scripts/measure-construct-evidence.mjs · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
+
+**`M178` — a record no instrument reads, and a check nothing runs**
+
+**Status: IN FLIGHT 2026-09-07.** Cut from the ten workable rows left after `M176` merged, on one
+question asked and answered: when a sentence and a measured fact disagree, the default repair is to
+**delete the copy** and point at the single source, and to build a reader only where there is no
+source to point at. Everything below follows from that.
+
+### M178a
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/measure-construct-evidence.mjs, tflw-tests/scripts/regression.mjs +3 more · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
+
+**`M178a` — the sweep**
+
+**`M176-07`.** `M176c` raised `RATCHET_CEILING` `0` → `15` and five statements of the old value did
+not move: `CONSTRUCTS.md`, `lib/constructs.mjs`'s docblock, and three in
+`measure-construct-evidence.mjs` — one of them **printed to a user**, reproduced on the box before
+repair. Every gate was green throughout, because the gate reads the constant and nothing reads the
+sentence. The sharpest of the five is the docblock saying the raise is *"exactly the edit this pin
+exists to make loud"*.
 
 <!-- GENERATED:decisions:end -->
