@@ -9,6 +9,7 @@ import { deflateSync } from 'node:zlib';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const ORDERS_CSV = 'id,status,total\n1,delivered,19.98\n2,pending,4.50\n';
 
@@ -74,7 +75,7 @@ test('`body csv` on a malformed CSV (wrong field count) fails the step with a sp
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /body csv: row 2 has 3 fields, expected 2 \(from the header row\)/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /body csv: row 2 has 3 fields, expected 2 \(from the header row\)/);
 
   await server.close();
 });
@@ -111,7 +112,7 @@ test('`body pdf text` on a non-PDF response fails the step with a specific messa
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /no \/trailer found \(is this response actually a PDF\?\)/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /no \/trailer found \(is this response actually a PDF\?\)/);
 
   await server.close();
 });

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('`before`(each) sets a var the test and its `after` can both see', async () => {
   const server = await startFixtureServer({
@@ -34,7 +35,7 @@ after
   assert.equal(orders.id, 'seeded-123');
   const cleanup = JSON.parse(server.received.get('/cleanup')![0]!.body);
   assert.equal(cleanup.id, 'seeded-123');
-  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  const kinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(kinds, ['let', 'api', 'expect', 'api', 'expect']);
 
   await server.close();
@@ -59,9 +60,9 @@ after
 
   assert.equal(report.ok, false);
   assert.equal(server.received.get('/cleanup')!.length, 1);
-  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  const kinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(kinds, ['api', 'expect', 'api', 'expect']);
-  assert.match(report.tests[0]!.error ?? '', /500/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /500/);
 
   await server.close();
 });
@@ -90,7 +91,7 @@ after
   assert.equal(report.ok, false);
   assert.equal(server.received.has('/orders'), false);
   assert.equal(server.received.has('/cleanup'), false);
-  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  const kinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(kinds, ['api', 'expect']);
 
   await server.close();

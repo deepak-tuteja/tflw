@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { testConfig } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 let server: Server;
 let baseUrl: string;
@@ -52,7 +53,7 @@ test('a self-signed cert fails with a teaching hint by default, not a bare "fetc
 
   assert.equal(report.ok, false);
   assert.equal(report.insecure, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /self-signed or private-CA certificate/);
   assert.match(error, /insecure true/);
   assert.match(error, /NODE_EXTRA_CA_CERTS/);

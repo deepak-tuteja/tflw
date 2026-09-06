@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram, makeUniqueSeq } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('the same seed reproduces identical `random` values; a different seed changes them', async () => {
   const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 201, { ok: true }) });
@@ -26,9 +27,9 @@ test('the same seed reproduces identical `random` values; a different seed chang
   const runB = await runProgram(program, config, { source, seed: 42 });
   const runC = await runProgram(program, config, { source, seed: 7 });
 
-  const detailsA = runA.report.tests[0]!.steps.slice(0, 5).map((s) => s.detail);
-  const detailsB = runB.report.tests[0]!.steps.slice(0, 5).map((s) => s.detail);
-  const detailsC = runC.report.tests[0]!.steps.slice(0, 5).map((s) => s.detail);
+  const detailsA = asEntry(runA.report.tests[0], 'functional').steps.slice(0, 5).map((s) => s.detail);
+  const detailsB = asEntry(runB.report.tests[0], 'functional').steps.slice(0, 5).map((s) => s.detail);
+  const detailsC = asEntry(runC.report.tests[0], 'functional').steps.slice(0, 5).map((s) => s.detail);
 
   assert.deepEqual(detailsA, detailsB, 'same seed must reproduce the exact same generated values');
   assert.notDeepEqual(detailsA, detailsC, 'a different seed should (overwhelmingly likely) differ');
@@ -47,7 +48,7 @@ test('`random number`/`random decimal` with a reversed range fail clearly instea
   const { program: numberProgram } = parseSource(numberSource);
   const { report: numberReport } = await runProgram(numberProgram, testConfig('http://127.0.0.1:1'), { source: numberSource });
   assert.equal(numberReport.ok, false);
-  assert.match(numberReport.tests[0]!.error ?? '', /random number 10 to 5.*`to` must be ≥ `from`/);
+  assert.match(asEntry(numberReport.tests[0], 'functional').error ?? '', /random number 10 to 5.*`to` must be ≥ `from`/);
 
   const decimalSource = `test "reversed decimal range"
   let price = random decimal 10.5 to 2.5
@@ -56,7 +57,7 @@ test('`random number`/`random decimal` with a reversed range fail clearly instea
   const { program: decimalProgram } = parseSource(decimalSource);
   const { report: decimalReport } = await runProgram(decimalProgram, testConfig('http://127.0.0.1:1'), { source: decimalSource });
   assert.equal(decimalReport.ok, false);
-  assert.match(decimalReport.tests[0]!.error ?? '', /random decimal 10\.5 to 2\.5.*`to` must be ≥ `from`/);
+  assert.match(asEntry(decimalReport.tests[0], 'functional').error ?? '', /random decimal 10\.5 to 2\.5.*`to` must be ≥ `from`/);
 });
 
 test('`random date between` with the bounds reversed fails instead of returning a date before `from` (M124-01)', async () => {
@@ -73,7 +74,7 @@ test('`random date between` with the bounds reversed fails instead of returning 
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /random date between .*`to` must be ≥ `from`/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /random date between .*`to` must be ≥ `from`/);
 });
 
 test('`random string` with a negative length fails instead of returning the empty string (M124-02)', async () => {
@@ -86,7 +87,7 @@ test('`random string` with a negative length fails instead of returning the empt
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /random string -3: length must be 0 or more/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /random string -3: length must be 0 or more/);
 });
 
 test('`random string 0` stays legal and produces the empty string (D629)', async () => {
@@ -102,7 +103,7 @@ test('`random string 0` stays legal and produces the empty string (D629)', async
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
   assert.equal(report.ok, true);
-  assert.match(report.tests[0]!.steps[0]!.detail ?? '', /""/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '', /""/);
   await server.close();
 });
 
@@ -123,7 +124,7 @@ ${letLines}
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const details = report.tests[0]!.steps.slice(0, 19).map((s) => s.detail);
+  const details = asEntry(report.tests[0], 'functional').steps.slice(0, 19).map((s) => s.detail);
   assert.equal(new Set(details).size, 19, 'every unique(...)/unique email/unique number value must be distinct');
   for (const d of details) assert.match(d ?? '', /\(unique\)$/);
 
@@ -150,9 +151,9 @@ test('the same seed AND `now` reproduce identical `random date in past`/`in futu
   const runB = await runProgram(program, config, { source, seed: 42, now: '2026-01-01T00:00:00.000Z' });
   const runC = await runProgram(program, config, { source, seed: 42, now: '2027-06-15T00:00:00.000Z' });
 
-  const detailsA = runA.report.tests[0]!.steps.slice(0, 2).map((s) => s.detail);
-  const detailsB = runB.report.tests[0]!.steps.slice(0, 2).map((s) => s.detail);
-  const detailsC = runC.report.tests[0]!.steps.slice(0, 2).map((s) => s.detail);
+  const detailsA = asEntry(runA.report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail);
+  const detailsB = asEntry(runB.report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail);
+  const detailsC = asEntry(runC.report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail);
 
   assert.deepEqual(detailsA, detailsB, 'same seed + same `now` must reproduce the exact same dates');
   assert.notDeepEqual(detailsA, detailsC, 'the same seed with a different `now` anchor must produce different absolute dates');
@@ -183,9 +184,9 @@ test('`today`/`now` derive from the run clock, not wall-clock `Date.now()` at ev
   const runC = await runProgram(program, config, { source, now: '2030-11-02T08:00:00.000Z' });
   for (const r of [runA, runB, runC]) assert.equal(r.report.ok, true, JSON.stringify(r.report.tests[0], null, 2));
 
-  const detailsA = runA.report.tests[0]!.steps.slice(0, 2).map((s) => s.detail);
-  const detailsB = runB.report.tests[0]!.steps.slice(0, 2).map((s) => s.detail);
-  const detailsC = runC.report.tests[0]!.steps.slice(0, 2).map((s) => s.detail);
+  const detailsA = asEntry(runA.report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail);
+  const detailsB = asEntry(runB.report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail);
+  const detailsC = asEntry(runC.report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail);
 
   assert.deepEqual(detailsA, detailsB, 'the same `now` must format identically across separate runs');
   assert.notDeepEqual(detailsA, detailsC, 'a different `now` must format differently');
@@ -206,7 +207,7 @@ test('`unique like` renders the pattern and stays distinct across calls', async 
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const [a, b] = report.tests[0]!.steps.slice(0, 2).map((s) => s.detail!);
+  const [a, b] = asEntry(report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail!);
   assert.match(a, /^a = "ORD-\d{6}" \(unique\)$/);
   assert.match(b, /^b = "ORD-\d{6}" \(unique\)$/);
   assert.notEqual(a, b);
@@ -231,7 +232,7 @@ test('`unique like` fills its whole value space without a collision, then refuse
   const full = sourceFor(100);
   const { report: rFull } = await runProgram(parseSource(full).program, testConfig(server.baseUrl), { source: full });
   assert.equal(rFull.ok, true, JSON.stringify(rFull.tests[0], null, 2));
-  const values = rFull.tests[0]!.steps.slice(0, 100).map((s) => {
+  const values = asEntry(rFull.tests[0], 'functional').steps.slice(0, 100).map((s) => {
     const m = s.detail!.match(/^v\d+ = "([^"]+)" \(unique\)$/);
     assert.ok(m, `expected a tagged unique detail, got: ${s.detail}`);
     return m[1]!;
@@ -245,8 +246,8 @@ test('`unique like` fills its whole value space without a collision, then refuse
   const over = sourceFor(101);
   const { report: rOver } = await runProgram(parseSource(over).program, testConfig(server.baseUrl), { source: over });
   assert.equal(rOver.ok, false);
-  assert.match(rOver.tests[0]!.error ?? '', /can encode at most 100 distinct values/);
-  assert.match(rOver.tests[0]!.error ?? '', /counter has already reached 100/);
+  assert.match(asEntry(rOver.tests[0], 'functional').error ?? '', /can encode at most 100 distinct values/);
+  assert.match(asEntry(rOver.tests[0], 'functional').error ?? '', /counter has already reached 100/);
 
   await server.close();
 });
@@ -275,9 +276,9 @@ test "t1"
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
 
   const digits = (detail: string) => detail.match(/"(?:AAA-)?(\d{4})"/)![1]!;
-  const r0 = digits(report.tests[0]!.steps[0]!.detail!);
-  const u0 = digits(report.tests[0]!.steps[1]!.detail!);
-  const r1 = digits(report.tests[1]!.steps[0]!.detail!);
+  const r0 = digits(asEntry(report.tests[0], 'functional').steps[0]!.detail!);
+  const u0 = digits(asEntry(report.tests[0], 'functional').steps[1]!.detail!);
+  const r1 = digits(asEntry(report.tests[1], 'functional').steps[0]!.detail!);
 
   // Counter 0 used to reproduce test 0's stream; counter 1 reproduced test 1's. Both directions.
   assert.notEqual(u0, r0, '`unique like` must not replay the drawing test\'s `random` stream');
@@ -305,7 +306,7 @@ test('`unique like` is seed- and clock-independent, where `random like` is not',
   const draw = async (seed: number, now: string) => {
     const { report } = await runProgram(program, testConfig(server.baseUrl), { source, seed, now });
     assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-    return report.tests[0]!.steps.slice(0, 2).map((st) => st.detail!.match(/"(ORD-\d{6})"/)![1]!);
+    return asEntry(report.tests[0], 'functional').steps.slice(0, 2).map((st) => st.detail!.match(/"(ORD-\d{6})"/)![1]!);
   };
 
   const [u1, r1] = await draw(4242, '2026-07-06T00:00:00.000Z');
@@ -336,7 +337,7 @@ ${letLines}
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const details = report.tests[0]!.steps.slice(0, 10).map((s) => s.detail!);
+  const details = asEntry(report.tests[0], 'functional').steps.slice(0, 10).map((s) => s.detail!);
   const uuids = details.map((d) => {
     const m = d.match(/^id\d+ = "([^"]+)" \(unique\)$/);
     assert.ok(m, `expected a tagged unique uuid detail, got: ${d}`);
@@ -368,9 +369,9 @@ test('`random uuid` is v4-shaped and reproducible under the same `--seed`', asyn
   const runB = await runProgram(program, config, { source, seed: 42 });
   const runC = await runProgram(program, config, { source, seed: 7 });
 
-  const detailsA = runA.report.tests[0]!.steps.slice(0, 2).map((s) => s.detail!);
-  const detailsB = runB.report.tests[0]!.steps.slice(0, 2).map((s) => s.detail!);
-  const detailsC = runC.report.tests[0]!.steps.slice(0, 2).map((s) => s.detail!);
+  const detailsA = asEntry(runA.report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail!);
+  const detailsB = asEntry(runB.report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail!);
+  const detailsC = asEntry(runC.report.tests[0], 'functional').steps.slice(0, 2).map((s) => s.detail!);
 
   for (const d of detailsA) {
     const m = d.match(/^\w+ = "([^"]+)" \(random\)$/);
@@ -397,7 +398,7 @@ test('`random password` guarantees at least one upper/lower/digit/symbol, at any
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const details = report.tests[0]!.steps.slice(0, 3).map((s) => s.detail!);
+  const details = asEntry(report.tests[0], 'functional').steps.slice(0, 3).map((s) => s.detail!);
   const pws = details.map((d) => {
     const m = d.match(/^\w+ = "([^"]+)" \(random\)$/);
     assert.ok(m, `expected a tagged random password detail, got: ${d}`);
@@ -425,7 +426,7 @@ test('`random password` below the length-4 floor fails clearly', async () => {
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /random password 3.*length must be at least 4/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /random password 3.*length must be at least 4/);
 });
 
 test('base64/hex/url transforms round-trip and stay untagged (not a generator)', async () => {
@@ -445,7 +446,7 @@ test('base64/hex/url transforms round-trip and stay untagged (not a generator)',
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const details = report.tests[0]!.steps.slice(0, 6).map((s) => s.detail!);
+  const details = asEntry(report.tests[0], 'functional').steps.slice(0, 6).map((s) => s.detail!);
   for (const d of details) assert.doesNotMatch(d, /\((random|unique)\)$/, 'transforms are not generators, no tag expected');
 
   assert.equal(details[0], 'creds = "YWxpY2VAZXhhbXBsZS50ZXN0OnMzY3IzdA=="');
@@ -466,7 +467,7 @@ test('base64/hex decode reject malformed input instead of silently dropping bad 
   const { program: hexProgram } = parseSource(badHex);
   const { report: hexReport } = await runProgram(hexProgram, testConfig('http://127.0.0.1:1'), { source: badHex });
   assert.equal(hexReport.ok, false);
-  assert.match(hexReport.tests[0]!.error ?? '', /hex decode\(\.\.\.\): "not-hex!" is not valid hex/);
+  assert.match(asEntry(hexReport.tests[0], 'functional').error ?? '', /hex decode\(\.\.\.\): "not-hex!" is not valid hex/);
 
   const badBase64 = `test "bad base64"
   let x = base64 decode("not valid base64!!")
@@ -475,7 +476,7 @@ test('base64/hex decode reject malformed input instead of silently dropping bad 
   const { program: b64Program } = parseSource(badBase64);
   const { report: b64Report } = await runProgram(b64Program, testConfig('http://127.0.0.1:1'), { source: badBase64 });
   assert.equal(b64Report.ok, false);
-  assert.match(b64Report.tests[0]!.error ?? '', /base64 decode\(\.\.\.\): "not valid base64!!" is not valid base64/);
+  assert.match(asEntry(b64Report.tests[0], 'functional').error ?? '', /base64 decode\(\.\.\.\): "not valid base64!!" is not valid base64/);
 });
 
 test('url decode rejects malformed percent-encoding', async () => {
@@ -486,7 +487,7 @@ test('url decode rejects malformed percent-encoding', async () => {
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /url decode\(\.\.\.\): "100% not valid" is not validly percent-encoded/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /url decode\(\.\.\.\): "100% not valid" is not validly percent-encoded/);
 });
 
 // ---------------------------------------------------------------------------
@@ -513,7 +514,7 @@ test('M102/A4-OS-11: a per-request header NAME interpolates', async () => {
   const { program } = parseSource(source);
   const run = await runProgram(program, testConfig(server.baseUrl), { source, seed: 1 });
 
-  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(run.report.tests[0]!.steps));
+  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(asEntry(run.report.tests[0], 'functional').steps));
   const sent = seen[0]!;
   assert.equal(sent['x-step-acme'], 'step-local', 'the header must be sent under the interpolated name');
   // The control: `x-step-{tenant}` is what this line sent before M102, and it is a legal header
@@ -539,7 +540,7 @@ test('M102/A4-OS-11: `expect header "{var}"` reads the interpolated header, and 
 `;
   const { program } = parseSource(source);
   const run = await runProgram(program, testConfig(server.baseUrl), { source, seed: 1 });
-  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(run.report.tests[0]!.steps));
+  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(asEntry(run.report.tests[0], 'functional').steps));
 
   // Before M102 the lookup was `x-trace-{tenant}` — always `null`, so the assertion was decided
   // against a header that cannot exist. Prove the failing message names the resolved header.
@@ -551,7 +552,7 @@ test('M102/A4-OS-11: `expect header "{var}"` reads the interpolated header, and 
   const bad = parseSource(badSource).program;
   const badRun = await runProgram(bad, testConfig(server.baseUrl), { source: badSource, seed: 1 });
   assert.equal(badRun.report.tests[0]!.ok, false);
-  const msg = badRun.report.tests[0]!.error ?? '';
+  const msg = asEntry(badRun.report.tests[0], 'functional').error ?? '';
   assert.match(msg, /header "X-Trace-acme"/, 'the failure must name the header actually read');
   assert.doesNotMatch(msg, /\{tenant\}/, 'the failure must not echo the un-interpolated literal');
 
@@ -570,9 +571,9 @@ test('M102/A4-OS-13: `random like`/`unique like`/`format` patterns interpolate',
 `;
   const { program } = parseSource(source);
   const run = await runProgram(program, testConfig(server.baseUrl), { source, seed: 42 });
-  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(run.report.tests[0]!.steps));
+  assert.equal(run.report.tests[0]!.ok, true, JSON.stringify(asEntry(run.report.tests[0], 'functional').steps));
 
-  const details = run.report.tests[0]!.steps.slice(0, 3).map((s) => s.detail ?? '');
+  const details = asEntry(run.report.tests[0], 'functional').steps.slice(0, 3).map((s) => s.detail ?? '');
   // `#` → digit and `?` → letter still work, so the pattern language survives interpolation. The
   // `{region}` half is the new behaviour; the `####` half is the guard that it stayed additive.
   assert.match(details[1]!, /EU-\d{4}/, `random like: ${details[1]}`);
@@ -594,7 +595,7 @@ test('M102/A4-OS-13: a `like` pattern with no `{` renders byte-identically to be
 `;
   const { program } = parseSource(source);
   const run = await runProgram(program, testConfig(server.baseUrl), { source, seed: 42 });
-  assert.match(run.report.tests[0]!.steps[0]!.detail ?? '', /SKU-\d{4}-[A-Z]{2}/);
+  assert.match(asEntry(run.report.tests[0], 'functional').steps[0]!.detail ?? '', /SKU-\d{4}-[A-Z]{2}/);
   await server.close();
 });
 
@@ -624,9 +625,9 @@ test "t1"
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
 
   const uuid = (detail: string) => /"([0-9a-f-]{36})"/.exec(detail)![1]!;
-  const u0 = uuid(report.tests[0]!.steps[0]!.detail!);
-  const r0 = uuid(report.tests[0]!.steps[1]!.detail!);
-  const r1 = uuid(report.tests[1]!.steps[0]!.detail!);
+  const u0 = uuid(asEntry(report.tests[0], 'functional').steps[0]!.detail!);
+  const r0 = uuid(asEntry(report.tests[0], 'functional').steps[1]!.detail!);
+  const r1 = uuid(asEntry(report.tests[1], 'functional').steps[0]!.detail!);
 
   // The first 12 bytes are the shaped half — the trailing 8 hex digits are the counter and are
   // *supposed* to be predictable, so comparing whole uuids would pass for the wrong reason.

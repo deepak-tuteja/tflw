@@ -22,6 +22,7 @@ import { sendRequest } from '../src/http.js';
 import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest } from '../src/httpPinned.js';
 import { MAX_REDIRECTS, RedirectLimitError } from '../src/redirect.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 /** `/hopN` redirects to `/hop(N-1)`; `/hop0` answers 200. Requesting `/hopN` therefore performs
  * exactly N redirects — which is what lets the cap be tested *at its boundary* rather than only
@@ -138,8 +139,8 @@ test('a looping test fails the run, and fails it identically with and without `a
 
   assert.equal(unguarded.report.ok, false, JSON.stringify(unguarded.report.tests, null, 2));
   assert.equal(guarded.report.ok, unguarded.report.ok, '`allow hosts` must not flip a verdict');
-  assert.equal(guarded.report.tests[0]!.error, unguarded.report.tests[0]!.error);
-  assert.match(unguarded.report.tests[0]!.error ?? '', /too many redirects/);
+  assert.equal(asEntry(guarded.report.tests[0], 'functional').error, asEntry(unguarded.report.tests[0], 'functional').error);
+  assert.match(asEntry(unguarded.report.tests[0], 'functional').error ?? '', /too many redirects/);
 
   await server.close();
 });

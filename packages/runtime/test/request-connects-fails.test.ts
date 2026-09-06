@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('`expect request fails` passes green for a real ECONNREFUSED — nothing is listening on the port', async () => {
   // Start a real server, grab its ephemeral port, then close it — the port is refused, not
@@ -33,7 +34,7 @@ test('`expect request connects` fails, with a clear message, when the connection
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /expected request to connect, but got:.*connection refused/s);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /expected request to connect, but got:.*connection refused/s);
 });
 
 test('`expect request fails` passes for an `allow hosts` block — the request never leaves the process', async () => {
@@ -70,7 +71,7 @@ test('`fails matching` fails (with both the expected pattern and the real reason
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /to fail matching "this text will never appear", but got:.*connection refused/s);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /to fail matching "this text will never appear", but got:.*connection refused/s);
 });
 
 test('`not connects` behaves exactly like a bare `fails` (generic negation composes, decision 18.1)', async () => {
@@ -118,7 +119,7 @@ test('without a following `request` assertion, a connection failure still crashe
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /request failed/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /request failed/);
 });
 
 test('`capture request as x` is rejected at runtime — `request` carries no value to capture', async () => {
@@ -130,7 +131,7 @@ test('`capture request as x` is rejected at runtime — `request` carries no val
     const { report } = await runProgram(program, config, { source });
 
     assert.equal(report.ok, false);
-    assert.match(report.tests[0]!.error ?? '', /`request` is not a capturable\/comparable value/);
+    assert.match(asEntry(report.tests[0], 'functional').error ?? '', /`request` is not a capturable\/comparable value/);
   } finally {
     await server.close();
   }
@@ -145,7 +146,7 @@ test('an invalid regex in `fails matching` reports a clear runtime error, like e
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /invalid regex in matcher/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /invalid regex in matcher/);
 });
 
 test('two separate `api` calls in one test each get their own independent connection-error tracking', async () => {

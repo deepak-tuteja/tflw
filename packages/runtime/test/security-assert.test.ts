@@ -11,6 +11,7 @@ import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
 import type { ReproSubject } from '../src/interpreter.js';
+import { asEntry } from './__helpers__/entry.js';
 
 /** A JSON route with no security headers at all — the §0 prediction's shape. */
 const bare: Handler = (_req, res) => json(res, 200, { ok: true });
@@ -237,8 +238,8 @@ test('D287: a clean session contributes nothing', async () => {
 test('`capture response as x` is a runtime error naming the parts that can be bound', async () => {
   const report = await run({ '/a': bare }, T('  api GET /a\n  capture response as r'));
   assert.equal(report.tests[0]!.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /not a capturable value/);
-  assert.match(report.tests[0]!.error ?? '', /capture body/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /not a capturable value/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /capture body/);
 });
 
 // --- M128c: a passing negated assertion lists what it found ------------------

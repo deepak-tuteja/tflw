@@ -15,6 +15,7 @@ import { runProgram } from '../src/interpreter.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import type { ResolvedConfig } from '../src/types.js';
 import { startFixtureServer, json, testConfig } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 /** An env declaring a second, named `api` service (SPEC §3.2) — the shape `B4-06` is about and the
  * one no cookie-jar test had before M88c2, which is why an unscoped jar survived this long. */
@@ -247,7 +248,7 @@ test('the step trace says when a request went out cookie-less because the jar is
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   const before = steps[0]!.detail ?? '';
   const after = steps[4]!.detail ?? '';
   assert.doesNotMatch(before, /no cookies for/, 'an empty jar is ordinary — the note must not fire before anything has been set');

@@ -30,6 +30,7 @@ import { runProgram } from '../src/interpreter.js';
 import { sendRequest } from '../src/http.js';
 import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest } from '../src/httpPinned.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const GUARDED = ['127.0.0.1'];
 
@@ -199,7 +200,7 @@ test('the report copy carries the final URL and never the raw cookies (`B4-16`)'
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.deepEqual(apiStep.response!.cookieEvents, [], 'the report copy must not carry raw Set-Cookie values');
   assert.equal(apiStep.response!.finalUrl, `${server.baseUrl}/dashboard`, 'the terminus is diagnostics, and does belong in the report');
   assert.doesNotMatch(JSON.stringify(report), /abc123/, 'no path through the serialized report reaches the session cookie');
@@ -235,7 +236,7 @@ test('a secret reaching the report only through `finalUrl` is masked by the fina
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source, environ });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const authorizeStep = report.tests[0]!.steps.find((s) => s.detail?.includes('/authorize'))!;
+  const authorizeStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.detail?.includes('/authorize'))!;
   assert.doesNotMatch(authorizeStep.response!.finalUrl, /p@ssw0rd-xyz/, 'the final report pass must retroactively mask a secret in `finalUrl`');
   assert.match(authorizeStep.response!.finalUrl, /•••\(ADMIN_PW\)/);
 
@@ -393,7 +394,7 @@ test('a login that redirects leaves the RUN authenticated, not merely reported a
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.equal(steps.find((s) => s.detail?.includes('/login'))!.ok, true, 'the login step was always green — that is the point');
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
 

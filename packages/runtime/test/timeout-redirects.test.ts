@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('per-step timeout fails the request when the server is slower', async () => {
   const server = await startFixtureServer({
@@ -21,7 +22,7 @@ test('per-step timeout fails the request when the server is slower', async () =>
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /timed out after 100ms/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /timed out after 100ms/);
 
   await server.close();
 });

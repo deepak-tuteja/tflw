@@ -17,6 +17,7 @@ import { sendRequest } from '../src/http.js';
 import { shutdownMtlsWorker } from '../src/mtlsWorker.js';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import { testConfig, startFixtureServer } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 let server: Server;
 let baseUrl: string;
@@ -129,7 +130,7 @@ test('without `cert`/`key`, a server that requires a client cert rejects the con
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /request failed/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /request failed/);
 });
 
 test('with `expect request fails`, the exact same missing-client-cert scenario now passes green (decision 18)', async () => {
@@ -151,7 +152,7 @@ test('`expect request connects` correctly fails when the connection was actually
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /expected request to connect, but got:/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /expected request to connect, but got:/);
 });
 
 test('`expect request connects` passes for a real successful request against the same server, with a valid client cert', async () => {
@@ -169,7 +170,7 @@ test('the `api` step itself still reports `ok: true` when it caught a connection
   const { program } = parseSource(source);
   const { report } = await runProgram(program, config, { source });
 
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.equal(apiStep.ok, true);
   assert.match(apiStep.detail, /connection failed/);
 });
@@ -195,7 +196,7 @@ test('the mTLS worker refuses a redirect hop to an unlisted host, and says why a
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /redirected to "https:\/\/unlisted\.invalid\/landing"/);
   assert.match(error, /host "unlisted\.invalid" is not in `allow hosts` \(127\.0\.0\.1\)/);
   assert.doesNotMatch(error, /request failed/, 'a refusal is the finished sentence, not a transport failure to re-frame');
@@ -215,11 +216,11 @@ test('an endless redirect chain fails on the mTLS path too, identically with and
 
   assert.equal(unguarded.report.ok, false, JSON.stringify(unguarded.report.tests, null, 2));
   assert.equal(guarded.report.ok, unguarded.report.ok, '`allow hosts` must not flip a verdict');
-  assert.equal(guarded.report.tests[0]!.error, unguarded.report.tests[0]!.error);
-  assert.match(unguarded.report.tests[0]!.error ?? '', /too many redirects/);
+  assert.equal(asEntry(guarded.report.tests[0], 'functional').error, asEntry(unguarded.report.tests[0], 'functional').error);
+  assert.match(asEntry(unguarded.report.tests[0], 'functional').error ?? '', /too many redirects/);
   // The cap crosses the IPC boundary as its own finished sentence, the way a refusal does — not
   // re-framed as the transport failure the worker's error channel formats everything else into.
-  assert.doesNotMatch(unguarded.report.tests[0]!.error ?? '', /request failed/);
+  assert.doesNotMatch(asEntry(unguarded.report.tests[0], 'functional').error ?? '', /request failed/);
 });
 
 test('an allowed host on the mTLS path is unaffected by declaring `allow hosts`', async () => {

@@ -11,6 +11,7 @@ import { parseSource } from '@tflw/lang';
 import type { RedactPattern } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('`redact body.email` masks a top-level response field, and the assertion against the real value still passes', async () => {
   const server = await startFixtureServer({ '/user': (_req, res) => json(res, 200, { email: 'a@example.com', name: 'A' }) });
@@ -25,7 +26,7 @@ test('`redact body.email` masks a top-level response field, and the assertion ag
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.doesNotMatch(apiStep.response!.bodyText, /a@example\.com/);
   assert.match(apiStep.response!.bodyText, /\[redacted\]/);
   assert.match(apiStep.response!.bodyText, /"name":"A"/, 'an unmatched field must survive untouched');
@@ -49,7 +50,7 @@ test('`redact body.*.address` masks a nested field across every element of an ar
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.doesNotMatch(apiStep.response!.bodyText, /First St|Second St/);
   assert.match(apiStep.response!.bodyText, /"name":"A"/);
   assert.match(apiStep.response!.bodyText, /"name":"B"/);
@@ -70,7 +71,7 @@ test('`redact body.password` masks a request body field, not just response bodie
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.doesNotMatch(apiStep.request!.body!, /hunter2/);
   assert.match(apiStep.request!.body!, /\[redacted\]/);
   assert.match(apiStep.request!.body!, /a@example\.com/, 'an unmatched field must survive untouched');
@@ -92,7 +93,7 @@ test('a non-JSON body is left untouched — masking is best-effort, never a hard
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.equal(apiStep.response!.bodyText, 'email=a@example.com', 'non-JSON bodies pass through unchanged, no crash');
 
   await server.close();
@@ -118,9 +119,9 @@ test('`capture body.phone` on a redact-covered field masks its own detail line, 
   // captured variable really did carry the real, unmasked phone number into a later step, not
   // literally the string "[redacted]".
   assert.equal(report.ok, false);
-  const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
+  const captureStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'capture')!;
   assert.equal(captureStep.detail, 'p = [redacted] (captured)');
-  const expectSteps = report.tests[0]!.steps.filter((s) => s.kind === 'expect');
+  const expectSteps = asEntry(report.tests[0], 'functional').steps.filter((s) => s.kind === 'expect');
   // FS-03 changed what this step is allowed to *show* without changing what it evaluates. The
   // captured value is now registered with the taint redactor (that is the whole point — V2-03: a
   // `redact`-covered value must not resurface in a later step's URL or detail text), so the raw
@@ -149,7 +150,7 @@ test('`capture` on a field not covered by `redact` is unaffected', async () => {
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
+  const captureStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'capture')!;
   assert.equal(captureStep.detail, 'p = "+1-234-335-0035" (captured)');
 
   await server.close();
@@ -165,7 +166,7 @@ test('a passing `expect body.phone equals ...` on a redact-covered field masks t
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  const expectStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!;
   assert.doesNotMatch(expectStep.detail!, /\+1-234-335-0035/);
   assert.match(expectStep.detail!, /\[redacted\]/);
 
@@ -182,7 +183,7 @@ test('a failing `expect body.phone equals ...` masks the real (`got`) side, even
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  const expectStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!;
   assert.doesNotMatch(expectStep.detail!, /\+1-234-335-0035/, 'the real response value (the `got` side) must be masked');
   assert.match(expectStep.detail!, /\[redacted\]/);
 
@@ -203,7 +204,7 @@ test('`any`/`all` over a redact-covered path is deliberately left unmasked (docu
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  const expectStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!;
   assert.match(expectStep.detail!, /\+1-234-335-0035/, 'quantified assertions are out of scope for this fix — no crash, no (incorrect) masking attempted');
 
   await server.close();
@@ -218,9 +219,9 @@ test('no `redact` patterns declared means capture/expect detail text passes thro
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const captureStep = report.tests[0]!.steps.find((s) => s.kind === 'capture')!;
+  const captureStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'capture')!;
   assert.equal(captureStep.detail, 'p = "+1-234-335-0035" (captured)');
-  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  const expectStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!;
   assert.match(expectStep.detail!, /\+1-234-335-0035/);
 
   await server.close();
@@ -235,7 +236,7 @@ test('no `redact` patterns declared means the body passes through byte-for-byte 
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.equal(apiStep.response!.bodyText, JSON.stringify({ email: 'a@example.com' }));
 
   await server.close();
@@ -262,7 +263,7 @@ test('`redact header "Authorization"` masks the credential in the request trace'
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   // The request trace preserves the casing the `.tflw` file declared, so this reads it back the
   // same case-insensitive way `redactHeaderFields` matches it.
   const headers = new Map(Object.entries(apiStep.request!.headers).map(([k, v]) => [k.toLowerCase(), v]));
@@ -289,7 +290,7 @@ test('`redact header` matches case-insensitively, as HTTP header names do', asyn
   const { program } = parseSource(source);
   const { report } = await runProgram(program, config, { source });
 
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.equal(apiStep.response!.headers['set-cookie'], '[redacted]', 'a `Set-Cookie` coming back is as much a credential as an `Authorization` going out');
 
   await server.close();
@@ -305,7 +306,7 @@ test('`redact query "token"` masks one parameter value and leaves the rest of th
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const url = report.tests[0]!.steps.find((s) => s.kind === 'api')!.request!.url;
+  const url = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!.request!.url;
   assert.equal(url.includes(FS03_JWT), false);
   // The precision is the whole reason `query "<name>"` exists rather than a bare `redact url`,
   // which was considered and declined: masking the entire URL destroys the report's ability to say
@@ -338,7 +339,7 @@ test('the V2-03 repro: a `redact`-covered value is captured, then flows into a U
   // this same object, so zero occurrences here is zero occurrences in all three file sinks.
   assert.equal(JSON.stringify(report).includes(FS03_JWT), false, 'the captured token must not survive anywhere in the report');
   // …and it is masked as a *named* secret, so a reader can tell which captured value was hidden.
-  const sessionStep = report.tests[0]!.steps.filter((s) => s.kind === 'api').at(-1)!;
+  const sessionStep = asEntry(report.tests[0], 'functional').steps.filter((s) => s.kind === 'api').at(-1)!;
   assert.match(sessionStep.request!.url, /•••\(token\)/);
 
   await server.close();
@@ -356,7 +357,7 @@ test('a captured value NOT covered by `redact` is untainted — no gratuitous ma
   const { program } = parseSource(source);
   const { report } = await runProgram(program, config, { source });
 
-  const sessionStep = report.tests[0]!.steps.filter((s) => s.kind === 'api').at(-1)!;
+  const sessionStep = asEntry(report.tests[0], 'functional').steps.filter((s) => s.kind === 'api').at(-1)!;
   assert.match(sessionStep.request!.url, new RegExp(FS03_JWT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'taint follows `redact`, it is not applied to every capture');
 
   await server.close();

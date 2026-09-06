@@ -20,6 +20,7 @@ import { parseSource } from '@tflw/lang';
 import type { LogLevel } from '../src/types.js';
 import { runProgram } from '../src/interpreter.js';
 import { testConfig } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const BASE_URL = 'http://localhost:1'; // never dialed — no `api` step in these sources
 
@@ -29,7 +30,7 @@ test('a bare `log "…"` step always succeeds, defaults to level info, and falls
   const { report } = await runProgram(program, testConfig(BASE_URL), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const step = report.tests[0]!.steps.find((s) => s.kind === 'log')!;
+  const step = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'log')!;
   assert.equal(step.ok, true);
   assert.equal(step.level, 'info');
   assert.equal(step.destination, 'both'); // testConfig's default logDestination
@@ -41,7 +42,7 @@ test('`log warn "…"` carries its own level through to the StepResult', async (
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(BASE_URL), { source });
 
-  const step = report.tests[0]!.steps.find((s) => s.kind === 'log')!;
+  const step = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'log')!;
   assert.equal(step.level, 'warn');
   assert.equal(step.detail, 'stock low');
 });
@@ -52,7 +53,7 @@ test('`{var}` interpolation resolves a bound variable into the log message', asy
   const { report } = await runProgram(program, testConfig(BASE_URL), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const step = report.tests[0]!.steps.find((s) => s.kind === 'log')!;
+  const step = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'log')!;
   assert.equal(step.detail, 'order 42 created');
 });
 
@@ -62,7 +63,7 @@ test('an explicit `to console` always wins over the resolved config destination'
   const config = { ...testConfig(BASE_URL), logDestination: 'html' as const };
   const { report } = await runProgram(program, config, { source });
 
-  const step = report.tests[0]!.steps.find((s) => s.kind === 'log')!;
+  const step = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'log')!;
   assert.equal(step.destination, 'console');
 });
 
@@ -72,7 +73,7 @@ test('a bare `log "…"` (no `to` clause) falls back to the resolved config dest
   const config = { ...testConfig(BASE_URL), logDestination: 'html' as const };
   const { report } = await runProgram(program, config, { source });
 
-  const step = report.tests[0]!.steps.find((s) => s.kind === 'log')!;
+  const step = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'log')!;
   assert.equal(step.destination, 'html');
 });
 
@@ -86,7 +87,7 @@ test('a bare `log "…"` still resolves against a CLI-style `--log-output none` 
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const step = report.tests[0]!.steps.find((s) => s.kind === 'log')!;
+  const step = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'log')!;
   // Always recorded regardless of destination (decision 119) — `'none'` only ever means "no
   // renderer should show this," never "don't run/record it."
   assert.equal(step.destination, 'none');
@@ -99,9 +100,9 @@ test('several `log` steps interleave in source order with other step kinds', asy
   const { report } = await runProgram(program, testConfig(BASE_URL), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-  const kinds = report.tests[0]!.steps.map((s) => s.kind);
+  const kinds = asEntry(report.tests[0], 'functional').steps.map((s) => s.kind);
   assert.deepEqual(kinds, ['log', 'let', 'log']);
-  assert.equal(report.tests[0]!.steps[2]!.detail, 'after, x=1');
+  assert.equal(asEntry(report.tests[0], 'functional').steps[2]!.detail, 'after, x=1');
 });
 
 test('the record is identical at every level threshold — only rendering filters (SPEC §3.8)', async () => {
@@ -113,7 +114,7 @@ test('the record is identical at every level threshold — only rendering filter
     const { program } = parseSource(source);
     const { report } = await runProgram(program, { ...testConfig(BASE_URL), logLevel }, { source });
     assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
-    return report.tests[0]!.steps.filter((s) => s.kind === 'log').map((s) => [s.level, s.detail]);
+    return asEntry(report.tests[0], 'functional').steps.filter((s) => s.kind === 'log').map((s) => [s.level, s.detail]);
   };
 
   const atDebug = await recordAt('debug');

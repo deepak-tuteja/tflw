@@ -24,6 +24,7 @@ import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { interceptTypelessModuleWarning, resetTypelessModuleRestatement } from '../src/helpers.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 /** Run `fn` with stderr collected rather than printed, and give the warning queue a chance to
  * drain — `process.emitWarning` defers to `nextTick`, so an assertion made synchronously after the
@@ -157,7 +158,7 @@ test "x"
       ({ report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir }));
     });
 
-    assert.equal(report?.ok, true, report?.tests[0]?.error ?? '');
+    assert.equal(report?.ok, true, asEntry(report?.tests[0], 'functional').error ?? '');
     assert.match(during, /⚠ tflw:/, during);
     assert.doesNotMatch(during, /MODULE_TYPELESS_PACKAGE_JSON/, during);
 

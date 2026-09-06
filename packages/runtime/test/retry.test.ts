@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('a test that fails then passes within its retry budget is reported passed and flaky', async () => {
   let calls = 0;
@@ -26,7 +27,7 @@ test('a test that fails then passes within its retry budget is reported passed a
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  assert.equal(report.tests[0]!.flaky, true);
+  assert.equal(asEntry(report.tests[0], 'functional').flaky, true);
   assert.equal(calls, 3); // failed twice, passed on the 3rd (2 retries used)
 
   await server.close();
@@ -43,7 +44,7 @@ test('a test that exhausts its retries still fails, and is not marked flaky', as
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  assert.equal(report.tests[0]!.flaky, undefined);
+  assert.equal(asEntry(report.tests[0], 'functional').flaky, undefined);
   assert.equal(server.received.get('/always-down')!.length, 3); // 1 initial + 2 retries
 
   await server.close();
@@ -60,7 +61,7 @@ test('a test that passes on the first attempt is not marked flaky, regardless of
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true);
-  assert.equal(report.tests[0]!.flaky, undefined);
+  assert.equal(asEntry(report.tests[0], 'functional').flaky, undefined);
   assert.equal(server.received.get('/health')!.length, 1);
 
   await server.close();
@@ -135,7 +136,7 @@ test("a flaky pass's report carries every attempt's steps, not just the final on
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
-  const attempts = report.tests[0]!.attempts;
+  const attempts = asEntry(report.tests[0], 'functional').attempts;
   assert.equal(attempts?.length, 3);
   assert.equal(attempts![0]!.ok, false);
   assert.equal(attempts![1]!.ok, false);
@@ -144,7 +145,7 @@ test("a flaky pass's report carries every attempt's steps, not just the final on
   assert.equal(attempts![2]!.attempt, 3);
   assert.ok(attempts![0]!.steps.some((s) => s.detail?.includes('500')), 'attempt 1 steps should show the 500 that failed it');
   assert.ok(attempts![1]!.steps.some((s) => s.detail?.includes('500')), 'attempt 2 steps should show the 500 that failed it');
-  assert.deepEqual(attempts![2]!.steps, report.tests[0]!.steps, 'the final attempt mirrors the top-level steps field');
+  assert.deepEqual(attempts![2]!.steps, asEntry(report.tests[0], 'functional').steps, 'the final attempt mirrors the top-level steps field');
   assert.ok(attempts![0]!.error !== undefined);
   assert.ok(attempts![1]!.error !== undefined);
   assert.equal(attempts![2]!.error, undefined);
@@ -162,7 +163,7 @@ test('a test that passes on the first attempt has no `attempts` field at all', a
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
-  assert.equal(report.tests[0]!.attempts, undefined);
+  assert.equal(asEntry(report.tests[0], 'functional').attempts, undefined);
 
   await server.close();
 });
@@ -177,10 +178,10 @@ test('a test that exhausts its retries still records every failed attempt', asyn
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
-  const attempts = report.tests[0]!.attempts;
+  const attempts = asEntry(report.tests[0], 'functional').attempts;
   assert.equal(attempts?.length, 3);
   assert.ok(attempts!.every((a) => a.ok === false));
-  assert.deepEqual(attempts![2]!.steps, report.tests[0]!.steps, 'the top-level steps field still mirrors the last attempt, even though it failed');
+  assert.deepEqual(attempts![2]!.steps, asEntry(report.tests[0], 'functional').steps, 'the top-level steps field still mirrors the last attempt, even though it failed');
 
   await server.close();
 });

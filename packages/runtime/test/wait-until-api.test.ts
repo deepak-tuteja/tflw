@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('polls until the nested expects pass, then continues the test', async () => {
   let calls = 0;
@@ -26,7 +27,7 @@ test('polls until the nested expects pass, then continues the test', async () =>
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
   assert.ok(calls >= 3);
-  assert.match(report.tests[0]!.steps[0]!.detail ?? '', /passed after 3 attempts/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '', /passed after 3 attempts/);
 
   await server.close();
 });
@@ -50,7 +51,7 @@ test('times out and fails the test when the condition never holds', async () => 
   // deadline "won" depended on how busy the machine was, so the failure arrived as a spurious red on
   // a contended box, and `mutate.mjs` treats a red baseline as fatal to a twenty-minute sweep. It is
   // deterministic now because the clamp's own firing is reported as what it is, below.
-  assert.match(report.tests[0]!.steps[0]!.detail ?? '', /timed out after 500ms/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '', /timed out after 500ms/);
 
   await server.close();
 });
@@ -131,7 +132,7 @@ test('a poll aborted by decision 67’s own clamp reports the WAIT deadline, not
   const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 500 }), { source });
 
   assert.equal(report.ok, false);
-  const detail = report.tests[0]!.steps[0]!.detail ?? '';
+  const detail = asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '';
   // 500 is the number in the config. The value the clamp computed is not a number anybody chose.
   assert.match(detail, /^timed out after 500ms \(2 attempts\)/);
   assert.doesNotMatch(detail, /request timed out after/);
@@ -162,7 +163,7 @@ test('an author’s OWN shorter `timeout` on the poll still reports as a request
   const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 5000 }), { source });
 
   assert.equal(report.ok, false);
-  const detail = report.tests[0]!.steps[0]!.detail ?? report.tests[0]!.steps[0]!.error ?? '';
+  const detail = asEntry(report.tests[0], 'functional').steps[0]!.detail ?? asEntry(report.tests[0], 'functional').steps[0]!.error ?? '';
   assert.match(detail, /request timed out after 100ms/);
 
   await server.close();
@@ -190,7 +191,7 @@ test('M147d: `timeout 30s` on the poll does not lengthen the wait by a milliseco
   const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 500 }), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.steps[0]!.detail ?? '', /timed out after 500ms/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '', /timed out after 500ms/);
   // Not merely the message: had `timeout 30s` set the wait budget, this would have taken 30 seconds.
   assert.ok(performance.now() - started < 10_000, 'the 30s request timeout must not have become the step budget');
 
@@ -240,7 +241,7 @@ test('M147d: the timeout report quotes the budget that actually expired', async 
   const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 5000 }), { source });
 
   assert.equal(report.ok, false);
-  const detail = report.tests[0]!.steps[0]!.detail ?? '';
+  const detail = asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '';
   assert.match(detail, /timed out after 300ms/);
   assert.doesNotMatch(detail, /5000ms/);
 

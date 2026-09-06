@@ -22,6 +22,7 @@ import { runProgram } from '../src/interpreter.js';
 import { sendRequest } from '../src/http.js';
 import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest } from '../src/httpPinned.js';
 import { startFixtureServer, testConfig, json, type Handler } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 /** `/hopN` waits `delayMs`, then redirects to `/hop(N-1)`; `/hop0` waits `delayMs` and answers 200.
  * So `/hopN` costs `(N+1) × delayMs` in total while no *single* hop ever costs more than `delayMs`
@@ -121,7 +122,7 @@ test('the same step and the same `timeout` give the same verdict functionally an
   const workload = { ...workloadRun.report, scenarios: workloadRun.report.tests.filter((t) => t.kind === 'workload') };
 
   assert.equal(functional.report.ok, false, JSON.stringify(functional.report.tests, null, 2));
-  assert.match(functional.report.tests[0]!.error ?? '', /timed out after 1000ms/);
+  assert.match(asEntry(functional.report.tests[0], 'functional').error ?? '', /timed out after 1000ms/);
 
   const scenario = workload.scenarios[0]!;
   assert.equal(scenario.metrics.iterations, 1);

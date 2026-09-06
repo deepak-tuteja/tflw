@@ -15,6 +15,7 @@ import { parseConfigSource, parseSource, Codes } from '@tflw/lang';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const resolved = (lines: readonly string[]) => {
   // An empty `defaults` is `TF015`, so the no-config case is written as the block being absent —
@@ -159,7 +160,7 @@ const runSlow = async (timeouts: { api: number; browser: number }) => {
 test('an `api` step is bounded by `timeout api`', async () => {
   const { report } = await runSlow({ api: 100, browser: 5_000 });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /timed out after 100ms/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /timed out after 100ms/);
 });
 
 // **The control.** A generous `timeout api` beside a punishing `timeout browser`: the request must
@@ -168,5 +169,5 @@ test('an `api` step is bounded by `timeout api`', async () => {
 // configured" assertion is blind to, because it times out either way.
 test('a browser budget of 50ms does not reach an HTTP request', async () => {
   const { report } = await runSlow({ api: 5_000, browser: 50 });
-  assert.equal(report.ok, true, `an HTTP site is still reading the browser budget: ${report.tests[0]?.error ?? ''}`);
+  assert.equal(report.ok, true, `an HTTP site is still reading the browser budget: ${asEntry(report.tests[0], 'functional').error ?? ''}`);
 });

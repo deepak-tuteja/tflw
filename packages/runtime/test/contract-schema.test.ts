@@ -10,6 +10,7 @@ import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { loadOpenApiDocumentForCrawl, normalizeOpenApiSchema } from '../src/contract.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const OPENAPI_DOC = {
   components: {
@@ -69,7 +70,7 @@ test('a response missing a required field fails with a readable ajv error', asyn
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  const expectStep = report.tests[0]!.steps.find((s) => s.kind === 'expect')!;
+  const expectStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!;
   assert.equal(expectStep.ok, false);
   assert.match(expectStep.detail!, /to match schema "Widget"/);
   assert.match(expectStep.detail!, /name/);
@@ -103,7 +104,7 @@ test('an unknown schema name fails clearly, naming the schema', async () => {
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /schema "DoesNotExist" not found/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /schema "DoesNotExist" not found/);
 
   await server.close();
 });
@@ -122,7 +123,7 @@ test('a malformed (non-JSON, no components.schemas) OpenAPI document fails clear
   // Since `D460` this says which of the two things went wrong. The body did not parse at all, so
   // there is no document to look for schemas in, and the error says *that* rather than reporting a
   // missing `components.schemas` — which was true but was the second-order consequence.
-  assert.match(report.tests[0]!.error ?? '', /is not a JSON object/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /is not a JSON object/);
 
   await server.close();
 });
@@ -184,7 +185,7 @@ test "third assertion — still healthy, and now served from the cache"
     const { report } = await runProgram(program, config, { source });
 
     assert.equal(report.tests[0]!.ok, false, 'the outage itself must still fail — this is not about swallowing the error');
-    assert.match(report.tests[0]!.error ?? '', /got 500/);
+    assert.match(asEntry(report.tests[0], 'functional').error ?? '', /got 500/);
     assert.equal(report.tests[1]!.ok, true, 'the second assertion must re-fetch, not replay a cached rejection');
     assert.equal(report.tests[2]!.ok, true);
 
@@ -222,7 +223,7 @@ test "the assertion that rides on it"
     const { report } = await runProgram(program, config, { source });
     assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
 
-    const detailOf = (i: number) => report.tests[i]!.steps.find((s) => s.kind === 'expect')!.detail!;
+    const detailOf = (i: number) => asEntry(report.tests[i], 'functional').steps.find((s) => s.kind === 'expect')!.detail!;
 
     // The first assertion names the document, what it cost, and what came back — enough for a
     // reader to tell that *this* step made the round-trip.
@@ -290,10 +291,10 @@ test('D460: and the schema matcher still refuses that same document, in the same
   try {
     const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
     assert.equal(report.ok, false);
-    assert.match(report.tests[0]!.error ?? '', /has no `components\.schemas` to validate against/);
+    assert.match(asEntry(report.tests[0], 'functional').error ?? '', /has no `components\.schemas` to validate against/);
     // And it now carries the provenance clause every other outcome of this matcher has — the reader
     // learns which document was consulted, not just that one was unusable.
-    assert.match(report.tests[0]!.error ?? '', /fetched schema document/);
+    assert.match(asEntry(report.tests[0], 'functional').error ?? '', /fetched schema document/);
   } finally {
     await server.close();
   }
@@ -319,7 +320,7 @@ test('D460: the crawl seed shares the one cache, so a seed and an assertion cost
     const { report } = await runProgram(program, config, { source });
     assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
     assert.equal(server.received.get('/openapi.json')!.length, 1, 'one document, one fetch, two readers');
-    assert.match(report.tests[0]!.steps.find((s) => s.kind === 'expect')!.detail!, /from cache/);
+    assert.match(asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!.detail!, /from cache/);
   } finally {
     await server.close();
   }
@@ -369,7 +370,7 @@ test('a failing schema assertion still reports where the schema came from (A12-0
   try {
     const { report } = await runProgram(program, config, { source });
     assert.equal(report.ok, false);
-    const detail = report.tests[0]!.steps.find((s) => s.kind === 'expect')!.detail!;
+    const detail = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!.detail!;
     // The failure path is where provenance matters most: "the response doesn't match the schema"
     // is only actionable once you know *which* document was consulted, and when.
     assert.match(detail, /fetched schema document "[^"]*\/openapi\.json"/);

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('a seconds-format Retry-After is honored, and the retried request succeeds', async () => {
   let attempts = 0;
@@ -36,7 +37,7 @@ test('a seconds-format Retry-After is honored, and the retried request succeeds'
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
   assert.equal(attempts, 2);
   assert.ok(elapsed >= 1000, `expected the runtime to actually sleep ~1s, only took ${elapsed}ms`);
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.match(apiStep.detail!, /retried 1x honoring Retry-After \(waited 1000ms total\)/);
 
   await server.close();
@@ -87,9 +88,9 @@ test('max attempts exhausted still fails cleanly, not an infinite loop', async (
   const { report } = await runProgram(program, config, { source });
 
   assert.equal(report.ok, false);
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.match(apiStep.detail!, /retried 2x honoring Retry-After/);
-  assert.equal(report.tests[0]!.steps.find((s) => s.kind === 'expect')!.ok, false);
+  assert.equal(asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect')!.ok, false);
 
   await server.close();
 });
@@ -113,7 +114,7 @@ test('no `retry honoring` clause — today\'s unchanged single-attempt behavior'
 
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
   assert.equal(attempts, 1);
-  const apiStep = report.tests[0]!.steps.find((s) => s.kind === 'api')!;
+  const apiStep = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'api')!;
   assert.doesNotMatch(apiStep.detail!, /retried/);
 
   await server.close();

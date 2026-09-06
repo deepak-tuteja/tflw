@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('an absent header fails the capture instead of binding `undefined` (A4-06)', async () => {
   const server = await startFixtureServer({
@@ -59,7 +60,7 @@ test('an absent JSON key fails the capture (A4-06)', async () => {
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /nothing to capture at body\.nope/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /nothing to capture at body\.nope/);
 
   await server.close();
 });
@@ -76,7 +77,7 @@ test('an out-of-range array index fails the capture (A4-06)', async () => {
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /nothing to capture at body\.items\[5\]/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /nothing to capture at body\.items\[5\]/);
 
   await server.close();
 });

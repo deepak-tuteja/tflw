@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('a `use`d TypeScript helper is called via camelCase and its return value flows into the test', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-use-'));
@@ -36,7 +37,7 @@ test "signs a webhook payload"
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
   const body = JSON.parse(server.received.get('/webhooks')![0]!.body);
   assert.equal(body.sig, 'sig-pepper-42');
-  assert.match(report.tests[0]!.steps[0]!.detail ?? '', /sign payload\(42\) = "sig-pepper-42"/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '', /sign payload\(42\) = "sig-pepper-42"/);
 
   await server.close();
   await rm(dir, { recursive: true, force: true });
@@ -62,7 +63,7 @@ test "async helper"
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source, baseDir: dir });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  assert.match(report.tests[0]!.steps[0]!.detail ?? '', /double\(21\) = 42/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '', /double\(21\) = 42/);
 
   await rm(dir, { recursive: true, force: true });
 });
@@ -88,7 +89,7 @@ test "calls the wrong name"
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source, baseDir: dir });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /unknown call `do the thing\(\.\.\.\)`/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /unknown call `do the thing\(\.\.\.\)`/);
 
   await rm(dir, { recursive: true, force: true });
 });

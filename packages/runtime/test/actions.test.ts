@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('a same-file action composes: its steps land in the report, `give` feeds the caller', async () => {
   const server = await startFixtureServer({
@@ -32,7 +33,7 @@ test "checkout composes an action"
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   // action's own api/expect/capture/give land inline (its `give` is a real step, shown for
   // transparency), then the `let` call step, then the caller's own api/expect. Calling an action
   // does NOT update the caller's "last response" — it has its own, encapsulated (by design).
@@ -67,7 +68,7 @@ test "fire and forget"
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   // action's own api/expect/capture/give land inline, then the bare call step (no binding), then
   // the caller's own steps — same "call is encapsulated, doesn't touch the caller's lastResponse"
   // shape as a `let`-bound call (SPEC §8), just without a variable to discard the `give` into.
@@ -102,7 +103,7 @@ test "uses the imported action"
   const { report } = await runProgram(program, testConfig(server.baseUrl), { source, baseDir: dir });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  assert.match(report.tests[0]!.steps[4]!.detail ?? '', /create order\("Gadget"\) = 7/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[4]!.detail ?? '', /create order\("Gadget"\) = 7/);
 
   await server.close();
   await rm(dir, { recursive: true, force: true });
@@ -116,7 +117,7 @@ test('calling an unknown name is a clear runtime error', async () => {
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /unknown call `create odrer\(\.\.\.\)`/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /unknown call `create odrer\(\.\.\.\)`/);
 });
 
 test('wrong argument count is a clear runtime error', async () => {
@@ -130,7 +131,7 @@ test "missing an arg"
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /expects 2 argument\(s\), got 1/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /expects 2 argument\(s\), got 1/);
 });
 
 test('a duplicate action name (own file vs. import) fails the whole file up front — actions are file-scoped', async () => {

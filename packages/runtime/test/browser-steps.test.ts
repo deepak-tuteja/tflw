@@ -26,6 +26,7 @@ import { BrowserManager, BrowserPageState, chromiumDeterministicRenderArgs } fro
 import { snapshotPaths } from '../src/snapshot.js';
 import { startFixtureServer, testConfig, json, type FixtureServer } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
+import { asEntry } from './__helpers__/entry.js';
 
 const FIXTURE_HTML = `<!doctype html>
 <html>
@@ -347,7 +348,7 @@ test('open + click + fill (labelled) + fill (placeholder cascade) + select + che
   expect button "Bottom button" is visible
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.deepEqual(
     steps.map((s) => s.kind),
     ['open', 'click', 'fill', 'fill', 'select', 'checkbox', 'expect', 'uncheckbox', 'expect', 'hover', 'scroll', 'expect'],
@@ -370,7 +371,7 @@ test "checkout via a shared browser action"
   fill field "Email" with "a@b.test"
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.deepEqual(steps.map((s) => s.kind), ['open', 'click', 'expect', 'call', 'fill']);
 });
 
@@ -381,7 +382,7 @@ test('`fill form` runs each row as its own reported sub-step', async () => {
     | "Email" | "x@y.test" |
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.equal(steps[1]!.kind, 'fill');
   assert.match(steps[1]!.detail ?? '', /Email.*x@y\.test/);
 });
@@ -392,9 +393,9 @@ test('ambiguity (D7): two equally-named buttons is a hard error listing candidat
   click button "Duplicate"
 `);
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /ambiguous locator `button "Duplicate"`/);
-  assert.match(report.tests[0]!.error ?? '', /matched 2 elements/);
-  assert.match(report.tests[0]!.error ?? '', /within/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /ambiguous locator `button "Duplicate"`/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /matched 2 elements/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /within/);
 });
 
 test('`within` scopes locator resolution to one container, disambiguating an otherwise-ambiguous name', async () => {
@@ -408,7 +409,7 @@ test('`within` scopes locator resolution to one container, disambiguating an oth
     click button "Remove"
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.deepEqual(
     steps.map((s) => s.kind),
     ['open', 'click', 'within'],
@@ -436,7 +437,7 @@ test('a UI `expect` that never becomes true fails after the expect timeout, with
 `);
   const { report } = await runProgram(program, shortTimeoutConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /expected .*to be visible/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /expected .*to be visible/);
 });
 
 test('dialogs: `accept dialog` lets a `confirm()`-guarded action actually happen (no silent auto-dismiss no-op)', async () => {
@@ -753,7 +754,7 @@ test('dialogs: a subject read before any dialog is a clean error naming it, not 
   expect dialog type equals "confirm"
 `);
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /no dialog has been raised in this test yet/);
   assert.match(error, /`dialog type`/);
   assert.doesNotMatch(error, /null/);
@@ -774,7 +775,7 @@ test "reads with none of its own"
 `);
   assert.equal(report.ok, false);
   assert.equal(report.tests[0]!.ok, true, JSON.stringify(report.tests[0], null, 2));
-  assert.match(report.tests[1]!.error ?? '', /no dialog has been raised in this test yet/);
+  assert.match(asEntry(report.tests[1], 'functional').error ?? '', /no dialog has been raised in this test yet/);
 });
 
 test('a locator that never appears fails with a clear "no element found" error, not a hang', async () => {
@@ -782,7 +783,7 @@ test('a locator that never appears fails with a clear "no element found" error, 
   const { program } = parseSource('test "not found"\n  open "/"\n  click button "Does Not Exist"\n');
   const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /no element found for `button "Does Not Exist"`/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /no element found for `button "Does Not Exist"`/);
 });
 
 // ---- M5: live-DOM "nearest candidate" diagnosis (SPEC §9.3) ---------------------------------
@@ -792,7 +793,7 @@ test('a typo\'d button name surfaces the real button as a ready-to-paste suggest
   const { program } = parseSource('test "typo"\n  open "/diagnose"\n  click button "Add to Crat"\n');
   const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /no element found for `button "Add to Crat"`/);
   assert.match(error, /nearest matches on the page:/);
   assert.match(error, /button "Add to Cart"/);
@@ -803,7 +804,7 @@ test('a typo\'d field name surfaces the real labelled field, not a raw css guess
   const { program } = parseSource('test "typo"\n  open "/diagnose"\n  fill field "Emial Address" with "x"\n');
   const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /field "Email Address"/);
 });
 
@@ -812,7 +813,7 @@ test('an unrelated name with no similar match falls back to the unnamed element\
   const { program } = parseSource('test "no similar name"\n  open "/diagnose"\n  click button "Totally Unrelated Nonexistent Thing"\n');
   const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.doesNotMatch(error, /"Add to Cart"/); // not similar enough to suggest
   assert.match(error, /nearest matches on the page:/);
   // The icon-only button has no id/data-testid/name attribute to key off, so the fallback is a
@@ -826,7 +827,7 @@ test('nothing of the right kind on the page at all leaves the error message unch
   const { program } = parseSource('test "no candidates"\n  open "/diagnose"\n  click list "Anything"\n');
   const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /no element found for `list "Anything"`/);
   assert.doesNotMatch(error, /nearest matches on the page:/);
 });
@@ -845,7 +846,7 @@ test('a typo\'d text name surfaces the real text, and no structural css paths al
   const { program } = parseSource('test "text typo"\n  open "/diagnose"\n  click text "Add to Crat"\n');
   const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /nearest matches on the page:/);
   assert.match(error, /text "Add to Cart"/);
   assert.doesNotMatch(error, /css "html/); // the whole point: no `html`, `html > head`, `html > body`
@@ -856,7 +857,7 @@ test('an unrelated text name gets no diagnosis at all — an element with no tex
   const { program } = parseSource('test "text unrelated"\n  open "/diagnose"\n  click text "Somethign Unrelated"\n');
   const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /no element found for `text "Somethign Unrelated"`/);
   // Every named leaf is below MIN_DIAGNOSIS_SIMILARITY and the unnamed arm is gone, so the honest
   // answer is the unchanged message — not five containers ranked by where they sit in the document.
@@ -868,7 +869,7 @@ test('the `text` exclusion did not disarm the assertion path it now also fires o
   const { program } = parseSource('test "text expect"\n  open "/diagnose"\n  expect text "Add to Crat" is visible\n');
   const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /text "Add to Cart"/);
   assert.doesNotMatch(error, /css "html/);
 });
@@ -878,7 +879,7 @@ test('css/xpath locators never get a diagnosis suffix — no semantic name to fu
   const { program } = parseSource('test "css escape"\n  open "/diagnose"\n  click css ".nonexistent"\n');
   const { report } = await runProgram(program, shortBrowserConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /no element found for `css ".nonexistent"`/);
   assert.doesNotMatch(error, /nearest matches on the page:/);
 });
@@ -897,7 +898,7 @@ test('a typo\'d button in an `expect` gets the same diagnosis a `click` gets', a
   const { program } = parseSource('test "typo"\n  open "/diagnose"\n  expect button "Add to Crat" is visible\n');
   const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /but got no matching element/);
   assert.match(error, /nearest matches on the page:/);
   assert.match(error, /button "Add to Cart"/);
@@ -907,7 +908,7 @@ test('a soft `check` gets the diagnosis too — it is the same assertion, only n
   const { program } = parseSource('test "soft"\n  open "/diagnose"\n  check button "Add to Crat" is visible\n');
   const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const step = report.tests[0]!.steps.find((s) => s.kind === 'check' && !s.ok);
+  const step = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'check' && !s.ok);
   assert.ok(step, 'expected a failed check step');
   assert.match(step.detail ?? '', /nearest matches on the page:/);
   assert.match(step.detail ?? '', /button "Add to Cart"/);
@@ -918,7 +919,7 @@ test('`wait until` gets the diagnosis — a name that never resolves is the same
   const { program } = parseSource('test "wait typo"\n  open "/diagnose"\n  wait until button "Add to Crat" is visible\n');
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /nearest matches on the page:/);
   assert.match(error, /button "Add to Cart"/);
 });
@@ -929,7 +930,7 @@ test('an element that resolved but failed on state gets NO diagnosis — the nam
   const { program } = parseSource('test "state"\n  open "/diagnose"\n  expect button "Add to Cart" is disabled\n');
   const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /to be disabled/);
   assert.doesNotMatch(error, /nearest matches on the page:/);
 });
@@ -938,7 +939,7 @@ test('a passing assertion against nothing stays clean — `is hidden` is satisfi
   const { program } = parseSource('test "hidden passes"\n  open "/diagnose"\n  expect button "Add to Crat" is hidden\n');
   const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const step = report.tests[0]!.steps.find((s) => s.kind === 'expect');
+  const step = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect');
   assert.doesNotMatch(step?.detail ?? '', /nearest matches on the page:/);
 });
 
@@ -946,7 +947,7 @@ test('`has count 0` passing against a typo\'d name is still a pass, and still sa
   const { program } = parseSource('test "count zero"\n  open "/diagnose"\n  expect button "Add to Crat" has count 0\n');
   const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const step = report.tests[0]!.steps.find((s) => s.kind === 'expect');
+  const step = asEntry(report.tests[0], 'functional').steps.find((s) => s.kind === 'expect');
   assert.doesNotMatch(step?.detail ?? '', /nearest matches on the page:/);
 });
 
@@ -954,7 +955,7 @@ test('a failing `has count` against zero elements DOES get the diagnosis — the
   const { program } = parseSource('test "count typo"\n  open "/diagnose"\n  expect button "Add to Crat" has count 2\n');
   const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /nearest matches on the page:/);
   assert.match(error, /button "Add to Cart"/);
 });
@@ -963,7 +964,7 @@ test('css/xpath on the assertion path is skipped by the scan, exactly as on the 
   const { program } = parseSource('test "css expect"\n  open "/diagnose"\n  expect css ".nonexistent" is visible\n');
   const { report } = await runProgram(program, shortExpect(), { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.doesNotMatch(error, /nearest matches on the page:/);
 });
 
@@ -972,14 +973,14 @@ test('`open` without a `web` base URL configured is a clear error, not a crash',
   const { program } = parseSource('test "no web url"\n  open "/"\n');
   const { report } = await runProgram(program, noWebConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /no `web` base URL is configured/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /no `web` base URL is configured/);
 });
 
 test('a browser step with no `browserManager` supplied fails clearly instead of a null-deref', async () => {
   const { program } = parseSource('test "no manager"\n  open "/"\n');
   const { report } = await runProgram(program, config, { source: 'x' });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /no browser support was initialized/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /no browser support was initialized/);
 });
 
 // ---- M3b: frames / tabs / downloads / drag-drop / wait until <ui> ---------
@@ -992,7 +993,7 @@ test('`within frame` traverses into a real `<iframe>`\'s own document via `conte
     expect text "clicked" is visible
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.deepEqual(
     steps.map((s) => s.kind),
     ['open', 'click', 'expect', 'within'],
@@ -1012,7 +1013,7 @@ test('tabs: `switch to new tab` catches a real `target="_blank"` popup, `switch 
   expect button "Add to cart" is visible
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.deepEqual(
     steps.map((s) => s.kind),
     ['open', 'click', 'switchTab', 'expect', 'switchTab', 'expect', 'switchTab', 'closeTab', 'expect'],
@@ -1022,13 +1023,13 @@ test('tabs: `switch to new tab` catches a real `target="_blank"` popup, `switch 
 test('closing the only remaining tab is a runtime error, not a silent no-op', async () => {
   const { report } = await run('test "close last tab"\n  open "/"\n  close tab\n');
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /only tab open/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /only tab open/);
 });
 
 test('`switch to tab N` out of range is a clear error', async () => {
   const { report } = await run('test "bad tab index"\n  open "/"\n  switch to tab 2\n');
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /no tab 2 — 1 tab\(s\) currently open/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /no tab 2 — 1 tab\(s\) currently open/);
 });
 
 test('`download as <name>` captures a real `Content-Disposition: attachment` response\'s suggested filename', async () => {
@@ -1038,7 +1039,7 @@ test('`download as <name>` captures a real `Content-Disposition: attachment` res
     click text "Download report"
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.deepEqual(
     steps.map((s) => s.kind),
     ['open', 'click', 'download'],
@@ -1053,7 +1054,7 @@ test('`drag … to …` dispatches a real dragstart/dragenter/dragover/drop sequ
   expect text "Second, First" is visible
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const steps = report.tests[0]!.steps;
+  const steps = asEntry(report.tests[0], 'functional').steps;
   assert.deepEqual(
     steps.map((s) => s.kind),
     ['open', 'drag', 'expect'],
@@ -1083,7 +1084,7 @@ test('`wait until <ui condition>` polls against `timeout wait`, not `timeout exp
   wait until button "Add to cart" is enabled
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  assert.equal(report.tests[0]!.steps[1]!.kind, 'wait');
+  assert.equal(asEntry(report.tests[0], 'functional').steps[1]!.kind, 'wait');
 });
 
 test('`wait until <ui condition>` that never becomes true fails after the wait timeout (not the shorter expect one)', async () => {
@@ -1094,7 +1095,7 @@ test('`wait until <ui condition>` that never becomes true fails after the wait t
 `);
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /expected .*to be enabled/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /expected .*to be enabled/);
 });
 
 // ---- FS-05 (milestone B1): `wait until … for <duration>` -------------------
@@ -1110,7 +1111,7 @@ test('FS-05: a condition true throughout passes, and the step actually spends th
   wait until button "Hidden button" is hidden for 400ms
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const step = report.tests[0]!.steps[1]!;
+  const step = asEntry(report.tests[0], 'functional').steps[1]!;
   assert.equal(step.kind, 'wait');
   // The load-bearing assertion: a `for` that were parsed and then dropped would return on the
   // first poll and this would be a few milliseconds.
@@ -1131,7 +1132,7 @@ test('FS-05: a condition interrupted mid-window fails, and reports the longest u
   // ~250ms of hold before the reveal fires, against a required 600ms. The number is what tells a
   // reader the condition was nearly met rather than never met — a 1.9s-of-2s flake and a
   // never-true condition are otherwise the same report line.
-  assert.match(report.tests[0]!.error ?? '', /longest unbroken hold \d+ms of 600ms/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /longest unbroken hold \d+ms of 600ms/);
 });
 
 // ---- M147d (`A3-10`, D640): the per-step wait budget ------------------------
@@ -1153,7 +1154,7 @@ test('M147d: the step budget lengthens the window a hold has to fit inside', asy
   assert.deepEqual(diagnostics, []);
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  assert.match(report.tests[0]!.steps[1]!.detail ?? '', /held for 600ms/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[1]!.detail ?? '', /held for 600ms/);
 });
 
 test('M147d: the step budget shortens it too, and the refusal names the step number rather than the env one', async () => {
@@ -1169,7 +1170,7 @@ test('M147d: the step budget shortens it too, and the refusal names the step num
   assert.deepEqual(diagnostics, []);
   const { report } = await runProgram(program, longWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /can never be satisfied/);
   assert.match(error, /\(500ms\)/);
   assert.doesNotMatch(error, /3000ms/);
@@ -1237,7 +1238,7 @@ test('M147d: `for <duration>` composes with a widened subject — the hold is ov
   assert.deepEqual(diagnostics, []);
   const { report } = await runProgram(program, config, { source: 'x', browserManager });
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  assert.match(report.tests[0]!.steps[1]!.detail ?? '', /held for 300ms/);
+  assert.match(asEntry(report.tests[0], 'functional').steps[1]!.detail ?? '', /held for 300ms/);
 });
 
 test('M147d: the runtime re-asserts D641 rather than assuming the parser ran', async () => {
@@ -1250,7 +1251,7 @@ test('M147d: the runtime re-asserts D641 rather than assuming the parser ran', a
   step.subject = { type: 'StatusSubject', of: null, span: (step as unknown as { span: unknown }).span };
   const { report } = await runProgram(program, config, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /reads the last `api` response, which cannot change between polls/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /reads the last `api` response, which cannot change between polls/);
 });
 
 test('FS-05: a hold window at least as long as `timeout wait` is refused by name — it could never pass, and would otherwise surface as an ordinary timeout that explains nothing', async () => {
@@ -1261,7 +1262,7 @@ test('FS-05: a hold window at least as long as `timeout wait` is refused by name
 `);
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /can never be satisfied/);
   // Both numbers, because the fix could be either one.
   assert.match(error, /500ms/);
@@ -1279,7 +1280,7 @@ test('`screenshot "..."` captures the active page and attaches real PNG bytes to
   screenshot "landing page"
 `);
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const step = report.tests[0]!.steps[1]!;
+  const step = asEntry(report.tests[0], 'functional').steps[1]!;
   assert.equal(step.kind, 'screenshot');
   assert.match(step.detail ?? '', /landing page/);
   assert.ok(step.screenshot, 'expected a screenshot asset on the step');
@@ -1294,7 +1295,7 @@ test('a failing UI step automatically attaches a failure screenshot, without mas
 `);
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const failedStep = report.tests[0]!.steps.at(-1)!;
+  const failedStep = asEntry(report.tests[0], 'functional').steps.at(-1)!;
   assert.equal(failedStep.ok, false);
   assert.ok(failedStep.screenshot, 'expected a best-effort failure screenshot');
   assert.ok(Buffer.from(failedStep.screenshot!.base64, 'base64').subarray(0, 4).equals(PNG_MAGIC));
@@ -1306,7 +1307,7 @@ test('a clean, single-attempt passing test never captures a trace', async () => 
   click button "Add to cart"
 `);
   assert.equal(report.ok, true);
-  assert.equal(report.tests[0]!.trace, undefined);
+  assert.equal(asEntry(report.tests[0], 'functional').trace, undefined);
 });
 
 test('a failing test captures a real Playwright trace archive', async () => {
@@ -1317,8 +1318,8 @@ test('a failing test captures a real Playwright trace archive', async () => {
 `);
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.ok(report.tests[0]!.trace, 'expected a trace on the failing attempt');
-  assert.ok(Buffer.from(report.tests[0]!.trace!.base64, 'base64').subarray(0, 2).equals(ZIP_MAGIC));
+  assert.ok(asEntry(report.tests[0], 'functional').trace, 'expected a trace on the failing attempt');
+  assert.ok(Buffer.from(asEntry(report.tests[0], 'functional').trace!.base64, 'base64').subarray(0, 2).equals(ZIP_MAGIC));
 });
 
 test('a `retry` test that fails then passes captures a trace on both attempts (D12: failure + every retry)', async () => {
@@ -1333,7 +1334,7 @@ test('a `retry` test that fails then passes captures a trace on both attempts (D
   const { program, diagnostics } = parseSource(source);
   assert.deepEqual(diagnostics, []);
   const { report } = await runProgram(program, shortBrowserConfig, { source, browserManager });
-  const result = report.tests[0]!;
+  const result = asEntry(report.tests[0], 'functional');
   assert.equal(result.ok, true, JSON.stringify(result, null, 2));
   assert.equal(result.flaky, true);
   assert.equal(result.attempts?.length, 2);
@@ -1365,10 +1366,10 @@ test('FS-01: at `evidence none` a failing browser test captures neither a trace 
 
   // The test still fails, and still says why — only the binary evidence is withheld.
   assert.equal(report.ok, false);
-  const failedStep = report.tests[0]!.steps.at(-1)!;
+  const failedStep = asEntry(report.tests[0], 'functional').steps.at(-1)!;
   assert.equal(failedStep.ok, false);
   assert.equal(failedStep.screenshot, undefined, 'no failure screenshot below `evidence full`');
-  assert.equal(report.tests[0]!.trace, undefined, 'no trace archive below `evidence full`');
+  assert.equal(asEntry(report.tests[0], 'functional').trace, undefined, 'no trace archive below `evidence full`');
   assert.ok((failedStep.detail ?? '').length > 0, 'the failure message is not evidence and must survive');
 });
 
@@ -1382,8 +1383,8 @@ test('FS-01: at `evidence headers-only` binary evidence is suppressed too — on
 `);
   const { report } = await runProgram(program, headersOnly, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.equal(report.tests[0]!.steps.at(-1)!.screenshot, undefined);
-  assert.equal(report.tests[0]!.trace, undefined);
+  assert.equal(asEntry(report.tests[0], 'functional').steps.at(-1)!.screenshot, undefined);
+  assert.equal(asEntry(report.tests[0], 'functional').trace, undefined);
 });
 
 test('FS-01: an explicit `screenshot "..."` step below `evidence full` still passes, and says it was not captured', async () => {
@@ -1398,7 +1399,7 @@ test('FS-01: an explicit `screenshot "..."` step below `evidence full` still pas
   const { report } = await runProgram(program, noEvidence, { source: 'x', browserManager });
 
   assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-  const step = report.tests[0]!.steps[1]!;
+  const step = asEntry(report.tests[0], 'functional').steps[1]!;
   assert.equal(step.kind, 'screenshot');
   assert.equal(step.ok, true);
   assert.equal(step.screenshot, undefined);
@@ -1413,8 +1414,8 @@ test('FS-01: `evidence full` (the default) is unchanged — the accepted cost on
 `);
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.ok(report.tests[0]!.steps.at(-1)!.screenshot, 'the default level still captures failure evidence');
-  assert.ok(report.tests[0]!.trace, 'the default level still captures a trace');
+  assert.ok(asEntry(report.tests[0], 'functional').steps.at(-1)!.screenshot, 'the default level still captures failure evidence');
+  assert.ok(asEntry(report.tests[0], 'functional').trace, 'the default level still captures a trace');
 });
 
 test('engine selection: a `BrowserManager({ engine: "firefox" })` runs real Firefox end-to-end', async () => {
@@ -1469,7 +1470,7 @@ test('`expect request to "..." was made` fails (after the expect timeout) when n
 `);
   const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /expected request to "\/api\/orders" to have been made/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /expected request to "\/api\/orders" to have been made/);
 });
 
 test('`expect request to "..." not was made` passes when nothing matching ever fires', async () => {
@@ -1521,7 +1522,7 @@ test('an `of request to "..."` subject with no matching request yet fails cleanl
 `);
   const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /no matching request has been observed yet/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /no matching request has been observed yet/);
 });
 
 test('`stub` replaces the real response — the page sees the stubbed body, and the real server never receives the request', async () => {
@@ -1580,7 +1581,7 @@ test('`expect page has no a11y violations` fails against a real broken page, lis
 `);
   const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error ?? '';
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
   assert.match(error, /expected page to have no a11y violations, but found 5/);
   assert.match(error, /image-alt/);
   assert.match(error, /\[critical\]/);
@@ -1597,7 +1598,7 @@ test('a `<severity>` floor counts that severity and everything worse, not an exa
 `);
   const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /found 3/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /found 3/);
 });
 
 test('a `critical` floor correctly fails against a page that really does have critical violations', async () => {
@@ -1610,7 +1611,7 @@ test('a `critical` floor correctly fails against a page that really does have cr
 `);
   const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /found 2/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /found 2/);
 });
 
 test('negation: `not has no … violations` passes when the page genuinely has that severity', async () => {
@@ -1629,7 +1630,7 @@ test('negation fails cleanly when no violation of that severity exists', async (
 `);
   const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /expected page to have at least one a11y violation, but found none/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /expected page to have at least one a11y violation, but found none/);
 });
 
 test('the a11y expect retries and re-scans, passing once a violation genuinely fixes itself mid-poll', async () => {
@@ -1662,7 +1663,7 @@ test('FS-01: below `evidence full` a snapshot mismatch still fails and still say
     await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page matches snapshot "gated"\n', dir, { updateSnapshots: true });
     const { report } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "gated"\n', dir, { config: noEvidence });
     assert.equal(report.ok, false, 'the assertion must be unaffected');
-    const step = report.tests[0]!.steps.at(-1)!;
+    const step = asEntry(report.tests[0], 'functional').steps.at(-1)!;
     assert.match(step.detail ?? '', /does not match baseline.*px.*%/, 'the diagnosis must survive intact');
     assert.equal(step.snapshotDiff, undefined, 'the triptych is page pixels — it does not reach the report below `evidence full`');
   } finally {
@@ -1675,7 +1676,7 @@ test('with no baseline and no `--update-snapshots`, the step fails clearly and a
   try {
     const { report } = await runSnapshot('test "no baseline"\n  open "/snap"\n  expect page matches snapshot "first"\n', dir);
     assert.equal(report.ok, false);
-    const step = report.tests[0]!.steps.at(-1)!;
+    const step = asEntry(report.tests[0], 'functional').steps.at(-1)!;
     assert.match(step.detail ?? '', /no baseline exists yet.*--update-snapshots/);
     assert.ok(step.snapshotDiff, 'expected evidence even on a missing-baseline failure');
     assert.equal(step.snapshotDiff!.baseline, undefined);
@@ -1690,7 +1691,7 @@ test('`--update-snapshots` on a first run writes a real baseline PNG + platform 
   try {
     const { report } = await runSnapshot('test "writes baseline"\n  open "/snap"\n  expect page matches snapshot "first"\n', dir, { filePath: 'visual.tflw', updateSnapshots: true });
     assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-    const step = report.tests[0]!.steps.at(-1)!;
+    const step = asEntry(report.tests[0], 'functional').steps.at(-1)!;
     assert.match(step.detail ?? '', /new baseline written/);
 
     const paths = snapshotPaths(dir, 'visual.tflw', 'writes baseline', 'first');
@@ -1709,7 +1710,7 @@ test('a matching second run against an unchanged baseline passes with no `snapsh
     await runSnapshot('test "seed"\n  open "/snap"\n  expect page matches snapshot "same"\n', dir, { updateSnapshots: true });
     const { report } = await runSnapshot('test "seed"\n  open "/snap"\n  expect page matches snapshot "same"\n', dir);
     assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-    const step = report.tests[0]!.steps.at(-1)!;
+    const step = asEntry(report.tests[0], 'functional').steps.at(-1)!;
     assert.match(step.detail ?? '', /matches baseline/);
     assert.equal(step.snapshotDiff, undefined, 'a clean pass should carry no evidence at all');
   } finally {
@@ -1723,7 +1724,7 @@ test('a real pixel difference (`dynamic` box recolored) fails without `--update-
     await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page matches snapshot "changed"\n', dir, { updateSnapshots: true });
     const { report } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "changed"\n', dir);
     assert.equal(report.ok, false);
-    const step = report.tests[0]!.steps.at(-1)!;
+    const step = asEntry(report.tests[0], 'functional').steps.at(-1)!;
     assert.match(step.detail ?? '', /does not match baseline.*px.*%.*--update-snapshots/);
     assert.ok(step.snapshotDiff?.baseline && step.snapshotDiff.diff, 'expected a full triptych on a real mismatch');
     for (const b64 of [step.snapshotDiff!.baseline!, step.snapshotDiff!.actual, step.snapshotDiff!.diff!]) {
@@ -1740,13 +1741,13 @@ test('`--update-snapshots` against a real mismatch overwrites the baseline and p
     await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page matches snapshot "accept"\n', dir, { updateSnapshots: true });
     const { report } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "accept"\n', dir, { updateSnapshots: true });
     assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
-    assert.match(report.tests[0]!.steps.at(-1)!.detail ?? '', /baseline updated/);
+    assert.match(asEntry(report.tests[0], 'functional').steps.at(-1)!.detail ?? '', /baseline updated/);
 
     // Prove the overwrite really happened: comparing again against the (now green) baseline with a
     // fresh green render passes cleanly with no diff evidence.
     const { report: verify } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page matches snapshot "accept"\n', dir);
     assert.equal(verify.ok, true);
-    assert.equal(verify.tests[0]!.steps.at(-1)!.snapshotDiff, undefined);
+    assert.equal(asEntry(verify.tests[0], 'functional').steps.at(-1)!.snapshotDiff, undefined);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -1761,7 +1762,7 @@ test('a platform-key mismatch fails immediately with a clear message, before any
 
     const { report } = await runSnapshot('test "seed"\n  open "/snap"\n  expect page matches snapshot "platform"\n', dir);
     assert.equal(report.ok, false);
-    assert.match(report.tests[0]!.steps.at(-1)!.detail ?? '', /platform.*macos-webkit-999\.0.*not a tolerance knob/s);
+    assert.match(asEntry(report.tests[0], 'functional').steps.at(-1)!.detail ?? '', /platform.*macos-webkit-999\.0.*not a tolerance knob/s);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -1813,11 +1814,11 @@ test('`not matches snapshot` asserts the opposite: fails while it matches, passe
 
     const { report: stillMatches } = await runSnapshot('test "seed"\n  open "/snap?dynamic=red"\n  expect page not matches snapshot "negated"\n', dir);
     assert.equal(stillMatches.ok, false, 'still identical to the baseline — `not matches` should fail');
-    assert.match(stillMatches.tests[0]!.steps.at(-1)!.detail ?? '', /expected to differ.*matched exactly/);
+    assert.match(asEntry(stillMatches.tests[0], 'functional').steps.at(-1)!.detail ?? '', /expected to differ.*matched exactly/);
 
     const { report: nowDiffers } = await runSnapshot('test "seed"\n  open "/snap?dynamic=green"\n  expect page not matches snapshot "negated"\n', dir);
     assert.equal(nowDiffers.ok, true, JSON.stringify(nowDiffers.tests[0], null, 2));
-    assert.match(nowDiffers.tests[0]!.steps.at(-1)!.detail ?? '', /differs from baseline as expected/);
+    assert.match(asEntry(nowDiffers.tests[0], 'functional').steps.at(-1)!.detail ?? '', /differs from baseline as expected/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -1827,7 +1828,7 @@ test('a stray `mask <locator>` after a matcher other than `matches snapshot` is 
   const { program } = parseSource('test "bad mask"\n  expect status equals 200 mask css "#x"\n');
   const { report } = await runProgram(program, config, { source: 'x' });
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error ?? '', /`mask <locator>` only applies alongside `matches snapshot "…"`/);
+  assert.match(asEntry(report.tests[0], 'functional').error ?? '', /`mask <locator>` only applies alongside `matches snapshot "…"`/);
 });
 
 test('chromiumDeterministicRenderArgs: only chromium gets the deterministic-font-rendering flags, matching platformKey\'s own assumption that a same-platform-key render is byte-identical (D15)', () => {

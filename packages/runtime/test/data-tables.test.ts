@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { startFixtureServer, testConfig, json } from './support.js';
+import { asEntry } from './__helpers__/entry.js';
 
 test('an inline `with each` table runs one case per row, interpolating `{col}` into the test name', async () => {
   const server = await startFixtureServer({
@@ -255,7 +256,7 @@ test "row {nmae}"
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source, baseDir: dir });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error!;
+  const error = asEntry(report.tests[0], 'functional').error!;
   assert.match(error, /unknown table column "nmae" referenced in the test name/);
   assert.match(error, /did you mean `name`\?/);
   // The half the row is actually about — the old remedy pointed at two keywords that cannot bind a
@@ -275,7 +276,7 @@ test "row {quantity}"
   const { program } = parseSource(source);
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source, baseDir: dir });
 
-  const error = report.tests[0]!.error!;
+  const error = asEntry(report.tests[0], 'functional').error!;
   assert.match(error, /this row from ".\/rows.csv" has: name, email/);
 
   await rm(dir, { recursive: true, force: true });
@@ -294,7 +295,7 @@ test "row {nmae}"
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
 
   assert.equal(report.ok, false);
-  assert.match(report.tests[0]!.error!, /unknown table column "nmae" referenced in the test name/);
+  assert.match(asEntry(report.tests[0], 'functional').error!, /unknown table column "nmae" referenced in the test name/);
 });
 
 test('a correctly spelled column is silent — the check does not fire on a name it can resolve', async () => {
@@ -328,7 +329,7 @@ test('the general unbound-variable remedy survives where it is still the right o
   const { report } = await runProgram(program, testConfig('http://127.0.0.1:1'), { source });
 
   assert.equal(report.ok, false);
-  const error = report.tests[0]!.error!;
+  const error = asEntry(report.tests[0], 'functional').error!;
   assert.match(error, /unknown variable "traceId" — is it defined with `let` or `capture` earlier\?/);
   assert.doesNotMatch(error, /unknown table column/);
 });
