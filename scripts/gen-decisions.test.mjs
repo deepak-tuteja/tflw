@@ -43,6 +43,7 @@ import {
   extractBlock,
   pickAnchor,
   publishedIds,
+  scanLines,
   scrub,
   scrubTracked,
   staleExemptions,
@@ -1184,4 +1185,66 @@ test('a binary file is skipped on its content, not on its name', () => {
   const r = run(dir, ['--demand']);
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stdout, /0 image and 1 binary file\(s\) not read/);
+});
+
+// -------------------------------------------------------------------------------------------
+// `M175b` / `D897` / `D900` — a title inside a blockquote, and a title inside a fence
+// -------------------------------------------------------------------------------------------
+
+test('a boldLead inside a blockquote anchors, and only when nothing unquoted exists', () => {
+  // `M169-03`: 50 milestone accounts in `REVIEW_FINDINGS.md` and 9 across two plans are titled
+  // `> **\`D753\` — …**`, and every one of the thirteen forms before this anchored at the start of a
+  // line. Two identifiers had no other block anywhere and so resolved to nothing at all.
+  const quoted = collectAnchors([
+    { path: 'REVIEW_FINDINGS.md', text: '> **`M123b`: `M114-01` closes, and its answer was a cancellation.**' },
+  ]);
+  assert.equal(quoted.get('M123b')?.[0].kind, 'quotedBoldLead');
+
+  // Nested quoting is the same claim one level deeper.
+  const nested = collectAnchors([{ path: 'PLAN_X.md', text: '> > **`D753` — the timer fired its own run.**' }]);
+  assert.equal(nested.get('D753')?.[0].kind, 'quotedBoldLead');
+
+  // AND IT IS LAST. This is the whole of `D897`: the pre-pass that strips `>` before the forms run
+  // gains the same two identifiers and *moves four others*, because `D764`-`D767` are each written
+  // twice in `PLAN_M154_DOGFOOD_CONFORMANCE.md` — once in the blockquote narrating the judgement,
+  // once under `#### The four decisions, stated` — and `D766`'s two copies disagree while
+  // `DECISIONS.md` publishes the stated one (`M175-01`).
+  const chosen = pickAnchor('D766', [
+    { file: 'PLAN_M154_DOGFOOD_CONFORMANCE.md', line: 1680, kind: 'quotedBoldLead', headingLevel: 0 },
+    { file: 'PLAN_M154_DOGFOOD_CONFORMANCE.md', line: 1794, kind: 'boldLead', headingLevel: 0 },
+  ]);
+  assert.equal(chosen.kind, 'boldLead', 'the unquoted copy still wins');
+  assert.equal(chosen.line, 1794, 'and it is the one under "The four decisions, stated"');
+});
+
+test('a fence is an illustration, never a definition', () => {
+  // `D900`. `takeStatement` already said this in words and `extractBlock` already tracked fences;
+  // `collectAnchors` alone did not. Latent at thirteen forms — 3 candidates inside fences, 0 picked
+  // — and `quotedBoldLead` activates it, because documenting a blockquoted title means pasting one
+  // into a fence. `PLAN_M175_GATE_REACH.md` did exactly that and became `M123b`'s anchor.
+  const text = [
+    'The two exceptions are written like this:',
+    '',
+    '```',
+    '> **`M123b`: a sample of the shape, not a definition of it.**',
+    '**`D753` — nor is this one, and it is not even quoted.**',
+    '```',
+    '',
+    '**`D682` — a real title after the fence still anchors.**',
+  ].join('\n');
+  const anchors = collectAnchors([{ path: 'PLAN_M175_GATE_REACH.md', text }]);
+  assert.equal(anchors.get('M123b'), undefined, 'a quoted sample inside a fence is not a definition');
+  assert.equal(anchors.get('D753'), undefined, 'nor is an unquoted one — this closes all fourteen forms, not just the new one');
+  assert.equal(anchors.get('D682')?.[0].kind, 'boldLead', 'and the fence closes, so what follows still anchors');
+
+  // A `~~~` fence is a fence, and a longer run closes only on a run at least as long.
+  const tilde = collectAnchors([{ path: 'PLAN_X.md', text: ['~~~~', '**`D683` — inside.**', '~~~~'].join('\n') }]);
+  assert.equal(tilde.get('D683'), undefined, 'tildes fence too');
+
+  // THE ASYMMETRY IS DELIBERATE (`D900`): the citation side keeps untagged fences, because
+  // `D105`-`D107`'s 89 citations live inside `GRAMMAR.md`'s EBNF fences. Demand reads a fence as
+  // prose; supply cannot read it as a claim. Asserted here so a later "consistency" edit has to
+  // argue with it rather than notice it.
+  const cited = scanLines(['```', 'a comment citing `D105` inside an untagged fence', '```'].join('\n'));
+  assert.equal(cited.some((l) => l.inProductFence), false, 'an untagged fence is not a product fence');
 });

@@ -95,6 +95,87 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
   ];
 }
 
+/**
+ * `M175d` / `D901` — what the config probe harness runs, held to what `tflw check` runs.
+ *
+ * `M156-01`: `runProbe`'s `wrap: 'config'` branch composes, **by hand**, a subset of
+ * `loadAndValidate`'s config phase, and nothing held the two lists together. The manifest's own
+ * totality gate cannot see it: it checks that a row *has* a probe, never that the probe can *reach*
+ * the rule, so a code emitted only from a pass the harness does not run would render an example cell
+ * and assert nothing (`D722`).
+ *
+ * `D711` DECIDED THE SHAPE, AND THE THIRD OPTION IS REFUSED IN WRITING RATHER THAN SKIPPED.
+ *
+ *  1. *Import `loadAndValidate`'s composition and call it.* One implementation that agrees with
+ *     itself — and impossible here anyway: the CLI's config phase is `async`, needs a `cwd`, reads
+ *     files off disk and resolves envs, none of which a source-text probe has.
+ *  2. *Keep two lists and assert they are equal.* `D711` chose this for the notation grammar, and
+ *     `M164-12`/`M171d` is the row recording what it costs when nothing holds the pair together —
+ *     which is this row, one layer over. **Taken.**
+ *  3. *Declare, as data, which checks the harness does not run and why* — `M171a`'s mechanism applied
+ *     to a composition instead of a corpus. **Not refused: folded into 2.** A bare equality
+ *     assertion would force the harness to run passes it structurally cannot, so the declaration is
+ *     what makes the equality statable at all. `M175c` took the declaration alone because there the
+ *     widening was possible and merely expensive; here two of the six are impossible, and an
+ *     impossibility that is not written down reads exactly like an oversight.
+ *
+ * The list is read out of `cli.ts` rather than restated, so adding a sixth pass to the CLI reddens
+ * this test with the new name in the message. That crosses a package boundary on purpose: the whole
+ * defect is two files disagreeing, and a copy of the list in this package could not have caught it.
+ */
+const CONFIG_PHASE_RUN_BY_HARNESS = new Set([
+  'checkAllowHostsCoversBaseUrls',
+  'checkConfigDeclaredEnvRefs',
+  'checkConfigBracedEnvRefs',
+]);
+
+/** Passes `tflw check` runs over a config that a source-text probe cannot reach, each with why. */
+const CONFIG_PHASE_NOT_REACHABLE = new Map([
+  ['checkSessionBody',
+   'takes `resolved.sessions` — the env-filtered session roster built by `resolve.ts` from the whole ' +
+   'config plus the active env block — together with the resolved service map and the env base-url and ' +
+   'timeout tables. A probe is source text with no env selected, so there is no active env block and no ' +
+   'resolved roster to hand it. This is the pass `M156-01` names: 13 codes reachable in the config ' +
+   'dialect only through a session body, and no `wrap: config` probe can evidence one.'],
+  ['checkConfigFiles',
+   'is `async` and reads the filesystem relative to `cwd`, asking whether the files a config names ' +
+   'exist. A probe has no directory. `D722` would be satisfied by a probe that rendered an example ' +
+   'and asserted nothing, which is worse than the row having no probe at all.'],
+]);
+
+test('the config probe harness runs what `tflw check` runs, or says which passes it cannot', () => {
+  const cliPath = new URL('../../cli/src/cli.ts', import.meta.url);
+  const cli = readFileSync(cliPath, 'utf8');
+
+  // The composition is one array literal, so it is read as one block rather than swept whole-file —
+  // `checkAllowHostsCoversBaseUrls` is named eleven times in prose in this file and a bare sweep
+  // would count comments as calls, which is `M169-04`'s shape in miniature.
+  const start = cli.indexOf('const configEnvDiags = [');
+  assert.notStrictEqual(start, -1, "loadAndValidate's config composition could not be located in cli.ts — it was renamed, and this test is the thing that was supposed to notice");
+  const block = cli.slice(start, cli.indexOf('\n  ];', start));
+  const called = new Set([...block.matchAll(/\.\.\.\(?(?:await )?(check[A-Za-z]+)\(/g)].map((m) => m[1]));
+
+  assert.ok(called.size > 0, 'the composition block was found but no calls were read out of it — the regex and the source have drifted apart');
+
+  const declared = new Set([...CONFIG_PHASE_RUN_BY_HARNESS, ...CONFIG_PHASE_NOT_REACHABLE.keys()]);
+  const undeclared = [...called].filter((c) => !declared.has(c));
+  const phantom = [...declared].filter((c) => !called.has(c));
+
+  assert.deepEqual(undeclared, [],
+    `\`tflw check\` runs ${undeclared.join(', ')} over a config and this harness neither runs it nor declares why it cannot. ` +
+    'Add it to CONFIG_PHASE_RUN_BY_HARNESS and to runProbe, or to CONFIG_PHASE_NOT_REACHABLE with the reason a probe cannot reach it (M156-01, D901).');
+  assert.deepEqual(phantom, [],
+    `${phantom.join(', ')} is declared here and no longer called by loadAndValidate — a declaration naming a pass that does not exist ` +
+    'excuses a gap that is not there and hides one that is.');
+
+  // `D880`: the "cannot reach" half must stay non-empty and reasoned. If it empties, the harness can
+  // run everything and this whole structure should be replaced by calling the real composition.
+  assert.ok(CONFIG_PHASE_NOT_REACHABLE.size > 0, 'nothing is declared unreachable — if that is true, delete this test and import the real composition instead of restating it');
+  for (const [name, why] of CONFIG_PHASE_NOT_REACHABLE) {
+    assert.ok(why.length > 80, `${name} is declared unreachable without a reason a reader can check`);
+  }
+});
+
 test('every `DIAGNOSTICS` row carries exactly one kind of evidence', () => {
   // `M159c` widened this from "at least one probe" to "one of probes or `runtime`", because
   // `TF080` is the first code no source text provokes (`D801`). The widening is the risk: "at

@@ -169,13 +169,37 @@ export function checkShardCost(manifests, costs = SUITE_SECONDS, budget = SHARD_
     }
   }
 
-  const worst = new Map();
+  // `M175e` / `M169-01` — EVERY measurement, not the max, AND THE GATE NAMES NO CAUSE.
+  //
+  // The row: this gate read one number per package, so *"a wedged runner and a stale SUITE_SECONDS
+  // entry emit the identical message"*. `PLAN_M175` §3 assumed the repair was a discriminator — a
+  // wedged runner is slow on every shard, a stale entry is slow only where that package is
+  // baselined, and the signatures differ within a single run. `M172e`'s 24-shard run was the first
+  // time the within-run spread was actually read, and it refutes that: nine shards carrying five
+  // root-suite mutations each came in at 80-121s per run against a `SUITE_SECONDS` of 108. **The
+  // constant was not stale. The runner was simply slow.** The case that motivated separating the two
+  // causes turned out to have only one of them, so the discriminator is withdrawn in the row.
+  //
+  // What survives is the spread itself. It is reported and nothing is inferred from it, because a
+  // gate that names the wrong cause is worse than one that names none — which is this row's own
+  // finding turned on its own repair. The reader gets the disagreement, the shape of the evidence,
+  // and both candidate explanations unranked.
+  const seen = new Map();
   for (const m of timed) {
     for (const [pkg, seconds] of Object.entries(m.costs ?? {})) {
-      if (!(worst.get(pkg) >= seconds)) worst.set(pkg, seconds);
+      if (!Number.isFinite(seconds)) continue;
+      seen.set(pkg, [...(seen.get(pkg) ?? []), seconds]);
     }
   }
-  for (const [pkg, measured] of [...worst].sort(([a], [b]) => a.localeCompare(b))) {
+  /** `12s` · `12-19s across 4 shards` — the second form is the whole point of this stage. */
+  const spread = (xs) => {
+    const lo = Math.min(...xs), hi = Math.max(...xs);
+    return lo === hi
+      ? `${lo}s${xs.length > 1 ? ` on all ${xs.length} shards that ran it` : ''}`
+      : `${lo}-${hi}s across the ${xs.length} shards that ran it`;
+  };
+  for (const [pkg, all] of [...seen].sort(([a], [b]) => a.localeCompare(b))) {
+    const measured = Math.max(...all);
     const declared = costs[pkg];
     if (declared === undefined) {
       problems.push(`a shard baselined \`${pkg}\`, which has no SUITE_SECONDS entry — the packer priced it at a default it did not measure.`);
@@ -183,11 +207,20 @@ export function checkShardCost(manifests, costs = SUITE_SECONDS, budget = SHARD_
     }
     if (measured > declared * COST_DRIFT && measured - declared >= COST_FLOOR_SECONDS) {
       problems.push(
-        `SUITE_SECONDS['${pkg}'] is ${declared}s and its baseline measured ${measured}s — ${(measured / declared).toFixed(1)}× light. ` +
-          `partition() packs by that number, so a light entry does not merely mispredict a shard, it decides which mutations go in it.`,
+        `SUITE_SECONDS['${pkg}'] says ${declared}s and this run measured ${spread(all)} — ${(measured / declared).toFixed(1)}× at the worst shard. ` +
+          `partition() packs by the declared number, so a disagreement does not merely mispredict a shard, it decides which mutations go in it.\n` +
+          `    This gate does not say which of the two it is, and that is deliberate (M169-01/M175e): a constant that is\n` +
+          `    wrong and a runner that is slow produce the same overrun, and M172e measured a case that read as the first\n` +
+          `    and was the second. The spread above is the evidence — one slow shard among many points away from the\n` +
+          `    constant; every shard alike points at it — and it is offered rather than interpreted.`,
       );
     } else if (declared > measured * COST_DRIFT && declared - measured >= COST_FLOOR_SECONDS) {
-      notes.push(`SUITE_SECONDS['${pkg}'] is ${declared}s against a measured ${measured}s — heavy, so it over-provisions rather than overruns. Not a failure; correct it when convenient.`);
+      notes.push(`SUITE_SECONDS['${pkg}'] is ${declared}s against a measured ${spread(all)} — heavy, so it over-provisions rather than overruns. Not a failure; correct it when convenient.`);
+    } else if (all.length > 1 && Math.min(...all) * COST_DRIFT < measured) {
+      // `D880`-adjacent: the spread is the instrument this stage adds, so when it is wide enough to
+      // be worth reading it is printed even where nothing failed. A silent instrument is one nobody
+      // checks the day it matters.
+      notes.push(`SUITE_SECONDS['${pkg}'] is ${declared}s and the run measured ${spread(all)} — inside the drift bar, but the shards disagree with each other by more than ${COST_DRIFT}×, which is a property of the runner rather than of the constant.`);
     }
   }
   return { problems, notes };

@@ -6321,6 +6321,21 @@ absolute GitHub URLs. The gate parses `SPEC.md`'s headings, computes their slugs
 fragment that resolves to nothing. It closes the hole `M149` left open rather than merely avoiding
 it this once.
 
+### D683
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`D683` — the check has two tiers, and the CI tier names what it cannot do**
+
+`R3` requires the generator to run in CI. **It cannot.** The extraction source is 66 gitignored
+files that do not exist on a CI runner, and `M152a` would ship a gate that is either absent or
+lying. Two tiers instead, both in one `--check`:
+
+| tier | needs the private records | what it proves |
+| --- | --- | --- |
+| **citation conformance** (`D675`) + **scrub** (`D676`) | no — both sides are tracked | no cited id lacks an entry, no entry lacks a citation, nothing in `§1.7`'s classes leaks |
+| **extraction fidelity** | yes | every entry is byte-identical to the block it was lifted from |
+
 ### D686
 
 <sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
@@ -6853,7 +6868,7 @@ published artifact for a sibling to break against, the choice is informed rather
 
 ### D758
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/scripts/perf-conformance.mjs +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md, tflw-tests/scripts/perf-conformance.mjs +2 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D758` — the measured perf gate is a phase of the regression sweep, and the sweep is where it
 lives now.** `scripts/regression.mjs` gains `perf-ladder`, running
@@ -7994,7 +8009,7 @@ and the second group is the one that is a real address a real repository publish
 
 ### D880
 
-<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-argv-contract.mjs, tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
 
 **`D880` — the tracked sweep announces that it could not run, rather than reporting a clean tree.**
 `git ls-files` is the only enumerator of this corpus and the offload driver's copy of the tree has
@@ -10957,7 +10972,7 @@ Gitignored by `.gitignore:35`.
 
 ### M162
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/tests/mixed/storefront.tflw +1 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs +2 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
 
 **`M162` — a test owns the state it asserts on**
 
@@ -11044,7 +11059,7 @@ line; restate the count; delete the no-op perturbation. Keep all 54 `find` patte
 
 ### M164
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +12 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +13 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`M164` — the roster plants must be shown to discriminate**
 
@@ -11143,7 +11158,7 @@ Gitignored by `.gitignore:35`.
 
 ### M167
 
-<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-contributing.mjs +2 more · lifted from `PLAN_M167_SWEEP_SIZE.md`</sub>
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-argv-contract.mjs +3 more · lifted from `PLAN_M167_SWEEP_SIZE.md`</sub>
 
 **`M167` — the size of the regression sweep is not stated in tracked prose, and now cannot be**
 
@@ -11218,7 +11233,7 @@ file spells `tflw <id>`; `verify-provenance.mjs` says the same rule in the same 
 **`M171` — every guard declares its corpus**
 
 **Status:** **`M171a`, `M171b`, `M171b2` BUILT and merged; `M171c` MEASURED 2026-09-05 (§11);
-`M171d` BUILT 2026-09-05 (§12.0), sibling PR pending its `D511` pair; `M171e` remains.** Written out of a grilling that answered
+`M171d` BUILT 2026-09-05 (§12.0), sibling PR pending its `D511` pair; **`M171e` BUILT 2026-09-05 (§13.4), closing `M164-01`** — `M171` is complete per `D894`.** Written out of a grilling that answered
 `PLAN_M170` §7's own question — *is the recurrence worth a milestone of its own?* — **yes**. This
 plan takes ownership of the property; `M170` keeps one stage (`M164-05`) and is downstream of this
 one.
@@ -11252,6 +11267,15 @@ one file there.
 
 **`M171d` — BUILT 2026-09-05, sibling PR pending. The row it is aimed at is `M164-12`.**
 
+### M172
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
+
+**`M172` — the five tflw-side ledger rows that are one milestone's worth of work**
+
+**Scoped 2026-09-05. COMPLETE 2026-09-05 — `M172a`–`M172e` all built and merged** (`#171`, `#172`,
+`#173`), and all five rows are closed in the ledger.
+
 ### M172d
 
 <sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
@@ -11269,5 +11293,28 @@ named costs declined; `D887` — the guard is wired to the root `npm test` and n
 **`M172e` — built 2026-09-05**
 
 Closes `M155-02`. The last stage, and the only one crossing the repository boundary.
+
+### M175a
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M175_GATE_REACH.md`</sub>
+
+**`M175a` — readback.** BUILT 2026-09-06; this paragraph is amended in place rather than rewritten,
+because the correction is part of the record. Two rows, one mechanism, and they are together because
+separating them would build the same check twice. `verify-provenance.mjs` declines to check a sha
+**by decision** — *"WHY THE SHA IS NOT CHECKED HERE … CI holds a depth-1 clone … It is printed for a
+reader and checked by hand"* — and the reason is correct *for CI*: a depth-1 clone cannot resolve an
+arbitrary commit. **This plan cited that rationale as `:737` and it sits near `:391`, and it is about
+a different sha** — the commit `37edd5c` that `DECLARED_UNRESOLVABLE`'s `M141b` entry names, not the
+pin's. The argument transfers and the conclusion is unchanged; the citation was adjacent rather than
+identical, which is the kind of drift a line number always eventually is. It is not a reason for the machine doing the pinning, which has the credential, the full
+history and the records. So the check belongs in `refresh-sibling-citations.mjs` at write time and in
+a developer-machine tier of `verify:provenance` — the `D683` shape the decisions gate already uses,
+where the tier that cannot run says out loud that it did not run. `M162-04` rides the same trip: the
+regeneration a re-pin makes necessary is performed by the same script on the same machine, so a
+re-pin that would change `DECISIONS.md` and does not regenerate it is a *write-time* failure and
+never a CI one. **`M172-01`'s reproduction is worth preserving before it is repaired** — from
+`1bf108f` until 2026-09-05 the pin named a branch squash-merged as tflw-tests `#79`, whose sha is
+not an ancestor of that repository's `main` and survives only because the branch was never deleted.
+A check that would not have caught that is not this stage.
 
 <!-- GENERATED:decisions:end -->

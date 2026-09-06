@@ -426,3 +426,39 @@ if (local) {
     `    node scripts/refresh-sibling-citations.mjs --ref ${ref}`,
   );
 }
+
+/**
+ * `M175a` / `M162-04` — regenerating `DECISIONS.md` is part of pinning, not a step after it.
+ *
+ * The row: a re-pin changes `DECISIONS.md`, nothing in the merge path regenerates it, and **CI
+ * structurally cannot notice** — `gen-decisions --check` runs a reduced tier on a runner because the
+ * design records it lifts from are gitignored (`D683`), so the comparison that catches this can only
+ * run on a working tree that has them. The generated file was guarded by a step a human has to
+ * remember, immediately after another step a human has to remember.
+ *
+ * The subtlety that made it invisible for four milestones: `aff0e98`'s message said *"Identifier set
+ * unchanged — only the ref, sha and source URL move"*, and that was **true of the identifier set and
+ * insufficient**. The pin also carries *which sibling files cite each identifier*, and `DECISIONS.md`
+ * prints that as each entry's `<sub>cited from …</sub>` line. Moving the source from a branch to
+ * `main` changed three of those and added a fourth attribution, none of it an identifier.
+ *
+ * So this is a write-time failure and never a CI one: the machine that can pin is the machine that
+ * has the records. It regenerates here, in the same process, and **fails loudly if it cannot** —
+ * a re-pin that leaves the generated file behind is the state the row describes, and exiting 0
+ * after printing a warning would recreate the step a human has to remember.
+ */
+if (!local) {
+  try {
+    execFileSync(process.execPath, [join(ROOT, 'scripts', 'gen-decisions.mjs')], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    console.log('  DECISIONS.md regenerated in the same pass (M162-04) — commit it with the pin.');
+  } catch (e) {
+    console.error(
+      `\n✗ the pin was written and DECISIONS.md could NOT be regenerated: ${String(e.stderr || e.message).trim().split('\n')[0]}\n` +
+      '  The pin carries which sibling file cites each identifier, and that is printed as each\n' +
+      "  entry's `cited from` line. A pin committed without its regeneration is M162-04, and CI\n" +
+      '  cannot catch it: gen-decisions --check runs a reduced tier on a runner because the records\n' +
+      '  are gitignored (D683). Fix the cause and run `node scripts/gen-decisions.mjs` before committing.',
+    );
+    process.exit(1);
+  }
+}

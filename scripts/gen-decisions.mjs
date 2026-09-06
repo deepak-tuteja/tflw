@@ -248,9 +248,16 @@ const SELF_DOCUMENTING = new Set(['PLAN_M152_DECISION_PROVENANCE.md', 'PLAN_M169
 const TITLES_ITS_OWN = new Set(['h1', 'heading', 'boldLead']);
 
 /**
- * The seven forms a private record uses to define an identifier. Ordered by how strongly each says
+ * The forms a private record uses to define an identifier. Ordered by how strongly each says
  * "this block *is* the definition" rather than "this block mentions it" — `pickAnchor` reads the
  * order as precedence (D682).
+ *
+ * THIS SENTENCE SAID "The seven forms" UNTIL 2026-09-06, WHEN THERE WERE THIRTEEN. It was not alone:
+ * `M169-03`'s ledger row said nine and `PLAN_M175` said ten in six places. Four documents, four
+ * numbers, none of them the array's. The count is **deleted rather than corrected**, on `D767` —
+ * *a count in prose is a copy with no guard* — and the gate prints `ANCHORS.length` instead, so the
+ * number now has exactly one source and cannot drift from it. The docblock below already said
+ * "nothing checks the set"; that was true of the membership and it was true of the size.
  *
  * `roadmap` is first and applies only to `PLAN.md`: its `- **M1 — API vertical slice.**` list is
  * where the global milestone sequence is actually defined, and nothing else defines it at all.
@@ -301,6 +308,27 @@ const ANCHORS = [
   // where nothing else matched: `M133` is the one milestone in the corpus with neither a plan of its
   // own nor a `PROGRESS.md` entry, and this row of its arc's index is the only block that states it.
   { kind: 'tableSecond', re: /^\|[^|]*\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*\|/ },
+  // `> **`D753` — the timer's `Requires=` fired the run it was supposed to schedule.**` — a
+  // `boldLead` inside a blockquote. Every form above anchors at the start of a line, so a title
+  // written into a quote was invisible to all of them: `M169-03`, 50 accounts in `REVIEW_FINDINGS.md`
+  // and 9 more across two plans.
+  //
+  // IT IS LAST, AND THAT IS THE WHOLE REPAIR (`D897`). The obvious fix is a one-line pre-pass
+  // stripping `>` before the forms run, and it was measured over all 91 records rather than argued:
+  // it gains the same two identifiers this entry does and **moves four others**. `D764`–`D767` are
+  // each written twice in `PLAN_M154_DOGFOOD_CONFORMANCE.md` — once in the blockquote narrating the
+  // judgement that took them, once under a heading reading `#### The four decisions, stated` — and
+  // `D766`'s two copies disagree about what `matcher:was-made` rosters against. `DECISIONS.md`
+  // publishes the stated one. A pre-pass moves it to the narrative, silently, which is the single
+  // outcome `D858` exists to prevent. Ranked last, `boldLead` still wins wherever an unquoted copy
+  // exists, so only an identifier with no unquoted title anywhere is gained: measured 2 gained,
+  // 0 moved, against the pre-pass's 2 and 4. The disagreement itself is `M175-01` and is deliberately
+  // not repaired here — this entry's evidence is that the grammar was about to choose between two
+  // copies without anyone seeing it.
+  //
+  // `affine` outranks `RANK` in `pickAnchor`, so "last" is only last *within a file's tier*. That is
+  // checked rather than assumed: the before/after map is asserted in `gen-decisions.test.mjs`.
+  { kind: 'quotedBoldLead', re: /^(?:>\s?)+\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—.:-]/ },
 ];
 const RANK = Object.fromEntries(ANCHORS.map((a, i) => [a.kind, i]));
 
@@ -317,7 +345,25 @@ export function collectAnchors(records) {
   for (const { path, text } of records) {
     const name = basename(path);
     const lines = text.split('\n');
+    // A FENCE IS AN ILLUSTRATION, NEVER A DEFINITION (`D900`). `takeStatement` already says this in
+    // as many words and `extractBlock` already tracks fences; only this function did not, so a
+    // sample of a record's shape counted as the record. Latent at thirteen forms — measured 3
+    // candidates inside fences and **0 picked**, so nothing published was ever lifted from one —
+    // and `quotedBoldLead` is what activates it, because the natural way to document a blockquoted
+    // title is to paste one into a fence. This plan did exactly that and made its own illustration
+    // `M123b`'s anchor, which is how the gap was found.
+    //
+    // DELIBERATELY NOT SYMMETRIC WITH THE CITATION SIDE. `scanLines` excludes only `PRODUCT_FENCE_INFO`
+    // fences, because `D105`-`D107`'s 89 citations live in comments inside `GRAMMAR.md`'s untagged
+    // EBNF fences and a blanket exclusion would have dropped 99 of them. Demand and supply want
+    // opposite answers here: text inside a fence can *cite* an identifier — it is prose a reader
+    // reads — but it cannot *define* one, because a definition is a claim the document makes and a
+    // fence is a claim it quotes.
+    let fence = null;
     lines.forEach((ln, i) => {
+      const f = /^\s*(```+|~~~+)/.exec(ln);
+      if (fence) { if (f && f[1].startsWith(fence)) fence = null; return; }
+      if (f) { fence = f[1]; return; }
       for (const a of ANCHORS) {
         if (a.only && name !== a.only) continue;
         const m = a.re.exec(ln);

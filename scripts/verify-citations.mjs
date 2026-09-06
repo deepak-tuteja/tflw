@@ -104,6 +104,75 @@ function trackedMarkdown(root) {
 }
 
 /**
+ * WHAT THIS GATE DOES NOT DEMAND, MEASURED RATHER THAN ASSERTED (`M175c`, `D896`).
+ *
+ * `M169-04`: this gate reads tracked **markdown**, and `M169b` had already widened
+ * `gen-decisions.mjs`' *demand* over tracked non-prose under `D858`. The obvious repair is to widen
+ * this one to match. It was measured first, and the measurement is why it was not:
+ *
+ *   716 hits across 156 tracked non-markdown text files. **They are not exempt — they are real.**
+ *   `// Bundles src/cli.ts into one self-contained dist/cli.cjs (decision 43)` is a bare citation
+ *   by this gate's own definition, and so is `test('--now with an unparseable date/time is a usage
+ *   error (decision 52)')`. `D691`'s exemption covers text that *mentions* the notation without
+ *   using it, which is this gate's own rules and fixtures and nothing else: **118 of the 716**.
+ *
+ * So widening is ~598 real rewrites across 153 files of shipped source and tests, each needing its
+ * number resolved first — a second measurement nobody has taken. The corpus stays prose, **and the
+ * narrowing is declared with the number that makes it a judgement rather than an oversight**. That
+ * is `D893`'s rule applied: the repair for this class is the declaration, not `git ls-files`.
+ *
+ * THE NUMBER IS COMPUTED HERE, NOT WRITTEN HERE (`D767`). A count in prose is a copy with no guard,
+ * and this file would be the fourth document in this repository to carry a stale one this week. The
+ * figures above are the ones measured on 2026-09-06 and are illustrative; the gate prints what it
+ * finds today, so a reader comparing the two learns whether the class is growing.
+ *
+ * AND IT FAILS RATHER THAN GOES QUIET (`D880`). A declaration that measures nothing is worse than no
+ * declaration: it reads as a considered exemption while asserting the empty set. If the enumeration
+ * returns no files, or this gate's own machinery is not among them, the split is meaningless and
+ * this gate says so instead of printing a confident zero.
+ */
+const OWN_MACHINERY = new Set([
+  'scripts/verify-citations.mjs',
+  'scripts/verify-citations.test.mjs',
+  'scripts/citation-rules.mjs',
+]);
+
+/**
+ * The tracked non-markdown text this gate declines to demand. Enumeration only.
+ *
+ * Split from `declaredReach` for the reason `trackedMarkdown`/`findBare` are split: this half needs
+ * `git ls-files` and so runs on a machine with an index, while the arithmetic must be testable
+ * anywhere. `scripts/exec.mjs` syncs the box copy without `.git`, so a test that called git would be
+ * red on the box and green here — which is the failure mode this repository keeps filing.
+ */
+export function trackedNonMarkdown(root) {
+  const out = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const files = [];
+  let skipped = 0;
+  for (const rel of out.split('\0').filter(Boolean)) {
+    if (rel.endsWith('.md')) continue;
+    let text;
+    try { text = readFileSync(join(root, rel), 'utf8'); } catch { skipped++; continue; }
+    if (text.includes('\0')) { skipped++; continue; }
+    files.push({ path: rel, text });
+  }
+  return { files, skipped };
+}
+
+/** What that corpus carries, split into this gate's own machinery and everything else. */
+export function declaredReach({ files, skipped = 0 }) {
+  let hits = 0, own = 0, ownFiles = 0;
+  for (const { path, text } of files) {
+    const n = [...text.matchAll(BARE), ...text.matchAll(BARE_LETTER), ...text.matchAll(BARE_HASH)].length;
+    if (OWN_MACHINERY.has(path)) ownFiles++;
+    if (n === 0) continue;
+    hits += n;
+    if (OWN_MACHINERY.has(path)) own += n;
+  }
+  return { files: files.length, hits, own, ownFiles, skipped, elsewhere: hits - own };
+}
+
+/**
  * Every bare citation the gate still objects to, with the four exemptions applied.
  *
  * Two of the exemptions are the same shape and `D691` states the general form: **a gate on a
@@ -260,8 +329,36 @@ const invokedDirectly = () => {
 if (invokedDirectly()) {
   const findings = findBare(trackedMarkdown(ROOT));
   const metadata = findInPackages(packageStrings(ROOT));
+
+  // `M175c` / `D896` / `D880`: state the reach, and refuse to state it vacuously.
+  const reach = declaredReach(trackedNonMarkdown(ROOT));
+  const reachProblem =
+    reach.files === 0
+      ? 'no tracked non-markdown text files were enumerated at all, so the declaration below would assert the empty set'
+      : reach.ownFiles !== OWN_MACHINERY.size
+        ? `this gate's own machinery is ${reach.ownFiles} of ${OWN_MACHINERY.size} files in the swept corpus — the exempt/real split cannot be stated, and OWN_MACHINERY has probably been renamed out from under it`
+        : reach.own === 0
+          ? "this gate's own rules and fixtures carry 0 hits, which cannot be true while the patterns are written in the file — the sweep is not reading what it thinks it is"
+          : null;
+  if (reachProblem) {
+    console.error(`✗ the declared reach cannot be measured: ${reachProblem}`);
+    console.error('  D896 makes this gate state what it does not demand. A declaration that measures');
+    console.error('  nothing reads as a considered exemption while asserting nothing (D880), so this');
+    console.error('  is a failure rather than a quiet zero.');
+    process.exit(1);
+  }
+  const declared = [
+    `  reach: this gate demands tracked markdown. It does NOT demand the ${reach.files} tracked`,
+    `  non-markdown text files beside it, which carry ${reach.hits} hit(s) — ${reach.own} of them in this`,
+    `  gate's own rules and fixtures (D691: text that mentions the notation), ${reach.elsewhere} of them real`,
+    '  bare citations in shipped comments and test titles. Declared, not widened (D896): widening is',
+    `  ~${reach.elsewhere} rewrites each needing its number resolved first. If ${reach.elsewhere} grows a lot, re-take that`,
+    '  decision rather than this measurement.',
+  ].join('\n');
+
   if (!findings.length && !metadata.length) {
     console.log('✓ no bare decision citations in tracked prose or package metadata');
+    console.log(declared);
     process.exit(0);
   }
   if (findings.length) {

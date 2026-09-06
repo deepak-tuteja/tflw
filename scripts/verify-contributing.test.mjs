@@ -210,6 +210,17 @@ const CLASSIFIED = [
  */
 const ABSENT_FROM_CI = [
   {
+    local: 'npm run verify:sibling-pin',
+    why: '`M175a` / `D899`. It resolves `scripts/sibling-citations.json`\'s `ref`, `sha` and `source` against the sibling '
+      + 'repository, which needs the network and a credential; CI holds a depth-1 clone and `verify-provenance.mjs` declines '
+      + 'the same check there for the same reason. Putting it in CI would also make this repository\'s builds red for the '
+      + 'sibling\'s branch lifecycle, which is not a tflw PR\'s business. It runs where a re-pin runs — the machine that has '
+      + 'the credential, the full history and the gitignored records — and where `gh` cannot answer it names the three clauses '
+      + 'it did not check and exits 0 (`D683`), so a green here can never be read as a green there. `M172-01` is why it exists '
+      + 'at all: nothing checked that any of the three fields still resolved, and a squash-merge leaves the branch commit a '
+      + 'reachable object while removing it from every line of history anybody reads',
+  },
+  {
     local: 'npm run verify:ledger',
     why: 'its corpus (`REVIEW_FINDINGS.md`) is gitignored on purpose, and a check that skips when its input is missing is green about nothing (`M131-03`). So the guard runs locally before a milestone is called done, and the *suite* verifying the guard runs in CI inside `npm test`',
   },
