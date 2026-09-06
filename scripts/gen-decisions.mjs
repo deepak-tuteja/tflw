@@ -266,27 +266,39 @@ const TITLES_ITS_OWN = new Set(['h1', 'heading', 'boldLead']);
  * anchor `D647` has anywhere, which is why `§1.8`'s "265 of 266" was a property of that
  * measurement's pattern set and not of the records (D684).
  */
+// A SEPARATOR FOLLOWED BY A DIGIT IS PART OF THE IDENTIFIER (`D910`, `M177c`). The `(?!-\d)`
+// half of this lookahead has been here since the forms were written, so a review row `M2-3` is not
+// read as the milestone `M2`. Its `.` sibling was never written, and the corpus uses **25 distinct
+// `Mn.m` tokens** — `M1.5`, `M4.4`, `M5.4`, `M10.5`, `M21.5`, `M37.6` and nineteen `M2.x`. Every
+// form whose separator class contains `.` therefore reads `## M2.9 — documentation completeness ✅`
+// as a title for `M2`, which collected **27 of its 32 anchors** that way.
+//
+// It was latent, not live — measured 1 identifier affected, **0 published titles wrong**, because
+// `M2` resolves through `roadmap`, which is ranked first and is the one form with no `.` in its
+// separator class. That is `D900`'s fence finding again (*3 candidates inside fences and 0 picked*)
+// and the same reason to close it now rather than note it: what keeps it latent is a ranking, and
+// `checkDuplicateTitles` below is the first thing in this file that reads the losers.
 const ANCHORS = [
-  { kind: 'roadmap', only: 'PLAN.md', re: /^\s*[-*]\s+\*\*`?(M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—:-]/ },
+  { kind: 'roadmap', only: 'PLAN.md', re: /^\s*[-*]\s+\*\*`?(M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—:-]/ },
   // `PLAN.md`'s ordered list sometimes titles an item with the milestone it covers —
   // `109. **M15 — Docs site polish…**`. So `P#109` and `M15` name the same block, in the two
   // namespaces at once: the collision of §1.2 seen from the inside.
-  { kind: 'roadmapTitle', only: 'PLAN.md', re: /^\d{1,3}\.\s+\*\*`?(M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—:-]/ },
-  { kind: 'h1', re: /^#\s+.*?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—:-]/ },
-  { kind: 'heading', re: /^#{1,5}\s+(?:\d+\.\s*)?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—.:-]/ },
+  { kind: 'roadmapTitle', only: 'PLAN.md', re: /^\d{1,3}\.\s+\*\*`?(M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—:-]/ },
+  { kind: 'h1', re: /^#\s+.*?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—:-]/ },
+  { kind: 'heading', re: /^#{1,5}\s+(?:\d+\.\s*)?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—.:-]/ },
   // `## M50 shipped 2026-08-02 — collapse `scenario` into `test``: a heading whose id is followed by
   // a word rather than a dash. It has to outrank `headingMid`, because that same line ends
   // `(D127, PLAN_DISCOVERY_EXCLUDE.md)` and a weaker rule reading the parenthetical first would
   // resolve the heading to the decision it *cites* instead of the milestone it *is*.
-  { kind: 'headingLoose', re: /^#{1,5}\s+`?(M\d{1,3}[a-z]?\d?)(?!-\d)`?\s+\w/ },
-  { kind: 'boldLead', re: /^\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—.:-]/ },
-  { kind: 'decisionsTaken', re: /^\*\*Decisions? taken:?\*\*\s*`?(D\d{1,3}[a-z]?)(?!-\d)`?\s*[—-]/ },
-  { kind: 'listBold', re: /^\s*[-*]\s+\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*[—.:-]/ },
+  { kind: 'headingLoose', re: /^#{1,5}\s+`?(M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s+\w/ },
+  { kind: 'boldLead', re: /^\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—.:-]/ },
+  { kind: 'decisionsTaken', re: /^\*\*Decisions? taken:?\*\*\s*`?(D\d{1,3}[a-z]?)(?![-.]\d)`?\s*[—-]/ },
+  { kind: 'listBold', re: /^\s*[-*]\s+\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*[—.:-]/ },
   // `PROGRESS.md`'s commit table: `| `b017c9b` | **M71** — … |`, and its milestone status table:
   // `| M20 — test-coverage audit follow-up: … | ✅ | … |`. Both are already one-sentence statements
   // of what a milestone shipped, written when it shipped — which is the shape `D670` wants, found
   // rather than reconstructed.
-  { kind: 'progressTable', re: /^\|\s*`?[0-9a-f]{6,10}`?\s*\|\s*\*{0,2}`?(M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*[—-]/ },
+  { kind: 'progressTable', re: /^\|\s*`?[0-9a-f]{6,10}`?\s*\|\s*\*{0,2}`?(M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*[—-]/ },
   // A heading naming an id parenthetically — `### 1.1 Driver boundary (D5)` — is the section that
   // *takes* the decision under `PLAN_BROWSER_PERF_SECURITY.md`'s own numbering, and it outranks the
   // two generic table kinds: a cell in a scope or index table only *names* an id, and letting a name
@@ -300,14 +312,14 @@ const ANCHORS = [
   // of which are about the milestone rather than the milestone's own account of itself. And it stays
   // below `boldLead`, which is what keeps `M50`'s `### M50 shipped … (D127, …)` from resolving
   // `D127` to the milestone that cites it.
-  { kind: 'headingMid', re: /^#{1,5}\s+.*?[(`]`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?[),`]/ },
-  { kind: 'tableLead', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*[—:-]\s/ },
-  { kind: 'tableRow', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*\|/ },
+  { kind: 'headingMid', re: /^#{1,5}\s+.*?[(`]`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?[),`]/ },
+  { kind: 'tableLead', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*[—:-]\s/ },
+  { kind: 'tableRow', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*\|/ },
   // An index table whose first column is the category and whose second is the id —
   // `| editors | \`M133\` | D24b's LSP/VS Code catch-up… |`. Weakest of all, so it can only ever win
   // where nothing else matched: `M133` is the one milestone in the corpus with neither a plan of its
   // own nor a `PROGRESS.md` entry, and this row of its arc's index is the only block that states it.
-  { kind: 'tableSecond', re: /^\|[^|]*\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\*{0,2}\s*\|/ },
+  { kind: 'tableSecond', re: /^\|[^|]*\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*\|/ },
   // `> **`D753` — the timer's `Requires=` fired the run it was supposed to schedule.**` — a
   // `boldLead` inside a blockquote. Every form above anchors at the start of a line, so a title
   // written into a quote was invisible to all of them: `M169-03`, 50 accounts in `REVIEW_FINDINGS.md`
@@ -328,7 +340,7 @@ const ANCHORS = [
   //
   // `affine` outranks `RANK` in `pickAnchor`, so "last" is only last *within a file's tier*. That is
   // checked rather than assumed: the before/after map is asserted in `gen-decisions.test.mjs`.
-  { kind: 'quotedBoldLead', re: /^(?:>\s?)+\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?!-\d)`?\s*[—.:-]/ },
+  { kind: 'quotedBoldLead', re: /^(?:>\s?)+\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—.:-]/ },
 ];
 const RANK = Object.fromEntries(ANCHORS.map((a, i) => [a.kind, i]));
 
@@ -380,6 +392,71 @@ export function collectAnchors(records) {
     });
   }
   return found;
+}
+
+/**
+ * The forms whose whole line *is* the statement, rather than a cell or a section that mentions an
+ * id. Only these can disagree, and that distinction is the difference between a check with one
+ * firing and a check with 165 (`D911`).
+ */
+const TITLING = new Set(['h1', 'boldLead', 'quotedBoldLead', 'listBold', 'decisionsTaken']);
+
+/**
+ * An anchor's statement as a reader reads it: the bold run it opens, which routinely wraps, with
+ * markdown furniture and blockquote prefixes removed. Compared normalised, because two copies of one
+ * decision differ in quoting far more often than in substance and a check that fires on a backtick
+ * is a check nobody keeps.
+ */
+function statementOf(lines, i) {
+  const joined = lines.slice(i, i + 6)
+    .map((l) => l.replace(/^(?:>\s?)+/, ''))
+    .join(' ')
+    .replace(/^\s*[-*]\s+/, '')
+    .replace(/^#{1,6}\s+/, '');
+  const bold = /^\*\*([\s\S]*?)\*\*/.exec(joined);
+  return (bold ? bold[1] : joined.split('  ')[0])
+    .replace(/[`*_]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/[.,;:]+$/, '');
+}
+
+/**
+ * Identifiers stated more than once **in one record**, whose statements disagree (`D911`).
+ *
+ * `D767` — *a count in prose is a copy with no guard* — turned on this file itself. `D764`-`D767`
+ * are each written twice in `PLAN_M154_DOGFOOD_CONFORMANCE.md`, once narrating the judgement and
+ * once under `#### The four decisions, stated`, and `D766`'s two copies disagreed about what
+ * `matcher:was-made` rosters against. `DECISIONS.md` published the right one **by accident**: every
+ * form but `quotedBoldLead` anchors at the start of a line, and a `>` hid the other. That is
+ * `M175-01`, and nothing in the repository was in a position to notice it.
+ *
+ * IT IS A FAILURE AND NOT A REPORT, WHICH THE CENSUS HAD TO SETTLE FIRST. The natural rule — any
+ * two definition-rank anchors in one record whose titles differ — gives **165 firings on 168
+ * groups**, because a plan is obliged to name a milestone in its scope table and again in its own
+ * `#### shipped …` heading, and that is one milestone mentioned twice rather than one decision
+ * written twice. Restricted to `TITLING`, the whole corpus holds **five** groups and **one**
+ * disagreement. A guard with one firing, which is the defect, can refuse; `M166`'s lesson is what a
+ * guard with 165 would have been worth.
+ */
+export function checkDuplicateTitles(anchors, records) {
+  const byPath = new Map(records.map((r) => [r.path, r.text.split('\n')]));
+  const out = [];
+  for (const [id, list] of anchors) {
+    const perFile = new Map();
+    for (const a of list) {
+      if (!TITLING.has(a.kind)) continue;
+      perFile.set(a.file, [...(perFile.get(a.file) ?? []), a]);
+    }
+    for (const [file, group] of perFile) {
+      if (group.length < 2) continue;
+      const said = group.map((a) => ({ line: a.line, kind: a.kind, said: statementOf(byPath.get(file), a.line - 1) }));
+      if (new Set(said.map((t) => t.said)).size < 2) continue;
+      out.push({ id, file, said });
+    }
+  }
+  return out;
 }
 
 /**
@@ -1293,7 +1370,7 @@ export const DECLARED_UNRESOLVABLE = new Map([
  * measurement ever stops holding, this is where to look.
  *
  * A finding-shaped citation like `M150-01` demands `M150`, and that asymmetry with the anchor rules'
- * `(?!-\d)` is deliberate: a review finding is filed *at* a milestone and a reader who meets one
+ * `(?![-.]\d)` is deliberate: a review finding is filed *at* a milestone and a reader who meets one
  * wants the milestone, but a finding's row is not the milestone's definition. It is also
  * load-bearing rather than incidental — measured over tracked prose, **seven published entries
  * (`M97a`, `M107`, `M131`, `M140`, `M144`, `M147`, `M154g`) are cited by nothing else**, so a
@@ -1526,7 +1603,21 @@ function main() {
         `  identifier in the record that took it, requalify the citation if it names the wrong one, or\n` +
         `  delete it and state the rule in words.`);
     }
-    return result.unresolved.length || result.stale.length ? 1 : 0;
+    // `D911`. Runs beside the demand check because it needs the same two things — the records and
+    // their anchors — and because both answer *is this index's input honest*, one about pointers
+    // nothing defines and one about definitions that contradict each other.
+    const dup = checkDuplicateTitles(collectAnchors(records), records);
+    for (const d of dup) {
+      console.error(`  ${d.id.padEnd(7)} ${d.file}`);
+      for (const t of d.said) console.error(`          :${String(t.line).padEnd(5)} ${t.kind.padEnd(15)} ${t.said.slice(0, 96)}`);
+    }
+    if (dup.length) {
+      console.error(`✗ ${dup.length} identifier(s) are stated twice in one record, in words that disagree.\n` +
+        `  Which copy this index publishes is then decided by anchor precedence, which is a ranking and\n` +
+        `  not a judgement (D911). Restate the narrating copy in the words the authoritative one uses,\n` +
+        `  or delete it — a decision stated twice is a copy with no guard (D767).`);
+    }
+    return result.unresolved.length || result.stale.length || dup.length ? 1 : 0;
   };
 
   if (demanding) {

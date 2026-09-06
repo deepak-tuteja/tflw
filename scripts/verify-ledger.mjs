@@ -338,6 +338,27 @@ export function planClaims(text, headerLines = 12) {
  * Detection runs over `maskCodeSpans`, ids come from the real text at the same indices. A close
  * verb inside a code span is a **quotation** — `PLAN_M171` quotes `PLAN_M160`'s defective line
  * while describing it — and quoting a defect must not commit one.
+ *
+ * **AND THE CLAUSE IS BOUNDED BY THE SENTENCE** (`D909`, `M177a`). `PLAN_M175` wrote
+ * `Closes …, and gates \`M149f-01\`'s condition. Files \`M175-01\`.` on one unbolded line, so a
+ * row it only *filed* was read as a row it closed — `M175-02`, and the reason that header had to be
+ * split across two lines to get this gate green.
+ *
+ * The asymmetry is the whole of the rule and it is not a nicety either. A sentence **ends** the
+ * clause in force; it cannot **open** one. Granting it the authority a bold label has was the
+ * obvious shape, it is what `M177`'s own scoping proposed, and measured over 92 records it drops
+ * the 17 ids it should and **admits 39 it should not**: `REVIEW_FINDINGS.md:6043` quotes this very
+ * header while reporting it, `:5822` uses *closes* as a noun, and `PLAN_M125:963` writes "it closes
+ * here" about a row it is explaining. Opening stays with a bold label and with the line's leading
+ * `Closes`, so this rule can subtract and can never add — measured 0 dropped, 0 gained across the
+ * whole corpus, with the two claims it re-segments (`PLAN_M104`'s) keeping every id they had.
+ *
+ * The scoping measurement asked only what the rule *loses*. That is the half that was safe.
+ *
+ * It stops one level above the verb: `, and gates \`M149f-01\`'s condition` is in the *same*
+ * sentence as the `Closes` list, and reaching it needs a reader of verbs, which is what the
+ * `<!-- plan:closes … -->` marker exists to avoid being. `D872` drew that line one level up; this
+ * draws it one level down and leaves the same remainder to the marker, deliberately.
  */
 export function closeClaims(text) {
   const out = []
@@ -355,10 +376,45 @@ export function closeClaims(text) {
         label = 'Closes'
       }
       if (!/\bcloses\b/i.test(label) || /without closing/i.test(label)) return
-      const ids = [...new Set([...raw.slice(from, to).matchAll(ROW_ID_BARE)].map((m) => m[1]))]
-      if (ids.length) out.push({ line: i + 1, ids, text: raw.slice(from, to).trim() })
+      // A SENTENCE CANNOT OPEN A CLAIM; IT CAN ONLY CONTINUE ONE OR END IT (`M177a`, `D909`).
+      // The asymmetry is the whole rule, and it was measured rather than assumed. Granting a
+      // sentence the same authority a bold label has — the shape `M177`'s §1 proposed — drops the
+      // 17 ids it was meant to drop and **admits 39 it was not**: `REVIEW_FINDINGS.md:6043` quotes
+      // `PLAN_M175`'s defective header while describing it, `:5822` uses *closes* as a noun, and
+      // `PLAN_M125:963` writes "it closes here" about a row it is explaining. Opening is reserved
+      // to a bold label and to the line's leading `Closes`, exactly as before; the only new power a
+      // sentence has is to stop the one in force. So this can add nothing, by construction.
+      for (const seg of sentences(masked, raw, from, to)) {
+        if (seg.index > 0 && (!/\bcloses\b/i.test(seg.text) || /without closing/i.test(seg.text))) continue
+        const ids = [...new Set([...seg.text.matchAll(ROW_ID_BARE)].map((m) => m[1]))]
+        if (ids.length) out.push({ line: i + 1, ids, text: seg.text.trim() })
+      }
     })
   })
+  return out
+}
+
+/**
+ * A claim's segment, cut at the sentence boundaries inside it (`D909`).
+ *
+ * Boundaries are found in the masked text and the text is taken from the real one at the same
+ * indices, for the reason `closeClaims` gives: a `.` inside a code span is part of an identifier,
+ * not the end of a thought. `PLAN_M104`'s `Closes \`M97c-03\` (S2). Files and closes \`M104-01\`
+ * (S2), …` is the one claim in the corpus that needs the second sentence kept, and it is kept
+ * because it carries its own verb — not because a sentence is trusted.
+ */
+function sentences(masked, raw, from, to) {
+  const stops = [...masked.slice(from, to).matchAll(/[.?!]\s+/g)].map((m) => ({
+    at: from + m.index + 1,
+    next: from + m.index + m[0].length,
+  }))
+  const out = []
+  let cursor = from
+  for (const s of stops) {
+    out.push({ index: out.length, text: raw.slice(cursor, s.at) })
+    cursor = s.next
+  }
+  out.push({ index: out.length, text: raw.slice(cursor, to) })
   return out
 }
 

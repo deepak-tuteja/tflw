@@ -34,6 +34,7 @@ import {
   CITATION,
   PREAMBLE,
   collectAnchors,
+  checkDuplicateTitles,
   RANGE,
   byId,
   collectCitations,
@@ -1215,6 +1216,73 @@ test('a boldLead inside a blockquote anchors, and only when nothing unquoted exi
   ]);
   assert.equal(chosen.kind, 'boldLead', 'the unquoted copy still wins');
   assert.equal(chosen.line, 1794, 'and it is the one under "The four decisions, stated"');
+});
+
+test('a separator followed by a digit is part of the identifier', () => {
+  // `D910`/`M177c`. The `(?!-\d)` half kept a review row `M2-3` from anchoring the milestone `M2`;
+  // its `.` sibling was never written, and the corpus has 25 `Mn.m` tokens. `M2` collected 27 of its
+  // 32 anchors from `M2.5`-`M2.21` lines this way.
+  const anchors = collectAnchors([
+    { path: 'PROGRESS.md', text: ['## M2.9 — documentation completeness ✅', '**`D75.2` — not a decision id either.**'].join('\n') },
+  ]);
+  assert.equal(anchors.get('M2'), undefined, 'a heading about `M2.9` does not define `M2`');
+  assert.equal(anchors.get('D75'), undefined, 'and the decision namespace is guarded the same way');
+
+  // The control that says the guard did not simply switch the forms off: the same shapes without a
+  // trailing digit still anchor, and the `-` half it generalises still works.
+  const live = collectAnchors([
+    { path: 'PROGRESS.md', text: ['## M2 — API breadth ✅', '**`D75` — a real one.**', '**`M2-3` — a review row, not a milestone.**'].join('\n') },
+  ]);
+  assert.equal(live.get('M2')?.[0].kind, 'heading');
+  assert.equal(live.get('D75')?.[0].kind, 'boldLead');
+  assert.equal(live.get('M2')?.length, 1, '`M2-3` still does not anchor `M2`');
+});
+
+test('a decision stated twice in one record, in words that disagree, is a failure', () => {
+  // `D911`/`M175-01`. `D766`'s two copies in `PLAN_M154` disagreed about what `matcher:was-made`
+  // rosters against, and `DECISIONS.md` published the right one only because `>` hid the other.
+  const disagree = [
+    '> **`D766` — `matcher:was-made` rosters against the webV2 corpus.**',
+    '',
+    '**`D766` — `matcher:was-made` rosters against a browser plant.**',
+  ].join('\n');
+  const rec = [{ path: 'PLAN_M154_DOGFOOD_CONFORMANCE.md', text: disagree }];
+  const hit = checkDuplicateTitles(collectAnchors(rec), rec);
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].id, 'D766');
+  assert.deepEqual(hit[0].said.map((t) => t.kind), ['quotedBoldLead', 'boldLead']);
+
+  // Agreeing copies are not a finding. Keeping a narration beside the authoritative statement is
+  // deliberate — the account of how a decision was reached is the part of this corpus worth most —
+  // so the check is about the words, not about the duplication.
+  const agree = disagree.replace('the webV2 corpus', 'a browser plant');
+  const same = [{ path: 'PLAN_M154_DOGFOOD_CONFORMANCE.md', text: agree }];
+  assert.deepEqual(checkDuplicateTitles(collectAnchors(same), same), []);
+
+  // Quoting and wrapping are not disagreements. The statement is compared normalised and across the
+  // lines a bold run really wraps over, which is what caught `M177b`'s first, incomplete repair.
+  const wrapped = [{ path: 'PLAN_X.md', text: [
+    '> **`D766` — `matcher:was-made` rosters against a browser plant, and its condition',
+    '> was an address rather than a requirement.**',
+    '',
+    '**`D766` — matcher:was-made rosters against a browser plant, and its condition was an address',
+    'rather than a requirement.**',
+  ].join('\n') }];
+  assert.deepEqual(checkDuplicateTitles(collectAnchors(wrapped), wrapped), [], 'backticks and a line break are not substance');
+});
+
+test('the duplicate-title check reads statements, not mentions', () => {
+  // THE CENSUS IS THE TEST (`D911`). Any two definition-rank anchors in one record is the natural
+  // rule and it fires 165 times on 168 groups, because this is what almost every group looks like:
+  // a plan's scope table entry and its own later `shipped` heading, one milestone mentioned twice.
+  const rec = [{ path: 'PLAN_M90_MIGRATION.md', text: [
+    '### `M90a` — the tool says what it did · single-repo',
+    '',
+    '| `M90a` — the tool says what it did | `b5-11` | a731360 |',
+    '',
+    '#### `M90a` shipped 2026-08-05',
+  ].join('\n') }];
+  assert.deepEqual(checkDuplicateTitles(collectAnchors(rec), rec), []);
 });
 
 test('a fence is an illustration, never a definition', () => {
