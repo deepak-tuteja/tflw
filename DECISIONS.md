@@ -11410,7 +11410,7 @@ take are §7.
 
 | stage | repo | state |
 |---|---|---|
-| `M176b` | tests | **built**, branch `m176-sibling-gate-reach` |
+| `M176b` | tests | **built** `139c54d` — the `orphaned` state, 12 controls against a real repository |
 
 ### M176c
 
@@ -11418,7 +11418,7 @@ take are §7.
 
 | stage | repo | state |
 |---|---|---|
-| `M176c` | tests | next — opens `D511`'s window |
+| `M176c` | tests | **built** `b9c9d73` — `refresh-tflw` opened the window (manifest `2 ≠ 1`, 16 unaccounted ids, `183/199`); `C114` rostered, 15 ratcheted, ceiling `0 → 15` |
 
 ### M176d
 
@@ -11426,7 +11426,7 @@ take are §7.
 
 | stage | repo | state |
 |---|---|---|
-| `M176d` | tests | the pin's reach, and `PLAN_M174` §9 corrected in place |
+| `M176d` | tests | **built** `4ea3e7a` — the pin moved into `readSpec`; `PLAN_M174` §9 corrected in place under `D669` |
 
 ### M176e
 
@@ -11434,7 +11434,7 @@ take are §7.
 
 | stage | repo | state |
 |---|---|---|
-| `M176e` | tests | **built**, same branch — built before `M176c`/`M176d` on purpose: it needs no `refresh-tflw` and so does not have to sit inside `D511`'s red window |
+| `M176e` | tests | **built** `a343951` — built before `M176c`/`M176d` on purpose: it needs no `refresh-tflw`, so it does not have to sit inside `D511`'s red window |
 
 ### M176f
 
@@ -11442,6 +11442,6 @@ take are §7.
 
 | stage | repo | state |
 |---|---|---|
-| `M176f` | tests | the two decisions |
+| `M176f` | tests | **built** `4ac634e` — both decisions taken on measurements |
 
 <!-- GENERATED:decisions:end -->
