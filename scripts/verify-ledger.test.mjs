@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   availability,
+  changedSince,
   check,
   classify,
   isWellFormed,
@@ -721,11 +722,19 @@ test('an empty workload reads as empty, not as an unavailability (`M147-15`)', a
   }
 })
 
-test('a stamped sha that is not a ref is an unavailability, and the message does not blame git', async () => {
-  // The second conflation in the same line. `changedSince` returns `null` for two reasons and says
-  // so in its own comment — no git, *or* the stamped commit is not in this checkout — while the
-  // report named only the first. One rebase past a stamped commit is enough to make `no git here`
-  // false in a perfectly healthy repo, which is `M147-15`'s defect at smaller scale.
+test('a stamped sha that is not a ref is answered by date, and the message does not blame git', async () => {
+  // `M147-15` filed the conflation this case was written for: `changedSince` returned `null` for two
+  // reasons — no git, *or* the stamped commit is not in this checkout — while the report named only
+  // the first, so one rebase past a stamped commit made `no git here` false in a healthy repo.
+  //
+  // **`M176-02` narrowed `null` to the first reason only.** A sha this checkout does not have is not
+  // an inability to look; it is an inability to look *exactly*, and the date question still answers.
+  // So the citation is now READ rather than dropped, and the qualifier names the sha as the reason
+  // instead of asserting, as the old line did, that it 'is not a ref in that repo' — a clause that
+  // was a string constant and was false for the commonest case, a sibling's own `main` head.
+  //
+  // The unavailability branch is not gone and is still covered: the case above this one runs against
+  // a tree with no `.git` at all, which is the one remaining reason `changedSince` answers `null`.
   const root = await mkdtemp(join(tmpdir(), 'tflw-noref-'))
   try {
     await twoCommitRepo(root, 'p.md')
@@ -744,8 +753,12 @@ test('a stamped sha that is not a ref is an unavailability, and the message does
     )
     const r = await runOn(root)
     assert.equal(r.code, 0, r.stdout)
-    assert.match(r.stdout, /stale check UNAVAILABLE — none of the 1 citation could be read here/)
+    assert.doesNotMatch(r.stdout, /stale check UNAVAILABLE/)
+    assert.match(r.stdout, /1 citations? checked/)
+    assert.match(r.stdout, /deadbeef names no commit in that checkout/)
     assert.doesNotMatch(r.stdout, /no git here/)
+    // The old clause, retired: it stated a property of the *ref namespace* that nothing measured.
+    assert.doesNotMatch(r.stdout, /is not a ref in that repo/)
     // The control that this repo really does have git: the plan-claims tier needs `git log main`,
     // and it must not be announcing an absence of its own here. Without this the case would pass
     // against a fixture that was simply not a git checkout — the wrong reason entirely.
@@ -1151,4 +1164,96 @@ test('a claim the marker already carries is neither failed nor announced', () =>
   const plan = { file: 'PLAN_M902.md', milestone: '902', ids: planClaims(text), claims: closeClaims(text) }
   const { unreadClaims } = check(sound({ plans: [plan], shipped: new Set(['902']) }))
   assert.deepEqual(unreadClaims, [])
+})
+
+// --- `D912`: a blockquote is a quotation, never a claim (`M176a`, `M176-04`) --------------------
+//
+// `M177` shipped `D909` and this fired on `M177`'s own plan the day it reached `main`: the plan
+// quotes `PLAN_M175`'s defective header as its worked example, and the gate read the quotation as a
+// claim — then advised writing a row into the marker that the milestone does not close. Measured
+// over all 108 records, 3 of 50 close-claims sat in blockquotes and all three were quotations.
+
+test('a blockquote quoting another plan states no claim of its own', () => {
+  const quoted = closeClaims('> Closes `M169-03`, `M169-01`, and gates `M149f-01`\'s condition. Files `M175-01`.')
+  assert.deepEqual(quoted, [])
+})
+
+test('and the control: the same line unquoted still states its claim', () => {
+  // Without this the rule above could be passing because `closeClaims` reads nothing at all.
+  const bare = closeClaims('Closes `M169-03`, `M169-01`, and gates `M149f-01`\'s condition. Files `M175-01`.')
+  assert.deepEqual(bare.map((c) => c.ids), [['M169-03', 'M169-01', 'M149f-01']])
+})
+
+test('a nested or indented blockquote is still a quotation', () => {
+  assert.deepEqual(closeClaims('  > > **Closes:** `A3-05`'), [])
+})
+
+// --- `M176-02`: the stale report asks the repository the cited path lives in --------------------
+//
+// `changedSince` branched on whether the path was a sibling one and fell straight to the coarse date
+// question for every sibling citation, printing a reason it never measured — *"the sha is not a ref
+// in that repo"* — about a sha that was that repository's own `main` head. Measured over the open
+// rows: 9 of 19 stamps name a commit that resolves in the sibling and not here.
+//
+// A real repository rather than a stub, for the reason the sibling's own provenance self-test gives:
+// the thing under test is what git answers, and a stub asserts what this file already believes.
+
+const git = (cwd, ...args) => execFileAsync('git', args, { cwd })
+
+test('a stamp whose sha resolves in the cited repository is answered exactly, not by date', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ledger-stale-'))
+  try {
+    await git(dir, 'init', '-q', '-b', 'main')
+    await git(dir, 'config', 'user.email', 'fixture@example.invalid')
+    await git(dir, 'config', 'user.name', 'fixture')
+    await writeFile(join(dir, 'f.mjs'), 'one\n')
+    await git(dir, 'add', '-A')
+    await git(dir, 'commit', '-qm', 'one')
+    const { stdout } = await git(dir, 'rev-parse', 'HEAD')
+    const at = stdout.trim()
+
+    const same = changedSince({ dir, rel: 'f.mjs' }, { commit: at, date: '2000-01-01' })
+    assert.equal(same.how, 'blob', 'the sha resolves here, so the exact question is the one asked')
+    assert.equal(same.moved, false)
+
+    await writeFile(join(dir, 'f.mjs'), 'two\n')
+    await git(dir, 'add', '-A')
+    await git(dir, 'commit', '-qm', 'two')
+    const moved = changedSince({ dir, rel: 'f.mjs' }, { commit: at, date: '2000-01-01' })
+    assert.equal(moved.how, 'blob')
+    assert.equal(moved.moved, true)
+
+    // Content, not history (`M143-07`): put the original bytes back and the exact question says no.
+    await writeFile(join(dir, 'f.mjs'), 'one\n')
+    await git(dir, 'add', '-A')
+    await git(dir, 'commit', '-qm', 'back to one')
+    assert.equal(changedSince({ dir, rel: 'f.mjs' }, { commit: at, date: '2000-01-01' }).moved, false)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a stamp whose sha names no commit in that checkout falls back to the date, and says so', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ledger-stale-'))
+  try {
+    await git(dir, 'init', '-q', '-b', 'main')
+    await git(dir, 'config', 'user.email', 'fixture@example.invalid')
+    await git(dir, 'config', 'user.name', 'fixture')
+    await writeFile(join(dir, 'f.mjs'), 'one\n')
+    await git(dir, 'add', '-A')
+    await execFileAsync('git', ['commit', '-qm', 'one'], {
+      cwd: dir,
+      env: { ...process.env, GIT_AUTHOR_DATE: '2020-06-01T12:00:00Z', GIT_COMMITTER_DATE: '2020-06-01T12:00:00Z' },
+    })
+
+    const foreign = '0'.repeat(40)
+    const answer = changedSince({ dir, rel: 'f.mjs' }, { commit: foreign, date: '2000-01-01' })
+    assert.equal(answer.how, 'date', 'the sha is not here, so the coarse question is the honest one')
+    assert.equal(answer.moved, true, 'the file was committed after 2000-01-01')
+
+    // And the date bound is a real bound rather than a formality.
+    assert.equal(changedSince({ dir, rel: 'f.mjs' }, { commit: foreign, date: '2999-01-01' }).moved, false)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
