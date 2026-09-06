@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyMutationResponse, grantedClasses, InputProber, planProbes, withheldClasses, type InputProbePolicy, type InputProbeRequest } from '../src/inputProbe.js';
 import type { AuthorizedTarget, RequestTrace, ResponseTrace } from '../src/types.js';
+import { authorized } from './__helpers__/authorized.js';
 
 function res(over: Partial<ResponseTrace> = {}): ResponseTrace {
   const bodyText = over.bodyText ?? '{"ok":true}';
@@ -21,7 +22,7 @@ function req(over: Partial<RequestTrace> = {}): RequestTrace {
 }
 
 function target(over: Partial<AuthorizedTarget> = {}): AuthorizedTarget {
-  return { target: 'https://localhost:4001', reason: 'self-hosted test fixture', probeMutating: false, probeOversized: false, probeTraversal: false, ...over };
+  return authorized('https://localhost:4001', 'self-hosted test fixture', over);
 }
 
 function policy(over: Partial<InputProbePolicy> = {}): InputProbePolicy {

@@ -17,6 +17,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BROKEN_SUITE_CANDIDATES, TlsProber, connectionOptions, type TlsProbePolicy } from '../src/tlsProbe.js';
+import { authorized } from './__helpers__/authorized.js';
 
 let certDir: string;
 let key: Buffer;
@@ -38,7 +39,14 @@ function policy(over: Partial<TlsProbePolicy> = {}): TlsProbePolicy {
     timeoutMs: 4000,
     insecure: true,
     allowHosts: null,
-    authorizedTargets: [{ target: 'https://127.0.0.1', reason: 'self-hosted test fixture' }],
+    authorizedTargets: [authorized('https://127.0.0.1', 'self-hosted test fixture')],
+    // `M173d1` — `probeCiphers` is required on `TlsProbePolicy` too, and this builder never named
+    // it. It was `undefined`, which `enumerateOffered` reads as withheld, so the default is
+    // unchanged by stating it; what changes is that the three tests below which *do* set it
+    // (`:295`, `:325`, `:385`) are now visibly overriding a stated default rather than filling a
+    // hole. This error only surfaced once the `authorizedTargets` literal above stopped erroring
+    // — a missing field on the outer object had been masked by a missing field on the inner one.
+    probeCiphers: false,
     ...over,
   };
 }
@@ -46,7 +54,7 @@ function policy(over: Partial<TlsProbePolicy> = {}): TlsProbePolicy {
 /** D291 is origin-scoped and these listeners get an ephemeral port, so the declaration has to be
  * built once the port is known. */
 function authorizedFor(url: string, over: Partial<TlsProbePolicy> = {}): TlsProbePolicy {
-  return policy({ authorizedTargets: [{ target: new URL(url).origin, reason: 'self-hosted test fixture' }], ...over });
+  return policy({ authorizedTargets: [authorized(new URL(url).origin, 'self-hosted test fixture')], ...over });
 }
 
 async function listen(server: TlsServer | TcpServer): Promise<string> {
@@ -188,7 +196,7 @@ test('D291: an origin no `authorized target` covers is refused, and nothing is o
   // The case the checker cannot see: `TF060` judges the base URL statically, and this is where a
   // redirect actually landed.
   const prober = new TlsProber();
-  const result = await prober.probe(modernUrl, policy({ authorizedTargets: [{ target: 'https://elsewhere.example', reason: 'not this one' }] }));
+  const result = await prober.probe(modernUrl, policy({ authorizedTargets: [authorized('https://elsewhere.example', 'not this one')] }));
   assert.ok(!result.ok);
   assert.match(result.reason, /no `authorized target` covers https:\/\/127\.0\.0\.1:/);
   // The refusal has to carry the line the author should write, not only the complaint.
@@ -206,16 +214,16 @@ test('a declaration is matched by origin, not by path prefix or by wildcard', as
   const origin = new URL(modernUrl).origin;
   // A declaration written with a path still covers the origin it names — the path is not part of an
   // origin, and demanding one would make the declaration mean less than it says.
-  const withPath = await new TlsProber().probe(modernUrl, policy({ authorizedTargets: [{ target: `${origin}/v1`, reason: 'fixture' }] }));
+  const withPath = await new TlsProber().probe(modernUrl, policy({ authorizedTargets: [authorized(`${origin}/v1`, 'fixture')] }));
   assert.ok(withPath.ok);
   // A different port is a different origin, and must not be covered.
-  const otherPort = await new TlsProber().probe(modernUrl, policy({ authorizedTargets: [{ target: 'https://127.0.0.1:1', reason: 'fixture' }] }));
+  const otherPort = await new TlsProber().probe(modernUrl, policy({ authorizedTargets: [authorized('https://127.0.0.1:1', 'fixture')] }));
   assert.ok(!otherPort.ok);
 });
 
 test('a malformed declaration is skipped rather than crashing the probe', async () => {
   const origin = new URL(modernUrl).origin;
-  const result = await new TlsProber().probe(modernUrl, policy({ authorizedTargets: [{ target: 'not a url', reason: 'x' }, { target: origin, reason: 'fixture' }] }));
+  const result = await new TlsProber().probe(modernUrl, policy({ authorizedTargets: [authorized('not a url', 'x'), authorized(origin, 'fixture')] }));
   assert.ok(result.ok);
 });
 

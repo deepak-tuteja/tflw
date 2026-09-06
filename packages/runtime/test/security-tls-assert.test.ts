@@ -18,6 +18,7 @@ import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { testConfig } from './support.js';
 import { TlsProber } from '../src/tlsProbe.js';
+import { authorized } from './__helpers__/authorized.js';
 import type { ResolvedConfig } from '../src/types.js';
 
 let certDir: string;
@@ -65,7 +66,7 @@ after(async () => {
 function config(over: Partial<ResolvedConfig> = {}): ResolvedConfig {
   return {
     ...testConfig(httpsUrl, {}, true),
-    authorizedTargets: [{ target: httpsUrl, reason: 'self-hosted test fixture' }],
+    authorizedTargets: [authorized(httpsUrl, 'self-hosted test fixture')],
     ...over,
   };
 }
@@ -101,7 +102,7 @@ test('a modern fixture trips neither TLS rule — the negative case, live', asyn
 
 test('a plaintext response is never probed, and says so in the static words', async () => {
   const detail = await assertionDetail(
-    { ...testConfig(plainUrl), authorizedTargets: [{ target: plainUrl, reason: 'self-hosted test fixture' }] },
+    { ...testConfig(plainUrl), authorizedTargets: [authorized(plainUrl, 'self-hosted test fixture')] },
     'test "t"\n  api GET /a\n  expect response has no critical security violations\n',
   );
   // A `critical` floor over plaintext engages nothing at all — D285's verdict, which is where the
@@ -114,7 +115,7 @@ test('a plaintext response is never probed, and says so in the static words', as
 test('D291: an origin no declaration covers stands the TLS rules down with the reason', async () => {
   // The assertion still runs — this is not an error — but the two rules that needed a connection
   // report why they could not have one, rather than quietly joining the silent majority.
-  const detail = await assertionDetail(config({ authorizedTargets: [{ target: 'https://elsewhere.example', reason: 'not this one' }] }));
+  const detail = await assertionDetail(config({ authorizedTargets: [authorized('https://elsewhere.example', 'not this one')] }));
   assert.match(detail, /12 rules — 3 applicable, 9 not applicable/);
   // Both rules, one line, because one connection failure blocked both.
   assert.match(detail, /note: sec\/tls-version-old, sec\/tls-weak-cipher could not be evaluated — .*no `authorized target` covers/);

@@ -23,7 +23,8 @@ import {
   type ProbeRequest,
 } from '../src/authzProbe.js';
 import { CookieJar } from '../src/cookieJar.js';
-import type { RequestTrace, ResponseTrace } from '../src/types.js';
+import type { AuthorizedTarget, RequestTrace, ResponseTrace } from '../src/types.js';
+import { authorized } from './__helpers__/authorized.js';
 
 // `api.test` is a public origin as far as `classifyAddress` is concerned — RFC 6761 reserves the
 // name, but D338 grants a name-based exemption to `localhost` and nothing else, so every probe in
@@ -456,7 +457,7 @@ test('end to end: the four outcomes of one assertion, in one call', async () => 
 
 // -- D330: `probe mutating` resolves per origin, across every declaration ------------------------
 
-const target = (t: string, probeMutating: boolean) => ({ target: t, reason: 'fixture', probeMutating });
+const target = (t: string, probeMutating: boolean): AuthorizedTarget => authorized(t, 'fixture', { probeMutating });
 
 test('D330: `probe mutating` is granted per origin, and never by a neighbouring declaration', () => {
   const targets = [target('http://a.test', true), target('http://b.test', false)];
