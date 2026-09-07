@@ -6289,6 +6289,15 @@ with its critical `sec/csrf-not-enforced`, and `seed spider`) appear **nowhere**
 three fully specified in `SPEC.md`. No phrase list could ever have found them, because an absent page
 matches no grep.
 
+### D669
+
+<sub>cited from tflw-tests/scripts/verify-grader-reachability.mjs · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+
+**`D669` — polish lands upstream, never in the output.** `DECISIONS.md` is generated and never
+hand-edited. Where an extracted block does not stand alone out of context, the fix is written into
+the private record and the generator re-run, so the published text and the design record say the same
+thing. This is the user's explicit requirement and it is also what keeps `--check` meaningful.
+
 ### D673
 
 <sub>cited from CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
@@ -11296,7 +11305,7 @@ discriminating, 13 flags each with a reader.**
 
 ### M171
 
-<sub>cited from tflw-tests/scripts/measure-construct-evidence.mjs, tflw-tests/scripts/verify-external-targets.mjs, tflw-tests/scripts/verify-notation-parity.mjs +2 more · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
+<sub>cited from tflw-tests/scripts/measure-construct-evidence.mjs, tflw-tests/scripts/verify-external-targets.mjs, tflw-tests/scripts/verify-grader-reachability.mjs +3 more · lifted from `PLAN_M171_GUARD_CORPORA.md`</sub>
 
 **`M171` — every guard declares its corpus**
 
@@ -11452,7 +11461,7 @@ take are §7. Both halves are on `main`, and the window `M176c` opened on purpos
 
 ### M178
 
-<sub>cited from tflw-tests/scripts/measure-construct-evidence.mjs · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
+<sub>cited from tflw-tests/scripts/measure-construct-evidence.mjs, tflw-tests/scripts/verify-grader-reachability.mjs · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
 
 **`M178` — a record no instrument reads, and a check nothing runs**
 
