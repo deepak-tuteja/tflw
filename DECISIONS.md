@@ -11612,7 +11612,8 @@ exists to make loud"*.
 
 **`M179` — a pin that outlives the merge that used to kill it**
 
-**Status: BUILT 2026-09-07, in flight.** Cut from `M176-06` in a grilling session on the same day,
+**Status: COMPLETE 2026-09-07.** Both halves are on `main`, and the claim was measured rather than
+assumed — see the box below the stage table. Cut from `M176-06` in a grilling session on the same day,
 after four re-pins in two days made the cost measurable rather than arguable. The milestone rests on
 one measurement taken during that session: **`refs/pull/N/head` is a ref GitHub never deletes**, so
 the recurrence this row is about is removable rather than structural.
