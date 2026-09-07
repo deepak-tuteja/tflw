@@ -111,6 +111,22 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:sibling-pin -- --require-network',
+    class: 'gate',
+    local: 'npm run verify:sibling-pin',
+    why: "`M179b`/`D920`. It was in ABSENT_FROM_CI for its whole life, on a reason that was wrong: the docblock said it "
+      + "needed \"the network and a credential\" and cited `verify-provenance.mjs` declining the same check on a depth-1 "
+      + "clone. Those are two different blockers. `verify-provenance.mjs` declines because a depth-1 clone lacks the objects "
+      + "it must walk — a git problem, still correct for it; this gate touches no git, only `gh api`, and both repositories "
+      + "are public, so a runner can already do every read. The cost of the wrong sentence is measured: `M176-06`, five dead "
+      + "pins in two days with the only instrument that could see them unreachable from CI. The local form omits "
+      + "`--require-network` deliberately — on a developer machine `gh` may genuinely be absent and the `D683` skip is the "
+      + "honest answer; in CI a silent skip would be a green gate that never runs (`D921`), so the flag turns \"did not run\" "
+      + "into a failure. Static, four API calls, seconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:decisions',
     class: 'gate',
     local: 'npm run verify:decisions',
@@ -209,17 +225,6 @@ const CLASSIFIED = [
  * no CI step to compare against. That is an honest limit and it is stated rather than papered over.
  */
 const ABSENT_FROM_CI = [
-  {
-    local: 'npm run verify:sibling-pin',
-    why: '`M175a` / `D899`. It resolves `scripts/sibling-citations.json`\'s `ref`, `sha` and `source` against the sibling '
-      + 'repository, which needs the network and a credential; CI holds a depth-1 clone and `verify-provenance.mjs` declines '
-      + 'the same check there for the same reason. Putting it in CI would also make this repository\'s builds red for the '
-      + 'sibling\'s branch lifecycle, which is not a tflw PR\'s business. It runs where a re-pin runs — the machine that has '
-      + 'the credential, the full history and the gitignored records — and where `gh` cannot answer it names the three clauses '
-      + 'it did not check and exits 0 (`D683`), so a green here can never be read as a green there. `M172-01` is why it exists '
-      + 'at all: nothing checked that any of the three fields still resolved, and a squash-merge leaves the branch commit a '
-      + 'reachable object while removing it from every line of history anybody reads',
-  },
   {
     local: 'npm run verify:ledger',
     why: 'its corpus (`REVIEW_FINDINGS.md`) is gitignored on purpose, and a check that skips when its input is missing is green about nothing (`M131-03`). So the guard runs locally before a milestone is called done, and the *suite* verifying the guard runs in CI inside `npm test`',

@@ -8113,6 +8113,101 @@ never reaches either. The sibling's evidence for the row is therefore a plant th
 a subject, which no existing locator plant is. One double-rostered id, stated, with its distinct
 obligation named.
 
+### D913
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D913` — The target is the toil, not the window.** A dead pin's harm was costed three ways —
+the recurring PR-per-citation loop, the unverifiable published `cited from` claim, and mere silence —
+and the loop is the one being repaired. `main` may carry a stale ref briefly; what it may not do is
+require a human to notice.
+
+### D914
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D914` — The pin's `ref` becomes `refs/pull/N/head`.** Not `main`, and not a branch name. This
+is the whole repair, and §2 is its evidence.
+
+### D915
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D915` — The landed-guarantee is bought back as a named clause, not left implicit.**
+`M176-06` calls the follow-up re-pin *"cheap and lossless — 529 cited identifiers before and after"*.
+It is lossless in **content** and not in **meaning**: under `D511` the pin is always taken from an
+unmerged branch, and the follow-up re-pin at `main` is the step that retroactively confirms **the
+sibling prose actually landed**. Delete the chore and that guarantee leaves with it — tflw could
+permanently publish `cited from` lines against a tree abandoned after tflw had already merged its
+half, which `D511`'s ordering makes reachable rather than hypothetical. So the property becomes an
+explicit clause instead of a side effect of a chore.
+
+### D916
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D916` — That clause does not live in tflw's CI, because there it could never fire.** `D511`
+means that at the moment any tflw re-pin PR runs, the sibling PR it points at is *necessarily* still
+open — not usually, only. `#182` and `#183` both pinned an open `#84`; after `#183` merges, tflw's
+push-to-`main` run still sees `#84` open; then `#84` merges and **tflw never pushes again**. The
+clause would tolerate `OPEN` on every run it ever had and never once be asked its question. That is
+`M141`'s shape — an instrument never pointed at its corpus — and shipping it into the gate that
+closes this row would plant a fresh instance of the repo's own named defect.
+
+### D917
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D917` — The landed-clause lives in the sibling, on `push: [main]`.** The event that makes the
+guarantee true happens in the sibling, so the check belongs there — the same reasoning that makes
+this row hard is what says where to put the fix. It needs no new workflow and no new external
+target: the sibling's `acceptance-check` job **already checks tflw out**
+(`repository: deepak-tuteja/tflw`), so the pin is readable from disk, and the PR-state lookup is
+against the sibling's *own* repository, which `GITHUB_TOKEN` covers. It opens no PR and automates no
+edit — this is explicitly **not** the rejected "machine opens the re-pin" option.
+
+### D919
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D919` — Pin once, last.** `#183` exists only because a citation arrived after the pin was
+taken. Written into `CONTRIBUTING.md` beside the pin procedure, not enforced by a gate: the failure
+is already loud (the sibling's `verify:provenance` names it exactly), and a gate that tried to
+predict "is this branch finished" would be guessing.
+
+### D920
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D920` — the gate's stated reason for never running in CI was wrong, so it gets a CI home.**
+`verify-sibling-pin.mjs`'s docblock, `CONTRIBUTING.md:73` and `verify-contributing.test.mjs`'s
+`ABSENT_FROM_CI` entry all said the same thing: it *"needs the network and a credential. CI holds a
+depth-1 clone and `verify-provenance.mjs` declines the same check for that reason, correctly."* That
+sentence conflates two unrelated blockers. `verify-provenance.mjs` declines because a **depth-1
+clone** does not hold the objects it would have to walk — a git problem, and its reason is still
+correct for it. This gate uses no git at all; it uses `gh api`, and **both repositories are public**,
+so every read it makes is one an unauthenticated runner could already do. The premise had been true
+of neither half since it was written, and the cost is measured rather than argued: the only
+instrument that can see a dead pin spent its whole life unreachable from CI while the pin died five
+times in two days. Taken during `M179`'s build, not its scoping — §4 recorded the wrongness, and
+what promoted it to a decision is that three separate files had to be corrected in step, which is
+what makes it a rule rather than a typo.
+
+### D921
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D921` — a tier that may silently not run is an honest skip locally and a vacuous gate in CI.**
+`D683` says a check that cannot look must say so and exit 0, and that is right on a developer machine
+where `gh` may genuinely be absent. Putting the same behaviour in CI would have planted `M141`'s
+shape inside the milestone that closes `M176-06`: a token that stopped working would make all three
+network clauses stop running, the gate would print its skip, exit 0, and stay green about it
+indefinitely — an instrument never pointed at its corpus, in the gate built to stop exactly that. So
+`verify-sibling-pin.mjs` learns `--require-network`, which turns "did not run" into a failure, and
+**only CI passes it**. The flag cannot make a passing clause fail or a failing one pass; its entire
+subject is the tier's own reachability. This decision was not in the scoping at all — it was found
+by asking what the `D683` tier would do in the new home, which is the question the move creates.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -10370,7 +10465,7 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 ### M141
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +33 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +34 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **M141 — two answers to one question (Order 1 of the ledger drawdown)**
 
@@ -11411,7 +11506,7 @@ A check that would not have caught that is not this stage.
 
 ### M176
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/check-acceptance.mjs, tflw-tests/scripts/lib/constructs.mjs +4 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/check-acceptance.mjs +5 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
 
 **`M176` — a gate's reach against its output's claim, one repository over**
 
@@ -11465,14 +11560,14 @@ take are §7. Both halves are on `main`, and the window `M176c` opened on purpos
 
 **`M178` — a record no instrument reads, and a check nothing runs**
 
-**Status: IN FLIGHT 2026-09-07.** Cut from the ten workable rows left after `M176` merged, on one
+**Status: COMPLETE 2026-09-07.** Both halves are on `main`. Cut from the ten workable rows left after `M176` merged, on one
 question asked and answered: when a sentence and a measured fact disagree, the default repair is to
 **delete the copy** and point at the single source, and to build a reader only where there is no
 source to point at. Everything below follows from that.
 
 ### M178a
 
-<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/measure-construct-evidence.mjs, tflw-tests/scripts/regression.mjs +3 more · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/measure-construct-evidence.mjs +4 more · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
 
 **`M178a` — the sweep**
 
@@ -11482,5 +11577,26 @@ not move: `CONSTRUCTS.md`, `lib/constructs.mjs`'s docblock, and three in
 repair. Every gate was green throughout, because the gate reads the constant and nothing reads the
 sentence. The sharpest of the five is the docblock saying the raise is *"exactly the edit this pin
 exists to make loud"*.
+
+### M179
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`M179` — a pin that outlives the merge that used to kill it**
+
+**Status: SCOPED 2026-09-07, nothing built.** Cut from `M176-06` in a grilling session on the same
+day, after four re-pins in two days made the cost measurable rather than arguable. The milestone
+rests on one measurement taken during that session: **`refs/pull/N/head` is a ref GitHub never
+deletes**, so the recurrence this row is about is removable rather than structural.
+
+### M179b
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`M179b` — tflw. A CI home.** `verify:sibling-pin` runs in tflw's CI with
+`GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`. Its `D683` tier message stays: where `gh` cannot answer it
+still prints what it did not check. The docblock's credential claim is corrected. This does not close
+the window and is not claimed to — it makes the next tflw PR trip over a dead pin instead of a human
+remembering, which is what would have caught all four of this arc's incidents.
 
 <!-- GENERATED:decisions:end -->
