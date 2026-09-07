@@ -5990,7 +5990,7 @@ merges if they keep listing commands.
 
 ### D511
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-construct-coverage.mjs +4 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +6 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **D511 — tflw merges first, and the two PRs are chained**
 
@@ -8124,14 +8124,14 @@ require a human to notice.
 
 ### D914
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-sibling-pin-landed.mjs · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
 
 **`D914` — The pin's `ref` becomes `refs/pull/N/head`.** Not `main`, and not a branch name. This
 is the whole repair, and §2 is its evidence.
 
 ### D915
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +2 more · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
 
 **`D915` — The landed-guarantee is bought back as a named clause, not left implicit.**
 `M176-06` calls the follow-up re-pin *"cheap and lossless — 529 cited identifiers before and after"*.
@@ -8144,7 +8144,7 @@ explicit clause instead of a side effect of a chore.
 
 ### D916
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +2 more · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
 
 **`D916` — That clause does not live in tflw's CI, because there it could never fire.** `D511`
 means that at the moment any tflw re-pin PR runs, the sibling PR it points at is *necessarily* still
@@ -8156,7 +8156,7 @@ closes this row would plant a fresh instance of the repo's own named defect.
 
 ### D917
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +2 more · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
 
 **`D917` — The landed-clause lives in the sibling, on `push: [main]`.** The event that makes the
 guarantee true happens in the sibling, so the check belongs there — the same reasoning that makes
@@ -8165,6 +8165,18 @@ target: the sibling's `acceptance-check` job **already checks tflw out**
 (`repository: deepak-tuteja/tflw`), so the pin is readable from disk, and the PR-state lookup is
 against the sibling's *own* repository, which `GITHUB_TOKEN` covers. It opens no PR and automates no
 edit — this is explicitly **not** the rejected "machine opens the re-pin" option.
+
+### D918
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-sibling-pin-landed.mjs · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D918` — `OPEN` is resolved, not guessed.** Three states are reachable and only two are
+unambiguous: `MERGED` passes, `CLOSED` is the exposure and must fail, and `OPEN` is either a live
+`D511` window or a PR abandoned without being closed. On a push to `main` the merge commit says
+*which* PR just landed, so the step distinguishes instead of inferring: **if the pin names the PR
+that just merged it must be merged; if it names a different one, tolerate `OPEN` and still fail on
+`CLOSED`.** An age bound was refused outright — a verdict that changes with the calendar is `M141`'s
+other half.
 
 ### D919
 
@@ -10131,7 +10143,7 @@ blind spot + repro emitter · `f14f087` docs · `dd8c5b5` the mutation-registry 
 
 ### M131
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/lib/plants.mjs +4 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/lib/plants.mjs +5 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131` — the D21 safety completion**
 
@@ -10465,7 +10477,7 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 ### M141
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +34 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +35 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **M141 — two answers to one question (Order 1 of the ledger drawdown)**
 
@@ -11278,7 +11290,7 @@ behavioural test that resolves a doubled declaration of each key and asserts whi
 
 ### M166
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/tflw-provenance.mjs +6 more · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/tflw-provenance.mjs +7 more · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
 
 **`M166` — `verify:ledger` must not accuse the ledger of a defect it could not have seen**
 
@@ -11460,7 +11472,7 @@ named costs declined; `D887` — the guard is wired to the root `npm test` and n
 
 ### M172e
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/check-fixture-coverage.json, tflw-tests/scripts/verify-check-diagnostics.mjs +2 more · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-fixture-coverage.json +4 more · lifted from `PLAN_M172_TFLW_LEDGER_FIVE.md`</sub>
 
 **`M172e` — built 2026-09-05**
 
@@ -11506,7 +11518,7 @@ A check that would not have caught that is not this stage.
 
 ### M176
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/check-acceptance.mjs +5 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +8 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
 
 **`M176` — a gate's reach against its output's claim, one repository over**
 
@@ -11556,7 +11568,7 @@ take are §7. Both halves are on `main`, and the window `M176c` opened on purpos
 
 ### M178
 
-<sub>cited from tflw-tests/scripts/measure-construct-evidence.mjs, tflw-tests/scripts/verify-grader-reachability.mjs · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/measure-construct-evidence.mjs, tflw-tests/scripts/verify-grader-reachability.mjs · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
 
 **`M178` — a record no instrument reads, and a check nothing runs**
 
@@ -11567,7 +11579,7 @@ source to point at. Everything below follows from that.
 
 ### M178a
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/measure-construct-evidence.mjs +4 more · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +5 more · lifted from `PLAN_M178_RECORDS_AND_CHECKS.md`</sub>
 
 **`M178a` — the sweep**
 
@@ -11584,10 +11596,20 @@ exists to make loud"*.
 
 **`M179` — a pin that outlives the merge that used to kill it**
 
-**Status: SCOPED 2026-09-07, nothing built.** Cut from `M176-06` in a grilling session on the same
-day, after four re-pins in two days made the cost measurable rather than arguable. The milestone
-rests on one measurement taken during that session: **`refs/pull/N/head` is a ref GitHub never
-deletes**, so the recurrence this row is about is removable rather than structural.
+**Status: BUILT 2026-09-07, in flight.** Cut from `M176-06` in a grilling session on the same day,
+after four re-pins in two days made the cost measurable rather than arguable. The milestone rests on
+one measurement taken during that session: **`refs/pull/N/head` is a ref GitHub never deletes**, so
+the recurrence this row is about is removable rather than structural.
+
+### M179a
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-sibling-pin-landed.mjs · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`M179a` — tflw. The pin's shape.** `refresh-sibling-citations.mjs` learns `--pr <N>` and writes
+`ref: refs/pull/N/head`; `verify-sibling-pin.mjs` keeps all three network clauses unchanged (they
+pass against a pull ref, measured) and gains a `ref`-shape clause so a branch-name pin is refused
+rather than silently accepted. `D709`/`D710`/`D899` amended in place; `CONTRIBUTING.md` gains
+`D919`.
 
 ### M179b
 
@@ -11598,5 +11620,21 @@ deletes**, so the recurrence this row is about is removable rather than structur
 still prints what it did not check. The docblock's credential claim is corrected. This does not close
 the window and is not claimed to — it makes the next tflw PR trip over a dead pin instead of a human
 remembering, which is what would have caught all four of this arc's incidents.
+
+### M179c
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-sibling-pin-landed.mjs · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`M179c` — tests. The landed-clause.** `scripts/verify-sibling-pin-landed.mjs`, a step in
+`acceptance-check` gated to `github.event_name == 'push'`, implementing `D918`. Controls it must
+ship with, per `M172e` — a gate green on the day it lands says so and proves it can refuse:
+
+- a pin naming a merged PR passes;
+- a pin naming a **closed, unmerged** PR fails;
+- a pin naming a *different*, still-open PR passes;
+- a pin naming *the PR that just merged*, found unmerged, fails;
+- and the `state`-vs-`merged` trap has a control of its own, because a fixture whose `state` is
+  `closed` and whose `merged` is `true` is the exact input that would have shipped the plausible
+  failure.
 
 <!-- GENERATED:decisions:end -->
