@@ -1478,6 +1478,39 @@ second takes the active env's `timeout wait`, exactly as before. The bare `timeo
 here for the first time: it was inherited silently from the shared request line, which is how
 `A3-10` came to read it as a capability the locator form was missing.
 
+**A poll whose response is the wrong *shape* is a poll that did not satisfy, not a failed step**
+(`M182a`, `D936`). A matcher may raise rather than return an outcome — `has count` throws when its
+subject is not an array, string or `body bytes` — and in a poll loop the subject's shape varies with
+the response: a `200` body is the collection being waited for, a `401`/`503` problem+json body is an
+object. Such a raise used to escape the whole wait, ending it with the matcher's own text and none
+of the `timed out after …` prefix every other exit carries. It is now recorded as that poll's
+message and the step polls on to its own deadline, so a failure arrives through the timeout exit:
+
+```
+timed out after 5000ms (7 attempts): `has count` expects an array (or string, or `body bytes`) subject, got object
+```
+
+The complaint is relocated, not swallowed. The cost is real and deliberate: a condition that can
+*never* hold — `has count` against a body that is always an object — now spends the whole budget
+instead of failing on the first poll. That is D248's trade, taken here for D248's reason, and the
+progress line below is what buys it back. **Scope is declared, not widened** (`D896`): this is the
+poll loop only. An `expect` outside a wait still fails fast (§6), because there is no second
+observation there to be patient for.
+
+**A wait still unsatisfied at ~3s says so, and keeps waiting** (`M182a`, `D937`) — the API half of
+the locator line in §9.3, on the same threshold and the same guard:
+
+```
+⏳ tflw: `GET /v1/tickets?assignedTo=…&slaBreached=true` has not satisfied its condition after 3s — expected body to have count 2, but got 0; still waiting, up to 30s
+```
+
+**No deadline moves and nothing that passed stops passing.** One line per step, not per poll,
+written straight to stderr: it is progress, not a result, so it is never added to the event stream
+and is deliberately not buffered per file under `--parallel` the way `--verbose` step logs are.
+A step whose own budget leaves no room to wait after speaking stays quiet — the guard is "at least
+as much waiting left as has already passed", so `timeout wait 5s` never produces a line and
+`timeout wait 30s` produces one at 3s.
+
 `wait until api` may carry its own `header "…" is <value>` lines, exactly like an `api` step's
 header sub-block (§5.1) — the same `header`/`expect` block, headers first by convention but not
 enforced by the grammar. Every poll re-sends them, so a poll that needs a specific auth token,

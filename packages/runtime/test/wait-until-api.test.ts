@@ -253,3 +253,134 @@ test('M147d: the timeout report quotes the budget that actually expired', async 
 
   await server.close();
 });
+
+
+// ---- M182a (`D936`/`D937`, `M181-01`): a transient is a poll that did not satisfy -------------
+
+/** The speculative line is written straight to stderr (`D269`/`D937`), so observing it means owning
+ * the stream for the duration of the run. Sibling of the helper in `browser-diagnosis.test.ts`. */
+async function captureStderr<T>(fn: () => Promise<T>): Promise<{ result: T; stderr: string }> {
+  const chunks: string[] = [];
+  const original = process.stderr.write.bind(process.stderr);
+  (process.stderr as { write: unknown }).write = (chunk: string | Uint8Array): boolean => {
+    chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+    return true;
+  };
+  try {
+    const result = await fn();
+    return { result, stderr: chunks.join('') };
+  } finally {
+    (process.stderr as { write: unknown }).write = original;
+  }
+}
+
+test('M182a: a poll whose body is the wrong SHAPE is a poll that did not satisfy, and the wait goes on (D936)', async () => {
+  // `M181-01`, measured on the build box 2026-09-07. The subject of a poll's condition changes with
+  // the response: a `200` body is the array being waited for, a `401` problem+json body is an
+  // object, and `count()` throws on the second. Uncaught, that one transient ended a 5s wait 742ms
+  // early and reported a subject type — so the step could not survive a token expiring, a 503, or
+  // any other momentary non-answer, which is precisely what a wait exists to sit through.
+  let calls = 0;
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => {
+      calls++;
+      if (calls < 3) return json(res, 401, { type: 'about:blank', title: 'Unauthorized', status: 401 });
+      json(res, 200, [{ id: 1 }, { id: 2 }]);
+    },
+  });
+
+  const source = `test "outlives a transient"
+  wait until api GET /poll
+    expect body has count 2
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 5000 }), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const detail = asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '';
+  // Not merely green: green *after waiting*. A wait satisfied by its first poll is an assertion
+  // spelled like a wait, which is the other half of what `M181-01` measured.
+  assert.match(detail, /passed after 3 attempts/);
+  assert.equal(calls, 3);
+
+  await server.close();
+});
+
+test('M182a: a body that is never the right shape fails through the TIMEOUT exit, carrying the matcher text (D936)', async () => {
+  // The control on the line above, and the part that keeps the author informed. `D936` does not
+  // swallow the matcher's complaint — it relocates it behind the `timed out after …` prefix, which
+  // is the only observable that says which of this function's exits ran. Before, the detail was the
+  // bare matcher text with no prefix, naming the shape and neither the budget nor the attempts.
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => json(res, 401, { type: 'about:blank', title: 'Unauthorized', status: 401 }),
+  });
+
+  const source = `test "never the right shape"
+  wait until api GET /poll
+    expect body has count 2
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 500 }), { source });
+
+  assert.equal(report.ok, false);
+  const detail = asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '';
+  assert.match(detail, /^timed out after 500ms \(\d+ attempts?\)/);
+  assert.match(detail, /`has count` expects an array \(or string, or `body bytes`\) subject, got object/);
+
+  await server.close();
+});
+
+test('M182a: the cost `D936` buys — a wait under this repository’s own 5s budget stays silent (D937)', async () => {
+  // The measured consequence the plan required this test to carry. `M125c`'s guard is
+  // `budget > 3000 * 2`, and `testFlow-tests` sets `defaults: timeout wait 5s` — `5000 > 6000` is
+  // false, so the dogfood suite's own waits emit nothing. Asserting the absence of the line under a
+  // budget that CAN produce one would be the real assertion; asserting it under 5s without saying
+  // why would be `M141`, an instrument pointed away from its corpus. It is pointed here on purpose.
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => json(res, 200, { status: 'pending' }),
+  });
+
+  const source = `test "quiet under a short budget"
+  wait until api GET /poll
+    expect body.status equals "shipped"
+`;
+  const { program } = parseSource(source);
+  const { result, stderr } = await captureStderr(() => runProgram(program, testConfig(server.baseUrl, { wait: 5000 }), { source }));
+
+  assert.equal(result.report.ok, false);
+  assert.doesNotMatch(stderr, /⏳ tflw:/);
+
+  await server.close();
+});
+
+test('M182a: a budget with room to spare says so at 3s, once, and keeps polling to its own deadline (D937)', async () => {
+  // `M125c`'s line, on `M125c`'s threshold, for the API form. The three things it must name are the
+  // three the locator line names: what is being waited on, why the last poll did not satisfy, and
+  // how much longer this will go on. The `once` assertion is the one that matters most — a line per
+  // poll at `WAIT_POLL_INTERVAL_MS` would be twelve of them.
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => json(res, 200, { status: 'pending' }),
+  });
+
+  const source = `test "speaks, then carries on"
+  wait until api GET /poll
+    expect body.status equals "shipped"
+`;
+  const { program } = parseSource(source);
+  const startedAt = performance.now();
+  const { result, stderr } = await captureStderr(() => runProgram(program, testConfig(server.baseUrl, { wait: 7000 }), { source }));
+  const elapsed = performance.now() - startedAt;
+
+  assert.equal(result.report.ok, false);
+  assert.match(stderr, /⏳ tflw: `GET .*\/poll` has not satisfied its condition after 3s/);
+  assert.match(stderr, /expected body\.status to equal "shipped", but got "pending"/);
+  assert.match(stderr, /still waiting, up to 7s/);
+  assert.equal(stderr.match(/⏳ tflw:/g)?.length, 1, 'once per step, not once per poll');
+  // The deadline does not move. A progress line that quietly became a shorter timeout would turn a
+  // slow service's green suite red — `D248`'s own non-negotiable, restated on this form.
+  assert.ok(elapsed >= 7000, `the wait must still run its full budget, took ${elapsed}ms`);
+
+  await server.close();
+});

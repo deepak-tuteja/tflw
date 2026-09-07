@@ -608,6 +608,33 @@ endpoint its finding names. All were found by *running* a repro or a crawl, not 
   nothing would have gone red. Additive, so the contract version stays 1 and a consumer written
   against version 1 is unaffected.
 
+### Fixed — a wait that gave up early and blamed the matcher (M182)
+
+**A single transient response ended a `wait until api` outright, reporting a subject type.** The
+subject of a poll's condition changes with the response — a `200` body is the array being waited
+for, a `401` or `503` problem+json body is an object — and `has count` throws a `RuntimeError` on
+the second. Nothing in the poll loop caught it, so the throw escaped the wait entirely. Measured on
+the dogfood suite against one live stack: a wait died **742 ms short of its 5 s budget** with the
+detail *`has count` expects an array (or string, or `body bytes`) subject, got object*, which
+names the shape and neither the budget, the attempts, nor the expiry that produced it. Under tflw's
+own 30 s default the same transient kills a wait with 25 s left.
+
+- **A `RuntimeError` raised while evaluating a poll's condition is now a poll that did not satisfy,
+  not a failed step** (`D936`). It is recorded as that poll's message and the wait keeps polling to
+  its own deadline, so the failure — if there is one — arrives through the timeout exit that was
+  already there: `timed out after 5000ms (7 attempts): ` followed by the matcher's own text. The
+  complaint is relocated, not swallowed. The cost is stated rather than hidden: an author who writes
+  `has count` against a body that will never be an array now waits the full budget instead of
+  failing on one poll — `D248`'s trade, taken the way `D248` took it.
+- **Scope is declared rather than widened** (`D896`): the poll loop only. An `expect` outside a wait
+  still throws immediately, because there is no second observation there to be patient for.
+- **`wait until api` gained the progress line the browser wait has had since `M125c`** (`D937`), on
+  the same 3 s threshold and the same guard — it speaks only when at least as much waiting would
+  remain as has already passed, so a wait whose whole budget is 5 s stays silent rather than
+  announcing itself a blink before it fails. Console only, never buffered, and no event in the
+  stream: a progress line is not a result (`C4`). It names what the locator line names — the target,
+  how long it has waited, why the last poll did not satisfy, and how much longer it will go on.
+
 ### Fixed — `unique` is scoped to a run, and the constraint it feeds is not (M181)
 
 **`unique` restarted at zero on every `tflw run`, against columns that outlive the run.** SPEC §7.2

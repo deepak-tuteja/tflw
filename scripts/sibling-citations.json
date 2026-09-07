@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "refs/pull/87/head",
-  "sha": "9028c53d977c0a3637adf1c3d8696d18ee10617c",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/9028c53d977c0a3637adf1c3d8696d18ee10617c",
+  "ref": "refs/pull/88/head",
+  "sha": "d8b0c26e4c4a0c63e86febdedd5599e36b1a185c",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/d8b0c26e4c4a0c63e86febdedd5599e36b1a185c",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -20,7 +20,7 @@
     "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
     "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
   ],
-  "codeFiles": 771,
+  "codeFiles": 775,
   "checkFixtures": [
     "TF001",
     "TF002",
@@ -1210,6 +1210,10 @@
     "D935": [
       "CONTRIBUTING.md"
     ],
+    "D939": [
+      "CONTRIBUTING.md",
+      "tests/api/admin/tickets.tflw"
+    ],
     "M104": [
       "CONSTRUCTS.md",
       "scripts/lib/constructs.mjs",
@@ -1911,11 +1915,13 @@
     "M181": [
       "CONSTRUCTS.md",
       "CONTRIBUTING.md",
+      "apiV2/src/admin-users/admin-users.controller.ts",
       "scripts/lib/constructs.mjs",
       "scripts/verify-second-run.mjs",
       "tests/.constructs/dialog-kinds.tflw",
       "tests/.constructs/dialog-one-shot.tflw",
       "tests/.constructs/generator-known-answers.tflw",
+      "tests/api/admin/tickets.tflw",
       "tests/examples/generators-explained.tflw",
       "tests/mixed/storefront.tflw"
     ],
@@ -1933,6 +1939,18 @@
     "M181e": [
       "CONTRIBUTING.md",
       "tests/mixed/storefront.tflw"
+    ],
+    "M182": [
+      "CONTRIBUTING.md"
+    ],
+    "M182b": [
+      "CONTRIBUTING.md",
+      "apiV2/src/admin-users/admin-users.controller.ts",
+      "tests/api/admin/tickets.tflw"
+    ],
+    "M182c": [
+      "CONTRIBUTING.md",
+      "tests/api/admin/tickets.tflw"
     ],
     "M22": [
       "CONTRIBUTING.md",
@@ -2734,6 +2752,13 @@
     "D933": [
       "scripts/lib/constructs.mjs",
       "scripts/verify-construct-acceptance.mjs"
+    ],
+    "D938": [
+      "apiV2/src/admin-users/admin-users.controller.ts",
+      "tests/api/admin/tickets.tflw"
+    ],
+    "D940": [
+      "tests/api/admin/tickets.tflw"
     ],
     "D96": [
       "tests/.checkonly/crawl-body-not-an-assertion.tflw"

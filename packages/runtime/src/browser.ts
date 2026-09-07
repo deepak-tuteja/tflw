@@ -626,9 +626,13 @@ export interface ResolvedLocator {
 
 const POLL_INTERVAL_MS = 100;
 
-/** How long a locator may go unresolved before `resolveLocator` says so out loud (`FU-14`, D248).
- * Not a new deadline and not a fast-fail — the step still polls to its own timeout. */
-const SPECULATIVE_DIAGNOSIS_MS = 3000;
+/** How long a wait may go unsatisfied before it says so out loud (`FU-14`, D248). Not a new
+ * deadline and not a fast-fail — the step still polls to its own timeout.
+ *
+ * Exported since `M182a` (`D937`): `wait until api` speaks on this same threshold, and on the same
+ * `budget > 2 ×` guard below. One number, defined once — a second copy in `interpreter.ts` would be
+ * two hand-maintained constants that nothing compares (`D489`'s shape). */
+export const SPECULATIVE_DIAGNOSIS_MS = 3000;
 
 function candidateStrategies(scope: LocatorScope, kind: LocatorKind, name: string): { readonly pwLocator: PWLocator; readonly via: string }[] {
   switch (kind) {

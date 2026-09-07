@@ -80,6 +80,7 @@ import {
   requireSingleMatch,
   resolveLocator,
   resolveLocatorSnapshot,
+  SPECULATIVE_DIAGNOSIS_MS,
   type BrowserManager,
   type CapturedNetworkRequest,
   type LocatorScope,
@@ -5881,7 +5882,16 @@ async function execWaitUntilApi(
   // is left of this deadline a few lines down; that clamp is decision 67 and is why the per-request
   // clause could never have served as the poll budget the row asked the locator form to gain.
   const waitBudget = step.waitMs ?? config.timeouts.wait;
-  const deadline = performance.now() + waitBudget;
+  const startedAt = performance.now();
+  const deadline = startedAt + waitBudget;
+  // `D937` (`M182a`, `M181-01`) — `M125c`'s progress line, on `M125c`'s own threshold and its own
+  // guard: speak only when at least as much waiting would remain as has already passed, so a wait
+  // whose whole budget is 5s never emits a line 3s in that the failure would overtake 2s later.
+  // The consequence is measured and deliberate: `testFlow-tests` sets `timeout wait 5s`, and
+  // `5000 > 6000` is false, so the dogfood suite's own waits stay silent. An acceptance test that
+  // wants the line has to ask for a budget that can produce one.
+  const speakAt = waitBudget > SPECULATIVE_DIAGNOSIS_MS * 2 ? startedAt + SPECULATIVE_DIAGNOSIS_MS : undefined;
+  let spoken = false;
   let attempt = 0;
   let last: { redacted: ApiExec['redacted']; response: ResponseTrace; request: RequestTrace; message: string } | null = null;
   for (;;) {
@@ -5937,7 +5947,32 @@ async function execWaitUntilApi(
     // statically forbids a `request` assertion here, decision 18) — `connectionError` is always
     // null; a real connection failure still throws out of `execApi` above and crashes the poll
     // loop exactly like today, unchanged.
-    const outcomes = await Promise.all(step.expects.map((e) => evaluateExpect(e, trace.response, null, ctx, config, baseDir)));
+    //
+    // `D936` (`M182a`, `M181-01`) — a `RuntimeError` raised while evaluating a poll's condition is a
+    // poll that did not satisfy, not a failed step. `count()` throws when its subject is not an
+    // array, and in a poll loop the subject's shape varies with the response: a `200` body is the
+    // array being waited for, a `401`/`503` problem+json body is an object. Uncaught, that escaped
+    // the wait entirely — the step died 742ms short of a 5s budget reporting a subject type, with
+    // no `timed out after …` prefix, which is the only observable that says which exit ran.
+    //
+    // Caught per expect rather than around the `Promise.all`, so a second throwing expect settles
+    // here instead of becoming an unhandled rejection, and so the surviving outcomes keep their
+    // order — `find((o) => !o.ok)` below still reports the FIRST failing clause, thrown or not.
+    //
+    // The cost, stated rather than hidden: an author who writes `has count` against a body that
+    // will never be an array now waits the full budget instead of failing on one poll. That is
+    // `D248`'s trade taken the way `D248` took it, and `D937`'s line above is what buys it back.
+    //
+    // Scope, declared and not widened (`D896`): this function only. `expect` outside a wait keeps
+    // throwing immediately — there is no second observation there to be patient for.
+    const outcomes = await Promise.all(
+      step.expects.map((e) =>
+        evaluateExpect(e, trace.response, null, ctx, config, baseDir).catch((err: unknown): MatchOutcome => {
+          if (!(err instanceof RuntimeError)) throw err;
+          return { ok: false, message: err.message };
+        }),
+      ),
+    );
     const allOk = outcomes.every((o) => o.ok);
     const attempts = `${attempt} attempt${attempt === 1 ? '' : 's'}`;
     if (allOk) {
@@ -5958,8 +5993,30 @@ async function execWaitUntilApi(
         request: trace.request,
       };
     }
+    if (speakAt !== undefined && !spoken && performance.now() >= speakAt) {
+      spoken = true;
+      announceStillPolling(redacted.request.method, redacted.request.url, lastMessage, waitBudget, redactor);
+    }
     await sleep(WAIT_POLL_INTERVAL_MS);
   }
+}
+
+/** `D937`. The `wait until api` half of `M125c`'s speculative diagnosis, and deliberately the same
+ * shape: the target, how long it has waited, why the last poll did not satisfy, and how long it
+ * will keep going. Spoken once per step, from inside the loop, while the wait carries on to its own
+ * deadline — this is progress, not a verdict.
+ *
+ * **Console only, and deliberately not buffered**, for `M125c`'s reason: `--verbose` step logs are
+ * collected per file and flushed as a block under `--parallel > 1`, and a progress line that
+ * arrives after the failure it exists to pre-empt has no purpose. It adds no event to the stream
+ * either — a progress line is not a result (`C4`/`B3-05`).
+ *
+ * Redacted like every other detail this step emits: the URL is a poll target and may carry a
+ * captured token in a query string, and stderr is not exempt from that. */
+function announceStillPolling(method: string, url: string, why: string, waitBudget: number, redactor: Redactor): void {
+  const seconds = (ms: number): string => `${Math.round(ms / 1000)}s`;
+  const line = `⏳ tflw: \`${method} ${url}\` has not satisfied its condition after ${seconds(SPECULATIVE_DIAGNOSIS_MS)} — ${why}; still waiting, up to ${seconds(waitBudget)}`;
+  process.stderr.write(`${redactor.redact(line)}\n`);
 }
 
 /** `signal` (M32, R5) races the timer against an abort — a scheduled sleep (VU spawn stagger,
