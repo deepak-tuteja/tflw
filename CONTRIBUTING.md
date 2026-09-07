@@ -71,6 +71,7 @@ npm run verify:decisions                # ※ does less in CI than it does here
 npm run verify:citations
 npm run verify:anchors
 npm run verify:sibling-pin              # ¶ CI adds --require-network (D921)
+npm run verify:sibling-pin:self-test
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
 node scripts/mutate.mjs <milestone>    # ‡ the CI form is different
@@ -256,6 +257,17 @@ npm run verify:ledger                  # § never runs in CI, by decision
   here on purpose, because on a developer machine `gh` may genuinely be absent and the `D683` skip is
   then the honest answer, while in CI a silent skip is a gate that is green having checked nothing
   (`D921`).
+
+- **`npm run verify:sibling-pin:self-test`** — **the gate above had no controls at all, and that is
+  how it reached CI broken.** `M179b` gave it a CI home and its reachability probe asked `gh api
+  user`; it went green on a developer machine and red on the runner **in the same commit**.
+  `GITHUB_TOKEN` is a GitHub **App installation** token with no user behind it, so `/user` refuses it
+  — while every read the gate actually makes is public. Measured unauthenticated: the three clause
+  reads answer **200** and `/user` answers **401**, so the probe was gating a public capability on an
+  authenticated one, and the answers are independent (`D922`). Four controls, no network: the
+  pull-ref shape in both directions, and that the probe reads the sibling repository rather than the
+  caller's identity. Restoring the `/user` probe reddens two of the four. It is only because
+  `--require-network` was already there that this was a red build instead of a permanent silent skip.
 
   **Pin once, and pin last** (`D919`). Refresh the pin when the sibling branch is
   **finished**, not when it is opened. `#183` exists for no other reason: `M178a` added a citation to

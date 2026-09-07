@@ -8220,6 +8220,22 @@ indefinitely — an instrument never pointed at its corpus, in the gate built to
 subject is the tier's own reachability. This decision was not in the scoping at all — it was found
 by asking what the `D683` tier would do in the new home, which is the question the move creates.
 
+### D922
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+
+**`D922` — a reachability probe asks for the capability it gates, and nothing else.**
+`verify-sibling-pin.mjs` decided whether its network tier could run by calling `gh api user --jq
+.login`. That is a question about **identity**; the three clauses it gates ask about **public
+repository metadata**, and the two answers are independent. `GITHUB_TOKEN` is a GitHub App
+installation token with no user behind it, so `/user` refuses it while every read the gate makes
+succeeds — measured unauthenticated, with no token at all: `repos/<sibling>`, `commits/<sha>` and
+`commits/refs%2Fpull%2F85%2Fhead` all answer **200**, and `/user` answers **401**. The probe now
+reads the sibling repository, which is the weakest read the clauses themselves depend on. It
+deliberately does **not** probe the pinned sha or ref: those *are* the clauses, and a probe that
+could fail for the reason a clause fails would convert a real defect into a skip. Taken after CI
+refused the build, which is the only place this was visible.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>

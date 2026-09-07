@@ -60,6 +60,46 @@ function gh(args) {
   }
 }
 
+/** The args the reachability probe runs. Named so a control can read it (`D922`). */
+export function reachabilityProbe(r) {
+  return ['api', `repos/${r}`, '--jq', '.full_name'];
+}
+
+/**
+ * `M172e`, and this gate earned it the hard way. It shipped into CI with a probe that asked `gh api
+ * user`, went green here and red there in the same commit, and had no controls at all to say so.
+ */
+function selfTest() {
+  const cases = [
+    ['the pull-ref shape accepts refs/pull/N/head',
+      () => PULL_REF.test('refs/pull/85/head') && PULL_REF.test('refs/pull/1/head')],
+    ['it rejects a branch name, `main`, and a zero pull number',
+      () => !PULL_REF.test('m179-landed-clause') && !PULL_REF.test('main') && !PULL_REF.test('refs/pull/0/head')],
+    // The control for the defect above. `GITHUB_TOKEN` is an App installation token with no user
+    // behind it, so `/user` refuses it while every read this gate makes — all public — succeeds.
+    // Measured unauthenticated: the three clause reads answer 200 and `/user` answers 401.
+    ['the reachability probe reads the sibling repository, not the caller\'s identity',
+      () => {
+        const args = reachabilityProbe('owner/repo');
+        return args.join(' ').includes('repos/owner/repo') && !args.some((a) => a === 'user' || a === '/user');
+      }],
+    ['the probe names the repository it is handed, so it cannot drift from the pin',
+      () => reachabilityProbe('a/b').join(' ').includes('a/b')
+        && !reachabilityProbe('a/b').join(' ').includes('deepak-tuteja')],
+  ];
+  let bad = 0;
+  for (const [name, fn] of cases) {
+    let ok = false;
+    try { ok = fn(); } catch (e) { ok = false; console.error(`    threw: ${e.message}`); }
+    console.log(`  ${ok ? '✓' : '✗'} ${name}`);
+    if (!ok) bad++;
+  }
+  console.log(bad === 0 ? `\n✓ ${cases.length} controls pass.` : `\n✗ ${bad} of ${cases.length} controls failed.`);
+  return bad === 0 ? 0 : 1;
+}
+
+if (process.argv.includes('--self-test')) process.exit(selfTest());
+
 const problems = [];
 const notes = [];
 const fail = (what, detail) => problems.push({ what, detail });
@@ -113,7 +153,23 @@ if (pin.sha && pin.source && !pin.source.includes(pin.sha)) {
  */
 const requireNetwork = process.argv.includes('--require-network');
 
-const reachable = gh(['api', 'user', '--jq', '.login']) !== null;
+/**
+ * The reachability probe asks for the capability this gate needs, and nothing else (`D922`).
+ *
+ * It used to be `gh api user --jq .login`, and that shipped green here and red on CI in the same
+ * commit. `GITHUB_TOKEN` is a GitHub **App installation** token: it has no user behind it, so
+ * `/user` refuses it — while every read this gate actually makes, all of them public, would have
+ * succeeded. The probe was asking *"is somebody logged in?"* to gate *"can I read the sibling
+ * repository?"*, and the answers are independent. An instrument pointed at the wrong corpus
+ * (`M141`), in the availability check of the gate that closes `M176-06`.
+ *
+ * So it probes the sibling repository itself. That is the weakest read the three clauses below
+ * depend on: if it answers, `gh` exists and can reach this repository's public metadata, and a
+ * failure in a clause is then about the pin rather than about the tooling. It deliberately does NOT
+ * probe the pinned sha or ref — those ARE the clauses, and a probe that could fail for the reason a
+ * clause fails would turn a real defect into a skip.
+ */
+const reachable = gh(reachabilityProbe(repo)) !== null;
 if (!reachable && requireNetwork) {
   console.error('\n✗ the network tier could not run, and this caller requires it');
   console.error('  `gh api user` did not answer, so none of the three clauses below were checked:');

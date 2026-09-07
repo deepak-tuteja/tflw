@@ -127,6 +127,20 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:sibling-pin:self-test',
+    class: 'gate',
+    local: 'npm run verify:sibling-pin:self-test',
+    why: "`M172e`/`D922`. The gate above had no controls at all for its whole life, and that is exactly how it reached CI with a "
+      + "reachability probe asking `gh api user`: green on a developer machine, red on the runner, in the same commit. "
+      + "`GITHUB_TOKEN` is a GitHub App installation token with no user behind it, so `/user` refuses it — while every read the "
+      + "gate actually makes is public. Measured unauthenticated: the three clause reads answer **200** and `/user` answers "
+      + "**401**, so the probe was gating a public capability on an authenticated one. Four controls, no network: the pull-ref "
+      + "shape in both directions, and that the probe reads the sibling repository rather than the caller's identity. Restoring "
+      + "the `/user` probe reddens two of the four",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:decisions',
     class: 'gate',
     local: 'npm run verify:decisions',
