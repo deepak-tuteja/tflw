@@ -350,6 +350,13 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     note: '`M154g-07` — the pattern\'s capacity *is* static (`#` is base 10, `?` is base 26, and both are literal after interpolation), but the thing it is compared against is not: the run-wide `unique` counter is shared with every other generator in the family (SPEC §7.5), so whether a given pattern runs out depends on how many `unique` draws the run made before reaching it. Same shape as `browser-unknown-tab`. There is no decidable sub-case to carve out either — the smallest possible space still serves its first draw, so no literal pattern is wrong on sight',
   },
   {
+    id: 'unique-number-space-exhausted',
+    file: 'eval.ts',
+    excerpt: 'unique number can encode at most',
+    decidable: 'needs-values',
+    note: '`M181a`/`D930` — `unique number` carries the run namespace in the high 30 bits of a safe integer and the run-wide counter in the low 23, so it has a per-run capacity for the first time, and it is refused rather than wrapped for `unique-like-space-exhausted`\'s reason: past that point two counters round onto one double, which is a silent repeat under a guarantee of distinctness. Undecidable for the same reason as that row and not a weaker one — the ceiling is a constant, but what it is compared against is the shared counter (SPEC §7.5), so whether a run reaches it depends on how many `unique` draws every other generator made first. There is no literal sub-case: 2^23 draws is reachable only by a load run, and no file is wrong on sight',
+  },
+  {
     id: 'eval-invalid-reference',
     file: 'eval.ts',
     excerpt: 'invalid reference',

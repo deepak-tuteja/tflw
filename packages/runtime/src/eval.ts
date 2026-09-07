@@ -4,7 +4,7 @@
 
 import { isDecodableBase64, isDecodableHex, isDecodablePercentEncoding, parseStringParts, type BinaryOp, type DateOffsetUnit, type PathSegment, type StringPart, type Value } from '@tflw/lang';
 import type { Redactor } from './redact.js';
-import { subSeed, mulberry32, hashString, SEED_DOMAIN } from './seed.js';
+import { subSeed, mulberry32, hashString, SEED_DOMAIN, resolveRunNamespace, runNamespaceToken, RUN_NAMESPACE_BITS } from './seed.js';
 import type { CookieJar } from './cookieJar.js';
 import type { BrowserManager, BrowserPageState, LocatorScope } from './browser.js';
 import type { SessionRef } from './interpreter.js';
@@ -194,18 +194,18 @@ export function evalValue(value: Value, ctx: EvalCtx): unknown {
     }
     case 'UniquePrefixExpr': {
       const prefix = String(evalValue(value.prefix, ctx));
-      return `${prefix}-${ctx.uniqueSeq.next()}`;
+      return `${prefix}-${runNamespaceToken(runNamespaceOf(ctx))}-${ctx.uniqueSeq.next()}`;
     }
     case 'UniqueEmailExpr':
-      return `user${ctx.uniqueSeq.next()}@example.test`;
+      return `user-${runNamespaceToken(runNamespaceOf(ctx))}-${ctx.uniqueSeq.next()}@example.test`;
     case 'UniqueNumberExpr':
-      return ctx.uniqueSeq.next();
+      return uniqueNumber(ctx.uniqueSeq.next(), runNamespaceOf(ctx));
     case 'UniqueLikeExpr':
       // A4-OS-13/M102, as in `FormatExpr` above. `uniqueLike`'s placeholders are `#` and `?`, so
       // interpolating first cannot collide with the pattern language.
-      return uniqueLike(String(evalValue(value.pattern, ctx)), ctx.uniqueSeq.next());
+      return uniqueLike(String(evalValue(value.pattern, ctx)), ctx.uniqueSeq.next(), runNamespaceOf(ctx));
     case 'UniqueUuidExpr':
-      return uniqueUuid(ctx.uniqueSeq.next(), ctx.runSeed);
+      return uniqueUuid(ctx.uniqueSeq.next(), ctx.runSeed, runNamespaceOf(ctx));
     case 'RandomNumberExpr': {
       const from = asNumber(evalValue(value.from, ctx), 'random number');
       const to = asNumber(evalValue(value.to, ctx), 'random number');
@@ -524,19 +524,25 @@ function randomUuidV4(rng: () => number): string {
  * placeholder first, after passing through an affine permutation of the pattern's own value space
  * so that consecutive draws do not read as a counter.
  *
- * The permutation is keyed by THE PATTERN ALONE and not by the run seed, which makes this a pure
- * function of the counter like every other member of the family: `unique number` answers 8, 9, 10
- * on every run at every seed, and this now answers the same three codes beside it. Keying it on
- * `runSeed` as well was tried first and reverted — the permutation exists only so a draw does not
- * read as a sequence, the pattern keys that completely, and the seed bought nothing the construct
- * promises while making one member of a family move under `--seed` when the other four do not.
- * Cross-*run* collision safety is not on offer here for any of them (§7.2: distinct across
- * tests/workers *within a run*), so seeding did not buy that either.
+ * The permutation is keyed by the pattern AND THE RUN NAMESPACE (`D930`, `M181a`), and by neither
+ * the run seed nor anything else: it stays a pure function of the counter *within* a run, and moves
+ * between runs exactly as far as `resolveRunNamespace` does. Keying it on `runSeed` was tried once
+ * and reverted, and that reversal still stands — the seed is what `random` moves with, and a member
+ * of this family that moved under `--seed` would be indistinguishable from `random like` (`C113`).
+ * The namespace is the other axis: a *permutation* rather than an offset, so capacity, bijectivity
+ * and the refusal below are all untouched, and the second run of a suite walks the same value space
+ * in a different order rather than re-issuing the first run's first N codes (`M162-01`).
  *
- * DISTINCTNESS IS A TRUE GUARANTEE, the same kind `unique uuid` gets from embedding the counter and
- * `unique("prefix")` gets from string concatenation (SPEC §7.2, §7.5): `c → (mul·c + add) mod
- * capacity` with `gcd(mul, capacity) = 1` is a bijection on `[0, capacity)`, so distinct counters
- * can only produce distinct codes, and distinct codes render as distinct strings. It is
+ * What that buys is narrower than the rest of the family's, and §7.2 says so rather than rounding
+ * it up (`D932`): a permutation of a finite space cannot promise cross-run distinctness. Two runs
+ * drawing a few hundred codes from a 10^6-capacity pattern can land on a shared one. Distinctness
+ * *within* a run stays a true guarantee, because within a run this is still one bijection.
+ *
+ * WITHIN A RUN, DISTINCTNESS IS A TRUE GUARANTEE — the same kind `unique uuid` gets from embedding
+ * the counter and `unique("prefix")` gets from string concatenation (SPEC §7.2, §7.5): `c → (mul·c
+ * + add) mod capacity` with `gcd(mul, capacity) = 1` is a bijection on `[0, capacity)`, so distinct
+ * counters can only produce distinct codes, and distinct codes render as distinct strings. Across
+ * runs it is the paragraph above: a different bijection over the same space, not a wider space. It is
  * deliberately NOT unpredictable — the values are an arithmetic progression modulo `capacity`, so a
  * reader who has seen two of them can extrapolate the rest. `unique` promises collision-safety, not
  * secrecy, and nothing should treat one of these as a token.
@@ -554,7 +560,7 @@ function randomUuidV4(rng: () => number): string {
  * Capacity is finite and the counter is shared with the rest of the `unique` family, so a narrow
  * pattern can genuinely run out. That throws, naming both numbers — silently wrapping would put the
  * false guarantee straight back, which is the whole of this fix. */
-function uniqueLike(pattern: string, counter: number): string {
+function uniqueLike(pattern: string, counter: number, namespace: number): string {
   const chars = [...pattern];
   const slots: number[] = [];
   let capacity = 1n;
@@ -571,7 +577,7 @@ function uniqueLike(pattern: string, counter: number): string {
         `generator, SPEC §7.5). Widen the pattern, or use \`random like\` if collisions are acceptable.`,
     );
   }
-  let code = permuteIndex(BigInt(counter), capacity, pattern);
+  let code = permuteIndex(BigInt(counter), capacity, pattern, namespace);
   for (let k = slots.length - 1; k >= 0; k--) {
     const i = slots[k]!;
     const radix = chars[i] === '#' ? 10n : 26n;
@@ -585,18 +591,24 @@ function uniqueLike(pattern: string, counter: number): string {
 /** The bijection `uniqueLike` renders. `mul` is drawn from a per-pattern sub-seed and then walked up
  * to the first value coprime with `capacity`, which always terminates: `capacity` is a product of
  * 10s and 26s, so its prime factors are a subset of {2, 5, 13} and coprime values are dense. The
- * only key is the pattern, so two patterns of the same shape do not walk their value spaces in
- * lockstep while one pattern walks its own identically on every run — `--seed` replay reproduces
- * the draw (P#23) because nothing here varies with the seed at all.
+ * key is the pattern and the run namespace, so two patterns of the same shape do not walk their
+ * value spaces in lockstep, and one pattern walks its own identically for the whole of a run and
+ * differently in the next one — `--seed` replay still reproduces the draw (P#23) because nothing
+ * here varies with the seed at all, and `--now` pins the other axis (§7.4).
+ *
+ * The namespace enters through `subSeed`'s *index* position under its own domain separator
+ * (`SEED_DOMAIN.uniqueLike`) rather than being folded into the pattern hash: a run identity is not a
+ * pattern hash, and `D815` was written because this function had already been handed two unrelated
+ * spaces once without either declaring itself.
  *
  * `BigInt` throughout, not `number`: a 16-`#` pattern's capacity is already past
  * `Number.MAX_SAFE_INTEGER`, and `index * mul` overflows the double's exact range long before that.
  * A float rounding here would silently map two counters onto one code — which is precisely the
  * guarantee this function exists to make true, so it cannot be left to a size assumption about how
  * wide a pattern anyone writes. */
-function permuteIndex(index: bigint, capacity: bigint, pattern: string): bigint {
-  if (capacity <= 2n) return index; // a 1- or 2-element space has no scrambling to do
-  const rng = mulberry32(subSeed(hashString(pattern) >>> 0, 0x11c5));
+function permuteIndex(index: bigint, capacity: bigint, pattern: string, namespace: number): bigint {
+  if (capacity <= 2n) return index; // a 1- or 2-element space has no scrambling to do, in any run
+  const rng = mulberry32(subSeed(hashString(pattern) >>> 0, namespace, SEED_DOMAIN.uniqueLike));
   // `rng()` is a double in [0,1); scaled through `Number` first, then widened — capacity can exceed
   // 2^53, so the draw lands in a coarse but well-spread subset of a huge space rather than pretending
   // to a precision `mulberry32` does not have. Bijectivity depends on `gcd`, not on this spread.
@@ -616,25 +628,81 @@ function gcdBig(a: bigint, b: bigint): bigint {
   return a;
 }
 
-/** `unique uuid` — v4-shaped, but the trailing 4 bytes (last 8 hex digits) are the run-wide
- * monotonic counter itself, not random: since that counter never repeats within a run, this is a
- * true distinctness guarantee (mirroring how `UniquePrefixExpr` guarantees it via literal string
- * concatenation), not just v4's low collision probability. The first 12 bytes come from a local
- * RNG keyed off the same counter (same pattern `UniqueLikeExpr` uses) purely for a realistic
- * random-looking shape — they carry none of the uniqueness guarantee themselves. */
-function uniqueUuid(counter: number, runSeed: number): string {
+/** `unique uuid` — v4-shaped, but the last 8 bytes are not random at all: bytes 12-15 (the trailing
+ * 8 hex digits) are the run-wide monotonic counter, and bytes 8-11 are the run namespace (`D929`,
+ * `M181a`). Since the counter never repeats within a run and the namespace never repeats between
+ * runs, that pair is a true distinctness guarantee on both axes — the same kind `UniquePrefixExpr`
+ * gets from literal string concatenation, not v4's low collision probability.
+ *
+ * The namespace lands in the *guaranteeing* half deliberately, and this is the correction
+ * `PLAN_M154`'s carry needed. That carry named `unique uuid` as the family's escape hatch for
+ * cross-run distinctness; it was not one. The trailing digits were the counter, identical on the
+ * next run, and the only thing that differed between runs was the shape half — whose own docstring
+ * says it carries none of the guarantee, and which under `--seed N` is byte-identical run to run
+ * (`PROGRESS.md:4667` records exactly that happening on a coupon code). A guarantee that lives in
+ * the bytes documented as carrying no guarantee is not a guarantee.
+ *
+ * Byte 8 is where the namespace meets the variant: the variant's `10` claims that byte's top two
+ * bits, so the namespace is 30 bits wide (`RUN_NAMESPACE_BITS`) and lands there whole rather than
+ * truncated — the width was chosen from this constraint, not worked around here. The first 8 bytes
+ * come from a local RNG keyed off the counter (the pattern `M154g-15` fixed) purely for a
+ * random-looking shape, and still carry no part of the guarantee. */
+function uniqueUuid(counter: number, runSeed: number, namespace: number): string {
   // `SEED_DOMAIN.uniqueUuid` (`M154g-15`, `D815`): without it this passed the `unique` counter into
   // the same argument position `interpreter.ts` fills with a *test index*, so `unique uuid`'s k-th
-  // draw shaped itself from test k's `random` stream. The trailing 8 hex digits — where the actual
-  // distinctness guarantee lives — are the counter itself and are untouched by this.
+  // draw shaped itself from test k's `random` stream. Both halves that carry the actual distinctness
+  // guarantee — the namespace and the counter — are untouched by this.
   const localRng = mulberry32(subSeed(runSeed, counter, SEED_DOMAIN.uniqueUuid));
   const bytes: number[] = [];
-  for (let i = 0; i < 12; i++) bytes.push(Math.floor(localRng() * 256));
+  for (let i = 0; i < 8; i++) bytes.push(Math.floor(localRng() * 256));
   bytes[6] = (bytes[6]! & 0x0f) | 0x40; // version 4
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80; // variant 10xxxxxx
+  // Bytes 8-11: the run namespace, big-endian, with `0x80` supplying the `10` variant in the two
+  // bits `RUN_NAMESPACE_BITS` leaves free. `namespace >>> 24` is < 64 for a 30-bit value, so the
+  // mask below drops nothing.
+  bytes.push(0x80 | ((namespace >>> 24) & 0x3f), (namespace >>> 16) & 0xff, (namespace >>> 8) & 0xff, namespace & 0xff);
   const counterHex = (counter >>> 0).toString(16).padStart(8, '0');
   for (let i = 0; i < 4; i++) bytes.push(parseInt(counterHex.slice(i * 2, i * 2 + 2), 16));
   return formatUuidBytes(bytes);
+}
+
+/** The run namespace for this evaluation (`D929`, `M181a`). Derived from `ctx.runClock` on the spot
+ * rather than carried as its own `EvalCtx` field: it is a pure function of the run clock, which
+ * every `EvalCtx` in the tree already has, so there is no literal anywhere — in `interpreter.ts`, in
+ * a hook, in a test — that can be built without one. A new field would have been a twelfth place to
+ * forget it.
+ *
+ * That it is *one* namespace per run rather than one per process is load-bearing for `uniqueLike`,
+ * whose bijection is only a bijection while every shard permutes the same space the same way, and
+ * it holds for a measured reason rather than a hoped one: `cli.ts` resolves the run clock once
+ * (`resolveRunClock(nowArg).toISOString()`) and hands that same ISO string both to its own shard-0
+ * `runProgram` call and to every forked load worker's `nowRaw`. */
+function runNamespaceOf(ctx: EvalCtx): number {
+  return resolveRunNamespace(ctx.runClock);
+}
+
+/** `unique number` — the run namespace in the high bits, the run-wide counter in the low ones, of a
+ * JavaScript safe integer. Both halves are exact: `RUN_NAMESPACE_BITS + UNIQUE_NUMBER_COUNTER_BITS`
+ * is 53, so the largest value this can return is `Number.MAX_SAFE_INTEGER` itself and no draw is
+ * ever rounded into a neighbour's value. Distinct counters give distinct numbers within a run;
+ * distinct namespaces give disjoint blocks between runs.
+ *
+ * The ceiling is real and is refused rather than wrapped, on `uniqueLike`'s precedent and for its
+ * reason: a wrapped value is a repeat, and a repeat under a guarantee of distinctness is worse than
+ * a stopped run. 2^23 draws is 8.4 million — reachable only by a load run, which is the one shape
+ * that could reach it, so the message names the two generators with no such ceiling. */
+const UNIQUE_NUMBER_COUNTER_BITS = 53 - RUN_NAMESPACE_BITS;
+const UNIQUE_NUMBER_CAPACITY = 2 ** UNIQUE_NUMBER_COUNTER_BITS;
+
+function uniqueNumber(counter: number, namespace: number): number {
+  if (counter >= UNIQUE_NUMBER_CAPACITY) {
+    throw new RuntimeError(
+      `unique number can encode at most ${UNIQUE_NUMBER_CAPACITY} distinct values in one run (the other ` +
+        `${RUN_NAMESPACE_BITS} bits of a safe integer carry the run namespace, SPEC §7.2), and this run's ` +
+        `\`unique\` counter has already reached ${counter} (it is shared with every other \`unique\` generator, ` +
+        `SPEC §7.5). Use \`unique("prefix")\` or \`unique uuid\`, which have no such ceiling.`,
+    );
+  }
+  return namespace * UNIQUE_NUMBER_CAPACITY + counter;
 }
 
 // ---- transforms: base64 / hex / url encode/decode (decision 98) -----------

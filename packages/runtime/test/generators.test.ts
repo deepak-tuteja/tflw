@@ -292,13 +292,16 @@ test "t1"
   await server.close();
 });
 
-// `unique like`'s permutation is keyed by the pattern and by nothing else, so it belongs to the
-// `unique` family's "pure function of the counter" half rather than the `random` family's seeded
-// half. That is the discriminator between the two constructs that *share the pattern language*, so
-// it is asserted in both directions in one test: the same pattern is frozen across two seeds and a
-// moved clock, while `random like` beside it moves. An earlier draft of the fix keyed the
-// permutation on `runSeed` too, which no assertion here would have caught.
-test('`unique like` is seed- and clock-independent, where `random like` is not', async () => {
+// `unique like` and `random like` share the pattern language and are told apart by which axis each
+// one moves on — the discriminator, and the reason this is asserted in both directions in one test.
+// `M181a` (`D931`) gives that discriminator its second axis rather than a caveat: **`random` moves
+// with `--seed` and not with the clock; `unique` moves with `--now` and not with the seed.** Before
+// `M181a` the `unique` half of that was "moves with neither", which is what made a second run
+// against a live database re-issue the first run's values (`M162-01`).
+//
+// Every value below is pinned by an explicit `--seed` and `--now`, so all four assertions are
+// deterministic — the two `notEqual`s are not bets on two draws from a 10^6 space differing.
+test('`unique like` moves with the clock and not the seed; `random like` the other way round', async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
 
   const source = `test "keying"
@@ -316,11 +319,103 @@ test('`unique like` is seed- and clock-independent, where `random like` is not',
 
   const [u1, r1] = await draw(4242, '2026-07-06T00:00:00.000Z');
   const [u2, r2] = await draw(9999, '2026-07-06T00:00:00.000Z');
-  const [u3] = await draw(4242, '2027-07-06T00:00:00.000Z');
+  const [u3, r3] = await draw(4242, '2027-07-06T00:00:00.000Z');
 
   assert.equal(u1, u2, '`unique like` must not move with the seed — it renders a counter, not a draw');
-  assert.equal(u1, u3, '`unique like` must not move with the clock either');
+  assert.notEqual(u1, u3, '`unique like` must move with the run clock — that is the run namespace (`D929`)');
   assert.notEqual(r1, r2, '`random like`, on the same pattern, must move with the seed');
+  assert.equal(r1, r3, '`random like` must not move with the clock — no `random like` draw touches it');
+
+  await server.close();
+});
+
+// `M181a` (`D929`–`D932`), the milestone's own acceptance in miniature. `M162-01` measured thirteen
+// API tests degrading on a second `tflw run` against one live stack, twelve of them one column:
+// `user<counter>@example.test` restarts at `user0` every run while `user.email` outlives it. So the
+// property under test is not "distinct within this run" — that has held since M2 — but **two runs
+// draw disjoint values**, which is what a database sees.
+//
+// `unique uuid` is graded apart from the other four because it is the one member with a seed-derived
+// half: its shape bytes move with `--seed` by design (they are v4 realism and carry no part of the
+// guarantee), while the two halves that DO carry it — the run namespace in bytes 8-11 and the
+// counter in bytes 12-15 — must not. Asserting the whole string were seed-stable would be asserting
+// the wrong thing about it, and asserting nothing would leave `--seed N` free to re-issue a run's
+// uuids wholesale, which is exactly what it did until this milestone.
+test('two runs of the same file draw disjoint `unique` values, and `--seed` + `--now` replays them exactly', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
+
+  const source = `test "the whole family"
+  let p = unique("Widget")
+  let e = unique email
+  let n = unique number
+  let l = unique like "ORD-######"
+  let u = unique uuid
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const draw = async (seed: number, now: string): Promise<string[]> => {
+    const { report } = await runProgram(program, testConfig(server.baseUrl), { source, seed, now });
+    assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+    return asEntry(report.tests[0], 'functional').steps.slice(0, 5).map((st) => st.detail!.match(/= "?([^"]+?)"? \(unique\)$/)![1]!);
+  };
+
+  const T1 = '2026-07-06T09:00:00.000Z';
+  const T2 = '2026-07-06T09:02:00.000Z'; // two minutes later — the gap between two runs of one suite
+  const a = await draw(4242, T1);
+  const b = await draw(4242, T1);
+  const c = await draw(9999, T1);
+  const d = await draw(4242, T2);
+
+  assert.deepEqual(a, b, '`--seed` + `--now` together must reproduce a run exactly (§7.4)');
+  assert.deepEqual(a.slice(0, 4), c.slice(0, 4), 'the four non-uuid members must not move with the seed — `unique` never consults the RNG (`M154g-07`)');
+
+  // The whole point, and the shape a database sees: nothing a later run issues may repeat anything
+  // an earlier one did.
+  const overlap = a.filter((v) => d.includes(v));
+  assert.deepEqual(overlap, [], `two runs two minutes apart must share no \`unique\` value at all — shared: ${JSON.stringify(overlap)}`);
+
+  // `unique uuid`, graded on its two halves. Group 4 and the first half of group 5 are the run
+  // namespace; the trailing 8 hex digits are the counter.
+  const uuidOf = (vals: string[]): string => vals[4]!;
+  const namespaceBytes = (u: string): string => u.slice(19, 23) + u.slice(24, 28);
+  const counterBytes = (u: string): string => u.slice(-8);
+  assert.equal(counterBytes(uuidOf(a)), counterBytes(uuidOf(c)), 'a uuid\'s counter digits must not move with the seed');
+  assert.equal(namespaceBytes(uuidOf(a)), namespaceBytes(uuidOf(c)), 'a uuid\'s namespace digits must not move with the seed either');
+  assert.notEqual(uuidOf(a), uuidOf(c), 'a uuid\'s shape half is seed-derived — v4 realism, and it does move');
+  assert.equal(counterBytes(uuidOf(a)), counterBytes(uuidOf(d)), 'the counter restarts at the same place in the next run — which is why the namespace has to be the thing that differs');
+  assert.notEqual(namespaceBytes(uuidOf(a)), namespaceBytes(uuidOf(d)), 'a uuid\'s namespace digits must move with the run clock');
+
+  await server.close();
+});
+
+// `unique number` is the one member whose value space is bounded by something other than a pattern:
+// the run namespace takes 30 of a JavaScript safe integer's 53 bits, leaving 2^23 counter values.
+// Past that, `namespace * 2^23 + counter` stops being exact and two counters could round onto one
+// double — a silent repeat under a guarantee of distinctness, which is `uniqueLike`'s hazard and
+// gets `uniqueLike`'s answer. Driven through `runProgram`'s injectable `uniqueSeq` because 8.4
+// million draws is not a test; the ceiling is still the shipped one, not a test-only constant.
+test('`unique number` refuses its per-run ceiling rather than wrapping past a safe integer', async () => {
+  const server = await startFixtureServer({ '/health': (_req, res) => res.writeHead(200).end('ok') });
+
+  const source = `test "at the ceiling"
+  let n = unique number
+  api GET /health
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const seqFrom = (start: number): { next(): number } => {
+    let n = start;
+    return { next: () => n++ };
+  };
+
+  const under = await runProgram(program, testConfig(server.baseUrl), { source, uniqueSeq: seqFrom(2 ** 23 - 1) });
+  assert.equal(under.report.ok, true, 'the last value in the space must still be issued');
+  const at = await runProgram(program, testConfig(server.baseUrl), { source, uniqueSeq: seqFrom(2 ** 23) });
+  assert.equal(at.report.ok, false, 'one past the space must fail the run, not wrap');
+  const error = asEntry(at.report.tests[0], 'functional').error ?? '';
+  assert.match(error, /can encode at most 8388608 distinct values in one run/);
+  assert.match(error, /counter has already reached 8388608/);
 
   await server.close();
 });

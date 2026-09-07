@@ -4229,7 +4229,7 @@ applicable** — never a violation, and never a silent pass. The result carries 
 
 ### D285
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +13 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +14 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D285 — zero applicable rules is a failure, not a pass**
 
@@ -4425,7 +4425,7 @@ both of which the rules state in their own failure text rather than leaving to t
 
 ### D300
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-second-run.mjs · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D300 — a rule blocked by a failed instrument is announced; one blocked by its precondition is not**
 
@@ -7520,7 +7520,7 @@ substitution this ledger exists to refuse.
 
 ### D819
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/constructs.mjs +1 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/constructs.mjs +2 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
 
 **D819 — every browser test creates and addresses the records it asserts on**
 
@@ -7551,13 +7551,23 @@ that failed or the bound that held — and stays as a header if the intermittent
 
 ### D822
 
-<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-second-run.mjs · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
 
-**D822 — no automated guard is built for accumulated-state degradation**
+**D822 — no automated guard is built for accumulated-state degradation (amended by `M181c`)**
 
 `M154g-06` records that no automated path reaches it: every CI entry point starts fresh. A gate that
 runs eight consecutive full-gate rounds to catch this would cost more than the defect and would be
-the only such gate in the repository.
+the only such gate in the repository. **Amended 2026-09-07 by `M181c` (`D934`), on this decision's
+own terms and not against them:** that price is the price of *this* condition — stock depletion,
+measured at six consecutive runs of one file. A second condition underneath it, which this decision
+did not separate out, costs **two** runs of **one file**: a `unique(...)` counter restarting at 0 on
+every `tflw run` against columns that outlive the run, which `M162-01` later measured at three
+whole-suite runs against one live stack going 323 pass → 5 failed → 8 failed, twelve of the thirteen
+failing steps on `user.email`. So the guard refused here is not the guard now available —
+`regression.mjs`'s `second-run-check` runs `--tag smoke` twice inside its own ordinary fresh restart,
+~3 seconds of graded work and no extra restart, because not restarting is the condition — and it
+declares its reach rather than widening (`D896`): stock depletion is still outside it, and `D819`
+stays a convention because the class is wider than what two runs can see.
 
 ### D823
 
@@ -8089,6 +8099,20 @@ goes stale silently and says so only in prose a reader must find; `listed` + *se
 stale **loudly, at the moment it happens**. The keyword rule in §11.2 could not see it, because
 these guards write *"fail loudly instead"* rather than *"deliberately"*.
 
+### D896
+
+<sub>cited from tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-second-run.mjs · lifted from `PLAN_M175_GATE_REACH.md`</sub>
+
+**`D896` — the bare-citation gate's corpus stays prose, and the narrowing is declared with the
+number that makes it a judgement rather than an oversight.** Taken by the user, 2026-09-06, against
+§9.3's measurement. `M169-04` closes **by declaration, not by widening**: `verify-citations.mjs`
+states its subject, states its corpus (42 tracked markdown files), and states that 537 tracked
+non-markdown text files carry **716** hits of which **118** are this gate's own rules and fixtures —
+so ~598 are real bare citations in shipped comments and test titles that this gate deliberately does
+not demand. The alternative — rewriting all ~598 — was costed and refused: it is a very large
+diff across 153 files with no behaviour change, and every rewrite needs its number to actually
+resolve, which is a second measurement nobody has taken.
+
 ### D904
 
 <sub>cited from tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M174_SUBJECT_FAMILY.md`</sub>
@@ -8310,6 +8334,74 @@ under a 20 ms tolerance (`M157g`), `C45` now carries a derived tolerance and a c
 and the other five have no floor to derive. **This is a declaration of reach, not a widening**
 (`D896`, `D722`): the class is two, both are answered, and a sixth clause of the same shape arriving
 later would be unguarded — which is stated here rather than implied by a gate that could not see it.
+
+### D929
+
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-construct-acceptance.mjs +2 more · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`D929` — the run namespace comes from the run clock, never the run seed.** `--seed` means *replay
+the RNG*, and `unique`'s entire contract is that it does not consult the RNG; tying it to `--seed`
+would re-break `M154g-07` and invert the discriminator three C-clauses are built on. `--now` is
+already the documented way to pin the run clock, and `--seed` + `--now` together is already
+documented as what makes a run exactly reproducible. So replay keeps working, through the flag that
+already means it.
+
+### D930
+
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`D930` — each member gains the namespace in the way its own value space allows, and `unique uuid`
+gains nothing.** The unbounded members (`unique("prefix")`, `unique email`, `unique number`) mix the
+namespace into the rendered counter. `unique like` keys `permuteIndex`'s per-pattern sub-seed by
+`(pattern, namespace)` — capacity, bijectivity and the refusal are untouched, because the space is
+permuted rather than offset. `unique uuid` already mixes a run-varying value into its shape half and
+changes only in that the half carrying the guarantee now carries the namespace too, which is the
+correction `PLAN_M154`'s prescription needed.
+
+### D931
+
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`D931` — the promise gains an axis rather than a caveat.** SPEC §7.2 currently says *collision-safe
+across tests/workers/retries* and, two lines under it, *use for anything with a uniqueness
+constraint* — a scope sentence and a usage prescription that contradict each other, and the thirteen
+tests followed the second. The replacement is two statements, both observable: **`random` moves with
+`--seed` and not with the clock; `unique` moves with `--now` and not with the seed.**
+
+### D932
+
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`D932` — `unique like`'s cross-run distinctness is stated as probabilistic, and the others' as
+guaranteed.** A permutation of a finite space cannot promise more: at capacity 10^6 and a few hundred
+draws a run, two runs can land on a shared code. The unbounded members carry a true guarantee;
+`unique like` carries the pattern's. Saying so is the whole lesson of the sentence being replaced.
+
+### D933
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`D933` — `C81`/`C82`/`C113` are re-derived, not deleted.** Each keeps its `catches` sentence; the
+discriminator becomes two-axis instead of one. A clause that asserted the defect as a property is
+the strongest evidence that the property was believed, and deleting it would remove the record.
+
+### D934
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-second-run.mjs · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`D934` — `D822` is amended on its own terms, not overruled.** It refused an accumulated-state guard
+priced at *"eight consecutive full-gate rounds"*, taken from `M154g-06`'s loop. The condition
+reproduces in **two** runs, and in two runs of **one file**. The guard `D822` refused is not the
+guard now available, and the amendment says so in place.
+
+### D935
+
+<sub>cited from tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`D935` — the tickets accumulation is filed, not absorbed.** It is not a `unique` defect and the
+repair is a different one (a test scoping itself to a seeded agent). Absorbing it would let this
+milestone's own scope grow past what it measured. Its diagnostic naming a token expiry instead of
+the count is filed with it.
 
 ### M0
 
@@ -11209,7 +11301,7 @@ Gitignored by `.gitignore:35`.
 
 ### M162
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs +3 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONSTRUCTS.md +9 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
 
 **`M162` — a test owns the state it asserts on**
 
@@ -11233,7 +11325,7 @@ and where a reading *was* inferred and then contradicted by the box, the contrad
 
 ### M162b
 
-<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +1 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
 
 **`M162b` — `D819`/`D820`.** Re-plant `C31` and `C33`, repair the review test, update both known
 answers in `scripts/lib/constructs.mjs`, re-run the roster and the ratchet.
@@ -11742,5 +11834,48 @@ squash-merge deleted `m180-flatness-floor`, `commits/m180-flatness-floor` answer
 --require-network` exits 0 on `main` untouched. One clause, one control, and a measurement
 saying the class this row was filed against has fewer members than the row believed. Closes
 `M155-03`, open since 2026-08-30 and the oldest `S3` in the ledger.
+
+### M181
+
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +8 more · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`M181` — `unique` is run-scoped, and the constraint it feeds is not**
+
+**Status:** **COMPLETE 2026-09-07 — `M181a` through `M181e` all built. `M162-01` is closed.**
+
+### M181a
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +1 more · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`M181a` — tflw.** The run namespace in `seed.ts`/`eval.ts`, the five renderers per `D930`, SPEC
+§7.2 and §7.5 per `D931`/`D932`, and `packages/lang/src/spec-data.ts`'s three `notes` columns, which
+`gen-spec-tables.test.ts` holds the SPEC tables to. tflw's own generator tests assert *distinctness*,
+not literal values (`generators.test.ts:128`, `retry.test.ts:114`), so they should pass unchanged —
+which is itself a prediction, below.
+
+### M181b
+
+<sub>cited from tflw-tests/tests/.constructs/generator-known-answers.tflw · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`M181b` — the sibling's grader.** `C81`/`C82`/`C84`/`C113` re-derived per `D933`, and
+`generator-known-answers.tflw`'s illustrative counter table rewritten to the new measurement. The
+`.tflw` assertions are shape-agnostic already (`matches "^W3-Widget"`, three-distinct); the grader is
+where the arithmetic lives and where the work is.
+
+### M181c
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-second-run.mjs · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`M181c` — the guard `D822` refused.** One sweep phase that runs a small file **twice on one stack**
+and requires the second run green. Cheap by construction: it needs no extra restart, because not
+restarting is the condition.
+
+### M181e
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+
+**`M181e` — verification.** Three consecutive whole-suite runs on one stack, no `cli.mjs stop`, all
+green. That is `M162`'s clause 1′ read back verbatim, and it is the only acceptance that means
+anything.
 
 <!-- GENERATED:decisions:end -->
