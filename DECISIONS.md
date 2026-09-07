@@ -6332,7 +6332,7 @@ it this once.
 
 ### D683
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
 
 **`D683` — the check has two tiers, and the CI tier names what it cannot do**
 
@@ -8235,6 +8235,81 @@ reads the sibling repository, which is the weakest read the clauses themselves d
 deliberately does **not** probe the pinned sha or ref: those *are* the clauses, and a probe that
 could fail for the reason a clause fails would convert a real defect into a skip. Taken after CI
 refused the build, which is the only place this was visible.
+
+### D923
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M180_NULL_RESULT_FLOOR.md`</sub>
+
+**`D923` — `M178a`'s two-member class has one member, and this is the other one being sorted
+correctly.** `M178a` put `C45` beside `C48` as *a timing number compared under jitter*. It is not
+one. `C45`'s statistic is a count of arrivals at a zero-latency counter under a deterministic
+schedule, and §2 measures its floor at exactly `0` over 25 runs on two machine classes. It belongs
+with the five clauses `M178a` excluded — the ones with no noise floor for an effect to have to clear
+— and the row's question, asked of it properly, is answered rather than repaired. **This is the
+distinction the row could not draw without the measurement**, which is why it was left open against a
+measurement rather than closed on an argument.
+
+### D924
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M180_NULL_RESULT_FLOOR.md`</sub>
+
+**`D924` — the tolerance is derived from the floor rather than inherited: `6` becomes `3`.** `6` was
+never derived; it is 24% of a 25-arrival bin, chosen when the clause was written and never compared
+against anything. With the floor at `0` and the nearest wrong shape at `15`, `3` sits one full
+boundary-slip above a value never once observed to be non-zero and five times below the curve the
+clause must refuse. It denies a 500 ms window off its neighbours by more than 3 of 25 — 12%, where
+`6` waved through 24%. **The tightening is not the point of this milestone and is the cheapest part
+of it**; the point is that the number now has a derivation attached to it in the file.
+
+### D925
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M180_NULL_RESULT_FLOOR.md`</sub>
+
+**`D925` — a flatness clause needs a curve it must refuse, and the run already contained one.**
+Pointing `hold`'s own predicate at `/ramp` and requiring it to fail is what turns `spread 0` from a
+number into evidence. `/ramp` is the closest wrong answer this generator can give, it is produced by
+the same corpus run through the same server at the same bin width, and it costs nothing — it was
+already being fetched two clauses down. **One definition of the statistic, pointed at two curves**:
+`flatness()` is hoisted beside `ownBins` precisely so the control cannot be a second copy of the
+predicate that drifts from the first, which is this pair of repositories' most-repeated defect shape.
+
+### D926
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M180_NULL_RESULT_FLOOR.md`</sub>
+
+**`D926` — that control bounds the tolerance from above, which nobody asked it for and is the better
+half of it.** Mutating `FLAT_TOLERANCE` to `999` on the box: the flatness clause goes on printing
+`✓ … the spread across its steady bins is 0 against a tolerance of 999`, entirely confident and
+entirely vacuous, and **the control is the only thing in the file that refuses**. So a future edit
+cannot loosen this tolerance past the nearest wrong shape without the grader saying so by name. A
+tolerance that is checked against a curve is a tolerance that can be wrong out loud (`M166`).
+
+### D927
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M180_NULL_RESULT_FLOOR.md`</sub>
+
+**`D927` — the blind spot is stated in place rather than left to be discovered.** 500 ms bins cannot
+see sub-bin burstiness: a generator firing 25 requests at once at the top of every bin scores
+`spread 0` and passes every clause in `C45`. That is a real defect class for a load generator and
+this clause does not claim to cover it. Spacing is `gapsMs`'s subject and `C50`'s claim, and **no
+clause anywhere grades `hold`'s spacing** — filed as `M180-01` rather than folded in here, because
+its tolerance would need its own derivation and quietly adding an underived one is the exact defect
+this milestone exists to remove.
+
+### D928
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M180_NULL_RESULT_FLOOR.md`</sub>
+
+**`D928` — no new gate, and the reason is that the class is already covered clause-by-clause.**
+The tempting move is a mechanism that stops the class growing — something that reads the grader and
+fails on a *does not move* clause with an underived tolerance. Refused: it would be a text-shaped
+gate over prose in a 3000-line file, which is `M166`'s *a gate that fails plausibly is worse than one
+that refuses* waiting to happen, and this repository has already paid for hand-rolled row parsers
+twice. What covers the class instead is per-clause and already built: `C48` carries a 50 ms effect
+under a 20 ms tolerance (`M157g`), `C45` now carries a derived tolerance and a control that refuses,
+and the other five have no floor to derive. **This is a declaration of reach, not a widening**
+(`D896`, `D722`): the class is two, both are answered, and a sixth clause of the same shape arriving
+later would be unguarded — which is stated here rather than implied by a gate that could not see it.
 
 ### M0
 
@@ -11653,5 +11728,15 @@ ship with, per `M172e` — a gate green on the day it lands says so and proves i
 - and the `state`-vs-`merged` trap has a control of its own, because a fixture whose `state` is
   `closed` and whose `merged` is `true` is the exact input that would have shipped the plausible
   failure.
+
+### M180
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M180_NULL_RESULT_FLOOR.md`</sub>
+
+**`M180` — a null result whose floor turned out to be arithmetic, not noise**
+
+**Status: BUILT 2026-09-07.** Suite green on the build box after both halves: **3970 tests, 0 fail**. One clause, one control, and a measurement that says the class this
+row was filed against has fewer members than the row believed. Closes `M155-03`, open since
+2026-08-30 and the oldest `S3` in the ledger.
 
 <!-- GENERATED:decisions:end -->
