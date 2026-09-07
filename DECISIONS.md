@@ -11735,8 +11735,12 @@ ship with, per `M172e` — a gate green on the day it lands says so and proves i
 
 **`M180` — a null result whose floor turned out to be arithmetic, not noise**
 
-**Status: BUILT 2026-09-07.** Suite green on the build box after both halves: **3970 tests, 0 fail**. One clause, one control, and a measurement that says the class this
-row was filed against has fewer members than the row believed. Closes `M155-03`, open since
-2026-08-30 and the oldest `S3` in the ledger.
+**Status: COMPLETE 2026-09-07.** Both halves are on `main`. Suite green on the build box:
+**3970 tests, 0 fail**. `M179`'s pull-ref pin held a second time and needed no re-pin — after `#86`'s
+squash-merge deleted `m180-flatness-floor`, `commits/m180-flatness-floor` answers **422** while
+`commits/refs%2Fpull%2F86%2Fhead` still resolves to `8922994`, and `verify:sibling-pin
+--require-network` exits 0 on `main` untouched. One clause, one control, and a measurement
+saying the class this row was filed against has fewer members than the row believed. Closes
+`M155-03`, open since 2026-08-30 and the oldest `S3` in the ledger.
 
 <!-- GENERATED:decisions:end -->
