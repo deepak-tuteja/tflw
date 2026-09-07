@@ -101,9 +101,11 @@ export function problem(assigned, covered) {
     `  The two repositories are one unit of work here (D511, tflw merges first):\n` +
     `    1. add the fixture in testFlow-tests (tests/.checkonly/ or CONFIG_FIXTURES), on a branch;\n` +
     `    2. regenerate its published set there:  npm run refresh:check-coverage\n` +
-    `    3. re-pin from that branch, here:       node scripts/refresh-sibling-citations.mjs --ref <branch>\n` +
-    `    4. merge this repository, then the sibling, then re-pin to \`main\` — the second step is the\n` +
-    `       one 1bf108f skipped, and \`M172-01\` is the row that records what it cost.`
+    `    3. open its pull request, and pin THAT here:  node scripts/refresh-sibling-citations.mjs --pr <N>\n` +
+    `    4. merge this repository, then the sibling. There is no fifth step: \`refs/pull/<N>/head\`\n` +
+    `       outlives the squash merge that deletes the branch (\`M179\`, \`D914\`), so the follow-up\n` +
+    `       re-pin this recipe used to end with is gone (\`D919\`). The second step is still the one\n` +
+    `       1bf108f skipped, and \`M172-01\` is the row that records what that cost.`
   )
 }
 
@@ -124,9 +126,9 @@ const DIAGNOSTICS = await import(new URL(`../${BUNDLE}`, import.meta.url).href)
 function coverageUnknown() {
   return (
     `\`${PIN}\` carries no \`checkFixtures\`, so what the sibling has a fixture for is unknown.\n` +
-    `  This is not a green state: it is the comparison not running. Re-pin against a ref that\n` +
-    `  carries the sibling's \`${SIBLING_SOURCE}\`:\n` +
-    `      node scripts/refresh-sibling-citations.mjs --ref main`
+    `  This is not a green state: it is the comparison not running. Re-pin against a pull request\n` +
+    `  whose head carries the sibling's \`${SIBLING_SOURCE}\`:\n` +
+    `      node scripts/refresh-sibling-citations.mjs --pr <N>`
   )
 }
 
@@ -176,10 +178,16 @@ export const CORPORA = [
         run: () => problem(['TF001'], []) !== null,
       },
       {
-        what: 'the message names the four-step cross-repository order, which is the whole of what a reader has to do',
+        what: 'the message names the four-step cross-repository order, the pull-request pin it takes, and why there is no fifth step',
         run: () => {
           const why = problem(['TF082'], ['TF001'])
-          return why.includes('refresh:check-coverage') && why.includes('D511') && why.includes('--ref <branch>')
+          // `--pr <N>` and `D914` rather than `--ref <branch>` since `M180`. The recipe used to end
+          // with a re-pin at `main` and this plant pinned the spelling that step was written in, so
+          // when `M179a` taught the refresher to REFUSE a branch ref the instruction went stale and
+          // its own guard went on certifying it. Asserting the reason as well as the flag is what
+          // stops the next interface change leaving the same gap.
+          return why.includes('refresh:check-coverage') && why.includes('D511')
+            && why.includes('--pr <N>') && why.includes('D914')
         },
       },
       {

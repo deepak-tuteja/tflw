@@ -132,7 +132,7 @@ npm run verify:ledger                  # § never runs in CI, by decision
   `D864`). `testFlow-tests` cites this notation in documents its own readers meet, and the index used
   to publish 91 of the 185 identifiers it uses — the rest had anchors nobody had asked for. Its half
   arrives through `scripts/sibling-citations.json`, a tracked pin re-taken with
-  `node scripts/refresh-sibling-citations.mjs --ref <ref>` (network, an authenticated `gh`, never CI
+  `node scripts/refresh-sibling-citations.mjs --pr <N>` (network, an authenticated `gh`, never CI
   — the same asymmetry `spec-anchors.json` lives with). What the pin holds is what that repository
   *asks of this one*, which is not everything it cites: its own milestones are subtracted using the
   manifest it publishes at `scripts/own-identifiers.json`, and so are the identifiers it declares
