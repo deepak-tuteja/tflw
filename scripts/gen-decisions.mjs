@@ -1410,6 +1410,20 @@ export function demandReport({ files, skipped }, { unresolved, stale, cited }) {
 export const SIBLING_PIN = join('scripts', 'sibling-citations.json');
 
 /**
+ * The one shape a published sibling pin may take (`M179a`, `D914`): `refs/pull/<N>/head`, the ref
+ * GitHub never deletes. `refresh-sibling-citations.mjs` refuses to write anything else and
+ * `verify-sibling-pin.mjs` refuses to read anything else, and it lives HERE — beside the path it
+ * constrains and inside the module both already import — rather than being written twice. A shape
+ * rule copied into a second file is `D767`'s defect with a regex in place of a number.
+ *
+ * It is not in `refresh-sibling-citations.mjs` for a duller reason worth recording: that file parses
+ * `process.argv` at module scope, so importing it to borrow one constant RUNS it, and the gate that
+ * imported it exited 2 with the refresher's usage text before checking anything. Caught by running
+ * the gate rather than by reading it.
+ */
+export const PULL_REF = /^refs\/pull\/([1-9][0-9]*)\/head$/;
+
+/**
  * The dogfood target's citations, pinned (`D709`, `D710`).
  *
  * `testFlow-tests` cites this repository's notation in prose its own readers meet, and until this
@@ -1435,7 +1449,7 @@ export function readSiblingPin(root) {
       `cannot read ${SIBLING_PIN}: ${String(e.message).split('\n')[0]}\n` +
       `  The index publishes what BOTH repositories' prose asks for (D709). Without this file it\n` +
       `  would drop the sibling's 94 identifiers and then report them as orphans on the next check.\n` +
-      `  Re-pin with \`node scripts/refresh-sibling-citations.mjs --ref main\`.`,
+      `  Re-pin with \`node scripts/refresh-sibling-citations.mjs --pr <N>\`.`,
     );
   }
   if (!pin?.repo || !pin.citations) throw new Error(`${SIBLING_PIN} is missing \`repo\` or \`citations\` — re-pin it rather than hand-editing.`);
@@ -1562,7 +1576,7 @@ function main() {
       console.error(
         `✗ ${banner}\n` +
         `  Nobody else can fetch that commit, so this index is not reproducible from this repository\n` +
-        `  plus a published ref (D710). Push the sibling branch, then re-pin with --ref <branch>.`,
+        `  plus a published ref (D710). Open the sibling pull request, then re-pin with --pr <N>.`,
       );
       return 1;
     }

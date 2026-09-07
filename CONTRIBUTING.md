@@ -70,7 +70,8 @@ npm run verify:check-coverage
 npm run verify:decisions                # ※ does less in CI than it does here
 npm run verify:citations
 npm run verify:anchors
-npm run verify:sibling-pin              # ¶ needs a credential; never runs in CI
+npm run verify:sibling-pin              # ¶ CI adds --require-network (D921)
+npm run verify:sibling-pin:self-test
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
 node scripts/mutate.mjs <milestone>    # ‡ the CI form is different
@@ -234,19 +235,69 @@ npm run verify:ledger                  # § never runs in CI, by decision
   names a different package than its file on purpose (`M147e`'s LSP anchor, where the row is an
   agreement between two surfaces and only the LSP suite reads both), so "file inside pkg" is not an
   invariant. Check it by hand when a `SURVIVED` surprises you.
-- **`npm run verify:sibling-pin`** — **¶ it needs a credential, so it never runs in CI, and that is
-  the same decision as the two above rather than a new one.** `scripts/sibling-citations.json`
-  records the sibling commit whose prose this index publishes (`D709`/`D710`) as a `ref`, a `sha` and
-  a `source` URL, and until `M175a` **nothing checked that any of the three still resolved**
-  (`M172-01`). The clause that matters is ancestry: a squash-merge leaves the branch commit as a
-  reachable *object* while removing it from every line of history anybody reads, so a pin can name a
-  tree that exists and is on no branch. The gate was written against a pin in exactly that state —
-  merging the sibling's `#82` had deleted the branch its `ref` named twenty minutes earlier — which
-  is also why it is a **read-time** check and not only a write-time one: the pin was valid when
-  written and was invalidated later, by a merge in the other repository. Where `gh` cannot answer it
-  prints the three clauses it did not check and exits 0 (`D683`); the offline clause — `source` must
-  name the sha the pin records — always runs, because a disagreement between two fields of one file
-  needs no network and is what a hand-edit produces.
+- **`npm run verify:sibling-pin`** — **it runs in CI since `M179b`, and the sentence that kept it out
+  was wrong.** `scripts/sibling-citations.json` records the sibling commit whose prose this index
+  publishes (`D709`/`D710`) as a `ref`, a `sha` and a `source` URL, and until `M175a` **nothing
+  checked that any of the three still resolved** (`M172-01`). The clause that matters is ancestry: a
+  squash-merge leaves the branch commit as a reachable *object* while removing it from every line of
+  history anybody reads, so a pin can name a tree that exists and is on no branch. The gate was
+  written against a pin in exactly that state — merging the sibling's `#82` had deleted the branch
+  its `ref` named twenty minutes earlier — which is also why it is a **read-time** check and not only
+  a write-time one: the pin was valid when written and was invalidated later, by a merge in the other
+  repository.
+
+  It said for its whole life that it *"needs a credential, so it never runs in CI"*, citing
+  `verify-provenance.mjs` declining the same check on a depth-1 clone. **Those are two different
+  blockers** (`D920`). `verify-provenance.mjs` declines because a depth-1 clone does not hold the
+  objects it would walk — a git problem, and its reason still stands. This gate uses no git at all,
+  only `gh api`, and **both repositories are public**, so a runner can already do every read it
+  makes. The cost of that one sentence is measured rather than asserted: `M176-06`, five dead pins in
+  two days, with the only instrument that could see them unreachable from CI by a premise that was
+  never true. CI runs it as `npm run verify:sibling-pin -- --require-network`; the flag is omitted
+  here on purpose, because on a developer machine `gh` may genuinely be absent and the `D683` skip is
+  then the honest answer, while in CI a silent skip is a gate that is green having checked nothing
+  (`D921`).
+
+- **`npm run verify:sibling-pin:self-test`** — **the gate above had no controls at all, and that is
+  how it reached CI broken.** `M179b` gave it a CI home and its reachability probe asked `gh api
+  user`; it went green on a developer machine and red on the runner **in the same commit**.
+  `GITHUB_TOKEN` is a GitHub **App installation** token with no user behind it, so `/user` refuses it
+  — while every read the gate actually makes is public. Measured unauthenticated: the three clause
+  reads answer **200** and `/user` answers **401**, so the probe was gating a public capability on an
+  authenticated one, and the answers are independent (`D922`). Four controls, no network: the
+  pull-ref shape in both directions, and that the probe reads the sibling repository rather than the
+  caller's identity. Restoring the `/user` probe reddens two of the four. It is only because
+  `--require-network` was already there that this was a red build instead of a permanent silent skip.
+
+  **Pin once, and pin last** (`D919`). Refresh the pin when the sibling branch is
+  **finished**, not when it is opened. `#183` exists for no other reason: `M178a` added a citation to
+  a file *after* `#182` had already pinned that branch, so the same branch was pinned twice and cost
+  a second 30-minute CI run to move three lines of JSON. This is not enforced by a gate, and
+  deliberately — the failure is already loud and names itself exactly (the sibling's
+  `verify:provenance` says which identifier does not resolve), whereas a gate trying to predict
+  *"is this branch finished"* would be guessing.
+
+  The pin names **`refs/pull/<N>/head`** and nothing else (`D914`), so refresh it with
+  `node scripts/refresh-sibling-citations.mjs --pr <N>`. A branch name dies with the branch on
+  squash-merge, and `main` cannot be used at all: `D511` merges tflw **first**, so at pin time the
+  sibling commit is not on the sibling's `main` yet, and pinning there afterwards is the follow-up
+  chore `M179` exists to delete. Measured on the already-merged `#83`: its branch ref answers 422
+  and its pull ref still resolves, `identical` to the sha it records. Where `gh` cannot answer, the
+  gate prints the three clauses it did not check and exits 0 (`D683`); the offline clauses — the
+  ref's shape, and `source` naming the sha the pin records — always run, because neither needs a
+  network and both are what a hand-edit produces.
+
+  **What the pull-ref pin gives up, and where you will find it instead.** Pinning at `main` used to
+  prove the sibling prose had actually **landed**; a pull ref does not, because under `D511` that
+  pull request is always still open when the pin is taken. That guarantee was never written
+  down — it was a side effect of the follow-up chore, and deleting the chore would have deleted it
+  silently, so it is now an explicit clause (`D915`). It does **not** live in this repository's CI,
+  where it could never fire: `D511` means the sibling pull request is *necessarily* open on every
+  tflw run, so the clause would tolerate `OPEN` every time and never once be asked its question
+  (`D916` — `M141`'s shape). It lives in the sibling, in the job that runs on a push to its `main`,
+  because that is where the event happens (`D917`). If you are looking for *why the chore went away
+  rather than getting automated*, the answer is that the toil was the target and the brief stale
+  window was not (`D913`).
 
   Re-pinning **regenerates `DECISIONS.md` in the same process** (`M162-04`). That is not tidiness:
   the pin carries which sibling file cites each identifier, and the index prints it as each entry's

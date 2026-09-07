@@ -17,12 +17,34 @@
 // (`M131-03`). So the cheap comparison runs everywhere and the credentialed fetch runs where a human
 // is, which is exactly `refresh-spec-anchors.mjs`'s asymmetry.
 //
-// IT TAKES A REF, AND IT DEFAULTS TO `main`. The pin records what the sibling PUBLISHES, not what a
-// working tree happens to hold — a local read would let unmerged sibling prose decide what this
-// repository's tracked index contains, and it would look identical to a correct pin. A cross-repo
-// change in flight pins its own branch, the same way `M152c` pinned its anchors:
+// IT TAKES A PULL REQUEST, NOT A BRANCH AND NOT `main` (`M179a`, `D913`/`D914`). The pin records
+// what the sibling PUBLISHES, not what a working tree happens to hold — a local read would let
+// unmerged sibling prose decide what this repository's tracked index contains, and it would look
+// identical to a correct pin. That much is unchanged since `M152c`. What changed is WHICH published
+// ref, and the reason is arithmetic rather than preference.
 //
-//     node scripts/refresh-sibling-citations.mjs --ref <branch>
+//     node scripts/refresh-sibling-citations.mjs --pr <N>
+//
+// `D511` fixes the merge order: tflw merges FIRST, so at the moment a pin is taken the sibling
+// commit is not on the sibling's `main` and a branch ref is the only thing naming it. Every sibling
+// pull request is then squash-merged with the branch deleted, so the ref the pin names stops
+// existing and the sha it records stops being an ancestor of anything — `compare main...<branch
+// sha>` reports `diverged`, permanently. That is not an oversight in the merge order; it is what a
+// squash does, which is why `M176-06` recurred five times in two days without anybody being
+// careless, and why the repair could never be "remember to re-pin".
+//
+// `refs/pull/N/head` is a ref GitHub never deletes. Measured 2026-09-07 against the already-merged
+// `#83`, whose branch was deleted on merge: `commits/m176-sibling-gate-reach` is a 422, while
+// `commits/refs%2Fpull%2F83%2Fhead` still resolves, and `compare refs/pull/83/head...<sha>` reports
+// `identical` — before the merge and after. So a pull-ref pin passes every clause of
+// `verify-sibling-pin.mjs` during `D511`'s window and keeps passing forever afterwards. The
+// follow-up re-pin stops existing rather than being automated.
+//
+// WHAT THIS GIVES UP, AND WHERE IT IS BOUGHT BACK (`D915`). A pin at `main` proved the sibling prose
+// had actually LANDED; a pin at a pull ref does not, because under `D511` the pull request is always
+// still open when the pin is taken. That guarantee was never written down — it was a side effect of
+// a chore — and deleting the chore would have deleted it silently. It is now an explicit clause, in
+// the sibling's own push-to-`main` job, because that is where the event happens (`D916`/`D917`).
 //
 // FILES, NOT LINES (`D686`). The provenance line names files, so lines would buy nothing and cost
 // the property that makes this file readable in a diff: a line-level pin churns on every edit to the
@@ -63,7 +85,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectCitations } from './gen-decisions.mjs';
+import { collectCitations, PULL_REF } from './gen-decisions.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'scripts', 'sibling-citations.json');
@@ -75,11 +97,56 @@ const COVERAGE_FILE = 'scripts/check-fixture-coverage.json';
 export const SIBLING = 'deepak-tuteja/tflw-tests';
 
 const refFlag = process.argv.indexOf('--ref');
-const ref = refFlag === -1 ? 'main' : process.argv[refFlag + 1];
+const prFlag = process.argv.indexOf('--pr');
 const fromFlag = process.argv.indexOf('--from-checkout');
 const fromCheckout = fromFlag === -1 ? null : process.argv[fromFlag + 1];
-if (!ref || (fromFlag !== -1 && !fromCheckout)) {
-  console.error('usage: node scripts/refresh-sibling-citations.mjs [--ref <git-ref>] [--from-checkout <path>]');
+
+const USAGE = 'usage: node scripts/refresh-sibling-citations.mjs --pr <N> [--from-checkout <path>]\n'
+  + '       node scripts/refresh-sibling-citations.mjs --ref refs/pull/<N>/head';
+
+// `--pr <N>` is the spelling a human should use; `--ref` stays because `--from-checkout` and the
+// tests name a ref directly, and because spelling the pull ref out is sometimes what a reader needs
+// to see. They are mutually exclusive: two ways to say the same thing, given at once, is a question
+// about which one wins that has no good answer (`M166` — a gate that answers plausibly).
+if (refFlag !== -1 && prFlag !== -1) {
+  console.error('✗ --pr and --ref are two spellings of the same argument; give one.\n' + USAGE);
+  process.exit(2);
+}
+
+let ref;
+if (prFlag !== -1) {
+  const n = process.argv[prFlag + 1];
+  if (!/^[1-9][0-9]*$/.test(String(n))) {
+    console.error(`✗ --pr wants a pull request number, got \`${n ?? ''}\`.\n${USAGE}`);
+    process.exit(2);
+  }
+  ref = `refs/pull/${n}/head`;
+} else if (refFlag !== -1) {
+  ref = process.argv[refFlag + 1];
+} else {
+  // No default. `main` was the default for this file's whole life and it is now the one ref that
+  // cannot be pinned (`D914`), so defaulting to anything at all would be defaulting to a refusal.
+  console.error('✗ no ref given. A pin names the sibling pull request whose prose it publishes.\n' + USAGE);
+  process.exit(2);
+}
+
+// A pin built from a local checkout is already marked `local: true` and is refused downstream by
+// `gen-decisions.mjs` (`D865`), so its ref never reaches a committed file and is not shape-checked
+// here — the shape rule is about what gets PUBLISHED.
+if (!fromCheckout && !PULL_REF.test(ref)) {
+  console.error(
+    `✗ \`${ref}\` is not a shape this pin may take (D914).\n`
+    + '  A published pin names `refs/pull/<N>/head`, the one ref GitHub never deletes. A branch name\n'
+    + '  dies when the branch is deleted on merge, and `main` cannot be used at all: `D511` merges\n'
+    + '  tflw FIRST, so at pin time the sibling commit is not on the sibling\'s main yet. Pinning at\n'
+    + '  `main` afterwards is the follow-up re-pin M179 exists to delete — five of them in two days.\n'
+    + `  ${USAGE}`,
+  );
+  process.exit(2);
+}
+
+if (fromFlag !== -1 && !fromCheckout) {
+  console.error(USAGE);
   process.exit(2);
 }
 
@@ -360,7 +427,7 @@ if (coverageRaw === null) {
     `${SIBLING}@${sha.slice(0, 7)} (${ref}) has no ${COVERAGE_FILE}.\n` +
     `  That file is generated there by \`node scripts/verify-check-diagnostics.mjs --write\` and is what\n` +
     `  this repository's verify:check-coverage reads. A ref from before the sibling's half of M172e\n` +
-    `  cannot be pinned: merge that half, or pin the branch carrying it (--ref <branch>).`,
+    `  cannot be pinned: merge that half, or pin the pull request carrying it (--pr <N>).`,
   );
 }
 let checkFixtures;
@@ -391,7 +458,7 @@ const corpus = {
     + 'and which of its files cite it, read from the ref below (D709/D710/D864). The code half is '
     + 'what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a '
     + 'site qualifies as `tflw <id>`. Never hand-edit — refresh with '
-    + '`node scripts/refresh-sibling-citations.mjs --ref <ref>`, and note that the sibling\'s own '
+    + '`node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling\'s own '
     + '`verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind '
     + 'of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).',
   repo: SIBLING,
@@ -399,7 +466,7 @@ const corpus = {
   sha,
   ...(local ? { local: true } : {}),
   source: local
-    ? `LOCAL CHECKOUT ${fromCheckout} — not a published ref; re-pin with --ref before committing (D865)`
+    ? `LOCAL CHECKOUT ${fromCheckout} — not a published ref; re-pin with --pr before committing (D865)`
     : `https://github.com/${SIBLING}/tree/${sha}`,
   files: paths,
   codeFiles: codeFiles.length,
@@ -423,7 +490,7 @@ if (local) {
   console.log(
     '\n  This pin is marked `local: true` and CANNOT be committed: `verify:decisions` refuses it.\n' +
     `  Push the sibling branch, then re-run without --from-checkout:\n` +
-    `    node scripts/refresh-sibling-citations.mjs --ref ${ref}`,
+    `    node scripts/refresh-sibling-citations.mjs --pr <N>   # ${ref}`,
   );
 }
 

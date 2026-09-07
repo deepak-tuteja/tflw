@@ -145,6 +145,31 @@ jobs:
       # tflw assigns while each was right about its own input.
       - run: npm run verify:check-coverage
 
+      # `M179b` (`D920`). The pin the step above reads is only worth reading if it still resolves,
+      # and until now the one gate that checks that never ran here. Its docblock said it needed "the
+      # network and a credential" and pointed at `verify-provenance.mjs` declining the same check on
+      # a depth-1 clone — two unrelated blockers conflated into one sentence. `verify-provenance.mjs`
+      # declines because a depth-1 clone lacks the objects it must walk; that is a git problem and
+      # its reason still stands. This gate uses no git at all, only `gh api`, and BOTH repositories
+      # are public, so it needs nothing Actions does not already hand it. That wrong sentence is why
+      # the pin died five times in two days with the only instrument that could see it unreachable
+      # from CI (`M176-06`).
+      #
+      # `--require-network` is not optional decoration (`D921`). Without it a broken token would make
+      # every clause stop running while the job stayed green — the `D683` skip is honest on a laptop
+      # and is a vacuous gate here, which is `M141`'s shape planted in the gate that closes the row.
+      # With it, "did not run" is a failure and the tier's own reachability is observable.
+      - run: npm run verify:sibling-pin -- --require-network
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # `D922`. The gate above shipped into CI with a reachability probe that asked `gh api user` —
+      # green here, red there, in the same commit, because `GITHUB_TOKEN` is an App installation
+      # token with no user behind it while every read the gate makes is public (measured
+      # unauthenticated: the three clause reads answer 200 and `/user` answers 401). It had no
+      # controls at all, which is how that reached CI. These four are them, and they need no network.
+      - run: npm run verify:sibling-pin:self-test
+
       # `DECISIONS.md` is the resolution target for the private notation this repo is written in —
       # `P#43`, `D318`, `M137d`, roughly 730 citations of records `.gitignore` excludes (M152/`D666`).
       # THIS STEP RUNS ONLY HALF THE CHECK, and says so rather than printing a bare green. Both
