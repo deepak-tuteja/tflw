@@ -1317,7 +1317,7 @@ test('a fence is an illustration, never a definition', () => {
   assert.equal(cited.some((l) => l.inProductFence), false, 'an untagged fence is not a product fence');
 });
 
-// --- `D-M183-1`, build state is not a decision -----------------------------------------------------
+// --- `D941`, build state is not a decision -----------------------------------------------------
 //
 // `M180-03`: every milestone was costing a trailing pull request whose entire content was one
 // paragraph of generated status, because a plan's `**Status:**` paragraph sits inside the block
@@ -1349,7 +1349,7 @@ test('a build-state paragraph is stepped over and the statement under it is what
     line: 1, kind: 'heading', headingLevel: 1,
   });
   assert.match(body, /A session is established/, 'the statement is what the index is for');
-  assert.doesNotMatch(body, /BUILT 2026-01-01/, 'and build state is not a decision (`D-M183-1`)');
+  assert.doesNotMatch(body, /BUILT 2026-01-01/, 'and build state is not a decision (`D941`)');
   assert.doesNotMatch(body, /how the work went/, 'still one paragraph, not the section (`D670`)');
 });
 

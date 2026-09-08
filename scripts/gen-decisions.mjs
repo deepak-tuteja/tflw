@@ -547,21 +547,10 @@ function isCommentOnly(lines, i) {
 }
 
 /**
- * A plan's build-state paragraph — the `**Status:**` line and whatever is wrapped onto it.
- *
- * `D-M183-1`: **build state is not a decision**, so it does not belong in the published index. The
- * paragraph is volatile by construction — a milestone stamps `BUILT` → `COMPLETE` on the day it
- * merges, and the sentence often wants merge commits that do not exist until after the merge — so
- * lifting it makes every milestone's last act a regeneration, a push and a full CI run whose entire
- * content is one paragraph. Three milestones paid it in a row: `M179` as tflw `#186`, `M180` as
- * `#188`, `M182` as `#191` (2 insertions, 1 deletion, one file, 27 checks).
- *
- * `mac-dashboard` arrived at the same rule independently and for a different reason — build state
- * is stated **once**, in `PLAN.md` §7, because four places once stated it and no two agreed.
- *
- * The plan's *stage table*, where the merge commits and the per-stage `merged as #N` states
- * actually live, was never extracted (`M180-03` measured this). So the boundary this moves is the
- * one the plans' own structure already draws; it just had one paragraph on the wrong side of it.
+ * The labels `D941` covers. The reason each one is here is beside it; the rule they share is
+ * `isBookkeepingBlock`'s docblock below, stated ONCE — an earlier draft of this file carried that
+ * paragraph twice, above this list and above the function, which is `D489` in the milestone whose
+ * subject is records nothing holds to their source.
  */
 const BOOKKEEPING = [
   // Build state. Volatile by construction: a milestone stamps `BUILT` -> `COMPLETE` on the day it
@@ -580,7 +569,7 @@ const BOOKKEEPING = [
 /**
  * A plan's leading bookkeeping paragraph — build state, merge record, or a numbering reservation.
  *
- * `D-M183-1`: **build state is not a decision**, so it does not belong in the published index. The
+ * `D941`: **build state is not a decision**, so it does not belong in the published index. The
  * paragraph is volatile by construction, so lifting it makes every milestone's last act a
  * regeneration, a push and a full CI run whose entire content is one paragraph. Three milestones
  * paid it in a row: `M179` as tflw `#186`, `M180` as `#188`, `M182` as `#191` (2 insertions, 1
@@ -743,7 +732,7 @@ export function extractBlock(text, anchor) {
     while (i < lines.length && (lines[i].trim() === '' || isCommentOnly(lines, i))) {
       i = lines[i].trim() === '' ? i + 1 : takeBlock(lines, i);
     }
-    // `D-M183-1`. Step over the build-state paragraph the same way a comment-only one is stepped
+    // `D941`. Step over the build-state paragraph the same way a comment-only one is stepped
     // over, and for the same reason: it is a paragraph by every blank-line rule and it is not what
     // anybody asked this file for.
     //
