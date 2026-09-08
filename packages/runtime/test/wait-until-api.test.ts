@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
+import { speculativeSpeakAt, SPECULATIVE_DIAGNOSIS_MS } from '../src/browser.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 import { asEntry } from './__helpers__/entry.js';
 
@@ -252,4 +253,89 @@ test('M147d: the timeout report quotes the budget that actually expired', async 
   assert.doesNotMatch(detail, /5000ms/);
 
   await server.close();
+});
+
+
+// ---- M182a (`D936`/`D937`, `M181-01`): a transient is a poll that did not satisfy -------------
+
+
+test('M182a: a poll whose body is the wrong SHAPE is a poll that did not satisfy, and the wait goes on (D936)', async () => {
+  // `M181-01`, measured on the build box 2026-09-07. The subject of a poll's condition changes with
+  // the response: a `200` body is the array being waited for, a `401` problem+json body is an
+  // object, and `count()` throws on the second. Uncaught, that one transient ended a 5s wait 742ms
+  // early and reported a subject type — so the step could not survive a token expiring, a 503, or
+  // any other momentary non-answer, which is precisely what a wait exists to sit through.
+  let calls = 0;
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => {
+      calls++;
+      if (calls < 3) return json(res, 401, { type: 'about:blank', title: 'Unauthorized', status: 401 });
+      json(res, 200, [{ id: 1 }, { id: 2 }]);
+    },
+  });
+
+  const source = `test "outlives a transient"
+  wait until api GET /poll
+    expect body has count 2
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 5000 }), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const detail = asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '';
+  // Not merely green: green *after waiting*. A wait satisfied by its first poll is an assertion
+  // spelled like a wait, which is the other half of what `M181-01` measured.
+  assert.match(detail, /passed after 3 attempts/);
+  assert.equal(calls, 3);
+
+  await server.close();
+});
+
+test('M182a: a body that is never the right shape fails through the TIMEOUT exit, carrying the matcher text (D936)', async () => {
+  // The control on the line above, and the part that keeps the author informed. `D936` does not
+  // swallow the matcher's complaint — it relocates it behind the `timed out after …` prefix, which
+  // is the only observable that says which of this function's exits ran. Before, the detail was the
+  // bare matcher text with no prefix, naming the shape and neither the budget nor the attempts.
+  const server = await startFixtureServer({
+    '/poll': (_req, res) => json(res, 401, { type: 'about:blank', title: 'Unauthorized', status: 401 }),
+  });
+
+  const source = `test "never the right shape"
+  wait until api GET /poll
+    expect body has count 2
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, testConfig(server.baseUrl, { wait: 500 }), { source });
+
+  assert.equal(report.ok, false);
+  const detail = asEntry(report.tests[0], 'functional').steps[0]!.detail ?? '';
+  assert.match(detail, /^timed out after 500ms \(\d+ attempts?\)/);
+  assert.match(detail, /`has count` expects an array \(or string, or `body bytes`\) subject, got object/);
+
+  await server.close();
+});
+
+test('M182a: the cost `D936` buys — a budget of 5s or less can never produce a progress line (D937)', () => {
+  // The measured consequence `D937` had to carry, asserted at the boundary rather than by running a
+  // wait for five real seconds and watching nothing happen.
+  //
+  // `testFlow-tests` sets `defaults: timeout wait 5s`, and the guard is `budget > 2 x 3000`, so
+  // `5000 > 6000` is false and the dogfood suite's own waits emit nothing — verified in that corpus
+  // at 0 lines across three runs (`M182d`), which is where that claim belongs. What belongs HERE is
+  // the rule that makes it true, and a rule about two numbers is tested as a function of two
+  // numbers: exactly, on both sides, and at the point where it changes its mind.
+  //
+  // The end-to-end version of this cost the mutation sweep five seconds times every runtime
+  // mutation — see `scripts/mutate.mjs` and `ci.yml`'s re-shard log. It also asserted an ABSENCE,
+  // which is the weaker of the two shapes: this one pins the value.
+  const t = 1000;
+  assert.equal(speculativeSpeakAt(t, 5000), undefined, "this repository's own 5s budget stays silent");
+  assert.equal(speculativeSpeakAt(t, SPECULATIVE_DIAGNOSIS_MS * 2), undefined, 'exactly 2x is silent — the guard is >, not >=');
+  assert.equal(speculativeSpeakAt(t, SPECULATIVE_DIAGNOSIS_MS * 2 + 1), t + SPECULATIVE_DIAGNOSIS_MS, 'one millisecond past 2x speaks');
+  assert.equal(speculativeSpeakAt(t, 7000), t + SPECULATIVE_DIAGNOSIS_MS, 'and it speaks AT the threshold, not at the budget');
+  // The browser wait (`M125c`) and this one now read the same function, so this is one rule tested
+  // once rather than the same expression written twice and compared by nobody (`D489`).
+  assert.equal(speculativeSpeakAt(0, 30_000), SPECULATIVE_DIAGNOSIS_MS, "tflw's own 30s default speaks at 3s");
 });

@@ -4184,6 +4184,16 @@ convenience; the allowlist becomes the boundary, which is what M85 built it to b
 Writing an absolute URL opts the suite into declaring where it may reach. With no `allow hosts`
 configured the runtime refuses the step; the checker warns.
 
+### D248
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+
+**D248 — `FU-14`: a speculative diagnosis at ~3 s, and the deadline does not move**
+
+At ~3 s with nothing matched, run the nearest-candidate scan and print it as provisional progress —
+*still nothing matching `button "Log Inn"` after 3s; the closest thing on the page is
+`button "Login"`* — then keep polling to the step deadline exactly as now.
+
 ### D266
 
 <sub>cited from SPEC.md, tflw-tests/tests/.checkonly/service-with-absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
@@ -8101,7 +8111,7 @@ these guards write *"fail loudly instead"* rather than *"deliberately"*.
 
 ### D896
 
-<sub>cited from tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-second-run.mjs · lifted from `PLAN_M175_GATE_REACH.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/regression.mjs +1 more · lifted from `PLAN_M175_GATE_REACH.md`</sub>
 
 **`D896` — the bare-citation gate's corpus stays prose, and the narrowing is declared with the
 number that makes it a judgement rather than an oversight.** Taken by the user, 2026-09-06, against
@@ -8402,6 +8412,71 @@ guard now available, and the amendment says so in place.
 repair is a different one (a test scoping itself to a seeded agent). Absorbing it would let this
 milestone's own scope grow past what it measured. Its diagnostic naming a token expiry instead of
 the count is filed with it.
+
+### D936
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M182_WAIT_UNTIL_HONESTY.md`</sub>
+
+- **`D936` — a `RuntimeError` raised while evaluating a poll's condition is a poll that did not
+  satisfy, not a failed step.** `execWaitUntilApi` catches it, records it as that poll's message,
+  and keeps polling to its own deadline. The wait then fails, if it fails, through the timeout exit
+  it already has, so the detail reads `timed out after 5000ms (7 attempts): ` followed by the exact
+  matcher text — naming the expiry *and* the shape where it named only the shape.
+
+  **The cost is stated rather than hidden:** an author who writes `has count` against a body that
+  will never be an array now waits the full budget instead of failing in one poll. That is `D248`'s
+  trade, taken the same way `D248` took it, and `D937` is what buys it back.
+
+  **Scope, declared not widened (`D896`):** only `execWaitUntilApi`. `expect` outside a wait keeps
+  throwing immediately — there is no second observation there, so there is nothing to be patient
+  for.
+
+### D937
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M182_WAIT_UNTIL_HONESTY.md`</sub>
+
+- **`D937` — `wait until api` gains `M125c`'s progress line, on `M125c`'s own threshold and guard.**
+  `SPECULATIVE_DIAGNOSIS_MS = 3000`, spoken once, only when `budget > 3000 * 2`, stderr only, no
+  event in the stream (`C4`/`B3-05`), never buffered. The line names what the locator line names:
+  the target, how long it has waited, why the last poll did not satisfy, and how long it will keep
+  going.
+
+  **The measured consequence, which the acceptance clause has to carry:** this repository sets
+  `defaults: timeout wait 5s`, and `5000 > 6000` is false, so **the dogfood suite's own waits stay
+  silent**. `M182a`'s acceptance test must set a longer `timeout wait` explicitly or it will assert
+  the absence of a line under a budget that could never produce one — `M141`, an instrument never
+  pointed at its corpus.
+
+### D938
+
+<sub>cited from tflw-tests/apiV2/src/admin-users/admin-users.controller.ts, tflw-tests/tests/api/admin/tickets.tflw · lifted from `PLAN_M182_WAIT_UNTIL_HONESTY.md`</sub>
+
+- **`D938` — `PLAN_LIFECYCLE` L1 decision 3 is amended, not overruled, and not in `UsersController`.**
+  That decision's reason was scope ("in this plan"), not principle, and it deferred admin user
+  management to *"§ Future directions"* — **a parking lot whose five ranked items do not contain
+  it.** The deferral pointer is dangling and has been since the plan was written; recording that is
+  half of why this amendment is written down rather than assumed.
+
+  The route lands in its **own admin module**, the shape `load-admin` already established, so
+  `UsersController`'s self-service invariant stays literally true and its comment stays correct.
+
+### D939
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tests/api/admin/tickets.tflw · lifted from `PLAN_M182_WAIT_UNTIL_HONESTY.md`</sub>
+
+- **`D939` — the test mints its own agent, and dave stays.** AGENT_B is not deleted from the seed:
+  it is still the successful assignee nowhere else, it is still what two other tests in the file
+  authenticate as for their `409` and `404` paths, and deleting a seeded fixture to prove a
+  different point is how a grader silently stops finding things (`M181d`'s own rule).
+
+### D940
+
+<sub>cited from tflw-tests/tests/api/admin/tickets.tflw · lifted from `PLAN_M182_WAIT_UNTIL_HONESTY.md`</sub>
+
+- **`D940` — the file header's discipline paragraph is amended in place and quotes itself.** It
+  claims the count is *"an exact, order-independent count no matter what order these tests execute
+  in"*. Every word is true **within a run**, which is exactly the shape `D933` was written for: the
+  sentence asserted the defect's boundary as if it were the whole boundary. Re-derived, not deleted.
 
 ### M0
 
@@ -10168,7 +10243,7 @@ as written. Three things the plan did not predict, each recorded where it was fo
 
 ### M125c
 
-<sub>cited from SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **`M125c` — browser diagnosis**
 
@@ -11837,7 +11912,7 @@ saying the class this row was filed against has fewer members than the row belie
 
 ### M181
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +8 more · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +10 more · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
 
 **`M181` — `unique` is run-scoped, and the constraint it feeds is not**
 
@@ -11877,5 +11952,48 @@ restarting is the condition.
 **`M181e` — verification.** Three consecutive whole-suite runs on one stack, no `cli.mjs stop`, all
 green. That is `M162`'s clause 1′ read back verbatim, and it is the only acceptance that means
 anything.
+
+### M182
+
+<sub>cited from CHANGELOG.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M182_WAIT_UNTIL_HONESTY.md`</sub>
+
+**`M182` — a wait that gives up early and blames the matcher, and a count that was never this run's**
+
+**Status:** **`M182a`-`M182d` BUILT and MEASURED 2026-09-08. COMPLETE.**
+
+### M182a
+
+<sub>cited from SPEC.md · lifted from `PLAN_M182_WAIT_UNTIL_HONESTY.md`</sub>
+
+**`M182a` — tflw: the catch and the line**
+
+`packages/runtime/src/interpreter.ts` only.
+
+### M182b
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/apiV2/src/admin-users/admin-users.controller.ts, tflw-tests/tests/api/admin/tickets.tflw · lifted from `PLAN_M182_WAIT_UNTIL_HONESTY.md`</sub>
+
+**`M182b` — the sibling: the route**
+
+`PATCH /admin/users/:id/role`, in `apiV2/src/admin-users/` (controller + service + module + DTO,
+registered in `app.module.ts`), `@Roles(UserRole.ADMIN)` + `AnyAuthGuard` + `RolesGuard`, no
+migration. The three statuses are three different layers and the tests say so: `403` is `RolesGuard`
+before the handler, `404` is the repository lookup, `422` is the global `ValidationPipe`'s
+`IsEnum` — this module raises none of them itself except the `404`. Coverage is `.tflw`, not jest,
+because `apiV2` has no unit tests **by decision** (`D538`/`M141`: unit tests would pin a target
+whose whole job is to keep being reshaped).
+
+### M182c
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/tests/api/admin/tickets.tflw · lifted from `PLAN_M182_WAIT_UNTIL_HONESTY.md`</sub>
+
+**`M182c` — the sibling: the test**
+
+The collection test registers a user with a `unique` email, reads its id from `/auth/profile`,
+promotes it, and assigns to that. Header paragraph amended per `D940` — the old sentence is quoted
+inside the new one rather than replaced. Dave stays seeded and stays in the file's other two tests.
+Three authz tests for the new route live in the same file, and the comment above them says why:
+nothing else calls it, and a reader following `@ticketing` from `README.md` should find the verb the
+collection test depends on.
 
 <!-- GENERATED:decisions:end -->

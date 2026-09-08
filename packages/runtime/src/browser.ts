@@ -626,9 +626,35 @@ export interface ResolvedLocator {
 
 const POLL_INTERVAL_MS = 100;
 
-/** How long a locator may go unresolved before `resolveLocator` says so out loud (`FU-14`, D248).
- * Not a new deadline and not a fast-fail — the step still polls to its own timeout. */
-const SPECULATIVE_DIAGNOSIS_MS = 3000;
+/** How long a wait may go unsatisfied before it says so out loud (`FU-14`, D248). Not a new
+ * deadline and not a fast-fail — the step still polls to its own timeout.
+ *
+ * Exported since `M182a` (`D937`): `wait until api` speaks on this same threshold, and on the same
+ * `budget > 2 ×` guard below. One number, defined once — a second copy in `interpreter.ts` would be
+ * two hand-maintained constants that nothing compares (`D489`'s shape). */
+export const SPECULATIVE_DIAGNOSIS_MS = 3000;
+
+/** When a wait of `budgetMs`, begun at `startedAt`, should say it is still waiting — or `undefined`
+ * if it should stay quiet for its whole life.
+ *
+ * Speak only when at least as much waiting would remain as has already passed: under a budget of
+ * ~6s or less the line would land a blink before the failure it precedes and be pure noise.
+ *
+ * ONE GUARD, DEFINED ONCE, and `M182a` is why this is a function rather than an expression. That
+ * milestone exported `SPECULATIVE_DIAGNOSIS_MS` above citing `D489` — two hand-maintained numbers
+ * that nothing compares — and then wrote the *guard* out twice, here and in `execWaitUntilApi`,
+ * character for character apart from the budget's name. That is `D489`'s shape one level up,
+ * introduced by the milestone that quoted it. The two waits speak on one rule or they are two
+ * rules, and the second one drifts silently.
+ *
+ * It is also the seam the tests needed. `D937`'s consequence — a 5s budget can never produce a
+ * line, because `5000 > 6000` is false — was asserted end to end by running a wait for five real
+ * seconds and observing nothing. Asserting an absence is what that test cost the mutation sweep:
+ * the suite is re-run once per mutation, so five seconds there is five seconds times every runtime
+ * mutation. The boundary is a pure function of two numbers and is tested as one. */
+export function speculativeSpeakAt(startedAt: number, budgetMs: number): number | undefined {
+  return budgetMs > SPECULATIVE_DIAGNOSIS_MS * 2 ? startedAt + SPECULATIVE_DIAGNOSIS_MS : undefined;
+}
 
 function candidateStrategies(scope: LocatorScope, kind: LocatorKind, name: string): { readonly pwLocator: PWLocator; readonly via: string }[] {
   switch (kind) {
@@ -707,7 +733,7 @@ export async function resolveLocator(scope: LocatorScope, locatorAst: LocatorAst
   // timeout of 3 s or so the line would land a blink before the failure it precedes and be pure
   // noise. `M119`'s guard is untouched: this is progress, and the diagnosis still fires exactly
   // once, at the end, on the step's final failure.
-  const speakAt = timeoutMs > SPECULATIVE_DIAGNOSIS_MS * 2 ? startedAt + SPECULATIVE_DIAGNOSIS_MS : undefined;
+  const speakAt = speculativeSpeakAt(startedAt, timeoutMs);
   let spoken = false;
   for (;;) {
     for (const attempt of attempts) {
