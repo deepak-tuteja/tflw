@@ -62,18 +62,29 @@ test, so it is just `let savedId = {orderId}` with a second name.
 Two generator families with opposite guarantees — see the
 [full generator reference](/reference/generators) for every form:
 
-- **`unique(...)`** (and `unique email`/`unique like "..."`/`unique uuid`) guarantees a
-  collision-free value across the whole run, including retries — its counter keeps advancing on
-  every retry attempt of the *same* test, by design, so a retried attempt never collides with data
-  the failed attempt already created. That also means it **cannot** reproduce a value an earlier
-  attempt used.
+- **`unique(...)`** (and `unique email`/`unique number`/`unique like "..."`/`unique uuid`)
+  guarantees a collision-free value across the whole run, including retries — its counter keeps
+  advancing on every retry attempt of the *same* test, by design, so a retried attempt never
+  collides with data the failed attempt already created. That also means it **cannot** reproduce a
+  value an earlier attempt used. It is also collision-free **between runs**: every value carries a
+  run namespace taken from the run clock, so a second run against a database the first one wrote to
+  does not re-issue the first run's values. (`unique like` is the one exception, and only across
+  runs: its namespace permutes the pattern's value space rather than widening it, so two runs
+  drawing from a narrow pattern can still land on a shared code.)
 - **`random`** produces reproducible-under-`--seed` values for anything else. All `random` values
   derive from one run seed with per-test sub-seeds; all `today`/`now`-derived values derive from
   one run clock (the real instant, or `--now <iso>` to pin it). Anything a retry needs to reuse
   identically across its own attempts must come from `random`, never `unique`.
 
+**One sentence each, and they are opposites:** `random` moves with `--seed` and not with the run
+clock; `unique` moves with `--now` and not with the seed. That is what tells `unique like` and
+`random like` apart — they share a pattern language and differ in nothing else.
+
 `tflw run --seed <s> --now <iso>` together reproduce a run's exact absolute generated values —
-every generated value is shown inline at its step in the report (`qty = 100 (random)`).
+every generated value is shown inline at its step in the report (`qty = 100 (random)`). Pinning
+`--now` pins the run namespace too, so two runs pinned to the same instant draw the same `unique`
+values on purpose: against a live database that outlives the run, pin the seed and leave the clock
+alone.
 
 ## Expressions
 

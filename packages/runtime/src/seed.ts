@@ -28,6 +28,10 @@ export const SEED_DOMAIN = {
   test: 0,
   /** `unique uuid`'s local shape RNG, keyed by the run-wide `unique` counter. */
   uniqueUuid: 0x753d,
+  /** `unique like`'s per-pattern permutation, keyed by the run namespace (`D930`, `M181a`). A third
+   * space again: the index handed in there is a *run identity*, not a test index and not a counter,
+   * and `D815` exists precisely so that a new caller declares its space instead of borrowing one. */
+  uniqueLike: 0x4c9b,
 } as const;
 
 /** Per-test sub-seed derived from the run seed + test index, so parallel/worker order never
@@ -69,4 +73,45 @@ export function hashString(s: string): number {
     h = Math.imul(h, 0x01000193);
   }
   return h >>> 0;
+}
+
+/** Width of the run namespace (`D929`, `M181a`) — 30 bits, and the number is set by the narrowest
+ * member rather than by the widest. `unique uuid` carries the namespace in the four bytes that
+ * begin at the variant nibble, and the variant claims two of those 32 bits; `unique number` carries
+ * it in a JavaScript safe integer, whose remaining 23 bits are that generator's per-run capacity.
+ * One width for the whole family is what lets SPEC §7.2 state one cross-run promise instead of
+ * five. */
+export const RUN_NAMESPACE_BITS = 30;
+const RUN_NAMESPACE_MODULUS = 2 ** RUN_NAMESPACE_BITS;
+
+/** The run namespace (`D929`) — the identity of *this invocation*, mixed into every `unique` value
+ * so a second run against a database the first run already wrote to does not re-issue the first
+ * run's values. `M162-01`: thirteen API tests degraded on a second run against one live stack, and
+ * twelve of the thirteen were one column, because `user<counter>@example.test` restarts at `user0`
+ * on every `tflw run` while `user.email` outlives the run.
+ *
+ * It comes from the run **clock**, and never from the run seed. `--seed` means *replay the RNG*,
+ * and the whole contract of the `unique` family is that it never consults the RNG at all
+ * (`M154g-07`, and the `C81`/`C82`/`C113` clauses that define `unique` *by* its seed-independence):
+ * keying this off the seed would make `--seed N` re-issue the same emails on every run, which is
+ * the defect measured above wearing a flag. `--now` is already the documented way to pin the clock
+ * (§7.4), so an exactly-reproducible run stays available through the flag that already means it.
+ *
+ * Truncated to `RUN_NAMESPACE_BITS`, so two runs share a namespace only when their clocks differ by
+ * an exact multiple of 2^30 ms (12.4 days) — a statement about clocks, not a probability. Total by
+ * construction: an invalid `--now` is the CLI's usage error to refuse (`resolveRunClock`'s stated
+ * contract), and a `NaN` here would not fail anywhere a reader would look — it would render the
+ * literal text `NaN` into every generated value and go on passing. */
+export function resolveRunNamespace(runClock: Date): number {
+  const ms = runClock.getTime();
+  if (!Number.isFinite(ms)) return 0;
+  return (((ms % RUN_NAMESPACE_MODULUS) + RUN_NAMESPACE_MODULUS) % RUN_NAMESPACE_MODULUS) >>> 0;
+}
+
+/** The run namespace as it appears inside a generated *string* — fixed-width base36, so
+ * `user-<token>-<counter>` is injective in `(namespace, counter)` by construction rather than by a
+ * separator convention that a future prefix could contain. Six digits is exactly what 30 bits needs
+ * (36^5 < 2^30 < 36^6), and the width is padded rather than natural so it never varies. */
+export function runNamespaceToken(namespace: number): string {
+  return namespace.toString(36).padStart(6, '0');
 }

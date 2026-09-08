@@ -1854,12 +1854,27 @@ keyword that ends the enclosing expression. Write `random password 8` or `random
 ### 7.2 `unique` — collision-safe identity data (P#19, P#21)
 
 `unique("prefix")`, `unique email`, `unique number`, `unique like "ORD-######"`, `unique uuid`.
-Guaranteed distinct across tests/workers within a run (run/worker-seeded). Use for anything with
-a uniqueness constraint.
+Guaranteed distinct across tests, workers and retries within a run, **and across separate runs**.
+Use for anything with a uniqueness constraint.
 
-`unique uuid` is v4-shaped, but its trailing 8 hex digits are the run-wide counter itself (the
-same guarantee mechanism `unique("prefix")` gets from literal string concatenation), so
-distinctness is a true guarantee, not v4's usual low collision probability. There is deliberately
+**Two axes, one sentence each (`D931`, M181).** `random` moves with `--seed` and not with the run
+clock; `unique` moves with `--now` and not with the seed. Every value in this family carries a **run
+namespace** derived from the run clock (§7.4) beside the run-wide counter — the counter separates
+draws inside a run, the namespace separates one run from the next.
+
+That second half is new in M181 and it repairs a contradiction this section used to contain. It
+promised distinctness "across tests/workers within a run" and, two lines below, prescribed the
+family for *anything with a uniqueness constraint* — and a uniqueness constraint in a database
+outlives the run. Thirteen API tests in tflw's own dogfood suite degraded on the second `tflw run`
+against one live stack for exactly that reason, twelve of them on one column, because
+`user<counter>@example.test` restarted at `user0` every run while `user.email` did not
+(`M162-01`). A scope sentence and a usage prescription that disagree are a defect in the promise,
+not in the tests that believed it.
+
+`unique uuid` is v4-shaped, but its last 8 bytes are not random: bytes 12-15 (the trailing 8 hex
+digits) are the run-wide counter and bytes 8-11 are the run namespace, so distinctness on both axes
+is a true guarantee rather than v4's usual low collision probability — the same mechanism
+`unique("prefix")` gets from literal string concatenation. There is deliberately
 no `unique password` — passwords carry no real-world uniqueness constraint the way email/order-id
 do (M18); see `random password` (§7.3).
 
@@ -1870,17 +1885,28 @@ the counter's, not the pattern's collision probability. The values are scattered
 **not unpredictable** — they are an arithmetic progression through the space, so two of them
 determine the rest. Nothing should treat one as a secret; `unique` promises collision-safety.
 
-That permutation is keyed by the **pattern only**, so like the rest of this section `unique like` is
-a pure function of the counter: the same pattern yields the same codes in the same order on every
-run, under every `--seed` and every `--now`. That is the opposite of `random like` (§7.3), which
-shares the pattern language and moves with the seed — the two constructs are told apart by exactly
-this, and not by their shape.
+That permutation is keyed by the **pattern and the run namespace** (`D930`), and by nothing else —
+never by the seed. Within a run `unique like` is a pure function of the counter, and between runs it walks the
+same value space in a different order. That is the opposite of `random like` (§7.3), which shares the
+pattern language and moves with the seed instead: the two constructs are told apart by which axis
+each one moves on, not by their shape.
+
+**`unique like` is the one member whose cross-run distinctness is probabilistic (`D932`).** A
+permutation of a finite space cannot promise more: two runs each drawing a few hundred codes from a
+10^6-capacity pattern can land on a shared one. Distinctness *within* a run stays a true guarantee,
+because within a run it is one bijection. The other four members carry a true guarantee on both axes.
+Widen the pattern where that matters, or reach for `unique("prefix")`/`unique uuid`, which have no
+capacity at all.
 
 A pattern has a finite capacity as a result — 10^6 for the six digits above — and the counter it
 spends is shared with every other `unique` generator in the run (§7.5). A run that exhausts a pattern
 **fails, naming both numbers**. It never wraps: a wrapped value is a repeat, and a repeat under a
 guarantee of distinctness is worse than a stopped run. Widen the pattern, or use `random like` (§7.3)
 where collisions are acceptable.
+
+**`unique number` has a capacity too, for the same kind of reason** — the run namespace takes 30 of a
+safe integer's 53 bits, leaving 2^23 (8,388,608) draws in one run. Reachable only by a load run, and
+refused the same way rather than wrapped past the point where two counters round onto one value.
 
 **Under `retry` (§4.4):** `unique(...)`'s run-wide counter keeps advancing on every retry attempt
 of the *same* test — by design, so a retried attempt never collides with data the failed attempt
@@ -1951,11 +1977,11 @@ the same anchor (`today - 10 days` against `today`) are ordered without a clock,
 <!-- GENERATED:generators:start -->
 | Family | Generator | Notes | Example |
 |---|---|---|---|
-| unique | `unique("prefix")` | collision-safe across tests/workers/retries | `unique("Widget")` |
-| unique | `unique email` | collision-safe across tests/workers/retries | `unique email` |
-| unique | `unique number` | collision-safe across tests/workers/retries | `unique number` |
-| unique | `unique like "ORD-######"` | `#` = digit, `?` = letter; the run-wide counter is rendered into the placeholders, so distinctness is guaranteed, not probabilistic — a pattern too narrow to encode the counter is refused rather than allowed to repeat | `unique like "ORD-######"` |
-| unique | `unique uuid` | v4-shaped; trailing digits are the run-wide counter, so distinctness is guaranteed, not probabilistic | `unique uuid` |
+| unique | `unique("prefix")` | collision-safe across tests/workers/retries and across runs — every value carries a run namespace taken from the run clock (`--now` pins it; `--seed` never moves it) | `unique("Widget")` |
+| unique | `unique email` | collision-safe across tests/workers/retries and across runs — every value carries a run namespace taken from the run clock (`--now` pins it; `--seed` never moves it) | `unique email` |
+| unique | `unique number` | collision-safe across tests/workers/retries and across runs — every value carries a run namespace taken from the run clock (`--now` pins it; `--seed` never moves it); 2^23 draws per run, refused rather than wrapped past a safe integer | `unique number` |
+| unique | `unique like "ORD-######"` | `#` = digit, `?` = letter; the run-wide counter is rendered into the placeholders through a permutation keyed by the pattern and the run namespace, so distinctness within a run is guaranteed and across runs is probabilistic (bounded by the pattern) — a pattern too narrow to encode the counter is refused rather than allowed to repeat | `unique like "ORD-######"` |
+| unique | `unique uuid` | v4-shaped; the trailing digits are the run-wide counter and the four bytes before them are the run namespace, so distinctness within and across runs is guaranteed, not probabilistic | `unique uuid` |
 | random | `random number A to B` / `random decimal A to B` | seed-reproducible; a reversed range is refused — at check time when both bounds are literal, at run time otherwise | `random number 1 to 100` |
 | random | `random date in past` / `in future` / `between A and B` | seed- and run-clock-reproducible (`--seed`/`--now`); `between` refuses a reversed range, and a bound that is not a date | `random date in past` |
 | random | `random of "a", "b", ...` | seed-reproducible pick from an inline list | `random of "red", "blue", "green"` |
@@ -1977,6 +2003,10 @@ Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/la
   doesn't shift values).
 - All `today`/`now`-derived values (`today`, `now`, `random date in past`/`in future`) derive from
   **one run clock** — the real current instant, or `--now <iso>` to pin it exactly (P#52).
+- The **run namespace** every `unique` value carries (§7.2, `D929`) derives from that same run
+  clock, and from nothing else. It is one namespace per run across every worker: the CLI resolves
+  the clock once and hands the same instant to each forked load shard, which is what keeps
+  `unique like`'s permutation one bijection rather than one per process.
 - Seed and run clock are both stamped in the CLI summary, report.html header, and junit
   properties.
 - `tflw run --seed <s>` alone reproduces *which* relative values a run draws — the same choice
@@ -1988,9 +2018,20 @@ Generated from `packages/lang/src/spec-data.ts` by `npm run docs:gen -w @tflw/la
   alone, since neither endpoint touches the run clock.
 - Every generated value is shown inline at its step in the report: `qty = 100 (random)`.
 
-`unique(…)` values are deliberately **not** seed-reproducible (their run-wide counter keeps
-advancing so a retry can't collide — §4.4). Generators used *inside* a `session` block reproduce
-identically under any `--parallel N` (§3.3, P#53), same as everywhere else.
+`unique(…)` values are deliberately **not** seed-reproducible — the family never consults the RNG at
+all, and its run-wide counter keeps advancing so a retry can't collide (§4.4). The axis they *do*
+move on is `--now`, and it is worth being exact about what that buys and what it costs:
+
+- **It fixes the run namespace, not the whole value.** Which draw gets which counter still depends on
+  execution order, and concurrency reshuffles that between runs — the counter is spent in the order
+  steps actually run (§7.5). So `--now` reproduces the *space* a run draws from, not a transcript.
+- **Two runs pinned to the same `--now` share a namespace, and can therefore collide with each
+  other.** That is not a leak in the guarantee, it is the guarantee read back: pinning the clock is
+  how you ask for the same run twice, and the same run twice is the same values twice. Against a
+  live database that outlives the run, pin `--seed` and leave `--now` alone.
+
+Generators used *inside* a `session` block reproduce identically under any `--parallel N` (§3.3,
+P#53), same as everywhere else.
 
 ### 7.5 Expressions (P#25)
 

@@ -608,6 +608,52 @@ endpoint its finding names. All were found by *running* a repro or a crawl, not 
   nothing would have gone red. Additive, so the contract version stays 1 and a consumer written
   against version 1 is unaffected.
 
+### Fixed — `unique` is scoped to a run, and the constraint it feeds is not (M181)
+
+**`unique` restarted at zero on every `tflw run`, against columns that outlive the run.** SPEC §7.2
+promised distinctness *"across tests/workers within a run"* and, two lines below, prescribed the
+family for *anything with a uniqueness constraint* — and a uniqueness constraint in a database
+outlives the run. Measured on the dogfood suite against one live stack, three consecutive runs with
+no restart between them: **323 pass, then 5 failures, then 8**. Twelve of the thirteen failing steps
+were one column — `POST /auth/register`, *email already registered*, on `user17@example.test`,
+`user33@…`, `user160@…` — because `unique email` renders `user<counter>@example.test` from a counter
+that begins again at `0` each invocation. A scope sentence and a usage prescription that disagree
+are a defect in the promise, not in the tests that believed it.
+
+Every `unique` value now carries a **run namespace** beside the run-wide counter: the counter
+separates draws inside a run, the namespace separates one run from the next.
+
+- **The namespace comes from the run clock, never the run seed** (`D929`). `--seed` means *replay
+  the RNG*, and this family's whole contract is that it never consults the RNG — keying it off the
+  seed would make `--seed N` re-issue the same emails on every run, which is the measured defect
+  wearing a flag. `--now` is already the documented way to pin the clock.
+- **The promise gains an axis rather than a caveat** (`D931`): **`random` moves with `--seed` and
+  not with the clock; `unique` moves with `--now` and not with the seed.** That is now the
+  discriminator between `unique like` and `random like`, which share a pattern language and were
+  previously told apart on one axis alone.
+- **`unique like` says it is probabilistic across runs, because it is** (`D932`). Its namespace
+  permutes the pattern's value space rather than offsetting into it — so capacity, bijectivity and
+  the too-narrow-pattern refusal are all untouched — but a permutation of a finite space cannot
+  promise cross-run distinctness. Within a run it is still one bijection and still a guarantee. The
+  other four members guarantee both axes.
+- **`unique uuid`'s namespace lands in the half that carries the guarantee** (`D930`), bytes 8-11,
+  beside the counter in bytes 12-15. It had been named the family's escape hatch for cross-run
+  distinctness and was not one: its trailing digits were the counter, identical on the next run, and
+  the only bytes that differed between runs were the shape half its own docstring says carry no part
+  of the guarantee — bytes that are byte-identical run to run under `--seed N`.
+
+**Value shapes changed.** `unique("Widget")` now renders `Widget-<token>-<n>`, `unique email`
+renders `user-<token>-<n>@example.test`, `unique number` returns a large integer whose high 30 bits
+are the namespace, and `unique uuid` fills bytes 8-11 from it. `unique like` renders exactly as
+before — same pattern, same capacity, same digits — it just walks the space in a different order in
+the next run. Recorded because it is real, not because a migration is needed: tflw is unpublished
+and has no users outside this repository and its dogfood sibling.
+
+**`unique number` gains a ceiling** — 2^23 draws in one run, the bits the namespace leaves in a
+JavaScript safe integer. It is refused, naming both numbers, rather than wrapped past the point
+where two counters round onto one value: `unique like`'s rule, for `unique like`'s reason. Only a
+load run can reach it, and the message names the two members that have no ceiling at all.
+
 ### Fixed — one string form for a value, and `unique` across processes (M161)
 
 **`unique` was not distinct across forked load workers**, which `SPEC` §7.2 promises in as many
