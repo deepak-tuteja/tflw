@@ -547,6 +547,70 @@ function isCommentOnly(lines, i) {
 }
 
 /**
+ * A plan's build-state paragraph — the `**Status:**` line and whatever is wrapped onto it.
+ *
+ * `D-M183-1`: **build state is not a decision**, so it does not belong in the published index. The
+ * paragraph is volatile by construction — a milestone stamps `BUILT` → `COMPLETE` on the day it
+ * merges, and the sentence often wants merge commits that do not exist until after the merge — so
+ * lifting it makes every milestone's last act a regeneration, a push and a full CI run whose entire
+ * content is one paragraph. Three milestones paid it in a row: `M179` as tflw `#186`, `M180` as
+ * `#188`, `M182` as `#191` (2 insertions, 1 deletion, one file, 27 checks).
+ *
+ * `mac-dashboard` arrived at the same rule independently and for a different reason — build state
+ * is stated **once**, in `PLAN.md` §7, because four places once stated it and no two agreed.
+ *
+ * The plan's *stage table*, where the merge commits and the per-stage `merged as #N` states
+ * actually live, was never extracted (`M180-03` measured this). So the boundary this moves is the
+ * one the plans' own structure already draws; it just had one paragraph on the wrong side of it.
+ */
+const BOOKKEEPING = [
+  // Build state. Volatile by construction: a milestone stamps `BUILT` -> `COMPLETE` on the day it
+  // merges.
+  'Status',
+  // Merge bookkeeping. Strictly worse than `Status`, because the sentence *wants* merge commits and
+  // those do not exist until after the merge — so it cannot be written correctly before the event
+  // that invalidates the index.
+  'Merged',
+  // A `D`-number reservation. `PLAN_M171`'s own paragraph ends **"Re-derive it at build time and do
+  // not trust this line"**, and publishing an instruction not to trust the thing it is printed in
+  // is the clearest case in the corpus.
+  'Numbering',
+];
+
+/**
+ * A plan's leading bookkeeping paragraph — build state, merge record, or a numbering reservation.
+ *
+ * `D-M183-1`: **build state is not a decision**, so it does not belong in the published index. The
+ * paragraph is volatile by construction, so lifting it makes every milestone's last act a
+ * regeneration, a push and a full CI run whose entire content is one paragraph. Three milestones
+ * paid it in a row: `M179` as tflw `#186`, `M180` as `#188`, `M182` as `#191` (2 insertions, 1
+ * deletion, one file, 27 checks).
+ *
+ * `mac-dashboard` arrived at the same rule independently and for a different reason — build state
+ * is stated **once**, in `PLAN.md` §7, because four places once stated it and no two agreed.
+ *
+ * The plan's *stage table*, where the merge commits and the per-stage `merged as #N` states
+ * actually live, was never extracted (`M180-03` measured this). So the boundary this moves is the
+ * one the plans' own structure already draws; it just had three paragraphs on the wrong side of it.
+ *
+ * **The set is closed and declared, and it fails open.** A label that is not on it is left alone
+ * and published exactly as it is today, which is the conservative direction: the cost of missing
+ * one is a pull request this milestone already prices, and the cost of over-matching is a milestone
+ * with no statement in the index at all. It was derived by reading every plan's leading paragraphs
+ * rather than by guessing — of 26 plans whose entry led with `Status`, exactly one had a second
+ * labelled paragraph, and it was `Numbering`.
+ */
+function isBookkeepingBlock(lines, i) {
+  // The FIRST WORD inside the opening bold span, not the whole span. `**Status:**` is the whole
+  // span and `**Merged 2026-09-08**` is not — it carries the date inside the emphasis — so a rule
+  // written against the whole span matched two of the three labels and silently left the worst one
+  // published. Found by regenerating and reading the output rather than by reasoning about the
+  // regex, which is this repository's own standing rule about verifying the artifact.
+  const m = /^\s*\*\*([A-Za-z]+)/.exec(lines[i] ?? '');
+  return m !== null && BOOKKEEPING.includes(m[1]);
+}
+
+/**
  * A top-level list marker. Indented markers are continuations of the item above and are matched by
  * the indent rule instead, so this is deliberately anchored at column zero.
  */
@@ -678,6 +742,20 @@ export function extractBlock(text, anchor) {
     let i = start + 1;
     while (i < lines.length && (lines[i].trim() === '' || isCommentOnly(lines, i))) {
       i = lines[i].trim() === '' ? i + 1 : takeBlock(lines, i);
+    }
+    // `D-M183-1`. Step over the build-state paragraph the same way a comment-only one is stepped
+    // over, and for the same reason: it is a paragraph by every blank-line rule and it is not what
+    // anybody asked this file for.
+    //
+    // ONE paragraph, and only when something publishable follows. The fallback is not defensive
+    // padding — a plan whose statement is a rule, a section heading or the end of the file would
+    // otherwise publish `---` as its entry, and an entry that publishes its build state is worse
+    // than nothing only while a statement exists to replace it. Where none does, the old behaviour
+    // is the honest one and the plan is the thing to fix (`D669`).
+    while (isBookkeepingBlock(lines, i)) {
+      const after = skipBlank(lines, takeBlock(lines, i));
+      if (after >= lines.length || /^\s*(?:#{1,6}\s|(?:-{3,}|\*{3,}|_{3,})\s*$)/.test(lines[after])) break;
+      i = after;
     }
     const j = takeStatement(lines, i);
     // The heading line is demoted to bold: the identifier is already this entry's own heading, and

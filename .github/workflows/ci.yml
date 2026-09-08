@@ -598,6 +598,20 @@ jobs:
           name: mutation-shard-${{ matrix.shard }}
           path: shard-${{ matrix.shard }}.json
           if-no-files-found: error
+          # `D-M183-7`. The default is the repository's 90 days — measured, not assumed: a live
+          # artifact's `expires_at - created_at` is 89.98 days. This job uploads 24 manifests per
+          # run and the account held **5979** of them on 2026-09-09, growing without a bound that
+          # anything watches.
+          #
+          # The aggregator below downloads them **within the same run**, so retention buys exactly
+          # one thing: a human reading a shard's manifest after the fact. Nobody has ever read a
+          # twelve-week-old one. Fourteen days outlasts any forensic use this repository has
+          # actually had — the longest was `M182e`'s re-shard investigation, which read manifests
+          # from two runs the same day — and cuts the steady-state population by ~85%.
+          #
+          # Deliberately NOT applied to the coverage report, which is one artifact per run rather
+          # than 24 and is the input to a trend nobody has built yet.
+          retention-days: 14
 
   # ---------------------------------------------------------------------------
   # M127 — the job that says the shards added up, and the only one entitled to.

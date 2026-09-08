@@ -9758,10 +9758,10 @@ and only `threshold p95 duration is less than 100000ms`. One line to add.
 
 **M90 — `tflw migrate` becomes a tool that does something · 2026-08-05**
 
-**Status: ✅ done.** Cluster **C8 closed** — `PLAN_M90_MIGRATION.md` complete as scoped. Shipped as
-three commits in a load-bearing order: **M90a** (CLI) → **M90b** (`lang`) → **M90c** (surfaces).
-Reversing it would have made every deprecation diagnostic print *"run `tflw migrate`"* while migrate
-still emitted nothing.
+The cluster's premise was that the migration story does not exist: `migrate` shipped in `--help`,
+SPEC §12 and `reference/cli.md` as a working command, exited 2 with zero output, and structurally
+could not act because no rule populated the field it splices. Probing it before writing code moved
+the cluster in both directions at once.
 
 ### M91
 
@@ -9769,9 +9769,12 @@ still emitted nothing.
 
 **M91 — the tests that counted without proving · 2026-08-05**
 
-**Status: ✅ done.** Cluster **C14 closed** — `PLAN_M91_TEST_TRUTH.md` complete as scoped, plus two
-of its own decisions corrected by probing. Shipped as three commits: **M91a** (`075eee4`) →
-**M91b** (`60441a5`) → **M91c** (`cf3513b`), branch `m91-test-truth`.
+C14's rows came out of the review method's own column — *every S1/S2 names the test that should
+have caught it and why it didn't* — and kept returning the same shape: a green, well-named test
+that did not check what its name claimed. Probing found the shape one level deeper. **The oversell
+was not only in the titles; it was in the code they pointed at.** Three of the four surviving rows
+described one object: `runLoad`, a function nothing shipped, returning a report shape no artifact
+carried, proved by 46 tests and 15 assertions.
 
 ### M92
 
@@ -10694,12 +10697,8 @@ description of the work turned out to be incomplete.
 
 **M138 — `CONTRIBUTING.md`: giving the gate set a home**
 
-**Status: PLAN, grilled 2026-08-18.** Supersedes the 2026-08-16 SEED that occupied this path. The
-seed's own §5 said its seven open questions *"must be settled before any file is written"* — they are
-settled below, in §5, each with the measurement that decided it. The seed's §2 measurement has been
-**re-taken against both repos' current `ci.yml`, and it had gone stale in five days** (§2.4). That is
-not an aside; it is the milestone's central evidence, and it changed the answer to §5's first
-question.
+Closes one ledger row: **`M136a-02` (S4, open)** — *the gate set a contributor must run before
+pushing is written down nowhere, and this repo has no `CONTRIBUTING.md` at all.*
 
 ### M138b
 
@@ -10739,9 +10738,10 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 **M141 — two answers to one question (Order 1 of the ledger drawdown)**
 
-**Status: GRILLED 2026-08-19.** Supersedes the same-day seed, which is preserved only where it was
-right. Decisions **D531–D546**. Highest existing before this file was `D530`
-(`PLAN_M140_REVERIFICATION.md`).
+**The rows:** `M115-03` · `M128-04` · `M137a-01` · `M128-03` · `M138b-01`
+**The brief:** `PLAN_LEDGER_DRAWDOWN.md` §3, Order 1 — *"a check that runs, passes, and is
+structurally incapable of seeing what it claims."*
+**The grilling's first result:** that description is a symptom, not the mechanism. See `D531`.
 
 ### M142
 
@@ -10749,8 +10749,7 @@ right. Decisions **D531–D546**. Highest existing before this file was `D530`
 
 **M142 — one parser-derived vocabulary guard (Order 3)**
 
-**Status: GRILLED 2026-08-19.** Decisions `D550`–`D559`. Supersedes the seed of the same name.
-Order 3 of the ledger drawdown.
+<!-- plan:closes M136b-01, B5-08, B5-09, B5-10 -->
 
 ### M143
 
@@ -10758,7 +10757,8 @@ Order 3 of the ledger drawdown.
 
 **`M143` — the sweep stops re-downloading Ubuntu, and starts saying how long it took**
 
-**Status: `M143a` `70e163c` (PR #86) · `M143b` `ceb8792` (PR #87) · `M143c` `794c3c8` (tflw-tests PR #28) all MERGED 2026-08-19, each green first attempt. `M142`/#85 merged between them as `46e9497`. `M143d` `67e5b26` pushed onto tflw-tests PR #27, in CI. Both cluster rows closed: `M115-02` and `M137g-03`. Nine further rows filed, five closed; the four still open are `M143-01`, `M143-02`, `M143-06` and — until `M145` — `M143-07` and `M143-08`, listed in §10 and §11.** Those ids used to be omitted from this header on purpose: `planClaims` read every backticked id in the first twelve lines as a row the plan CLOSES (`M143-08`). `M145` fixed the guard, and the `plan:closes` marker below is now the claim, so the header can say what was filed. <!-- plan:closes M115-02, M137g-03 --> Decisions `D560`–`D591`. Supersedes the seed of the same name.
+Order 2 of the ledger drawdown. Rows: **`M115-02`** (S3) · **`M137g-03`** (S4). `M107-02` left the
+cluster (`M140` closed it; `M126` had deleted its class).
 
 ### M143a
 
@@ -10823,9 +10823,10 @@ have derived from is gitignored.
 
 **M146 — report honesty (Order 5 of the ledger drawdown)**
 
-**Status: GRILLED 2026-08-20, three scope calls ruled by the user the same day (§0).** Supersedes the seed of the same name, kept where it was right.
-Decisions **D612–D621**; highest before this file was `D611` (`PLAN_M145_INSTRUMENT_PRECISION.md`).
-**Two decoupled milestones**, `M146a` and `M146b`, each branching off `main` (`D541`).
+The seed named six rows and argued the real membership was four. The grilling agrees on the number
+and disagrees about almost everything else: three of the four turned out to be in different files,
+at different costs, and with different fix shapes than the seed's measurement implied, and the
+milestone's expensive half is not the one the seed predicted.
 
 ### M147
 
@@ -11203,14 +11204,9 @@ The diagnostics family is rostered **by rule**, not by rows (`D751`/`D763`): `C5
 
 **PLAN_M157 — teardown under load: delete the `cleanup` gate, fix the metric it was protecting**
 
-**Status:** **`M157a`–`M157f` all built 2026-08-29.** tflw: `M157a` in PR 138 (merged, isolated as
-§4 requires), `M157b`–`M157e` in PR 139. `testFlow-tests`: `M157f` in its own PR, merging second
-under `D511`. Suite green on the box at **3766 tests**; sibling gate green at **102 plants**,
-roster 178/178, ratchet 0/0. One follow-up remains and is named in §4b: a third tflw commit
-re-pinning `sibling-citations.json`, which is what publishes `D789`.
-Closes `M154e-01`; files `M157-01`. **Breaking** (removes a keyword, changes reported percentiles).
-**Ledger row:** `M154e-01` (S3), reframed. **Decisions:** `D781`–`D789`. **No new diagnostic** —
-`TF079` was scoped and dropped, see `M157c`. Gitignored by `.gitignore:35`.
+    for f in PLAN_*.md; do grep -oE '^#+ *.{0,3}D[0-9]{3}' "$f" | grep -oE 'D[0-9]{3}' \
+      | sort -u | sed "s|^|$f |"; done | sort -k2 | awk '{c[$2]=c[$2]" "$1} END \
+      {for (k in c) {n=split(c[k],a," "); if (n>1) print "DUP", k, c[k]}}'
 
 ### M157a
 
@@ -11270,14 +11266,13 @@ Reopened from `M155d`'s branch, two days after `M157f` closed, because
 
 **`M158` — the docs-site guard learns what the language is**
 
-**Status:** **BUILT 2026-08-30** — `M158a`–`M158d` complete, suite 3771 green on the build box,
-all six record gates green. Build log in §4b. Two of this plan's own decisions were corrected by
-measuring them (`D792`, `D794`); one number was minted outside the reserved block (`D837`).
-Originally scoped 2026-08-29. **Not breaking** — no grammar, no runtime, no
-diagnostic. Guard and comment changes only.
-**Closes:** `M154-01` (S3), `M153a-01` (S4). **Disposes without closing:** `M149f-01` (S4),
-`M153a-02` (S4) — both are `D622` conditions awaiting evidence that has not arrived (§5).
-**Numbering:** takes `D790`–`D796`, **and `D837`**. Mints no `TF` code (`TF079` stays free).
+`D797` is `M159`'s and was never free for this plan to spend, so the one decision the build needed
+and the scope did not foresee took the arc's high-water mark instead. Re-computed before minting,
+with the collision check `M160-01` exists for — `D768`–`D836` contiguous across every `PLAN_*.md`
+and `DECISIONS.md`, no duplicates — so **`D837`**, and the next free number is now `D838`. The
+header line *"Next free after this plan: `D797`"* was true of the arc's reservation scheme and false
+as a statement about the repository, which is `M160-01`'s exact shape one plan later.
+Gitignored by `.gitignore:35`.
 
 ### M159
 
@@ -11285,10 +11280,21 @@ diagnostic. Guard and comment changes only.
 
 **`M159` — native dialogs: the whole surface, and something to assert about each kind**
 
-**Status:** **`M159a`–`M159d` built 2026-08-30**; `M159e` absorbed into `M159b`, `M159f` open. **Additive** — three
-constructs, no removals. Changes the behaviour of a program that arms two dialogs, which today is
-silently wrong. `M159e`'s per-kind table was written inside `M159b`, because `D799`'s prose needs it
-to make sense; it is not a separate step any more.
+**One correction to this plan's own numbering, and it is not the usual direction.** `D801` and
+`D802` both specify a **runtime warning**, and no such thing existed: every one of the 66 `TF` codes
+before `TF080` is decided by `tflw check`, `DiagnosticProbe` knows exactly one way to provoke one
+(compile source, read the message back), and `TestResult` had no field to carry a non-fatal notice.
+The four runtime-detected warnings that already ship — `backOff.warning`, `insecure`,
+`inconclusive`, the unmasked-secret band — are each a bespoke field with no code. So `M159c` builds
+the channel, and the diagnostic manifest gains a `runtime` evidence kind for rows no probe can
+reach. See §3a.
+**Closes:** `M154b-02` (S3), `M154b-01` (S4). **Fixes two gaps found while scoping and not
+previously filed** (§2.3, §2.4) — recorded here rather than as ledger rows, because they are fixed
+in the milestone that found them.
+**Numbering:** takes `D797`–`D806`. Next free after this plan: **`D807`** (`M160`). Mints **`TF079`**
+and **`TF080`** (next free `TF081`).
+Sibling work gated on `D511` (tflw merges first).
+Gitignored by `.gitignore:35`.
 
 ### M159b
 
@@ -11322,13 +11328,15 @@ extended, roster to 181, ratchet re-run.
 
 **`M160` — latency carries a float; rounding happens at render**
 
-**Status:** **`M160a`-`M160d` built 2026-08-29**, both repositories, `D511` order kept throughout
-(tflw PR 135 -> tflw PR 136 -> tflw-tests PR 61 -> this pair). Suite green on the box at 3752 tests.
-The sibling's perf baseline is re-founded from five run artifacts and now carries **all seven
-`p95Ratio` bands**, against four before — `dogfood-get-only`, `echo-get-only` and `echo-post-only`
-were suppressed on a quantum tflw no longer has. **Not breaking** to any `.tflw` program.
-**Changes every reported number** at low latency, and changes what `histogram.ts`'s own header is
-allowed to claim.
+Prediction 4 **holds**. Prediction 1 is **false in both clauses**, and the more useful of the two
+failures: the `echo-*` gap against k6 halved, from ~170% to +88.5%/+106.9%, but "below 20%" was never
+reachable by a rounding change — at 0.9 ms what the ladder measures is tflw's own per-iteration cost.
+Filed as **`M160-01`**: a plan's `Next free` line is a claim about the past, and this one was accurate
+when written and wrong when read. See the numbering note below.
+**Closes:** `M154f-13` (S3).
+**Numbering:** takes `D807`–`D811`, then `D834`–`D836` (all three added 2026-08-29 during `M160d`'s
+build; see `D811`'s amendment, `D835`'s account of what `D834` got wrong, and `D836`). Next free
+after this plan: **`D837`**. Mints no `TF` code.
 
 ### M160a
 
@@ -11380,13 +11388,13 @@ Gitignored by `.gitignore:35`.
 
 **`M162` — a test owns the state it asserts on**
 
-**Status:** **BUILT 2026-08-31** — `M162a`-`M162e`, merged as tflw PR #152 then
-tflw-tests PR #67 under `D511` (sibling `42ebbe1`). §8 is the measurement
-(`D818` discharged, its protocol amended in place, `M154g-06`'s unknown range turned into a
-threshold of **6**); §9 is the repair and its verification. `M154g-06` **closed**; `M154h-01`
-**partial** (`🟨`) — structural half shipped, flake not reproduced in 120 iterations and therefore
-not explained. Four rows filed: `M162-01`-`M162-04`. Acceptance clause 1 **amended, not met as
-written** — see §9.4.
+**`testFlow-tests` only** for code — no tflw change, no grammar, no diagnostic. **But the scoping
+line "no `D511` ordering" was wrong**, and the sibling's own gate said so: citing `D819`, `D822` and
+`M162` in sibling prose makes `verify:provenance` red until tflw's `sibling-citations.json` names
+them, so tflw merges first exactly as `D511` says. The rule is about *citations*, not only about
+code, and this plan assumed the narrower reading.
+**Closes:** `M154g-06` (S4). **Partial:** `M154h-01` (S3) — `🟨`, remainder tracked.
+<!-- plan:closes M154g-06 -->
 
 ### M162a
 
@@ -11419,10 +11427,17 @@ anything.
 
 **`M163` — a grader that runs in no automated pass is not a grader**
 
-**Status:** **BUILT AND MERGED 2026-08-31** — `M163a`-`M163e`, merged under `D511` as tflw PR #154 (the pin), then tflw-tests PR #68 (`aff8823`), then tflw PR #155 (the re-pin to `main`). §8 is the sizing (`D824`
-discharged: **no second tier needed**, and `M154f-01`'s cost premise was wrong); §9 is the repair and
-`D828`'s audit, which was supposed to return zero and returned **two**. `M154f-01` and `M154g-02`
-both **closed**. Two rows filed: `M163-01`, `M163-02`.
+**`testFlow-tests` only** for code — no tflw change, no grammar, no diagnostic. **The scoping line
+"no `D511` ordering" is wrong for the second milestone running**: sibling prose now cites `D823`,
+`D824` and `M163a`-`M163c`, and its own `verify:provenance` goes red until tflw's
+`sibling-citations.json` names them. `M162` measured this exact thing two days earlier and this
+header still said it — a scoping line copied forward faster than the correction it needed.
+**Closes:** `M154f-01` (S3), `M154g-02` (S3).
+<!-- plan:closes M154f-01, M154g-02 -->
+**Numbering:** takes `D823`–`D828`. Next free after this plan: **`D829`** — the line below said
+`D824`, which is inside this plan's own range and cannot be free; `M165` already holds `D829`, so
+the next genuinely free number is **`D834`**.
+Gitignored by `.gitignore:35`.
 
 ### M163a
 
@@ -11467,15 +11482,10 @@ line; restate the count; delete the no-op perturbation. Keep all 54 `find` patte
 
 **`M164` — the roster plants must be shown to discriminate**
 
-**Status:** **`M164a` BUILT AND MERGED 2026-08-31** (sibling PR #69, `db66248`). **`M164b` and
-`M164c` BUILT AND MERGED 2026-09-01** (§11, §12) — sibling PR #70 (`8cd1371`), with `D511`'s two
-stages as tflw PR #156 (`99b7a29`) and PR #157 (`0a555bf`). The census ran, and its reading is §12.
-**`M164d` is not built and will not be** (`D851`). **`M164e` BUILT 2026-09-01** (§14) — `D827` is
-discharged, with a measured answer of **one covered plant in 102**. Numbering runs `D838`-`D854`.
-**The milestone closes with six of seven acceptance clauses met and says which one is not**
-(`D853`). Named by `D827` inside `M163` and deliberately not taken there. **The sizing in §2 and the pilot in §3 were run before any decision below was written**
-— `M163a`'s habit (`D824`), and the reason three of this plan's decisions came out the opposite way
-from how they were going to be written.
+**`testFlow-tests` for the harness; tflw for its mutation registry, read-only.** Numbering takes
+**`D838`–`D854`** (scoped as `D838`-`D847`; `D848` came out of `M164b`, `D849`-`D852` out of
+`M164c` and `D853`-`D854` out of `M164e`). Mints no `TF` code. **Closes no existing ledger row** — `D827` is a decision, not
+a row, and this milestone discharges it. Expected to *file* rows, not close them.
 
 ### M164a
 
@@ -11552,13 +11562,11 @@ behavioural test that resolves a doubled declaration of each key and asserts whi
 
 **`M166` — `verify:ledger` must not accuse the ledger of a defect it could not have seen**
 
-**Status:** found and **BUILT 2026-09-02**, in one sitting, during the verification sweep that
-followed `M164`'s close. **Files two rows and closes one** — `M166-01` (the gate defect, closed by
-this milestone) and `M166-02` (**left open by `M166`, §8; since closed by `M167`, 2026-09-02, four
-files wider than it was written**). No existing row covers either.
-**Numbering:** takes `D855`–`D856` (verified unspent at HEAD: `DECISIONS.md`'s highest is `D854`,
-spent by `M164e`). Mints **no** `TF` code — this is a repo script, not the language.
-Gitignored by `.gitignore:35`.
+<!-- plan:closes -->
+> `plan:closes` is deliberately empty, for `M164`'s reason: `verify-ledger.mjs` reads a plan's first
+> twelve header lines as its close-claims, and `M166-01` is a row this milestone **files**. It closes
+> it in the same breath, but it does so by editing the row's own status cell, which is the form the
+> gate actually reads.
 
 ### M167
 
@@ -11566,12 +11574,9 @@ Gitignored by `.gitignore:35`.
 
 **`M167` — the size of the regression sweep is not stated in tracked prose, and now cannot be**
 
-**Status:** **BUILT 2026-09-02**, immediately after `M166`, as the fix for the row `M166` filed on
-its way past. **Closes one row** — `M166-02`. Files none.
-**Numbering:** takes `D857` (verified unspent at HEAD: `DECISIONS.md`'s highest is `D854`; `D855` and
-`D856` are `M166`'s and are cited only from tflw script comments, so they publish nothing).
-Mints **no** `TF` code.
-Gitignored by `.gitignore:35`.
+<!-- plan:closes -->
+> Empty for `M166`'s reason: `M166-02`'s close is written into the row's own status cell, which is the
+> form `verify-ledger.mjs` reads. A header claim would be a second copy of it.
 
 ### M168
 
@@ -11579,24 +11584,7 @@ Gitignored by `.gitignore:35`.
 
 **`M168` — the constructs nothing can be shown to test, and the one that was misfiled**
 
-**Status:** **SCOPED 2026-09-02; the five mutations BUILT and MEASURED 2026-09-03 (§8); the
-sibling census RESUMED over them the same day and `M168-01` CLOSED (§9).** §1-§7
-were written to be argued with before any of it existed and are left as they were argued; §8 is what
-running it said. It takes `M164` §14.7's first handoff and re-derives it, which changed the answer.
-**Numbering:** takes **no** decision after all — every question §6 raised was settled by reading a
-mechanism or by a measurement, and neither mints one. `D857` remains the last spent, by `M167`.
-Reserves no `TF` code.
-**Files seven rows and closes four:** `M168-01` (the registry gap) and `M168-02` (`C108`, §2), both
-filed 2026-09-02 with the milestone still scoped-not-started; **`M168-03`** — *two of the four
-constructs have no behavioural test in tflw either* — filed and closed 2026-09-03 by the measurement
-§5.2 committed to; and **`M168-04`**, **`M168-05`**, **`M168-06`**, **`M168-07`**, all four found by
-the census resume in §9 and none of them anything this plan predicted. **`M168-01` is closed** by
-that resume — each mutation shown to kill its plant, and, which is the narrower claim `D842`
-actually asks for, five of them shown to *cover*. `M168-02` stays open; it is a fixture gap and
-sibling work. See §6.4 — and see the correction there
-first: **there is no sibling ledger.** `testFlow-tests` has no `REVIEW_FINDINGS.md` at all; tflw's is
-the only one, which is why `M164-03` — a row about a sibling *plant* — sits in it.
-Gitignored by `.gitignore:35`.
+<!-- plan:closes M168-01, M168-03, M168-04, M168-07 -->
 
 ### M169a
 
@@ -11636,27 +11624,9 @@ file spells `tflw <id>`; `verify-provenance.mjs` says the same rule in the same 
 
 **`M170` — the `M164` residue: four guards and a measurement**
 
-**Status:** **SCOPED 2026-09-04, RESHAPED 2026-09-05, `M170a` BUILT 2026-09-05 (§8) — the plan's single remaining stage, so `M170` is complete.** The reshape came out of a
-grilling on 2026-09-05 that answered all three of §6's open questions plus §5's disposition, and
-answered §7's own question *yes*: **the recurrence now has an owner, `PLAN_M171_GUARD_CORPORA.md`,**
-which absorbs `M164-09`, `M164-12` and `M164-01` as its instances along with `M169-07` and
-`M169-08`. What is left in this plan is `M164-05` and nothing else — §3 and §4 are amended in
-place below rather than rewritten, because which stages moved and why is the part worth keeping.
-The original text follows. Written after `M169b`+`M169c` were built (PR #166,
-CI green, unmerged at the time of writing) because the user asked to continue into the five `M164`
-rows that arc left open: `M164-01`, `M164-02`, `M164-05`, `M164-09`, `M164-12`.
-**Numbering:** takes `D866`+ (re-verified 2026-09-05 against `DECISIONS.md`, whose highest is
-now `D865`). **This line said `D862`+ and was already wrong when it was written down.** It read
-*"verified unspent: `DECISIONS.md`'s highest is `D857`; `M169` took `D858`–`D861`"* — both
-halves true at the moment of writing, and the reservation stale within a day, because `M169d`
-was still being built and took `D862`–`D865` (`D862` the range predicate as a parameter, `D863`
-the manifest's `unresolvable` map, `D864` the per-identifier rule, `D865` `--from-checkout`).
-The defect is not the arithmetic, it is the tense: a scoped plan reserved numbers from a
-sequence an *unfinished* milestone was still drawing from, and recorded the check as though it
-settled the question. A reservation against a moving sequence has to be re-taken at build time,
-never at scope time — so re-derive this from `DECISIONS.md` before minting, and do not trust
-this line either. Mints no `TF` code as scoped.
-Gitignored by `.gitignore`'s `PLAN_*.md`.
+> **No `plan:closes` marker yet, deliberately.** The cut in §3 is a proposal with two open questions
+> in §6, and a `closes` list written before those are answered is a claim the plan cannot keep.
+> `M169`'s §2.8 is the precedent: the marker goes in when the stages are fixed.
 
 ### M170a
 
@@ -11674,11 +11644,12 @@ discriminating, 13 flags each with a reader.**
 
 **`M171` — every guard declares its corpus**
 
-**Status:** **`M171a`, `M171b`, `M171b2` BUILT and merged; `M171c` MEASURED 2026-09-05 (§11);
-`M171d` BUILT 2026-09-05 (§12.0), sibling PR pending its `D511` pair; **`M171e` BUILT 2026-09-05 (§13.4), closing `M164-01`** — `M171` is complete per `D894`.** Written out of a grilling that answered
-`PLAN_M170` §7's own question — *is the recurrence worth a milestone of its own?* — **yes**. This
-plan takes ownership of the property; `M170` keeps one stage (`M164-05`) and is downstream of this
-one.
+> **No `plan:closes` marker yet, deliberately.** §4's cut is a proposal. `M169` §2.8 and `M170`'s
+> header are the precedent: the marker goes in when the stages are fixed, because a `closes` list
+> written before that is a claim the plan cannot keep. Note the irony and do not resolve it early —
+> **`M169-08` is in this plan's own closes list, and it is the defect that makes a marker-less
+> plan's close-claim unreadable below line twelve.** Until this ships, this plan's claims are
+> invisible to the gate by the same mechanism it exists to repair.
 
 ### M171b
 
@@ -11742,14 +11713,7 @@ Closes `M155-02`. The last stage, and the only one crossing the repository bound
 
 **`M174` — the manifest gains a `subject` family**
 
-**Status:** **COMPLETE 2026-09-06.** Scoped 2026-09-05; measured on the build box 2026-09-06 (§2, §3);
-decided (§5), `D903`–`D906`. Spun out of `PLAN_M172_TFLW_LEDGER_FIVE.md` §1.
-**Merged 2026-09-06 as `#177`, `44e2d79`**, onto `M173` (`#176`, `909d28c`).
-Closes `M159-01`.
-It files and closes `M174-01`, `M174-02` and `M174-03`, all three found by §2's measurement
-and by reviewing the diffs it caused.
-The sibling half is handed to `M176` under `D511`, which fixes the merge order: tflw first, an
-accepted red window on the sibling's `main`.
+<!-- plan:closes M159-01, M174-01, M174-02, M174-03 -->
 
 ### M175a
 
@@ -11780,9 +11744,17 @@ A check that would not have caught that is not this stage.
 
 **`M176` — a gate's reach against its output's claim, one repository over**
 
-**Status: COMPLETE 2026-09-06.** The sibling-side milestone `D511` had been deferring since `M174`
-merged (`#177`, `44e2d79`). Measured while scoping (§4, §5); the cut is §6; the decisions it must
-take are §7. Both halves are on `main`, and the window `M176c` opened on purpose is closed.
+| stage | repo | state |
+|---|---|---|
+| `M176a` | tflw | **merged 2026-09-06 as `#179`, `1aeb8a4`**, onto `M177` (`#178`, `c067098`) |
+| `M176b` | tests | **built** `139c54d` — the `orphaned` state, 12 controls against a real repository |
+| `M176e` | tests | **built** `a343951` — built before `M176c`/`M176d` on purpose: it needs no `refresh-tflw`, so it does not have to sit inside `D511`'s red window |
+| `M176c` | tests | **built** `b9c9d73` — `refresh-tflw` opened the window (manifest `2 ≠ 1`, 16 unaccounted ids, `183/199`); `C114` rostered, 15 ratcheted, ceiling `0 → 15` |
+| `M176d` | tests | **built** `4ea3e7a` — the pin moved into `readSpec`; `PLAN_M174` §9 corrected in place under `D669` |
+| `M176f` | tests | **built** `4ac634e` — both decisions taken on measurements |
+| — | tflw | **merged as `#180`, `31d93a0`** — re-pins the sibling's citations, closing `D511`'s window. Merged **first**, 27/27 |
+| — | tests | **merged as `#83`, `7f1dca0`** — carries `M176b`–`M176f`, 7/7 |
+| — | tflw | **`#181`** re-pins at `main` — the squash that merged `#83` deleted the branch `#180`'s pin named, and `verify:sibling-pin` went red on `main` for it |
 
 ### M176b
 
@@ -11830,10 +11802,12 @@ take are §7. Both halves are on `main`, and the window `M176c` opened on purpos
 
 **`M178` — a record no instrument reads, and a check nothing runs**
 
-**Status: COMPLETE 2026-09-07.** Both halves are on `main`. Cut from the ten workable rows left after `M176` merged, on one
-question asked and answered: when a sentence and a measured fact disagree, the default repair is to
-**delete the copy** and point at the single source, and to build a reader only where there is no
-source to point at. Everything below follows from that.
+| stage | repo | state |
+|---|---|---|
+| `M178a` | tests | **merged 2026-09-07 as `#84`, `3b44f9d`**, 7/7 — five rows closed, four filed, two amended |
+| — | tflw | **merged as `#182`, `6066db1`** — pins the sibling at `M178a` and publishes its anchors, `D511`, first |
+| — | tflw | **merged as `#183`, `c0b946f`** — re-pins the *same* branch a second time, because `M178-04`'s repair cited `D669` after the first pin was taken |
+| — | tflw | **`#184`** re-pins at `main` — the squash that merged `#84` deleted the branch `#183`'s pin named, and `verify:sibling-pin` went red for it, naming `M172-01` |
 
 ### M178a
 
@@ -11854,11 +11828,11 @@ exists to make loud"*.
 
 **`M179` — a pin that outlives the merge that used to kill it**
 
-**Status: COMPLETE 2026-09-07.** Both halves are on `main`, and the claim was measured rather than
-assumed — see the box below the stage table. Cut from `M176-06` in a grilling session on the same day,
-after four re-pins in two days made the cost measurable rather than arguable. The milestone rests on
-one measurement taken during that session: **`refs/pull/N/head` is a ref GitHub never deletes**, so
-the recurrence this row is about is removable rather than structural.
+| stage | repo | state |
+|---|---|---|
+| `M179a` | tflw | **merged 2026-09-07 as `#185`, `157d2c4`**, 27/27 — `--pr <N>`, the shape clause |
+| `M179b` | tflw | **merged in `#185`** — a CI home, the wrong premise corrected in three files, `--require-network`, and the probe defect CI found |
+| `M179c` | tests | **merged 2026-09-07 as `#85`, `c95cad9`**, 7/7 — the landed-clause, 8 controls, 2 against live API data |
 
 ### M179a
 
@@ -11902,13 +11876,10 @@ ship with, per `M172e` — a gate green on the day it lands says so and proves i
 
 **`M180` — a null result whose floor turned out to be arithmetic, not noise**
 
-**Status: COMPLETE 2026-09-07.** Both halves are on `main`. Suite green on the build box:
-**3970 tests, 0 fail**. `M179`'s pull-ref pin held a second time and needed no re-pin — after `#86`'s
-squash-merge deleted `m180-flatness-floor`, `commits/m180-flatness-floor` answers **422** while
-`commits/refs%2Fpull%2F86%2Fhead` still resolves to `8922994`, and `verify:sibling-pin
---require-network` exits 0 on `main` untouched. One clause, one control, and a measurement
-saying the class this row was filed against has fewer members than the row believed. Closes
-`M155-03`, open since 2026-08-30 and the oldest `S3` in the ledger.
+| stage | repo | state |
+|---|---|---|
+| `M180a` | tests | **merged 2026-09-07 as `#86`, `d08e61f`**, 7/7 — the derived tolerance, the named effect, and the control that refuses `/ramp` |
+| `M180b` | tflw | **merged 2026-09-07 as `#187`, `69793f4`**, 27/27 — `D923`–`D928` published, the pin taken once and last (`D919`) at `refs/pull/86/head`, and `M180-02`'s four stale prescriptions repaired |
 
 ### M181
 
@@ -11916,7 +11887,15 @@ saying the class this row was filed against has fewer members than the row belie
 
 **`M181` — `unique` is run-scoped, and the constraint it feeds is not**
 
-**Status:** **COMPLETE 2026-09-07 — `M181a` through `M181e` all built. `M162-01` is closed.**
+- **`M181a`, tflw** — the run namespace, all five renderers, SPEC §7.2/§7.3.1/§7.4, the generator
+  manifest, the docs site, and the changelog. Suite green on the build box, **3972 tests, 0 fail**
+  (from 3970).
+- **`M181b`, the sibling** — `C81`/`C82`/`C83`/`C84`/`C113` re-derived per `D933`, the plant's
+  known-answer table re-measured, and `CONSTRUCTS.md`'s five rows and its narrative rewritten. All
+  five rows green at full recall and precision, with **two controls run against mutated builds**:
+  freezing the namespace reddens exactly the five cross-run clauses and nothing else, and giving one
+  construct a namespace of its own reddens exactly the two sharing clauses. The sibling's whole
+  suite is **`PASS 323/323`** on a clean stack against the new tflw, so `D511`'s red window is shut.
 
 ### M181a
 
@@ -11959,8 +11938,8 @@ anything.
 
 **`M182` — a wait that gives up early and blames the matcher, and a count that was never this run's**
 
-**Status:** **`M182a`-`M182e` BUILT and MEASURED 2026-09-08. COMPLETE.**
-`M182e` was not planned — CI filed it, and §5 records why it had to exist.
+Closes `M181-01` (S3). Does **not** close `M181-02` (S3), which was filed out of this row on
+2026-09-07 at the user's instruction and is deliberately left open — see §9.
 
 ### M182a
 
