@@ -11959,7 +11959,8 @@ anything.
 
 **`M182` — a wait that gives up early and blames the matcher, and a count that was never this run's**
 
-**Status:** **`M182a`-`M182d` BUILT and MEASURED 2026-09-08. COMPLETE.**
+**Status:** **`M182a`-`M182e` BUILT and MEASURED 2026-09-08. COMPLETE.**
+`M182e` was not planned — CI filed it, and §5 records why it had to exist.
 
 ### M182a
 
