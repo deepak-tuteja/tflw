@@ -474,6 +474,51 @@ jobs:
   # trigger; 24 lands at 1148s and under it. 1044s is a floor (`6 x 174` — five root-suite mutations
   # and a baseline), not a choice, and the lever when 24 comes due is the cost of that suite rather
   # than the count.
+  #
+  # ---------------------------------------------------------------------------
+  # NOT RE-SHARDED at `M182e`, and the count staying at 24 is the finding rather than an omission.
+  #
+  # The trigger fired: shard 10 of 24 took **20m11s** against the 20m00s trigger, while all 24
+  # shards passed and all 334 mutations ran. The milestone that produced it **adds no mutations** —
+  # the registry is 334 either side of it — so the first reading was that the sweep had grown into
+  # its packing and the `shard:` list below was due for a widen to 32. THAT READING WAS WRONG, AND
+  # THE TABLE ABOVE HAD ALREADY REFUSED IT: `M171c` prices n=32 at 8.447 against the 1.7 levelness
+  # bar, and its closing sentence names the real lever — *"the lever when 24 comes due is the cost
+  # of that suite rather than the count."*
+  #
+  # WHAT SHARD 10 HOLDS is 13 `@tflw/runtime` mutations and nothing else, not the root-suite chunk
+  # the 17m24s plateau is made of. Modelled `(13+1) x 68 = 952s`, actual 1211s — a ratio of 1.27
+  # where every other shard read ~1.03. Measured from the 24 manifests of the runs either side, nine
+  # `@tflw/runtime` baselines each, ranges that do not overlap:
+  #
+  #   `#189` (before)  60-73s, median 72   ·   `#190` (after)  81-84s, median 82
+  #   root:test:scripts 120 -> 118 · `tflw` 192 -> 191 · `@tflw/lang` 13 -> 12   (all flat)
+  #
+  # ONE PACKAGE MOVED, AND IT WAS NOT THE REGISTRY. `M182a` added four TESTS, two of which wait on
+  # the wall clock — a 7s budget asserting `elapsed >= 7000`, and a 5s one asserting silence — so
+  # ~12s went onto the runtime suite, and the sweep re-runs that suite once per mutation. A
+  # milestone with zero registry footprint moved the critical path by 2m13s.
+  #
+  # EVERY COUNT WAS PRICED against a corrected table, per-shard cost rebuilt from the MEASURED
+  # maxima and validated first against the 24 manifests it came from (predicted 19m36s vs actual
+  # 19m01-20m11s on the four longest shards, ratio 0.97-1.03):
+  #
+  #   n=24 19m48s / 99%   ·  n=25 19m48s / 99%  ·  n=26 19m48s / 99%
+  #   n=27 16m48s / 84%   ·  n=28-29 15m24s / 77%   — and every one of those fails the 1.7 bar
+  #
+  # No count clears both the trigger and the levelness bar, because the ~18m floor is set by the
+  # `tflw` suite at 198s and the root suite at 124s. Widening to 32 would have added eight jobs to
+  # every pull request and left the longest shard where it is. **The count was never the lever.**
+  #
+  # WHAT WAS DONE INSTEAD is `M182e`: the 5s test is now a boundary assertion on the guard rather
+  # than five seconds of watching nothing happen, and the 7s one — which cannot be shortened without
+  # ceasing to assert the thing `D248` refused — sits in a file of its own, since `node --test` gives
+  # each file its own process and `@tflw/runtime` does not run at `--test-concurrency=1`. Measured at
+  # `--test-concurrency=2`, three runs each, which reproduces the runner: **80.0s -> 72.5s**, against
+  # a 72s median before the milestone. The file split alone was worth only 2.9s of the 12s and would
+  # not have been enough — a sleeping test still holds a worker slot, so splitting re-packs the tail
+  # rather than removing the cost. That was measured too, after a single-sample reading of it looked
+  # like 5.6s and nearly got acted on.
   mutations:
     name: mutation controls (shard ${{ matrix.shard }}/24)
     runs-on: ubuntu-latest

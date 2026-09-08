@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
+import { speculativeSpeakAt, SPECULATIVE_DIAGNOSIS_MS } from '../src/browser.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 import { asEntry } from './__helpers__/entry.js';
 
@@ -257,22 +258,6 @@ test('M147d: the timeout report quotes the budget that actually expired', async 
 
 // ---- M182a (`D936`/`D937`, `M181-01`): a transient is a poll that did not satisfy -------------
 
-/** The speculative line is written straight to stderr (`D269`/`D937`), so observing it means owning
- * the stream for the duration of the run. Sibling of the helper in `browser-diagnosis.test.ts`. */
-async function captureStderr<T>(fn: () => Promise<T>): Promise<{ result: T; stderr: string }> {
-  const chunks: string[] = [];
-  const original = process.stderr.write.bind(process.stderr);
-  (process.stderr as { write: unknown }).write = (chunk: string | Uint8Array): boolean => {
-    chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
-    return true;
-  };
-  try {
-    const result = await fn();
-    return { result, stderr: chunks.join('') };
-  } finally {
-    (process.stderr as { write: unknown }).write = original;
-  }
-}
 
 test('M182a: a poll whose body is the wrong SHAPE is a poll that did not satisfy, and the wait goes on (D936)', async () => {
   // `M181-01`, measured on the build box 2026-09-07. The subject of a poll's condition changes with
@@ -332,55 +317,25 @@ test('M182a: a body that is never the right shape fails through the TIMEOUT exit
   await server.close();
 });
 
-test('M182a: the cost `D936` buys — a wait under this repository’s own 5s budget stays silent (D937)', async () => {
-  // The measured consequence the plan required this test to carry. `M125c`'s guard is
-  // `budget > 3000 * 2`, and `testFlow-tests` sets `defaults: timeout wait 5s` — `5000 > 6000` is
-  // false, so the dogfood suite's own waits emit nothing. Asserting the absence of the line under a
-  // budget that CAN produce one would be the real assertion; asserting it under 5s without saying
-  // why would be `M141`, an instrument pointed away from its corpus. It is pointed here on purpose.
-  const server = await startFixtureServer({
-    '/poll': (_req, res) => json(res, 200, { status: 'pending' }),
-  });
-
-  const source = `test "quiet under a short budget"
-  wait until api GET /poll
-    expect body.status equals "shipped"
-`;
-  const { program } = parseSource(source);
-  const { result, stderr } = await captureStderr(() => runProgram(program, testConfig(server.baseUrl, { wait: 5000 }), { source }));
-
-  assert.equal(result.report.ok, false);
-  assert.doesNotMatch(stderr, /⏳ tflw:/);
-
-  await server.close();
-});
-
-test('M182a: a budget with room to spare says so at 3s, once, and keeps polling to its own deadline (D937)', async () => {
-  // `M125c`'s line, on `M125c`'s threshold, for the API form. The three things it must name are the
-  // three the locator line names: what is being waited on, why the last poll did not satisfy, and
-  // how much longer this will go on. The `once` assertion is the one that matters most — a line per
-  // poll at `WAIT_POLL_INTERVAL_MS` would be twelve of them.
-  const server = await startFixtureServer({
-    '/poll': (_req, res) => json(res, 200, { status: 'pending' }),
-  });
-
-  const source = `test "speaks, then carries on"
-  wait until api GET /poll
-    expect body.status equals "shipped"
-`;
-  const { program } = parseSource(source);
-  const startedAt = performance.now();
-  const { result, stderr } = await captureStderr(() => runProgram(program, testConfig(server.baseUrl, { wait: 7000 }), { source }));
-  const elapsed = performance.now() - startedAt;
-
-  assert.equal(result.report.ok, false);
-  assert.match(stderr, /⏳ tflw: `GET .*\/poll` has not satisfied its condition after 3s/);
-  assert.match(stderr, /expected body\.status to equal "shipped", but got "pending"/);
-  assert.match(stderr, /still waiting, up to 7s/);
-  assert.equal(stderr.match(/⏳ tflw:/g)?.length, 1, 'once per step, not once per poll');
-  // The deadline does not move. A progress line that quietly became a shorter timeout would turn a
-  // slow service's green suite red — `D248`'s own non-negotiable, restated on this form.
-  assert.ok(elapsed >= 7000, `the wait must still run its full budget, took ${elapsed}ms`);
-
-  await server.close();
+test('M182a: the cost `D936` buys — a budget of 5s or less can never produce a progress line (D937)', () => {
+  // The measured consequence `D937` had to carry, asserted at the boundary rather than by running a
+  // wait for five real seconds and watching nothing happen.
+  //
+  // `testFlow-tests` sets `defaults: timeout wait 5s`, and the guard is `budget > 2 x 3000`, so
+  // `5000 > 6000` is false and the dogfood suite's own waits emit nothing — verified in that corpus
+  // at 0 lines across three runs (`M182d`), which is where that claim belongs. What belongs HERE is
+  // the rule that makes it true, and a rule about two numbers is tested as a function of two
+  // numbers: exactly, on both sides, and at the point where it changes its mind.
+  //
+  // The end-to-end version of this cost the mutation sweep five seconds times every runtime
+  // mutation — see `scripts/mutate.mjs` and `ci.yml`'s re-shard log. It also asserted an ABSENCE,
+  // which is the weaker of the two shapes: this one pins the value.
+  const t = 1000;
+  assert.equal(speculativeSpeakAt(t, 5000), undefined, "this repository's own 5s budget stays silent");
+  assert.equal(speculativeSpeakAt(t, SPECULATIVE_DIAGNOSIS_MS * 2), undefined, 'exactly 2x is silent — the guard is >, not >=');
+  assert.equal(speculativeSpeakAt(t, SPECULATIVE_DIAGNOSIS_MS * 2 + 1), t + SPECULATIVE_DIAGNOSIS_MS, 'one millisecond past 2x speaks');
+  assert.equal(speculativeSpeakAt(t, 7000), t + SPECULATIVE_DIAGNOSIS_MS, 'and it speaks AT the threshold, not at the budget');
+  // The browser wait (`M125c`) and this one now read the same function, so this is one rule tested
+  // once rather than the same expression written twice and compared by nobody (`D489`).
+  assert.equal(speculativeSpeakAt(0, 30_000), SPECULATIVE_DIAGNOSIS_MS, "tflw's own 30s default speaks at 3s");
 });

@@ -81,6 +81,7 @@ import {
   resolveLocator,
   resolveLocatorSnapshot,
   SPECULATIVE_DIAGNOSIS_MS,
+  speculativeSpeakAt,
   type BrowserManager,
   type CapturedNetworkRequest,
   type LocatorScope,
@@ -5890,7 +5891,7 @@ async function execWaitUntilApi(
   // The consequence is measured and deliberate: `testFlow-tests` sets `timeout wait 5s`, and
   // `5000 > 6000` is false, so the dogfood suite's own waits stay silent. An acceptance test that
   // wants the line has to ask for a budget that can produce one.
-  const speakAt = waitBudget > SPECULATIVE_DIAGNOSIS_MS * 2 ? startedAt + SPECULATIVE_DIAGNOSIS_MS : undefined;
+  const speakAt = speculativeSpeakAt(startedAt, waitBudget);
   let spoken = false;
   let attempt = 0;
   let last: { redacted: ApiExec['redacted']; response: ResponseTrace; request: RequestTrace; message: string } | null = null;
