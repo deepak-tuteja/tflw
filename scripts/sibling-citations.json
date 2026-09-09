@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "refs/pull/92/head",
-  "sha": "c3927d60be5634398916384e912517a62e18a6b6",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/c3927d60be5634398916384e912517a62e18a6b6",
+  "ref": "refs/pull/93/head",
+  "sha": "3855673a3b5725ee54fcfadda9d68963fdaafeab",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/3855673a3b5725ee54fcfadda9d68963fdaafeab",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -20,7 +20,7 @@
     "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
     "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
   ],
-  "codeFiles": 775,
+  "codeFiles": 780,
   "checkFixtures": [
     "TF001",
     "TF002",
@@ -524,6 +524,8 @@
       "scripts/lib/constructs.mjs",
       "scripts/lib/perf-ladder.mjs",
       "scripts/lib/plants.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/refresh-tflw.mjs",
       "scripts/verify-provenance.mjs",
       "scripts/verify-security-acceptance.mjs"
     ],
@@ -1614,6 +1616,7 @@
       "scripts/lib/graders.mjs",
       "scripts/lib/mutation-covers.mjs",
       "scripts/lib/perf-ladder.mjs",
+      "scripts/lib/tflw-provenance.mjs",
       "scripts/measure-construct-evidence.mjs",
       "scripts/perf-conformance.mjs",
       "scripts/read-mutation-matrix.mjs",
@@ -1625,6 +1628,7 @@
       "scripts/verify-input-acceptance.mjs",
       "scripts/verify-perf-baseline.mjs",
       "scripts/verify-perf-parity.mjs",
+      "scripts/verify-provenance.mjs",
       "scripts/verify-redaction.mjs",
       "scripts/verify-security-acceptance.mjs",
       "scripts/verify-sweep-size.mjs",
@@ -2549,6 +2553,7 @@
       "scripts/lib/tflw-bin.mjs",
       "scripts/lib/tflw-provenance.mjs",
       "scripts/refresh-tflw.mjs",
+      "scripts/verify-provenance.mjs",
       "scripts/verify-tflw-resolution.mjs"
     ],
     "D766": [
@@ -2697,6 +2702,7 @@
       "scripts/verify-tflw-resolution.mjs"
     ],
     "D866": [
+      "scripts/verify-notation-parity.mjs",
       "scripts/verify-provenance.mjs"
     ],
     "D878": [
@@ -2724,6 +2730,10 @@
     ],
     "D904": [
       "scripts/lib/constructs.mjs"
+    ],
+    "D909": [
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/verify-provenance.mjs"
     ],
     "D914": [
       "scripts/verify-sibling-pin-landed.mjs"
@@ -2799,10 +2809,12 @@
       "scripts/verify-notation-parity.mjs"
     ],
     "D954": [
-      "scripts/lib/tflw-bin.mjs"
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/lib/tflw-provenance.mjs"
     ],
     "D955": [
       "scripts/lib/tflw-bin.mjs",
+      "scripts/lib/tflw-provenance.mjs",
       "scripts/refresh-tflw.mjs",
       "scripts/verify-tflw-resolution.mjs"
     ],
@@ -3084,12 +3096,17 @@
     "M181b": [
       "tests/.constructs/generator-known-answers.tflw"
     ],
+    "M183": [
+      "scripts/verify-notation-parity.mjs"
+    ],
     "M183c": [
       "scripts/verify-notation-parity.mjs",
       "scripts/verify-provenance.mjs"
     ],
     "M184": [
       "scripts/lib/tflw-bin.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/verify-provenance.mjs",
       "scripts/verify-tflw-resolution.mjs"
     ],
     "M184a": [
@@ -3097,15 +3114,29 @@
     ],
     "M184b": [
       "scripts/lib/tflw-bin.mjs",
+      "scripts/verify-notation-parity.mjs",
+      "scripts/verify-provenance.mjs",
       "scripts/verify-tflw-resolution.mjs"
     ],
     "M184c": [
       "scripts/lib/tflw-bin.mjs",
+      "scripts/lib/tflw-provenance.mjs",
       "scripts/refresh-tflw.mjs",
       "scripts/verify-tflw-resolution.mjs"
     ],
     "M184d": [
       "scripts/verify-construct-acceptance.mjs"
+    ],
+    "M185a": [
+      "scripts/verify-provenance.mjs"
+    ],
+    "M185b": [
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/refresh-tflw.mjs",
+      "scripts/verify-provenance.mjs"
+    ],
+    "M185c": [
+      "scripts/verify-notation-parity.mjs"
     ],
     "M19": [
       "tests/api/mechanics/body-types.tflw"

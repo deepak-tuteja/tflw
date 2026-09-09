@@ -263,7 +263,17 @@ export const SELF_MUTATIONS = [
     file: 'scripts/verify-ledger.mjs',
     what: "`closeClaims` stops reading anything past the twelfth line, which restores `M169-08`: a plan's `**Closes:** …` on line sixteen is not missed loudly, it is not seen, and the gate reports that every plan claim agrees. `PLAN_M160` wrote one there and made *verify-ledger shows it closed* its own acceptance clause — an acceptance criterion unsatisfiable by construction with nothing in a position to say so",
     edits: [
-      ["  text.split('\\n').forEach((raw, i) => {", "  text.split('\\n').slice(0, 12).forEach((raw, i) => {"],
+      // `M185d` renamed the loop variable to `line` (the raw text is now the marker-stripped
+      // `raw` derived from it), so this `find:` follows the source rather than the source being
+      // held still for it — which is what the exactly-once check exists to force.
+      // The anchor carries `const out = []` because `M185d` made the loop header ambiguous: the
+      // variable is now `line` in three functions here (`parseIndex`, `staleDisclaimers` and this
+      // one), and the exactly-once check reddened on 3 matches rather than passing on the wrong
+      // one — which is the whole point of counting instead of replacing.
+      [
+        "  const out = []\n  text.split('\\n').forEach((line, i) => {",
+        "  const out = []\n  text.split('\\n').slice(0, 12).forEach((line, i) => {",
+      ],
     ],
   },
   // --- M171b (`M164-09`) ------------------------------------------------------------------------

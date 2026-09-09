@@ -293,6 +293,41 @@ const ROW_ID_BARE = /\b([A-Z]+\d*[a-z]?-\d+)\b/g
 const CLOSES = /<!--\s*plan:closes\s+([^>]*?)\s*-->/
 
 /**
+ * A plan declaring that the ids it names on THIS LINE are not claims (`M185d`, `M183-01`).
+ *
+ * `PLAN_M183` §1 wrote **"Two of the ten are not defects and no milestone closes them."** — the
+ * clearest sentence in this corpus about rows a milestone deliberately leaves open — and
+ * `closeClaims` read it as a claim to close both, because the bold run carrying the verb opens a
+ * segment (`D872`) and the rule cannot see the negation. The gate then failed with a confident,
+ * well-worded message asserting the opposite of what the line said, and the repair it proposed
+ * would have written the false claim into the record: `M166`'s failing-plausibly class, and worse
+ * than a refusal.
+ *
+ * ## Why a marker and not a reader of verbs
+ *
+ * `D909` refused a verb reader and measured why: granting a sentence the authority a bold label has
+ * drops the 17 ids it should and admits **39** it should not. That refusal stands unamended. A
+ * wordlist of negations is refused separately on `D659`'s ground — this repository's guards do not
+ * maintain wordlists, and a stale one fails silently.
+ *
+ * This is the third mechanism of the same shape as `D912`'s blockquote rule and `D900`'s fences:
+ * **subtraction only, declared by the author, reading no verbs.** It can remove an id from a claim
+ * and can never add one, so it cannot make the gate miss a row it was not pointed at.
+ *
+ * ## It names ids, and it is exercise-checked
+ *
+ * A line-blanket marker would be a suppression mechanism. This one names the ids it disclaims, so a
+ * plan that later does close one carries a marker a reader can see is wrong, and an id disclaimed
+ * on a line that never claimed it is a FAILURE — `D540`'s rule that an allow-list is the honest
+ * half and not a silencer, and the same exercise check `PERMITTED` carries one gate over.
+ *
+ * It is separate from `plan:closes` rather than a widening of it, because `planClaims` and
+ * `closeClaims` answer different questions by design (`M169-08`), and `M183-01` measured that the
+ * existing marker does not reach this: adding it left both problems standing verbatim.
+ */
+const NOT_A_CLAIM = /<!--\s*plan:not-a-claim\s+([^>]*?)\s*-->/
+
+/**
  * The rows a plan says it closes.
  *
  * **Two sources, explicit first** (`M143-08`). If the plan carries a `<!-- plan:closes … -->`
@@ -360,9 +395,63 @@ export function planClaims(text, headerLines = 12) {
  * `<!-- plan:closes … -->` marker exists to avoid being. `D872` drew that line one level up; this
  * draws it one level down and leaves the same remainder to the marker, deliberately.
  */
-export function closeClaims(text) {
+/**
+ * Every `plan:not-a-claim` id that disclaims nothing (`M185d`).
+ *
+ * The exercise check that keeps the marker from being a silencer. A disclaimer is a written
+ * statement that a sentence would otherwise read as a claim; if the sentence does not read as one,
+ * the statement is false and the marker is a stale exemption sitting in the record where a reader
+ * will trust it. `D540`: an allow-list is the honest half, not a suppression mechanism — and it is
+ * only honest while every member is still doing something.
+ *
+ * Computed by running the same function twice, once honouring the markers and once not, so the two
+ * answers cannot drift apart the way two implementations of one rule would (`D489`).
+ */
+export function staleDisclaimers(text) {
+  const withMarkers = closeClaims(text)
+  const without = closeClaims(text, { honourDisclaimers: false })
+  const claimedAt = new Map()
+  for (const c of without) claimedAt.set(c.line, new Set([...(claimedAt.get(c.line) ?? []), ...c.ids]))
+  const keptAt = new Map()
+  for (const c of withMarkers) keptAt.set(c.line, new Set([...(keptAt.get(c.line) ?? []), ...c.ids]))
+
+  const stale = []
+  text.split('\n').forEach((line, i) => {
+    const declared = line.match(NOT_A_CLAIM)
+    if (!declared) return
+    const ids = [...new Set([...declared[1].matchAll(ROW_ID_BARE)].map((m) => m[1]))]
+    if (ids.length === 0) {
+      stale.push({ line: i + 1, id: null, why: 'the marker names no row id at all, so it disclaims nothing' })
+      return
+    }
+    const wouldHave = claimedAt.get(i + 1) ?? new Set()
+    const kept = keptAt.get(i + 1) ?? new Set()
+    for (const id of ids) {
+      if (!wouldHave.has(id)) stale.push({ line: i + 1, id, why: 'this line does not read as a claim about it even without the marker' })
+      else if (kept.has(id)) stale.push({ line: i + 1, id, why: 'the marker did not remove it — it is still read as a claim' })
+    }
+  })
+  return stale
+}
+
+export function closeClaims(text, { honourDisclaimers = true } = {}) {
   const out = []
-  text.split('\n').forEach((raw, i) => {
+  text.split('\n').forEach((line, i) => {
+    // The marker is stripped from the line BEFORE anything reads it, not filtered out afterwards.
+    // Its own payload is a list of row ids, so a marker left in the text would be scanned as part of
+    // whatever segment contains it and would re-add the very ids it disclaims.
+    //
+    // AND IT IS STRIPPED IN BOTH MODES. `honourDisclaimers: false` means *do not subtract these
+    // ids*, not *read the marker as prose* — the marker is metadata either way. The first draft
+    // stripped it only in the honouring mode, which made `staleDisclaimers` blind to exactly the
+    // case it exists for: the un-honoured run picked the ids up out of the marker itself, so every
+    // disclaimed id looked like one the line would have claimed, and a disclaimer naming a row the
+    // sentence never mentioned reported clean. Caught by its own plant.
+    const declared = line.match(NOT_A_CLAIM)
+    const disclaimed = declared && honourDisclaimers
+      ? new Set([...declared[1].matchAll(ROW_ID_BARE)].map((m) => m[1]))
+      : null
+    const raw = declared ? line.replace(NOT_A_CLAIM, '') : line
     // A BLOCKQUOTE IS A QUOTATION, NEVER A CLAIM (`M176a`, `D912`).
     //
     // `D900`'s argument, one construct over: a fence is an illustration and so is a `>` line. A plan
@@ -402,6 +491,7 @@ export function closeClaims(text) {
       for (const seg of sentences(masked, raw, from, to)) {
         if (seg.index > 0 && (!/\bcloses\b/i.test(seg.text) || /without closing/i.test(seg.text))) continue
         const ids = [...new Set([...seg.text.matchAll(ROW_ID_BARE)].map((m) => m[1]))]
+          .filter((id) => !disclaimed?.has(id))
         if (ids.length) out.push({ line: i + 1, ids, text: seg.text.trim() })
       }
     })
@@ -632,7 +722,18 @@ export function check({ ledger, plans, shipped, resolve = () => 'here', manifest
   // without a repository. The *failure* underneath it needs both git and an open row, and is
   // guarded accordingly.
   const unreadClaims = []
-  for (const { file, milestone, closesAt, ids, claims = [] } of plans) {
+  for (const { file, milestone, closesAt, ids, claims = [], staleDisclaimers: stale = [] } of plans) {
+    // A `plan:not-a-claim` marker that disclaims nothing is a false statement in the record
+    // (`M185d`). Checked on every tree, not only on a git checkout: unlike the claims below it
+    // needs no `git log` — the marker and the sentence it is about are on the same line.
+    for (const d of stale) {
+      problems.push(
+        `${file}:${d.line} carries \`plan:not-a-claim\`${d.id ? ` for \`${d.id}\`` : ''} and ${d.why}. ` +
+          `A disclaimer states that a sentence would otherwise read as a claim; one that removes nothing ` +
+          `is a stale exemption a reader will trust (D540). Delete it, or fix the id it names.`,
+      )
+    }
+
     // A staged plan is finished by its last stage, not its first. Without `closesAt` this asks
     // "has anything called M125 shipped?", which `M125b1` answers yes to while `M125c`/`d`/`e` are
     // still unwritten — so every row those stages owe reads as stale the day the first stage merges.
@@ -1014,6 +1115,35 @@ export const CORPORA = [
         what: 'NEGATIVE CONTROL — a close-claim quoted inside a code span is not a claim',
         run: () => checkPlanted({ line: 20, label: null }).problems.length === 0,
       },
+      // `M185d` (`M183-01`) — THE DISCLAIMER, AND THE THREE WAYS IT MUST NOT BE A SILENCER.
+      {
+        what: 'a `plan:not-a-claim` naming the id removes the claim the sentence would otherwise make',
+        run: () => checkPlanted({ line: 20, label: '**Closes:**', disclaim: 'X-01' }).problems.length === 0,
+      },
+      {
+        what: 'and it subtracts ONLY the ids it names — a second id on the same line is still a claim',
+        run: () => {
+          const { problems } = checkPlanted({ line: 20, label: '**Closes:**', extraId: 'X-02', disclaim: 'X-01' })
+          return problems.some((p) => /`X-02`/.test(p)) && !problems.some((p) => /`X-01`/.test(p))
+        },
+      },
+      {
+        what: 'a disclaimer for an id the line never claimed FAILS as a stale exemption (D540)',
+        run: () => {
+          const { problems } = checkPlanted({ line: 20, label: '**Closes:**', disclaim: 'X-01 X-99' })
+          return problems.some((p) => /`X-99`.*does not read as a claim/s.test(p))
+        },
+      },
+      {
+        what: 'NEGATIVE CONTROL — the marker\'s OWN id list is not read back as a claim',
+        run: () => {
+          // The marker's payload is a list of row ids. Stripping it before the line is scanned is
+          // the whole reason this works; filtering afterwards would leave the ids in the segment
+          // text and re-add exactly what was disclaimed.
+          const text = '**Closes:** `X-01` <!-- plan:not-a-claim X-01 -->'
+          return closeClaims(text).length === 0 && closeClaims(text, { honourDisclaimers: false }).length === 1
+        },
+      },
     ],
   },
 ]
@@ -1023,8 +1153,10 @@ export const CORPORA = [
  * file on purpose: a corpus declaration whose plant is proved somewhere else is a corpus
  * declaration nobody can read, and the plant is the load-bearing half.
  */
-function checkPlanted({ line, label }) {
-  const claim = label ? `${label} \`X-01\`` : 'a plan wrote `**Closes:** X-01` and was wrong to'
+function checkPlanted({ line, label, extraId = null, disclaim = null }) {
+  const ids = `\`X-01\`${extraId ? ` and \`${extraId}\`` : ''}`
+  const claim = (label ? `${label} ${ids}` : 'a plan wrote `**Closes:** X-01` and was wrong to')
+    + (disclaim ? ` <!-- plan:not-a-claim ${disclaim} -->` : '')
   const text = ['# PLAN_M900', ...Array.from({ length: line - 2 }, () => ''), claim].join('\n')
   return check({
     ledger: [
@@ -1035,8 +1167,12 @@ function checkPlanted({ line, label }) {
       '| id | sev | claim | status |',
       '|---|---|---|---|',
       '| `X-01` | S3 | a claim | open — **rv 2026-09-01 @aaaaaaa reproduces** · `a/b.ts:1` |',
+      ...(extraId ? [`| \`${extraId}\` | S3 | a claim | open — **rv 2026-09-01 @aaaaaaa reproduces** · \`a/b.ts:1\` |`] : []),
     ].join('\n'),
-    plans: [{ file: 'PLAN_M900_PLANTED.md', milestone: '900', ids: planClaims(text), claims: closeClaims(text) }],
+    plans: [{
+      file: 'PLAN_M900_PLANTED.md', milestone: '900',
+      ids: planClaims(text), claims: closeClaims(text), staleDisclaimers: staleDisclaimers(text),
+    }],
     shipped: new Set(['900']),
   })
 }
@@ -1054,6 +1190,7 @@ function loadPlans(root) {
         closesAt: text.match(CLOSES_AT)?.[1] ?? null,
         ids: planClaims(text),
         claims: closeClaims(text),
+        staleDisclaimers: staleDisclaimers(text),
       }
     })
 }
