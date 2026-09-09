@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "refs/pull/90/head",
-  "sha": "7888ea881d4be6dd1b20d485798fdbc8e98685d8",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/7888ea881d4be6dd1b20d485798fdbc8e98685d8",
+  "ref": "refs/pull/91/head",
+  "sha": "3652c223feea6d0f4e8ea0ce7217128dbbccf6c0",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/3652c223feea6d0f4e8ea0ce7217128dbbccf6c0",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -2544,7 +2544,9 @@
       "scripts/verify-construct-coverage.mjs"
     ],
     "D737": [
-      "scripts/lib/tflw-provenance.mjs"
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/lib/tflw-provenance.mjs",
+      "scripts/verify-tflw-resolution.mjs"
     ],
     "D766": [
       "scripts/lib/constructs.mjs",
@@ -2651,7 +2653,8 @@
     ],
     "D847": [
       "scripts/discover-mutation-kills.mjs",
-      "scripts/lib/census-shape.mjs"
+      "scripts/lib/census-shape.mjs",
+      "scripts/lib/tflw-bin.mjs"
     ],
     "D848": [
       "scripts/discover-mutation-kills.mjs",
@@ -2789,6 +2792,13 @@
     "D952": [
       "scripts/verify-notation-parity.mjs"
     ],
+    "D954": [
+      "scripts/lib/tflw-bin.mjs"
+    ],
+    "D956": [
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/verify-tflw-resolution.mjs"
+    ],
     "D96": [
       "tests/.checkonly/crawl-body-not-an-assertion.tflw"
     ],
@@ -2839,12 +2849,14 @@
     "M131": [
       "scripts/derive-perf-bands.mjs",
       "scripts/lib/plants.mjs",
+      "scripts/lib/tflw-bin.mjs",
       "scripts/verify-check-diagnostics.mjs",
       "scripts/verify-contributing.mjs",
       "scripts/verify-notation-parity.mjs",
       "scripts/verify-provenance.mjs",
       "scripts/verify-security-acceptance.mjs",
-      "scripts/verify-sibling-pin-landed.mjs"
+      "scripts/verify-sibling-pin-landed.mjs",
+      "scripts/verify-tflw-resolution.mjs"
     ],
     "M131a": [
       "tests/.checkonly/authz-scan-public-target.tflw",
@@ -3063,6 +3075,17 @@
     "M183c": [
       "scripts/verify-notation-parity.mjs",
       "scripts/verify-provenance.mjs"
+    ],
+    "M184": [
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/verify-tflw-resolution.mjs"
+    ],
+    "M184a": [
+      "scripts/lib/tflw-bin.mjs"
+    ],
+    "M184b": [
+      "scripts/lib/tflw-bin.mjs",
+      "scripts/verify-tflw-resolution.mjs"
     ],
     "M19": [
       "tests/api/mechanics/body-types.tflw"
