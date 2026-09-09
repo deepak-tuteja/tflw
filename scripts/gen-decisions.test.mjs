@@ -40,10 +40,15 @@ import {
   collectCitations,
   collectLegacy,
   conformance,
+  siblingCodeCitations,
+  siblingProseCitations,
+  siblingQualifiedIn,
   expandsRanges,
   extractBlock,
   pickAnchor,
   publishedIds,
+  resolveSiblingCode,
+  resolveSiblingProse,
   scanLines,
   scrub,
   scrubTracked,
@@ -1405,4 +1410,52 @@ test('stamping a plan COMPLETE moves DECISIONS.md by nothing, and changing what 
   run(dir);
   assert.notEqual(decisions(dir), built, 'what the milestone decided still reaches the index');
   assert.match(decisions(dir), /is NOT reused/);
+});
+
+// --- M183c (`D950`): the sibling reading, moved here so it is reachable from a test -----------
+//
+// These five moved out of `refresh-sibling-citations.mjs`, which shells out to `gh` at module
+// scope and is therefore unimportable — the reason `M164-12` gives for why neither half of the
+// citation-grammar pair was ever testable. The move was proved neutral by artefact (the pin is
+// byte-identical across it); these are the unit half, so a later edit is caught here and not only
+// by the sibling's CI.
+
+test('a sibling markdown file with no **Notation.** paragraph contributes nothing', () => {
+  assert.equal(resolveSiblingProse('see D9 for why\n'), '',
+    'declining to guess which sequence a bare M<n> means is the rule; the sibling gate refuses the state separately');
+  assert.equal(siblingProseCitations([{ path: 'DOC.md', text: 'see D9 for why\n' }]).size, 0);
+});
+
+test('a declared file that does NOT default to its own sequence keeps bare forms and blanks the sibling-qualified one', () => {
+  const text = '**Notation.**\n\nsee M164 and `testFlow-tests D4` for why\n';
+  const ids = [...siblingProseCitations([{ path: 'DOC.md', text }]).keys()].sort(byId);
+  assert.ok(ids.includes('M164'), 'a bare M<n> here indexes THIS repository');
+  assert.ok(!ids.includes('D4'), '`testFlow-tests D4` names the sibling’s own sequence and must not be demanded of this index');
+});
+
+test('a declared file that DOES default to its own sequence blanks bare forms and keeps the marked minority', () => {
+  const text = "**Notation.**\n\nUnqualified here is this repository's own. See M164 and `tflw M22`.\n";
+  const ids = [...siblingProseCitations([{ path: 'DOC.md', text }]).keys()].sort(byId);
+  assert.ok(!ids.includes('M164'), 'a bare M<n> in such a file is the sibling’s milestone, not ours');
+  assert.ok(ids.includes('M22'), '`tflw M22` is the one spelling that overrides the default (D866: per site)');
+});
+
+test('the per-site qualifier is read per file, not pooled across the corpus', () => {
+  assert.deepEqual([...siblingQualifiedIn('see `tflw M22` here')], ['M22']);
+  assert.deepEqual([...siblingQualifiedIn('see M22 here')], [],
+    'a bare form does not qualify itself — pooling this across files is the defect D866 records, 47 pin sites wide');
+});
+
+test('the sibling code reading blanks the sibling-qualified form and expands ranges', () => {
+  assert.equal(resolveSiblingCode("// testFlow-tests M22 is theirs\n").includes('M22'), false);
+  const ids = [...siblingCodeCitations([{ path: 'src/a.ts', text: "const span = 'D5-D9';\n" }]).keys()].sort(byId);
+  assert.deepEqual(ids, ['D5', 'D6', 'D7', 'D8', 'D9'],
+    'ranges expand in the sibling code corpus by D862, where D861 keeps them unexpanded in this repository’s own code');
+});
+
+test('NEGATIVE CONTROL — the sibling code reading is not the prose reading wearing a different name', () => {
+  const text = "const span = 'D5-D9';\n";
+  assert.equal(siblingProseCitations([{ path: 'src/a.ts', text }]).size, 0,
+    'the prose reading refuses an undeclared file; if these two agreed here the corpus parameter would be doing nothing');
+  assert.equal(siblingCodeCitations([{ path: 'src/a.ts', text }]).size, 5);
 });

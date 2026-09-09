@@ -203,6 +203,98 @@ export function collectCitations(files, expands = expandsRanges) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Reading the sibling — this repository's half of the pair `M164-12` is about
+// ---------------------------------------------------------------------------------------------
+//
+// MOVED HERE FROM `refresh-sibling-citations.mjs` BY `M183c` (`D950`), UNCHANGED. That file shells
+// out to `gh` at module scope, so importing it fetches from GitHub — which is the reason
+// `M164-12` gives for why neither half of this pair is reachable from a test, and therefore why
+// the two grammars have only ever been compared by a red arriving late. Nothing below needs a
+// network, a ref or a checkout; it sat there because that is where it was written.
+//
+// `D711` IS UNTOUCHED, AND THIS IS THE OBVIOUS PLACE TO MISREAD IT. That decision refuses a
+// *shared reading* — "a shared implementation would agree with itself". What moved is this
+// repository's reading, from one of its own files into another of its own files. The sibling's
+// `verify-provenance.mjs` still implements the grammar independently and still does not call this.
+// What the move buys is that the sibling's self-test can now hold both at once and *contradict*
+// one with the other (`D948`), which is the third statement of the rule `D866` asks for.
+//
+// PROOF OBLIGATION, discharged at build time rather than argued: the pin
+// `refresh-sibling-citations.mjs --from-checkout` writes is byte-identical across this move.
+
+/** `testFlow-tests M22` — the sibling naming its own sequence. Blanked before collecting. */
+const SIBLING_OWN = /`?testFlow-tests\s+(?:M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
+/** `tflw M22` — the sibling naming THIS sequence. The one spelling that overrides the default. */
+const SIBLING_THEIRS = /`?tflw\s+(M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
+/** A bare `M<n>` in a file that has declared the sibling's own sequence as its default. */
+const SIBLING_UNQUALIFIED_M = /(?<![\w#])M\d{1,3}[a-z]?\d?\b/g;
+
+/**
+ * `D711`'s per-file default, applied to one of the sibling's markdown files before collecting.
+ *
+ * Three outcomes, and the first is the one that matters most: a file with no `**Notation.**`
+ * paragraph contributes NOTHING rather than contributing a guess. The sibling's own gate is what
+ * refuses that state; this only declines to invent an answer for it.
+ *
+ * @param {string} text @returns {string} the text to collect citations from
+ */
+export function resolveSiblingProse(text) {
+  if (!/\*\*Notation\.\*\*/.test(text)) return '';
+  if (!/here is this repository's own/.test(text)) return text.replace(SIBLING_OWN, ' ');
+  const kept = [...text.matchAll(SIBLING_THEIRS)].map((m) => m[1]).join(' ');
+  return `${text.replace(SIBLING_UNQUALIFIED_M, ' ')}\n${kept}\n`;
+}
+
+/**
+ * The same for one of the sibling's non-prose files. A `.ts` file carries no `**Notation.**`
+ * paragraph, so `own-identifiers.json` answers whose sequence a bare `M<n>` means (`M169d2`) and
+ * all this does is blank the explicitly-sibling-qualified form.
+ *
+ * @param {string} text @returns {string}
+ */
+export function resolveSiblingCode(text) {
+  return text.replace(SIBLING_OWN, ' ');
+}
+
+/**
+ * The identifiers one file qualifies as THIS repository's, by site (`D866`). The site is the unit:
+ * a `tflw M22` in one file re-admits `M22` in that file and nowhere else. Reading another file's
+ * context IS inferring from context, which is what the override exists not to do.
+ *
+ * @param {string} text @returns {Set<string>}
+ */
+export function siblingQualifiedIn(text) {
+  const here = new Set();
+  for (const [, id] of text.matchAll(SIBLING_THEIRS)) here.add(id);
+  return here;
+}
+
+/**
+ * What this repository pins out of the sibling's prose — the middle of the sandwich the sibling's
+ * `citationsOf` ⊆ … ⊆ `citationsLoose` bracket.
+ *
+ * @param {{path: string, text: string}[]} files
+ */
+export function siblingProseCitations(files) {
+  return collectCitations(files.map(({ path, text }) => ({ path, text: resolveSiblingProse(text) })));
+}
+
+/**
+ * The same for the sibling's code corpus. Ranges expand here and `D861` says they do not expand in
+ * code — both are right, because they are about different corpora. `D862` records the measurement
+ * that separates them: all 15 range-shaped strings in the sibling's code are tight, same-sequence
+ * and written by a person in a comment, where this repository's one counterexample is a coverage
+ * span used as a test fixture. Refusing to expand would drop seven interior identifiers the
+ * sibling's own gate reads, and a pin that disagrees with the reading it is compared against is
+ * `M154d`'s unclearable red.
+ *
+ * @param {{path: string, text: string}[]} files
+ */
+export function siblingCodeCitations(files) {
+  return collectCitations(files.map(({ path, text }) => ({ path, text: resolveSiblingCode(text) })), () => true);
+}
+
+// ---------------------------------------------------------------------------------------------
 // Anchors — where the private records define an identifier
 // ---------------------------------------------------------------------------------------------
 

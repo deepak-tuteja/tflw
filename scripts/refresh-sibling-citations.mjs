@@ -85,7 +85,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectCitations, PULL_REF } from './gen-decisions.mjs';
+import { PULL_REF, siblingCodeCitations, siblingProseCitations, siblingQualifiedIn } from './gen-decisions.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'scripts', 'sibling-citations.json');
@@ -311,7 +311,8 @@ function claimedIdentifiers() {
 // `DECLARED_UNRESOLVABLE` rather than edited out of this comment.
 //
 // First, the `testFlow-tests` qualifier is invisible to `collectCitations`, which reads the bare
-// `D4` — the exact distinction `OWN`/`THEIRS` below exist to draw, unimplemented in the other half
+// `D4` — the exact distinction `SIBLING_OWN`/`SIBLING_THEIRS` exist to draw (in
+// `gen-decisions.mjs` since `M183c`), unimplemented in the other half
 // of the pair. Teaching it there was measured rather than assumed: the qualified form is house
 // convention in the sibling, ~40 sites across its prose, and appears in tflw **exactly once** —
 // here. A grammar generalised from a single instance is the shape `M167` names and `D861` refused,
@@ -321,21 +322,11 @@ function claimedIdentifiers() {
 // heading, copied between the two plans, naming a decision nobody ever wrote. There is no anchor to
 // point it at in either tree, so the example cannot be made to resolve — only stated, which is what
 // the declaration does and what makes it checkable if `D4` is ever minted for real.
-const OWN = /`?testFlow-tests\s+(?:M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
-const THEIRS = /`?tflw\s+(M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
-const UNQUALIFIED_M = /(?<![\w#])M\d{1,3}[a-z]?\d?\b/g;
-
-const resolved = files.map(({ path, text }) => {
-  const defaultsToOwn = /here is this repository's own/.test(text);
-  // A file with no declaration at all contributes nothing rather than contributing a guess. The
-  // sibling's gate is what refuses that state; this only declines to invent an answer for it.
-  if (!/\*\*Notation\.\*\*/.test(text)) return { path, text: '' };
-  if (!defaultsToOwn) return { path, text: text.replace(OWN, ' ') };
-  const kept = [...text.matchAll(THEIRS)].map((m) => m[1]).join(' ');
-  return { path, text: `${text.replace(UNQUALIFIED_M, ' ')}\n${kept}\n` };
-});
-
-const cited = collectCitations(resolved);
+// The patterns and the per-file resolution moved to `gen-decisions.mjs` in `M183c` (`D950`),
+// unchanged, because the `gh` call at module scope above makes this file unimportable and that is
+// the stated reason `M164-12` gives for why neither half of this pair is reachable from a test.
+// `D711` is untouched: what moved is this repository's reading, between two of its own files.
+const cited = siblingProseCitations(files);
 
 // ---------------------------------------------------------------------------------------------
 // The code half
@@ -348,7 +339,7 @@ const cited = collectCitations(resolved);
 // expand would drop seven interior identifiers the sibling's own gate reads, and a pin that
 // disagrees with the reading it is compared against is `M154d`'s unclearable red.
 const { claimed, unresolvable } = claimedIdentifiers();
-const codeCited = collectCitations(codeFiles.map(({ path, text }) => ({ path, text: text.replace(OWN, ' ') })), () => true);
+const codeCited = siblingCodeCitations(codeFiles);
 
 // The override, per site (`D-M164-06-8`). Everything else the sibling claims is its own and is not
 // asked of this index; `tflw M22` is the one spelling that says otherwise, and it is deliberately
@@ -363,8 +354,7 @@ const codeCited = collectCitations(codeFiles.map(({ path, text }) => ({ path, te
 // last clause above is the tell: reading another file's context IS inferring from context.
 const qualifiedAt = new Map();
 for (const { path, text } of codeFiles) {
-  const here = new Set();
-  for (const [, id] of text.matchAll(THEIRS)) here.add(id);
+  const here = siblingQualifiedIn(text);
   if (here.size) qualifiedAt.set(path, here);
 }
 const qualifiesAt = (path, id) => qualifiedAt.get(path)?.has(id) === true;
