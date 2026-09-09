@@ -5899,7 +5899,7 @@ three graders. Not a new mechanism — the existing one, moved and widened.
 
 ### D489
 
-<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/perf-ladder.mjs +3 more · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/perf-ladder.mjs +5 more · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
 
 **D489 — The manifest is the source; `VULNS.md`'s table is checked against it. Direction matters.**
 
@@ -6583,7 +6583,7 @@ fail the day it ships.
 
 ### D737
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/refresh-tflw.mjs +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/refresh-tflw.mjs +2 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D737` — the build stamp is never invented.**
 `commit` is a short sha or `null`; there is no third answer. Outside a git checkout — a published
@@ -7999,7 +7999,7 @@ whole point, and committing one that names a commit nobody can fetch is what `D7
 
 ### D866
 
-<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
 
 **`D866` — qualification is a property of a site, not of the corpus.** `D864`'s third term is
 written *"`tflw <id>` **at a site**"*, and `D-M164-06-8` calls it *"the per-site override"*. Both
@@ -8158,6 +8158,16 @@ the matcher-compatibility check judge, and a locator in *action* position (`clic
 never reaches either. The sibling's evidence for the row is therefore a plant that uses a locator as
 a subject, which no existing locator plant is. One double-rostered id, stated, with its distinct
 obligation named.
+
+### D909
+
+<sub>cited from tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M177_LEDGER_CLAIM_AND_RECORD.md`</sub>
+
+**`D909` — a sentence ends a close-claim's clause; it cannot open one.**
+Taken 2026-09-06 while building `M177a`. `D872` settled that a claim's corpus is the *clause* and
+not the line, split at bold runs. A sentence is the next boundary down, and `PLAN_M175`'s
+`Closes …. Files \`M175-01\`.` is what it costs not to have it — `M175-02`, and the reason that
+header is split across two lines today.
 
 ### D913
 
@@ -8566,7 +8576,7 @@ file**, beside the pattern-layer one, sharing its fixture discipline.
 
 ### D954
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
 **`D954` — the refresh is a local act on every machine, and `refresh-tflw` is the only way to
 perform it.** No tarball is carried between machines by any mechanism. This is the user's proposal
@@ -8574,7 +8584,7 @@ adopted verbatim; `D953` is what makes it true rather than aspirational.
 
 ### D955
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/refresh-tflw.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/refresh-tflw.mjs +1 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
 **`D955` — a branch refresh marks itself, and the mark is not `commit`.** `D737` governs what the
 build could *observe*; this records what the packer was *told*. A `'released'` grader may refuse a
@@ -11141,7 +11151,7 @@ Joins the `security-ui` regression leg.
 
 ### M154f
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md +32 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md +34 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154f` — the security tier and the cross-repo seam**
 
@@ -12088,6 +12098,21 @@ Three authz tests for the new route live in the same file, and the comment above
 nothing else calls it, and a reader following `@ticketing` from `README.md` should find the verb the
 collection test depends on.
 
+### M183
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+
+**`M183` — a record that costs a pull request, a rule stated twice and compared never, and a claim whose evidence is fetched and unread**
+
+**Status:** **`M183a`, `M183b` and `M183c` BUILT, MEASURED and MERGED 2026-09-09** (tflw `2f68fa2`
++ `9b7eeef` + `39b0d8a`, sibling `901bd3e`). **`M183d` was never blocked and is now BUILT — as
+`M184d`, on the box** (`D957`): `D946`'s "unrunnable" was a fact about the Mac, and the gate runs on
+the box today (`M184` §1.1). Its scope in §6 below stands as written; what changed is where it ran
+and that `/spike` turned out to be unusable as its control. `M180-01` is closed. Read
+`PLAN_M184_REFRESH_IS_LOCAL.md` for the build, so this file does not become a second place the same
+build state is recorded (`D489`).
+Written after `M182` merged (tflw `6880679`, sibling `407d264`), against a ledger at **10 open**.
+
 ### M183c
 
 <sub>cited from tflw-tests/scripts/verify-notation-parity.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
@@ -12099,7 +12124,7 @@ a parity gate*, and one was built on 2026-09-06. This widens it.
 
 ### M184
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
 **`M184` — the refresh is a local act, the artifact is rsynced, and the banner names the mode rather than the thing**
 
@@ -12120,7 +12145,7 @@ is that the arrangement is **already half-doing this, informally, and the halves
 
 ### M184b
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-notation-parity.mjs, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
 **`M184b` — the check that outlives the refresh (`D956`)**
 
@@ -12136,7 +12161,7 @@ is that the arrangement is **already half-doing this, informally, and the halves
 
 ### M184c
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/refresh-tflw.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/refresh-tflw.mjs +1 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
 **`M184c` — the ref a build was packed from (`D955`, `D737`)**
 
@@ -12150,5 +12175,45 @@ Only after `M184a`/`M184b`, because a marker on an artifact that gets overwritte
 
 `M183d` as scoped in `PLAN_M183` §6, run where it works. Not a new stage, a relocation, recorded
 here so the correction in §1.1 has somewhere to land.
+
+### M185a
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M185_SAYS_WHAT_IT_SAW.md`</sub>
+
+**`M185a` — the announcement stops claiming an event it cannot see (`M184-02`)**
+
+**One thing the build sharpened over the plan.** The plan said the caller would pass "the tree's
+state"; what it passes is narrower and better. Whether the tree is dirty *somewhere* says nothing
+about the index — an uncommitted `packages/` file does not make `DECISIONS.md` a guess. The witness
+asks whether **the file that answered** is committed, which is the narrowest fact that can support
+or refute *landed*, and it is also exactly the condition `M184-02` walked into.
+
+### M185b
+
+<sub>cited from tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/refresh-tflw.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M185_SAYS_WHAT_IT_SAW.md`</sub>
+
+**`M185b` — provenance reads the records `M184c` wrote (`M184-03`)**
+
+```
+! tflw 0.1.0 carries no commit (D737), and the two records beside it DISAGREE:
+  packed from main@39b0d8a, tree synced here is main@1ff0381 (dirty).
+```
+
+and `verify:construct-acceptance` graded 103 plants underneath it, which is `GRADEABLE` working as
+decided. Four mutants, all caught: the `mismatched` branch disabled (3 controls), `sameCommit` made
+exact (1), `mismatched` removed from `GRADEABLE` (1), and — the one that matters — agreement
+promoted to `current` (3).
+
+### M185c
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M185_SAYS_WHAT_IT_SAW.md`</sub>
+
+**`M185c` — the two corpus rules are compared, not trusted (`M183-02`)**
+
+The repair then deleted tflw's rule, for the sibling's reason re-measured against **this** side's
+grammar rather than inherited: `CITATION` and `RANGE` over the 5 tracked lockfiles, 855,936 bytes,
+**0 identifiers**, so the pin does not move. Control: restoring the rule to tflw reddens the gate
+naming the rule and the side — a mutation made on the far tree, which is the only side where it
+proves anything.
 
 <!-- GENERATED:decisions:end -->

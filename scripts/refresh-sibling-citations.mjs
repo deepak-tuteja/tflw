@@ -235,17 +235,37 @@ const tree = fetchTree();
 // The two corpora (`M169d3`, `D864`) — the sibling's own split, re-implemented on this side
 // ---------------------------------------------------------------------------------------------
 //
-// The sibling states these five in `verify-provenance.mjs`'s `EXCLUSIONS`, each with the defect it
+// The sibling states these in `verify-provenance.mjs`'s `EXCLUSIONS`, each with the defect it
 // prevents; the reasons are not repeated here, only the rules, because a reason copied across a
 // repository boundary is a reason that goes stale in one of the two places. What matters here is
 // that both sides exclude the same files: an exclusion only on this side would put an identifier in
 // the pin that the sibling never asks for, and one only on that side would demand an entry this pin
 // does not carry. Either way the red is unclearable.
+//
+// AND THAT COMMENT WAS THE ONLY THING HOLDING IT, WHICH IS WHY IT DRIFTED (`M185c`, `M183-02`).
+//
+// The sibling deleted its `lockfile` rule on 2026-09-06 (`M176f`, `4594dd9`, #82) after measuring
+// what it was worth — 0.6 ms of a 15.7 ms scan, 0 identifiers, 15.4% of the corpus — and this copy
+// stood for three days afterwards. Nothing was red, and the reason had nothing to do with the two
+// lists agreeing: `M171d`'s convergence gave both grammars `+` and `=` citation boundaries, so a
+// `sha512-` digest tail is refused on its own and the rule excluded nothing on either side. Two
+// facts cancelling is not agreement.
+//
+// It is deleted here for the sibling's reason, re-measured against THIS side's grammar rather than
+// inherited: `CITATION` and `RANGE` over the 5 tracked lockfiles in that tree, 855,936 bytes, yield
+// **0** identifiers, so the pin does not move. The exclusion is gone rather than added there,
+// because an exclusion that excludes nothing is the vacuity `M141` names, and keeping it would have
+// left this side's corpus permanently narrower than the claim it makes.
+//
+// The comment above is no longer the mechanism. `testFlow-tests`' `verify-notation-parity.mjs`
+// compares the two rule sets as WRITTEN — its CORPUS layer — and fails naming the rule and the side
+// it is missing from. `EXCLUDED` is read there as source text, so a rename, a move, or a disjunct
+// that layer cannot name is a failure rather than a skip: keep this a single arrow expression, and
+// add any new rule to `CORPUS_VOCABULARY` on that side in the same edit.
 const IMAGE_EXT = new Set(['.png', '.svg', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.avif']);
 const MANIFEST = 'scripts/own-identifiers.json';
 const EXCLUDED = (path) => path.endsWith('.md')
   || IMAGE_EXT.has(extname(path).toLowerCase())
-  || /(?:^|\/)(?:package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/.test(path)
   || path === MANIFEST
   || path.endsWith('.jsonl');
 
