@@ -6085,7 +6085,7 @@ both). **The answer is A**, with a reason that is not in the row and changes how
 
 ### D540
 
-<sub>cited from tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **D540 — green condition, made machine-checkable**
 
@@ -6583,7 +6583,7 @@ fail the day it ships.
 
 ### D737
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/refresh-tflw.mjs +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D737` — the build stamp is never invented.**
 `commit` is a short sha or `null`; there is no third answer. Outside a git checkout — a published
@@ -7985,7 +7985,7 @@ Not one is a fixture value.
 
 ### D865
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
 
 **`D865` — a two-repository change can be exercised before either half is pushed, and the pin it
 produces cannot be committed.** `refresh-sibling-citations.mjs --from-checkout <path>` reads the
@@ -8571,6 +8571,15 @@ file**, beside the pattern-layer one, sharing its fixture discipline.
 **`D954` — the refresh is a local act on every machine, and `refresh-tflw` is the only way to
 perform it.** No tarball is carried between machines by any mechanism. This is the user's proposal
 adopted verbatim; `D953` is what makes it true rather than aspirational.
+
+### D955
+
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/refresh-tflw.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+
+**`D955` — a branch refresh marks itself, and the mark is not `commit`.** `D737` governs what the
+build could *observe*; this records what the packer was *told*. A `'released'` grader may refuse a
+build carrying it. Same shape as `--from-checkout`'s `local: true` in
+`refresh-sibling-citations.mjs` (`D865`), and adopted on that precedent rather than on preference.
 
 ### D956
 
@@ -10507,7 +10516,7 @@ blind spot + repro emitter · `f14f087` docs · `dd8c5b5` the mutation-registry 
 
 ### M131
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/lib/plants.mjs +8 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/lib/plants.mjs +9 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131` — the D21 safety completion**
 
@@ -11067,7 +11076,7 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
 ### M153b
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-acceptance.mjs +7 more · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-acceptance.mjs +8 more · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
 
 **`M153b` — the sibling's two descriptions (testFlow-tests)**
 
@@ -12124,6 +12133,14 @@ is that the arrangement is **already half-doing this, informally, and the halves
   tarball, so an install that is not from it leaves the question unanswerable.
 - ✅ The announce line names the artifact: `… <- default (the vendored tarball) — installed from
   vendor/tflw-0.1.0.tgz (04fe2248), contents verified`.
+
+### M184c
+
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/refresh-tflw.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+
+**`M184c` — the ref a build was packed from (`D955`, `D737`)**
+
+Only after `M184a`/`M184b`, because a marker on an artifact that gets overwritten is decoration.
 
 ### M184d
 
