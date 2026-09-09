@@ -12103,7 +12103,7 @@ is that the arrangement is **already half-doing this, informally, and the halves
 
 <sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
-**`M184a` — stop the sync from severing the record (`D953`, `D954`) — BUILT, ACCEPTED**
+**`M184a` — stop the sync from severing the record (`D953`, `D954`)**
 
 - ✅ `vendor/` into `exec.mjs`'s `NEVER_PUSH`, with the reason in the docblock beside its neighbours.
 - ✅ `refresh-tflw` run on the **box**, natively, so it holds a build it packed itself.
@@ -12115,8 +12115,23 @@ is that the arrangement is **already half-doing this, informally, and the halves
 
 **`M184b` — the check that outlives the refresh (`D956`)**
 
-- The installed entry is verified against `vendor/*.tgz` at **resolution** time, not only at refresh
-  time, so §3.2's window closes.
-- The announce line says which of the two it is looking at.
+- ✅ `vendorProvenance()` in `scripts/lib/tflw-bin.mjs`: gunzip `vendor/*.tgz`, read
+  `package/dist/cli.cjs` out of it, compare sha256 against the resolved entry. **8.6 ms on the box**,
+  measured before designing around a cost that turned out not to exist — and no new state file,
+  which is the version of this that could itself go stale.
+- ✅ Three states on `D737`'s precedent, `unknowable` printed rather than assumed (`M131-03`), with
+  **five distinct ways** to reach it. Only `mismatch` is fatal: `released` *means* the vendored
+  tarball, so an install that is not from it leaves the question unanswerable.
+- ✅ The announce line names the artifact: `… <- default (the vendored tarball) — installed from
+  vendor/tflw-0.1.0.tgz (04fe2248), contents verified`.
+
+### M184d
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+
+**`M184d` — `M183d`, on the box (`D957`)**
+
+`M183d` as scoped in `PLAN_M183` §6, run where it works. Not a new stage, a relocation, recorded
+here so the correction in §1.1 has somewhere to land.
 
 <!-- GENERATED:decisions:end -->
