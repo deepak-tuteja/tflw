@@ -6583,7 +6583,7 @@ fail the day it ships.
 
 ### D737
 
-<sub>cited from tflw-tests/scripts/lib/tflw-provenance.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D737` — the build stamp is never invented.**
 `commit` is a short sha or `null`; there is no third answer. Outside a git checkout — a published
@@ -7828,7 +7828,7 @@ larger number it did not measure.
 
 ### D847
 
-<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/census-shape.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/census-shape.mjs, tflw-tests/scripts/lib/tflw-bin.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D847` — the installation proof is the bundle with its build stamp normalised out, and `D843`'s named mechanism does not work**
 
@@ -8563,6 +8563,23 @@ with an exercise-checked exemption map. A second gate asserting an overlapping c
 two hand-maintained copies of one fact, which drift silently — and it would be introduced by the
 milestone whose subject is records nothing holds. The reading-layer assertion goes **into that
 file**, beside the pattern-layer one, sharing its fixture discipline.
+
+### D954
+
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+
+**`D954` — the refresh is a local act on every machine, and `refresh-tflw` is the only way to
+perform it.** No tarball is carried between machines by any mechanism. This is the user's proposal
+adopted verbatim; `D953` is what makes it true rather than aspirational.
+
+### D956
+
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+
+**`D956` — the announce line names the artifact it resolved, or it stops claiming one.** §1.2. The
+current wording is a category label read as a provenance claim. Either the line verifies the
+installed entry against `vendor/*.tgz` and says so, or it says "the default entry" and leaves the
+tarball out of a sentence that is not about it.
 
 ### M0
 
@@ -10490,7 +10507,7 @@ blind spot + repro emitter · `f14f087` docs · `dd8c5b5` the mutation-registry 
 
 ### M131
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/lib/plants.mjs +6 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/lib/plants.mjs +8 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131` — the D21 safety completion**
 
@@ -12070,5 +12087,51 @@ collection test depends on.
 
 `D944`, `D948`-`D952`. **Both repositories.** Re-cut 2026-09-09 after §3.4: the scoping said *build
 a parity gate*, and one was built on 2026-09-06. This widens it.
+
+### M184
+
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+
+**`M184` — the refresh is a local act, the artifact is rsynced, and the banner names the mode rather than the thing**
+
+Opened by the user's proposal, in their words: *"refresh should be native to both machines … when
+refreshed/latest tflw is required on mac side it should be generated/refreshed by
+`npm run refresh-tflw` … the same for the box."* The proposal is right. What the measurement adds
+is that the arrangement is **already half-doing this, informally, and the halves disagree today**.
+
+### M184a
+
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+
+**`M184a` — stop the sync from severing the record (`D953`, `D954`)**
+
+- ✅ `vendor/` into `exec.mjs`'s `NEVER_PUSH`, with the reason in the docblock beside its neighbours.
+- ✅ `refresh-tflw` run on the **box**, natively, so it holds a build it packed itself.
+- ⚠️ **Not** run on the Mac, and that is a deferred decision rather than an omission — see below.
+
+### M184b
+
+<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-tflw-resolution.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+
+**`M184b` — the check that outlives the refresh (`D956`)**
+
+- ✅ `vendorProvenance()` in `scripts/lib/tflw-bin.mjs`: gunzip `vendor/*.tgz`, read
+  `package/dist/cli.cjs` out of it, compare sha256 against the resolved entry. **8.6 ms on the box**,
+  measured before designing around a cost that turned out not to exist — and no new state file,
+  which is the version of this that could itself go stale.
+- ✅ Three states on `D737`'s precedent, `unknowable` printed rather than assumed (`M131-03`), with
+  **five distinct ways** to reach it. Only `mismatch` is fatal: `released` *means* the vendored
+  tarball, so an install that is not from it leaves the question unanswerable.
+- ✅ The announce line names the artifact: `… <- default (the vendored tarball) — installed from
+  vendor/tflw-0.1.0.tgz (04fe2248), contents verified`.
+
+### M184d
+
+<sub>cited from tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+
+**`M184d` — `M183d`, on the box (`D957`)**
+
+`M183d` as scoped in `PLAN_M183` §6, run where it works. Not a new stage, a relocation, recorded
+here so the correction in §1.1 has somewhere to land.
 
 <!-- GENERATED:decisions:end -->
