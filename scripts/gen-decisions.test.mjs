@@ -1316,3 +1316,93 @@ test('a fence is an illustration, never a definition', () => {
   const cited = scanLines(['```', 'a comment citing `D105` inside an untagged fence', '```'].join('\n'));
   assert.equal(cited.some((l) => l.inProductFence), false, 'an untagged fence is not a product fence');
 });
+
+// --- `D941`, build state is not a decision -----------------------------------------------------
+//
+// `M180-03`: every milestone was costing a trailing pull request whose entire content was one
+// paragraph of generated status, because a plan's `**Status:**` paragraph sits inside the block
+// `D668` lifts verbatim. Three milestones paid it consecutively — `M179` as tflw `#186`, `M180` as
+// `#188`, `M182` as `#191`. The extractor now steps over a leading bookkeeping paragraph the same
+// way it steps over a comment-only one.
+
+/** The fixture's `M7` record, with a chosen build-state paragraph and a chosen statement. */
+const m7 = (lead, statement = 'A session is established once and reused across every step in the file that names it.') =>
+  [
+    '# M7 — sessions carry their own cookie jar',
+    '',
+    ...(lead ? [lead, ''] : []),
+    statement,
+    '',
+    'Everything after the first paragraph is how the work went, not what was decided.',
+    '',
+    '## Decisions',
+    '',
+    '**`D7` — the percentile algorithm differs from the reference implementation.** Documented,',
+    'not changed: the divergence is smaller than the sampling error at the run lengths anyone uses.',
+    '',
+  ].join('\n');
+
+const setPlan = (dir, text) => writeFileSync(join(dir, 'PLAN_M7_SESSIONS.md'), text, 'utf8');
+
+test('a build-state paragraph is stepped over and the statement under it is what publishes', () => {
+  const body = extractBlock(m7('**Status:** **BUILT 2026-01-01.** Merged as #12.'), {
+    line: 1, kind: 'heading', headingLevel: 1,
+  });
+  assert.match(body, /A session is established/, 'the statement is what the index is for');
+  assert.doesNotMatch(body, /BUILT 2026-01-01/, 'and build state is not a decision (`D941`)');
+  assert.doesNotMatch(body, /how the work went/, 'still one paragraph, not the section (`D670`)');
+});
+
+test('the label is the first word inside the bold span, not the whole span', () => {
+  // `**Status:**` is the whole span and `**Merged 2026-09-08**` is not — the date is inside the
+  // emphasis. A rule written against the whole span matched two of the three labels and left the
+  // worst one published, which is the label this repository publishes merge commits from.
+  const body = extractBlock(m7('**Merged 2026-09-08**, `D511` order: tflw **#190** (`a0a3e95`).'), {
+    line: 1, kind: 'heading', headingLevel: 1,
+  });
+  assert.doesNotMatch(body, /a0a3e95/, 'a merge sha cannot be written before the merge that invalidates the index');
+  assert.match(body, /A session is established/);
+});
+
+test('a run of bookkeeping paragraphs is stepped over, and an unlisted label is left alone', () => {
+  const run2 = extractBlock(
+    m7('**Status:** **BUILT.**\n\n**Numbering:** takes `D900`+; re-derive at build time.'),
+    { line: 1, kind: 'heading', headingLevel: 1 },
+  );
+  assert.doesNotMatch(run2, /BUILT/);
+  assert.doesNotMatch(run2, /re-derive at build time/, 'a reservation that says not to trust it is not an entry');
+  assert.match(run2, /A session is established/);
+
+  // FAILS OPEN. The set is closed and declared; a label outside it publishes exactly as it does
+  // today. The cost of missing one is a pull request this milestone already prices; the cost of
+  // over-matching is a milestone with no statement in the index at all.
+  const unlisted = extractBlock(m7('**Closes:** `M154b-02` (S3).'), { line: 1, kind: 'heading', headingLevel: 1 });
+  assert.match(unlisted, /M154b-02/, 'a `Closes` claim is written at scoping time and does not move after the merge');
+});
+
+test('a plan whose statement is only a rule or a heading keeps publishing its build state', () => {
+  const rule = ['# M7 — sessions carry their own cookie jar', '', '**Status:** **BUILT 2026-01-01.**', '', '---', '', '## 1. How it went', ''].join('\n');
+  const body = extractBlock(rule, { line: 1, kind: 'heading', headingLevel: 1 });
+  assert.match(body, /BUILT 2026-01-01/, 'an entry that publishes `---` is worse than one that publishes build state');
+  assert.doesNotMatch(body, /^---$/m, 'and the rule itself never publishes');
+});
+
+test('stamping a plan COMPLETE moves DECISIONS.md by nothing, and changing what it decided still moves it', () => {
+  const dir = fixture();
+
+  setPlan(dir, m7('**Status:** **BUILT 2026-01-01**, first stage only.'));
+  run(dir);
+  const built = decisions(dir);
+
+  // The whole point, end to end: the stamp every milestone takes on its last day.
+  setPlan(dir, m7('**Status:** **COMPLETE 2026-02-02** — all three stages, merged as #12, #13 and #14.'));
+  run(dir);
+  assert.equal(decisions(dir), built, 'the trailing pull request `M180-03` filed has no content to carry');
+
+  // NEGATIVE CONTROL, and this test is worth nothing without it: a generator that had simply
+  // stopped reading the record would pass the assertion above.
+  setPlan(dir, m7('**Status:** **COMPLETE 2026-02-02.**', 'A session is established once and is NOT reused across steps.'));
+  run(dir);
+  assert.notEqual(decisions(dir), built, 'what the milestone decided still reaches the index');
+  assert.match(decisions(dir), /is NOT reused/);
+});
