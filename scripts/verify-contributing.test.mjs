@@ -141,6 +141,34 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:own-identifiers',
+    class: 'gate',
+    local: 'npm run verify:own-identifiers',
+    why: "`M186d`/`D959`. `verify:decisions` enforces the PROSE half of `D858` — every cited identifier has an entry. This "
+      + "enforces the shape of the answer to the other half: an identifier cited only in tracked code resolves in the records "
+      + "and is deliberately not published, so `scripts/own-identifiers.json` is what lets a reader of a public file tell a "
+      + "live decision from a typo. Its entire safety property is that it carries names and nothing lifted from a record, and "
+      + "that is a property which degrades by good intentions — one clause of helpful context per entry, then a title, then a "
+      + "first paragraph, and at no point does anybody decide to publish the records. Both sides are tracked so this is a full "
+      + "check here rather than a half one; the currency half needs the gitignored records and stays local (`D859`), which the "
+      + "gate prints instead of passing over. Static, milliseconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
+    cmd: 'npm run verify:own-identifiers:self-test',
+    class: 'gate',
+    local: 'npm run verify:own-identifiers:self-test',
+    why: "The controls for the gate above, for `D922`'s reason exactly — a gate whose failure modes nothing demonstrates is a "
+      + "gate nobody has seen work. Eleven, no network and no records. The two load-bearing ones fail on an identifier carrying "
+      + "one clause of context and on a declaration reason edited by a single character; the second is what keeps the free-text "
+      + "exemption checkable, since `unresolvable`'s reasons are allowed only because they are generated from tracked source. "
+      + "A twelfth was written and DELETED rather than shipped: an order assertion whose expression ended `|| true` and "
+      + "therefore could not fail, in the gate whose subject is checks that do not check. Static, milliseconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:decisions',
     class: 'gate',
     local: 'npm run verify:decisions',
@@ -242,6 +270,10 @@ const ABSENT_FROM_CI = [
   {
     local: 'npm run verify:ledger',
     why: 'its corpus (`REVIEW_FINDINGS.md`) is gitignored on purpose, and a check that skips when its input is missing is green about nothing (`M131-03`). So the guard runs locally before a milestone is called done, and the *suite* verifying the guard runs in CI inside `npm test`',
+  },
+  {
+    local: 'npm run refresh:own-identifiers -- --check',
+    why: 'the CURRENCY half of `M186c` (`D859`). It answers *is the manifest still what the records anchor*, so it needs the gitignored records and a CI checkout can never run it. Deliberately split from `npm run verify:own-identifiers`, which is in CI and answers a different question — *is the manifest the right shape, carrying names and no record text*. Both sides of that one are tracked, so putting them in one command would have made the CI half inherit a limit it does not have, and a gate that reports a skip it did not need is the shape `D527` names',
   },
 ];
 

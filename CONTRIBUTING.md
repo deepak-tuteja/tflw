@@ -72,6 +72,9 @@ npm run verify:citations
 npm run verify:anchors
 npm run verify:sibling-pin              # ¶ CI adds --require-network (D921)
 npm run verify:sibling-pin:self-test
+npm run verify:own-identifiers
+npm run verify:own-identifiers:self-test
+npm run refresh:own-identifiers -- --check   # § needs the records
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
 node scripts/mutate.mjs <milestone>    # ‡ the CI form is different
@@ -154,18 +157,33 @@ npm run verify:ledger                  # § never runs in CI, by decision
   inside the *same* record and only the report can tell you which one you are reading.
   **Since 2026-09-04 it also checks the citations in *code*,** and that half buys something
   different, so it is worth stating separately. This index answers what tracked *prose* cites; the
-  notation is used just as heavily in comments, tests and `ci.yml`, and those 946 identifiers across
-  525 files were checked by nothing at all. They still publish nothing. A citation in code has to
-  **resolve** — the pointer must be live — and that is all: no block is lifted, no line is added
-  here, and a reader who cannot see the design records is exactly as well off as before. That is
-  deliberate and it is the difference between this and simply widening the corpus, which would have
-  added several thousand lines to a public file in one commit. The first run found ten dead pointers
-  in files a maintainer reads constantly, four of them in `ci.yml`.
+  notation is used just as heavily in comments, tests and `ci.yml`, and that corpus was checked by
+  nothing at all. It still publishes nothing. A citation in code has to **resolve** — the pointer
+  must be live — and that is all: no block is lifted and no line is added here. That is deliberate
+  and it is the difference between this and simply widening the corpus, which would put thousands of
+  lines of unreviewed record text into a public file in one commit, in the one direction that cannot
+  be taken back. The first run found ten dead pointers in files a maintainer reads constantly, four
+  of them in `ci.yml`.
+
+  **What changed in `M186c` is the reader's side of that bargain.** The sentence that used to stand
+  here said a reader who cannot see the design records is *"exactly as well off as before"*, and
+  that was true and was the weak point: `--demand` proves there are no dead pointers, but it needs
+  the records, so from a checkout the proof was a claim to be taken on trust.
+  `scripts/own-identifiers.json` carries it across — every identifier the records anchor, **by name
+  and without a word of their text** — so someone who meets a decision id in a docblock and finds
+  nothing in `DECISIONS.md` can tell a live decision from a typo, without anything private being
+  published. `verify:own-identifiers` asserts that names-only property, because it is the kind that
+  erodes one helpful clause at a time.
+
+  Naming an example here would have been worse than useless, which is worth a sentence because it is
+  the same rule one level up: this paragraph originally cited a real unpublished identifier to show
+  what the manifest is for, and citing it **in tracked prose is the act that publishes it** — the
+  example would have refuted itself on the next regeneration.
   Run it alone with **`npm run docs:demand`**; `verify:decisions` runs it as part of its third tier,
   so it inherits that tier's limit exactly — it needs the records **and** `git ls-files`, so it
   cannot run in CI or on the box, and there is no CI counterpart to fall back on. It prints, every
-  run, both the corpus it read and the identifiers it is declared *not* to check: six are cited
-  precisely because they resolve to nothing, three of them this gate's own negative fixtures. That
+  run, both the corpus it read and the identifiers it is declared *not* to check — each cited
+  precisely because it resolves to nothing, several of them this gate's own negative fixtures. That
   declaration is checked in the other direction too — if one of the six ever starts resolving, the
   run goes red on the declaration rather than passing quietly, because a declared non-existence that
   has become untrue is a standing exemption for a real citation.

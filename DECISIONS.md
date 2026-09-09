@@ -6,10 +6,21 @@ personal address, and none of that belongs in a public commit. But the code, `SP
 `GRAMMAR.md`, `CHANGELOG.md` and the READMEs cite them constantly, in a notation that was only
 ever addressed to someone who had them open.
 
-This file is the resolution target for that notation. Every identifier cited anywhere in tracked
-prose has an entry below, **lifted verbatim** from the record that defines it. Nothing here is a
-summary: if a block reads oddly out of context the fix is written into the record and this file is
-regenerated, so the two can never say different things.
+This file is the resolution target for that notation **as it appears in tracked prose**. Every
+identifier cited anywhere in tracked prose has an entry below, **lifted verbatim** from the record
+that defines it. Nothing here is a summary: if a block reads oddly out of context the fix is written
+into the record and this file is regenerated, so the two can never say different things.
+
+**A citation in tracked *source* is answered differently, and it is the one thing to know before
+reading on.** A comment addresses a maintainer with the working tree open, so an identifier cited
+only in code is required to *resolve* in the records and is deliberately **not** published here.
+That is not a gap being tolerated: `scripts/gen-decisions.mjs --demand` reads every tracked
+non-prose file and fails on any identifier that resolves to nothing, so a citation in a `.ts` or
+`.mjs` file names a real decision even where this file is silent about it. Which identifiers those
+are is published — by name, without their text — in
+[`scripts/own-identifiers.json`](scripts/own-identifiers.json), so *"is this a live decision or a
+dead pointer"* is answerable from a checkout without lifting an unreviewed word of a private record
+into a public one.
 
 **Tracked prose means both repositories.** [`tflw-tests`](https://github.com/deepak-tuteja/tflw-tests)
 is tflw's dogfood target — a deliberately realistic API and the `.tflw` suites that exercise it —
@@ -72,10 +83,15 @@ A bare **`§n`** is a section of `SPEC.md` in fifty of the eighty-six places it 
 not, it is a section of whichever record the sentence names — or, if it names none, of the record on
 that entry's own `lifted from` line.
 
-This index answers **tracked prose**. The same notation appears about 9,300 more times in comments
-in tracked *source*, naming 671 identifiers — most of which have no entry here, because a comment
-addresses a maintainer who has the working tree. That exclusion is deliberate and it is large: if
-you arrived from a citation in a `.ts` file and find nothing below, this is why.
+**If you arrived from a citation in a `.ts` or `.mjs` file and find nothing below**, the opening
+section says why, and `own-identifiers.json` names what is missing. Most code citations do have an
+entry here — a comment usually cites something the prose cites too — so a silent one is the
+exception, and that file is what makes the exception legible rather than indistinguishable from a
+typo.
+
+No count is given for any of that, deliberately: the three that used to stand here were pinned by a
+gate to this text and compared to nothing in the tree, and by the time they were measured one of
+them had inverted its own claim.
 
 **`A4-05`, `FU-11`, `M130-01`** and the like are rows of the review ledger: a working queue of
 open defects, kept out of this repository for a different reason than the plans, and not resolved
@@ -12215,5 +12231,13 @@ grammar rather than inherited: `CITATION` and `RANGE` over the 5 tracked lockfil
 **0 identifiers**, so the pin does not move. Control: restoring the rule to tflw reddens the gate
 naming the rule and the side — a mutation made on the far tree, which is the only side where it
 proves anything.
+
+### M186c
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M186_THE_INDEX_ANSWERS_FOR_CODE.md`</sub>
+
+| stage | repo | what |
+|---|---|---|
+| `M186c` | tflw | **`own-identifiers.json` for tflw**, `M169d4`'s precedent applied to the repository that owns the notation: every identifier the records anchor, names only, generated and gated, so a checkout can answer *is `D911` real* without publishing a word of the block. |
 
 <!-- GENERATED:decisions:end -->

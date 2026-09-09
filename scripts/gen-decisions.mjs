@@ -1268,10 +1268,21 @@ personal address, and none of that belongs in a public commit. But the code, \`S
 \`GRAMMAR.md\`, \`CHANGELOG.md\` and the READMEs cite them constantly, in a notation that was only
 ever addressed to someone who had them open.
 
-This file is the resolution target for that notation. Every identifier cited anywhere in tracked
-prose has an entry below, **lifted verbatim** from the record that defines it. Nothing here is a
-summary: if a block reads oddly out of context the fix is written into the record and this file is
-regenerated, so the two can never say different things.
+This file is the resolution target for that notation **as it appears in tracked prose**. Every
+identifier cited anywhere in tracked prose has an entry below, **lifted verbatim** from the record
+that defines it. Nothing here is a summary: if a block reads oddly out of context the fix is written
+into the record and this file is regenerated, so the two can never say different things.
+
+**A citation in tracked *source* is answered differently, and it is the one thing to know before
+reading on.** A comment addresses a maintainer with the working tree open, so an identifier cited
+only in code is required to *resolve* in the records and is deliberately **not** published here.
+That is not a gap being tolerated: \`scripts/gen-decisions.mjs --demand\` reads every tracked
+non-prose file and fails on any identifier that resolves to nothing, so a citation in a \`.ts\` or
+\`.mjs\` file names a real decision even where this file is silent about it. Which identifiers those
+are is published — by name, without their text — in
+[\`scripts/own-identifiers.json\`](scripts/own-identifiers.json), so *"is this a live decision or a
+dead pointer"* is answerable from a checkout without lifting an unreviewed word of a private record
+into a public one.
 
 **Tracked prose means both repositories.** [\`tflw-tests\`](https://github.com/deepak-tuteja/tflw-tests)
 is tflw's dogfood target — a deliberately realistic API and the \`.tflw\` suites that exercise it —
@@ -1334,10 +1345,15 @@ A bare **\`§n\`** is a section of \`SPEC.md\` in fifty of the eighty-six places
 not, it is a section of whichever record the sentence names — or, if it names none, of the record on
 that entry's own \`lifted from\` line.
 
-This index answers **tracked prose**. The same notation appears about 9,300 more times in comments
-in tracked *source*, naming 671 identifiers — most of which have no entry here, because a comment
-addresses a maintainer who has the working tree. That exclusion is deliberate and it is large: if
-you arrived from a citation in a \`.ts\` file and find nothing below, this is why.
+**If you arrived from a citation in a \`.ts\` or \`.mjs\` file and find nothing below**, the opening
+section says why, and \`own-identifiers.json\` names what is missing. Most code citations do have an
+entry here — a comment usually cites something the prose cites too — so a silent one is the
+exception, and that file is what makes the exception legible rather than indistinguishable from a
+typo.
+
+No count is given for any of that, deliberately: the three that used to stand here were pinned by a
+gate to this text and compared to nothing in the tree, and by the time they were measured one of
+them had inverted its own claim.
 
 **\`A4-05\`, \`FU-11\`, \`M130-01\`** and the like are rows of the review ledger: a working queue of
 open defects, kept out of this repository for a different reason than the plans, and not resolved
@@ -1430,6 +1446,27 @@ function readTracked(root) {
  */
 export const IMAGE_EXT = new Set(['.png', '.svg', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.avif']);
 
+/**
+ * `M186c`'s manifest, excluded from the demand corpus with the reason at the exclusion.
+ *
+ * A citation is a reference somebody *made* — a maintainer writing `D911` in a comment because the
+ * rule matters there. `own-identifiers.json` is a generated list of names, so every entry in it
+ * resolves **by construction**: it is produced from the anchors the demand check would go on to
+ * verify. Reading it as a corpus asks the check to confirm its own input, adds roughly 1,556
+ * non-citations to a count reported to a human as *"identifiers cited across N files"*, and makes
+ * a deleted anchor unobservable from here — the manifest simply regenerates without it and stays
+ * self-consistent.
+ *
+ * It is the third member of a family this repository keeps naming: the sibling's `EXCLUDED` and
+ * `EXCLUSIONS` both drop `sibling-citations.json` for the same reason, and `M164-12` calls it out —
+ * a gate that reads a corpus tends to end up inside it.
+ *
+ * NOT extended to `sibling-citations.json` here, which contributes 598 sites to this corpus today
+ * and has since `M169d3`. The same argument applies to it and changing that is a measurement, not a
+ * tidy-up: it would move a number four gates report. Filed rather than done.
+ */
+export const OWN_IDENTIFIERS = 'scripts/own-identifiers.json';
+
 export function readCode(root) {
   let out;
   try {
@@ -1443,10 +1480,11 @@ export function readCode(root) {
     );
   }
   const files = [];
-  const skipped = { images: 0, binary: 0 };
+  const skipped = { images: 0, binary: 0, generated: 0 };
   for (const path of out.split('\n').filter(Boolean)) {
     if (path.endsWith('.md')) continue;
     if (IMAGE_EXT.has(extname(path).toLowerCase())) { skipped.images++; continue; }
+    if (path === OWN_IDENTIFIERS) { skipped.generated++; continue; }
     const buf = readFileSync(join(root, path));
     if (buf.includes(0)) { skipped.binary++; continue; }
     files.push({ path, text: buf.toString('utf8') });
@@ -1553,7 +1591,9 @@ export function checkDemand(files, anchors, legacy) {
 export function demandReport({ files, skipped }, { unresolved, stale, cited }) {
   const out = [
     `demand (D858): ${cited} identifiers cited across ${files.length} tracked non-prose files` +
-    ` — ${skipped.images} image and ${skipped.binary} binary file(s) not read, and tracked markdown read by the publish half instead.`,
+    ` — ${skipped.images} image and ${skipped.binary} binary file(s) not read,`
+    + ` ${skipped.generated} generated manifest (${OWN_IDENTIFIERS}, whose every entry resolves by construction),`
+    + ` and tracked markdown read by the publish half instead.`,
     `  declared unresolvable (D860), ${DECLARED_UNRESOLVABLE.size} identifiers, none of which costs a citation site:`,
   ];
   for (const [id, why] of DECLARED_UNRESOLVABLE) out.push(`    ${id.padEnd(5)} ${why}`);

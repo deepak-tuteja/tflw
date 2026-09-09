@@ -2,7 +2,7 @@
   "name": "tflw-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "testFlow — a testing-only DSL (.tflw / tflw CLI). Monorepo root.",
+  "description": "testFlow \u2014 a testing-only DSL (.tflw / tflw CLI). Monorepo root.",
   "type": "module",
   "repository": {
     "type": "git",
@@ -40,6 +40,9 @@
     "verify:anchors": "node scripts/verify-anchors.mjs",
     "verify:sibling-pin": "node scripts/verify-sibling-pin.mjs",
     "verify:sibling-pin:self-test": "node scripts/verify-sibling-pin.mjs --self-test",
+    "verify:own-identifiers": "node scripts/verify-own-identifiers.mjs",
+    "verify:own-identifiers:self-test": "node scripts/verify-own-identifiers.mjs --self-test",
+    "refresh:own-identifiers": "node scripts/refresh-own-identifiers.mjs",
     "docs:decisions": "node scripts/gen-decisions.mjs",
     "docs:provenance": "node scripts/gen-decisions.mjs --provenance",
     "docs:demand": "node scripts/gen-decisions.mjs --demand"
