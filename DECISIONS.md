@@ -2352,7 +2352,7 @@ resolution is reported.**
 
 ### D9
 
-<sub>cited from SPEC.md, tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +3 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +4 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Escape hatch (D9)**
 
@@ -5899,7 +5899,7 @@ three graders. Not a new mechanism — the existing one, moved and widened.
 
 ### D489
 
-<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/perf-ladder.mjs +2 more · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
+<sub>cited from tflw-tests/VULNS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/perf-ladder.mjs +3 more · lifted from `PLAN_M139_LEDGER_ACCEPTANCE.md`</sub>
 
 **D489 — The manifest is the source; `VULNS.md`'s table is checked against it. Direction matters.**
 
@@ -7965,6 +7965,18 @@ repair is the one `M164-08` already specifies — `RANGE` must not expand inside
 author, and a citation abutting `+`, `/` or `=` is not a citation — plus the possessive shape §2.4
 found: a trailing `s` on an otherwise bare `M<n>` is not a sub-milestone.
 
+### D862
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`D862` — `expandsRanges` is a question about a corpus, and the sibling's answer is different.**
+`D861` scoped `RANGE` to markdown because one file here — `grammarCoverage.test.ts` — names a
+coverage span `M29-M53` as a fixture, and expanding it manufactures 23 identifiers nothing cites.
+That generalisation does not survive contact with `testFlow-tests`. Measured over its 763 tracked
+non-prose files at `552e545`: **15 range-shaped strings, all 15 tight, same-sequence, and written by
+a person in a comment** — `D16-D19 never designed one`, `D57-D59`, `D67-D72`, `D340–D345`, `M0-M4`.
+Not one is a fixture value.
+
 ### D864
 
 <sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
@@ -8478,6 +8490,80 @@ the count is filed with it.
   in"*. Every word is true **within a run**, which is exactly the shape `D933` was written for: the
   sentence asserted the defect's boundary as if it were the whole boundary. Re-derived, not deleted.
 
+### D943
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+
+**`D943` — a pending citation is declared, and the declaration expires.** The sibling's
+`verify:provenance` accepts an identifier that does not yet resolve **only** when it is declared
+pending with the pull request that will land it. A declaration whose pull request has merged, or
+that names no open pull request, is a **red** — the tolerance may not outlive its cause. Without
+the expiry this is a hole in a gate in a public repository.
+
+### D944
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+
+**`D944` — the two grammars are compared by a property, not by their outputs.** Per `D866`:
+comparing what the two implementations *emit* is what already agreed with itself while both were
+wrong. The assertion goes where both grammars are readable at once, and it asserts the rule a
+third time in a form that is not either implementation.
+
+### D948
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+
+**`D948` — the parity assertion imports both implementations; `D711` is untouched.** That decision
+refuses a *shared reading* — *"a shared implementation would agree with itself"* — and what is
+shared here is the **assertion**, not the reading. `refresh-sibling-citations.mjs` and
+`verify-provenance.mjs` still compute the grammar twice and still do not call each other. The
+self-test in the sibling's gate imports tflw's `collectCitations` in order to *contradict* it, and
+it can only do that by holding both. The dependency it adds is on the sibling **checkout**, which
+this gate already hard-fails without (`M131-03`), so it adds no new precondition either. Written
+down because a later reader will meet the import before the reason.
+
+### D949
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+
+**`D949` — the sibling converges onto tflw's product-fence rule, not the reverse.** §3.2's
+argument, and the same direction `M171d` took for `RANGE`. The deciding fact is that a demand the
+pin structurally cannot satisfy has no clearing edit in either document, while a citation the pin
+omits is a dead pointer and `D860` already answers those.
+
+### D950
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+
+**`D950` — the refresher's per-file resolution moves into the shared grammar module, and the two
+readings stay two.** §3.3. What moves is twelve lines of pure text handling that never needed a
+network; what does not move is either side's reading. Proof obligation, not opinion: the pin
+`refresh-sibling-citations.mjs --from-checkout` writes must be **byte-identical** before and after
+the extraction. That is `D865`'s artefact diff, which `D866` names as one of the two admissible
+third statements — so this stage gets both of them.
+
+### D951
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+
+**`D951` — the property's input is a construction enumeration, and every construction must be
+load-bearing.** A generated corpus is what §3.1 shows is needed, but a list of hand-written strings
+is a fixture, and `M168`'s finding is that a fixture default hides the construct. The control is
+drop-one: removing any single construction from the list must change what the property can detect,
+demonstrated by mutation rather than asserted. A construction that no mutation needs is deleted,
+not kept for completeness.
+
+### D952
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+
+**`D952` — `M183c` widens the parity gate that exists; it does not add one beside it.** §3.4.
+`verify-notation-parity.mjs` already holds the two grammars together at the pattern layer, in CI,
+with an exercise-checked exemption map. A second gate asserting an overlapping claim is `D489` —
+two hand-maintained copies of one fact, which drift silently — and it would be introduced by the
+milestone whose subject is records nothing holds. The reading-layer assertion goes **into that
+file**, beside the pattern-layer one, sharing its fixture discipline.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -8813,7 +8899,7 @@ it, which is what turns a VS Code feature set into an editor-independent one.
 
 ### M22
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/refresh-own-identifiers.mjs, tflw-tests/scripts/verify-notation-parity.mjs +1 more · lifted from `PROGRESS.md`</sub>
 
 | Milestone | Status | Started | Finished |
 |---|---|---|---|
@@ -10404,7 +10490,7 @@ blind spot + repro emitter · `f14f087` docs · `dd8c5b5` the mutation-registry 
 
 ### M131
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/lib/plants.mjs +5 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/derive-perf-bands.mjs, tflw-tests/scripts/lib/plants.mjs +6 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131` — the D21 safety completion**
 
@@ -11010,7 +11096,7 @@ Plants for the API-side remainder: `check` at scale, `retry`, `after` hooks, `re
 
 ### M154d
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/measure-construct-evidence.mjs +11 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/measure-construct-evidence.mjs +12 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154d` — the UI/browser tier**
 
@@ -11570,7 +11656,7 @@ behavioural test that resolves a doubled declaration of each key and asserts whi
 
 ### M167
 
-<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-argv-contract.mjs +3 more · lifted from `PLAN_M167_SWEEP_SIZE.md`</sub>
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-argv-contract.mjs +4 more · lifted from `PLAN_M167_SWEEP_SIZE.md`</sub>
 
 **`M167` — the size of the regression sweep is not stated in tracked prose, and now cannot be**
 
@@ -11824,7 +11910,7 @@ exists to make loud"*.
 
 ### M179
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
 
 **`M179` — a pin that outlives the merge that used to kill it**
 
@@ -11975,5 +12061,14 @@ inside the new one rather than replaced. Dave stays seeded and stays in the file
 Three authz tests for the new route live in the same file, and the comment above them says why:
 nothing else calls it, and a reader following `@ticketing` from `README.md` should find the verb the
 collection test depends on.
+
+### M183c
+
+<sub>cited from tflw-tests/scripts/verify-notation-parity.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+
+**`M183c` — the two grammars, compared at the layer nothing compares**
+
+`D944`, `D948`-`D952`. **Both repositories.** Re-cut 2026-09-09 after §3.4: the scoping said *build
+a parity gate*, and one was built on 2026-09-06. This widens it.
 
 <!-- GENERATED:decisions:end -->
