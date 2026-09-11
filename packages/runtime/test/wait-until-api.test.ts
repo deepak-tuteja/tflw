@@ -3,8 +3,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource } from '@tflw/lang';
-import { runProgram } from '../src/interpreter.js';
+import { parseSource, parseConfigSource } from '@tflw/lang';
+import { runProgram, SessionCache } from '../src/interpreter.js';
+import { resolveConfig, selectEnv } from '../src/resolve.js';
+import type { ResolvedConfig } from '../src/types.js';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { speculativeSpeakAt, SPECULATIVE_DIAGNOSIS_MS } from '../src/browser.js';
 import { startFixtureServer, testConfig, json } from './support.js';
 import { asEntry } from './__helpers__/entry.js';
@@ -338,4 +341,163 @@ test('M182a: the cost `D936` buys — a budget of 5s or less can never produce a
   // The browser wait (`M125c`) and this one now read the same function, so this is one rule tested
   // once rather than the same expression written twice and compared by nobody (`D489`).
   assert.equal(speculativeSpeakAt(0, 30_000), SPECULATIVE_DIAGNOSIS_MS, "tflw's own 30s default speaks at 3s");
+});
+
+// `M187a` (`M181-02`, `D961`–`D964`): a poll is a request, and a `401` on it re-establishes the
+// test's opted-in sessions on the same terms as an `api` step's (`P#99a`). Until this round the
+// poll loop was the one request site in the runtime that received a `401` and consulted nothing —
+// a session's login runs once per run and is cached (P#42), so a wait late in a long suite met a
+// dead credential on its FIRST poll and sent it unchanged to the deadline.
+//
+// The fixture expires a token by REQUEST COUNT, not by the clock: a token serves `uses` resource
+// requests and the next one is a `401`. That is the only way "two expiries inside one wait" is a
+// deterministic count of logins rather than a race with a timer — and it is what makes `armed`
+// (`D962`) testable at all: refresh on a `401`, disarm, re-arm on the first poll that is not a
+// `401`, so the bound is once per EXPIRY and not once per wait.
+
+function sessionWaitConfig(baseUrl: string, waitMs: number): ResolvedConfig {
+  const configSource =
+    `defaults\n  timeout wait ${waitMs}ms\n\n` +
+    `env test default\n  api "${baseUrl}"\n\n` +
+    `session admin\n  api POST /auth/login body { user: "a", pass: "b" }\n  capture body.token as token\n  header "Authorization" is "Bearer {token}"\n`;
+  const parsed = parseConfigSource(configSource);
+  assert.deepEqual(parsed.diagnostics, [], JSON.stringify(parsed.diagnostics));
+  return resolveConfig(parsed.config, selectEnv(parsed.config, {}));
+}
+
+/** Tokens that die after `uses` resource requests each; `login` may be told to start failing. */
+function countingAuth(uses: number, failLoginsFrom = Infinity) {
+  let logins = 0;
+  const remaining = new Map<string, number>();
+  return {
+    logins: () => logins,
+    login: (_req: IncomingMessage, res: ServerResponse) => {
+      logins++;
+      if (logins >= failLoginsFrom) { json(res, 500, { error: 'auth is down' }); return; }
+      const tok = `tok-${logins}`;
+      remaining.set(tok, uses);
+      json(res, 200, { token: tok });
+    },
+    /** Spend one use of the presented token; `false` is a `401`. */
+    spend: (auth: string | undefined): boolean => {
+      const tok = (auth ?? '').replace(/^Bearer /, '');
+      const left = remaining.get(tok) ?? 0;
+      if (left <= 0) return false;
+      remaining.set(tok, left - 1);
+      return true;
+    },
+  };
+}
+
+const refreshSteps = <T extends { kind: string; detail?: string }>(steps: readonly T[]): T[] =>
+  steps.filter((s) => s.kind === 'header' && (s.detail ?? '').includes('re-establish'));
+
+test('M187a: a wait whose FIRST poll meets a dead cached session re-establishes it and polls on (D961, D964)', async () => {
+  // One use per token: the `api` step spends the establishing token, so the wait's first poll is
+  // the `401` — the shape a long suite produces in its last minutes.
+  const auth = countingAuth(1);
+  let served = 0;
+  const server = await startFixtureServer({
+    '/auth/login': auth.login,
+    '/jobs/1': (req, res) => {
+      if (!auth.spend(req.headers['authorization'])) { json(res, 401, { error: 'expired' }); return; }
+      served++;
+      json(res, 200, { status: 'done' });
+    },
+  });
+  const source = `test "old session" as admin\n  api GET /jobs/1\n  expect status equals 200\n  wait until api GET /jobs/1\n    expect body.status equals "done"\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, sessionWaitConfig(server.baseUrl, 3000), { source, sessionCache: new SessionCache() });
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  assert.equal(auth.logins(), 2, 'establish once, one re-login inside the wait');
+  assert.equal(served, 2, 'the api step and the wait\'s second poll');
+  const steps = asEntry(report.tests[0], 'functional').steps;
+  const waitStep = steps.find((s) => s.kind === 'wait');
+  assert.ok(waitStep && waitStep.ok, JSON.stringify(steps, null, 2));
+  assert.match(waitStep.detail ?? '', /^passed after 2 attempts/);
+  // `D964` — the re-establish is the wait's own evidence, and it precedes the wait's result.
+  const refreshed = refreshSteps(steps);
+  assert.equal(refreshed.length, 1, JSON.stringify(steps, null, 2));
+  assert.ok(steps.indexOf(refreshed[0]!) < steps.indexOf(waitStep), 'the refresh row is reported before the wait it happened inside');
+  await server.close();
+});
+
+test('M187a: two expiries inside one wait are two re-logins — the bound is per expiry, not per wait (D962)', async () => {
+  // Each token serves two resource requests. Establish → tok-1: the api step + poll 1. Poll 2 is a
+  // 401 → tok-2: polls 2', 3. Poll 4 is a 401 → tok-3: poll 4', which is the fifth served request
+  // and the one that satisfies. Once-per-wait would have died at poll 4 with the budget unspent.
+  const auth = countingAuth(2);
+  let served = 0;
+  const server = await startFixtureServer({
+    '/auth/login': auth.login,
+    '/jobs/1': (req, res) => {
+      if (!auth.spend(req.headers['authorization'])) { json(res, 401, { error: 'expired' }); return; }
+      served++;
+      json(res, 200, { status: served >= 5 ? 'done' : 'running' });
+    },
+  });
+  const source = `test "long wait" as admin\n  api GET /jobs/1\n  expect status equals 200\n  wait until api GET /jobs/1\n    expect body.status equals "done"\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, sessionWaitConfig(server.baseUrl, 5000), { source, sessionCache: new SessionCache() });
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+  assert.equal(auth.logins(), 3, 'establish once, then one re-login per expiry');
+  const steps = asEntry(report.tests[0], 'functional').steps;
+  assert.equal(refreshSteps(steps).length, 2);
+  assert.match(steps.find((s) => s.kind === 'wait')!.detail ?? '', /^passed after 6 attempts/);
+  await server.close();
+});
+
+test('M187a: a credential that stays 401 after a successful re-login is refreshed once, then the wait times out saying so (D962, D963)', async () => {
+  const auth = countingAuth(1);
+  const server = await startFixtureServer({
+    '/auth/login': auth.login,
+    // The account itself lost access — re-auth mints a fresh token and it is refused too.
+    '/jobs/1': (_req, res) => json(res, 401, { error: 'forbidden' }),
+  });
+  const source = `test "revoked" as admin\n  wait until api GET /jobs/1\n    expect status equals 200\n`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, sessionWaitConfig(server.baseUrl, 800), { source, sessionCache: new SessionCache() });
+  assert.equal(report.ok, false);
+  assert.equal(auth.logins(), 2, 'establish once, ONE re-login, then no more — the wait never re-armed');
+  const steps = asEntry(report.tests[0], 'functional').steps;
+  assert.equal(refreshSteps(steps).length, 1);
+  const detail = steps.find((s) => s.kind === 'wait')!.detail ?? '';
+  // `D963` — the one failing exit is still the timeout, and its line now names the credential.
+  assert.match(detail, /^timed out after 800ms \(\d+ attempts\): last poll 401 after 1 session refresh; /);
+  await server.close();
+});
+
+test('M187a: a re-login that itself fails does not end the wait, and an anonymous wait is untouched (D963, D961)', async () => {
+  // The establishing login (the first) succeeds and every later one answers 500: the api step
+  // spends the token, the wait's first poll is a 401, and the re-login it triggers fails.
+  const auth = countingAuth(1, 2);
+  const server = await startFixtureServer({
+    '/auth/login': auth.login,
+    '/jobs/1': (req, res) => {
+      if (!auth.spend(req.headers['authorization'])) { json(res, 401, { error: 'expired' }); return; }
+      json(res, 200, { status: 'done' });
+    },
+  });
+  const source = `test "auth down" as admin\n  api GET /jobs/1\n  expect status equals 200\n  wait until api GET /jobs/1\n    expect body.status equals "done"\n`;
+  const { program } = parseSource(source);
+  const config = sessionWaitConfig(server.baseUrl, 800);
+  const { report } = await runProgram(program, config, { source, sessionCache: new SessionCache() });
+  assert.equal(report.ok, false);
+  assert.equal(auth.logins(), 2, 'one failed re-login attempt, not a loop of them');
+  const steps = asEntry(report.tests[0], 'functional').steps;
+  const failedRefresh = steps.find((s) => s.kind === 'header' && (s.detail ?? '').includes('failed'));
+  assert.ok(failedRefresh, JSON.stringify(steps, null, 2));
+  assert.match(steps.find((s) => s.kind === 'wait')!.detail ?? '', /^timed out after 800ms/);
+
+  // Anonymous control: no `as admin`, so `ctx.sessionNames` is empty and nothing here runs — the
+  // 401 is an unsatisfied poll exactly as before this round, with no refresh text in the message.
+  const anon = `test "anon"\n  wait until api GET /jobs/1\n    expect status equals 200\n`;
+  const before = auth.logins();
+  const { report: anonReport } = await runProgram(parseSource(anon).program, config, { source: anon, sessionCache: new SessionCache() });
+  assert.equal(anonReport.ok, false);
+  assert.equal(auth.logins(), before, 'an anonymous wait never logs in');
+  const anonSteps = asEntry(anonReport.tests[0], 'functional').steps;
+  assert.equal(refreshSteps(anonSteps).length, 0);
+  assert.doesNotMatch(anonSteps.find((s) => s.kind === 'wait')!.detail ?? '', /session refresh/);
+  await server.close();
 });

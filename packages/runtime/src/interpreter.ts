@@ -3473,7 +3473,12 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'WaitUntilApiStmt': {
-          const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, src, stepStart, tc.pinnedAgents);
+          const waited = await execWaitUntilApi(step, config, ctx, tc.redactor, tc.baseDir, tc.configDir, src, stepStart, tc.pinnedAgents, tc);
+          // `D964` (`M187a`) — a re-establish inside the wait is the wait's own evidence, reported
+          // ahead of its result so the timeline reads in the order it happened, the same shape the
+          // `ApiStep` case gives `refreshSessions`' steps. Empty for an anonymous test or a wait
+          // that never met a `401`.
+          results.push(...waited.refreshSteps);
           lastResponse = waited.response;
           lastRequest = waited.request;
           lastOwnerIdentity = waited.request ? ownerIdentityFor(ctx, waited.request.url) : {};
@@ -5876,8 +5881,9 @@ async function execWaitUntilApi(
   configDir: string,
   src: string,
   start: number,
-  pinnedAgents?: KeepAliveAgents,
-): Promise<{ result: StepResult; response: ResponseTrace | null; request: RequestTrace | null }> {
+  pinnedAgents: KeepAliveAgents | undefined,
+  tc: TestCtx,
+): Promise<{ result: StepResult; response: ResponseTrace | null; request: RequestTrace | null; refreshSteps: StepResult[] }> {
   // D640 (`M147d`, `A3-10`) — this step's own `timeout wait <duration>`, else the env's. Distinct
   // from `step.request.timeoutMs`, which is one *poll's* request timeout and is clamped to whatever
   // is left of this deadline a few lines down; that clamp is decision 67 and is why the per-request
@@ -5895,6 +5901,27 @@ async function execWaitUntilApi(
   let spoken = false;
   let attempt = 0;
   let last: { redacted: ApiExec['redacted']; response: ResponseTrace; request: RequestTrace; message: string } | null = null;
+  // `D961`/`D962` (`M187a`, `M181-02`) — a poll is a request, and a `401` on it re-establishes the
+  // test's opted-in sessions on the same terms as an `api` step's (`P#99a`, the branch at the
+  // `ApiStep` case). This loop was the one request site in the runtime that received a `401` and
+  // consulted nothing: a session's login runs once per run and is cached (P#42), so a wait late in
+  // a long suite met a dead credential on its FIRST poll and sent it unchanged to the deadline,
+  // while the `api` step beside it refreshed and retried.
+  //
+  // The bound is `D962`'s: at most one refresh per run of consecutive `401` polls. `armed` starts
+  // true, a refreshed `401` clears it, and any poll that is NOT a `401` sets it again — that poll
+  // proved the new credential works, so the next `401` is a new expiry and not the same one. A
+  // 30 s wait over a 5 s TTL refreshes at each expiry; a permanently-bad credential refreshes once
+  // and times out on its own deadline. `P#99a`'s *exactly once* is the same bound for a site that
+  // makes one request; *once per step* here would leave a wait longer than two TTLs exactly as
+  // dead as before after its first refresh.
+  //
+  // A re-establish that itself fails does not end the wait (`D963`): `D936` gave this loop one
+  // failing exit, the timeout, so that every failure carries the `timed out after …` prefix, and
+  // the failed re-login is already its own evidence step. The loop stays disarmed and polls on.
+  let armed = true;
+  let refreshes = 0;
+  const refreshSteps: StepResult[] = [];
   for (;;) {
     // If the deadline already passed (e.g. eaten by the previous poll + inter-poll sleep), report the
     // timeout using the last completed poll's result rather than firing off another request — issuing
@@ -5907,6 +5934,7 @@ async function execWaitUntilApi(
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), last.redacted.request, last.redacted.response),
         response: last.response,
         request: last.request,
+        refreshSteps,
       };
     }
     attempt++;
@@ -5942,6 +5970,7 @@ async function execWaitUntilApi(
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), last?.redacted.request, last?.redacted.response),
         response: last?.response ?? null,
         request: last?.request ?? null,
+        refreshSteps,
       };
     }
     // `wait until api` never opts into catching a connection failure (`checkRequestAssertions`
@@ -5982,9 +6011,24 @@ async function execWaitUntilApi(
         result: mkStep('wait', src, step.span, true, start, redactor.redact(detail), redacted.request, redacted.response),
         response: trace.response,
         request: trace.request,
+        refreshSteps,
       };
     }
-    const lastMessage = outcomes.find((o) => !o.ok)!.message;
+    const unauthorized = trace.response.status === 401;
+    if (unauthorized && armed && ctx.sessionNames.length > 0) {
+      armed = false;
+      refreshes++;
+      const refresh = await refreshSessions(ctx, ctx.sessionNames, config, tc, src, step.span);
+      refreshSteps.push(...refresh.steps);
+    } else if (!unauthorized) {
+      armed = true;
+    }
+    // `D963` — when the last poll was a `401` and a refresh was tried, the timeout line says so.
+    // The report already carries the re-establish as an evidence row; without this the step's own
+    // message still blames the matcher, which is the exact complaint `M181-02` filed.
+    const lastMessage = unauthorized && refreshes > 0
+      ? `last poll 401 after ${refreshes} session refresh${refreshes === 1 ? '' : 'es'}; ${outcomes.find((o) => !o.ok)!.message}`
+      : outcomes.find((o) => !o.ok)!.message;
     last = { redacted, response: trace.response, request: trace.request, message: lastMessage };
     if (performance.now() >= deadline) {
       const detail = `timed out after ${waitBudget}ms (${attempts}): ${lastMessage}`;
@@ -5992,6 +6036,7 @@ async function execWaitUntilApi(
         result: mkStep('wait', src, step.span, false, start, redactor.redact(detail), redacted.request, redacted.response),
         response: trace.response,
         request: trace.request,
+        refreshSteps,
       };
     }
     if (speakAt !== undefined && !spoken && performance.now() >= speakAt) {

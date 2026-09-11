@@ -112,6 +112,40 @@ kinds of line may interleave. This matters for any poll that needs a token, a pe
 an idempotency key attached: without it, the only way to poll an authenticated endpoint would be a
 workaround.
 
+## A wait that outlives its credential
+
+The `{token}` above is a value the test captured, and every poll re-sends exactly that string. When
+the server stops accepting it, every remaining poll is a `401` and the wait can only time out,
+whatever the resource is doing. The runtime does not renew values — it cannot, because nothing told
+it which login produced the string or which header to replace.
+
+A `session` tells it both. A test running `as <session>` needs no header line on the poll, and a
+poll that answers `401` re-establishes the session and carries on with the fresh credential — the
+same thing an `api` step has done on a `401` since sessions gained refresh, now inside the wait
+too. The re-establish is its own row in the report, ahead of the wait's result, so a wait that
+recovered never looks like one that silently passed:
+
+```tflw
+test "the job finishes, however long that takes" as admin
+  api POST /jobs body { kind: "export" }
+  expect status equals 202
+  capture body.id as jobId
+
+  wait until api GET /jobs/{jobId} timeout wait 5m
+    expect body.status equals "done"
+```
+
+The bound is one refresh per expiry, not one per wait: a wait over several expiries refreshes at
+each one, while a credential the server keeps refusing is refreshed once and then the wait times
+out on its own deadline, saying so — `timed out after 5000ms (7 attempts): last poll 401 after 1
+session refresh; …` — rather than blaming the condition.
+
+This matters more for an **old** session than for a long wait. A session's login runs once per run
+and is cached, so a suite that outlasts its token has every later test start with a dead
+credential; an `api` step refreshes and moves on, and until this release a `wait until api` failed
+on its first poll. If you want to *observe* an expiry, hold the token yourself with `capture` and
+assert the `401` — that is exactly what the captured form is for.
+
 ## Two budgets on one line
 
 `wait until api GET /jobs timeout 5s timeout wait 5m` carries both, and they bound different things

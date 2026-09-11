@@ -52,7 +52,9 @@ goes stale:
 - **Reactive:** if a test's request comes back `401` and the test opted into a session, the
   runtime re-establishes it and retries the original request exactly once — bounded, so a
   permanently-bad credential fails clearly instead of looping. The re-establish shows up in
-  `report.html` as its own evidence steps.
+  `report.html` as its own evidence steps. A `wait until api` poll is a request on the same terms,
+  with the bound restated for a site that makes many of them — once per expiry, not once per
+  step; see [a wait that outlives its credential](/guide/retry-and-polling#a-wait-that-outlives-its-credential).
 - **Proactive:** a session that knows its own TTL (currently `oauth2` sessions, via `expires_in`)
   re-establishes ahead of time once the run clock passes that deadline, without waiting for a
   `401`.
