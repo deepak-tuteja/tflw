@@ -394,7 +394,9 @@ established — two independent mechanisms cover the two ways a real credential 
   back `401` and the test opted into one or more sessions (`as admin` or `as admin, userA`), the
   runtime re-establishes each opted-in session in declared order (a fresh `runSession()` call,
   invalidating the old cache entry first) and retries the original request **exactly once** —
-  bounded, so a permanently-bad credential fails clearly rather than looping. The re-establish
+  bounded, so a permanently-bad credential fails clearly rather than looping. A `wait until api`
+  poll is a request on the same terms since `M187` (`D961`), with the bound restated for a site
+  that makes many requests — once per expiry, not once per step — in §5.5. The re-establish
   itself shows up in `report.html` as its own evidence steps, so a passing retry never looks like
   it silently self-healed. An anonymous test (no `as <session>`) or a `401` with nothing left to
   refresh just fails normally, same as before this decision.
@@ -1521,6 +1523,25 @@ wait until api GET /jobs/{jobId}
   header "Authorization" is "Bearer {token}"
   expect body.status equals "done"
 ```
+
+**A wait outlives a bearer only through a `session`; a captured credential is a value, and the
+runtime does not renew values** (`M187`, `D961`, `D965`). The example above holds `{token}`
+because a test captured it, and every poll re-sends exactly that string — when the server stops
+accepting it, every remaining poll is a `401` and the wait can only time out, whatever the resource
+is doing. That is by construction: the runtime cannot renew what it did not obtain, because nothing
+told it which login produced the value or which header to replace. A `session` block tells it both,
+and a test running `as <session>` gets inside a wait what it has had on an `api` step since P#99a —
+**a poll answering `401` re-establishes the test's opted-in sessions and the next poll carries the
+fresh credential**, with the re-establish recorded as its own evidence step ahead of the wait's
+result. The bound is per expiry rather than per step (`D962`): one refresh per run of consecutive
+`401` polls, re-armed by the first poll that is not a `401`, so a wait over several expiries
+refreshes at each one while a permanently-bad credential refreshes once and times out on its own
+deadline. A wait's one failing exit is still the timeout (`D936`); when the last poll was a `401`
+after a refresh, its line says so — `timed out after 5000ms (7 attempts): last poll 401 after 1
+session refresh; …` — rather than blaming the matcher (`D963`). The common case this covers is not
+a long wait but an old session: a session's login runs once per run and is cached, so a wait late
+in a long suite met a dead credential on its **first** poll, and before `M187` sent it unchanged to
+the deadline while the `api` step beside it refreshed and retried.
 
 ## 6. Assertions (P#13–16) ✅
 

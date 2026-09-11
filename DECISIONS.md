@@ -1414,7 +1414,7 @@ here.
 
 ### P#99a
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN.md`</sub>
 
     **(a) Session refresh-on-401 + TTL (enterprise decision 3a).** The real pain this closes:
     M14's session cache ran a session's steps *at most once per run* (P#42) and cached
@@ -8616,6 +8616,59 @@ current wording is a category label read as a provenance claim. Either the line 
 installed entry against `vendor/*.tgz` and says so, or it says "the default entry" and leaves the
 tarball out of a sentence that is not about it.
 
+### D961
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+
+**`D961` — a poll is a request, and a `401` on it is refreshable on the same terms as a step's.**
+`P#99a`'s eligibility rule is reused unchanged: `ctx.sessionNames` non-empty, opted-in sessions
+re-established in declared order, the refresh's evidence steps in the report. Nothing about *which*
+credentials the runtime can renew changes; only the set of request sites that ask.
+
+### D962
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+
+**`D962` — the arming rule: at most one refresh per run of consecutive `401` polls.** A wait starts
+armed. A `401` poll while armed refreshes and disarms; any poll that is *not* `401` re-arms. So a
+30 s wait over a 5 s TTL refreshes at each expiry — every re-arm is a poll that proved the new
+credential worked — while a permanently-bad credential refreshes once and then times out on its own
+deadline. `P#99a`'s *exactly once* per step is the same bound expressed for a site that makes one
+request; a wait makes many, and *once per step* would leave a wait longer than two TTLs exactly as
+dead as today after its first refresh. *Once per expiry* is the bound that means the same thing.
+
+### D963
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+
+**`D963` — a failed re-establish does not end the wait, and the timeout exit says what happened.**
+`D936` gave the wait one failing exit, the timeout, so that every failure carries the `timed out
+after …` prefix; a failed refresh keeps that. The evidence step already records the failed
+re-establish. What changes is the timeout message when the last poll was a `401`: it names the
+status and the refresh count — `timed out after 5000ms (7 attempts): last poll 401 after 1 session
+refresh; has count …` — because otherwise the report has the truth in an evidence row and the step's
+own line still blames the matcher, which is the exact complaint `M181-02` filed.
+
+### D964
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+
+**`D964` — the refresh's evidence is the wait's, reported before the wait's result.**
+`execWaitUntilApi` returns `refreshSteps: StepResult[]`; the `WaitUntilApiStmt` case pushes them
+before `waited.result`. Chronology in the report, and no second owner for the steps. Metrics: the
+re-establish's own round-trips go to `ctx.metricsSink` exactly as `refreshSessions` already sends
+them (`M146b`), and the wait's `billFrom` is untouched — a wait step is not an endpoint sample.
+
+### D965
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+
+**`D965` — the boundary is stated once, in §5.5, and cross-referenced from §3.3.** Not built
+around. The refused alternative is recorded here so it is not re-proposed: a `refresh` sub-block
+inside `wait until api` that runs a login and re-captures. It would be a second credential concept
+with all five surfaces of the first, and every case it serves is served by declaring the login as a
+`session` — which is what `session` is for.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -12239,5 +12292,16 @@ proves anything.
 | stage | repo | what |
 |---|---|---|
 | `M186c` | tflw | **`own-identifiers.json` for tflw**, `M169d4`'s precedent applied to the repository that owns the notation: every identifier the records anchor, names only, generated and gated, so a checkout can answer *is `D911` real* without publishing a word of the block. |
+
+### M187
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+
+**`M187` — a wait outlives its credential the way a step already does**
+
+One row. `M181-02` says a `wait until api` cannot outlive the bearer token it was handed and the
+language has no way to say otherwise. Half of that is true and half of it was never true, and the
+row could not tell which half it was measuring because the dogfood file it was measured on uses
+the kind of credential the language does not renew.
 
 <!-- GENERATED:decisions:end -->

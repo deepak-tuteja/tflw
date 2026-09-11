@@ -608,6 +608,34 @@ endpoint its finding names. All were found by *running* a repro or a crawl, not 
   nothing would have gone red. Additive, so the contract version stays 1 and a consumer written
   against version 1 is unaffected.
 
+### Fixed — a wait outlives its credential the way a step already does (M187)
+
+**A `wait until api` poll that answered `401` sent the same dead credential to the deadline.** A
+session's login runs once per run and is cached; on a `401` an `api` step re-establishes the
+test's opted-in sessions and retries (P#99a). The poll loop was the one request site in the runtime
+that received a `401` and consulted nothing — so a wait late in a long suite met an expired session
+on its **first** poll and could only time out, and the line it produced blamed the condition
+(`testFlow M181-02`).
+
+- **A poll is a request on the same terms as a step** (`D961`): a `401` poll in a test running
+  `as <session>` re-establishes the session and the next poll carries the fresh credential. The
+  re-establish is the wait's own evidence, reported ahead of the wait's result (`D964`), so a wait
+  that recovered never looks like one that silently passed.
+- **The bound is per expiry, not per step** (`D962`): one refresh per run of consecutive `401`
+  polls, re-armed by the first poll that is not a `401`. A wait over several expiries refreshes at
+  each; a permanently-bad credential refreshes once and times out on its own deadline. *Exactly
+  once* was the right bound for a site that makes one request; here it would have left a wait
+  longer than two TTLs exactly as dead after its first refresh.
+- **The timeout line names the credential** (`D963`): when the last poll was a `401` after a
+  refresh — `timed out after 5000ms (7 attempts): last poll 401 after 1 session refresh; …`. The
+  wait's one failing exit is still the timeout (`D936`); a re-login that itself fails is recorded
+  and the wait polls on.
+- **The boundary, stated rather than built around** (`D965`): a wait outlives a bearer only through
+  a `session`. A credential a test *captured* is a value, re-sent verbatim on every poll, and the
+  runtime does not renew values — it cannot, because nothing told it which login produced the
+  string. Anonymous waits and waits carrying a captured `{token}` header are byte-identical to
+  before. SPEC §5.5, and the guide's *A wait that outlives its credential*.
+
 ### Fixed — a wait that gave up early and blamed the matcher (M182)
 
 **A single transient response ended a `wait until api` outright, reporting a subject type.** The
