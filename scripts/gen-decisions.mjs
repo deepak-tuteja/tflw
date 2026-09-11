@@ -1547,6 +1547,18 @@ export const DECLARED_UNRESOLVABLE = new Map([
   ['M164d', "`gen-decisions.mjs` — quoted in `D863`'s docblock. `D851` records that `M164d` is not built, and an unbuilt milestone has no block to extract"],
   ['M404b', "`gen-decisions.mjs` — quoted in `D863`'s docblock. The invented half of the sibling self-test's planted citation; `D404` beside it is real and resolves"],
   ['M154i', "`gen-decisions.mjs` — quoted in `D863`'s docblock. Defined in NEITHER repository, like `D4`: minted in the sibling's comment and referred back to once in `M164-12`'s row here, and a mention is not an anchor"],
+  // `M186`, found the day after it shipped. The same case as `D888`/`D999`/`M9a2` one file
+  // over, and it arrived by an ordering trap worth naming here because this list is where
+  // somebody meets it: `readCode()` reads the *tracked* set, so a brand-new gate file is
+  // outside the demand corpus until `git add`, and the gates were run before staging. CI
+  // cannot be the backstop — `--demand` needs the gitignored records (`D668`), so the half
+  // of this repository that checks citations in code is a developer discipline by
+  // construction (`D683`, `D859`). Run the record gates AFTER staging, not before.
+  ['M2a', "`verify-own-identifiers.mjs` — the milestone-form entry in `selfTest()`'s three-shape "
+    + "fixture, beside a `D` and a `P#`. Deliberately left unresolvable rather than swapped for a "
+    + "real id: the fixture exercises `shapeProblems`, which decides what an identifier LOOKS "
+    + "like, and a shape test that depends on the corpus containing a particular milestone is a "
+    + "shape test coupled to something it does not assert (`M9a2` above is this on purpose)"],
 ]);
 
 /**
