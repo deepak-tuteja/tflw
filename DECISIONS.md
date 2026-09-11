@@ -1414,7 +1414,7 @@ here.
 
 ### P#99a
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tests/api/admin/tickets.tflw +2 more · lifted from `PLAN.md`</sub>
 
     **(a) Session refresh-on-401 + TTL (enterprise decision 3a).** The real pain this closes:
     M14's session cache ran a session's steps *at most once per run* (P#42) and cached
@@ -8618,7 +8618,7 @@ tarball out of a sentence that is not about it.
 
 ### D961
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tests/api/admin/tickets.tflw +1 more · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
 
 **`D961` — a poll is a request, and a `401` on it is refreshable on the same terms as a step's.**
 `P#99a`'s eligibility rule is reused unchanged: `ctx.sessionNames` non-empty, opted-in sessions
@@ -8627,7 +8627,7 @@ credentials the runtime can renew changes; only the set of request sites that as
 
 ### D962
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tests/api/identity/token-expiry.tflw · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
 
 **`D962` — the arming rule: at most one refresh per run of consecutive `401` polls.** A wait starts
 armed. A `401` poll while armed refreshes and disarms; any poll that is *not* `401` re-arms. So a
@@ -8651,7 +8651,7 @@ own line still blames the matcher, which is the exact complaint `M181-02` filed.
 
 ### D964
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/api/identity/token-expiry.tflw · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
 
 **`D964` — the refresh's evidence is the wait's, reported before the wait's result.**
 `execWaitUntilApi` returns `refreshSteps: StepResult[]`; the `WaitUntilApiStmt` case pushes them
@@ -8668,6 +8668,23 @@ around. The refused alternative is recorded here so it is not re-proposed: a `re
 inside `wait until api` that runs a login and re-captures. It would be a second credential concept
 with all five surfaces of the first, and every case it serves is served by declaring the login as a
 `session` — which is what `session` is for.
+
+### D966
+
+<sub>cited from tflw-tests/tests/api/identity/token-expiry.tflw · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+
+**`D966` — the dogfood wait starts with a dead cached token, which is the common case and not a
+compression of it; the app gains no knob to stage the rare case.** The first draft of this decision
+called the sleep-then-wait shape a stand-in for a mid-wait crossing. §1's correction reverses that:
+a wait whose *first* poll meets an expired session credential is what a long suite produces in
+its last minutes, and the test stages it against the real TTL, the real `401` body and the real
+re-login. The mid-wait crossing — two expiries inside one wait, the arming rule's own subject — is
+the corner, and it is the fixture test's, where a TTL can be 200 ms and the assertion counts
+logins. Measured for the record: nothing in `apiV2` takes longer than 5 s to become true — jobs run
+150 ms stages (`STAGE_DELAY_MS`), SLA breach is 1500 ms (`SLA_WINDOW_MS`), every dogfood wait
+passes inside 2 s — so staging the corner on the real app would need a `delayMs` on `POST /jobs`
+or a tunable SLA window, API surface added so one test can exist. Refused. **What the dogfood does
+not show is stated**: no dogfood wait crosses an expiry mid-flight.
 
 ### M0
 
@@ -12074,7 +12091,7 @@ ship with, per `M172e` — a gate green on the day it lands says so and proves i
 
 ### M181
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +10 more · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +11 more · lifted from `PLAN_M181_RUN_SCOPED_UNIQUE.md`</sub>
 
 **`M181` — `unique` is run-scoped, and the constraint it feeds is not**
 
@@ -12295,7 +12312,7 @@ proves anything.
 
 ### M187
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tests/api/admin/tickets.tflw +2 more · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
 
 **`M187` — a wait outlives its credential the way a step already does**
 
@@ -12303,5 +12320,13 @@ One row. `M181-02` says a `wait until api` cannot outlive the bearer token it wa
 language has no way to say otherwise. Half of that is true and half of it was never true, and the
 row could not tell which half it was measuring because the dogfood file it was measured on uses
 the kind of credential the language does not renew.
+
+### M187c
+
+<sub>cited from tflw-tests/tests/api/admin/tickets.tflw, tflw-tests/tests/api/orders/return-requests.tflw · lifted from `PLAN_M187_A_WAIT_OUTLIVES_ITS_CREDENTIAL.md`</sub>
+
+| stage | repo | what |
+|---|---|---|
+| `M187c` | tflw-tests | **The wait meets a real expiry.** After tflw's half merges and `npm run refresh-tflw` re-vendors from `main`: a new test in `tests/api/identity/token-expiry.tflw` — the file whose subject is the 5 s TTL — running `as admin`, sleeping past the TTL with the helper the file already uses, then a `wait until api` with no header line whose first poll therefore answers `401`. Acceptance is the report: the wait passes, and its timeline carries one *re-established session "admin"* step. Then measure `tickets.tflw`'s inline-login paragraph against what it says, and amend it in place if the reason it gives is `P#99a`'s job. |
 
 <!-- GENERATED:decisions:end -->
