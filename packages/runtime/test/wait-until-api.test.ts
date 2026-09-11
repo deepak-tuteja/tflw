@@ -389,7 +389,7 @@ function countingAuth(uses: number, failLoginsFrom = Infinity) {
   };
 }
 
-const refreshSteps = (steps: readonly { kind: string; detail?: string }[]) =>
+const refreshSteps = <T extends { kind: string; detail?: string }>(steps: readonly T[]): T[] =>
   steps.filter((s) => s.kind === 'header' && (s.detail ?? '').includes('re-establish'));
 
 test('M187a: a wait whose FIRST poll meets a dead cached session re-establishes it and polls on (D961, D964)', async () => {
