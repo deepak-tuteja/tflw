@@ -182,6 +182,24 @@ jobs:
       # passed.
       - run: npm run verify:decisions
 
+      # `M186d` (`D959`). `verify:decisions` above enforces the PROSE half of `D858` — every cited
+      # identifier has an entry. This enforces the shape of the answer to the other half. An
+      # identifier cited only in tracked code resolves in the records and is deliberately not
+      # published (`D858`), so `scripts/own-identifiers.json` is what lets a reader of a public file
+      # tell a live decision from a typo — and its whole safety property is that it carries names and
+      # nothing lifted from a record. That property degrades by good intentions, one clause of
+      # helpful context at a time, so it is asserted rather than promised. Both sides are tracked, so
+      # this is a full check here and not a half one; the *currency* half needs the gitignored
+      # records and stays a developer discipline (`D859`), which the gate prints rather than passing
+      # over in silence.
+      - run: npm run verify:own-identifiers
+
+      # Its controls, for `D922`'s reason exactly — a gate whose failure modes nothing demonstrates
+      # is a gate nobody has seen work. Eleven, and the load-bearing two are the ones that fail on an
+      # identifier carrying one clause of context and on a declaration reason edited by a single
+      # character.
+      - run: npm run verify:own-identifiers:self-test
+
       # The other half of `D666`. `verify:decisions` keeps every *canonical* citation pointed at an
       # entry that exists; this keeps prose from writing the older spelling, `decision 57`, which
       # names a number without saying which of nine numbered sequences indexes it (`M152b`/`D691`).
