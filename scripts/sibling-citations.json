@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "refs/pull/94/head",
-  "sha": "2166f73317572a2b7589716bb3384b10a8790410",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/2166f73317572a2b7589716bb3384b10a8790410",
+  "ref": "refs/pull/95/head",
+  "sha": "3511e10223eb8659f3cada2050b70853235fd78b",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/3511e10223eb8659f3cada2050b70853235fd78b",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -11,6 +11,7 @@
     "VULNS.md",
     "apiV2/README.md",
     "tflw-acceptance/README.md",
+    "tflw-acceptance/evidence/M154h-01/README.md",
     "tflw-acceptance/perf/README.md",
     "tflw-acceptance/perf/founding-runs/README.md",
     "tflw-acceptance/perf/profile/FINDINGS.md",
@@ -20,7 +21,7 @@
     "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
     "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
   ],
-  "codeFiles": 780,
+  "codeFiles": 783,
   "checkFixtures": [
     "TF001",
     "TF002",
@@ -1113,6 +1114,7 @@
       "CONTRIBUTING.md",
       ".github/workflows/ci.yml",
       "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/kill-detail.mjs",
       "scripts/lib/mutation-covers.mjs",
       "scripts/list-mutation-candidates.mjs",
       "scripts/read-mutation-matrix.mjs",
@@ -1216,6 +1218,27 @@
     "D939": [
       "CONTRIBUTING.md",
       "tests/api/admin/tickets.tflw"
+    ],
+    "D968": [
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/kill-detail.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-contributing.mjs"
+    ],
+    "D969": [
+      "tflw-acceptance/evidence/M154h-01/README.md",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/kill-detail.mjs"
+    ],
+    "D970": [
+      "tflw-acceptance/evidence/M154h-01/README.md",
+      "tests/mixed/storefront.tflw"
+    ],
+    "D971": [
+      "tflw-acceptance/evidence/M154h-01/README.md",
+      "tests/mixed/storefront.tflw"
     ],
     "M104": [
       "CONSTRUCTS.md",
@@ -1527,6 +1550,7 @@
       ".github/workflows/ci.yml",
       "scripts/check-acceptance.mjs",
       "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/kill-detail.mjs",
       "scripts/lib/mutations.mjs",
       "scripts/lib/tflw-bin.mjs",
       "scripts/lib/tflw-provenance.mjs",
@@ -1614,6 +1638,7 @@
       "scripts/derive-perf-bands.mjs",
       "scripts/lib/constructs.mjs",
       "scripts/lib/graders.mjs",
+      "scripts/lib/kill-detail.mjs",
       "scripts/lib/mutation-covers.mjs",
       "scripts/lib/perf-ladder.mjs",
       "scripts/lib/tflw-provenance.mjs",
@@ -1698,6 +1723,7 @@
     ],
     "M154h": [
       "CONSTRUCTS.md",
+      "tflw-acceptance/evidence/M154h-01/README.md",
       "scripts/regression.mjs",
       "scripts/verify-provenance.mjs",
       "tests/mixed/storefront.tflw"
@@ -1858,6 +1884,19 @@
       "scripts/verify-sibling-pin-landed.mjs",
       "scripts/verify-sweep-size.mjs"
     ],
+    "M168": [
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/argv.mjs",
+      "scripts/lib/census-shape.mjs",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/kill-detail.mjs",
+      "scripts/lib/mutation-covers.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-contributing.mjs"
+    ],
     "M170": [
       "CONTRIBUTING.md",
       ".github/workflows/ci.yml",
@@ -1884,13 +1923,17 @@
     "M176": [
       "CONSTRUCTS.md",
       "CONTRIBUTING.md",
+      "tflw-acceptance/evidence/M154h-01/README.md",
       ".github/workflows/ci.yml",
       "scripts/check-acceptance.mjs",
+      "scripts/discover-mutation-kills.mjs",
       "scripts/lib/constructs.mjs",
+      "scripts/lib/kill-detail.mjs",
       "scripts/lib/tflw-provenance.mjs",
       "scripts/measure-construct-evidence.mjs",
       "scripts/read-mutation-matrix.mjs",
       "scripts/verify-construct-coverage.mjs",
+      "scripts/verify-contributing.mjs",
       "scripts/verify-sibling-pin-landed.mjs"
     ],
     "M176c": [
@@ -1959,6 +2002,18 @@
     "M182c": [
       "CONTRIBUTING.md",
       "tests/api/admin/tickets.tflw"
+    ],
+    "M188b": [
+      "CONTRIBUTING.md",
+      ".github/workflows/ci.yml",
+      "scripts/discover-mutation-kills.mjs",
+      "scripts/lib/kill-detail.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-contributing.mjs"
+    ],
+    "M188c": [
+      "tflw-acceptance/evidence/M154h-01/README.md",
+      "tests/mixed/storefront.tflw"
     ],
     "M22": [
       "CONTRIBUTING.md",
@@ -2515,6 +2570,7 @@
       "scripts/verify-check-diagnostics.mjs"
     ],
     "D669": [
+      "scripts/lib/kill-detail.mjs",
       "scripts/verify-grader-reachability.mjs"
     ],
     "D673": [
@@ -2605,9 +2661,6 @@
     ],
     "D820": [
       "scripts/lib/constructs.mjs"
-    ],
-    "D821": [
-      "tests/mixed/storefront.tflw"
     ],
     "D825": [
       "scripts/regression.mjs"
@@ -2839,6 +2892,9 @@
     "D966": [
       "tests/api/identity/token-expiry.tflw"
     ],
+    "D972": [
+      "tests/mixed/storefront.tflw"
+    ],
     "M100": [
       ".github/workflows/ci.yml"
     ],
@@ -3030,17 +3086,6 @@
       "scripts/verify-provenance.mjs",
       "scripts/verify-sweep-size.mjs"
     ],
-    "M168": [
-      ".github/workflows/ci.yml",
-      "scripts/discover-mutation-kills.mjs",
-      "scripts/lib/argv.mjs",
-      "scripts/lib/census-shape.mjs",
-      "scripts/lib/constructs.mjs",
-      "scripts/lib/mutation-covers.mjs",
-      "scripts/read-mutation-matrix.mjs",
-      "scripts/verify-construct-acceptance.mjs",
-      "scripts/verify-contributing.mjs"
-    ],
     "M169a": [
       "scripts/verify-notation-parity.mjs"
     ],
@@ -3084,6 +3129,7 @@
     ],
     "M176e": [
       "scripts/lib/constructs.mjs",
+      "scripts/lib/kill-detail.mjs",
       "scripts/lib/mutation-covers.mjs",
       "scripts/lib/plants.mjs",
       "scripts/read-mutation-matrix.mjs",
