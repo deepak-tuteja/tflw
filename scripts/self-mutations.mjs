@@ -298,7 +298,7 @@ export const SELF_MUTATIONS = [
     file: 'scripts/gen-decisions.mjs',
     what: "`SCRUB_EXEMPT`'s non-vacuity check goes away, so an exemption goes on excusing a whole file from a rule after the specimen it was written for has left. This is the defect one level in: the exemption list is itself a corpus declaration, and an entry nobody can see expiring blinds the sweep in exactly the direction `M171` is about. Fails open and stays green forever, because the thing it stops reporting is the file the gate is no longer reading",
     edits: [
-      ['  return { ran: true, files: files.length, dirt, stale: staleExemptions(hits, new Set(files)) };', '  return { ran: true, files: files.length, dirt, stale: [] };'],
+      ['  return { ran: true, files: files.length, corpus: describeCorpus(corpus), dirt, stale: staleExemptions(hits, new Set(files)) };', '  return { ran: true, files: files.length, corpus: describeCorpus(corpus), dirt, stale: [] };'],
     ],
   },
   {
