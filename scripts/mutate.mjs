@@ -3215,6 +3215,50 @@ const REGISTRY = [
     find: '  if (unknown) return coverageUnknown()',
     replace: '  if (unknown) return null',
   },
+
+  // ── M189b — the registry widens where the sibling's census had nothing to try (`D977`) ────────
+  //
+  // `testFlow-tests`' census (`M164b`) applied every entry above that reaches its bundle and asked
+  // which of its 103 acceptance plants went red. Eight plants never did — and for two of them,
+  // `C3` (`run N iterations …`) and `C48` (`teardown`), the reason is not the plant: no entry in
+  // this registry perturbs what those constructs *compute*. The keyword matches that exist
+  // (`ungradable-threshold-passes`, `browser-close-rethrow`) are about other things. A plant cannot
+  // be red under a mutation nobody wrote, and a census that never tries one records `survived` for
+  // a reason that has nothing to do with the roster's depth.
+  //
+  // So these are written here, under `D840`'s one-registry rule, and each has to be killed by this
+  // repository's own suite like every other entry — which makes each one a control tflw needed
+  // anyway (`D977`). Three entries, and the third is the interesting one: `C48`'s fixture cannot
+  // tell `on success` from its inversion (both tear down four of its eight iterations), which is the
+  // exact shape the sibling's `M189c` exists to repair, and the reason the entry is the inversion
+  // rather than the blunter "never tears down" that the plant would already catch.
+  {
+    id: 'shared-iteration-pool-runs-one-too-many',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: '`run N iterations across M users` lands N+1 requests: the VU that observes an empty pool takes one more iteration before the pool reads negative. Every threshold still holds, the report still says PASS, and `metrics.iterations` faithfully reports the wrong number — `D97`\'s "exactly N, never more" is off by one in the direction no error rate can see. Under `--workers` the surplus is one per shard that got a VU, so the count stops being "independent of `--workers`", the second half of the contract `tflw spec` states for this construct',
+    find: '            while (remaining > 0 && !abortSignal?.aborted) {\n              remaining--;',
+    replace: '            while (remaining >= 0 && !abortSignal?.aborted) {\n              remaining--;',
+  },
+  {
+    id: 'per-user-iterations-run-one-too-many',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: '`run N iterations per user across M users` lands (N+1)×M requests — the per-VU loop runs to `<=` — so a 12-per-user run over 5 VUs lands 65, and the shared-pool spelling one entry up is untouched. The two spellings are two branches, and a plant that asserts one exact total says nothing about the other; the sibling\'s `C3` asserts both by different arithmetic for exactly this reason',
+    find: '            for (let n = 0; n < iterationsPerVu && !abortSignal?.aborted; n++) await runIteration(pinnedAgents);',
+    replace: '            for (let n = 0; n <= iterationsPerVu && !abortSignal?.aborted; n++) await runIteration(pinnedAgents);',
+  },
+  {
+    id: 'teardown-on-success-tears-down-the-failures-instead',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: '`teardown on success` reads the iteration\'s verdict inverted, so the hooks run after every iteration that FAILED and after none that passed — the residue a forensic reader wanted kept is deleted, and the data of every clean iteration is left behind. `always` and `never` are untouched, and so is the `teardownSkipped` count, which still counts the iterations whose hooks did not run; only which iterations those are has flipped. A fixture whose passing and failing tests run the same number of iterations counts the same number of markers under this and under the real rule — which is what the sibling\'s `teardown.tflw` did until `M189c`',
+    find: "      const teardownRuns = config.teardown === 'never' ? false : config.teardown === 'on-success' ? exec.ok : true;",
+    replace: "      const teardownRuns = config.teardown === 'never' ? false : config.teardown === 'on-success' ? !exec.ok : true;",
+  },
 ];
 
 /**
