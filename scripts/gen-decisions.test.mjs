@@ -57,6 +57,7 @@ import {
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const GENERATOR = join(ROOT, 'scripts', 'gen-decisions.mjs');
+const ENUMERATOR = join(ROOT, 'scripts', 'committable.mjs');
 
 const temps = [];
 after(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
@@ -76,7 +77,12 @@ function fixture({ withRecords = true, spec = null, sibling = {}, pin = undefine
   execFileSync('git', ['config', 'user.name', 'fixture'], { cwd: dir });
 
   // Line-for-line the arrangement that creates the defect: the records are on disk, and invisible.
-  write('.gitignore', 'PLAN*.md\nPROGRESS.md\n');
+  // The two ignored scripts are the fixture's copy of the generator itself (below): under `D967`
+  // the corpus is everything a commit would carry, and an untracked tool that cites every
+  // identifier in this repository's records would be demanded against a fixture that has none of
+  // them. Before `D967` the copy was excluded by the ordering trap `M186-01` filed — copied after
+  // `git add -A`, so never in the index — which is the fixture relying on the defect it now tests.
+  write('.gitignore', 'PLAN*.md\nPROGRESS.md\nscripts/gen-decisions.mjs\nscripts/committable.mjs\n');
 
   write('SPEC.md', spec ?? [
     '# Spec',
@@ -134,6 +140,7 @@ function fixture({ withRecords = true, spec = null, sibling = {}, pin = undefine
 
   execFileSync('git', ['add', '-A'], { cwd: dir });
   cpSync(GENERATOR, join(dir, 'scripts', 'gen-decisions.mjs'), { recursive: false, force: true, mkdir: true });
+  cpSync(ENUMERATOR, join(dir, 'scripts', 'committable.mjs'), { recursive: false, force: true, mkdir: true });
   return dir;
 }
 
@@ -617,7 +624,7 @@ test('the build host in a tracked file does NOT fail the check — that rule dec
   run(dir);
   const check = run(dir, ['--check']);
   assert.equal(check.code, 0, check.stderr);
-  assert.match(check.stdout, /tracked files swept/);
+  assert.match(check.stdout, /files swept \(\d+ tracked \+ \d+ untracked\)/);
 });
 
 test('a clean tree says how many tracked files it swept, so the green states what it read', () => {
@@ -625,7 +632,7 @@ test('a clean tree says how many tracked files it swept, so the green states wha
   run(dir);
   const check = run(dir, ['--check']);
   assert.equal(check.code, 0, check.stderr);
-  assert.match(check.stdout, /\d+ tracked files swept/);
+  assert.match(check.stdout, /\d+ files swept \(\d+ tracked \+ \d+ untracked\)/);
 });
 
 // --- D683, the tier that must announce its own absence ---------------------------------------------
@@ -1114,6 +1121,45 @@ test('an identifier cited only in code, resolving to nothing, fails the demand c
   assert.equal(r.code, 1);
   assert.match(r.stderr, /M77\b/);
   assert.match(r.stderr, /src\/thing\.ts:1/, 'a dead pointer is only actionable with the site that carries it');
+});
+
+// --- M188a (`D967`, `M186-01`) — the corpus is the tree that will be committed ----------------
+//
+// `readCode()` read `git ls-files`, the INDEX, so a new file joined the demand corpus at `git add`.
+// `M186` ran the gate green, staged, committed, and it went red on the next run — on `M186`'s own
+// new file. The corpus is now the index plus every untracked file that is not ignored, and a
+// finding in a file that has not been staged says so by name. Both directions are tested: an
+// untracked file is read, and an ignored one is not, because a gate that read ignored files would
+// demand the gitignored design records against themselves.
+
+test('an untracked file citing a dead identifier fails the demand check BEFORE `git add` (D967)', () => {
+  const dir = fixture();
+  assert.equal(run(dir).code, 0);
+  // The generated index is staged, as it is in this repository, so the one untracked file in the
+  // corpus is the probe. Written after the fixture staged everything, so it is exactly the file
+  // `M186-01` describes: on disk, about to be committed, and invisible to `git ls-files`.
+  execFileSync('git', ['add', 'DECISIONS.md'], { cwd: dir });
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  writeFileSync(join(dir, 'src', 'new-gate.ts'), '// the retry rule is `M77` (see the records)\n', 'utf8');
+  const r = run(dir, ['--demand']);
+  assert.equal(r.code, 1, 'the gate must see the file a commit taken now would carry');
+  assert.match(r.stderr, /M77\b/);
+  assert.match(r.stderr, /src\/new-gate\.ts \(untracked\):1/, 'an unstaged site is named as unstaged');
+  assert.match(r.stdout, /\d+ tracked \+ 1 untracked; D967/, 'the corpus line says what was read and what of it is unstaged');
+});
+
+test('an ignored file citing a dead identifier is not in the corpus, which is the negative control for D967', () => {
+  const dir = fixture();
+  assert.equal(run(dir).code, 0);
+  // `PLAN*.md` is ignored by the fixture's own `.gitignore`, but markdown is prose and prose is
+  // the publish half; the control has to be a NON-prose ignored file, or it tests the wrong rule.
+  writeFileSync(join(dir, '.gitignore'), 'PLAN*.md\nPROGRESS.md\nscripts/gen-decisions.mjs\nscripts/committable.mjs\nscratch/\n', 'utf8');
+  execFileSync('git', ['add', '.gitignore', 'DECISIONS.md'], { cwd: dir });
+  mkdirSync(join(dir, 'scratch'), { recursive: true });
+  writeFileSync(join(dir, 'scratch', 'probe.ts'), '// the retry rule is `M77` (see the records)\n', 'utf8');
+  const r = run(dir, ['--demand']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /\d+ tracked \+ 0 untracked; D967/);
 });
 
 test('a citation in code resolves without publishing, which is the whole of D858', () => {

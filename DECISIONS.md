@@ -6317,7 +6317,7 @@ matches no grep.
 
 ### D669
 
-<sub>cited from tflw-tests/scripts/verify-grader-reachability.mjs · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/kill-detail.mjs, tflw-tests/scripts/verify-grader-reachability.mjs · lifted from `PLAN_M152_DECISION_PROVENANCE.md`</sub>
 
 **`D669` — polish lands upstream, never in the output.** `DECISIONS.md` is generated and never
 hand-edited. Where an extracted block does not stand alone out of context, the fix is written into
@@ -7565,16 +7565,6 @@ position within the rows it owns. The plant keeps its `catches` clause verbatim 
 fires no drop, or reorders something else"* — because the discrimination is unchanged; only the
 premise moves.
 
-### D821
-
-<sub>cited from tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
-
-**D821 — the `KNOWN INTERMITTENT` header is replaced by the measurement, not deleted**
-
-`storefront.tflw:194`'s header is the right artefact for an undiagnosed flake and it is why this
-row is actionable at all. It is rewritten to carry the result of `D818` — the loop count, the arm
-that failed or the bound that held — and stays as a header if the intermittent survives the fix.
-
 ### D822
 
 <sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-second-run.mjs · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
@@ -7798,7 +7788,7 @@ an output of `M164b`, and `M164c` is the decision point that reads it.**
 
 ### D842
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +4 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +5 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D842` — a collateral kill is recorded as collateral, never counted as coverage**
 
@@ -8685,6 +8675,53 @@ logins. Measured for the record: nothing in `apiV2` takes longer than 5 s to bec
 passes inside 2 s — so staging the corner on the real app would need a `delayMs` on `POST /jobs`
 or a tunable SLA window, API surface added so one test can exist. Refused. **What the dogfood does
 not show is stated**: no dogfood wait crosses an expiry mid-flight.
+
+### D968
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +3 more · lifted from `PLAN_M188_THREE_ROWS_THREE_KINDS_OF_EVIDENCE.md`</sub>
+
+**`D968` — `kill-detail.json` is produced by the sweep, provenance-stamped per mutation, and the
+gate counts what is still hand-authored.** The current 16 entries stay as they are — regenerating
+them is a ~50 h census that would re-derive 294 relations `M176e` already made falsifiable from
+their own fields. The row is **deferred**, trigger: the next census, at which the gate's
+hand-authored count is expected to reach 0 and the row closes or reopens on what the producer
+finds.
+
+### D969
+
+<sub>cited from tflw-tests/tflw-acceptance/evidence/M154h-01/README.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/kill-detail.mjs · lifted from `PLAN_M188_THREE_ROWS_THREE_KINDS_OF_EVIDENCE.md`</sub>
+
+**`D969` — a transcript is a debugging aid, not evidence; the sweep is the evidence.** Once the
+producer writes the file from the grader's table, the source is the sweep, reproducible from the
+mutation registry plus the tflw sha `run-meta.json` records — ~93 s to re-derive one entry.
+Transcripts stay in `~/.tflw-mutation/transcripts`, untracked and allowed to be perishable; they
+carry the box's home path and committing them would need a scrubber for a file whose only value
+over re-running is 93 s.
+
+### D970
+
+<sub>cited from tflw-tests/tflw-acceptance/evidence/M154h-01/README.md, tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M188_THREE_ROWS_THREE_KINDS_OF_EVIDENCE.md`</sub>
+
+**`D970` — `M154h-01` closes on the retained artifact, and `M162a` §8.6 is its structural fix.**
+The mechanism (§1) is filed with a reproduction the ledger can point at. Nothing new in the runtime
+or the app is needed to close it; what the round adds is the assertion that makes the ordering
+explicit, and the words.
+
+### D971
+
+<sub>cited from tflw-tests/tflw-acceptance/evidence/M154h-01/README.md, tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M188_THREE_ROWS_THREE_KINDS_OF_EVIDENCE.md`</sub>
+
+**`D971` — evidence that cannot be regenerated is archived in the repository that owns the test;
+evidence that can be is not.** `tflw-acceptance/evidence/<row>/`, README states the bar. The
+complement of `D969`: a sweep can be re-run, a CI race cannot. Content is seed data — no host path,
+nothing to scrub — and the directory is not read by any gate, so it can never become `M176-05`.
+
+### D972
+
+<sub>cited from tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M188_THREE_ROWS_THREE_KINDS_OF_EVIDENCE.md`</sub>
+
+**`D972` — the app's post-success reset is not changed.** A user who enters a second review inside
+the 77 ms a POST takes loses it; no user does. Stated so it is not re-found as a defect.
 
 ### M0
 
@@ -11172,7 +11209,7 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
 ### M153b
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-acceptance.mjs +8 more · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-acceptance.mjs +9 more · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
 
 **`M153b` — the sibling's two descriptions (testFlow-tests)**
 
@@ -11237,7 +11274,7 @@ Joins the `security-ui` regression leg.
 
 ### M154f
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md +34 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/founding-runs/README.md +35 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`M154f` — the security tier and the cross-repo seam**
 
@@ -11259,7 +11296,7 @@ re-read against `M154f`'s actual scope; see §8.5 for why it is a rename rather 
 
 ### M154h
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/tflw-acceptance/evidence/M154h-01/README.md, tflw-tests/scripts/regression.mjs +2 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **Build note — 2026-08-26, the measured gate moves into the sweep (`M154h`)**
 
@@ -11788,7 +11825,7 @@ behavioural test that resolves a doubled declaration of each key and asserts whi
 
 ### M168
 
-<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/argv.mjs +6 more · lifted from `PLAN_M168_UNMUTATED_CONSTRUCTS.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +8 more · lifted from `PLAN_M168_UNMUTATED_CONSTRUCTS.md`</sub>
 
 **`M168` — the constructs nothing can be shown to test, and the one that was misfiled**
 
@@ -11948,7 +11985,7 @@ A check that would not have caught that is not this stage.
 
 ### M176
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +8 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +12 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
 
 **`M176` — a gate's reach against its output's claim, one repository over**
 
@@ -11990,7 +12027,7 @@ A check that would not have caught that is not this stage.
 
 ### M176e
 
-<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/mutation-covers.mjs, tflw-tests/scripts/lib/plants.mjs +4 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/kill-detail.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +5 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
 
 | stage | repo | state |
 |---|---|---|
@@ -12328,5 +12365,21 @@ the kind of credential the language does not renew.
 | stage | repo | what |
 |---|---|---|
 | `M187c` | tflw-tests | **The wait meets a real expiry.** After tflw's half merges and `npm run refresh-tflw` re-vendors from `main`: a new test in `tests/api/identity/token-expiry.tflw` — the file whose subject is the 5 s TTL — running `as admin`, sleeping past the TTL with the helper the file already uses, then a `wait until api` with no header line whose first poll therefore answers `401`. Acceptance is the report: the wait passes, and its timeline carries one *re-established session "admin"* step. Then measure `tickets.tflw`'s inline-login paragraph against what it says, and amend it in place if the reason it gives is `P#99a`'s job. |
+
+### M188b
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +3 more · lifted from `PLAN_M188_THREE_ROWS_THREE_KINDS_OF_EVIDENCE.md`</sub>
+
+| stage | repo | what |
+|---|---|---|
+| `M188b` | tflw-tests | **`kill-detail.json` gains a producer.** Inside `discover-mutation-kills.mjs`, from the grader's per-plant table `runRoster` already parses: for each killed mutation, write its relations `{kind, skipped?}` with a provenance stamp per mutation (`producedBy: "discover-mutation-kills.mjs"`, the tflw sha, the run's `startedAt`). `read-mutation-matrix.mjs` reports `produced / hand-authored` counts beside its existing verdict. The existing entries stay hand-authored; the script header and the row say why the transcripts are not evidence. Unit test: the producer over a transcript's table reproduces that mutation's current entry (§4.2). |
+
+### M188c
+
+<sub>cited from tflw-tests/tflw-acceptance/evidence/M154h-01/README.md, tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M188_THREE_ROWS_THREE_KINDS_OF_EVIDENCE.md`</sub>
+
+| stage | repo | what |
+|---|---|---|
+| `M188c` | tflw-tests | **`M154h-01` closed on its own evidence.** `tflw-acceptance/evidence/M154h-01/` — `failure.png`, `network.txt` (the three review calls, method/status/time), `step.json` (the failing test record, base64 stripped) — and a README stating the bar for the directory: evidence that cannot be regenerated. `storefront.tflw`'s header paragraph rewritten from "did not reproduce, stays open" to the diagnosis. One precondition assertion before the second attempt: the comment field is empty (the reset has rendered), so the ordering the test now rests on is asserted, not implied. |
 
 <!-- GENERATED:decisions:end -->

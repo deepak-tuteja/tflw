@@ -27,11 +27,11 @@
 // illustrating a fragment's *shape* inside backticks, two script comments quoting one, and a
 // synthetic link inside a test fixture. A quotation of an address is not an address.
 
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { anchorsOf } from './github-slug.mjs';
+import { committableFiles, describeCorpus } from './committable.mjs';
 import { inCodeSpan, scanLines } from './gen-decisions.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -46,10 +46,10 @@ export const REFERENCE = /(?:https?:\/\/\S*?blob\/[^/\s]+\/SPEC\.md|\]\([^)\s]*S
 /** Tracked markdown, or a clear message about why the question cannot be answered here. */
 export function trackedMarkdown(root = ROOT) {
   try {
-    return execFileSync('git', ['ls-files', '*.md'], { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 })
-      .toString('utf8')
-      .split('\n')
-      .filter(Boolean);
+    const corpus = committableFiles(root, ['*.md']);
+    const paths = corpus.paths;
+    paths.corpus = describeCorpus(corpus);
+    return paths;
   } catch {
     throw new Error(
       'verify-anchors needs `git ls-files` and this tree has no .git — it is an rsync of the\n' +
@@ -121,12 +121,13 @@ export function findDeadReferences(spec, files) {
 
 /** The same judgement, over the working tree. */
 export function fromDisk(root = ROOT) {
-  const files = trackedMarkdown(root).map((path) => ({ path, text: readFileSync(join(root, path), 'utf8') }));
-  return findDeadReferences(readFileSync(join(root, 'SPEC.md'), 'utf8'), files);
+  const paths = trackedMarkdown(root);
+  const files = paths.map((path) => ({ path, text: readFileSync(join(root, path), 'utf8') }));
+  return { ...findDeadReferences(readFileSync(join(root, 'SPEC.md'), 'utf8'), files), corpus: paths.corpus };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { dead, references, anchors, collisions } = fromDisk();
+  const { dead, references, anchors, collisions, corpus } = fromDisk();
 
   // A collision is an anchor this repository computed from a rule GitHub has never been asked to
   // confirm here (see `anchorsOf`). Refusing is the honest answer: the alternative is a gate that
@@ -158,5 +159,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   }
 
-  console.log(`✓ ${references} SPEC.md fragment references all resolve, against ${anchors} headings`);
+  console.log(`✓ ${references} SPEC.md fragment references all resolve, against ${anchors} headings (${corpus} markdown files; D967)`);
 }

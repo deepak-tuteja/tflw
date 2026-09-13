@@ -22,7 +22,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import { committableFiles, describeCorpus } from './committable.mjs';
 import { inCodeSpan, scanLines } from './gen-decisions.mjs';
 // The patterns live in their own file so a consumer can have the rules without this gate and
 // everything behind it — see that file's header for what importing this one cost.
@@ -88,9 +88,9 @@ const IN_LINK_TARGET = /\]\([^)]*$|<[^>\s]*$|https?:\/\/\S*$|\.md#\S*$/;
 
 /** Tracked markdown. Same corpus, and same `.git` requirement, as the generator's own gate. */
 function trackedMarkdown(root) {
-  let out;
+  let corpus;
   try {
-    out = execFileSync('git', ['ls-files', '*.md'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    corpus = committableFiles(root, ['*.md']);
   } catch (e) {
     const why = String(e.stderr ?? e.message).trim().split('\n')[0];
     throw new Error(
@@ -100,7 +100,9 @@ function trackedMarkdown(root) {
       `  through the offload driver.`,
     );
   }
-  return out.split('\n').filter(Boolean).map((p) => ({ path: p, text: readFileSync(join(root, p), 'utf8') }));
+  const files = corpus.paths.map((p) => ({ path: p, text: readFileSync(join(root, p), 'utf8') }));
+  files.corpus = describeCorpus(corpus);
+  return files;
 }
 
 /**
@@ -146,17 +148,17 @@ const OWN_MACHINERY = new Set([
  * red on the box and green here — which is the failure mode this repository keeps filing.
  */
 export function trackedNonMarkdown(root) {
-  const out = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const corpus = committableFiles(root);
   const files = [];
   let skipped = 0;
-  for (const rel of out.split('\0').filter(Boolean)) {
+  for (const rel of corpus.paths) {
     if (rel.endsWith('.md')) continue;
     let text;
     try { text = readFileSync(join(root, rel), 'utf8'); } catch { skipped++; continue; }
     if (text.includes('\0')) { skipped++; continue; }
     files.push({ path: rel, text });
   }
-  return { files, skipped };
+  return { files, skipped, corpus: describeCorpus(corpus) };
 }
 
 /** What that corpus carries, split into this gate's own machinery and everything else. */
@@ -271,13 +273,13 @@ export function findBare(files) {
 export function packageStrings(root) {
   let listed;
   try {
-    listed = execFileSync('git', ['ls-files', '*package.json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    listed = committableFiles(root, ['*package.json']).paths;
   } catch (e) {
     const why = String(e.stderr ?? e.message).trim().split('\n')[0];
     throw new Error(`cannot list the tracked files: ${why}`);
   }
   const out = [];
-  for (const file of listed.split('\n').filter(Boolean)) {
+  for (const file of listed) {
     const doc = JSON.parse(readFileSync(join(root, file), 'utf8'));
     const walk = (node, path) => {
       if (typeof node === 'string') out.push({ file, path, value: node });
@@ -327,11 +329,13 @@ const invokedDirectly = () => {
 };
 
 if (invokedDirectly()) {
-  const findings = findBare(trackedMarkdown(ROOT));
+  const prose = trackedMarkdown(ROOT);
+  const findings = findBare(prose);
   const metadata = findInPackages(packageStrings(ROOT));
 
   // `M175c` / `D896` / `D880`: state the reach, and refuse to state it vacuously.
-  const reach = declaredReach(trackedNonMarkdown(ROOT));
+  const nonProse = trackedNonMarkdown(ROOT);
+  const reach = declaredReach(nonProse);
   const reachProblem =
     reach.files === 0
       ? 'no tracked non-markdown text files were enumerated at all, so the declaration below would assert the empty set'
@@ -348,8 +352,8 @@ if (invokedDirectly()) {
     process.exit(1);
   }
   const declared = [
-    `  reach: this gate demands tracked markdown. It does NOT demand the ${reach.files} tracked`,
-    `  non-markdown text files beside it, which carry ${reach.hits} hit(s) — ${reach.own} of them in this`,
+    `  reach: this gate demands committable markdown (${prose.corpus}; D967). It does NOT demand the`,
+    `  ${reach.files} non-markdown text files beside it (${nonProse.corpus}), which carry ${reach.hits} hit(s) — ${reach.own} of them in this`,
     `  gate's own rules and fixtures (D691: text that mentions the notation), ${reach.elsewhere} of them real`,
     '  bare citations in shipped comments and test titles. Declared, not widened (D896): widening is',
     `  ~${reach.elsewhere} rewrites each needing its number resolved first. If ${reach.elsewhere} grows a lot, re-take that`,
@@ -357,7 +361,7 @@ if (invokedDirectly()) {
   ].join('\n');
 
   if (!findings.length && !metadata.length) {
-    console.log('✓ no bare decision citations in tracked prose or package metadata');
+    console.log(`✓ no bare decision citations in committable prose (${prose.corpus}) or package metadata`);
     console.log(declared);
     process.exit(0);
   }
