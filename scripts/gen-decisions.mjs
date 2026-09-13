@@ -20,7 +20,7 @@
 // skipped, which is the whole reason this ledger's `D527` exists.
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, realpathSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { committableFiles, describeCorpus } from './committable.mjs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname, basename, extname } from 'node:path';
 
@@ -1087,13 +1087,13 @@ const BINARY = /\.(png|jpe?g|gif|ico|webp|bmp|woff2?|ttf|eot|otf|pdf|zip|gz|tgz|
  * @param {string} root
  */
 export function scrubTracked(root) {
-  let files;
+  let corpus;
   try {
-    files = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-      .split('\0').filter(Boolean);
+    corpus = committableFiles(root);
   } catch {
     return { ran: false, why: '`git ls-files` did not answer in this tree, so the tracked corpus could not be enumerated' };
   }
+  const files = corpus.paths;
   const dirt = [];
   const hits = new Map();
   for (const f of files) {
@@ -1107,7 +1107,7 @@ export function scrubTracked(root) {
       if (!SCRUB_EXEMPT.some((e) => e.file === f && e.rules.includes(d.id))) dirt.push({ ...d, file: f });
     }
   }
-  return { ran: true, files: files.length, dirt, stale: staleExemptions(hits, new Set(files)) };
+  return { ran: true, files: files.length, corpus: describeCorpus(corpus), dirt, stale: staleExemptions(hits, new Set(files)) };
 }
 
 /**
@@ -1390,9 +1390,9 @@ function readRecords(root) {
  * @returns {{path: string, text: string}[]}
  */
 function readTracked(root) {
-  let out;
+  let corpus;
   try {
-    out = execFileSync('git', ['ls-files', '*.md'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    corpus = committableFiles(root, ['*.md']);
   } catch (e) {
     const why = String(e.stderr ?? e.message).trim().split('\n')[0];
     throw new Error(
@@ -1402,10 +1402,7 @@ function readTracked(root) {
       `  the box copy without it, so run this one here rather than through the offload driver.`,
     );
   }
-  return out
-    .split('\n')
-    .filter(Boolean)
-    .map((p) => ({ path: p, text: readFileSync(join(root, p), 'utf8') }));
+  return corpus.paths.map((p) => ({ path: p, text: readFileSync(join(root, p), 'utf8') }));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1468,20 +1465,20 @@ export const IMAGE_EXT = new Set(['.png', '.svg', '.jpg', '.jpeg', '.gif', '.ico
 export const OWN_IDENTIFIERS = 'scripts/own-identifiers.json';
 
 export function readCode(root) {
-  let out;
+  let corpus;
   try {
-    out = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    corpus = committableFiles(root);
   } catch (e) {
     const why = String(e.stderr ?? e.message).trim().split('\n')[0];
     throw new Error(
       `cannot list the tracked files: ${why}\n` +
-      `  The demand check (D858) reads every tracked file that is not prose, so it needs the index\n` +
-      `  to know which files are tracked. A tree with no \`.git\` cannot answer that.`,
+      `  The demand check (D858) reads every committable file that is not prose (D967), so it needs\n` +
+      `  git to know which files those are. A tree with no \`.git\` cannot answer that.`,
     );
   }
   const files = [];
   const skipped = { images: 0, binary: 0, generated: 0 };
-  for (const path of out.split('\n').filter(Boolean)) {
+  for (const path of corpus.paths) {
     if (path.endsWith('.md')) continue;
     if (IMAGE_EXT.has(extname(path).toLowerCase())) { skipped.images++; continue; }
     if (path === OWN_IDENTIFIERS) { skipped.generated++; continue; }
@@ -1489,7 +1486,7 @@ export function readCode(root) {
     if (buf.includes(0)) { skipped.binary++; continue; }
     files.push({ path, text: buf.toString('utf8') });
   }
-  return { files, skipped };
+  return { files, skipped, corpus: describeCorpus(corpus), untracked: new Set(corpus.untracked) };
 }
 
 /**
@@ -1549,11 +1546,13 @@ export const DECLARED_UNRESOLVABLE = new Map([
   ['M154i', "`gen-decisions.mjs` — quoted in `D863`'s docblock. Defined in NEITHER repository, like `D4`: minted in the sibling's comment and referred back to once in `M164-12`'s row here, and a mention is not an anchor"],
   // `M186`, found the day after it shipped. The same case as `D888`/`D999`/`M9a2` one file
   // over, and it arrived by an ordering trap worth naming here because this list is where
-  // somebody meets it: `readCode()` reads the *tracked* set, so a brand-new gate file is
+  // somebody met it: `readCode()` read the *tracked* set, so a brand-new gate file was
   // outside the demand corpus until `git add`, and the gates were run before staging. CI
   // cannot be the backstop — `--demand` needs the gitignored records (`D668`), so the half
   // of this repository that checks citations in code is a developer discipline by
-  // construction (`D683`, `D859`). Run the record gates AFTER staging, not before.
+  // construction (`D683`, `D859`). `M188a` (`D967`, closing `M186-01`) removed the ordering
+  // rather than announcing it: the corpus is now the tree a commit would carry, read through
+  // `committable.mjs`, so this file would have been read before it was staged.
   ['M2a', "`verify-own-identifiers.mjs` — the milestone-form entry in `selfTest()`'s three-shape "
     + "fixture, beside a `D` and a `P#`. Deliberately left unresolvable rather than swapped for a "
     + "real id: the fixture exercises `shapeProblems`, which decides what an identifier LOOKS "
@@ -1600,9 +1599,9 @@ export function checkDemand(files, anchors, legacy) {
 }
 
 /** What the demand check read and what it did not, printed on every run of it (`D859`, `D860`). */
-export function demandReport({ files, skipped }, { unresolved, stale, cited }) {
+export function demandReport({ files, skipped, corpus }, { unresolved, stale, cited }) {
   const out = [
-    `demand (D858): ${cited} identifiers cited across ${files.length} tracked non-prose files` +
+    `demand (D858): ${cited} identifiers cited across ${files.length} committable non-prose files (${corpus}; D967)` +
     ` — ${skipped.images} image and ${skipped.binary} binary file(s) not read,`
     + ` ${skipped.generated} generated manifest (${OWN_IDENTIFIERS}, whose every entry resolves by construction),`
     + ` and tracked markdown read by the publish half instead.`,
@@ -1819,7 +1818,9 @@ function main() {
         `  real citation from the check. Delete the entry (D860).`);
     }
     for (const [id, sites] of result.unresolved) {
-      const where = sites.slice(0, 4).map((x) => `${x.file}:${x.line}`).join(', ');
+      // An untracked site is named as such (D967): the file is in the corpus because a commit
+      // taken now would carry it, and the reader should know it has not been staged yet.
+      const where = sites.slice(0, 4).map((x) => `${x.file}${code.untracked.has(x.file) ? ' (untracked)' : ''}:${x.line}`).join(', ');
       console.error(`  ${id.padEnd(7)} ${String(sites.length).padStart(3)} site(s)  ${where}${sites.length > 4 ? ', …' : ''}`);
     }
     if (result.unresolved.length) {
@@ -1941,7 +1942,7 @@ function main() {
   if (!haveRecords) {
     console.log(
       `gen-decisions --check: ${published.size} entries, ${citedIds.size} cited identifiers — conformance and scrub pass` +
-      `${sweep.ran ? `, ${sweep.files} tracked files swept clean` : ''}.\n` +
+      `${sweep.ran ? `, ${sweep.files} files swept clean (${sweep.corpus})` : ''}.\n` +
       `  NOT CHECKED HERE: that each entry still matches the record it was lifted from. The design\n` +
       `  records are gitignored (D668), so no CI runner can compare them. That half is checked on a\n` +
       `  developer machine and by review — not by this run, which is why this line exists (D683).`);
@@ -1964,7 +1965,7 @@ function main() {
     return 1;
   }
   console.log(`gen-decisions --check: ${published.size} entries match the design records; ${citedIds.size} cited identifiers all resolve; scrub clean`
-    + `${sweep.ran ? `, ${sweep.files} tracked files swept` : ''}.`);
+    + `${sweep.ran ? `, ${sweep.files} files swept (${sweep.corpus})` : ''}.`);
   // The demand half runs last because it is the newer and weaker claim: `D858` buys resolution and
   // declines publication, so a finding here never means `DECISIONS.md` is wrong. Reported after the
   // line above rather than instead of it, so a red demand check cannot be misread as a red index.
