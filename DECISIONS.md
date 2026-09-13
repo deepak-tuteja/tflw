@@ -2485,7 +2485,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D17
 
-<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Workload model (D17) — both, arrival-rate taught as default**
 
@@ -6427,7 +6427,7 @@ written down rather than inferred.
 
 ### D722
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/apiV2/src/lifecycle/lifecycle.constants.ts, tflw-tests/apiV2/src/lifecycle/lifecycle.controller.ts +13 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/apiV2/src/lifecycle/lifecycle.constants.ts +16 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D722` — the dogfood's job is defect yield, and coverage is the gate.**
 A construct counts as covered when it is exercised in a way that *could fail* — a known-answer
@@ -6627,7 +6627,7 @@ error naming the right one.
 
 ### D739
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +3 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +4 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D739` — "uncovered" on the ratchet means *unrostered*, not *unexercised*.**
 `M154b`'s ratchet ships with 163 of the 166 constructs on it, and `step:api` is one of them — with
@@ -6814,7 +6814,7 @@ along in the artifact as history rather than as the gate.
 
 ### D751
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +2 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +3 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D751` — a construct whose known answer is already enforced by a dedicated gate is rostered by
 *reference* to that gate, not by a hand-written row restating it.**
@@ -7007,7 +7007,7 @@ address, and this one named no requirement at all.
 
 ### D767
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +13 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +14 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D767` — a count in prose is a copy with no guard, so `D504` deletes the number as well as the
 list.**
@@ -7463,7 +7463,7 @@ code that satisfies the wrong half.
 
 ### D807
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +3 more · lifted from `PLAN_M160_LATENCY_PRECISION.md`</sub>
 
 **D807 — the five precision-critical sites carry a float; the sixteen wall-clock sites do not**
 
@@ -7788,7 +7788,7 @@ an output of `M164b`, and `M164c` is the decision point that reads it.**
 
 ### D842
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +5 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +6 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D842` — a collateral kill is recorded as collateral, never counted as coverage**
 
@@ -7822,7 +7822,7 @@ declares and skips*, and a 5-hour discovery run is not a phase.
 
 ### D846
 
-<sub>cited from tflw-tests/scripts/lib/mutations.mjs, tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/mutations.mjs, tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/read-mutation-matrix.mjs +1 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D846` — the subject is the 102 acceptance-graded rows**
 
@@ -7834,7 +7834,7 @@ larger number it did not measure.
 
 ### D847
 
-<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/census-shape.mjs, tflw-tests/scripts/lib/tflw-bin.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/census-shape.mjs, tflw-tests/scripts/lib/reach.mjs +2 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D847` — the installation proof is the bundle with its build stamp normalised out, and `D843`'s named mechanism does not work**
 
@@ -7852,7 +7852,7 @@ provenance helpers as already reading that sha. Measured on the box before `M164
 
 ### D848
 
-<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/reach-verdicts.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D848` — the baseline is a bracket, not a precondition**
 
@@ -7908,7 +7908,7 @@ met and will not be**. `D851` declined to build the gate that would have met it.
 
 ### D854
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/reach.mjs +1 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D854` — the census reports its own staleness, and does not fail on it**
 
@@ -8582,7 +8582,7 @@ file**, beside the pattern-layer one, sharing its fixture discipline.
 
 ### D954
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/reach.mjs, tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
 **`D954` — the refresh is a local act on every machine, and `refresh-tflw` is the only way to
 perform it.** No tarball is carried between machines by any mechanism. This is the user's proposal
@@ -8722,6 +8722,31 @@ nothing to scrub — and the directory is not read by any gate, so it can never 
 
 **`D972` — the app's post-success reset is not changed.** A user who enters a second review inside
 the 77 ms a POST takes loses it; no user does. Stated so it is not re-found as a defect.
+
+### D974
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +6 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+
+**`D974` — reach is measured, not judged.** Whether a surviving mutation's lines are executed
+by any plant is a fact one instrumented roster run produces, so it is produced, stamped, and
+re-runnable after every census. The judgement that remains — asserted or not — is confined to
+the reached set and lives in a hand table a gate holds equal to the measured set.
+
+### D976
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+
+**`D976` — deepening is bounded and each repair carries its own kill.** Eleven constructs, each
+verified by a hand mutation reddening its plant, recorded in the row. The census (`M190`) is
+the second witness, not the first.
+
+### D977
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+
+**`D977` — the registry widens in tflw, with a control per entry.** A runtime mutation the
+census needs is also a control tflw's suite needs; the two are one artefact under one rule
+(`D840`). Only never-red constructs with no candidate qualify.
 
 ### M0
 
@@ -11209,7 +11234,7 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
 ### M153b
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-acceptance.mjs +9 more · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-acceptance.mjs +10 more · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
 
 **`M153b` — the sibling's two descriptions (testFlow-tests)**
 
@@ -11498,7 +11523,7 @@ roster and ratchet. **`D511` merge order: tflw first, then testFlow-tests.**
 
 ### M157g
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +2 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +3 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **`M157g` — 2026-08-31, the clause that was vacuous and flaky from one cause**
 
@@ -11723,7 +11748,7 @@ line; restate the count; delete the no-op perturbation. Keep all 54 `find` patte
 
 ### M164
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +14 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +15 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`M164` — the roster plants must be shown to discriminate**
 
@@ -11744,7 +11769,7 @@ Nothing gated, nothing mutated, no stack.
 
 ### M164b
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +4 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs +7 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`M164b` — discovery, built 2026-09-01**
 
@@ -11803,7 +11828,7 @@ behavioural test that resolves a doubled declaration of each key and asserts whi
 
 ### M166
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/tflw-provenance.mjs +7 more · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/reach.mjs +8 more · lifted from `PLAN_M166_LEDGER_PATH_AVAILABILITY.md`</sub>
 
 **`M166` — `verify:ledger` must not accuse the ledger of a defect it could not have seen**
 
@@ -11985,7 +12010,7 @@ A check that would not have caught that is not this stage.
 
 ### M176
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +12 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +13 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
 
 **`M176` — a gate's reach against its output's claim, one repository over**
 
@@ -12011,7 +12036,7 @@ A check that would not have caught that is not this stage.
 
 ### M176c
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/measure-construct-evidence.mjs +2 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/measure-construct-evidence.mjs +4 more · lifted from `PLAN_M176_SIBLING_GATE_REACH.md`</sub>
 
 | stage | repo | state |
 |---|---|---|
@@ -12381,5 +12406,72 @@ the kind of credential the language does not renew.
 | stage | repo | what |
 |---|---|---|
 | `M188c` | tflw-tests | **`M154h-01` closed on its own evidence.** `tflw-acceptance/evidence/M154h-01/` — `failure.png`, `network.txt` (the three review calls, method/status/time), `step.json` (the failing test record, base64 stripped) — and a README stating the bar for the directory: evidence that cannot be regenerated. `storefront.tflw`'s header paragraph rewritten from "did not reproduce, stays open" to the diagnosis. One precondition assertion before the second attempt: the comment field is empty (the reset has rendered), so the ordering the test now rests on is asserted, not implied. |
+
+### M189a
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/reach-verdicts.mjs +6 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+
+**`M189a` — reach (sibling)**
+
+1. `scripts/measure-mutation-reach.mjs`: run the acceptance roster once against **unmutated**
+   tflw under `c8` (the bundle, with source maps back to `packages/*/src`), then for every
+   `kill-matrix.jsonl` row with `state: survived` and a runtime file, locate the mutation's
+   `find` string in the source and ask whether any of its lines executed. Output
+   `tflw-acceptance/mutation/reach.json`: per mutation `{reached: true|false, lines: [..],
+   plants: [..]}` under a `$produced` stamp (`D968`'s shape). Two controls in the script's
+   self-test and in the artefact: one mutation the census killed by assertion (its lines must
+   read reached) and one whose path no fixture can enter (must read unreached).
+2. `read-mutation-matrix.mjs` gains a bin line: `N reached / M unreached of the 99 surviving
+   runtime mutants` and lists the reached ones.
+3. The reading: every reached survivor gets a verdict in a hand table,
+   `tflw-acceptance/mutation/reach-verdicts.json` — `not-asserted` (a plant runs through it and
+   its known answer does not depend on the result) or `out-of-reach-by-design` (visible only in
+   the report, the LSP, an exit code, or a path the roster cannot enter). A gate,
+   `verify:reach-verdicts`, asserts the hand table and the measured reached set name exactly the
+   same mutations, `mutation-covers.mjs`'s arrangement.
+4. Rows filed per construct family from the `not-asserted` bin, open, for the drawdown milestone.
+5. Wiring: self-test, CI step in `acceptance-check`, `verify-contributing.mjs` classification,
+   `CONTRIBUTING.md` bullet, `CONSTRUCTS.md` paragraph on what reach means and does not.
+
+### M189b
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/tflw-acceptance/conformance/teardown.tflw · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+
+**`M189b` — the registry (tflw)**
+
+1. One runtime mutation each for `run … iterations` and `teardown`, and for any other never-red
+   construct `M189a`'s reading shows has no candidate. Each perturbs the *result* — the iteration
+   count off by one, the teardown step skipped on a passing test — never the parse.
+2. Each entry needs a tflw unit test that kills it. Where none exists, that is a tflw test gap
+   found on the way: the test is written in the same commit and the fact recorded here (§6).
+3. `verify:mutations` on the box for the affected milestone tag; `EXPECTED` in
+   `verify-test-counts.mjs` bumped for the new tests; the full `npm test` on the box before push
+   (`M188`'s §6 item 1).
+
+### M189c
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +4 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+
+**`M189c` — the eleven (sibling)**
+
+1. The 8 never-red plants: each gets the assertion its known answer was missing, or a fixture
+   that reaches the branch, and is verified by **one hand mutation on the box that reddens it** —
+   the mutation named and the red line quoted in `CONSTRUCTS.md`'s row, as `M188c` did for
+   `M154h-01`.
+2. The 3 fixture-less subjects get a fixture and a row each; the ratchet goes 15 → 12 and its
+   ceiling with it.
+3. `M189-01` closed; `M164-02` and `M176-05` re-stamped, still deferred, naming `M190` as the
+   decider.
+
+### M190
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+
+**`M190` — the re-census, and the decider.** Not built here and not scoped here: one unattended
+run of `discover-mutation-kills.mjs` over the whole registry (343 entries after `M189b`, ~50 h of
+box calendar) with the `M188b` producer writing `kill-detail.json`, followed by
+`measure-mutation-reach` so the nine new entries have a reach. It is what moves `M164-02`
+(a second discriminating perturbation) and `M176-05` (`16 of 16` produced) — `D978` — and what
+grades the eleven of `M189c` a second time. Everything else below is a plain list.
 
 <!-- GENERATED:decisions:end -->
