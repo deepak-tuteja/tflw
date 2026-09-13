@@ -177,7 +177,12 @@ const DEFAULT_PKG = '@tflw/lang';
  */
 export const SUITE_SECONDS = {
   '@tflw/lang': 10,
-  '@tflw/runtime': 68,
+  // 68 until `M189b`, and the aggregate job's re-shard trigger is what corrected it. `main`'s last
+  // 24-shard run already had its nine 13-mutation runtime shards at 17-19m against a modelled
+  // 15m54s — ~80s a run — and the first `M189b` run's one 14-mutation shard took 20m23s, past the
+  // 20m00s trigger: 15 runs in 1223s is **82s**. Taken as measured, the larger of the two readings,
+  // for the reason the two entries below give: this number's job is to stop a shard overrunning.
+  '@tflw/runtime': 82,
   '@tflw/reporter': 4,
   '@tflw/lsp-server': 5,
   '@tflw/docs-site': 5,
@@ -1970,14 +1975,15 @@ const REGISTRY = [
     pkg: ROOT_SUITE,
     file: '.github/workflows/ci.yml',
     what: "`D449`'s own near-miss, frozen as a control. The reassembly job's `--of=` falls behind the `shard:` matrix — which is what actually happened during this milestone's re-shard, and it cost a full CI round trip: twelve shards each green about themselves, and a failure three jobs away from the two integers that disagreed. `verify-shards.mjs` still catches it at runtime and is still the only thing that can see a shard that never reported; this kills it in a second instead",
-    // M148 moved this with the 12 → 18 widen, `M151` with 18 → 20, and `M169b` with 20 → 23. The
+    // M148 moved this with the 12 → 18 widen, `M151` with 18 → 20, `M169b` with 20 → 23, `M171c`
+    // with 23 → 24 and `M189b` with 24 → 28. The
     // `find:` has to quote the live workflow, and the `replace:` is deliberately the *previous*
     // count rather than a nonsense one: the failure being controlled is a re-shard that updates
     // some of the six copies and not the rest, so the mutant should look exactly like a
     // half-finished widen. This entry is itself a seventh copy — it is the one that fails loudly
     // and immediately when the workflow moves without it, which is why it is not held by a guard.
-    find: 'verify-shards.mjs shards --of=24',
-    replace: 'verify-shards.mjs shards --of=20',
+    find: 'verify-shards.mjs shards --of=28',
+    replace: 'verify-shards.mjs shards --of=24',
   },
 
   // -- M137b (D433/D434/D457): the CSRF clause and the derived principal ----------------------------
@@ -3215,6 +3221,109 @@ const REGISTRY = [
     find: '  if (unknown) return coverageUnknown()',
     replace: '  if (unknown) return null',
   },
+
+  // ── M189b — the registry widens where the sibling's census had nothing to try (`D977`) ────────
+  //
+  // `testFlow-tests`' census (`M164b`) applied every entry above that reaches its bundle and asked
+  // which of its 103 acceptance plants went red. Eight plants never did — and for two of them,
+  // `C3` (`run N iterations …`) and `C48` (`teardown`), the reason is not the plant: no entry in
+  // this registry perturbs what those constructs *compute*. The keyword matches that exist
+  // (`ungradable-threshold-passes`, `browser-close-rethrow`) are about other things. A plant cannot
+  // be red under a mutation nobody wrote, and a census that never tries one records `survived` for
+  // a reason that has nothing to do with the roster's depth.
+  //
+  // So these are written here, under `D840`'s one-registry rule, and each has to be killed by this
+  // repository's own suite like every other entry — which makes each one a control tflw needed
+  // anyway (`D977`). Three entries, and the third is the interesting one: `C48`'s fixture cannot
+  // tell `on success` from its inversion (both tear down four of its eight iterations), which is the
+  // exact shape the sibling's `M189c` exists to repair, and the reason the entry is the inversion
+  // rather than the blunter "never tears down" that the plant would already catch.
+  {
+    id: 'shared-iteration-pool-runs-one-too-many',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: '`run N iterations across M users` lands N+1 requests: the VU that observes an empty pool takes one more iteration before the pool reads negative. Every threshold still holds, the report still says PASS, and `metrics.iterations` faithfully reports the wrong number — `D97`\'s "exactly N, never more" is off by one in the direction no error rate can see. Under `--workers` the surplus is one per shard that got a VU, so the count stops being "independent of `--workers`", the second half of the contract `tflw spec` states for this construct',
+    find: '            while (remaining > 0 && !abortSignal?.aborted) {\n              remaining--;',
+    replace: '            while (remaining >= 0 && !abortSignal?.aborted) {\n              remaining--;',
+  },
+  {
+    id: 'per-user-iterations-run-one-too-many',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: '`run N iterations per user across M users` lands (N+1)×M requests — the per-VU loop runs to `<=` — so a 12-per-user run over 5 VUs lands 65, and the shared-pool spelling one entry up is untouched. The two spellings are two branches, and a plant that asserts one exact total says nothing about the other; the sibling\'s `C3` asserts both by different arithmetic for exactly this reason',
+    find: '            for (let n = 0; n < iterationsPerVu && !abortSignal?.aborted; n++) await runIteration(pinnedAgents);',
+    replace: '            for (let n = 0; n <= iterationsPerVu && !abortSignal?.aborted; n++) await runIteration(pinnedAgents);',
+  },
+  {
+    id: 'teardown-on-success-tears-down-the-failures-instead',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/interpreter.ts',
+    what: '`teardown on success` reads the iteration\'s verdict inverted, so the hooks run after every iteration that FAILED and after none that passed — the residue a forensic reader wanted kept is deleted, and the data of every clean iteration is left behind. `always` and `never` are untouched, and so is the `teardownSkipped` count, which still counts the iterations whose hooks did not run; only which iterations those are has flipped. A fixture whose passing and failing tests run the same number of iterations counts the same number of markers under this and under the real rule — which is what the sibling\'s `teardown.tflw` did until `M189c`',
+    find: "      const teardownRuns = config.teardown === 'never' ? false : config.teardown === 'on-success' ? exec.ok : true;",
+    replace: "      const teardownRuns = config.teardown === 'never' ? false : config.teardown === 'on-success' ? !exec.ok : true;",
+  },
+  // The other six never-red plants, measured the same afternoon on the box: each of the hand
+  // mutations below reddened its plant (`C93`, `C96`, `C98`, `C101`, `C102`, `C114`) at the first
+  // attempt, so the plant discriminates and the reason the census never saw it red is that
+  // nothing here perturbed the construct. `D977`'s rule admits exactly these — never-red, no
+  // candidate — and each has to be killed by this repository's suite like every other entry.
+  {
+    id: 'defaults-merged-for-the-default-env-only',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the runtime merges `defaults` into the default env alone, so a run under `--env two` sees no `header`, no `allow hosts`, no `timeout` from the block that was written to be shared. `tflw check` is untouched — the checker has its own merge — which is how the sibling\'s `C93` stayed green under this with four `check` legs and needed a run-time one (`M189c`)',
+    find: '  if (config.defaults) applyEntries(config.defaults.entries);',
+    replace: '  if (config.defaults && env.isDefault) applyEntries(config.defaults.entries);',
+  },
+  {
+    id: 'a-lone-exclude-line-is-ignored',
+    milestone: 'm189b',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: 'discovery honours `exclude` only when a config declares two or more of them — a single line, which is what SPEC §3.9\'s example and every config in the sibling write, is a silent no-op again (`B6-10`\'s shape, off by one instead of by kind). An explicit file argument still runs either way, so the half of `C96` that says "an explicit path still does not [skip]" cannot see this; the discovery half can',
+    find: '      if (exclude.includes(rel)) continue;',
+    replace: '      if (exclude.length > 1 && exclude.includes(rel)) continue;',
+  },
+  {
+    id: 'scoped-header-loses-its-scope',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'a `header … for <service>` line is stored with no service, so it rides every request in the env instead of the one service\'s — SPEC §3.2\'s scoping decorates rather than narrows. Every unscoped header still arrives everywhere and the scoped one still arrives where it should, so a plant that only asks "is it there?" stays green; `C98`\'s precision half asks "is it ABSENT from the other two?"',
+    find: '          headers.push({ name: entry.name.value, value: entry.value, service: entry.service });',
+    replace: '          headers.push({ name: entry.name.value, value: entry.value, service: null });',
+  },
+  {
+    id: 'workers-key-pinned-to-one',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the `workers` config key is parsed, checked, and then resolved to `1` whatever it says — the `--workers` flag still works, so a suite driven from the command line never notices, and a config that asked for two files to run at once gets them one after the other in silence. `C101` reads the rendezvous watermark off the wire and would answer "alone" at `workers 2`',
+    find: "        case 'WorkersDecl':\n          workers = entry.count;",
+    replace: "        case 'WorkersDecl':\n          workers = 1;",
+  },
+  {
+    id: 'report-key-ignored',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the `report` config key resolves to nothing, so every artifact lands at the default `report/` whatever the config asked for — `--report` on the command line still moves them, which is why an operator who sets the key once and reads the flag\'s documentation would not see it. `C102` looks for all four artifacts under the configured directory and for `report/` to be absent',
+    find: "        case 'ReportDecl':\n          reportDir = entry.dir.value;\n          break;",
+    replace: "        case 'ReportDecl':\n          break;",
+  },
+  {
+    id: 'locator-subject-skips-the-kind-rule',
+    milestone: 'm189b',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: 'a UI locator in subject position is exempted from the matcher-compatibility rule, so `expect button "Save" was made` checks clean and fails mid-run from the runtime\'s own matcher switch — `TF042`\'s founding scenario, reinstated for the one subject kind `M174` added last. Value subjects were already exempt (`TF041` owns them); this widens that exemption by one word. `C114`\'s first leg goes silent and its other two stay silent, which is the row\'s whole reason for having three',
+    find: "    if (expect.subject.type !== 'ValueSubject') {\n      const kind = SUBJECT_KINDS[expect.subject.type];",
+    replace: "    if (expect.subject.type !== 'ValueSubject' && expect.subject.type !== 'LocatorSubject') {\n      const kind = SUBJECT_KINDS[expect.subject.type];",
+  },
 ];
 
 /**
@@ -3687,8 +3796,15 @@ export const RESHARD_AT = 2 / 3;
  * with the lowest max. See `ci.yml`'s re-shard log: the max plateaus at 756s from 25 onward, but
  * only by splitting the widest chunk three ways beside 3-mutation bins, which takes the probe's
  * ratio from 1.212 to 3.330 against its 1.7 bar. 23 is the last count that is both cheap and level.
+ *
+ * 24 -> 28 at `M189b`. The registry grew by nine runtime entries and the packer put them into one
+ * 14-mutation chunk that overran the trigger; `@tflw/runtime` re-measured at 82s (was 68); and
+ * the levelness probe now reads max against the mean, so the refusal `ci.yml`'s `M182e` entry
+ * records — every wider count failed the max/min bar — no longer binds. See that file's
+ * `M189b` entry for the priced table; 28 is the first count whose longest shard is the root-suite
+ * chunk rather than a runtime one.
  */
-export const SHARD_COUNT = 24;
+export const SHARD_COUNT = 28;
 
 /** Estimated wall-clock seconds for a shard, for `--list`'s benefit. The same model `partition()`
  *  packs by, so a listing that looks unbalanced *is* the balance the packer achieved. */
