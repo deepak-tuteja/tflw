@@ -177,7 +177,12 @@ const DEFAULT_PKG = '@tflw/lang';
  */
 export const SUITE_SECONDS = {
   '@tflw/lang': 10,
-  '@tflw/runtime': 68,
+  // 68 until `M189b`, and the aggregate job's re-shard trigger is what corrected it. `main`'s last
+  // 24-shard run already had its nine 13-mutation runtime shards at 17-19m against a modelled
+  // 15m54s — ~80s a run — and the first `M189b` run's one 14-mutation shard took 20m23s, past the
+  // 20m00s trigger: 15 runs in 1223s is **82s**. Taken as measured, the larger of the two readings,
+  // for the reason the two entries below give: this number's job is to stop a shard overrunning.
+  '@tflw/runtime': 82,
   '@tflw/reporter': 4,
   '@tflw/lsp-server': 5,
   '@tflw/docs-site': 5,
@@ -1970,14 +1975,15 @@ const REGISTRY = [
     pkg: ROOT_SUITE,
     file: '.github/workflows/ci.yml',
     what: "`D449`'s own near-miss, frozen as a control. The reassembly job's `--of=` falls behind the `shard:` matrix — which is what actually happened during this milestone's re-shard, and it cost a full CI round trip: twelve shards each green about themselves, and a failure three jobs away from the two integers that disagreed. `verify-shards.mjs` still catches it at runtime and is still the only thing that can see a shard that never reported; this kills it in a second instead",
-    // M148 moved this with the 12 → 18 widen, `M151` with 18 → 20, and `M169b` with 20 → 23. The
+    // M148 moved this with the 12 → 18 widen, `M151` with 18 → 20, `M169b` with 20 → 23, `M171c`
+    // with 23 → 24 and `M189b` with 24 → 28. The
     // `find:` has to quote the live workflow, and the `replace:` is deliberately the *previous*
     // count rather than a nonsense one: the failure being controlled is a re-shard that updates
     // some of the six copies and not the rest, so the mutant should look exactly like a
     // half-finished widen. This entry is itself a seventh copy — it is the one that fails loudly
     // and immediately when the workflow moves without it, which is why it is not held by a guard.
-    find: 'verify-shards.mjs shards --of=24',
-    replace: 'verify-shards.mjs shards --of=20',
+    find: 'verify-shards.mjs shards --of=28',
+    replace: 'verify-shards.mjs shards --of=24',
   },
 
   // -- M137b (D433/D434/D457): the CSRF clause and the derived principal ----------------------------
@@ -3790,8 +3796,15 @@ export const RESHARD_AT = 2 / 3;
  * with the lowest max. See `ci.yml`'s re-shard log: the max plateaus at 756s from 25 onward, but
  * only by splitting the widest chunk three ways beside 3-mutation bins, which takes the probe's
  * ratio from 1.212 to 3.330 against its 1.7 bar. 23 is the last count that is both cheap and level.
+ *
+ * 24 -> 28 at `M189b`. The registry grew by nine runtime entries and the packer put them into one
+ * 14-mutation chunk that overran the trigger; `@tflw/runtime` re-measured at 82s (was 68); and
+ * the levelness probe now reads max against the mean, so the refusal `ci.yml`'s `M182e` entry
+ * records — every wider count failed the max/min bar — no longer binds. See that file's
+ * `M189b` entry for the priced table; 28 is the first count whose longest shard is the root-suite
+ * chunk rather than a runtime one.
  */
-export const SHARD_COUNT = 24;
+export const SHARD_COUNT = 28;
 
 /** Estimated wall-clock seconds for a shard, for `--list`'s benefit. The same model `partition()`
  *  packs by, so a listing that looks unbalanced *is* the balance the packer achieved. */
