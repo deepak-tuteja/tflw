@@ -3259,6 +3259,65 @@ const REGISTRY = [
     find: "      const teardownRuns = config.teardown === 'never' ? false : config.teardown === 'on-success' ? exec.ok : true;",
     replace: "      const teardownRuns = config.teardown === 'never' ? false : config.teardown === 'on-success' ? !exec.ok : true;",
   },
+  // The other six never-red plants, measured the same afternoon on the box: each of the hand
+  // mutations below reddened its plant (`C93`, `C96`, `C98`, `C101`, `C102`, `C114`) at the first
+  // attempt, so the plant discriminates and the reason the census never saw it red is that
+  // nothing here perturbed the construct. `D977`'s rule admits exactly these — never-red, no
+  // candidate — and each has to be killed by this repository's suite like every other entry.
+  {
+    id: 'defaults-merged-for-the-default-env-only',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the runtime merges `defaults` into the default env alone, so a run under `--env two` sees no `header`, no `allow hosts`, no `timeout` from the block that was written to be shared. `tflw check` is untouched — the checker has its own merge — which is how the sibling\'s `C93` stayed green under this with four `check` legs and needed a run-time one (`M189c`)',
+    find: '  if (config.defaults) applyEntries(config.defaults.entries);',
+    replace: '  if (config.defaults && env.isDefault) applyEntries(config.defaults.entries);',
+  },
+  {
+    id: 'a-lone-exclude-line-is-ignored',
+    milestone: 'm189b',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: 'discovery honours `exclude` only when a config declares two or more of them — a single line, which is what SPEC §3.9\'s example and every config in the sibling write, is a silent no-op again (`B6-10`\'s shape, off by one instead of by kind). An explicit file argument still runs either way, so the half of `C96` that says "an explicit path still does not [skip]" cannot see this; the discovery half can',
+    find: '      if (exclude.includes(rel)) continue;',
+    replace: '      if (exclude.length > 1 && exclude.includes(rel)) continue;',
+  },
+  {
+    id: 'scoped-header-loses-its-scope',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'a `header … for <service>` line is stored with no service, so it rides every request in the env instead of the one service\'s — SPEC §3.2\'s scoping decorates rather than narrows. Every unscoped header still arrives everywhere and the scoped one still arrives where it should, so a plant that only asks "is it there?" stays green; `C98`\'s precision half asks "is it ABSENT from the other two?"',
+    find: '          headers.push({ name: entry.name.value, value: entry.value, service: entry.service });',
+    replace: '          headers.push({ name: entry.name.value, value: entry.value, service: null });',
+  },
+  {
+    id: 'workers-key-pinned-to-one',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the `workers` config key is parsed, checked, and then resolved to `1` whatever it says — the `--workers` flag still works, so a suite driven from the command line never notices, and a config that asked for two files to run at once gets them one after the other in silence. `C101` reads the rendezvous watermark off the wire and would answer "alone" at `workers 2`',
+    find: "        case 'WorkersDecl':\n          workers = entry.count;",
+    replace: "        case 'WorkersDecl':\n          workers = 1;",
+  },
+  {
+    id: 'report-key-ignored',
+    milestone: 'm189b',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: 'the `report` config key resolves to nothing, so every artifact lands at the default `report/` whatever the config asked for — `--report` on the command line still moves them, which is why an operator who sets the key once and reads the flag\'s documentation would not see it. `C102` looks for all four artifacts under the configured directory and for `report/` to be absent',
+    find: "        case 'ReportDecl':\n          reportDir = entry.dir.value;\n          break;",
+    replace: "        case 'ReportDecl':\n          break;",
+  },
+  {
+    id: 'locator-subject-skips-the-kind-rule',
+    milestone: 'm189b',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/checker.ts',
+    what: 'a UI locator in subject position is exempted from the matcher-compatibility rule, so `expect button "Save" was made` checks clean and fails mid-run from the runtime\'s own matcher switch — `TF042`\'s founding scenario, reinstated for the one subject kind `M174` added last. Value subjects were already exempt (`TF041` owns them); this widens that exemption by one word. `C114`\'s first leg goes silent and its other two stay silent, which is the row\'s whole reason for having three',
+    find: "    if (expect.subject.type !== 'ValueSubject') {\n      const kind = SUBJECT_KINDS[expect.subject.type];",
+    replace: "    if (expect.subject.type !== 'ValueSubject' && expect.subject.type !== 'LocatorSubject') {\n      const kind = SUBJECT_KINDS[expect.subject.type];",
+  },
 ];
 
 /**
