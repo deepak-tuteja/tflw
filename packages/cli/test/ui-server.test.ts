@@ -6,12 +6,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UiServer, readProject, runArgv, safeJoin, parseUiArgs, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, readProject, runArgv, safeJoin, parseUiArgs, traceViewerDir, type RunRecord, type ReportEntry } from '../src/ui-server.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cliEntry = join(here, '..', 'src', 'cli.ts');
@@ -221,6 +221,43 @@ test('the page: index.html for / and for any extension-less path, files by name,
   } finally {
     await ui.close();
     await unbuilt.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the trace viewer: served under /trace/ from the project\'s own playwright-core, absent when the project has none, never outside it', async () => {
+  // `M192` U3. A project with `playwright-core` reachable from its root (here, this repository's
+  // `node_modules`, linked in) gets Playwright's viewer; one without gets a 404 that names the
+  // command. The viewer is *the project's*, not tflw's, because the traces are the project's.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-ui-trace-'));
+  await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+  await writeFile(join(dir, 'package.json'), '{"name":"fixture","private":true}', 'utf8');
+  const bare = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'ui') });
+  try {
+    const port = await bare.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+    assert.equal(traceViewerDir(dir), null);
+    assert.equal((await readProject(dir)).traceViewer, false);
+    const missing = await fetch(`${base}/trace/index.html`);
+    assert.equal(missing.status, 404);
+    assert.match(((await missing.json()) as { error: string }).error, /show-trace/);
+
+    await symlink(join(here, '..', '..', '..', 'node_modules'), join(dir, 'node_modules'), 'dir');
+    const viewerDir = traceViewerDir(dir);
+    assert.ok(viewerDir !== null && viewerDir.endsWith(join('lib', 'vite', 'traceViewer')), `resolved ${viewerDir}`);
+    assert.equal((await readProject(dir)).traceViewer, true);
+    const index = await fetch(`${base}/trace/index.html`);
+    assert.equal(index.status, 200);
+    assert.equal(index.headers.get('content-type'), 'text/html; charset=utf-8');
+    assert.match(await index.text(), /Playwright Trace Viewer/);
+    assert.equal(await (await fetch(`${base}/trace/`)).status, 200);
+    const sw = await fetch(`${base}/trace/sw.bundle.js`);
+    assert.equal(sw.status, 200);
+    assert.equal(sw.headers.get('content-type'), 'text/javascript; charset=utf-8');
+    assert.equal((await fetch(`${base}/trace/..%2Fpackage.json`)).status, 400);
+    assert.equal((await fetch(`${base}/trace/nope.js`)).status, 404);
+  } finally {
+    await bare.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

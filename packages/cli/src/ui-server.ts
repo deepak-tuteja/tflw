@@ -23,6 +23,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile, readdir, stat, cp, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve, relative, dirname, extname, sep } from 'node:path';
+import { createRequire } from 'node:module';
 import { parseSource, parseConfigSource } from '@tflw/lang';
 import { resolveConfig, selectEnv } from '@tflw/runtime';
 import { discoverTests } from './project.js';
@@ -62,6 +63,10 @@ export interface ProjectView {
   readonly envs: readonly { name: string; isDefault: boolean }[];
   readonly reportDir: string;
   readonly files: readonly ProjectFile[];
+  /** Whether `/trace/` serves Playwright's trace viewer — true when `playwright-core` resolves
+   * from the project (`M192` U3). The page shows *open trace* when it does and the
+   * `npx playwright show-trace` line when it does not. */
+  readonly traceViewer: boolean;
 }
 
 /** What `tflw run` is asked for. Every field maps to one CLI flag, and nothing else reaches the
@@ -134,7 +139,24 @@ export async function readProject(root: string): Promise<ProjectView> {
       diagnostics: diagnostics.length,
     });
   }
-  return { root, envs, reportDir: resolved.reportDir, files };
+  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null };
+}
+
+/** Playwright's own trace viewer — the static page `npx playwright show-trace` serves — resolved
+ * through the project the traces belong to, which is where its `playwright` is (`M192` U3, §2
+ * q8: the archive is handed to Playwright's viewer, not to a viewer of tflw's). Served by this
+ * process under `/trace/` so that a page reached over `ssh -L` opens a trace in the reader's own
+ * browser, and nothing is spawned; the viewer fetches the archive from `/api/reports/…`, the same
+ * origin. `null` when the project has no `playwright-core`, which is also a project that could
+ * not have written a trace. */
+export function traceViewerDir(root: string): string | null {
+  try {
+    const manifest = createRequire(join(root, 'package.json')).resolve('playwright-core/package.json');
+    const dir = join(dirname(manifest), 'lib', 'vite', 'traceViewer');
+    return existsSync(join(dir, 'index.html')) ? dir : null;
+  } catch {
+    return null;
+  }
 }
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -151,6 +173,10 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.svg': 'image/svg+xml',
   '.zip': 'application/zip',
   '.map': 'application/json; charset=utf-8',
+  // The trace viewer's own files (`M192` U3).
+  '.ttf': 'font/ttf',
+  '.woff2': 'font/woff2',
+  '.webmanifest': 'application/manifest+json',
 };
 
 function contentType(path: string): string {
@@ -432,6 +458,19 @@ export class UiServer {
     }
 
     if (path.startsWith('/api/')) return json(res, 404, { error: `no route ${method} ${path}` });
+
+    // Playwright's trace viewer, from the project's own `playwright-core` (`traceViewerDir`).
+    if (path === '/trace' || path.startsWith('/trace/')) {
+      const dir = traceViewerDir(this.opts.root);
+      if (dir === null) return json(res, 404, { error: 'no playwright-core resolves from the project, so there is no trace viewer to serve; `npx playwright show-trace <archive>` opens one' });
+      const wanted = path === '/trace' || path === '/trace/' ? 'index.html' : path.slice('/trace/'.length);
+      const file = safeJoin(dir, decodeURIComponent(wanted));
+      if (file === null) return json(res, 400, { error: 'outside the trace viewer' });
+      if (await sendFile(res, file)) return;
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('not found\n');
+      return;
+    }
 
     // The page. A request for a path with no extension is the app's own routing, and gets
     // index.html; everything else is a file under the bundle or a 404.

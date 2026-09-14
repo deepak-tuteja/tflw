@@ -1,26 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="tflw" tests="5" failures="1" errors="0" time="0.021" timestamp="2026-09-14T17:30:03.290Z">
-  <testsuite name="tests/catalog.tflw" tests="3" failures="1" errors="0" time="0.014" timestamp="2026-09-14T17:30:03.290Z">
+<testsuites name="tflw" tests="7" failures="2" errors="0" time="5.525" timestamp="2026-09-14T18:33:30.422Z">
+  <testsuite name="tests/catalog.tflw" tests="3" failures="1" errors="0" time="0.016" timestamp="2026-09-14T18:33:30.422Z">
     <properties>
       <property name="env" value="headers"/>
-      <property name="seed" value="3261985195"/>
-      <property name="now" value="2026-09-14T17:30:03.289Z"/>
+      <property name="seed" value="4024678461"/>
+      <property name="now" value="2026-09-14T18:33:30.421Z"/>
     </properties>
-    <testcase name="lists the catalog and follows the first item" classname="tests/catalog.tflw" time="0.012"/>
+    <testcase name="lists the catalog and follows the first item" classname="tests/catalog.tflw" time="0.014"/>
     <testcase name="a missing item is a 404 with a reason" classname="tests/catalog.tflw" time="0.001"/>
     <testcase name="the price of a widget is what the shelf says" classname="tests/catalog.tflw" time="0.001">
       <failure message="expected body.price to equal 10, but got 12">expected body.price to equal 10, but got 12</failure>
     </testcase>
   </testsuite>
-  <testsuite name="tests/orders.tflw" tests="2" failures="0" errors="0" time="0.005" timestamp="2026-09-14T17:30:03.290Z">
+  <testsuite name="tests/orders.tflw" tests="2" failures="0" errors="0" time="0.005" timestamp="2026-09-14T18:33:30.422Z">
     <properties>
       <property name="env" value="headers"/>
-      <property name="seed" value="3261985195"/>
-      <property name="now" value="2026-09-14T17:30:03.289Z"/>
+      <property name="seed" value="4024678461"/>
+      <property name="now" value="2026-09-14T18:33:30.421Z"/>
     </properties>
     <testcase name="creates an order and reads its total back" classname="tests/orders.tflw" time="0.004"/>
     <testcase name="a warm-up endpoint answers on the second attempt" classname="tests/orders.tflw" time="0.001">
       <system-out>flaky: passed on attempt 2 of 2 (1 prior attempt failed)</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="tests/shop.tflw" tests="2" failures="1" errors="0" time="5.504" timestamp="2026-09-14T18:33:30.422Z">
+    <properties>
+      <property name="env" value="headers"/>
+      <property name="seed" value="4024678461"/>
+      <property name="now" value="2026-09-14T18:33:30.421Z"/>
+    </properties>
+    <testcase name="the shop page greets and the button answers" classname="tests/shop.tflw" time="0.323"/>
+    <testcase name="the shelf never says sold out" classname="tests/shop.tflw" time="5.181">
+      <failure message="expected `text &quot;Sold out&quot;` to be visible, but got no matching element">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</failure>
     </testcase>
   </testsuite>
 </testsuites>

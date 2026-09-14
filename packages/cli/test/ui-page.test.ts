@@ -10,7 +10,7 @@ import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtemp, cp, rm, readFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, cp, rm, readFile, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -53,6 +53,9 @@ before(async () => {
 
   root = join(scratch, 'project');
   await cp(join(fixtures, 'project'), root, { recursive: true });
+  // A project with `playwright` installed, as one that wrote a trace is: this repository's
+  // `node_modules`, linked in, is what `traceViewerDir` resolves through (U3).
+  await symlink(join(here, '..', '..', '..', 'node_modules'), join(root, 'node_modules'), 'dir');
   for (const env of ['full', 'headers']) {
     await mkdir(join(root, 'report', 'runs'), { recursive: true });
     await cp(join(fixtures, 'reports', env), join(root, 'report', 'runs', env), { recursive: true });
@@ -180,6 +183,79 @@ test('at `evidence headers only` the page states the level and shows the marker 
   assert.deepEqual(bodies, held);
   // Headers are still there — the level withholds bodies, not headers.
   assert.ok((await page.locator('[data-response] [data-headers]').count()) > 0);
+});
+
+test('WebUI at `evidence full`: the screenshot a step took, the failure shot, and the trace handed to Playwright\'s viewer', async () => {
+  const report = oracle.full!;
+  await openReport('full');
+  const shots = report.tests.flatMap((t) => (t as TestResult).steps.filter((s) => s.screenshot).map((s) => ({ test: t.name, step: s })));
+  assert.ok(shots.length >= 2 && shots.some((x) => x.step.ok) && shots.some((x) => !x.step.ok), 'the corpus has an explicit screenshot and a failure-first one');
+  for (const { test: name, step } of shots) {
+    const row = page.locator(`[data-test][data-name="${name}"] [data-step][data-line="${step.line}"]`);
+    const img = row.locator('[data-screenshot]');
+    assert.equal(await img.count(), 1, `${name} line ${step.line}: one screenshot`);
+    assert.equal(await img.getAttribute('src'), `data:image/png;base64,${step.screenshot!.base64}`);
+    // Folded under a passing step, open under a failed one — the HTML report's rule.
+    assert.equal(await row.locator('details.evidence').evaluate((el) => (el as { open: boolean }).open), !step.ok);
+    // Decodable, not just present: the report's bytes are a PNG of the fixture viewport. Through
+    // a fresh `Image` rather than the rendered one, which is `loading="lazy"` inside a closed
+    // `<details>` and so never loads — its `decode()` hangs there rather than rejecting.
+    // (`Image` is the browser's; this file type-checks under `node` only, hence the cast.)
+    const size = await img.evaluate(
+      (el) =>
+        new Promise<number[]>((resolve, reject) => {
+          const probe = new (globalThis as unknown as { Image: new () => { onload: () => void; onerror: () => void; src: string; naturalWidth: number; naturalHeight: number } }).Image();
+          probe.onload = () => resolve([probe.naturalWidth, probe.naturalHeight]);
+          probe.onerror = () => reject(new Error('the screenshot did not decode'));
+          probe.src = el.getAttribute('src')!;
+        }),
+    );
+    assert.deepEqual(size, [640, 400], 'the fixture viewport');
+  }
+  const traced = report.tests.filter((t) => (t as TestResult).trace) as TestResult[];
+  assert.equal(traced.length, 1, 'the failed browser test kept its trace; the passing one did not');
+  const section = page.locator(`[data-test][data-name="${traced[0]!.name}"]`);
+  const line = section.locator('[data-trace]');
+  await line.waitFor();
+  const path = (await line.getAttribute('data-trace'))!;
+  assert.match(path, /^assets\/traces\/[0-9a-f]{16}\.zip$/);
+  // The link resolves to the archive the reporter wrote — the page's hash is the reporter's.
+  const zip = await fetch(`${baseUrl}${await line.locator('[data-trace-download]').getAttribute('href')}`);
+  assert.equal(zip.status, 200);
+  assert.equal(Number(zip.headers.get('content-length')), Buffer.from(traced[0]!.trace!.base64, 'base64').length);
+  assert.equal(await line.locator('code').textContent(), `npx playwright show-trace ${path}`);
+  // *open trace*: Playwright's own viewer, served by tflw ui, reading the archive from the same origin.
+  const viewerHref = (await line.locator('[data-open-trace]').getAttribute('href'))!;
+  assert.match(viewerHref, /^\/trace\/index\.html\?trace=/);
+  const viewer = await browser.newPage();
+  try {
+    await viewer.goto(`${baseUrl}${viewerHref}`);
+    // The trace's own content, rendered by the viewer: the page the test opened.
+    await viewer.getByText('127.0.0.1:4717', { exact: false }).first().waitFor({ timeout: 60_000 });
+  } finally {
+    await viewer.close();
+  }
+  assert.equal(await page.locator('[data-evidence-withheld]').count(), 0);
+});
+
+test('WebUI at `evidence headers only`: no screenshot, no trace, and the sentence saying why, under every browser test', async () => {
+  const report = oracle.headers!;
+  await openReport('headers');
+  assert.equal(await page.locator('[data-screenshot]').count(), 0);
+  assert.equal(await page.locator('[data-trace]').count(), 0);
+  const browserTests = report.tests.filter((t) => (t as TestResult).steps.some((s) => s.kind === 'open'));
+  assert.equal(browserTests.length, 2, 'the corpus has two browser tests');
+  assert.ok(browserTests.every((t) => !(t as TestResult).trace && (t as TestResult).steps.every((s) => !s.screenshot)), 'the run withheld them (FS-01)');
+  const withheld = page.locator('[data-evidence-withheld]');
+  assert.equal(await withheld.count(), browserTests.length);
+  for (const t of browserTests) {
+    const p = page.locator(`[data-test][data-name="${t.name}"] [data-evidence-withheld]`);
+    assert.equal(await p.getAttribute('data-evidence-withheld'), report.evidenceLevel);
+  }
+  // The `screenshot` step itself says it was not captured — the runtime's words, shown as its detail.
+  const shotStep = (browserTests[0] as TestResult).steps.find((s) => s.kind === 'screenshot')!;
+  assert.match(shotStep.detail ?? '', /not captured \(evidence level\)/);
+  assert.equal(await page.locator(`[data-test][data-name="${browserTests[0]!.name}"] [data-step][data-line="${shotStep.line}"] [data-detail]`).textContent(), shotStep.detail);
 });
 
 test('a run from the page: the live pane fills from the stream, and the kept directory is what the page then shows', async () => {

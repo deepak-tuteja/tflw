@@ -7,10 +7,24 @@
 import type { StepResult } from './contract';
 import { ms, pretty } from './format';
 
+/** A screenshot as the report holds it — the PNG bytes, base64, straight into the `img`. Never
+ * redacted (the runtime's own note on `ScreenshotAsset`): what the page shows is what a user
+ * looking at the browser saw. */
+function Screenshot({ base64, label }: { base64: string; label: string }) {
+  return (
+    <figure className="screenshot">
+      <img src={`data:image/png;base64,${base64}`} alt={label} loading="lazy" data-screenshot data-screenshot-bytes={base64.length} />
+      <figcaption className="muted">{label}</figcaption>
+    </figure>
+  );
+}
+
 export function StepRow({ step }: { step: StepResult }) {
   if (step.kind === 'log') return <LogRow step={step} />;
   const hasTrace = step.request !== undefined;
+  const hasShot = step.screenshot !== undefined || step.snapshotDiff !== undefined;
   const assertion = step.kind === 'expect' || step.kind === 'check';
+  const labels = [step.screenshot ? 'screenshot' : '', step.snapshotDiff ? 'snapshot diff' : '', hasTrace ? 'request & response' : ''].filter(Boolean);
   return (
     <li className={`step ${step.ok ? 'ok' : 'fail'} kind-${step.kind}`} data-step data-line={step.line} data-kind={step.kind} data-ok={step.ok}>
       <div className="line">
@@ -25,9 +39,18 @@ export function StepRow({ step }: { step: StepResult }) {
           {step.detail}
         </div>
       ) : null}
-      {hasTrace ? (
+      {hasTrace || hasShot ? (
         <details className="evidence" open={!step.ok}>
-          <summary>request &amp; response</summary>
+          <summary>{labels.join(', ')}</summary>
+          {step.screenshot ? <Screenshot base64={step.screenshot.base64} label={step.ok ? 'screenshot' : 'screenshot at the failure'} /> : null}
+          {step.snapshotDiff ? (
+            <div className="snapshot-diff" data-snapshot-diff>
+              {step.snapshotDiff.baseline ? <Screenshot base64={step.snapshotDiff.baseline} label="baseline" /> : null}
+              <Screenshot base64={step.snapshotDiff.actual} label="actual" />
+              {step.snapshotDiff.diff ? <Screenshot base64={step.snapshotDiff.diff} label="diff" /> : null}
+            </div>
+          ) : null}
+          {hasTrace ? (
           <div className="trace">
             <div className="panel req" data-request>
               <div className="phead">
@@ -50,6 +73,7 @@ export function StepRow({ step }: { step: StepResult }) {
               </div>
             ) : null}
           </div>
+          ) : null}
         </details>
       ) : null}
     </li>

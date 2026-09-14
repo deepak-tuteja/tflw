@@ -3,6 +3,10 @@
     {
       "file": "tests/catalog.tflw",
       "test": "the price of a widget is what the shelf says"
+    },
+    {
+      "file": "tests/shop.tflw",
+      "test": "the shelf never says sold out"
     }
   ]
 }

@@ -3435,6 +3435,34 @@ const REGISTRY = [
     find: "      return { ...state, tests: patch(state.tests, event.file, event.test, (t) => ({ ...t, steps: [...t.steps, event.step] })) };",
     replace: "      return { ...state, tests: patch(state.tests, event.file, event.test, (t) => t) };",
   },
+  // `M192` U3 — the WebUI kind.
+  {
+    id: 'the-withheld-evidence-is-never-explained',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ReportView.tsx',
+    what: 'a browser test run below `evidence full` shows no screenshot and no trace and no sentence saying why, so the absence reads as a run that captured nothing rather than one that withheld it by decision (`FS-01`, `D987`)',
+    find: "  const withheld = browser && context !== undefined && context.evidenceLevel !== undefined && context.evidenceLevel !== 'full';",
+    replace: "  const withheld = false;",
+  },
+  {
+    id: 'a-screenshot-is-an-empty-image',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/StepRow.tsx',
+    what: 'the screenshot element is there with its caption and the report\'s bytes are not in it — a broken image where the evidence should be, and every presence check still green',
+    find: "      <img src={`data:image/png;base64,${base64}`} alt={label} loading=\"lazy\" data-screenshot data-screenshot-bytes={base64.length} />",
+    replace: "      <img src=\"data:image/png;base64,\" alt={label} loading=\"lazy\" data-screenshot data-screenshot-bytes={base64.length} />",
+  },
+  {
+    id: 'the-trace-link-names-another-archive',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/assets.ts',
+    what: 'the page\'s restatement of the reporter\'s asset hash drifts by one digit, so *open trace* and the download point at a file the reporter never wrote — the exact drift the restatement risks, and the reason the gate resolves the link',
+    find: "  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);",
+    replace: "  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 15);",
+  },
 ];
 
 /**

@@ -21,6 +21,18 @@ export function startFixtureServer() {
     };
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const path = url.pathname;
+    // The shop page, for the fixture's two browser tests (`M192` U3): a heading, a button whose
+    // click reveals a line, and nothing that says "sold out" — the failing test looks for that.
+    if (req.method === 'GET' && path === '/') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Fixture shop</title>' +
+          '<style>body{font:16px system-ui;margin:2rem;background:#fff;color:#111}#bought{display:none;color:#080}</style></head>' +
+          '<body><h1>Fixture shop</h1><p>Three items on the shelf.</p>' +
+          '<button onclick="document.getElementById(\'bought\').style.display=\'block\'">Buy a widget</button>' +
+          '<p id="bought">Bought one widget.</p></body></html>',
+      );
+    }
     if (req.method === 'GET' && path === '/items') return send(200, { items });
     let m = /^\/items\/(\d+)$/.exec(path);
     if (req.method === 'GET' && m) {

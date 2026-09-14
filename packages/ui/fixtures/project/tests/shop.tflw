@@ -1,0 +1,13 @@
+@ui @smoke
+test "the shop page greets and the button answers"
+  open "/"
+  expect text "Fixture shop" is visible
+  click button "Buy a widget"
+  expect text "Bought one widget." is visible
+  screenshot "after the purchase"
+
+@ui
+test "the shelf never says sold out"
+  open "/"
+  expect text "Three items on the shelf." is visible
+  expect text "Sold out" is visible
