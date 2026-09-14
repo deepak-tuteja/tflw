@@ -1330,7 +1330,7 @@ band would also have resolved to the wrong sequence on magnitude alone: \`CHANGE
 the digits would have sent each of those to a published entry about something else, which is worse
 than the dead pointer it replaced. The survivors say \`enterprise decision n\`, which names its list.
 
-Not every \`#n\` is a citation at all: \`D147\`, \`M92\` and \`M148\` number pull requests with it, and
+Not every \`#n\` is a citation at all: \`D147\`, \`M92\` and \`M139\` number pull requests with it, and
 \`M130\` numbers an OWASP category.
 
 An entry may also name a **file**. Most of those are in this repository — \`SPEC.md\`, \`CHANGELOG.md\`,
