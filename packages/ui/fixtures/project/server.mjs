@@ -3,7 +3,9 @@
 // search that answers on a small deterministic latency ladder, so a histogram has more than one
 // bucket, and a stock check that fails every fourth call, so an error-rate threshold has
 // something to breach — and a login that sets a bare session cookie, for the security scan (U5). Started by `scripts/make-fixtures.mjs` and by the page gate; never by
-// `tflw ui` itself. `PORT` is the one `tflw.config` names.
+// `tflw ui` itself. `PORT` is the one `tflw.config` names — the default, not the only port: the
+// page gate passes a free one and rewrites its copy of the config, because two gates on one host
+// (`M194`'s parallel sweep) were the first to run this file twice at once, and both wanted 4717.
 import { createServer } from 'node:http';
 
 export const PORT = 4717;
@@ -14,7 +16,7 @@ const items = [
   { id: 3, name: 'gizmo', price: 3 },
 ];
 
-export function startFixtureServer() {
+export function startFixtureServer(port = PORT) {
   const orders = new Map();
   let warmups = 0;
   let searches = 0;
@@ -93,7 +95,7 @@ export function startFixtureServer() {
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(PORT, '127.0.0.1', () => resolve(server));
+    server.listen(port, '127.0.0.1', () => resolve(server));
   });
 }
 
