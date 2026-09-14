@@ -103,6 +103,14 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:fmt-roundtrip -- --check',
+    class: 'gate',
+    local: 'npm run verify:fmt-roundtrip -- --check',
+    why: "`M191`/`D997` — the formatter's own gate over this repository's tracked `.tflw` files: `format()` yields the same tokens in the same order with trivia excluded, every comment kept, and is idempotent; under `--check` the files are already formatted too, so the formatter's own corpus can never fail the check it asks of the sibling's. A `.checkonly/` fixture that is broken on purpose is refused by design and listed, not counted. Needs `packages/lang/dist` — the `build` step — and no network. Milliseconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:check-coverage',
     class: 'gate',
     local: 'npm run verify:check-coverage',

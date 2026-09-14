@@ -5306,3 +5306,63 @@ test('`unique` stays distinct across forked load workers (SPEC §7.2)', async ()
     );
   }
 });
+
+// `M191` (`D997`) — `tflw fmt`: the file surface of `@tflw/lang`'s `format`. Walks a directory
+// (skipping `report/`), writes in place and names the file, `--check` writes nothing and exits 1
+// when something would change, and a file the lexer refuses is named on stderr and left alone
+// under both forms.
+test('fmt: formats a tree in place, --check lists and exits 1, a broken file is reported and left alone', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-fmt-'));
+  try {
+    await mkdir(join(dir, 'sub'));
+    await mkdir(join(dir, 'report'));
+    await writeFile(join(dir, 'a.tflw'), 'test "a"\n    api POST /o body {x:1}\n', 'utf8');
+    await writeFile(join(dir, 'sub', 'b.tflw'), 'test "b"\n  api GET /x\n', 'utf8');
+    await writeFile(join(dir, 'report', 'repro.tflw'), 'test "r"\n      api GET /x\n', 'utf8');
+    await writeFile(join(dir, 'broken.tflw'), 'test "c"\n  api GET /x $\n', 'utf8');
+
+    // --check: exit 1, names the file that would change, writes nothing, names the broken file.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'fmt', '--check'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stdout, stderr } = e as { code?: number; stdout: string; stderr: string };
+        assert.equal(code, 1, stderr);
+        assert.match(stdout, /^would format a\.tflw$/m);
+        assert.doesNotMatch(stdout, /b\.tflw|repro\.tflw/);
+        assert.match(stdout, /3 files, 1 would change, 1 not formatted\./);
+        assert.match(stderr, /✗ broken\.tflw: not formatted — TF001/);
+        return true;
+      },
+    );
+    assert.equal(await readFile(join(dir, 'a.tflw'), 'utf8'), 'test "a"\n    api POST /o body {x:1}\n');
+
+    // write: a.tflw formatted, b.tflw untouched, report/ skipped, exit 1 for the broken file.
+    await assert.rejects(
+      execFileAsync('node', [cliEntry, 'fmt'], { cwd: dir }),
+      (e: unknown) => {
+        const { code, stdout } = e as { code?: number; stdout: string };
+        assert.equal(code, 1);
+        assert.match(stdout, /^formatted a\.tflw$/m);
+        assert.match(stdout, /3 files, 1 formatted, 1 not formatted\./);
+        return true;
+      },
+    );
+    assert.equal(await readFile(join(dir, 'a.tflw'), 'utf8'), 'test "a"\n  api POST /o body { x: 1 }\n');
+    assert.equal(await readFile(join(dir, 'report', 'repro.tflw'), 'utf8'), 'test "r"\n      api GET /x\n');
+    assert.equal(await readFile(join(dir, 'broken.tflw'), 'utf8'), 'test "c"\n  api GET /x $\n');
+
+    // one file, already formatted: exit 0 and says so.
+    const { stdout } = await execFileAsync('node', [cliEntry, 'fmt', '--check', 'sub/b.tflw'], { cwd: dir });
+    assert.equal(stdout, '1 file, 0 would change.\n');
+
+    // an unknown flag is a usage error like every other command's.
+    await assert.rejects(execFileAsync('node', [cliEntry, 'fmt', '--chek'], { cwd: dir }), (e: unknown) => {
+      const { code, stderr } = e as { code?: number; stderr: string };
+      assert.equal(code, 2);
+      assert.match(stderr, /unknown flag `--chek` for `tflw fmt`/);
+      return true;
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

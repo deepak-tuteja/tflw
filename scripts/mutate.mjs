@@ -250,8 +250,10 @@ const REGISTRY = [
     plan: true,
     file: LEXER,
     what: 'a BOM at offset 0 counts as an indent column again (`M98d-01`)',
-    find: 'const bomCol = lineStart === 0 && line[0] === BOM ? 1 : 0;',
-    replace: 'const bomCol = 0;',
+    // Re-anchored by `M191`, which merged this local with the bracket-continuation one so the
+    // line's trivia record (`LineInfo`) could carry the same width; the mutation is unchanged.
+    find: 'const bomWidth = lineStart === 0 && line[0] === BOM ? 1 : 0;',
+    replace: 'const bomWidth = 0;',
   },
   {
     id: 'unicode-escape-recovery',
@@ -3323,6 +3325,47 @@ const REGISTRY = [
     what: 'a UI locator in subject position is exempted from the matcher-compatibility rule, so `expect button "Save" was made` checks clean and fails mid-run from the runtime\'s own matcher switch — `TF042`\'s founding scenario, reinstated for the one subject kind `M174` added last. Value subjects were already exempt (`TF041` owns them); this widens that exemption by one word. `C114`\'s first leg goes silent and its other two stay silent, which is the row\'s whole reason for having three',
     find: "    if (expect.subject.type !== 'ValueSubject') {\n      const kind = SUBJECT_KINDS[expect.subject.type];",
     replace: "    if (expect.subject.type !== 'ValueSubject' && expect.subject.type !== 'LocatorSubject') {\n      const kind = SUBJECT_KINDS[expect.subject.type];",
+  },
+
+  // --- M191 (`D994`–`D997`) — the formatter -------------------------------------------------
+  // Each aimed at the way a formatting rule could look right and quietly change a file's meaning,
+  // which is what the round-trip gate exists to catch. The gate's own strength is the fourth one:
+  // a round-trip that stops comparing comments passes on a formatter that deletes them.
+  {
+    id: 'interpolation-padded-like-an-object',
+    milestone: 'm191',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/format.ts',
+    what: '`{name}` prints as `{ name }` — still an interpolation to the parser by the `{ IDENT }` rule, so the round-trip holds and only the rule\'s own test can see that the tight form was the decision (`D995`)',
+    find: "  if (a.type === 'lbrace') return interp.has(ai) || b.type === 'rbrace' ? '' : ' ';",
+    replace: "  if (a.type === 'lbrace') return b.type === 'rbrace' ? '' : ' ';",
+  },
+  {
+    id: 'duration-unit-detached-from-its-number',
+    milestone: 'm191',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/format.ts',
+    what: 'the number→ident adjacency is no longer kept as written, so `4s` is printed `4 s` — the same tokens in the same order, a clean round-trip, and a file that now fails `tflw check` with `TF023`. The declared exception the formatter cannot do without',
+    find: "  if (a.type === 'number' && b.type === 'ident') return adjacent ? '' : ' ';",
+    replace: "  if (a.type === 'number' && b.type === 'ident') return ' ';",
+  },
+  {
+    id: 'end-of-block-comment-pulled-out-of-its-block',
+    milestone: 'm191',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/format.ts',
+    what: 'a comment at the end of a block takes the *next* code line\'s indent whatever the author wrote, so a comment closing a `test` moves out to column 0 — every token and every comment intact, the block structure intact, and the comment now reads as introducing the next test (`D996`)',
+    find: "    const closesBlock = prevCode !== null && info.indent > (next?.indent ?? -1) && info.indent >= prevCode.indent;",
+    replace: "    const closesBlock = false;",
+  },
+  {
+    id: 'round-trip-stops-reading-comments',
+    milestone: 'm191',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/format.ts',
+    what: 'the gate no longer compares comments, so a formatter that dropped every comment line would round-trip clean — the tokens are the same and the structure is the same, and 38% of the sibling\'s corpus is comments. The gate\'s own vacuity control',
+    find: "  const ca = comments(before); const cb = comments(after);",
+    replace: "  const ca: string[] = []; const cb: string[] = [];",
   },
 ];
 

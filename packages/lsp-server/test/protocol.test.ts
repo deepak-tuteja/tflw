@@ -73,6 +73,7 @@ test('initialize: advertises capabilities for every LSP feature this server impl
   assert.ok(result.capabilities.completionProvider);
   assert.ok(result.capabilities.signatureHelpProvider);
   assert.ok(result.capabilities.semanticTokensProvider);
+  assert.equal(result.capabilities.documentFormattingProvider, true);
   client.dispose();
 });
 
@@ -510,4 +511,25 @@ test('M147e/M106-01: the LSP range and the CLI caret agree on every end-of-sourc
     );
     client.dispose();
   }
+});
+
+test('formatting: one whole-document edit with `tflw fmt`\'s text, and none when the file is already formatted or does not lex (M191)', async () => {
+  const { client, uri } = await connectServer();
+  const text = `test "ok"\n    api POST /o body {a:1}\n`;
+  openDocument(client, uri, text);
+  const opts = { tabSize: 2, insertSpaces: true };
+  const edits = (await client.sendRequest('textDocument/formatting', { textDocument: { uri }, options: opts })) as { range: unknown; newText: string }[];
+  assert.equal(edits.length, 1);
+  assert.equal(edits[0]!.newText, 'test "ok"\n  api POST /o body { a: 1 }\n');
+  client.dispose();
+
+  const clean = await connectServer();
+  openDocument(clean.client, clean.uri, 'test "ok"\n  api POST /o body { a: 1 }\n');
+  assert.deepEqual(await clean.client.sendRequest('textDocument/formatting', { textDocument: { uri: clean.uri }, options: opts }), []);
+  clean.client.dispose();
+
+  const broken = await connectServer();
+  openDocument(broken.client, broken.uri, 'test "ok"\n  api GET /x $\n');
+  assert.deepEqual(await broken.client.sendRequest('textDocument/formatting', { textDocument: { uri: broken.uri }, options: opts }), []);
+  broken.client.dispose();
 });

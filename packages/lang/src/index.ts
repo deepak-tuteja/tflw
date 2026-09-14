@@ -13,7 +13,8 @@ export * from './ast.js';
 export * from './diagnostic.js';
 export * from './spec-data.js';
 export { RUNTIME_RULES, type RuntimeRule, type Decidability } from './conformance.js';
-export { lex, type LexResult } from './lexer.js';
+export { lex, type LexResult, type LineInfo } from './lexer.js';
+export { format, roundTrip, compareTexts, joinTokens, INDENT, type FormatResult } from './format.js';
 export {
   parse as parseTokens,
   parseConfig as parseConfigTokens,

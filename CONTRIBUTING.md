@@ -66,6 +66,7 @@ npm run typecheck
 xvfb-run -a npm test
 npm run verify:observability
 npm run verify:corpora
+npm run verify:fmt-roundtrip -- --check
 npm run verify:check-coverage
 npm run verify:decisions                # ※ does less in CI than it does here
 npm run verify:citations
@@ -105,6 +106,12 @@ npm run verify:ledger                  # § never runs in CI, by decision
   *checked and fine* and *never looked*. Same split as `verify:decisions` below — the plants are
   synthetic and run identically in CI, while resolving each corpus against the design records needs
   files `.gitignore` excludes, so a runner does half and says which half. Static, seconds.
+- **`npm run verify:fmt-roundtrip -- --check`** — the formatter's own gate (`M191`, `D997`): every
+  tracked `.tflw` here round-trips through `format()` to the same tokens in the same order, the
+  same indent structure and the same comments, formats idempotently, and — under `--check` — is
+  already formatted, so the formatter's own corpus can never fail the check it asks of the
+  sibling's. A `.checkonly/` fixture that is broken on purpose is refused by design and listed,
+  not counted. Needs the build; milliseconds.
 - **`npm run verify:check-coverage`** — the only gate in this list whose subject is the *other*
   repository's build. `testFlow-tests` demands a fixture for every check-phase `TF0xx` code the
   installed tflw assigns, and that rule is enforced one repository away from the change that breaks

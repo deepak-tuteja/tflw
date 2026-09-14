@@ -8832,6 +8832,27 @@ is ever taken.
 non-empty, `control.unmutated === 'red'` → `contended`; the reader prints it beside the other
 four and the two-way `COVERS` gate excludes it (a contended relation must not be labelled).
 
+### D994
+
+<sub>cited from SPEC.md · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
+
+**`D994` — `fmt` is a formatter over tokens, not a printer over the AST.** Tokens in, the same
+tokens out in the same order, only the whitespace between them decided by rules, comments kept
+where they are. No AST change, no trivia in nodes. The printer waits for the first real insertion
+(`M192` slice 2) and grows one node kind at a time. The GUI's write-back is span edits until then,
+the way `migrate.ts` and `reuse.ts` already write.
+
+### D997
+
+<sub>cited from SPEC.md · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
+
+**`D997` — three surfaces, one function; both corpora reformatted in the round.** `tflw fmt
+[paths…]` writes in place and names what changed, `--check` writes nothing, lists what would
+change, exit 1; the LSP answers `textDocument/formatting` with the same function (format-on-save
+in VS Code with no extension code); `tflw fmt --check` runs in both CIs. The sibling's 261 files
+and tflw's 4 are reformatted in this round's own PRs, because a formatter whose corpus fails its
+check is one nobody runs; the diff is whitespace by construction and the gate below is the proof.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -12574,5 +12595,19 @@ plant *does* reach is caught by nothing and stands as `covers`-eligible evidence
 makes the census tell a kill from a contended run by measurement, and makes it refuse to start or
 continue beside a tenant that is rendering. It also closes the driver trap the overnight launch
 found.
+
+### M191
+
+<sub>cited from SPEC.md · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
+
+**`M191` — `tflw fmt`: the formatter, and the file as the only truth**
+
+`M192` (the UI) rests on a file being the only truth, and a file two tools write needs one
+layout or every write is a diff. tflw has no formatter: the lexer consumes indentation and
+comments without a token, the AST carries spans and no trivia, and nothing in the CLI, the LSP or
+the extension lays a file out. This milestone adds the formatter as a pure function over the
+lexer's tokens, three surfaces for it, and reformats both corpora so its check is green from the
+day it lands. The printer — source from an AST — is deferred to `M192` slice 2, grown one node
+kind at a time against a real insertion (`D994`).
 
 <!-- GENERATED:decisions:end -->
