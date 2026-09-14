@@ -594,7 +594,14 @@ jobs:
     # Mirrored by `SHARD_BUDGET_SECONDS` in `scripts/mutate.mjs`, and asserted equal by
     # `verify-workflow.test.mjs`. Two numbers in two files describing one limit is exactly the drift
     # `verify-shards.mjs` exists to catch, so this pair does not get to be the exception.
-    timeout-minutes: 30
+    #
+    # 30 -> 35 at `M192` U7's last run (34901152848): 374 of 374 killed and shard 7/33 at 20m15s
+    # against the 20m00s trigger, because a *mutated* run of the page gate costs ~250s where its
+    # baseline costs 214 (a broken page makes the browser tests wait on selectors to their
+    # timeout). The count that clears that honestly is 43 — three waves under GitHub's 20-job cap
+    # — so the limit moves instead of the count, the trigger with it (2/3 of 35m = 23m20s), and
+    # the shard lands at 87%. The last re-shard of any kind: the sweep is leaving the runners.
+    timeout-minutes: 35
     strategy:
       # A shard that fails must not cancel its siblings: their manifests are what `mutation
       # controls` reassembles, and a cancelled shard uploads nothing. One red shard would otherwise
