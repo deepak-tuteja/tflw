@@ -1,0 +1,19 @@
+@load
+test "the catalog holds under a fixed amount of work"
+  run 120 iterations across 4 users
+  api GET /search?q=g as "search"
+  expect status equals 200
+  api GET /items/1
+  expect status equals 200
+  pause 100ms
+  threshold p95 duration is less than 500ms
+  threshold p95 duration for "search" is less than 500ms
+  threshold error rate is less than 1%
+
+@load
+test "the stock check is not allowed to fail one call in four"
+  run 40 iterations across 2 users
+  api GET /stock
+  expect status equals 200
+  pause 50ms
+  threshold error rate is less than 5%

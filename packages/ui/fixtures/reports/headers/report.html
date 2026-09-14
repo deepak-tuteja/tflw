@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>testFlow report — 5/7 passed</title>
+<title>testFlow report — 6/9 passed</title>
 <style>
 :root{--bg:#0f1115;--card:#171a21;--fg:#e6e8ec;--mut:#9aa3b2;--ok:#3fb950;--fail:#f85149;--warn:#d29922;--info:#58a6ff;--line:#262b36;--code:#0b0d11}
 @media (prefers-color-scheme: light){:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f27;--mut:#5b6472;--ok:#1a7f37;--fail:#cf222e;--warn:#9a6700;--info:#0969da;--line:#e5e8ec;--code:#f3f4f6}}
@@ -199,17 +199,17 @@ svg{width:100%;height:auto;overflow:visible}
   <h1>testFlow report</h1>
   <div class="meta">
     <span class="badge fail">FAIL</span>
-    <span>5/7 passed · 2 failed</span>
+    <span>6/9 passed · 3 failed</span>
     <span>env <code>headers</code></span>
-    <span>seed <code>4024678461</code></span>
-    <span>now <code>2026-09-14T18:33:30.421Z</code></span>
-    <span>5525 ms</span>
-    <span>2026-09-14T18:33:30.422Z</span>
+    <span>seed <code>1238868228</code></span>
+    <span>now <code>2026-09-14T19:31:27.764Z</code></span>
+    <span>9815 ms</span>
+    <span>2026-09-14T19:31:27.765Z</span>
   </div>
   
   
   
-  <div class="demo-badge">ℹ authz coverage: 0 of 7 api steps in the suite sit in a test that declares an owner (0%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>
+  <div class="demo-badge">ℹ authz coverage: 0 of 10 api steps in the suite sit in a test that declares an owner (0%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>
   
   
   
@@ -236,25 +236,32 @@ svg{width:100%;height:auto;overflow:visible}
         <li><button type="button" class="testlink fail" data-target="t2">✗ the price of a widget is what the shelf says</button></li>
       </ul>
     </details>
+    <details class="filegroup fail" open data-file="tests/load.tflw">
+      <summary><span class="fgdot fail"></span><span class="fgname">tests/load.tflw</span><span class="fgcount">(2, 1 failed)</span></summary>
+      <ul class="testlist">
+        <li><button type="button" class="testlink ok" data-target="t3">✓ the catalog holds under a fixed amount of work</button></li>
+        <li><button type="button" class="testlink fail" data-target="t4">✗ the stock check is not allowed to fail one call in four</button></li>
+      </ul>
+    </details>
     <details class="filegroup ok" data-file="tests/orders.tflw">
       <summary><span class="fgdot ok"></span><span class="fgname">tests/orders.tflw</span><span class="fgcount">(2)</span></summary>
       <ul class="testlist">
-        <li><button type="button" class="testlink ok" data-target="t3">✓ creates an order and reads its total back</button></li>
-        <li><button type="button" class="testlink ok" data-target="t4">✓ a warm-up endpoint answers on the second attempt</button></li>
+        <li><button type="button" class="testlink ok" data-target="t5">✓ creates an order and reads its total back</button></li>
+        <li><button type="button" class="testlink ok" data-target="t6">✓ a warm-up endpoint answers on the second attempt</button></li>
       </ul>
     </details>
     <details class="filegroup fail" open data-file="tests/shop.tflw">
       <summary><span class="fgdot fail"></span><span class="fgname">tests/shop.tflw</span><span class="fgcount">(2, 1 failed)</span></summary>
       <ul class="testlist">
-        <li><button type="button" class="testlink ok" data-target="t5">✓ the shop page greets and the button answers</button></li>
-        <li><button type="button" class="testlink fail" data-target="t6">✗ the shelf never says sold out</button></li>
+        <li><button type="button" class="testlink ok" data-target="t7">✓ the shop page greets and the button answers</button></li>
+        <li><button type="button" class="testlink fail" data-target="t8">✗ the shelf never says sold out</button></li>
       </ul>
     </details>
   </div>
 </nav>
 <main>
 <section class="test ok" id="t0" data-file="tests/catalog.tflw">
-  <h2><span class="dot ok"></span>lists the catalog and follows the first item <span class="tms">14 ms</span></h2>
+  <h2><span class="dot ok"></span>lists the catalog and follows the first item <span class="tms">13 ms</span></h2>
   
   
   
@@ -263,7 +270,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items</code><span class="sms">10 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (9.1ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (8.7ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items</div>
@@ -271,8 +278,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 9.119742999999971 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 8.720171999999991 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:27 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -298,7 +305,7 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items/{firstId}</code><span class="sms">2 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (1.4ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (1.3ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items/1</div>
@@ -306,8 +313,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 1.3897460000000024 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 1.2909350000000472 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:27 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -334,7 +341,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items/999</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items/999 → 404 (0.71ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/999 → 404 (0.66ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items/999</div>
@@ -342,8 +349,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 404 Not Found · 0.7111529999999675 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 404 Not Found · 0.6551619999999616 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:27 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -370,7 +377,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items/1</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (0.56ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (0.55ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items/1</div>
@@ -378,8 +385,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.5550320000000397 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.5471519999999828 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:27 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -396,8 +403,451 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
   </ol>
 </section>
-<section class="test ok" id="t3" data-file="tests/orders.tflw">
-  <h2><span class="dot ok"></span>creates an order and reads its total back <span class="tms">4 ms</span></h2>
+<section class="test ok" id="t3" data-file="tests/load.tflw">
+  <h2><span class="dot ok"></span>the catalog holds under a fixed amount of work <span class="tms">workload</span></h2>
+  <p class="generator-line ">generator: avg event-loop lag 0.5ms · max 1.8ms · cpu 5%</p>
+  <div class="metrics-block">
+  <p class="workload">run 120 iterations across 4 users</p>
+  <table class="stats">
+    <tr><th>iterations</th><td>120</td><th>failures</th><td>0</td><th>error rate</th><td>0.00%</td></tr>
+    <tr><th>assertions</th><td colspan="5">240</td></tr>
+    <tr><th>min</th><td>1.9ms</td><th>avg</th><td>16ms</td><th>max</th><td>28ms</td></tr>
+    <tr><th>p50</th><td>16ms</td><th>p90</th><td>27ms</td><th>p95</th><td>28ms</td><th>p99</th><td>28ms</td></tr>
+  </table>
+  
+  <table class="thresholds"><tr class="ok"><td>✓</td><td>p95 duration &lt; 500ms</td><td>actual: 28ms</td></tr><tr class="ok"><td>✓</td><td>p95 duration for &quot;search&quot; &lt; 500ms</td><td>actual: 27ms</td></tr><tr class="ok"><td>✓</td><td>error rate &lt; 1.00%</td><td>actual: 0.00%</td></tr></table>
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">28</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-p50" points="42,66 237.3,66 432.7,75 628,66" fill="none" />
+    <polyline class="series-p95" points="42,16.5 237.3,12 432.7,12 628,12" fill="none" />
+    <polyline class="series-p99" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">36</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-rps" points="42,26 237.3,12 432.7,22.5 628,71.5" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polygon class="series-error-area" points="42,138 42,138 237.3,138 432.7,138 628,138 628,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">3</text>
+    <text class="axis-label" x="42" y="156">1.9ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">28ms</text>
+    <rect class="series-histogram" x="42" y="96" width="5.1" height="42"><title>1.9ms × 1</title></rect>
+    <rect class="series-histogram" x="48.1" y="96" width="5.1" height="42"><title>2.6ms × 1</title></rect>
+    <rect class="series-histogram" x="54.2" y="96" width="5.1" height="42"><title>2.8ms × 1</title></rect>
+    <rect class="series-histogram" x="60.3" y="96" width="5.1" height="42"><title>2.9ms × 1</title></rect>
+    <rect class="series-histogram" x="66.4" y="96" width="5.1" height="42"><title>2.9ms × 1</title></rect>
+    <rect class="series-histogram" x="72.5" y="96" width="5.1" height="42"><title>3.1ms × 1</title></rect>
+    <rect class="series-histogram" x="78.6" y="96" width="5.1" height="42"><title>3.2ms × 1</title></rect>
+    <rect class="series-histogram" x="84.7" y="96" width="5.1" height="42"><title>3.3ms × 1</title></rect>
+    <rect class="series-histogram" x="90.8" y="96" width="5.1" height="42"><title>3.4ms × 1</title></rect>
+    <rect class="series-histogram" x="96.9" y="96" width="5.1" height="42"><title>3.8ms × 1</title></rect>
+    <rect class="series-histogram" x="103.0" y="96" width="5.1" height="42"><title>3.8ms × 1</title></rect>
+    <rect class="series-histogram" x="109.1" y="96" width="5.1" height="42"><title>4ms × 1</title></rect>
+    <rect class="series-histogram" x="115.3" y="54" width="5.1" height="84"><title>4ms × 2</title></rect>
+    <rect class="series-histogram" x="121.4" y="96" width="5.1" height="42"><title>4.1ms × 1</title></rect>
+    <rect class="series-histogram" x="127.5" y="96" width="5.1" height="42"><title>4.2ms × 1</title></rect>
+    <rect class="series-histogram" x="133.6" y="96" width="5.1" height="42"><title>5.1ms × 1</title></rect>
+    <rect class="series-histogram" x="139.7" y="96" width="5.1" height="42"><title>6.4ms × 1</title></rect>
+    <rect class="series-histogram" x="145.8" y="96" width="5.1" height="42"><title>7ms × 1</title></rect>
+    <rect class="series-histogram" x="151.9" y="96" width="5.1" height="42"><title>7ms × 1</title></rect>
+    <rect class="series-histogram" x="158.0" y="96" width="5.1" height="42"><title>7.2ms × 1</title></rect>
+    <rect class="series-histogram" x="164.1" y="96" width="5.1" height="42"><title>7.3ms × 1</title></rect>
+    <rect class="series-histogram" x="170.2" y="96" width="5.1" height="42"><title>7.3ms × 1</title></rect>
+    <rect class="series-histogram" x="176.3" y="96" width="5.1" height="42"><title>7.5ms × 1</title></rect>
+    <rect class="series-histogram" x="182.4" y="96" width="5.1" height="42"><title>7.6ms × 1</title></rect>
+    <rect class="series-histogram" x="188.5" y="96" width="5.1" height="42"><title>7.6ms × 1</title></rect>
+    <rect class="series-histogram" x="194.6" y="96" width="5.1" height="42"><title>7.8ms × 1</title></rect>
+    <rect class="series-histogram" x="200.7" y="96" width="5.1" height="42"><title>7.9ms × 1</title></rect>
+    <rect class="series-histogram" x="206.8" y="96" width="5.1" height="42"><title>7.9ms × 1</title></rect>
+    <rect class="series-histogram" x="212.9" y="96" width="5.1" height="42"><title>8.1ms × 1</title></rect>
+    <rect class="series-histogram" x="219.0" y="96" width="5.1" height="42"><title>8.3ms × 1</title></rect>
+    <rect class="series-histogram" x="225.1" y="96" width="5.1" height="42"><title>8.4ms × 1</title></rect>
+    <rect class="series-histogram" x="231.2" y="96" width="5.1" height="42"><title>8.6ms × 1</title></rect>
+    <rect class="series-histogram" x="237.3" y="96" width="5.1" height="42"><title>9ms × 1</title></rect>
+    <rect class="series-histogram" x="243.4" y="96" width="5.1" height="42"><title>10ms × 1</title></rect>
+    <rect class="series-histogram" x="249.5" y="96" width="5.1" height="42"><title>11ms × 1</title></rect>
+    <rect class="series-histogram" x="255.6" y="96" width="5.1" height="42"><title>11ms × 1</title></rect>
+    <rect class="series-histogram" x="261.8" y="54" width="5.1" height="84"><title>11ms × 2</title></rect>
+    <rect class="series-histogram" x="267.9" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="274.0" y="54" width="5.1" height="84"><title>12ms × 2</title></rect>
+    <rect class="series-histogram" x="280.1" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="286.2" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="292.3" y="12" width="5.1" height="126"><title>12ms × 3</title></rect>
+    <rect class="series-histogram" x="298.4" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="304.5" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="310.6" y="54" width="5.1" height="84"><title>13ms × 2</title></rect>
+    <rect class="series-histogram" x="316.7" y="96" width="5.1" height="42"><title>14ms × 1</title></rect>
+    <rect class="series-histogram" x="322.8" y="96" width="5.1" height="42"><title>14ms × 1</title></rect>
+    <rect class="series-histogram" x="328.9" y="96" width="5.1" height="42"><title>14ms × 1</title></rect>
+    <rect class="series-histogram" x="335" y="96" width="5.1" height="42"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="341.1" y="96" width="5.1" height="42"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="347.2" y="96" width="5.1" height="42"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="353.3" y="96" width="5.1" height="42"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="359.4" y="54" width="5.1" height="84"><title>16ms × 2</title></rect>
+    <rect class="series-histogram" x="365.5" y="54" width="5.1" height="84"><title>16ms × 2</title></rect>
+    <rect class="series-histogram" x="371.6" y="54" width="5.1" height="84"><title>16ms × 2</title></rect>
+    <rect class="series-histogram" x="377.7" y="96" width="5.1" height="42"><title>16ms × 1</title></rect>
+    <rect class="series-histogram" x="383.8" y="96" width="5.1" height="42"><title>16ms × 1</title></rect>
+    <rect class="series-histogram" x="389.9" y="96" width="5.1" height="42"><title>16ms × 1</title></rect>
+    <rect class="series-histogram" x="396.0" y="96" width="5.1" height="42"><title>16ms × 1</title></rect>
+    <rect class="series-histogram" x="402.1" y="96" width="5.1" height="42"><title>18ms × 1</title></rect>
+    <rect class="series-histogram" x="408.3" y="96" width="5.1" height="42"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="414.4" y="96" width="5.1" height="42"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="420.5" y="96" width="5.1" height="42"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="426.6" y="12" width="5.1" height="126"><title>19ms × 3</title></rect>
+    <rect class="series-histogram" x="432.7" y="12" width="5.1" height="126"><title>19ms × 3</title></rect>
+    <rect class="series-histogram" x="438.8" y="12" width="5.1" height="126"><title>20ms × 3</title></rect>
+    <rect class="series-histogram" x="444.9" y="96" width="5.1" height="42"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="451.0" y="54" width="5.1" height="84"><title>20ms × 2</title></rect>
+    <rect class="series-histogram" x="457.1" y="96" width="5.1" height="42"><title>21ms × 1</title></rect>
+    <rect class="series-histogram" x="463.2" y="96" width="5.1" height="42"><title>22ms × 1</title></rect>
+    <rect class="series-histogram" x="469.3" y="96" width="5.1" height="42"><title>22ms × 1</title></rect>
+    <rect class="series-histogram" x="475.4" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="481.5" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="487.6" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="493.7" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="499.8" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="505.9" y="54" width="5.1" height="84"><title>24ms × 2</title></rect>
+    <rect class="series-histogram" x="512.0" y="54" width="5.1" height="84"><title>24ms × 2</title></rect>
+    <rect class="series-histogram" x="518.1" y="96" width="5.1" height="42"><title>24ms × 1</title></rect>
+    <rect class="series-histogram" x="524.2" y="96" width="5.1" height="42"><title>24ms × 1</title></rect>
+    <rect class="series-histogram" x="530.3" y="96" width="5.1" height="42"><title>25ms × 1</title></rect>
+    <rect class="series-histogram" x="536.4" y="96" width="5.1" height="42"><title>25ms × 1</title></rect>
+    <rect class="series-histogram" x="542.5" y="96" width="5.1" height="42"><title>25ms × 1</title></rect>
+    <rect class="series-histogram" x="548.6" y="54" width="5.1" height="84"><title>26ms × 2</title></rect>
+    <rect class="series-histogram" x="554.8" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
+    <rect class="series-histogram" x="560.9" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
+    <rect class="series-histogram" x="567.0" y="54" width="5.1" height="84"><title>27ms × 2</title></rect>
+    <rect class="series-histogram" x="573.1" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
+    <rect class="series-histogram" x="579.2" y="12" width="5.1" height="126"><title>27ms × 3</title></rect>
+    <rect class="series-histogram" x="585.3" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
+    <rect class="series-histogram" x="591.4" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
+    <rect class="series-histogram" x="597.5" y="96" width="5.1" height="42"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="603.6" y="54" width="5.1" height="84"><title>28ms × 2</title></rect>
+    <rect class="series-histogram" x="609.7" y="54" width="5.1" height="84"><title>28ms × 2</title></rect>
+    <rect class="series-histogram" x="615.8" y="96" width="5.1" height="42"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="621.9" y="96" width="5.1" height="42"><title>28ms × 1</title></rect>
+  </svg>
+</div>
+  </div>
+</div>
+  <div class="endpoints"><h3>Endpoints</h3><details class="endpoint"><summary>search — 120 iterations, p95 27ms, 0.00% errors</summary><h4>search</h4><div class="metrics-block">
+  
+  <table class="stats">
+    <tr><th>iterations</th><td>120</td><th>failures</th><td>0</td><th>error rate</th><td>0.00%</td></tr>
+    
+    <tr><th>min</th><td>2ms</td><th>avg</th><td>15ms</td><th>max</th><td>27ms</td></tr>
+    <tr><th>p50</th><td>15ms</td><th>p90</th><td>27ms</td><th>p95</th><td>27ms</td><th>p99</th><td>27ms</td></tr>
+  </table>
+  
+  
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">27</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-p50" points="42,68 237.3,68 432.7,72.7 628,68" fill="none" />
+    <polyline class="series-p95" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
+    <polyline class="series-p99" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">36</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-rps" points="42,26 237.3,12 432.7,22.5 628,71.5" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polygon class="series-error-area" points="42,138 42,138 237.3,138 432.7,138 628,138 628,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">14</text>
+    <text class="axis-label" x="42" y="156">2ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">27ms</text>
+    <rect class="series-histogram" x="42" y="111" width="26.9" height="27"><title>2ms × 3</title></rect>
+    <rect class="series-histogram" x="69.9" y="48" width="26.9" height="90"><title>3ms × 10</title></rect>
+    <rect class="series-histogram" x="97.8" y="102" width="26.9" height="36"><title>4ms × 4</title></rect>
+    <rect class="series-histogram" x="125.7" y="120" width="26.9" height="18"><title>6ms × 2</title></rect>
+    <rect class="series-histogram" x="153.6" y="39" width="26.9" height="99"><title>7ms × 11</title></rect>
+    <rect class="series-histogram" x="181.5" y="102" width="26.9" height="36"><title>8ms × 4</title></rect>
+    <rect class="series-histogram" x="209.4" y="120" width="26.9" height="18"><title>10ms × 2</title></rect>
+    <rect class="series-histogram" x="237.3" y="39" width="26.9" height="99"><title>11ms × 11</title></rect>
+    <rect class="series-histogram" x="265.2" y="102" width="26.9" height="36"><title>12ms × 4</title></rect>
+    <rect class="series-histogram" x="293.1" y="93" width="26.9" height="45"><title>14ms × 5</title></rect>
+    <rect class="series-histogram" x="321.0" y="57" width="26.9" height="81"><title>15ms × 9</title></rect>
+    <rect class="series-histogram" x="349.0" y="111" width="26.9" height="27"><title>16ms × 3</title></rect>
+    <rect class="series-histogram" x="376.9" y="102" width="26.9" height="36"><title>18ms × 4</title></rect>
+    <rect class="series-histogram" x="404.8" y="48" width="26.9" height="90"><title>19ms × 10</title></rect>
+    <rect class="series-histogram" x="432.7" y="111" width="26.9" height="27"><title>20ms × 3</title></rect>
+    <rect class="series-histogram" x="460.6" y="129" width="26.9" height="9"><title>21ms × 1</title></rect>
+    <rect class="series-histogram" x="488.5" y="120" width="26.9" height="18"><title>22ms × 2</title></rect>
+    <rect class="series-histogram" x="516.4" y="66" width="26.9" height="72"><title>23ms × 8</title></rect>
+    <rect class="series-histogram" x="544.3" y="75" width="26.9" height="63"><title>24ms × 7</title></rect>
+    <rect class="series-histogram" x="572.2" y="111" width="26.9" height="27"><title>26ms × 3</title></rect>
+    <rect class="series-histogram" x="600.1" y="12" width="26.9" height="126"><title>27ms × 14</title></rect>
+  </svg>
+</div>
+  </div>
+</div></details>
+<details class="endpoint"><summary>GET /items/1 — 120 iterations, p95 1ms, 0.00% errors</summary><h4>GET /items/1</h4><div class="metrics-block">
+  
+  <table class="stats">
+    <tr><th>iterations</th><td>120</td><th>failures</th><td>0</td><th>error rate</th><td>0.00%</td></tr>
+    
+    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.47ms</td><th>max</th><td>1ms</td></tr>
+    <tr><th>p50</th><td>0ms</td><th>p90</th><td>1ms</td><th>p95</th><td>1ms</td><th>p99</th><td>1ms</td></tr>
+  </table>
+  
+  
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-p50" points="42,138 237.3,138 432.7,138 628,12" fill="none" />
+    <polyline class="series-p95" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
+    <polyline class="series-p99" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">36</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-rps" points="42,26 237.3,12 432.7,22.5 628,71.5" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polygon class="series-error-area" points="42,138 42,138 237.3,138 432.7,138 628,138 628,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">64</text>
+    <text class="axis-label" x="42" y="156">0ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">1ms</text>
+    <rect class="series-histogram" x="42" y="12" width="292" height="126"><title>0ms × 64</title></rect>
+    <rect class="series-histogram" x="335" y="27.8" width="292" height="110.3"><title>1ms × 56</title></rect>
+  </svg>
+</div>
+  </div>
+</div></details></div>
+</section>
+<section class="test fail" id="t4" data-file="tests/load.tflw">
+  <h2><span class="dot fail"></span>the stock check is not allowed to fail one call in four <span class="tms">workload</span></h2>
+  <p class="generator-line ">generator: avg event-loop lag 0.5ms · max 1.8ms · cpu 5%</p>
+  <div class="metrics-block">
+  <p class="workload">run 40 iterations across 2 users</p>
+  <table class="stats">
+    <tr><th>iterations</th><td>40</td><th>failures</th><td>10</td><th>error rate</th><td>25.00%</td></tr>
+    <tr><th>assertions</th><td colspan="5">40</td></tr>
+    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.72ms</td><th>max</th><td>1.7ms</td></tr>
+    <tr><th>p50</th><td>0.73ms</td><th>p90</th><td>1.3ms</td><th>p95</th><td>1.4ms</td><th>p99</th><td>1.7ms</td></tr>
+  </table>
+  
+  <table class="thresholds"><tr class="fail"><td>✗</td><td>error rate &lt; 5.00%</td><td>actual: 25.00%</td></tr></table>
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1.7</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polyline class="series-p50" points="42,83.9" fill="none" />
+    <polyline class="series-p95" points="42,34.2" fill="none" />
+    <polyline class="series-p99" points="42,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">40</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polyline class="series-rps" points="42,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">25%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polygon class="series-error-area" points="42,138 42,12 42,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">2</text>
+    <text class="axis-label" x="42" y="156">0ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">1.7ms</text>
+    <rect class="series-histogram" x="42" y="75" width="14.0" height="63"><title>0ms × 1</title></rect>
+    <rect class="series-histogram" x="57.0" y="75" width="14.0" height="63"><title>0.051ms × 1</title></rect>
+    <rect class="series-histogram" x="72.1" y="75" width="14.0" height="63"><title>0.11ms × 1</title></rect>
+    <rect class="series-histogram" x="87.1" y="75" width="14.0" height="63"><title>0.11ms × 1</title></rect>
+    <rect class="series-histogram" x="102.1" y="75" width="14.0" height="63"><title>0.23ms × 1</title></rect>
+    <rect class="series-histogram" x="117.1" y="75" width="14.0" height="63"><title>0.29ms × 1</title></rect>
+    <rect class="series-histogram" x="132.2" y="75" width="14.0" height="63"><title>0.32ms × 1</title></rect>
+    <rect class="series-histogram" x="147.2" y="75" width="14.0" height="63"><title>0.35ms × 1</title></rect>
+    <rect class="series-histogram" x="162.2" y="75" width="14.0" height="63"><title>0.36ms × 1</title></rect>
+    <rect class="series-histogram" x="177.2" y="75" width="14.0" height="63"><title>0.36ms × 1</title></rect>
+    <rect class="series-histogram" x="192.3" y="75" width="14.0" height="63"><title>0.37ms × 1</title></rect>
+    <rect class="series-histogram" x="207.3" y="75" width="14.0" height="63"><title>0.39ms × 1</title></rect>
+    <rect class="series-histogram" x="222.3" y="75" width="14.0" height="63"><title>0.45ms × 1</title></rect>
+    <rect class="series-histogram" x="237.3" y="75" width="14.0" height="63"><title>0.46ms × 1</title></rect>
+    <rect class="series-histogram" x="252.4" y="75" width="14.0" height="63"><title>0.5ms × 1</title></rect>
+    <rect class="series-histogram" x="267.4" y="75" width="14.0" height="63"><title>0.53ms × 1</title></rect>
+    <rect class="series-histogram" x="282.4" y="75" width="14.0" height="63"><title>0.53ms × 1</title></rect>
+    <rect class="series-histogram" x="297.4" y="75" width="14.0" height="63"><title>0.61ms × 1</title></rect>
+    <rect class="series-histogram" x="312.5" y="75" width="14.0" height="63"><title>0.64ms × 1</title></rect>
+    <rect class="series-histogram" x="327.5" y="75" width="14.0" height="63"><title>0.66ms × 1</title></rect>
+    <rect class="series-histogram" x="342.5" y="75" width="14.0" height="63"><title>0.73ms × 1</title></rect>
+    <rect class="series-histogram" x="357.5" y="75" width="14.0" height="63"><title>0.75ms × 1</title></rect>
+    <rect class="series-histogram" x="372.6" y="75" width="14.0" height="63"><title>0.78ms × 1</title></rect>
+    <rect class="series-histogram" x="387.6" y="75" width="14.0" height="63"><title>0.82ms × 1</title></rect>
+    <rect class="series-histogram" x="402.6" y="75" width="14.0" height="63"><title>0.83ms × 1</title></rect>
+    <rect class="series-histogram" x="417.6" y="75" width="14.0" height="63"><title>0.9ms × 1</title></rect>
+    <rect class="series-histogram" x="432.7" y="75" width="14.0" height="63"><title>0.91ms × 1</title></rect>
+    <rect class="series-histogram" x="447.7" y="75" width="14.0" height="63"><title>0.92ms × 1</title></rect>
+    <rect class="series-histogram" x="462.7" y="75" width="14.0" height="63"><title>0.94ms × 1</title></rect>
+    <rect class="series-histogram" x="477.7" y="75" width="14.0" height="63"><title>0.94ms × 1</title></rect>
+    <rect class="series-histogram" x="492.8" y="75" width="14.0" height="63"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="507.8" y="75" width="14.0" height="63"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="522.8" y="75" width="14.0" height="63"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="537.8" y="12" width="14.0" height="126"><title>1.2ms × 2</title></rect>
+    <rect class="series-histogram" x="552.9" y="75" width="14.0" height="63"><title>1.3ms × 1</title></rect>
+    <rect class="series-histogram" x="567.9" y="75" width="14.0" height="63"><title>1.3ms × 1</title></rect>
+    <rect class="series-histogram" x="582.9" y="75" width="14.0" height="63"><title>1.4ms × 1</title></rect>
+    <rect class="series-histogram" x="597.9" y="75" width="14.0" height="63"><title>1.4ms × 1</title></rect>
+    <rect class="series-histogram" x="613.0" y="75" width="14.0" height="63"><title>1.7ms × 1</title></rect>
+  </svg>
+</div>
+  </div>
+</div>
+  <div class="endpoints"><h3>Endpoints</h3><details class="endpoint"><summary>GET /stock — 40 iterations, p95 1ms, 25.00% errors</summary><h4>GET /stock</h4><div class="metrics-block">
+  
+  <table class="stats">
+    <tr><th>iterations</th><td>40</td><th>failures</th><td>10</td><th>error rate</th><td>25.00%</td></tr>
+    
+    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.63ms</td><th>max</th><td>1ms</td></tr>
+    <tr><th>p50</th><td>1ms</td><th>p90</th><td>1ms</td><th>p95</th><td>1ms</td><th>p99</th><td>1ms</td></tr>
+  </table>
+  
+  
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polyline class="series-p50" points="42,12" fill="none" />
+    <polyline class="series-p95" points="42,12" fill="none" />
+    <polyline class="series-p99" points="42,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">40</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polyline class="series-rps" points="42,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">25%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polygon class="series-error-area" points="42,138 42,12 42,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">25</text>
+    <text class="axis-label" x="42" y="156">0ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">1ms</text>
+    <rect class="series-histogram" x="42" y="62.4" width="292" height="75.6"><title>0ms × 15</title></rect>
+    <rect class="series-histogram" x="335" y="12" width="292" height="126"><title>1ms × 25</title></rect>
+  </svg>
+</div>
+  </div>
+</div></details></div>
+</section>
+<section class="test ok" id="t5" data-file="tests/orders.tflw">
+  <h2><span class="dot ok"></span>creates an order and reads its total back <span class="tms">6 ms</span></h2>
   
   
   
@@ -405,8 +855,8 @@ svg{width:100%;height:auto;overflow:visible}
   
   <ol class="steps">
 <li class="step ok kind-api">
-    <div class="line"><span class="mark">✓</span><code>api POST /orders body { itemId: 1, qty: 2 }</code><span class="sms">3 ms</span></div>
-    <div class="detail ">POST http://127.0.0.1:4717/orders → 201 (3.1ms)</div>
+    <div class="line"><span class="mark">✓</span><code>api POST /orders body { itemId: 1, qty: 2 }</code><span class="sms">5 ms</span></div>
+    <div class="detail ">POST http://127.0.0.1:4717/orders → 201 (4.2ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ POST http://127.0.0.1:4717/orders</div>
@@ -414,8 +864,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 201 Created · 3.0843210000000454 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 201 Created · 4.238925999999992 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:32 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -442,7 +892,7 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /orders/{orderId}</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/orders/1 → 200 (0.63ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/orders/1 → 200 (0.92ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/orders/1</div>
@@ -450,8 +900,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.6315519999999992 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.9219640000001164 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:32 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -468,8 +918,8 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
   </ol>
 </section>
-<section class="test ok" id="t4" data-file="tests/orders.tflw">
-  <h2><span class="dot ok"></span>a warm-up endpoint answers on the second attempt <span class="flaky">flaky</span> <span class="tms">1 ms</span></h2>
+<section class="test ok" id="t6" data-file="tests/orders.tflw">
+  <h2><span class="dot ok"></span>a warm-up endpoint answers on the second attempt <span class="flaky">flaky</span> <span class="tms">2 ms</span></h2>
   
   
   <details class="attempt">
@@ -478,7 +928,7 @@ svg{width:100%;height:auto;overflow:visible}
     <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /warmup</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/warmup → 503 (0.59ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/warmup → 503 (0.67ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/warmup</div>
@@ -486,8 +936,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 503 Service Unavailable · 0.5920820000000049 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 503 Service Unavailable · 0.6726930000004359 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:32 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -504,7 +954,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /warmup</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/warmup → 200 (0.48ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/warmup → 200 (0.61ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/warmup</div>
@@ -512,8 +962,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.4828719999999862 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.6105719999995927 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:32 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -525,8 +975,8 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
   </ol>
 </section>
-<section class="test ok" id="t5" data-file="tests/shop.tflw">
-  <h2><span class="dot ok"></span>the shop page greets and the button answers <span class="tms">323 ms</span></h2>
+<section class="test ok" id="t7" data-file="tests/shop.tflw">
+  <h2><span class="dot ok"></span>the shop page greets and the button answers <span class="tms">361 ms</span></h2>
   
   
   
@@ -534,17 +984,17 @@ svg{width:100%;height:auto;overflow:visible}
   
   <ol class="steps">
 <li class="step ok kind-open">
-    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">266 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">310 ms</span></div>
     <div class="detail ">open http://127.0.0.1:4717/</div>
     
   </li>
 <li class="step ok kind-expect">
-    <div class="line"><span class="mark">✓</span><code>expect text &quot;Fixture shop&quot; is visible</code><span class="sms">14 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>expect text &quot;Fixture shop&quot; is visible</code><span class="sms">12 ms</span></div>
     <div class="detail ">`text &quot;Fixture shop&quot;` to be visible</div>
     
   </li>
 <li class="step ok kind-click">
-    <div class="line"><span class="mark">✓</span><code>click button &quot;Buy a widget&quot;</code><span class="sms">39 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>click button &quot;Buy a widget&quot;</code><span class="sms">34 ms</span></div>
     <div class="detail ">click `button &quot;Buy a widget&quot;`</div>
     
   </li>
@@ -560,8 +1010,8 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
   </ol>
 </section>
-<section class="test fail" id="t6" data-file="tests/shop.tflw">
-  <h2><span class="dot fail"></span>the shelf never says sold out <span class="tms">5181 ms</span></h2>
+<section class="test fail" id="t8" data-file="tests/shop.tflw">
+  <h2><span class="dot fail"></span>the shelf never says sold out <span class="tms">5169 ms</span></h2>
   <p class="error">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</p>
   
   
@@ -579,7 +1029,7 @@ svg{width:100%;height:auto;overflow:visible}
     
   </li>
 <li class="step fail kind-expect">
-    <div class="line"><span class="mark">✗</span><code>expect text &quot;Sold out&quot; is visible</code><span class="sms">5155 ms</span></div>
+    <div class="line"><span class="mark">✗</span><code>expect text &quot;Sold out&quot; is visible</code><span class="sms">5144 ms</span></div>
     <div class="detail baddetail">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</div>
     
   </li>

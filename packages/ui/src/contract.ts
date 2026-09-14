@@ -5,7 +5,7 @@
 // bundle; type imports are erased.
 
 export type { ProjectView, ProjectFile, ProjectTest, RunRecord, RunRequest, RunStatus, ReportEntry as ReportDir } from '../../cli/src/ui-server.ts';
-export type { RunReport, ReportEntry, TestResult, WorkloadTestResult, CrawlResult, StepResult, AttemptResult, RunEvent } from '@tflw/runtime';
+export type { RunReport, ReportEntry, TestResult, WorkloadTestResult, CrawlResult, StepResult, AttemptResult, RunEvent, LoadMetrics, LoadThresholdResult, LoadWorkloadReport } from '@tflw/runtime';
 
 /** The server's own `event: end` on a run's stream — not a `RunEvent`, the run is over. */
 export interface EndEvent {

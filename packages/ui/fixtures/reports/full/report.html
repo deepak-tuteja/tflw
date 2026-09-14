@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>testFlow report — 5/7 passed</title>
+<title>testFlow report — 6/9 passed</title>
 <style>
 :root{--bg:#0f1115;--card:#171a21;--fg:#e6e8ec;--mut:#9aa3b2;--ok:#3fb950;--fail:#f85149;--warn:#d29922;--info:#58a6ff;--line:#262b36;--code:#0b0d11}
 @media (prefers-color-scheme: light){:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f27;--mut:#5b6472;--ok:#1a7f37;--fail:#cf222e;--warn:#9a6700;--info:#0969da;--line:#e5e8ec;--code:#f3f4f6}}
@@ -199,17 +199,17 @@ svg{width:100%;height:auto;overflow:visible}
   <h1>testFlow report</h1>
   <div class="meta">
     <span class="badge fail">FAIL</span>
-    <span>5/7 passed · 2 failed</span>
+    <span>6/9 passed · 3 failed</span>
     <span>env <code>full</code></span>
-    <span>seed <code>2339460237</code></span>
-    <span>now <code>2026-09-14T18:33:24.480Z</code></span>
-    <span>5600 ms</span>
-    <span>2026-09-14T18:33:24.481Z</span>
+    <span>seed <code>786228794</code></span>
+    <span>now <code>2026-09-14T19:31:17.473Z</code></span>
+    <span>9927 ms</span>
+    <span>2026-09-14T19:31:17.474Z</span>
   </div>
   
   
   
-  <div class="demo-badge">ℹ authz coverage: 0 of 7 api steps in the suite sit in a test that declares an owner (0%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>
+  <div class="demo-badge">ℹ authz coverage: 0 of 10 api steps in the suite sit in a test that declares an owner (0%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>
   
   
   
@@ -236,18 +236,25 @@ svg{width:100%;height:auto;overflow:visible}
         <li><button type="button" class="testlink fail" data-target="t2">✗ the price of a widget is what the shelf says</button></li>
       </ul>
     </details>
+    <details class="filegroup fail" open data-file="tests/load.tflw">
+      <summary><span class="fgdot fail"></span><span class="fgname">tests/load.tflw</span><span class="fgcount">(2, 1 failed)</span></summary>
+      <ul class="testlist">
+        <li><button type="button" class="testlink ok" data-target="t3">✓ the catalog holds under a fixed amount of work</button></li>
+        <li><button type="button" class="testlink fail" data-target="t4">✗ the stock check is not allowed to fail one call in four</button></li>
+      </ul>
+    </details>
     <details class="filegroup ok" data-file="tests/orders.tflw">
       <summary><span class="fgdot ok"></span><span class="fgname">tests/orders.tflw</span><span class="fgcount">(2)</span></summary>
       <ul class="testlist">
-        <li><button type="button" class="testlink ok" data-target="t3">✓ creates an order and reads its total back</button></li>
-        <li><button type="button" class="testlink ok" data-target="t4">✓ a warm-up endpoint answers on the second attempt</button></li>
+        <li><button type="button" class="testlink ok" data-target="t5">✓ creates an order and reads its total back</button></li>
+        <li><button type="button" class="testlink ok" data-target="t6">✓ a warm-up endpoint answers on the second attempt</button></li>
       </ul>
     </details>
     <details class="filegroup fail" open data-file="tests/shop.tflw">
       <summary><span class="fgdot fail"></span><span class="fgname">tests/shop.tflw</span><span class="fgcount">(2, 1 failed)</span></summary>
       <ul class="testlist">
-        <li><button type="button" class="testlink ok" data-target="t5">✓ the shop page greets and the button answers</button></li>
-        <li><button type="button" class="testlink fail" data-target="t6">✗ the shelf never says sold out</button></li>
+        <li><button type="button" class="testlink ok" data-target="t7">✓ the shop page greets and the button answers</button></li>
+        <li><button type="button" class="testlink fail" data-target="t8">✗ the shelf never says sold out</button></li>
       </ul>
     </details>
   </div>
@@ -263,7 +270,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items</code><span class="sms">10 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (9.4ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (9.3ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items</div>
@@ -271,8 +278,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 9.386094000000014 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:24 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 9.285843999999997 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:17 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">{
   &quot;items&quot;: [
     {
@@ -324,8 +331,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 1.4940760000000068 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:24 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 1.48112500000002 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:17 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">{
   &quot;id&quot;: 1,
   &quot;name&quot;: &quot;widget&quot;,
@@ -356,7 +363,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items/999</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items/999 → 404 (0.83ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/999 → 404 (0.78ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items/999</div>
@@ -364,8 +371,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 404 Not Found · 0.8267129999999838 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:24 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 404 Not Found · 0.777733000000012 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:17 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">{
   &quot;error&quot;: &quot;no such item&quot;
 }</pre>
@@ -394,7 +401,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items/1</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (0.56ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (0.58ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items/1</div>
@@ -402,8 +409,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.5553820000000087 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:24 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.5766519999999673 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:17 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">{
   &quot;id&quot;: 1,
   &quot;name&quot;: &quot;widget&quot;,
@@ -424,8 +431,453 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
   </ol>
 </section>
-<section class="test ok" id="t3" data-file="tests/orders.tflw">
-  <h2><span class="dot ok"></span>creates an order and reads its total back <span class="tms">4 ms</span></h2>
+<section class="test ok" id="t3" data-file="tests/load.tflw">
+  <h2><span class="dot ok"></span>the catalog holds under a fixed amount of work <span class="tms">workload</span></h2>
+  <p class="generator-line ">generator: avg event-loop lag 0.5ms · max 1.7ms · cpu 5%</p>
+  <div class="metrics-block">
+  <p class="workload">run 120 iterations across 4 users</p>
+  <table class="stats">
+    <tr><th>iterations</th><td>120</td><th>failures</th><td>0</td><th>error rate</th><td>0.00%</td></tr>
+    <tr><th>assertions</th><td colspan="5">240</td></tr>
+    <tr><th>min</th><td>2.3ms</td><th>avg</th><td>16ms</td><th>max</th><td>28ms</td></tr>
+    <tr><th>p50</th><td>16ms</td><th>p90</th><td>27ms</td><th>p95</th><td>28ms</td><th>p99</th><td>28ms</td></tr>
+  </table>
+  
+  <table class="thresholds"><tr class="ok"><td>✓</td><td>p95 duration &lt; 500ms</td><td>actual: 28ms</td></tr><tr class="ok"><td>✓</td><td>p95 duration for &quot;search&quot; &lt; 500ms</td><td>actual: 27ms</td></tr><tr class="ok"><td>✓</td><td>error rate &lt; 1.00%</td><td>actual: 0.00%</td></tr></table>
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">28</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-p50" points="42,66 237.3,66 432.7,66 628,66" fill="none" />
+    <polyline class="series-p95" points="42,12 237.3,12 432.7,12 628,16.5" fill="none" />
+    <polyline class="series-p99" points="42,12 237.3,12 432.7,12 628,16.5" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">36</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-rps" points="42,26 237.3,12 432.7,26 628,68" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polygon class="series-error-area" points="42,138 42,138 237.3,138 432.7,138 628,138 628,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">3</text>
+    <text class="axis-label" x="42" y="156">2.3ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">28.3ms</text>
+    <rect class="series-histogram" x="42" y="96" width="5.2" height="42"><title>2.3ms × 1</title></rect>
+    <rect class="series-histogram" x="48.2" y="96" width="5.2" height="42"><title>2.7ms × 1</title></rect>
+    <rect class="series-histogram" x="54.3" y="96" width="5.2" height="42"><title>2.9ms × 1</title></rect>
+    <rect class="series-histogram" x="60.5" y="54" width="5.2" height="84"><title>2.9ms × 2</title></rect>
+    <rect class="series-histogram" x="66.7" y="96" width="5.2" height="42"><title>3.1ms × 1</title></rect>
+    <rect class="series-histogram" x="72.8" y="96" width="5.2" height="42"><title>3.2ms × 1</title></rect>
+    <rect class="series-histogram" x="79.0" y="96" width="5.2" height="42"><title>3.4ms × 1</title></rect>
+    <rect class="series-histogram" x="85.2" y="96" width="5.2" height="42"><title>3.5ms × 1</title></rect>
+    <rect class="series-histogram" x="91.3" y="96" width="5.2" height="42"><title>3.5ms × 1</title></rect>
+    <rect class="series-histogram" x="97.5" y="96" width="5.2" height="42"><title>3.9ms × 1</title></rect>
+    <rect class="series-histogram" x="103.7" y="96" width="5.2" height="42"><title>3.9ms × 1</title></rect>
+    <rect class="series-histogram" x="109.9" y="96" width="5.2" height="42"><title>4ms × 1</title></rect>
+    <rect class="series-histogram" x="116.0" y="96" width="5.2" height="42"><title>4ms × 1</title></rect>
+    <rect class="series-histogram" x="122.2" y="96" width="5.2" height="42"><title>4.3ms × 1</title></rect>
+    <rect class="series-histogram" x="128.4" y="96" width="5.2" height="42"><title>4.5ms × 1</title></rect>
+    <rect class="series-histogram" x="134.5" y="96" width="5.2" height="42"><title>4.9ms × 1</title></rect>
+    <rect class="series-histogram" x="140.7" y="96" width="5.2" height="42"><title>6.2ms × 1</title></rect>
+    <rect class="series-histogram" x="146.9" y="54" width="5.2" height="84"><title>6.7ms × 2</title></rect>
+    <rect class="series-histogram" x="153.0" y="96" width="5.2" height="42"><title>6.7ms × 1</title></rect>
+    <rect class="series-histogram" x="159.2" y="96" width="5.2" height="42"><title>6.7ms × 1</title></rect>
+    <rect class="series-histogram" x="165.4" y="96" width="5.2" height="42"><title>7ms × 1</title></rect>
+    <rect class="series-histogram" x="171.5" y="96" width="5.2" height="42"><title>7.1ms × 1</title></rect>
+    <rect class="series-histogram" x="177.7" y="96" width="5.2" height="42"><title>7.4ms × 1</title></rect>
+    <rect class="series-histogram" x="183.9" y="96" width="5.2" height="42"><title>7.5ms × 1</title></rect>
+    <rect class="series-histogram" x="190.0" y="96" width="5.2" height="42"><title>7.6ms × 1</title></rect>
+    <rect class="series-histogram" x="196.2" y="96" width="5.2" height="42"><title>7.9ms × 1</title></rect>
+    <rect class="series-histogram" x="202.4" y="54" width="5.2" height="84"><title>8.2ms × 2</title></rect>
+    <rect class="series-histogram" x="208.5" y="96" width="5.2" height="42"><title>8.3ms × 1</title></rect>
+    <rect class="series-histogram" x="214.7" y="96" width="5.2" height="42"><title>8.5ms × 1</title></rect>
+    <rect class="series-histogram" x="220.9" y="96" width="5.2" height="42"><title>8.5ms × 1</title></rect>
+    <rect class="series-histogram" x="227.1" y="96" width="5.2" height="42"><title>9.1ms × 1</title></rect>
+    <rect class="series-histogram" x="233.2" y="96" width="5.2" height="42"><title>11ms × 1</title></rect>
+    <rect class="series-histogram" x="239.4" y="96" width="5.2" height="42"><title>11ms × 1</title></rect>
+    <rect class="series-histogram" x="245.6" y="96" width="5.2" height="42"><title>11ms × 1</title></rect>
+    <rect class="series-histogram" x="251.7" y="54" width="5.2" height="84"><title>11ms × 2</title></rect>
+    <rect class="series-histogram" x="257.9" y="96" width="5.2" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="264.1" y="96" width="5.2" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="270.2" y="96" width="5.2" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="276.4" y="96" width="5.2" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="282.6" y="96" width="5.2" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="288.7" y="96" width="5.2" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="294.9" y="96" width="5.2" height="42"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="301.1" y="54" width="5.2" height="84"><title>13ms × 2</title></rect>
+    <rect class="series-histogram" x="307.2" y="54" width="5.2" height="84"><title>13ms × 2</title></rect>
+    <rect class="series-histogram" x="313.4" y="96" width="5.2" height="42"><title>13ms × 1</title></rect>
+    <rect class="series-histogram" x="319.6" y="54" width="5.2" height="84"><title>14ms × 2</title></rect>
+    <rect class="series-histogram" x="325.7" y="96" width="5.2" height="42"><title>14ms × 1</title></rect>
+    <rect class="series-histogram" x="331.9" y="96" width="5.2" height="42"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="338.1" y="96" width="5.2" height="42"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="344.3" y="96" width="5.2" height="42"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="350.4" y="96" width="5.2" height="42"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="356.6" y="96" width="5.2" height="42"><title>16ms × 1</title></rect>
+    <rect class="series-histogram" x="362.8" y="96" width="5.2" height="42"><title>16ms × 1</title></rect>
+    <rect class="series-histogram" x="368.9" y="54" width="5.2" height="84"><title>16ms × 2</title></rect>
+    <rect class="series-histogram" x="375.1" y="96" width="5.2" height="42"><title>16ms × 1</title></rect>
+    <rect class="series-histogram" x="381.3" y="54" width="5.2" height="84"><title>16ms × 2</title></rect>
+    <rect class="series-histogram" x="387.4" y="54" width="5.2" height="84"><title>16ms × 2</title></rect>
+    <rect class="series-histogram" x="393.6" y="96" width="5.2" height="42"><title>17ms × 1</title></rect>
+    <rect class="series-histogram" x="399.8" y="96" width="5.2" height="42"><title>18ms × 1</title></rect>
+    <rect class="series-histogram" x="405.9" y="96" width="5.2" height="42"><title>18ms × 1</title></rect>
+    <rect class="series-histogram" x="412.1" y="96" width="5.2" height="42"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="418.3" y="96" width="5.2" height="42"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="424.4" y="96" width="5.2" height="42"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="430.6" y="96" width="5.2" height="42"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="436.8" y="96" width="5.2" height="42"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="442.9" y="96" width="5.2" height="42"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="449.1" y="54" width="5.2" height="84"><title>20ms × 2</title></rect>
+    <rect class="series-histogram" x="455.3" y="12" width="5.2" height="126"><title>20ms × 3</title></rect>
+    <rect class="series-histogram" x="461.5" y="96" width="5.2" height="42"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="467.6" y="96" width="5.2" height="42"><title>21ms × 1</title></rect>
+    <rect class="series-histogram" x="473.8" y="54" width="5.2" height="84"><title>21ms × 2</title></rect>
+    <rect class="series-histogram" x="480.0" y="96" width="5.2" height="42"><title>22ms × 1</title></rect>
+    <rect class="series-histogram" x="486.1" y="96" width="5.2" height="42"><title>22ms × 1</title></rect>
+    <rect class="series-histogram" x="492.3" y="54" width="5.2" height="84"><title>23ms × 2</title></rect>
+    <rect class="series-histogram" x="498.5" y="54" width="5.2" height="84"><title>23ms × 2</title></rect>
+    <rect class="series-histogram" x="504.6" y="96" width="5.2" height="42"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="510.8" y="96" width="5.2" height="42"><title>24ms × 1</title></rect>
+    <rect class="series-histogram" x="517.0" y="12" width="5.2" height="126"><title>24ms × 3</title></rect>
+    <rect class="series-histogram" x="523.1" y="54" width="5.2" height="84"><title>24ms × 2</title></rect>
+    <rect class="series-histogram" x="529.3" y="96" width="5.2" height="42"><title>24ms × 1</title></rect>
+    <rect class="series-histogram" x="535.5" y="96" width="5.2" height="42"><title>25ms × 1</title></rect>
+    <rect class="series-histogram" x="541.6" y="54" width="5.2" height="84"><title>25ms × 2</title></rect>
+    <rect class="series-histogram" x="547.8" y="96" width="5.2" height="42"><title>25ms × 1</title></rect>
+    <rect class="series-histogram" x="554.0" y="96" width="5.2" height="42"><title>26ms × 1</title></rect>
+    <rect class="series-histogram" x="560.1" y="96" width="5.2" height="42"><title>26ms × 1</title></rect>
+    <rect class="series-histogram" x="566.3" y="12" width="5.2" height="126"><title>27ms × 3</title></rect>
+    <rect class="series-histogram" x="572.5" y="96" width="5.2" height="42"><title>27ms × 1</title></rect>
+    <rect class="series-histogram" x="578.7" y="12" width="5.2" height="126"><title>27ms × 3</title></rect>
+    <rect class="series-histogram" x="584.8" y="96" width="5.2" height="42"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="591.0" y="96" width="5.2" height="42"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="597.2" y="54" width="5.2" height="84"><title>28ms × 2</title></rect>
+    <rect class="series-histogram" x="603.3" y="96" width="5.2" height="42"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="609.5" y="96" width="5.2" height="42"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="615.7" y="96" width="5.2" height="42"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="621.8" y="96" width="5.2" height="42"><title>28ms × 1</title></rect>
+  </svg>
+</div>
+  </div>
+</div>
+  <div class="endpoints"><h3>Endpoints</h3><details class="endpoint"><summary>search — 120 iterations, p95 27ms, 0.00% errors</summary><h4>search</h4><div class="metrics-block">
+  
+  <table class="stats">
+    <tr><th>iterations</th><td>120</td><th>failures</th><td>0</td><th>error rate</th><td>0.00%</td></tr>
+    
+    <tr><th>min</th><td>2ms</td><th>avg</th><td>15ms</td><th>max</th><td>28ms</td></tr>
+    <tr><th>p50</th><td>15ms</td><th>p90</th><td>27ms</td><th>p95</th><td>27ms</td><th>p99</th><td>27ms</td></tr>
+  </table>
+  
+  
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">28</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-p50" points="42,70.5 237.3,70.5 432.7,70.5 628,66" fill="none" />
+    <polyline class="series-p95" points="42,16.5 237.3,16.5 432.7,16.5 628,16.5" fill="none" />
+    <polyline class="series-p99" points="42,16.5 237.3,12 432.7,16.5 628,16.5" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">36</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-rps" points="42,26 237.3,12 432.7,26 628,68" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polygon class="series-error-area" points="42,138 42,138 237.3,138 432.7,138 628,138 628,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">12</text>
+    <text class="axis-label" x="42" y="156">2ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">28ms</text>
+    <rect class="series-histogram" x="42" y="127.5" width="24.5" height="10.5"><title>2ms × 1</title></rect>
+    <rect class="series-histogram" x="67.5" y="12" width="24.5" height="126"><title>3ms × 12</title></rect>
+    <rect class="series-histogram" x="93.0" y="96" width="24.5" height="42"><title>4ms × 4</title></rect>
+    <rect class="series-histogram" x="118.4" y="106.5" width="24.5" height="31.5"><title>6ms × 3</title></rect>
+    <rect class="series-histogram" x="143.9" y="22.5" width="24.5" height="115.5"><title>7ms × 11</title></rect>
+    <rect class="series-histogram" x="169.4" y="106.5" width="24.5" height="31.5"><title>8ms × 3</title></rect>
+    <rect class="series-histogram" x="194.9" y="127.5" width="24.5" height="10.5"><title>10ms × 1</title></rect>
+    <rect class="series-histogram" x="220.3" y="54" width="24.5" height="84"><title>11ms × 8</title></rect>
+    <rect class="series-histogram" x="245.8" y="54" width="24.5" height="84"><title>12ms × 8</title></rect>
+    <rect class="series-histogram" x="271.3" y="127.5" width="24.5" height="10.5"><title>13ms × 1</title></rect>
+    <rect class="series-histogram" x="296.8" y="106.5" width="24.5" height="31.5"><title>14ms × 3</title></rect>
+    <rect class="series-histogram" x="322.3" y="54" width="24.5" height="84"><title>15ms × 8</title></rect>
+    <rect class="series-histogram" x="347.7" y="85.5" width="24.5" height="52.5"><title>16ms × 5</title></rect>
+    <rect class="series-histogram" x="373.2" y="96" width="24.5" height="42"><title>18ms × 4</title></rect>
+    <rect class="series-histogram" x="398.7" y="54" width="24.5" height="84"><title>19ms × 8</title></rect>
+    <rect class="series-histogram" x="424.2" y="85.5" width="24.5" height="52.5"><title>20ms × 5</title></rect>
+    <rect class="series-histogram" x="449.7" y="127.5" width="24.5" height="10.5"><title>21ms × 1</title></rect>
+    <rect class="series-histogram" x="475.1" y="106.5" width="24.5" height="31.5"><title>22ms × 3</title></rect>
+    <rect class="series-histogram" x="500.6" y="54" width="24.5" height="84"><title>23ms × 8</title></rect>
+    <rect class="series-histogram" x="526.1" y="75" width="24.5" height="63"><title>24ms × 6</title></rect>
+    <rect class="series-histogram" x="551.6" y="85.5" width="24.5" height="52.5"><title>26ms × 5</title></rect>
+    <rect class="series-histogram" x="577.0" y="22.5" width="24.5" height="115.5"><title>27ms × 11</title></rect>
+    <rect class="series-histogram" x="602.5" y="127.5" width="24.5" height="10.5"><title>28ms × 1</title></rect>
+  </svg>
+</div>
+  </div>
+</div></details>
+<details class="endpoint"><summary>GET /items/1 — 120 iterations, p95 1ms, 0.00% errors</summary><h4>GET /items/1</h4><div class="metrics-block">
+  
+  <table class="stats">
+    <tr><th>iterations</th><td>120</td><th>failures</th><td>0</td><th>error rate</th><td>0.00%</td></tr>
+    
+    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.42ms</td><th>max</th><td>1ms</td></tr>
+    <tr><th>p50</th><td>0ms</td><th>p90</th><td>1ms</td><th>p95</th><td>1ms</td><th>p99</th><td>1ms</td></tr>
+  </table>
+  
+  
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-p50" points="42,12 237.3,138 432.7,138 628,138" fill="none" />
+    <polyline class="series-p95" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
+    <polyline class="series-p99" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">36</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polyline class="series-rps" points="42,26 237.3,12 432.7,26 628,68" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
+    <polygon class="series-error-area" points="42,138 42,138 237.3,138 432.7,138 628,138 628,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">69</text>
+    <text class="axis-label" x="42" y="156">0ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">1ms</text>
+    <rect class="series-histogram" x="42" y="12" width="292" height="126"><title>0ms × 69</title></rect>
+    <rect class="series-histogram" x="335" y="44.9" width="292" height="93.1"><title>1ms × 51</title></rect>
+  </svg>
+</div>
+  </div>
+</div></details></div>
+</section>
+<section class="test fail" id="t4" data-file="tests/load.tflw">
+  <h2><span class="dot fail"></span>the stock check is not allowed to fail one call in four <span class="tms">workload</span></h2>
+  <p class="generator-line ">generator: avg event-loop lag 0.5ms · max 1.7ms · cpu 5%</p>
+  <div class="metrics-block">
+  <p class="workload">run 40 iterations across 2 users</p>
+  <table class="stats">
+    <tr><th>iterations</th><td>40</td><th>failures</th><td>10</td><th>error rate</th><td>25.00%</td></tr>
+    <tr><th>assertions</th><td colspan="5">40</td></tr>
+    <tr><th>min</th><td>0.1ms</td><th>avg</th><td>0.84ms</td><th>max</th><td>1.8ms</td></tr>
+    <tr><th>p50</th><td>0.78ms</td><th>p90</th><td>1.6ms</td><th>p95</th><td>1.8ms</td><th>p99</th><td>1.8ms</td></tr>
+  </table>
+  
+  <table class="thresholds"><tr class="fail"><td>✗</td><td>error rate &lt; 5.00%</td><td>actual: 25.00%</td></tr></table>
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1.8</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polyline class="series-p50" points="42,83.4" fill="none" />
+    <polyline class="series-p95" points="42,12" fill="none" />
+    <polyline class="series-p99" points="42,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">40</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polyline class="series-rps" points="42,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">25%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polygon class="series-error-area" points="42,138 42,12 42,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1</text>
+    <text class="axis-label" x="42" y="156">0.1ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">1.8ms</text>
+    <rect class="series-histogram" x="42" y="12" width="13.7" height="126"><title>0.1ms × 1</title></rect>
+    <rect class="series-histogram" x="56.6" y="12" width="13.7" height="126"><title>0.29ms × 1</title></rect>
+    <rect class="series-histogram" x="71.3" y="12" width="13.7" height="126"><title>0.32ms × 1</title></rect>
+    <rect class="series-histogram" x="86.0" y="12" width="13.7" height="126"><title>0.41ms × 1</title></rect>
+    <rect class="series-histogram" x="100.6" y="12" width="13.7" height="126"><title>0.43ms × 1</title></rect>
+    <rect class="series-histogram" x="115.3" y="12" width="13.7" height="126"><title>0.44ms × 1</title></rect>
+    <rect class="series-histogram" x="129.9" y="12" width="13.7" height="126"><title>0.45ms × 1</title></rect>
+    <rect class="series-histogram" x="144.6" y="12" width="13.7" height="126"><title>0.47ms × 1</title></rect>
+    <rect class="series-histogram" x="159.2" y="12" width="13.7" height="126"><title>0.48ms × 1</title></rect>
+    <rect class="series-histogram" x="173.8" y="12" width="13.7" height="126"><title>0.52ms × 1</title></rect>
+    <rect class="series-histogram" x="188.5" y="12" width="13.7" height="126"><title>0.58ms × 1</title></rect>
+    <rect class="series-histogram" x="203.2" y="12" width="13.7" height="126"><title>0.58ms × 1</title></rect>
+    <rect class="series-histogram" x="217.8" y="12" width="13.7" height="126"><title>0.62ms × 1</title></rect>
+    <rect class="series-histogram" x="232.5" y="12" width="13.7" height="126"><title>0.69ms × 1</title></rect>
+    <rect class="series-histogram" x="247.1" y="12" width="13.7" height="126"><title>0.69ms × 1</title></rect>
+    <rect class="series-histogram" x="261.8" y="12" width="13.7" height="126"><title>0.7ms × 1</title></rect>
+    <rect class="series-histogram" x="276.4" y="12" width="13.7" height="126"><title>0.75ms × 1</title></rect>
+    <rect class="series-histogram" x="291.1" y="12" width="13.7" height="126"><title>0.76ms × 1</title></rect>
+    <rect class="series-histogram" x="305.7" y="12" width="13.7" height="126"><title>0.77ms × 1</title></rect>
+    <rect class="series-histogram" x="320.4" y="12" width="13.7" height="126"><title>0.77ms × 1</title></rect>
+    <rect class="series-histogram" x="335" y="12" width="13.7" height="126"><title>0.78ms × 1</title></rect>
+    <rect class="series-histogram" x="349.7" y="12" width="13.7" height="126"><title>0.79ms × 1</title></rect>
+    <rect class="series-histogram" x="364.3" y="12" width="13.7" height="126"><title>0.79ms × 1</title></rect>
+    <rect class="series-histogram" x="378.9" y="12" width="13.7" height="126"><title>0.86ms × 1</title></rect>
+    <rect class="series-histogram" x="393.6" y="12" width="13.7" height="126"><title>0.95ms × 1</title></rect>
+    <rect class="series-histogram" x="408.3" y="12" width="13.7" height="126"><title>0.95ms × 1</title></rect>
+    <rect class="series-histogram" x="422.9" y="12" width="13.7" height="126"><title>0.97ms × 1</title></rect>
+    <rect class="series-histogram" x="437.6" y="12" width="13.7" height="126"><title>1ms × 1</title></rect>
+    <rect class="series-histogram" x="452.2" y="12" width="13.7" height="126"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="466.9" y="12" width="13.7" height="126"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="481.5" y="12" width="13.7" height="126"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="496.2" y="12" width="13.7" height="126"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="510.8" y="12" width="13.7" height="126"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="525.5" y="12" width="13.7" height="126"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="540.1" y="12" width="13.7" height="126"><title>1.2ms × 1</title></rect>
+    <rect class="series-histogram" x="554.8" y="12" width="13.7" height="126"><title>1.3ms × 1</title></rect>
+    <rect class="series-histogram" x="569.4" y="12" width="13.7" height="126"><title>1.6ms × 1</title></rect>
+    <rect class="series-histogram" x="584.1" y="12" width="13.7" height="126"><title>1.7ms × 1</title></rect>
+    <rect class="series-histogram" x="598.7" y="12" width="13.7" height="126"><title>1.8ms × 1</title></rect>
+    <rect class="series-histogram" x="613.4" y="12" width="13.7" height="126"><title>1.8ms × 1</title></rect>
+  </svg>
+</div>
+  </div>
+</div>
+  <div class="endpoints"><h3>Endpoints</h3><details class="endpoint"><summary>GET /stock — 40 iterations, p95 1ms, 25.00% errors</summary><h4>GET /stock</h4><div class="metrics-block">
+  
+  <table class="stats">
+    <tr><th>iterations</th><td>40</td><th>failures</th><td>10</td><th>error rate</th><td>25.00%</td></tr>
+    
+    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.78ms</td><th>max</th><td>1ms</td></tr>
+    <tr><th>p50</th><td>1ms</td><th>p90</th><td>1ms</td><th>p95</th><td>1ms</td><th>p99</th><td>1ms</td></tr>
+  </table>
+  
+  
+  <div class="charts">
+    <div class="chart">
+  <h3>Latency over time <span class="chart-unit">(ms)</span></h3>
+  <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">1</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polyline class="series-p50" points="42,12" fill="none" />
+    <polyline class="series-p95" points="42,12" fill="none" />
+    <polyline class="series-p99" points="42,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Throughput <span class="chart-unit">(req/s)</span></h3>
+  <div class="legend"><span class="legend-item series-rps">requests/s</span></div>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Throughput">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">40</text>
+    <text class="axis-label" x="42" y="136">0</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polyline class="series-rps" points="42,12" fill="none" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Error rate <span class="chart-unit">(%)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Error rate">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">25%</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
+    <polygon class="series-error-area" points="42,138 42,12 42,138" />
+  </svg>
+</div>
+    <div class="chart">
+  <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
+  <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
+    <line class="axis" x1="42" y1="138" x2="628" y2="138" />
+    <text class="axis-label" x="42" y="12">31</text>
+    <text class="axis-label" x="42" y="156">0ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">1ms</text>
+    <rect class="series-histogram" x="42" y="101.4" width="292" height="36.6"><title>0ms × 9</title></rect>
+    <rect class="series-histogram" x="335" y="12" width="292" height="126"><title>1ms × 31</title></rect>
+  </svg>
+</div>
+  </div>
+</div></details></div>
+</section>
+<section class="test ok" id="t5" data-file="tests/orders.tflw">
+  <h2><span class="dot ok"></span>creates an order and reads its total back <span class="tms">6 ms</span></h2>
   
   
   
@@ -433,8 +885,8 @@ svg{width:100%;height:auto;overflow:visible}
   
   <ol class="steps">
 <li class="step ok kind-api">
-    <div class="line"><span class="mark">✓</span><code>api POST /orders body { itemId: 1, qty: 2 }</code><span class="sms">3 ms</span></div>
-    <div class="detail ">POST http://127.0.0.1:4717/orders → 201 (3ms)</div>
+    <div class="line"><span class="mark">✓</span><code>api POST /orders body { itemId: 1, qty: 2 }</code><span class="sms">5 ms</span></div>
+    <div class="detail ">POST http://127.0.0.1:4717/orders → 201 (4.3ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ POST http://127.0.0.1:4717/orders</div>
@@ -445,8 +897,8 @@ svg{width:100%;height:auto;overflow:visible}
 }</pre>
     </div>
     <div class="panel res">
-        <div class="phead">← 201 Created · 3.043970999999999 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:24 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 201 Created · 4.312195999999858 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:21 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">{
   &quot;id&quot;: 1,
   &quot;itemId&quot;: 1,
@@ -478,7 +930,7 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /orders/{orderId}</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/orders/1 → 200 (0.66ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/orders/1 → 200 (0.9ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/orders/1</div>
@@ -486,8 +938,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.656881999999996 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:24 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.9020729999992909 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:21 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">{
   &quot;id&quot;: 1,
   &quot;itemId&quot;: 1,
@@ -509,7 +961,7 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
   </ol>
 </section>
-<section class="test ok" id="t4" data-file="tests/orders.tflw">
+<section class="test ok" id="t6" data-file="tests/orders.tflw">
   <h2><span class="dot ok"></span>a warm-up endpoint answers on the second attempt <span class="flaky">flaky</span> <span class="tms">2 ms</span></h2>
   
   
@@ -519,7 +971,7 @@ svg{width:100%;height:auto;overflow:visible}
     <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /warmup</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/warmup → 503 (0.69ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/warmup → 503 (0.63ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/warmup</div>
@@ -527,8 +979,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 503 Service Unavailable · 0.6854720000000043 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:24 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 503 Service Unavailable · 0.6322430000000168 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:21 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">{
   &quot;error&quot;: &quot;warming up&quot;
 }</pre>
@@ -547,7 +999,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /warmup</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/warmup → 200 (0.51ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/warmup → 200 (0.61ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/warmup</div>
@@ -555,8 +1007,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.5100809999999569 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:24 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.6106220000001485 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:21 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">{
   &quot;ready&quot;: true,
   &quot;attempt&quot;: 2
@@ -571,8 +1023,8 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
   </ol>
 </section>
-<section class="test ok" id="t5" data-file="tests/shop.tflw">
-  <h2><span class="dot ok"></span>the shop page greets and the button answers <span class="tms">346 ms</span></h2>
+<section class="test ok" id="t7" data-file="tests/shop.tflw">
+  <h2><span class="dot ok"></span>the shop page greets and the button answers <span class="tms">389 ms</span></h2>
   
   
   
@@ -580,7 +1032,7 @@ svg{width:100%;height:auto;overflow:visible}
   
   <ol class="steps">
 <li class="step ok kind-open">
-    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">273 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">320 ms</span></div>
     <div class="detail ">open http://127.0.0.1:4717/</div>
     
   </li>
@@ -590,42 +1042,42 @@ svg{width:100%;height:auto;overflow:visible}
     
   </li>
 <li class="step ok kind-click">
-    <div class="line"><span class="mark">✓</span><code>click button &quot;Buy a widget&quot;</code><span class="sms">40 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>click button &quot;Buy a widget&quot;</code><span class="sms">37 ms</span></div>
     <div class="detail ">click `button &quot;Buy a widget&quot;`</div>
     
   </li>
 <li class="step ok kind-expect">
-    <div class="line"><span class="mark">✓</span><code>expect text &quot;Bought one widget.&quot; is visible</code><span class="sms">3 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>expect text &quot;Bought one widget.&quot; is visible</code><span class="sms">2 ms</span></div>
     <div class="detail ">`text &quot;Bought one widget.&quot;` to be visible</div>
     
   </li>
 <li class="step ok kind-screenshot">
-    <div class="line"><span class="mark">✓</span><code>screenshot &quot;after the purchase&quot;</code><span class="sms">15 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>screenshot &quot;after the purchase&quot;</code><span class="sms">13 ms</span></div>
     <div class="detail ">screenshot &quot;after the purchase&quot; captured</div>
     <details class="evidence"><summary>screenshot</summary><div class="screenshot"><img src="data:image/png;base64,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GAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAAwhgAAAMIIABADCAAAYAwAACGAAAA/4fAAAA///mELeZAAAABklEQVQDAN3BvW2QWTtNAAAAAElFTkSuQmCC" alt="screenshot" loading="lazy"></div></details>
   </li>
   </ol>
 </section>
-<section class="test fail" id="t6" data-file="tests/shop.tflw">
-  <h2><span class="dot fail"></span>the shelf never says sold out <span class="tms">5229 ms</span></h2>
+<section class="test fail" id="t8" data-file="tests/shop.tflw">
+  <h2><span class="dot fail"></span>the shelf never says sold out <span class="tms">5237 ms</span></h2>
   <p class="error">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</p>
   
   
   
-  <p class="trace-link">🔍 <a href="assets/traces/f5d3386afbcf5ba6.zip" download>trace.zip</a> — open with <code>npx playwright show-trace assets/traces/f5d3386afbcf5ba6.zip</code></p>
+  <p class="trace-link">🔍 <a href="assets/traces/93a5b789c1a56871.zip" download>trace.zip</a> — open with <code>npx playwright show-trace assets/traces/93a5b789c1a56871.zip</code></p>
   <ol class="steps">
 <li class="step ok kind-open">
-    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">20 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">18 ms</span></div>
     <div class="detail ">open http://127.0.0.1:4717/</div>
     
   </li>
 <li class="step ok kind-expect">
-    <div class="line"><span class="mark">✓</span><code>expect text &quot;Three items on the shelf.&quot; is visible</code><span class="sms">10 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>expect text &quot;Three items on the shelf.&quot; is visible</code><span class="sms">9 ms</span></div>
     <div class="detail ">`text &quot;Three items on the shelf.&quot;` to be visible</div>
     
   </li>
 <li class="step fail kind-expect">
-    <div class="line"><span class="mark">✗</span><code>expect text &quot;Sold out&quot; is visible</code><span class="sms">5167 ms</span></div>
+    <div class="line"><span class="mark">✗</span><code>expect text &quot;Sold out&quot; is visible</code><span class="sms">5174 ms</span></div>
     <div class="detail baddetail">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</div>
     <details class="evidence" open><summary>screenshot</summary><div class="screenshot"><img src="data:image/png;base64,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" alt="screenshot" loading="lazy"></div></details>
   </li>

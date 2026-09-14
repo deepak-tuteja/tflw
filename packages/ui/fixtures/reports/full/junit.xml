@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="tflw" tests="7" failures="2" errors="0" time="5.600" timestamp="2026-09-14T18:33:24.481Z">
-  <testsuite name="tests/catalog.tflw" tests="3" failures="1" errors="0" time="0.016" timestamp="2026-09-14T18:33:24.481Z">
+<testsuites name="tflw" tests="11" failures="3" errors="0" time="9.927" timestamp="2026-09-14T19:31:17.474Z">
+  <testsuite name="tests/catalog.tflw" tests="3" failures="1" errors="0" time="0.016" timestamp="2026-09-14T19:31:17.474Z">
     <properties>
       <property name="env" value="full"/>
-      <property name="seed" value="2339460237"/>
-      <property name="now" value="2026-09-14T18:33:24.480Z"/>
+      <property name="seed" value="786228794"/>
+      <property name="now" value="2026-09-14T19:31:17.473Z"/>
     </properties>
     <testcase name="lists the catalog and follows the first item" classname="tests/catalog.tflw" time="0.014"/>
     <testcase name="a missing item is a 404 with a reason" classname="tests/catalog.tflw" time="0.001"/>
@@ -12,25 +12,38 @@
       <failure message="expected body.price to equal 10, but got 12">expected body.price to equal 10, but got 12</failure>
     </testcase>
   </testsuite>
-  <testsuite name="tests/orders.tflw" tests="2" failures="0" errors="0" time="0.006" timestamp="2026-09-14T18:33:24.481Z">
+  <testsuite name="tests/load.tflw" tests="4" failures="1" errors="0" time="0.000" timestamp="2026-09-14T19:31:17.474Z">
     <properties>
       <property name="env" value="full"/>
-      <property name="seed" value="2339460237"/>
-      <property name="now" value="2026-09-14T18:33:24.480Z"/>
+      <property name="seed" value="786228794"/>
+      <property name="now" value="2026-09-14T19:31:17.473Z"/>
     </properties>
-    <testcase name="creates an order and reads its total back" classname="tests/orders.tflw" time="0.004"/>
+    <testcase name="the catalog holds under a fixed amount of work — p95 duration &lt; 500" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="the catalog holds under a fixed amount of work — p95 duration for &quot;search&quot; &lt; 500" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="the catalog holds under a fixed amount of work — error rate &lt; 0.01" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="the stock check is not allowed to fail one call in four — error rate &lt; 0.05" classname="tests/load.tflw" time="0.000">
+      <failure message="threshold breached: actual 25.00% was not less than 5.00%">threshold breached: actual 25.00% was not less than 5.00%</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="tests/orders.tflw" tests="2" failures="0" errors="0" time="0.008" timestamp="2026-09-14T19:31:17.474Z">
+    <properties>
+      <property name="env" value="full"/>
+      <property name="seed" value="786228794"/>
+      <property name="now" value="2026-09-14T19:31:17.473Z"/>
+    </properties>
+    <testcase name="creates an order and reads its total back" classname="tests/orders.tflw" time="0.006"/>
     <testcase name="a warm-up endpoint answers on the second attempt" classname="tests/orders.tflw" time="0.002">
       <system-out>flaky: passed on attempt 2 of 2 (1 prior attempt failed)</system-out>
     </testcase>
   </testsuite>
-  <testsuite name="tests/shop.tflw" tests="2" failures="1" errors="0" time="5.575" timestamp="2026-09-14T18:33:24.481Z">
+  <testsuite name="tests/shop.tflw" tests="2" failures="1" errors="0" time="5.626" timestamp="2026-09-14T19:31:17.474Z">
     <properties>
       <property name="env" value="full"/>
-      <property name="seed" value="2339460237"/>
-      <property name="now" value="2026-09-14T18:33:24.480Z"/>
+      <property name="seed" value="786228794"/>
+      <property name="now" value="2026-09-14T19:31:17.473Z"/>
     </properties>
-    <testcase name="the shop page greets and the button answers" classname="tests/shop.tflw" time="0.346"/>
-    <testcase name="the shelf never says sold out" classname="tests/shop.tflw" time="5.229">
+    <testcase name="the shop page greets and the button answers" classname="tests/shop.tflw" time="0.389"/>
+    <testcase name="the shelf never says sold out" classname="tests/shop.tflw" time="5.237">
       <failure message="expected `text &quot;Sold out&quot;` to be visible, but got no matching element">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</failure>
     </testcase>
   </testsuite>

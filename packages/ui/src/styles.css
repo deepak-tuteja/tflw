@@ -110,3 +110,22 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .trace-line { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; font-size: 12px; margin: 4px 0 6px; }
 .trace-line a { color: var(--accent); text-decoration: none; }
 .trace-line a[data-open-trace] { font-weight: 600; }
+
+/* U4 — the workload kind */
+.stats { border-collapse: collapse; margin: 0.5rem 0; font-variant-numeric: tabular-nums; }
+.stats th { text-align: left; font-weight: 500; color: var(--muted); padding: 0.1rem 1rem 0.1rem 0; }
+.stats thead th { color: var(--fg); font-weight: 600; }
+.stats td { padding: 0.1rem 1rem 0.1rem 0; text-align: right; }
+.thresholds td[data-actual-other] { color: var(--muted); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin: 0.75rem 0; }
+.chart { margin: 0; min-width: 0; }
+.chart figcaption { font-size: 0.9rem; margin-bottom: 0.25rem; }
+.chart-host { width: 100%; }
+.uplot { font-family: inherit; }
+.u-legend { font-size: 0.8rem; }
+.endpoints { border-collapse: collapse; margin: 0.5rem 0; font-variant-numeric: tabular-nums; }
+.endpoints th, .endpoints td { padding: 0.15rem 0.75rem 0.15rem 0; text-align: right; }
+.endpoints th:first-child, .endpoints td:first-child { text-align: left; }
+.endpoints th.sortable { cursor: pointer; user-select: none; font-weight: 500; color: var(--muted); }
+.endpoints th[data-sort='asc'], .endpoints th[data-sort='desc'] { color: var(--fg); }
+.compare select { margin-left: 0.25rem; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; font: inherit; }

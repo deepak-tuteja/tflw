@@ -3463,6 +3463,63 @@ const REGISTRY = [
     find: "  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16);",
     replace: "  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 15);",
   },
+  // U4 — the workload kind. Each one is a number the page could state wrongly while every
+  // presence check stays green: the gate reads every stat, threshold, endpoint cell and the
+  // legend under the cursor against `results.json`.
+  {
+    id: 'a-threshold-reads-its-target-as-its-actual',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/Workload.tsx',
+    what: 'the threshold row prints the bound where the measurement goes — `actual: 500ms` under a run that measured 28ms — and the ✓/✗ mark, which comes from the report, still agrees with itself',
+    find: "                <td data-actual>actual: {formatThresholdActual(t)}</td>",
+    replace: "                <td data-actual>actual: {formatThresholdTarget(t)}</td>",
+  },
+  {
+    id: 'the-successful-population-is-the-whole-one',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/Workload.tsx',
+    what: 'the *successful* rows read the all-iterations percentiles — `M89a`\'s split, the one a duration threshold actually reads, collapsed back into the population failures pull down',
+    find: "  { key: 'successful.p95', label: 'successful p95', kind: 'ms', read: (m) => m.successful.durations.p95 },",
+    replace: "  { key: 'successful.p95', label: 'successful p95', kind: 'ms', read: (m) => m.durations.p95 },",
+  },
+  {
+    id: 'the-latency-chart-plots-the-mean-as-p95',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/Workload.tsx',
+    what: 'the p95 series is the per-second mean — a chart labelled p95 that draws a lower, smoother line, which a pixel check cannot tell from the real one; the legend under the cursor can',
+    find: "    const p95 = timelineSeries(m, b?.metrics ?? null, (p) => p.p95, 'p95', COLORS[1]!);",
+    replace: "    const p95 = timelineSeries(m, b?.metrics ?? null, (p) => p.mean, 'p95', COLORS[1]!);",
+  },
+  {
+    id: 'the-histogram-drops-its-last-bucket',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/Workload.tsx',
+    what: 'the distribution is one bucket short — the slowest iterations, the ones a reader opens the histogram to see, gone from the tail',
+    find: "    const values = [...new Set([...m.histogram, ...(b?.metrics.histogram ?? [])].map((h) => h.value))].sort((p, q) => p - q);",
+    replace: "    const values = [...new Set([...m.histogram, ...(b?.metrics.histogram ?? [])].map((h) => h.value))].sort((p, q) => p - q).slice(0, -1);",
+  },
+  {
+    id: 'the-comparison-shows-this-run-twice',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ReportView.tsx',
+    what: 'the compared column, the dashed series and every Δ come from the selected run itself — two directories opened, one shown, and every difference reads ±0',
+    find: "      const other = c ? { id: c.id, test: c.data.tests.find((t): t is WorkloadTestResult => t.kind === 'workload' && t.name === entry.name) ?? null } : null;",
+    replace: "      const other = c ? { id: c.id, test: entry } : null;",
+  },
+  {
+    id: 'the-endpoint-sort-is-a-relabelled-header',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/Workload.tsx',
+    what: 'clicking a column header marks it sorted and moves nothing — the rows stay in source order under an ▲ that says otherwise',
+    find: "        {table.getRowModel().rows.map((row) => (",
+    replace: "        {table.getCoreRowModel().rows.map((row) => (",
+  },
 ];
 
 /**
