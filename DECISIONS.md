@@ -7777,7 +7777,7 @@ The mapping from mutation to plant does not exist and cannot be guessed. So:
 
 ### D841
 
-<sub>cited from tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/mutation-covers.mjs, tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/read-mutation-matrix.mjs · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D841` — the gate's size is derived, not chosen**
 
@@ -7822,7 +7822,7 @@ declares and skips*, and a 5-hour discovery run is not a phase.
 
 ### D846
 
-<sub>cited from tflw-tests/scripts/lib/mutations.mjs, tflw-tests/scripts/list-mutation-candidates.mjs, tflw-tests/scripts/read-mutation-matrix.mjs +1 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/mutation-covers.mjs, tflw-tests/scripts/lib/mutations.mjs +3 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D846` — the subject is the 102 acceptance-graded rows**
 
@@ -8747,6 +8747,44 @@ the second witness, not the first.
 **`D977` — the registry widens in tflw, with a control per entry.** A runtime mutation the
 census needs is also a control tflw's suite needs; the two are one artefact under one rule
 (`D840`). Only never-red constructs with no candidate qualify.
+
+### D979
+
+<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+
+**`D979` — findings are filed when found.** `M189-01` at scoping; the triage bins at the end of
+`M189a`; each open until a milestone closes it on evidence.
+
+### D980
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/mutation-covers.mjs · lifted from `PLAN_M190_THE_RE_CENSUS.md`</sub>
+
+**`D980` — a census is one directory, and a new census is a new one.** The matrix keys a verdict
+by mutation id; a resume treats any recorded id as settled. Two censuses against different
+rosters and registries in one file would settle the new by the old. `M190` runs in
+`~/.tflw-mutation-m190` on the box, from an empty matrix, and the `M164` directory is left as it
+is until the committed artefacts are replaced. `--remeasure` stays what it is for: a roster
+that changed *within* a census.
+
+### D981
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/mutation-covers.mjs · lifted from `PLAN_M190_THE_RE_CENSUS.md`</sub>
+
+**`D981` — the nine run first, alone, in the same census.** The sweep's order is the registry's,
+and a ten-hour run whose most informative answer arrives at hour six is run in the wrong order.
+`--only <the nine>` writes rows into the same matrix under the same baseline and does not shrink
+`run-meta`'s denominator (the script keeps `allCandidates` apart from what one invocation runs),
+so P1 is the first chunk of the census, not a rehearsal for it.
+
+### D984
+
+<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M190_THE_RE_CENSUS.md`</sub>
+
+**`D984` — the artefacts are replaced whole, in one sibling PR.** `kill-matrix.jsonl`,
+`kill-detail.json`, `census-shape.json`, `run-meta.json`, `reach.json` and any verdict rows the
+two-way gate demands land together, with `COVERS` extended for every new assertion kill and
+`CONSTRUCTS.md`'s eleven graded a second time in their own table. Two censuses are never merged;
+the old one is the git history.
 
 ### M0
 
@@ -11748,7 +11786,7 @@ line; restate the count; delete the no-op perturbation. Keep all 54 `find` patte
 
 ### M164
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +15 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +16 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`M164` — the roster plants must be shown to discriminate**
 
@@ -11850,7 +11888,7 @@ behavioural test that resolves a doubled declaration of each key and asserts whi
 
 ### M168
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +8 more · lifted from `PLAN_M168_UNMUTATED_CONSTRUCTS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +9 more · lifted from `PLAN_M168_UNMUTATED_CONSTRUCTS.md`</sub>
 
 **`M168` — the constructs nothing can be shown to test, and the one that was misfiled**
 
@@ -12409,7 +12447,7 @@ the kind of credential the language does not renew.
 
 ### M189a
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/reach-verdicts.mjs +6 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/mutation-covers.mjs +7 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
 
 **`M189a` — reach (sibling)**
 
@@ -12435,7 +12473,7 @@ the kind of credential the language does not renew.
 
 ### M189b
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/tflw-acceptance/conformance/teardown.tflw · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/mutation-covers.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +1 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
 
 **`M189b` — the registry (tflw)**
 
@@ -12450,7 +12488,7 @@ the kind of credential the language does not renew.
 
 ### M189c
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +4 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +5 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
 
 **`M189c` — the eleven (sibling)**
 
@@ -12465,13 +12503,15 @@ the kind of credential the language does not renew.
 
 ### M190
 
-<sub>cited from tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +1 more · lifted from `PLAN_M190_THE_RE_CENSUS.md`</sub>
 
-**`M190` — the re-census, and the decider.** Not built here and not scoped here: one unattended
-run of `discover-mutation-kills.mjs` over the whole registry (343 entries after `M189b`, ~50 h of
-box calendar) with the `M188b` producer writing `kill-detail.json`, followed by
-`measure-mutation-reach` so the nine new entries have a reach. It is what moves `M164-02`
-(a second discriminating perturbation) and `M176-05` (`16 of 16` produced) — `D978` — and what
-grades the eleven of `M189c` a second time. Everything else below is a plain list.
+**`M190` — the re-census, and the decider**
+
+`M189` built three things on top of a number it did not re-measure: `M164b`'s census of
+2026-09-01, in which 271 registry mutations against 102 plants produced **one** covering kill.
+Since then the registry gained nine runtime mutations written for the never-red plants
+(`M189b`, `D977`), eleven plants gained a hand kill each (`M189c`, `D976`), and 41 reached
+survivors were given a verdict by hand (`M189a`, `D974`). None of that has been run through the
+one instrument that grades the dogfood rather than describing it. This milestone runs it.
 
 <!-- GENERATED:decisions:end -->
