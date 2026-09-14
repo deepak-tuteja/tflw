@@ -239,7 +239,7 @@ export const STEP_KEYWORDS: readonly StepKeywordEntry[] = [
  * table, decision 16.10) and a later LSP's signature help. */
 export interface CliFlagEntry {
   readonly flag: string;
-  readonly command: 'run' | 'check' | 'init' | 'install-browsers' | 'pick' | 'watch' | 'migrate' | 'fmt' | 'spec' | 'global';
+  readonly command: 'run' | 'check' | 'init' | 'install-browsers' | 'pick' | 'watch' | 'migrate' | 'fmt' | 'ui' | 'spec' | 'global';
   readonly effect: string;
 }
 
@@ -625,6 +625,8 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--env <name>`', command: 'migrate', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one — deprecations are checker diagnostics, so this only affects which env-scoped checks run' },
   { flag: '`--no-color`', command: 'migrate', effect: 'disables ANSI color in CLI output' },
   { flag: '`--check`', command: 'fmt', effect: 'writes nothing; lists every file that would change and exits 1 if any would — the CI form. Without it, files are rewritten in place and each one that changed is named' },
+  { flag: '`--port <n>`', command: 'ui', effect: 'the loopback port the page is served on (default 4141); `0` lets the OS pick and the chosen port is printed' },
+  { flag: '`--no-open`', command: 'ui', effect: 'do not open the page in a browser after the server starts — the URL is printed either way, which is the form a tunnel (`ssh -L`) or a script wants' },
   { flag: '`--json`', command: 'spec', effect: "emits the construct manifest as JSON instead of the human listing — the form `testFlow-tests`' conformance gate reads (`M154a`). Spelled as a boolean rather than `--format json` (D738): `spec` has one machine format and one human one, so there is no open set of renderings to name" },
   { flag: '`--version`, `-v`', command: 'global', effect: 'print the installed version' },
   { flag: '`--help`, `-h`', command: 'global', effect: 'print usage' },
