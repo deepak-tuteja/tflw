@@ -100,3 +100,13 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .thresholds td { padding: 2px 10px 2px 0; }
 .thresholds tr.fail td { color: var(--fail); }
 @media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar { border-right: 0; border-bottom: 1px solid var(--line); } .trace { grid-template-columns: 1fr; } }
+
+/* Binary evidence (U3). */
+.screenshot { margin: 6px 0; }
+.screenshot img { max-width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.screenshot figcaption { font-size: 11px; }
+.snapshot-diff { display: flex; flex-wrap: wrap; gap: 10px; }
+.snapshot-diff .screenshot { flex: 1 1 200px; }
+.trace-line { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; font-size: 12px; margin: 4px 0 6px; }
+.trace-line a { color: var(--accent); text-decoration: none; }
+.trace-line a[data-open-trace] { font-weight: 600; }

@@ -121,7 +121,7 @@ export function App() {
                   </a>
                 ))}
             </p>
-            <ReportBody tests={report.data.tests} />
+            <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false }} />
           </article>
         ) : null}
         {selected === null && !error ? <p className="muted empty">select a run</p> : null}

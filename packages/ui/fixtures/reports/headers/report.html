@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>testFlow report — 4/5 passed</title>
+<title>testFlow report — 5/7 passed</title>
 <style>
 :root{--bg:#0f1115;--card:#171a21;--fg:#e6e8ec;--mut:#9aa3b2;--ok:#3fb950;--fail:#f85149;--warn:#d29922;--info:#58a6ff;--line:#262b36;--code:#0b0d11}
 @media (prefers-color-scheme: light){:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f27;--mut:#5b6472;--ok:#1a7f37;--fail:#cf222e;--warn:#9a6700;--info:#0969da;--line:#e5e8ec;--code:#f3f4f6}}
@@ -199,12 +199,12 @@ svg{width:100%;height:auto;overflow:visible}
   <h1>testFlow report</h1>
   <div class="meta">
     <span class="badge fail">FAIL</span>
-    <span>4/5 passed · 1 failed</span>
+    <span>5/7 passed · 2 failed</span>
     <span>env <code>headers</code></span>
-    <span>seed <code>3261985195</code></span>
-    <span>now <code>2026-09-14T17:30:03.289Z</code></span>
-    <span>21 ms</span>
-    <span>2026-09-14T17:30:03.290Z</span>
+    <span>seed <code>4024678461</code></span>
+    <span>now <code>2026-09-14T18:33:30.421Z</code></span>
+    <span>5525 ms</span>
+    <span>2026-09-14T18:33:30.422Z</span>
   </div>
   
   
@@ -243,11 +243,18 @@ svg{width:100%;height:auto;overflow:visible}
         <li><button type="button" class="testlink ok" data-target="t4">✓ a warm-up endpoint answers on the second attempt</button></li>
       </ul>
     </details>
+    <details class="filegroup fail" open data-file="tests/shop.tflw">
+      <summary><span class="fgdot fail"></span><span class="fgname">tests/shop.tflw</span><span class="fgcount">(2, 1 failed)</span></summary>
+      <ul class="testlist">
+        <li><button type="button" class="testlink ok" data-target="t5">✓ the shop page greets and the button answers</button></li>
+        <li><button type="button" class="testlink fail" data-target="t6">✗ the shelf never says sold out</button></li>
+      </ul>
+    </details>
   </div>
 </nav>
 <main>
 <section class="test ok" id="t0" data-file="tests/catalog.tflw">
-  <h2><span class="dot ok"></span>lists the catalog and follows the first item <span class="tms">12 ms</span></h2>
+  <h2><span class="dot ok"></span>lists the catalog and follows the first item <span class="tms">14 ms</span></h2>
   
   
   
@@ -255,8 +262,8 @@ svg{width:100%;height:auto;overflow:visible}
   
   <ol class="steps">
 <li class="step ok kind-api">
-    <div class="line"><span class="mark">✓</span><code>api GET /items</code><span class="sms">9 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (7.8ms)</div>
+    <div class="line"><span class="mark">✓</span><code>api GET /items</code><span class="sms">10 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (9.1ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items</div>
@@ -264,8 +271,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 7.811171000000002 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 9.119742999999971 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -299,8 +306,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 1.381292000000002 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 1.3897460000000024 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -327,7 +334,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items/999</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items/999 → 404 (0.65ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/999 → 404 (0.71ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items/999</div>
@@ -335,8 +342,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 404 Not Found · 0.6503010000000131 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 404 Not Found · 0.7111529999999675 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -363,7 +370,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items/1</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (0.54ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (0.56ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items/1</div>
@@ -371,8 +378,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.5401910000000498 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.5550320000000397 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -399,7 +406,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api POST /orders body { itemId: 1, qty: 2 }</code><span class="sms">3 ms</span></div>
-    <div class="detail ">POST http://127.0.0.1:4717/orders → 201 (3ms)</div>
+    <div class="detail ">POST http://127.0.0.1:4717/orders → 201 (3.1ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ POST http://127.0.0.1:4717/orders</div>
@@ -407,8 +414,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 201 Created · 2.984055000000012 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 201 Created · 3.0843210000000454 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -435,7 +442,7 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /orders/{orderId}</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/orders/1 → 200 (0.61ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/orders/1 → 200 (0.63ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/orders/1</div>
@@ -443,8 +450,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.6109710000000064 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.6315519999999992 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -471,7 +478,7 @@ svg{width:100%;height:auto;overflow:visible}
     <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /warmup</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/warmup → 503 (0.6ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/warmup → 503 (0.59ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/warmup</div>
@@ -479,8 +486,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 503 Service Unavailable · 0.5981909999999857 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 503 Service Unavailable · 0.5920820000000049 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -505,8 +512,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.478369999999984 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.4828719999999862 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 18:33:30 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -514,6 +521,66 @@ svg{width:100%;height:auto;overflow:visible}
 <li class="step ok kind-expect">
     <div class="line"><span class="mark">✓</span><code>expect status equals 200</code><span class="sms">0 ms</span></div>
     <div class="detail ">status to equal 200</div>
+    
+  </li>
+  </ol>
+</section>
+<section class="test ok" id="t5" data-file="tests/shop.tflw">
+  <h2><span class="dot ok"></span>the shop page greets and the button answers <span class="tms">323 ms</span></h2>
+  
+  
+  
+  
+  
+  <ol class="steps">
+<li class="step ok kind-open">
+    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">266 ms</span></div>
+    <div class="detail ">open http://127.0.0.1:4717/</div>
+    
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect text &quot;Fixture shop&quot; is visible</code><span class="sms">14 ms</span></div>
+    <div class="detail ">`text &quot;Fixture shop&quot;` to be visible</div>
+    
+  </li>
+<li class="step ok kind-click">
+    <div class="line"><span class="mark">✓</span><code>click button &quot;Buy a widget&quot;</code><span class="sms">39 ms</span></div>
+    <div class="detail ">click `button &quot;Buy a widget&quot;`</div>
+    
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect text &quot;Bought one widget.&quot; is visible</code><span class="sms">2 ms</span></div>
+    <div class="detail ">`text &quot;Bought one widget.&quot;` to be visible</div>
+    
+  </li>
+<li class="step ok kind-screenshot">
+    <div class="line"><span class="mark">✓</span><code>screenshot &quot;after the purchase&quot;</code><span class="sms">0 ms</span></div>
+    <div class="detail ">screenshot &quot;after the purchase&quot; not captured (evidence level)</div>
+    
+  </li>
+  </ol>
+</section>
+<section class="test fail" id="t6" data-file="tests/shop.tflw">
+  <h2><span class="dot fail"></span>the shelf never says sold out <span class="tms">5181 ms</span></h2>
+  <p class="error">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</p>
+  
+  
+  
+  
+  <ol class="steps">
+<li class="step ok kind-open">
+    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">14 ms</span></div>
+    <div class="detail ">open http://127.0.0.1:4717/</div>
+    
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect text &quot;Three items on the shelf.&quot; is visible</code><span class="sms">9 ms</span></div>
+    <div class="detail ">`text &quot;Three items on the shelf.&quot;` to be visible</div>
+    
+  </li>
+<li class="step fail kind-expect">
+    <div class="line"><span class="mark">✗</span><code>expect text &quot;Sold out&quot; is visible</code><span class="sms">5155 ms</span></div>
+    <div class="detail baddetail">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</div>
     
   </li>
   </ol>

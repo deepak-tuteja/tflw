@@ -3,10 +3,21 @@
 // `RunReport`) and for a run in flight (the stream reduced to the same shape by `live.ts`); the
 // only difference is the header, which for a live run says what has arrived so far.
 
+import { useEffect, useState } from 'react';
 import type { AttemptResult, CrawlResult, ReportEntry, RunReport, StepResult, TestResult, WorkloadTestResult } from './contract';
 import type { LiveTest } from './live';
+import { BROWSER_KINDS, tracePath } from './assets';
 import { ms, when } from './format';
+import { reportFileUrl } from './api';
 import { StepRow } from './StepRow';
+
+/** What a WebUI test's evidence depends on and where it can be opened: the report it is in and
+ * the level that report was run at. Absent for a live pane, which has neither yet. */
+export interface ReportContext {
+  readonly id: string;
+  readonly evidenceLevel: RunReport['evidenceLevel'];
+  readonly traceViewer: boolean;
+}
 
 export function ReportHeader({ report }: { report: RunReport }) {
   return (
@@ -32,7 +43,7 @@ export function ReportHeader({ report }: { report: RunReport }) {
 }
 
 /** Tests grouped by file in declaration order — the order the report holds them in. */
-export function ReportBody({ tests }: { tests: readonly ReportEntry[] }) {
+export function ReportBody({ tests, context }: { tests: readonly ReportEntry[]; context?: ReportContext }) {
   const byFile = groupByFile(tests.map((t) => ({ file: t.file, entry: t })));
   return (
     <div className="tests">
@@ -40,7 +51,7 @@ export function ReportBody({ tests }: { tests: readonly ReportEntry[] }) {
         <section className="file" key={file} data-file-group={file}>
           <h2 className="file-name">{file}</h2>
           {entries.map((e, i) => (
-            <Entry entry={e} key={`${e.name}-${i}`} />
+            <Entry entry={e} context={context} key={`${e.name}-${i}`} />
           ))}
         </section>
       ))}
@@ -84,10 +95,10 @@ function groupByFile<T>(items: readonly { file: string | undefined; entry: T }[]
   return [...groups.entries()];
 }
 
-function Entry({ entry }: { entry: ReportEntry }) {
+function Entry({ entry, context }: { entry: ReportEntry; context?: ReportContext }) {
   switch (entry.kind) {
     case 'functional':
-      return <Functional test={entry} />;
+      return <Functional test={entry} context={context} />;
     case 'workload':
       return <Workload test={entry} />;
     case 'crawl':
@@ -95,8 +106,12 @@ function Entry({ entry }: { entry: ReportEntry }) {
   }
 }
 
-function Functional({ test }: { test: TestResult }) {
+function Functional({ test, context }: { test: TestResult; context?: ReportContext }) {
   const prior = test.attempts ? test.attempts.slice(0, -1) : [];
+  // A WebUI test below `evidence full` has no screenshot and no trace by decision (`FS-01`), and
+  // the page says so where they would be rather than leaving the reader to infer it (`D987`).
+  const browser = test.steps.some((s) => BROWSER_KINDS.has(s.kind));
+  const withheld = browser && context !== undefined && context.evidenceLevel !== undefined && context.evidenceLevel !== 'full';
   return (
     <section className={`test ${test.ok ? 'ok' : 'fail'}`} data-test data-kind="functional" data-name={test.name} data-ok={test.ok}>
       <h3>
@@ -122,28 +137,68 @@ function Functional({ test }: { test: TestResult }) {
           ))}
         </ul>
       ) : null}
+      {withheld ? (
+        <p className="muted" data-evidence-withheld={context!.evidenceLevel}>
+          no screenshots and no trace — this run's evidence level is <code>{context!.evidenceLevel}</code>; they exist only at <code>full</code>
+        </p>
+      ) : null}
       {prior.map((a) => (
-        <Attempt attempt={a} key={a.attempt} />
+        <Attempt attempt={a} context={context} key={a.attempt} />
       ))}
       {test.attempts ? (
         <p className="attempt-final" data-attempts={test.attempts.length}>
           attempt {test.attempts.length} of {test.attempts.length} — {test.ok ? 'passed' : 'failed'}
         </p>
       ) : null}
+      {test.trace && context ? <TraceLink base64={test.trace.base64} context={context} /> : null}
       <Steps steps={test.steps} />
     </section>
   );
 }
 
-function Attempt({ attempt }: { attempt: AttemptResult }) {
+function Attempt({ attempt, context }: { attempt: AttemptResult; context?: ReportContext }) {
   return (
     <details className="attempt" data-attempt={attempt.attempt}>
       <summary>
         <span className="badge fail">attempt {attempt.attempt} — failed</span>
         {attempt.error ? <span className="muted"> {attempt.error}</span> : null}
       </summary>
+      {attempt.trace && context ? <TraceLink base64={attempt.trace.base64} context={context} /> : null}
       <Steps steps={attempt.steps} />
     </details>
+  );
+}
+
+/** The Playwright trace of a failed attempt: *open trace* hands the archive to Playwright's own
+ * viewer, served by `tflw ui` under `/trace/` from the project's `playwright-core`; the download
+ * and the `show-trace` line are there for a project without one, and for a reader who wants the
+ * file. The archive's name is the reporter's hash of its bytes (`assets.ts`). */
+function TraceLink({ base64, context }: { base64: string; context: ReportContext }) {
+  const [path, setPath] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    tracePath(base64).then((p) => {
+      if (live) setPath(p);
+    });
+    return () => {
+      live = false;
+    };
+  }, [base64]);
+  if (path === null) return null;
+  const href = reportFileUrl(context.id, path);
+  const viewer = `/trace/index.html?trace=${encodeURIComponent(new URL(href, window.location.origin).toString())}`;
+  return (
+    <p className="trace-line" data-trace={path}>
+      {context.traceViewer ? (
+        <a href={viewer} target="_blank" rel="noreferrer" data-open-trace>
+          open trace
+        </a>
+      ) : null}
+      <a href={href} download data-trace-download>
+        trace.zip
+      </a>
+      <code className="muted">npx playwright show-trace {path}</code>
+    </p>
   );
 }
 

@@ -258,6 +258,12 @@ directory a terminal run writes) and relays the stream as it arrives, and it ope
 directory the project holds — the current one, and each run started from the page, which is kept
 aside as `report/runs/<id>/` when it ends. Nothing on the page writes a `.tflw` file.
 
+**What a browser test shows is what the report holds.** At `evidence full` the screenshots a run
+took are on the page and a failed test's Playwright trace opens in Playwright's own trace viewer,
+which `tflw ui` serves under `/trace/` from the project's `playwright-core` — nothing is spawned
+and the archive never leaves the machine. Below `full` there is no screenshot and no trace, by
+decision, and the page says so under each browser test rather than leaving a gap.
+
 **Loopback only.** The bind address is not configurable: the page can start a run, and a run reads
 the project's `.env`. To reach it from another machine, tunnel it (`ssh -L 4141:127.0.0.1:4141`
 to that machine) rather than exposing it.
