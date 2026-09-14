@@ -19,6 +19,11 @@ function codeSpans(text: string): ReactNode[] {
   return text.split(/`([^`]+)`/).map((part, i) => (i % 2 === 1 ? <code key={i}>{part}</code> : part));
 }
 
+/** Above this many declines the list opens folded: `M192` U7's security dogfood raised 89 of them
+ * and the first finding sat 5,000 px down the page. `report.html` draws them flat; the page keeps
+ * every line and folds the list, the count and the sum in the summary. */
+export const FOLD_DECLINES_ABOVE = 3;
+
 /** A finding's identity for the comparison: the fingerprint when it has one, else its site. */
 const keyOf = (f: ScanFinding): string => f.fingerprint ?? `${f.rule} ${f.endpoint} ${f.location ?? ''}`;
 
@@ -53,11 +58,18 @@ export function Findings({ report, compare }: { report: RunReport; compare?: { r
           {Math.floor((blind.coverage.withOwner / blind.coverage.apiSteps) * 100)}%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.
         </p>
       ) : null}
-      {(blind?.declines ?? []).map((d, i) => (
-        <p className="muted" key={i} data-scan-decline={d.subject}>
-          ℹ {SCAN_KIND_LABEL[d.scan]} declined {d.count}×: <code>{d.subject}</code> — {d.reason}
-        </p>
-      ))}
+      {blind?.declines && blind.declines.length > 0 ? (
+        <details className="declines-fold" open={blind.declines.length <= FOLD_DECLINES_ABOVE} data-declines-fold={blind.declines.length}>
+          <summary className="muted">
+            ℹ {blind.declines.length} decline{blind.declines.length === 1 ? '' : 's'} — {blind.declines.reduce((n, d) => n + d.count, 0)}× a probe stood down, by subject
+          </summary>
+          {blind.declines.map((d, i) => (
+            <p className="muted" key={i} data-scan-decline={d.subject}>
+              ℹ {SCAN_KIND_LABEL[d.scan]} declined {d.count}×: <code>{d.subject}</code> — {d.reason}
+            </p>
+          ))}
+        </details>
+      ) : null}
       {findings.length > 0 ? (
         <p data-findings-summary>
           {findingsSummaryLine(findings)}

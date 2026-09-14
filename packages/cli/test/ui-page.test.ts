@@ -109,6 +109,18 @@ test('the sidebar is the project: every file, test, line and tag the server read
   const counts = await page.locator('[data-project-counts]').textContent();
   const total = project.files.reduce((n, f) => n + f.tests.length, 0);
   assert.equal(counts, `${project.files.length} files · ${total} tests`);
+  // U7: the tag cloud folds above `FOLD_TAGS_ABOVE` (the dogfood's 90 hid every file); the
+  // fixture's few stay open, and the fold names the count either way.
+  const allTags = new Set(project.files.flatMap((f) => f.tests.flatMap((t) => t.tags)));
+  const fold = page.locator('[data-tags-fold]');
+  assert.equal(await fold.getAttribute('data-tags-fold'), String(allTags.size));
+  assert.ok(allTags.size <= 24, 'the fixture is under the fold (`FOLD_TAGS_ABOVE` in Sidebar.tsx, restated — the cli typecheck has no jsx)');
+  assert.equal(await fold.evaluate((el) => (el as { open: boolean }).open), true);
+  assert.equal(await fold.locator('[data-tag]').count(), allTags.size);
+  // U7: the tab has the docs site's mark, and the page's own load logs no 404 for it.
+  const icon = await fetch(`${baseUrl}/favicon.svg`);
+  assert.equal(icon.status, 200);
+  assert.equal(icon.headers.get('content-type'), 'image/svg+xml');
 });
 
 test('the run list is the report directories, each row carrying its own results.json counts', async () => {
@@ -486,6 +498,11 @@ test('the findings block: every finding the report holds, grouped by rule in the
     }
     const cov = report.scanBlindSpot?.coverage;
     if (cov && cov.apiSteps > 0) assert.equal(await block.locator('[data-authz-coverage]').getAttribute('data-authz-coverage'), `${cov.withOwner}/${cov.apiSteps}`);
+    // U7: declines are folded under one line naming their count (89 on the security dogfood); the
+    // fixture raises none, so only the absent branch is graded here — the fold's threshold is §10's.
+    const declines = report.scanBlindSpot?.declines ?? [];
+    assert.equal(await block.locator('[data-declines-fold]').count(), declines.length > 0 ? 1 : 0);
+    assert.equal(await block.locator('[data-scan-decline]').count(), declines.length);
     // Grouped by rule, worst first, and inside a group the report's own order.
     const sorted = sortFindings(findings);
     const rules = [...new Set(sorted.map((f) => f.rule))];
@@ -581,12 +598,15 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
     assert.equal(await page.locator('[data-summary] [data-counts]').textContent(), `${written.total} tests · ${written.passed} passed · ${written.failed} failed`);
     assert.equal(await page.locator('[data-test]').count(), written.tests.length);
     // What was asked is what ran: `@catalog` is three of the five tests, and the argv says so.
-    const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { argv: string[]; status: string; kept: string }[];
+    const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { argv: string[]; status: string; exitCode: number | null; kept: string }[];
     assert.equal(runs.length, 1);
     assert.deepEqual(runs[0]!.argv.slice(-2), ['--tag', 'catalog']);
     assert.equal(runs[0]!.status, 'done');
     assert.equal(runs[0]!.kept, `report/runs/${id}`);
     assert.equal(written.total, 3);
+    // U7: exit 0/1 is the report's own verdict, so no note about the process appears.
+    assert.ok(runs[0]!.exitCode === (written.ok ? 0 : 1));
+    assert.equal(await page.locator('[data-run-exit]').count(), 0);
     assert.ok(written.tests.every((t) => t.file === 'tests/catalog.tflw'));
     // And the run list gained the row, with the run's own counts.
     const row = page.locator(`[data-report-row="${id}"]`);
@@ -611,4 +631,73 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
   } finally {
     target.close();
   }
+});
+
+test('a run cancelled from the page: its kept directory says so above the report, with the exit the process ended with', async () => {
+  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: () => Promise<Server> };
+  const target = await fixtureServer.startFixtureServer();
+  try {
+    await page.goto(baseUrl);
+    const before = new Set(await page.locator('[data-report-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-report-row'))));
+    await page.locator('[data-tag="load"]').click();
+    await page.locator('[data-run]').click();
+    // Cancel once the workload is under way — before that `tflw run` has no graceful abort and
+    // dies with no report (`cli.ts`: the handler is installed only for a run with a workload).
+    await page.locator('[data-live] [data-test]').first().waitFor({ timeout: 60_000 });
+    await page.locator('[data-cancel]').click();
+    const kept = page.locator('[data-report]');
+    await kept.waitFor({ timeout: 60_000 });
+    const id = (await kept.getAttribute('data-report'))!;
+    assert.ok(!before.has(id), 'a new directory was kept');
+    const written = JSON.parse(await readFile(join(root, 'report', 'runs', id, 'results.json'), 'utf8')) as RunReport;
+    assert.equal(written.aborted, true, 'the report says aborted — the runtime\'s own fact');
+    const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { status: string; exitCode: number | null; kept: string }[];
+    const run = runs.find((r) => r.kept === `report/runs/${id}`)!;
+    assert.equal(run.status, 'cancelled');
+    // U7's rule: the exit is the page's fact, not the report's, whenever the report's verdict does
+    // not already say it — a cancel is the page's own gesture and 130 is what it produced.
+    const note = page.locator('[data-run-exit]');
+    await note.waitFor();
+    assert.equal(await note.getAttribute('data-run-exit'), String(run.exitCode));
+    assert.equal(await note.getAttribute('data-run-status'), 'cancelled');
+    assert.match((await note.textContent())!, /cancelled from this page/);
+    assert.match((await note.textContent())!, new RegExp(`exit ${run.exitCode}`));
+    // Selecting a directory the page did not run — the corpus — shows no note.
+    await openReport('full');
+    assert.equal(await page.locator('[data-run-exit]').count(), 0);
+  } finally {
+    target.close();
+  }
+});
+
+test('a run that could not start: the live pane keeps its exit and stderr, drawn as the failure it is, and nothing is kept', async () => {
+  await page.goto(baseUrl);
+  // `--workers 0` — `tflw run` refuses it (usage, exit 2) before any report is written.
+  const before = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string }[];
+  await page.locator('[data-workers]').fill('0');
+  await page.locator('[data-run]').click();
+  const pane = page.locator('[data-live]');
+  await pane.locator('[data-stderr]').waitFor({ timeout: 60_000 });
+  const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string; status: string; exitCode: number | null; kept: string | null }[];
+  const run = runs.find((r) => !before.some((b) => b.id === r.id))!;
+  assert.equal(run.kept, null);
+  assert.equal(run.status, 'done');
+  assert.notEqual(run.exitCode, 0);
+  const verdict = pane.locator('.verdict');
+  assert.equal((await verdict.textContent())?.trim(), `exit ${run.exitCode}`);
+  // U7: the dogfood's security page drew a green `exit 2` — the colour keyed on failed tests, of
+  // which a run that never started has none.
+  assert.match((await verdict.getAttribute('class'))!, /\bfail\b/);
+  assert.match((await pane.locator('[data-stderr]').textContent())!, /positive integer/);
+  // And the run keeps a row of its own: no directory to stand for it, so it would otherwise
+  // vanish from the list the moment anything else is selected.
+  const row = page.locator(`[data-run-row="${run.id}"]`);
+  assert.equal(await row.getAttribute('data-status'), 'done');
+  assert.equal(await row.getAttribute('data-exit'), String(run.exitCode));
+  assert.match((await row.textContent())!, new RegExp(`exit ${run.exitCode} · no report`));
+  await openReport('full');
+  assert.equal(await page.locator(`[data-run-row="${run.id}"]`).count(), 1, 'the row survives a selection elsewhere');
+  await page.locator(`[data-run-row="${run.id}"]`).click();
+  await page.locator(`[data-live="${run.id}"] [data-stderr]`).waitFor({ timeout: 30_000 });
+  await page.locator('[data-workers]').fill('');
 });

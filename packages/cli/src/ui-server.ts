@@ -326,10 +326,19 @@ export class UiServer {
 
   /** Copy the report directory aside as `runs/<id>/` — the run's record, kept. Only the members
    * the contract names and the directories beside them; `runs/` itself is never copied into
-   * itself. Skipped when the run wrote nothing (a usage error exits before any artefact). */
+   * itself. Skipped when the run wrote nothing (a usage error exits before any artefact) —
+   * judged by `results.json`'s mtime against the run's start, not by its presence: a directory the
+   * previous run left is present too, and `M192` U7's gate kept one as the record of a run that
+   * had refused its own argv, then opened it as that run's report. */
   private async keep(live: LiveRun): Promise<void> {
     const reportDir = await this.reportDirFor();
-    if (!existsSync(join(reportDir, 'results.json'))) return;
+    let written: Date;
+    try {
+      written = (await stat(join(reportDir, 'results.json'))).mtime;
+    } catch {
+      return;
+    }
+    if (written.getTime() < Date.parse(live.record.startedAt)) return;
     const dest = join(reportDir, 'runs', live.record.id);
     await mkdir(dest, { recursive: true });
     // Entry by entry rather than one `cp` of the directory: `fs.cp` refuses a destination inside

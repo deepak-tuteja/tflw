@@ -4,8 +4,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelRun, getProject, getReports, getResults, getRuns, getStderr, reportFileUrl, startRun, subscribe } from './api';
 import type { EndEvent, ProjectView, ReportDir, RunRecord, RunReport, RunRequest } from './contract';
-import { addNoise, EMPTY_LIVE, reduceLive, type LiveState } from './live';
-import { reportIdOf } from './format';
+import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
+import { exitExplained, reportIdOf } from './format';
 import { LiveBody, ReportBody, ReportHeader } from './ReportView';
 import { Findings } from './Findings';
 import { RunList, type Selection } from './RunList';
@@ -30,6 +30,8 @@ export function App() {
   const [compareId, setCompareId] = useState<string | null>(null);
   const [compare, setCompare] = useState<{ id: string; data: RunReport } | null>(null);
   const [live, setLive] = useState<LiveRun | null>(null);
+  // U7 — the process behind a kept directory, when its exit is not the report's own verdict.
+  const [exitNote, setExitNote] = useState<{ id: string; run: RunRecord; stderr: string } | null>(null);
   const unsubscribe = useRef<(() => void) | null>(null);
 
   const refreshLists = useCallback(async () => {
@@ -45,7 +47,9 @@ export function App() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
     refreshLists()
       .then((p) => {
-        if (p[0]) setSelected({ kind: 'report', id: p[0].id });
+        // Only when nothing was chosen meanwhile — a run started before the list arrived (U7's
+        // gate did exactly that) would otherwise be unselected by the page's own first load.
+        if (p[0]) setSelected((s) => s ?? { kind: 'report', id: p[0]!.id });
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, [refreshLists]);
@@ -59,6 +63,19 @@ export function App() {
       .then((data) => setReport({ id, data }))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, [selected]);
+
+  useEffect(() => {
+    if (!report) return;
+    const run = runs.find((r) => r.kept !== null && reportIdOf(r.kept) === report.id);
+    if (!run || run.status === 'running' || exitExplained(run, report.data)) {
+      setExitNote(null);
+      return;
+    }
+    const id = report.id;
+    getStderr(run.id)
+      .then((stderr) => setExitNote({ id, run, stderr }))
+      .catch(() => setExitNote({ id, run, stderr: '' }));
+  }, [report, runs]);
 
   useEffect(() => {
     if (compareId === null) {
@@ -129,6 +146,17 @@ export function App() {
         {selected?.kind === 'report' && report && report.id === selected.id ? (
           <article className="report" data-report={report.id}>
             <ReportHeader report={report.data} />
+            {exitNote && exitNote.id === report.id ? (
+              <div className="warn run-exit" data-run-exit={exitNote.run.exitCode ?? ''} data-run-status={exitNote.run.status}>
+                ⚠ the run behind this directory {exitNote.run.status === 'cancelled' ? 'was cancelled from this page' : 'ended'} with{' '}
+                {exitNote.run.exitCode !== null ? `exit ${exitNote.run.exitCode}` : `signal ${exitNote.run.signal}`} — the report is what it had written by then, and its verdict does not say so.
+                {exitNote.stderr ? (
+                  <pre className="stderr" data-run-stderr>
+                    {exitNote.stderr}
+                  </pre>
+                ) : null}
+              </div>
+            ) : null}
             <p className="muted files-line">
               {reports.length > 1 ? (
                 <label className="compare">
@@ -164,16 +192,15 @@ export function App() {
 }
 
 function LivePane({ live }: { live: LiveRun }) {
-  const done = live.state.tests.filter((t) => t.result !== null);
-  const failed = done.filter((t) => t.result && !t.result.ok).length;
+  const { done, failed } = liveCounts(live.state);
   return (
     <article className="report live" data-live={live.id} data-live-status={live.end ? live.end.status : 'running'}>
       <header className="report-head">
-        <span className={`verdict ${live.end ? (live.end.status === 'cancelled' ? 'warn' : failed > 0 ? 'fail' : 'ok') : 'running'}`}>
+        <span className={`verdict ${live.end ? (live.end.status === 'cancelled' ? 'warn' : live.end.exitCode === 0 ? 'ok' : 'fail') : 'running'}`}>
           {live.end ? (live.end.status === 'cancelled' ? 'CANCELLED' : `exit ${live.end.exitCode}`) : 'RUNNING'}
         </span>
         <span data-live-counts>
-          {done.length} of {live.state.announced || '?'} done · {failed} failed
+          {done} of {live.state.announced || '?'} done · {failed} failed
         </span>
       </header>
       {live.stderr ? <pre className="stderr" data-stderr>{live.stderr}</pre> : null}

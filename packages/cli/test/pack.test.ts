@@ -76,7 +76,7 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/
   // `index.html`, at least one hashed script under `assets/`, and nothing else — in particular not
   // the `metafile.json` the build writes beside it for the notice and then removes.
   const ui = files.filter((f) => f.startsWith('dist/ui/'));
-  assert.deepEqual(ui.filter((f) => !/^dist\/ui\/assets\/index-[\w-]+\.(js|css)$/.test(f)), ['dist/ui/index.html']);
+  assert.deepEqual(ui.filter((f) => !/^dist\/ui\/assets\/index-[\w-]+\.(js|css)$/.test(f)).sort(), ['dist/ui/favicon.svg', 'dist/ui/index.html']);
   assert.ok(ui.some((f) => /^dist\/ui\/assets\/index-[\w-]+\.js$/.test(f)), 'the page ships no script');
   assert.deepEqual(files.filter((f) => !f.startsWith('dist/ui/')), ['LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md', 'dist/artifact-contract.json', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
 

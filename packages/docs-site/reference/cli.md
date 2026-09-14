@@ -281,6 +281,14 @@ applied and what stood down, with the reasons. With a second run open under *com
 finding says whether the other run had it and with what verdict, and the other run's findings this
 one lacks are listed — the baseline diff, drawn from two reports.
 
+**A run's exit is stated where its report cannot state it.** `tflw run`'s exit codes 0, 1, 3 and
+130 are the report's own verdicts (passed, a failure, inconclusive, aborted) and the header carries
+them; anything else — a process that died after writing its report, a signal, a cancel from the
+page — is written above the report with the run's stderr, and a run that wrote no report at all
+(a refused argument, an unmet `require env`) keeps a row of its own in the run list rather than
+disappearing. The environment a page-started run sees is the server's: start `tflw ui` where a
+terminal run would work, with the same `.env` beside the config.
+
 **Loopback only.** The bind address is not configurable: the page can start a run, and a run reads
 the project's `.env`. To reach it from another machine, tunnel it (`ssh -L 4141:127.0.0.1:4141`
 to that machine) rather than exposing it.
