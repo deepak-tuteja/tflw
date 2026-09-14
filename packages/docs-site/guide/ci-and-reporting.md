@@ -209,7 +209,11 @@ Replaces the human console output with one JSON object per line (`RunEvent`s —
 `test:start`/`step:end`/`test:end`/`run:end`, each tagged with its source file) — pure stdout, no
 human text mixed in, safe to pipe into a log aggregator or `jq`. Always full step-level detail,
 independent of `--verbose`. Also always written to `report/events.ndjson`, so the stream survives
-even when the invoking process didn't capture stdout.
+even when the invoking process didn't capture stdout. A `before file` / `after file` hook emits a
+`test:start`/`test:end` pair like any other unit of work, and both halves carry
+`hook: "before file"` or `hook: "after file"`; `run:start.total` counts the tests, a passing hook
+is work in flight and never one of them, and the field — not the name — is how a consumer tells
+the two apart. The file is written one line at a time, so a stream of any size lands whole.
 
 The file is not a byte-for-byte copy of stdout: it is written after the run, so it gets the same
 final redaction pass as `report.html`/`results.json` (see [secrets](/guide/config#secrets)) with

@@ -731,16 +731,23 @@ export interface RunReport {
 // 111/M17) — needed so a machine consumer (`--format ndjson`) can tell concurrent files' events
 // apart under `--workers > 1`, the same ambiguity that already forces `--verbose` to buffer
 // per-file instead of interleaving (see `cli.ts`'s `bufferedEmit`).
+// `hook` (`M192b`, closing `M192-02`): a `before file` / `after file` hook emits a pair like any
+// other unit of work (SPEC §13 clause 1) and, until this field, nothing on the pair said it was a
+// hook — a consumer showing work in flight could only tell by the name, and a test literally named
+// `before file` was a hook to it. The field is on both halves so a consumer that joins them by
+// name never has to guess; the passing hook's `test:end` is still absent from the report.
+export type FileHook = 'before file' | 'after file';
+
 export type RunEvent =
   | { readonly type: 'run:start'; readonly total: number; readonly env: string; readonly file?: string }
-  | { readonly type: 'test:start'; readonly name: string; readonly file?: string }
+  | { readonly type: 'test:start'; readonly name: string; readonly hook?: FileHook; readonly file?: string }
   | { readonly type: 'step:end'; readonly test: string; readonly step: StepResult; readonly file?: string }
   // `ReportEntry`, not `TestResult` (M88d, review finding `B3-11`): a workload-bearing test is a
   // row in `report.tests` like any other, so it emits a `test:start`/`test:end` pair like any
   // other, and the result it carries is the same `WorkloadTestResult` the report will hold —
   // metrics and evaluated thresholds instead of a step timeline. Every consumer of this field has
   // to branch on `result.kind` for the same reason `RunReport.tests`' consumers already do.
-  | { readonly type: 'test:end'; readonly result: ReportEntry; readonly file?: string }
+  | { readonly type: 'test:end'; readonly result: ReportEntry; readonly hook?: FileHook; readonly file?: string }
   | { readonly type: 'run:end'; readonly report: RunReport; readonly file?: string };
 
 export type EventSink = (event: RunEvent) => void;

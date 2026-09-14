@@ -44,6 +44,7 @@ export { buildSarifLog, writeSarif, runScanned, sarifUri, SARIF_FILE, SARIF_SCHE
 // package as `dist/artifact-contract.json`, which is what `testFlow-tests` reads across the repo
 // boundary. Nothing inside this monorepo needs it from here; the emitter imports it directly.
 export { ARTIFACT_CONTRACT, type ArtifactContract } from './artifact-contract.js';
+export { RUN_OWNED_CONDITIONAL_MEMBERS, clearRunOwnedMembers } from './report-dir.js';
 export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 
 /** Write report.html into `dir` (created if needed), plus any `assets/` files (M3c, D12) it links

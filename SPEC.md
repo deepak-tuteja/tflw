@@ -3841,10 +3841,12 @@ certify that anything is safe to share.
 
   1. **Every test counted in `run:end.report.total` emits a `test:start`/`test:end` pair** — a
      functional test, a `with each` row-case, and a **workload-bearing test** alike, on every path.
-     `before file` / `after file` hooks emit a pair too, like any other unit of work; a *passing*
-     file hook is still absent from the final report's `tests` — a hook that worked is not a test
-     result — so pairing `test:start`/`test:end` tracks work in flight, and `total` is how you
-     count tests. This used to be stated the other way round ("every `test:start` has a matching
+     `before file` / `after file` hooks emit a pair too, like any other unit of work, **and both
+     halves of a hook's pair carry `hook: "before file" | "after file"`**; a *passing* file hook
+     is still absent from the final report's `tests` — a hook that worked is not a test result —
+     so pairing `test:start`/`test:end` tracks work in flight, `total` is how you count tests, and
+     `hook` is how you tell the two apart (a test named `before file` is a test; a pair without
+     the field never is a hook). This used to be stated the other way round ("every `test:start` has a matching
      `test:end`"), which is a promise about *pairs*: a unit of work emitting **neither** event
      satisfied it vacuously, and that is exactly how a workload-bearing test streamed nothing at
      all for a full milestone without any regression test noticing (`B3-11`). Quantified over

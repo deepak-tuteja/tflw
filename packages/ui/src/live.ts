@@ -8,6 +8,8 @@ import type { ReportEntry, RunEvent, StepResult } from './contract';
 export interface LiveTest {
   readonly file: string | undefined;
   readonly name: string;
+  /** Set when the pair is a file hook's (`RunEvent.hook`); a passing one is work, not a test. */
+  readonly hook?: 'before file' | 'after file';
   /** Steps so far; replaced by `result.steps` when the test ends. */
   readonly steps: readonly StepResult[];
   readonly result: ReportEntry | null;
@@ -28,7 +30,7 @@ export function reduceLive(state: LiveState, event: RunEvent): LiveState {
     case 'run:start':
       return { ...state, files: event.file && !state.files.includes(event.file) ? [...state.files, event.file] : state.files, announced: state.announced + event.total };
     case 'test:start':
-      return { ...state, tests: [...state.tests, { file: event.file, name: event.name, steps: [], result: null }] };
+      return { ...state, tests: [...state.tests, { file: event.file, name: event.name, hook: event.hook, steps: [], result: null }] };
     case 'step:end':
       return { ...state, tests: patch(state.tests, event.file, event.test, (t) => ({ ...t, steps: [...t.steps, event.step] })) };
     case 'test:end':
@@ -46,13 +48,14 @@ export function reduceLive(state: LiveState, event: RunEvent): LiveState {
  * §13: the pair tracks work in flight, `run:start.total` counts tests), so it is shown as work and
  * not counted as a test — a failing one enters the report and is counted. Found by `M192` U7 on
  * the dogfood corpus, whose first file has a `before file`: the pane read "106 of 105 done". By
- * name, because the stream marks a hook no other way (`M192-02`). */
+ * the pair's `hook` field since `M192b` (`M192-02`): until then the stream marked a hook no other
+ * way than its name, and a test named `before file` was a hook to this counter. */
 export function liveCounts(state: LiveState): { readonly done: number; readonly failed: number } {
   let done = 0;
   let failed = 0;
   for (const t of state.tests) {
     if (t.result === null) continue;
-    if ((t.name === 'before file' || t.name === 'after file') && t.result.ok) continue;
+    if (t.hook && t.result.ok) continue;
     done += 1;
     if (!t.result.ok) failed += 1;
   }

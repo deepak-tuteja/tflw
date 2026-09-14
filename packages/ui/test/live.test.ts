@@ -66,22 +66,26 @@ test('mid-stream, a test holds the steps that have arrived so far and no result'
   assert.ok(events.filter((e) => e.type === 'step:end' && e.test === retried.name).length > retried.steps.length, 'the stream carried the failed attempt too');
 });
 
-test('a passing file hook is work in flight, not a test: shown in the pane and left out of the count (M192 U7)', () => {
+test('a passing file hook is work in flight, not a test: shown in the pane and left out of the count, by the pair\'s `hook` field (M192 U7, M192b)', () => {
   const hookStep = { kind: 'api', source: 'api GET /health', line: 2, ok: true, durationMs: 1 } as unknown as TestResult['steps'][number];
   const stream: RunEvent[] = [
-    { type: 'run:start', total: 1, env: 'local', file: 'a.tflw' },
-    { type: 'test:start', name: 'before file', file: 'a.tflw' },
-    { type: 'test:end', result: { kind: 'functional', name: 'before file', ok: true, durationMs: 1, steps: [hookStep] }, file: 'a.tflw' },
+    { type: 'run:start', total: 2, env: 'local', file: 'a.tflw' },
+    { type: 'test:start', name: 'before file', hook: 'before file', file: 'a.tflw' },
+    { type: 'test:end', result: { kind: 'functional', name: 'before file', ok: true, durationMs: 1, steps: [hookStep] }, hook: 'before file', file: 'a.tflw' },
     { type: 'test:start', name: 'the one test', file: 'a.tflw' },
     { type: 'test:end', result: { kind: 'functional', name: 'the one test', ok: false, durationMs: 1, steps: [] }, file: 'a.tflw' },
+    // `M192-02`'s other half: a TEST named like a hook is a test. Before the field, the counter
+    // could only go by the name and this one vanished from the count.
+    { type: 'test:start', name: 'before file', file: 'a.tflw' },
+    { type: 'test:end', result: { kind: 'functional', name: 'before file', ok: true, durationMs: 1, steps: [] }, file: 'a.tflw' },
     // A failing hook enters the report as its own entry (`hooks.test.ts`), so it counts.
-    { type: 'test:start', name: 'after file', file: 'a.tflw' },
-    { type: 'test:end', result: { kind: 'functional', name: 'after file', ok: false, durationMs: 1, steps: [], error: 'a `after file` hook failed' }, file: 'a.tflw' },
+    { type: 'test:start', name: 'after file', hook: 'after file', file: 'a.tflw' },
+    { type: 'test:end', result: { kind: 'functional', name: 'after file', ok: false, durationMs: 1, steps: [], error: 'a `after file` hook failed' }, hook: 'after file', file: 'a.tflw' },
   ];
   const live = stream.reduce(reduceLive, EMPTY_LIVE);
-  assert.equal(live.tests.length, 3, 'every pair is shown');
-  assert.deepEqual(liveCounts(live), { done: 2, failed: 2 });
-  assert.equal(live.announced, 1);
+  assert.equal(live.tests.length, 4, 'every pair is shown');
+  assert.deepEqual(liveCounts(live), { done: 3, failed: 2 });
+  assert.equal(live.announced, 2);
 });
 
 test('an exit is explained only by the report verdict that produced it (M192 U7): 0 ok, 1 failed, 3 inconclusive, 130 aborted; anything else, a signal or a cancel is the page\'s to say', () => {

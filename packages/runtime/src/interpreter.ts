@@ -2650,7 +2650,7 @@ async function runFileHooks(
   const scope = new Map<string, unknown>();
   const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar: new CookieJar() };
   const start = performance.now();
-  emit({ type: 'test:start', name: label });
+  emit({ type: 'test:start', name: label, hook: label });
   const steps: StepResult[] = [];
   for (const hook of hooks) {
     const exec = await execSteps(hook.body, config, ctx, tc, label, registry);
@@ -2658,7 +2658,7 @@ async function runFileHooks(
     if (!exec.ok) {
       const result: TestResult = { kind: 'functional', name: label, ok: false, durationMs: Math.round(performance.now() - start), steps, error: exec.error ?? `a \`${label}\` hook failed` };
       results.push(result);
-      emit({ type: 'test:end', result });
+      emit({ type: 'test:end', result, hook: label });
       return false;
     }
   }
@@ -2672,7 +2672,9 @@ async function runFileHooks(
   // is the contract (SPEC §13) rather than an accident — `run:start.total`/`run:end.total` are how
   // a consumer counts tests; `test:start`/`test:end` are how it tracks work in flight, and a file
   // hook is work.
-  emit({ type: 'test:end', result: { kind: 'functional', name: label, ok: true, durationMs: Math.round(performance.now() - start), steps } });
+  // `hook` on both halves (`M192b`): the pair says what it is, so a consumer counts by the field
+  // and not by the name (`M192-02`).
+  emit({ type: 'test:end', result: { kind: 'functional', name: label, ok: true, durationMs: Math.round(performance.now() - start), steps }, hook: label });
   return true;
 }
 
