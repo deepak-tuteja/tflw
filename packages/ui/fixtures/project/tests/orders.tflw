@@ -1,0 +1,15 @@
+@orders
+test "creates an order and reads its total back"
+  api POST /orders body { itemId: 1, qty: 2 }
+  expect status equals 201
+  expect header "content-type" contains "application/json"
+  expect body.total equals 24
+  capture body.id as orderId
+  api GET /orders/{orderId}
+  expect status equals 200
+  check body.qty equals 2
+
+@orders @flaky
+test "a warm-up endpoint answers on the second attempt" retry 2
+  api GET /warmup
+  expect status equals 200

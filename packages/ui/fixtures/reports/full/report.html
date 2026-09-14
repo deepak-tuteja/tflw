@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>testFlow report — 4/5 passed</title>
+<style>
+:root{--bg:#0f1115;--card:#171a21;--fg:#e6e8ec;--mut:#9aa3b2;--ok:#3fb950;--fail:#f85149;--warn:#d29922;--info:#58a6ff;--line:#262b36;--code:#0b0d11}
+@media (prefers-color-scheme: light){:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f27;--mut:#5b6472;--ok:#1a7f37;--fail:#cf222e;--warn:#9a6700;--info:#0969da;--line:#e5e8ec;--code:#f3f4f6}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+header.run{padding:20px 24px;border-bottom:1px solid var(--line)}h1{margin:0 0 8px;font-size:18px}
+.meta{display:flex;gap:14px;flex-wrap:wrap;color:var(--mut);align-items:center}
+.insecure-warning{margin-top:10px;padding:6px 10px;border-radius:6px;background:var(--warn);color:#1b1f27;font-weight:700}
+/* M118/D202 — informational, not a warning: a demo run is working as intended, it just proved
+   nothing about the reader's system. Same shape as the warning band so it is impossible to miss,
+   deliberately not the same colour so it does not read as something going wrong. */
+.demo-badge{margin-top:10px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);color:var(--mut);font-weight:600}
+.engine-badge{margin-top:8px;color:var(--mut);font-size:12px}
+.badge{padding:2px 10px;border-radius:20px;font-weight:700;color:#fff}.badge.ok{background:var(--ok)}.badge.fail{background:var(--fail)}
+code{background:var(--code);padding:1px 5px;border-radius:4px}
+.layout{display:flex;align-items:flex-start}
+.sidebar{flex:0 0 300px;width:300px;max-height:100vh;position:sticky;top:0;overflow-y:auto;border-right:1px solid var(--line);padding:12px}
+.filterbar{position:sticky;top:0;background:var(--bg);padding-bottom:8px;margin-bottom:6px}
+#tf-filter{width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;margin-bottom:6px}
+.statusfilter{display:flex;gap:4px}
+.statusfilter button{flex:1;padding:4px 0;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--mut);font:inherit;cursor:pointer}
+.statusfilter button.active{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+details.filegroup{margin:0 0 4px;border-radius:6px}
+details.filegroup summary{cursor:pointer;list-style:none;display:flex;gap:6px;align-items:center;padding:5px 6px;border-radius:6px}
+details.filegroup summary::-webkit-details-marker{display:none}
+details.filegroup summary:hover{background:var(--card)}
+.fgdot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}.fgdot.ok{background:var(--ok)}.fgdot.fail{background:var(--fail)}
+.fgname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.fgcount{color:var(--mut);font-size:11px}
+ul.testlist{list-style:none;margin:0;padding:2px 0 2px 18px}
+.testlink{display:block;width:100%;text-align:left;padding:4px 6px;border:none;background:transparent;color:var(--mut);font:inherit;font-size:12px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.testlink:hover{background:var(--card)}
+.testlink.fail{color:var(--fail)}
+.testlink.selected{background:var(--card);color:var(--fg);font-weight:700}
+.testlink.hidden-by-filter,details.filegroup.hidden-by-filter{display:none}
+main{flex:1;min-width:0;padding:16px 24px;max-width:1000px}
+.test{display:none}
+.test.active{display:block}
+.test{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line);border-radius:8px;margin:0 0 16px;padding:12px 16px}
+.test.ok{border-left-color:var(--ok)}.test.fail{border-left-color:var(--fail)}
+h2{font-size:15px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}.dot.ok{background:var(--ok)}.dot.fail{background:var(--fail)}
+.flaky{color:var(--warn);border:1px solid var(--warn);border-radius:10px;padding:0 8px;font-size:11px;font-weight:700;text-transform:uppercase}
+.parallel{color:var(--info);border:1px solid var(--info);border-radius:10px;padding:0 8px;font-size:11px;font-weight:700;text-transform:uppercase}
+.generator-line{margin:0 0 8px;color:var(--mut);font-size:12px}
+.generator-line.saturated{color:var(--warn);font-weight:700}
+.metrics-block .workload{color:var(--mut);margin:0 0 8px}
+.metrics-block table.stats{border-collapse:collapse;width:100%;margin-bottom:8px}
+.metrics-block table.stats th{text-align:left;color:var(--mut);font-weight:400;padding:3px 8px 3px 0}
+.metrics-block table.stats td{padding:3px 16px 3px 0}
+.metrics-block table.thresholds{border-collapse:collapse;width:100%;margin-bottom:8px}
+.metrics-block table.thresholds td{padding:3px 10px 3px 0}
+.metrics-block table.thresholds tr.ok td:first-child{color:var(--ok)}
+.metrics-block table.thresholds tr.fail td:first-child{color:var(--fail)}
+.runtime-warning{margin:8px 0;padding:6px 10px;border-radius:6px;background:var(--warn);color:#1b1f27;font-weight:600}
+.runtime-warning code{background:rgba(0,0,0,.12);padding:1px 4px;border-radius:3px}
+.runtime-warning .warn-src{font-weight:400;opacity:.85}
+.metrics-block .backoff-warning{margin:0 0 8px;padding:6px 10px;border-radius:6px;background:var(--warn);color:#1b1f27;font-weight:700}
+.metrics-block .charts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:700px){.metrics-block .charts{grid-template-columns:1fr}}
+.endpoints{margin:8px 0 0;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.endpoints h3{font-size:13px;color:var(--mut);margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}
+.endpoint{margin-bottom:6px}
+.endpoint summary{cursor:pointer;padding:4px 0;color:var(--fg)}
+.endpoint summary:hover{color:var(--info)}
+.endpoint .metrics-block{margin:8px 0 0}
+details.attempt{margin:6px 0;border:1px solid var(--line);border-left:3px solid var(--fail);border-radius:6px;background:var(--card)}
+details.attempt summary{cursor:pointer;padding:6px 10px;list-style:none;display:flex;gap:8px;align-items:center}
+details.attempt summary::-webkit-details-marker{display:none}
+details.attempt[open] summary{border-bottom:1px solid var(--line)}
+.attempt-badge{padding:1px 8px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase}
+.attempt-badge.fail{background:var(--fail);color:#fff}
+.attempt-badge.ok{background:var(--ok);color:#fff}
+.attempt-error{color:var(--mut);font-size:12px}
+.attempt-final-label{margin:6px 0 4px}
+details.attempt ol.steps{padding:4px 12px 4px 12px}
+.tms,.sms{color:var(--mut);font-weight:400;font-size:12px;margin-left:auto}
+.error{color:var(--fail);margin:4px 0 10px;white-space:pre-wrap;overflow-wrap:anywhere}
+ol.steps{list-style:none;margin:0;padding:0}
+.step{padding:6px 0;border-top:1px solid var(--line)}
+.line{display:flex;align-items:center;gap:8px}.line code{background:transparent;padding:0}
+.mark{width:14px;text-align:center;font-weight:700}.step.ok .mark{color:var(--ok)}.step.fail .mark{color:var(--fail)}
+.detail{color:var(--mut);margin:2px 0 2px 22px;white-space:pre-wrap;overflow-wrap:anywhere}
+.detail.baddetail{color:var(--fail)}
+/* D249. Deliberately placed AFTER the .detail rules above: testFlow-tests'
+   verify-report-no-overflow.mjs matches the FIRST '.detail{' in this stylesheet and asserts it sets
+   overflow-wrap, so any rule whose selector ends in '.detail' must never be hoisted above them. */
+.evidence{margin:2px 0 2px 22px}
+.evidence>summary{color:var(--mut);cursor:pointer;font-size:11px;letter-spacing:.03em;text-transform:uppercase;list-style:revert}
+.evidence>summary:hover{color:var(--fg)}
+.log-badge{display:inline-block;width:40px;flex:0 0 auto;padding:0 4px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.03em;text-align:center;color:#fff}
+.log-badge.log-debug{background:var(--mut)}
+.log-badge.log-info{background:var(--info)}
+.log-badge.log-warn{background:var(--warn);color:#1b1f27}
+.log-badge.log-error{background:var(--fail)}
+.step.kind-log .detail{color:var(--fg)}
+.trace{margin:6px 0 4px 22px;display:grid;gap:8px}
+.screenshot{margin:6px 0 4px 22px}
+.screenshot img{max-width:min(640px,100%);border:1px solid var(--line);border-radius:6px;display:block}
+.snapshot-diff{margin:6px 0 4px 22px;display:flex;flex-wrap:wrap;gap:10px}
+.snapshot-diff figure{margin:0}
+.snapshot-diff figcaption{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.snapshot-diff img{max-width:min(320px,100%);border:1px solid var(--line);border-radius:6px;display:block}
+.trace-link{margin:4px 0 4px 22px;color:var(--mut);font-size:12px}
+.trace-link code{font-size:11px}
+.panel{background:var(--code);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.phead{padding:6px 10px;border-bottom:1px solid var(--line);color:var(--mut);overflow-wrap:anywhere}
+table.headers{width:100%;border-collapse:collapse;font-size:12px}
+table.headers td{padding:3px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--mut);overflow-wrap:anywhere}
+table.headers td:first-child{width:180px;color:var(--fg)}
+pre.body{margin:0;padding:8px 10px;overflow-x:auto;white-space:pre;font-size:12px}
+/* M135a (D402) — the remediation block inside a finding row. Deliberately the same collapsed-detail
+   shape as .evidence above, because it is the same interaction: the row is the fact, the disclosure
+   is the reading a triager opens once they have chosen a row to act on. */
+details.finding-fix{margin:6px 0 2px}
+details.finding-fix>summary{color:var(--mut);cursor:pointer;font-size:11px;letter-spacing:.03em;text-transform:uppercase;list-style:revert}
+details.finding-fix>summary:hover{color:var(--fg)}
+details.finding-fix p{margin:6px 0;overflow-wrap:anywhere}
+.fix-title{font-weight:700}
+.fix-what,.fix-why{color:var(--mut)}
+/* M136a — 'fix-do' shipped in M135a unstyled, and D429's guard is what found it. The two actionable
+   lines are the ones a triager acts on, so they read at full contrast against the muted what/why. */
+.fix-do{color:var(--fg)}
+.fix-do strong{color:var(--info)}
+.fix-refs{font-size:12px;color:var(--mut)}
+.fix-refs a{color:var(--info)}
+/* M136a (D429, 'M135a-01') — the security findings block and the rule census.
+   'findings.ts' has emitted this full set of class names since M134b and the stylesheet matched
+   none of them, so the one section of this report a reader scans by severity was the one rendering
+   as an unstyled browser table.
+
+   Two constraints shape it. **The palette is the one already here** (--fail/--warn/--mut/--info,
+   the same four every other section uses) rather than a new severity ramp: the report has one
+   visual language, and a security block that invents a second is a worse outcome than the unstyled
+   table it replaces. And **nothing here may be hoisted above line ~525's '.detail{'** —
+   testFlow-tests' verify-report-no-overflow.mjs matches the FIRST '.detail{' in this stylesheet and
+   asserts it sets overflow-wrap, so a new rule ending in '.detail' placed earlier would silently
+   retarget that guard (D249's comment says so in place). '.finding-detail' is a different selector
+   and this block sits below both, so neither hazard is live; it is written down because the next
+   edit here is the one that would trip it. */
+section.findings table,section.scan-coverage table{border-collapse:collapse;width:100%;font-size:13px}
+section.findings thead th{text-align:left;color:var(--mut);font-weight:400;padding:4px 10px 4px 0;border-bottom:1px solid var(--line)}
+section.findings tbody td{padding:8px 10px 8px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.findings-summary{color:var(--mut);margin:0 0 10px}
+/* Severity is the axis a reader scans, so it is the only place colour is spent. 'critical' and
+   'serious' share --fail because both fail a build at any sane --fail-on and a reader triaging is
+   choosing between them by rule, not by hue; weight separates them. */
+td.sev{font-weight:700;white-space:nowrap;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
+td.sev-critical{color:var(--fail)}
+td.sev-serious{color:var(--fail);font-weight:600}
+td.sev-moderate{color:var(--warn)}
+td.sev-minor{color:var(--mut)}
+/* A withheld finding must read AS withheld without disappearing — it is still a finding, and D386's
+   rule is that a run which judged less never renders identically to one that judged more. Dimmed,
+   never hidden, and the reason is spelled out in '.finding-withheld' beside it. */
+tr.finding-off{opacity:.62}
+tr.finding-off td.sev{font-weight:400}
+.finding-withheld{color:var(--warn);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.finding-where{color:var(--mut);font-size:12px;margin-top:3px;overflow-wrap:anywhere}
+.finding-detail{margin-top:5px;overflow-wrap:anywhere}
+.finding-fp{color:var(--mut);font-size:12px;white-space:nowrap}
+.finding-seeded{margin-top:6px;color:var(--warn);font-size:12px;overflow-wrap:anywhere}
+.scan-census{margin:0 0 14px}
+.scan-census h3{margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+.scan-census p{margin:2px 0}
+.scan-census ul{margin:2px 0 0;padding-left:20px;color:var(--mut);font-size:12px}
+.scan-census li{overflow-wrap:anywhere}
+footer{padding:16px 24px;color:var(--mut);border-top:1px solid var(--line)}
+@media print{.sidebar{display:none}.test{display:block!important}main{max-width:none}}
+
+.chart{margin:12px 0;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:8px}
+.chart h3{margin:0 0 4px;font-size:13px}
+.chart-unit{color:var(--mut);font-weight:400;font-size:11px}
+.chart-empty{margin:12px 0;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:8px;color:var(--mut)}
+.chart-empty h3{margin:0 0 4px;font-size:13px;color:var(--fg)}
+.chart-empty p{margin:0;font-size:12px}
+.legend{display:flex;gap:10px;margin-bottom:4px;font-size:11px}
+.legend-item{display:flex;align-items:center;gap:4px;color:var(--mut)}
+.legend-item::before{content:'';display:inline-block;width:10px;height:2px;background:currentColor}
+.legend-item.series-p50{color:var(--info)}.legend-item.series-p95{color:var(--warn)}.legend-item.series-p99{color:var(--fail)}
+svg{width:100%;height:auto;overflow:visible}
+.axis{stroke:var(--line);stroke-width:1}
+.axis-label{fill:var(--mut);font-size:9px}
+.series-p50{stroke:var(--info);stroke-width:1.5}
+.series-p95{stroke:var(--warn);stroke-width:1.5}
+.series-p99{stroke:var(--fail);stroke-width:1.5}
+.series-rps{stroke:var(--ok);stroke-width:1.5}
+.series-error-area{fill:var(--fail);fill-opacity:.35;stroke:var(--fail);stroke-width:1}
+.series-histogram{fill:var(--info)}
+</style>
+</head>
+<body>
+<header class="run fail">
+  <h1>testFlow report</h1>
+  <div class="meta">
+    <span class="badge fail">FAIL</span>
+    <span>4/5 passed · 1 failed</span>
+    <span>env <code>full</code></span>
+    <span>seed <code>3473293618</code></span>
+    <span>now <code>2026-09-14T17:30:02.987Z</code></span>
+    <span>23 ms</span>
+    <span>2026-09-14T17:30:02.988Z</span>
+  </div>
+  
+  
+  
+  <div class="demo-badge">ℹ authz coverage: 0 of 7 api steps in the suite sit in a test that declares an owner (0%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>
+  
+  
+  
+  <div class="engine-badge">browser <code>chromium</code></div>
+  
+  
+</header>
+<div class="layout">
+<nav class="sidebar">
+  <div class="filterbar">
+    <input type="search" id="tf-filter" placeholder="filter tests…" autocomplete="off">
+    <div class="statusfilter" id="tf-statusfilter">
+      <button type="button" data-status="all">All</button>
+      <button type="button" data-status="fail" class="active">Failed</button>
+      <button type="button" data-status="ok">Passed</button>
+    </div>
+  </div>
+  <div class="tree">
+    <details class="filegroup fail" open data-file="tests/catalog.tflw">
+      <summary><span class="fgdot fail"></span><span class="fgname">tests/catalog.tflw</span><span class="fgcount">(3, 1 failed)</span></summary>
+      <ul class="testlist">
+        <li><button type="button" class="testlink ok" data-target="t0">✓ lists the catalog and follows the first item</button></li>
+        <li><button type="button" class="testlink ok" data-target="t1">✓ a missing item is a 404 with a reason</button></li>
+        <li><button type="button" class="testlink fail" data-target="t2">✗ the price of a widget is what the shelf says</button></li>
+      </ul>
+    </details>
+    <details class="filegroup ok" data-file="tests/orders.tflw">
+      <summary><span class="fgdot ok"></span><span class="fgname">tests/orders.tflw</span><span class="fgcount">(2)</span></summary>
+      <ul class="testlist">
+        <li><button type="button" class="testlink ok" data-target="t3">✓ creates an order and reads its total back</button></li>
+        <li><button type="button" class="testlink ok" data-target="t4">✓ a warm-up endpoint answers on the second attempt</button></li>
+      </ul>
+    </details>
+  </div>
+</nav>
+<main>
+<section class="test ok" id="t0" data-file="tests/catalog.tflw">
+  <h2><span class="dot ok"></span>lists the catalog and follows the first item <span class="tms">14 ms</span></h2>
+  
+  
+  
+  
+  
+  <ol class="steps">
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api GET /items</code><span class="sms">10 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (9.2ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ GET http://127.0.0.1:4717/items</div>
+      
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 200 OK · 9.201482999999996 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:02 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <pre class="body">{
+  &quot;items&quot;: [
+    {
+      &quot;id&quot;: 1,
+      &quot;name&quot;: &quot;widget&quot;,
+      &quot;price&quot;: 12
+    },
+    {
+      &quot;id&quot;: 2,
+      &quot;name&quot;: &quot;gadget&quot;,
+      &quot;price&quot;: 7
+    },
+    {
+      &quot;id&quot;: 3,
+      &quot;name&quot;: &quot;gizmo&quot;,
+      &quot;price&quot;: 3
+    }
+  ]
+}</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect status equals 200</code><span class="sms">0 ms</span></div>
+    <div class="detail ">status to equal 200</div>
+    
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect body.items has count 3</code><span class="sms">0 ms</span></div>
+    <div class="detail ">body.items to have count 3</div>
+    
+  </li>
+<li class="step ok kind-capture">
+    <div class="line"><span class="mark">✓</span><code>capture body.items[0].id as firstId</code><span class="sms">0 ms</span></div>
+    <div class="detail ">firstId = 1 (captured)</div>
+    
+  </li>
+<li class="step ok kind-log level-info">
+    <div class="line"><span class="log-badge log-info">INFO</span><code>log &quot;first item is {firstId}&quot;</code><span class="sms">0 ms</span></div>
+    <div class="detail">first item is 1</div>
+  </li>
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api GET /items/{firstId}</code><span class="sms">2 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (1.5ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ GET http://127.0.0.1:4717/items/1</div>
+      
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 200 OK · 1.5330519999999979 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <pre class="body">{
+  &quot;id&quot;: 1,
+  &quot;name&quot;: &quot;widget&quot;,
+  &quot;price&quot;: 12
+}</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect status equals 200</code><span class="sms">0 ms</span></div>
+    <div class="detail ">status to equal 200</div>
+    
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect body.name equals &quot;widget&quot;</code><span class="sms">0 ms</span></div>
+    <div class="detail ">body.name to equal &quot;widget&quot;</div>
+    
+  </li>
+  </ol>
+</section>
+<section class="test ok" id="t1" data-file="tests/catalog.tflw">
+  <h2><span class="dot ok"></span>a missing item is a 404 with a reason <span class="tms">1 ms</span></h2>
+  
+  
+  
+  
+  
+  <ol class="steps">
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api GET /items/999</code><span class="sms">1 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/999 → 404 (0.79ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ GET http://127.0.0.1:4717/items/999</div>
+      
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 404 Not Found · 0.7874009999999885 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <pre class="body">{
+  &quot;error&quot;: &quot;no such item&quot;
+}</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect status equals 404</code><span class="sms">0 ms</span></div>
+    <div class="detail ">status to equal 404</div>
+    
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect body.error equals &quot;no such item&quot;</code><span class="sms">0 ms</span></div>
+    <div class="detail ">body.error to equal &quot;no such item&quot;</div>
+    
+  </li>
+  </ol>
+</section>
+<section class="test fail active" id="t2" data-file="tests/catalog.tflw">
+  <h2><span class="dot fail"></span>the price of a widget is what the shelf says <span class="tms">1 ms</span></h2>
+  <p class="error">expected body.price to equal 10, but got 12</p>
+  
+  
+  
+  
+  <ol class="steps">
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api GET /items/1</code><span class="sms">1 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/1 → 200 (0.59ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ GET http://127.0.0.1:4717/items/1</div>
+      
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 200 OK · 0.5883210000000076 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <pre class="body">{
+  &quot;id&quot;: 1,
+  &quot;name&quot;: &quot;widget&quot;,
+  &quot;price&quot;: 12
+}</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect status equals 200</code><span class="sms">0 ms</span></div>
+    <div class="detail ">status to equal 200</div>
+    
+  </li>
+<li class="step fail kind-expect">
+    <div class="line"><span class="mark">✗</span><code>expect body.price equals 10</code><span class="sms">0 ms</span></div>
+    <div class="detail baddetail">expected body.price to equal 10, but got 12</div>
+    
+  </li>
+  </ol>
+</section>
+<section class="test ok" id="t3" data-file="tests/orders.tflw">
+  <h2><span class="dot ok"></span>creates an order and reads its total back <span class="tms">4 ms</span></h2>
+  
+  
+  
+  
+  
+  <ol class="steps">
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api POST /orders body { itemId: 1, qty: 2 }</code><span class="sms">3 ms</span></div>
+    <div class="detail ">POST http://127.0.0.1:4717/orders → 201 (3ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ POST http://127.0.0.1:4717/orders</div>
+      <table class="headers"><tr><td>content-type</td><td>application/json</td></tr></table>
+      <pre class="body">{
+  &quot;itemId&quot;: 1,
+  &quot;qty&quot;: 2
+}</pre>
+    </div>
+    <div class="panel res">
+        <div class="phead">← 201 Created · 3.0348240000000146 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <pre class="body">{
+  &quot;id&quot;: 1,
+  &quot;itemId&quot;: 1,
+  &quot;qty&quot;: 2,
+  &quot;total&quot;: 24
+}</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect status equals 201</code><span class="sms">0 ms</span></div>
+    <div class="detail ">status to equal 201</div>
+    
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect header &quot;content-type&quot; contains &quot;application/json&quot;</code><span class="sms">0 ms</span></div>
+    <div class="detail ">header &quot;content-type&quot; to contain &quot;application/json&quot;</div>
+    
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect body.total equals 24</code><span class="sms">0 ms</span></div>
+    <div class="detail ">body.total to equal 24</div>
+    
+  </li>
+<li class="step ok kind-capture">
+    <div class="line"><span class="mark">✓</span><code>capture body.id as orderId</code><span class="sms">0 ms</span></div>
+    <div class="detail ">orderId = 1 (captured)</div>
+    
+  </li>
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api GET /orders/{orderId}</code><span class="sms">1 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/orders/1 → 200 (0.66ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ GET http://127.0.0.1:4717/orders/1</div>
+      
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 200 OK · 0.6579909999999813 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <pre class="body">{
+  &quot;id&quot;: 1,
+  &quot;itemId&quot;: 1,
+  &quot;qty&quot;: 2,
+  &quot;total&quot;: 24
+}</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect status equals 200</code><span class="sms">0 ms</span></div>
+    <div class="detail ">status to equal 200</div>
+    
+  </li>
+<li class="step ok kind-check">
+    <div class="line"><span class="mark">✓</span><code>check body.qty equals 2</code><span class="sms">0 ms</span></div>
+    <div class="detail ">body.qty to equal 2</div>
+    
+  </li>
+  </ol>
+</section>
+<section class="test ok" id="t4" data-file="tests/orders.tflw">
+  <h2><span class="dot ok"></span>a warm-up endpoint answers on the second attempt <span class="flaky">flaky</span> <span class="tms">2 ms</span></h2>
+  
+  
+  <details class="attempt">
+    <summary><span class="attempt-badge fail">attempt 1 — failed</span> <span class="attempt-error">expected status to equal 200, but got 503</span></summary>
+    
+    <ol class="steps">
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api GET /warmup</code><span class="sms">1 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/warmup → 503 (0.68ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ GET http://127.0.0.1:4717/warmup</div>
+      
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 503 Service Unavailable · 0.67572100000001 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <pre class="body">{
+  &quot;error&quot;: &quot;warming up&quot;
+}</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step fail kind-expect">
+    <div class="line"><span class="mark">✗</span><code>expect status equals 200</code><span class="sms">0 ms</span></div>
+    <div class="detail baddetail">expected status to equal 200, but got 503</div>
+    
+  </li>
+    </ol>
+  </details>
+  <p class="attempt-final-label"><span class="attempt-badge ok">attempt 2 of 2 — passed</span></p>
+  
+  <ol class="steps">
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api GET /warmup</code><span class="sms">1 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/warmup → 200 (0.52ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ GET http://127.0.0.1:4717/warmup</div>
+      
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 200 OK · 0.5175110000000132 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 17:30:03 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <pre class="body">{
+  &quot;ready&quot;: true,
+  &quot;attempt&quot;: 2
+}</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect status equals 200</code><span class="sms">0 ms</span></div>
+    <div class="detail ">status to equal 200</div>
+    
+  </li>
+  </ol>
+</section>
+</main>
+</div>
+<footer>Generated by testFlow · evidence <code>full</code> — this report contains request and response bodies. Review it before attaching to a ticket.</footer>
+<script>
+(function(){
+  var sidebar = document.querySelector('.sidebar');
+  var main = document.querySelector('main');
+  if (!sidebar || !main) return;
+
+  function activate(id){
+    main.querySelectorAll('.test.active').forEach(function(el){ el.classList.remove('active'); });
+    var panel = id && document.getElementById(id);
+    if (panel) panel.classList.add('active');
+    sidebar.querySelectorAll('.testlink.selected').forEach(function(el){ el.classList.remove('selected'); });
+    var link = id && sidebar.querySelector('.testlink[data-target="' + id + '"]');
+    if (link) link.classList.add('selected');
+  }
+
+  sidebar.querySelectorAll('.testlink').forEach(function(link){
+    link.addEventListener('click', function(){ activate(link.getAttribute('data-target')); });
+  });
+
+  var statusFilter = 'fail';
+  function applyFilter(){
+    var q = (document.getElementById('tf-filter').value || '').toLowerCase();
+    sidebar.querySelectorAll('details.filegroup').forEach(function(group){
+      var links = group.querySelectorAll('.testlink');
+      var visibleCount = 0;
+      links.forEach(function(link){
+        var matchesText = link.textContent.toLowerCase().indexOf(q) !== -1;
+        var matchesStatus = statusFilter === 'all' || link.classList.contains(statusFilter);
+        var show = matchesText && matchesStatus;
+        link.parentElement.classList.toggle('hidden-by-filter', !show);
+        if (show) visibleCount++;
+      });
+      group.classList.toggle('hidden-by-filter', visibleCount === 0);
+    });
+  }
+  document.getElementById('tf-filter').addEventListener('input', applyFilter);
+  document.querySelectorAll('#tf-statusfilter button').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      statusFilter = btn.getAttribute('data-status');
+      document.querySelectorAll('#tf-statusfilter button').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      applyFilter();
+    });
+  });
+
+  activate('t2');
+  // The button carrying `active` and the list it claims to describe are two different things, and
+  // only this call makes them the same thing. Without it a failing run renders "Failed" highlighted
+  // over an unfiltered list — a label that lies, which is worse than the "All" default it replaced.
+  applyFilter();
+  // D249's third change: land on the failing step, not the top of a panel whose failure is below a
+  // screen of response headers. Scoped to the active panel so it cannot jump to another test's
+  // failure, and 'nearest' so a failure already in view does not scroll at all.
+  var firstFailure = main.querySelector('.test.active .step.fail');
+  if (firstFailure && firstFailure.scrollIntoView) firstFailure.scrollIntoView({ block: 'nearest' });
+})();
+</script>
+</body>
+</html>

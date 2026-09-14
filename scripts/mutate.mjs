@@ -195,6 +195,8 @@ export const SUITE_SECONDS = {
   // Two samples, 169s and 185s. The larger, because `tflw` is the second-heaviest package and this
   // number's job is to stop a shard overrunning, not to predict its median.
   tflw: 185,
+  // `M192` U2 — two pure suites, no browser: the reducer over the corpus and the metafile plugin.
+  '@tflw/ui': 5,
   // TWO SAMPLES, AND THE LARGER IS TAKEN — the same rule as `tflw: 185` above, for the same reason:
   // this number's job is to stop a shard overrunning, not to predict its median.
   //
@@ -3394,6 +3396,45 @@ const REGISTRY = [
     find: "    live.record.status = 'cancelled';\n    // SIGINT",
     replace: "    // SIGINT",
   },
+  // `M192` U2 — the page. Its gate is `cli/test/ui-page.test.ts`, which builds the page from
+  // `packages/ui/src` and grades the render against `results.json`; a mutation in the ui's source
+  // therefore runs the `tflw` suite. The reducer's is the ui's own suite.
+  {
+    id: 'a-prior-attempt-is-not-shown',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ReportView.tsx',
+    what: 'the failed attempts before a retried test\'s final one are dropped from the view, so a flaky pass reads as a clean one — the evidence `retry` exists to keep (`D86`) is in the report and not on the page',
+    find: "  const prior = test.attempts ? test.attempts.slice(0, -1) : [];",
+    replace: "  const prior: AttemptResult[] = [];",
+  },
+  {
+    id: 'a-failed-assertion-speaks-in-the-pages-words',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/StepRow.tsx',
+    what: 'a failed step shows a fixed sentence instead of the runtime\'s own `expected …, but got …` — the got/expected the reader opened the page for is replaced by the page\'s summary of it',
+    find: "        <div className={`detail${step.ok ? '' : ' baddetail'}${assertion ? ' assertion' : ''}`} data-detail>\n          {step.detail}",
+    replace: "        <div className={`detail${step.ok ? '' : ' baddetail'}${assertion ? ' assertion' : ''}`} data-detail>\n          {step.ok ? step.detail : 'assertion failed'}",
+  },
+  {
+    id: 'the-evidence-level-is-never-stated',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ReportView.tsx',
+    what: 'a `headers only` or `none` report is shown without the sentence naming the level, so an absent body reads as an empty one rather than a withheld one (`D987`)',
+    find: "      {report.evidenceLevel && report.evidenceLevel !== 'full' ? (",
+    replace: "      {false ? (",
+  },
+  {
+    id: 'the-live-reducer-drops-every-step',
+    milestone: 'm192',
+    pkg: '@tflw/ui',
+    file: 'packages/ui/src/live.ts',
+    what: '`step:end` no longer appends to the running test, so the live pane shows a test\'s name and nothing under it until the test ends — the stream is read and not shown',
+    find: "      return { ...state, tests: patch(state.tests, event.file, event.test, (t) => ({ ...t, steps: [...t.steps, event.step] })) };",
+    replace: "      return { ...state, tests: patch(state.tests, event.file, event.test, (t) => t) };",
+  },
 ];
 
 /**
@@ -4073,13 +4114,29 @@ export function suiteCommand(pkg) {
  *
  * `nameOf` is injected so this stays pure and testable against a fixture map rather than the tree.
  */
-export function rebuildTargetFor(file, pkg, nameOf) {
+export function rebuildTargetFor(file, pkg, nameOf, buildsOf = () => true) {
   const m = /^(packages\/[^/]+)\//.exec(file);
   if (!m) return null;
   const dir = m[1];
   const name = nameOf(dir);
   if (!name || name === pkg) return null;
+  // `M192` U2 — a workspace with no `build` script has no `dist` for a sibling's suite to be
+  // reading stale; whatever consumes it builds from source itself (`cli/test/ui-page.test.ts`
+  // runs vite over `packages/ui/src` inside the test). `npm run build -w` of such a workspace
+  // fails on "missing script", and the first sweep over the page's mutations reported that
+  // failure as a red suite and credited it as a kill — three mutations "killed" by a build that
+  // could not run, the vacuous-control shape this file already names twice (`M110`, `M119`).
+  if (!buildsOf(dir)) return null;
   return name;
+}
+
+/** Whether `packages/<dir>` declares a `build` script — the thing `rebuildTargetFor` would run. */
+function workspaceBuilds(dir) {
+  try {
+    return typeof JSON.parse(readFileSync(path.join(ROOT, dir, 'package.json'), 'utf8')).scripts?.build === 'string';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -4122,7 +4179,7 @@ function workspaceName(dir) {
 function runSuite(pkg, mutatedFile) {
   // `M147-09` — see `rebuildTargetFor`. Skipped entirely when the mutation and its suite share a
   // workspace, which is every mutation in the registry but one.
-  const rebuild = mutatedFile ? rebuildTargetFor(mutatedFile, pkg, workspaceName) : null;
+  const rebuild = mutatedFile ? rebuildTargetFor(mutatedFile, pkg, workspaceName, workspaceBuilds) : null;
   if (rebuild) {
     try {
       execSync(`npm run build -w ${rebuild} 2>&1`, { cwd: ROOT, encoding: 'utf8', env: suiteEnv(), timeout: SUITE_TIMEOUT_MS, maxBuffer: SUITE_MAX_BUFFER });

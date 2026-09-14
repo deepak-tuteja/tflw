@@ -67,6 +67,7 @@
     "@tflw/runtime": "*",
     "@tflw/reporter": "*",
     "@tflw/lsp-server": "*",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "playwright": "^1.62.0"
   }
 }
