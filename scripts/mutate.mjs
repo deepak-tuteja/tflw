@@ -121,108 +121,11 @@ const SIDE_EFFECT_FILES = ['SPEC.md'];
  * noise. Each distinct package is baselined once, on first use. */
 const DEFAULT_PKG = '@tflw/lang';
 
-/**
- * M127 (`M126-01`) — one run of each package's suite, in seconds, on a 2-core GitHub runner.
- *
- * **Balancing hint only.** `partition()` is total and disjoint whatever these numbers say; a stale
- * entry makes a shard slower or faster than its siblings and can make nothing else go wrong. That
- * property is the reason a measured table is affordable here at all, and it is why there is no
- * machinery to keep it fresh.
- *
- * Measured rather than guessed, which is what `M126-01` asked for. Run 31540764432's `mutation
- * controls` job printed a timestamp per mutation and per baseline; the deltas group by package as:
- *
- *     package             baseline    n   per-mutation   total
- *     @tflw/runtime            58s   36          59.6s   36.8m
- *     tflw                    163s    7         160.8s   21.5m
- *     root:test:scripts        41s   12          30.9s    6.9m
- *     @tflw/lang                8s   49           6.6s    5.6m
- *     @tflw/lsp-server          4s    8           7.4s    1.1m
- *     @tflw/reporter            3s    9           2.6s    0.4m
- *     @tflw/docs-site           4s    1           4.5s    0.1m
- *
- * Two things in that table decide the whole design. **A baseline costs almost exactly one mutation
- * of the same package** — it is the same suite run — so a shard's price is `(1 + n) × suite` per
- * package it touches, and splitting a package across shards is charged one extra suite run each
- * time. And **two packages hold 81% of the clock**, so sharding by milestone — the axis `M126-01`
- * reached for first — would have split the registry along a line the cost does not follow.
- */
-/**
- * M148 (`M147-11`) — **re-measured from runner logs, because the first set went stale and killed a
- * shard.** Every number below was `31`-style folklore until run 32504021628: each shard prints
- * `baseline <pkg> …` with a timestamp, so the true cost of one suite run is the delta into that
- * line, and eleven shard logs give it for free. What that showed:
- *
- *     package              was   measured   samples
- *     root:test:scripts     31       108          1     ← 3.5× light; this is the one that killed
- *     @tflw/runtime         60        68          8
- *     tflw                 161       169 (max 185) 2
- *     @tflw/lang             7        10          1
- *     @tflw/reporter         3         4          1
- *     @tflw/lsp-server       7         5          1     ← table was heavy, which is the safe way
- *     tflw-vscode            3         1          1     ← ditto
- *     @tflw/docs-site        5         5          1     ← the only one that was right
- *
- * Seven of eight had drifted, and only the direction saved most of them: a table that reads *heavy*
- * over-provisions, and a table that reads *light* packs a shard it cannot pay for. `partition()`
- * packs by these numbers, so a light entry does not merely mispredict — it decides the hand. At 31
- * the eighteen root-suite mutations modelled at `19 × 31 = 589s` and looked cheap enough to keep in
- * one bin; at the true 108 the same chunk is `19 × 108 = 2052s`, over the job's whole limit with a
- * shard to itself, and the packer cuts it up on its own.
- *
- * **`costProblem()` asserted every package *has* a number here and nothing ever asserted the number
- * was still true.** That is why `verify-shards.mjs` now re-measures: each shard writes what its
- * baselines actually cost into its manifest, and the aggregate job reads them back. A constant
- * nobody re-measures is a constant that is wrong and cannot say so.
- */
-export const SUITE_SECONDS = {
-  '@tflw/lang': 10,
-  // 68 until `M189b`, and the aggregate job's re-shard trigger is what corrected it. `main`'s last
-  // 24-shard run already had its nine 13-mutation runtime shards at 17-19m against a modelled
-  // 15m54s — ~80s a run — and the first `M189b` run's one 14-mutation shard took 20m23s, past the
-  // 20m00s trigger: 15 runs in 1223s is **82s**. Taken as measured, the larger of the two readings,
-  // for the reason the two entries below give: this number's job is to stop a shard overrunning.
-  '@tflw/runtime': 82,
-  '@tflw/reporter': 4,
-  '@tflw/lsp-server': 5,
-  '@tflw/docs-site': 5,
-  // M136b — first mutations aimed at the extension package. Measured locally rather than on a
-  // runner (the table above is 2-core GitHub numbers): the suite is ~1s of tests behind a
-  // `vscode-oniguruma` WASM load. M148 re-measured it on a runner at 1s and took the runner's
-  // number, since every other entry here is now a runner number and a mixed table is the thing
-  // that made this one hard to check.
-  'tflw-vscode': 1,
-  // Two samples, 169s and 185s. The larger, because `tflw` is the second-heaviest package and this
-  // number's job is to stop a shard overrunning, not to predict its median.
-  //
-  // 185 -> 221 at `M192` U7. The page gate (`ui-page.test.ts`: a Vite build and fourteen browser
-  // tests, two of which wait on runs) joined this suite across U2-U7, and the first 28-shard runs
-  // carrying `M192`'s tflw-suite mutations said so: five shards of five tflw mutations each took
-  // 20m25s-22m06s (tflw #210, run 34893163748), six runs apiece — **204-221s** a run. The larger,
-  // by the rule above; at 185 the model priced those shards at 18m30s and they ran 1.19x that.
-  tflw: 221,
-  // `M192` U2 — two pure suites, no browser: the reducer over the corpus and the metafile plugin.
-  '@tflw/ui': 5,
-  // TWO SAMPLES, AND THE LARGER IS TAKEN — the same rule as `tflw: 185` above, for the same reason:
-  // this number's job is to stop a shard overrunning, not to predict its median.
-  //
-  // `M148` set 108 on 2026-08-21. The aggregate job re-measured **174s** on the `M172e` run that
-  // overran, and the very next run — the 24-shard one, nine shards each holding 5 root-suite
-  // mutations — implies **80-121s** per run (`(n+1) x cost`, 7m58s to 12m08s). So 108 was close to
-  // the truth, 174 was a slow runner, and the honest reading is a suite whose cost varies more than
-  // 2x across runners rather than one that grew.
-  //
-  // **`M169-01` was NOT resolved here, and the first version of this comment claimed it was.** It
-  // argued the constant was stale rather than the runner sick, from history: this suite is
-  // `node --test "scripts/*.test.mjs"` and it went from 9 test files to 16 since 108 was taken.
-  // The file growth is real. The inference from it is not — `node --test` runs files concurrently,
-  // so seven more small files need not move wall clock at all, and the next run says they did not.
-  // Growth in *files* is not growth in *seconds*, and reading one as the other is this row's own
-  // trap wearing different clothes. The constant stays at 174 because over-provisioning is the safe
-  // direction (see above) and because at 24 shards it models 17m24s against a 17m59s actual on the
-  // longest shard, not because 174 is the cost.
-  [ROOT_SUITE]: 174,
-};
+// `M194` — the cost model that lived here (`SUITE_SECONDS`, measured per package on a 2-core
+// runner and re-measured at M112, M148, M171c, M189b and M192) is gone with the runners' shards.
+// `partition()` below deals by count, and a sweep runs on one machine whose K trees each hold a
+// slice of every package; a stale number can no longer pack a shard it cannot pay for, because
+// there is no number.
 
 // The two adjacent branches in `parsePrimary`'s number path, verbatim, so the ordering mutation is a
 // swap of whole blocks rather than a hand-retyped approximation of them.
@@ -3696,26 +3599,6 @@ export function coverage(mutations = MUTATIONS) {
  * means flagging it *and* dropping it from `UNRECONSTRUCTED`; doing either alone turns the sweep
  * red on its next run rather than silently overstating coverage.
  */
-/**
- * M127 — every package the registry names has a measured suite time.
- *
- * A missing entry costs no correctness (`partition()` is a partition whatever the weights say) but
- * it silently weights a package at the 60s fallback, and the two packages that dominate this sweep
- * are 161s and 60s. A new `pkg:` whose suite runs for three minutes would be dealt as if it ran for
- * one, and the only symptom would be one shard finishing much later than its siblings — read as
- * ordinary noise, on a job nobody watches the shape of. Cheaper to refuse and ask for a number.
- */
-export function costProblem(mutations = MUTATIONS, costs = SUITE_SECONDS) {
-  const missing = [...new Set(mutations.map((m) => m.pkg ?? DEFAULT_PKG))].filter((pkg) => !(pkg in costs));
-  if (missing.length === 0) return undefined;
-  return (
-    `mutate.mjs has no measured suite time for: ${missing.join(', ')}\n` +
-    `  Add each to SUITE_SECONDS with the seconds one run of its suite takes on a 2-core runner.\n` +
-    `  The number only balances the shards — it cannot make a sweep wrong — but guessing it is how\n` +
-    `  one shard quietly becomes the long pole again.`
-  );
-}
-
 export function coverageProblem(mutations = MUTATIONS) {
   const problems = [];
   for (const [ms, planned] of Object.entries(M98_PLAN)) {
@@ -3928,12 +3811,6 @@ function byPackage(mutations) {
   return [...groups];
 }
 
-/** What `n` mutations of `pkg` cost when they are the only ones of that package in a shard: their
- *  own suite runs plus the one baseline the shard has to pay before the first of them. */
-function chunkCost(pkg, n) {
-  return (n + 1) * (SUITE_SECONDS[pkg] ?? 60);
-}
-
 /** `ms` split into `k` contiguous, near-equal slices. Contiguous because registry order is
  *  milestone order, and a shard whose mutations come from one stretch of the registry is far easier
  *  to read a failure out of than one holding every seventh entry. */
@@ -3949,84 +3826,29 @@ function slices(ms, k) {
 }
 
 /**
- * `mutations` dealt into `n` shards, deterministically.
+ * `mutations` dealt into `n` shards, deterministically, by count.
  *
- * Chunk, then pack. Each package is cut into as many pieces as its cost exceeds an even share, and
- * the pieces are then packed longest-first into whichever shard they make cheapest — counting the
- * baseline only when that shard does not already hold the package. The target share is recomputed
- * after cutting, because cutting is what adds the extra baselines that move it; three passes is
- * enough for it to settle on this registry and the loop stops when it does.
+ * `M194` — each package's mutations are cut into up to `n` contiguous slices and dealt round the
+ * ring of shards from where the previous package stopped, so a package with fewer mutations than
+ * shards lands on the shards the last one left out rather than on shard 1 every time. Every shard
+ * holds about `1/n` of every package that has that many, and pays each package's baseline once —
+ * the deal `M127`'s packer priced by a cost table for machines this sweep no longer runs on. On
+ * one machine running all `n` shards at once the bound on the tail is one mutation of the slowest
+ * suite, which no table could improve on.
  *
- * Deterministic at every step that could be arbitrary: slices are contiguous and in registry order,
- * the pack order breaks cost ties on package name then first id, and the "cheapest shard" search
- * keeps the lowest index on a tie. The same registry always deals the same hands — which is what
- * makes a shard's contents reproducible from the shard number alone when one of them goes red.
+ * Deterministic at every step: slices are contiguous and in registry order, the package order is
+ * the registry's, so the same registry always deals the same hands — which is what makes a shard's
+ * contents reproducible from the shard number alone when one of them goes red.
  */
 export function partition(mutations, n) {
   if (!Number.isInteger(n) || n < 1) throw new Error(`shard count must be a positive integer, got ${n}`);
-  const groups = byPackage(mutations);
-
-  let target = groups.reduce((a, [pkg, ms]) => a + chunkCost(pkg, ms.length), 0) / n;
-  let chunks = [];
-  for (let pass = 0; pass < 3; pass++) {
-    chunks = [];
-    for (const [pkg, ms] of groups) {
-      const pieces = Math.max(1, Math.min(ms.length, Math.ceil(chunkCost(pkg, ms.length) / target)));
-      for (const part of slices(ms, pieces)) chunks.push({ pkg, ms: part });
-    }
-    const settled = chunks.reduce((a, c) => a + chunkCost(c.pkg, c.ms.length), 0) / n;
-    if (Math.abs(settled - target) < 1) break;
-    target = settled;
+  const bins = Array.from({ length: n }, () => ({ ms: [] }));
+  let cursor = 0;
+  for (const [, ms] of byPackage(mutations)) {
+    const dealt = slices(ms, n);
+    dealt.forEach((slice, i) => bins[(cursor + i) % n].ms.push(...slice));
+    cursor += dealt.length;
   }
-
-  // Cost-driven cutting can leave fewer chunks than shards — at `n` near the size of the registry
-  // the shares are smaller than a single suite run, and the cut is capped at one chunk per
-  // mutation per package. Keep halving the widest chunk until there is one for every shard, which
-  // is always reachable while `n` does not exceed the number of mutations. Without this the packer
-  // below hands out fewer chunks than it has bins and a shard comes out empty — found by the
-  // totality assertion at the bottom of this function, on the first run of the test that exercises
-  // every shard count the registry can take.
-  while (chunks.length < n) {
-    let widest = 0;
-    for (let i = 1; i < chunks.length; i++) if (chunks[i].ms.length > chunks[widest].ms.length) widest = i;
-    if (chunks[widest].ms.length < 2) break;
-    const [left, right] = slices(chunks[widest].ms, 2);
-    chunks.splice(widest, 1, { pkg: chunks[widest].pkg, ms: left }, { pkg: chunks[widest].pkg, ms: right });
-  }
-
-  chunks.sort(
-    (a, b) =>
-      chunkCost(b.pkg, b.ms.length) - chunkCost(a.pkg, a.ms.length) ||
-      a.pkg.localeCompare(b.pkg) ||
-      a.ms[0].id.localeCompare(b.ms[0].id),
-  );
-
-  const bins = Array.from({ length: n }, () => ({ cost: 0, pkgs: new Set(), ms: [] }));
-  chunks.forEach((c, nth) => {
-    const suite = SUITE_SECONDS[c.pkg] ?? 60;
-    let best = nth;
-    let bestAfter = 0;
-    if (nth >= n) {
-      // Past the seeding round, a chunk goes wherever it lands cheapest — and landing in a shard
-      // that already holds its package is cheaper by one baseline, which is what keeps a package
-      // from being scattered across every shard and paying for itself six times.
-      bestAfter = Infinity;
-      for (let i = 0; i < n; i++) {
-        const after = bins[i].cost + c.ms.length * suite + (bins[i].pkgs.has(c.pkg) ? 0 : suite);
-        if (after < bestAfter) {
-          bestAfter = after;
-          best = i;
-        }
-      }
-    } else {
-      // The `n` most expensive chunks are dealt one per shard before anything is stacked. Classic
-      // longest-processing-time seeding, and it is also what makes an empty shard impossible.
-      bestAfter = chunkCost(c.pkg, c.ms.length);
-    }
-    bins[best].cost = bestAfter;
-    bins[best].pkgs.add(c.pkg);
-    bins[best].ms.push(...c.ms);
-  });
 
   const order = new Map(mutations.map((m, i) => [m.id, i]));
   const dealt = bins.map((b) => b.ms.sort((x, y) => order.get(x.id) - order.get(y.id)));
@@ -4042,94 +3864,6 @@ export function partition(mutations, n) {
     );
   }
   return dealt;
-}
-
-/**
- * The `timeout-minutes` on `ci.yml`'s mutation shard job, in seconds, and the fraction of it a
- * shard may reach before the `shard:` list is due for a widen.
- *
- * **The trigger is a fraction of the limit, never the limit itself** — `M131-06` wrote that rule
- * down and `ci.yml` has restated it twice. A trigger set *at* the limit says to act only once a
- * shard has already died, and a dead shard uploads no manifest, so the check would be reading an
- * absence.
- *
- * These two constants are the single source for both consumers: `SWEEP_BUDGET_MS` below, which
- * *warns* from inside the running shard, and `checkShardCost` in `verify-shards.mjs`, which *fails*
- * from the aggregate job afterwards. M148 exists because only the first of those existed, it fired
- * correctly at 25m02s on `main`, and a warning inside a job that passes is a warning nobody reads.
- *
- * `SHARD_BUDGET_SECONDS` must equal the shard job's `timeout-minutes`; `verify-shards.test.mjs`
- * asserts it, because two numbers in two files describing one limit is the drift this whole area
- * keeps producing.
- */
-// 30 -> 35 at `M192` U7, with `ci.yml`'s `timeout-minutes` (its entry there says why); the
-// guard test in `verify-shards.test.mjs` is what keeps the two equal.
-export const SHARD_BUDGET_SECONDS = 35 * 60;
-export const RESHARD_AT = 2 / 3;
-
-/**
- * How many shards CI actually splits the registry into. Mirrored by `ci.yml`'s matrix and asserted
- * equal by `verify-shards.test.mjs`, for the same reason `SHARD_BUDGET_SECONDS` is: two numbers in
- * two files describing one thing is the drift this whole file exists to catch.
- *
- * Written down by `M152e`, because the balance probe had been measuring a **six**-way split since
- * `M128b` — the shard count at the time — and CI has run twenty since. That is not a small
- * difference in this cost model: at six the packer cannot break `root:test:scripts`'s chunk across
- * bins and lands 14 minutes above the per-mutation LPT floor, while at twenty it lands one minute
- * *below* it, because it pays each package's baseline in far fewer bins (262 CPU-minutes against
- * LPT's 308). The probe was reporting a genuinely lopsided deal in a configuration nobody runs.
- *
- * 23 -> 24 at `M171c`, and **not** because the registry grew. `SUITE_SECONDS['root:test:scripts']`
- * was 1.6x light (108 against a re-measured 174), and a light entry does not merely mispredict a
- * shard — it decides which mutations go in it. Corrected, the same 334 mutations repack and every
- * count moves. Re-measured against the corrected table, in `ci.yml`'s own three columns:
- *
- *     n=21 1218s/101%/1.810 · n=22 1218s/101%/5.366 · n=23 1110s/93%/1.649
- *     **n=24 1044s/87%/1.551** · n=25 1044s/87%/4.599 · n=26 1044s/87%/1.551 · n>=32 870s/73%/8.447+
- *
- * Only **24** and **26** are level under the 1.7 bar, and they share a max, so 24 dominates. 23 is
- * still level and still under the trigger *in the model* — and is refused anyway, because
- * `ci.yml`'s re-shard log says in its own words that **93% modelled was a legal plan and it still
- * overran**: the split is planned on modelled seconds and the gate fires on actual ones. At the
- * log's own 1.10x, 23 lands at 1221s and over the 1200s trigger; 24 lands at 1148s and under it.
- *
- * 1044s is a floor, not a choice: it is `6 x 174`, one shard holding five root-suite mutations plus
- * its baseline. Nothing below it is reachable without cutting that chunk finer, which is what takes
- * the ratio to 8.447 at 32. The lever, when 24 comes due, is the cost of `root:test:scripts`
- * itself rather than the count — every root-suite mutation pays a full run of a suite that has
- * grown from 9 test files to 16.
- *
- * 20 -> 23 at `M169b`, and the balance probe this constant feeds is what chose 23 over the count
- * with the lowest max. See `ci.yml`'s re-shard log: the max plateaus at 756s from 25 onward, but
- * only by splitting the widest chunk three ways beside 3-mutation bins, which takes the probe's
- * ratio from 1.212 to 3.330 against its 1.7 bar. 23 is the last count that is both cheap and level.
- *
- * 24 -> 28 at `M189b`. The registry grew by nine runtime entries and the packer put them into one
- * 14-mutation chunk that overran the trigger; `@tflw/runtime` re-measured at 82s (was 68); and
- * the levelness probe now reads max against the mean, so the refusal `ci.yml`'s `M182e` entry
- * records — every wider count failed the max/min bar — no longer binds. See that file's
- * `M189b` entry for the priced table; 28 is the first count whose longest shard is the root-suite
- * chunk rather than a runtime one.
- *
- * 28 -> 33 at `M192` U7. The tflw suite grew by the page gate (`tflw: 221`, above) and the registry
- * by 31 entries, 27 of them `tflw`-suite mutations of the page; the trigger fired on every
- * `M192` PR's run (shards 1-2 at 20m02s-20m29s on #208, five shards over 20m on #210). Priced
- * against the corrected table — modelled longest shard / max-over-mean / total CPU minutes:
- *
- *     n=28 23m12s / 1.25 / 521 · n=29-32 22m06s / 1.22-1.34 / 527 · **n=33 18m25s / 1.14 / 535**
- *     n=34-47 18m25s / 1.17-1.55 · n=48 15m44s / 1.26 / 560
- *
- * 33 is the first count under the trigger, and the most level of the plateau it opens: its
- * longest shard is four tflw mutations plus their baseline (5 x 221). The next drop needs 48 jobs
- * a pull request for 2m41s. The model at 28 now prices 23m12s against the 22m06s that fired it.
- */
-export const SHARD_COUNT = 33;
-
-/** Estimated wall-clock seconds for a shard, for `--list`'s benefit. The same model `partition()`
- *  packs by, so a listing that looks unbalanced *is* the balance the packer achieved. */
-export function shardCost(shard) {
-  const groups = byPackage(shard);
-  return groups.reduce((a, [pkg, ms]) => a + chunkCost(pkg, ms.length), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -4212,87 +3946,18 @@ const TIMEOUT_LABEL = SUITE_TIMEOUT_MS >= 60_000 ? `${SUITE_TIMEOUT_MS / 60_000}
 // blaming a clock.
 const SUITE_MAX_BUFFER = 64 * 1024 * 1024;
 
-// M143a (`M137g-03`, re-stated) — the sweep says how long it took, every time.
-//
-// `M137g-03` asked for exactly this, and gave a reason that turned out to be false: it read JOB
-// totals, saw the slowest shard change identity between consecutive runs, and concluded a
-// deterministic LPT bin-packer could not be producing that. The packer is fine. What moved was
-// `Install Playwright browsers` — an apt stall of up to 14.5m sitting inside those totals — and the
-// row's own two headline runs are one of each mechanism: `32136069351` shard 11 = 0.5m install +
-// 20.0m mutation (a genuinely heavy shard), `32154411348` shard 6 = 14.1m install + 13.7m mutation
-// (the stall). Five passes of archaeology went into telling those two apart. One printed line would
-// have done it, which is why the row's recommendation is worth more after the measurement than
-// before it.
-//
-// **Measured against this sweep, not against the job.** A budget on the job is not this tool's to
-// know, and taking one would re-import the exact contamination that made the row's reason wrong.
-//
-// Twenty minutes — the same number `M131-06` (status: closed) recorded as the re-shard trigger,
-// and the same on purpose: this warning firing on two consecutive runs of `main` then IS the
-// condition the re-shard is deferred behind, rather than a second threshold to correlate against
-// it. Calibrated on the `Mutation controls` step across 108 shard-jobs of 9 runs (2026-08-18):
-// median 13.6m, p90 15.5m, max 20.1m, under a 30m `timeout-minutes`. So it sits at the observed
-// ceiling, ~1.5x the median, and leaves ten minutes of notice before the job is killed.
-// `M137g-03` proposed ~22m; that came off totals with a stalled apt inside them and is not what
-// this is set from.
-//
-// Overridable for the reason `SUITE_TIMEOUT_MS` is: `TFLW_MUTATE_BUDGET_MS=1` puts any sweep over
-// budget, which is how the warning gets watched firing. A bound nobody has seen trip is a claim,
-// not a control.
-//
-// M148 (`M147-11`) — **this budget did its job and it was not enough, and the reason is worth more
-// than the fix.** The comment above names the re-shard condition exactly right, and the warning
-// fired exactly as designed: run 32416405841, `main`, shard 11 of 12 —
-//
-//     ⏱ shard 11 of 12 took 25m02s (soft budget 20m00s).
-//     ⚠ OVER BUDGET by 5m02s. Nothing has failed …
-//
-// — and the job went green, and the next two runs lost a shard to `timeout-minutes`. So the defect
-// was never a missing threshold or an unnamed condition. It is that **the only thing watching the
-// condition was the job the condition is about, and that job passes.** A warning printed by a green
-// job is read by nobody; "nothing has failed" is true, and it is also the sentence that makes the
-// line skippable. `M131`'s rule — a deferral names a condition, not a milestone number — was
-// honoured here and still failed, because naming a condition and *observing* it are two jobs.
-//
-// The observer is `verify-shards.mjs`, in the aggregate job, reading the timings out of the shard
-// manifests. It is a different job from the one being judged, it fails rather than warns, and it
-// cannot be skipped by being green. This line stays: an operator watching a single shard scroll by
-// still wants it, and it is the earliest possible notice. It just is no longer the *only* notice.
-//
-// One number, two consumers. The threshold below is derived from the limit and the fraction rather
-// than restated, because a 20 written here and a 20 computed there is the two-copies-of-one-number
-// shape that this file has now been bitten by at five different sites.
-const SWEEP_BUDGET_MS = Number(process.env.TFLW_MUTATE_BUDGET_MS ?? SHARD_BUDGET_SECONDS * RESHARD_AT * 1000);
-
 /** `ms` as `13m36s` or `47s` — the shape a CI log gets read in. */
 export function formatElapsed(ms) {
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
 }
 
-/**
- * What a finished sweep says about its own clock.
- *
- * Pure and exported for `M98d`'s reason — the same one that made `tallyLine` pure. The sharded,
- * over-budget form of this line is otherwise reachable only by running a shard for twenty minutes,
- * which is to say it would be asserted by nothing.
- *
- * `D573` — printed on every run, pass or fail; only crossing the budget is loud. A number that
- * appears only when something is already wrong cannot establish a baseline, and not being able to
- * establish the baseline is what cost this row five passes of guesswork.
- */
-export function elapsedLine({ ms, shard, budgetMs = SWEEP_BUDGET_MS }) {
+/** What a finished sweep says about its own clock — `D573`, printed on every run. `M194` took the
+ *  soft budget off it: the budget was the runners' re-shard trigger, and the box driver reads
+ *  `actualSeconds` out of the manifests instead. */
+export function elapsedLine({ ms, shard }) {
   const what = shard ? `shard ${shard.index} of ${shard.of}` : 'this sweep';
-  const line = `⏱ ${what} took ${formatElapsed(ms)} (soft budget ${formatElapsed(budgetMs)}).`;
-  if (ms <= budgetMs) return line;
-  return (
-    `${line}\n` +
-    `⚠ OVER BUDGET by ${formatElapsed(ms - budgetMs)}. Nothing has failed — a sweep is judged by its exit\n` +
-    `  code and not by its clock — but this budget sits at the ~20m re-shard trigger \`M131-06\`\n` +
-    `  (status: closed) named, over a step whose measured median is 13.6m. Two consecutive runs of\n` +
-    `  \`main\` crossing it is the condition to re-shard; one crossing is the variance this has been\n` +
-    `  mistaken for before.`
-  );
+  return `⏱ ${what} took ${formatElapsed(ms)}.`;
 }
 
 export function suiteCommand(pkg) {
@@ -4451,25 +4116,9 @@ export function classifySuiteFailure(err) {
 // running `mutate.mjs m98d` still pays for exactly one suite.
 const baselined = new Set();
 
-/**
- * What each package's baseline actually cost, in seconds — the measurement `SUITE_SECONDS` above is
- * supposed to be, taken on the machine that is paying for it. M148 (`M147-11`): the table had gone
- * 3.5× light on the root suite and nothing could tell, because a baseline's cost was observable
- * only as a timestamp in a log nobody reads. Written into the shard manifest, read back by
- * `verify-shards.mjs`, and the reason the constants can never go stale in silence again.
- */
-const measuredSeconds = new Map();
-
-/** Seconds each package's baseline took in this run, for the manifest. Only packages actually
- *  baselined appear — a shard reports what it measured, not what it guessed. */
-export function baselineCosts() {
-  return Object.fromEntries([...measuredSeconds].sort(([a], [b]) => a.localeCompare(b)));
-}
-
 function baseline(pkg) {
   if (baselined.has(pkg)) return 0;
   process.stdout.write(`baseline ${pkg} … `);
-  const startedAt = Date.now();
   const result = runSuite(pkg);
   if (result.timedOut) {
     console.error(`\n✗ ${pkg}'s suite hung — killed after ${TIMEOUT_LABEL} without finishing. Nothing below ran. This is a hang, not a red suite: the last test to report is the one before the one to look at.`);
@@ -4490,7 +4139,6 @@ function baseline(pkg) {
   // Only the green path records. A suite that went red or hung stopped early or ran long for a
   // reason that has nothing to do with what it costs when it works, and feeding either into the
   // cost table would be worse than the stale number this replaces.
-  measuredSeconds.set(pkg, Math.round((Date.now() - startedAt) / 1000));
   console.log(`green, ${summaryCount(result.out, 'pass') ?? '?'} passing`);
   baselined.add(pkg);
   return 0;
@@ -4665,7 +4313,7 @@ function sweep(selected, scope, shard) {
 }
 
 function main(argv = process.argv) {
-  const problem = registryProblem() ?? coverageProblem() ?? costProblem();
+  const problem = registryProblem() ?? coverageProblem();
   if (problem) {
     console.error(problem);
     return 2;
@@ -4701,7 +4349,7 @@ function main(argv = process.argv) {
       console.error(`✗ shard ${shard.index}/${shard.of} came out empty. Refusing to exit 0 over zero mutations.`);
       return 2;
     }
-    console.log(`shard ${shard.index} of ${shard.of} — ${selected.length} of ${MUTATIONS.length} mutation(s), ~${Math.round(shardCost(selected) / 60)}m of suite time\n`);
+    console.log(`shard ${shard.index} of ${shard.of} — ${selected.length} of ${MUTATIONS.length} mutation(s)\n`);
   }
 
   // `--list` applies nothing. It exists because `M118-03` was opened by someone typing exactly this
@@ -4750,20 +4398,15 @@ function main(argv = process.argv) {
     if (manifest) {
       writeFileSync(
         manifest,
-        // M148 (`M147-11`) — `modelledSeconds` and `actualSeconds` are what turn `ci.yml`'s
-        // re-shard trigger from a paragraph into a check. The trigger has been written down since
-        // M127 and restated at M136a; it fired at 25m on `8fe3e66` and nobody was looking, and the
-        // next run lost a shard to the 30-minute limit. A number a job writes down is a number a
-        // later job can fail on. `costs` is the same idea one level down: the per-package
-        // measurement that says whether `SUITE_SECONDS` is still telling the truth.
+        // `actualSeconds` (M148) stays: the box driver reads it back to pick its tree count, and a
+        // number a run writes down is a number a later reader can compare. The modelled seconds
+        // and the per-package baseline costs left with the cost model (`M194`).
         `${JSON.stringify(
           {
             shard: shard?.index ?? 1,
             of: shard?.of ?? 1,
             registry: MUTATIONS.length,
-            modelledSeconds: Math.round(shardCost(selected)),
             actualSeconds: Math.round((Date.now() - sweepStartedAt) / 1000),
-            costs: baselineCosts(),
             ids: selected.map((m) => m.id),
           },
           null,

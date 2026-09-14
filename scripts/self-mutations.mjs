@@ -161,8 +161,9 @@ export const SELF_MUTATIONS = [
     pkg: ROOT_SUITE,
     file: SELF,
     what: "M127's partition stops being a partition: the last chunk is never packed, so one shard's worth of mutations is run by nobody and every shard is green about the rest. The totality guard inside `partition()` is what has to notice, because CI cannot — five green shards look exactly like six",
-    find: '  chunks.forEach((c, nth) => {',
-    replace: '  chunks.slice(0, -1).forEach((c, nth) => {',
+    // Retargeted at `M194`'s deal: the last slice of every package is dropped on the floor.
+    find: '    const dealt = slices(ms, n);',
+    replace: '    const dealt = slices(ms, n).slice(0, -1);',
   },
   {
     id: 'empty-shard-runs-clean',
@@ -192,30 +193,10 @@ export const SELF_MUTATIONS = [
     replace: '  const rebuild = null;',
   },
 
-  // --- M148 (`M147-11`) ---------------------------------------------------------------------
+  // --- M148 (`M147-11`) — retired at `M194` -------------------------------------------------
   //
-  // Both of these are the same shape as the row that produced them: a number the packer trusts,
-  // with nothing downstream re-measuring it. The first kills the measurement at the source; the
-  // second kills the check that reads it back. Neither can be caught by any mutation already here,
-  // because before M148 there was nothing in this file that knew what a shard cost.
-  {
-    id: 'baseline-cost-never-measured',
-    milestone: 'm148',
-    pkg: ROOT_SUITE,
-    file: SELF,
-    what: 'the measured baseline seconds are dropped on the floor, so every manifest reports `costs: {}` and `verify-shards.mjs` has nothing to compare `SUITE_SECONDS` against. The sweep still runs, every shard still passes, and the constants go back to being unfalsifiable — which is exactly the state that let the root suite drift 3.5× and cost a shard',
-    find: '  measuredSeconds.set(pkg, Math.round((Date.now() - startedAt) / 1000));',
-    replace: '  void startedAt;',
-  },
-  {
-    id: 'shard-budget-is-the-limit-itself',
-    milestone: 'm148',
-    pkg: ROOT_SUITE,
-    file: SELF,
-    what: "the re-shard trigger is moved from two-thirds of the limit to the limit, which is `M131-06`'s error made executable: a shard that reaches 30m has already been cancelled by `timeout-minutes` and uploaded no manifest, so the check can only ever fire on a run where it had nothing to read. A trigger at the limit is a trigger that never fires",
-    find: 'export const RESHARD_AT = 2 / 3;',
-    replace: 'export const RESHARD_AT = 1;',
-  },
+  // Two entries lived here: the baseline cost measurement dropped on the floor, and the re-shard
+  // trigger moved to the limit. Both mutated a cost model that left with the runners' shards.
   // --- M147f (`M131-03`) ------------------------------------------------------------------------
   //
   // The first mutation in this repo aimed at `verify-ledger.mjs`, which is worth stating plainly:

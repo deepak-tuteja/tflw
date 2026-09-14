@@ -18,10 +18,8 @@ import {
   M98_PLAN,
   MUTATIONS,
   ROOT_SUITE,
-  SHARD_COUNT,
   UNRECONSTRUCTED,
   classifySuiteFailure,
-  costProblem,
   rebuildTargetFor,
   coverage,
   coverageProblem,
@@ -30,7 +28,6 @@ import {
   parseArgs,
   partition,
   registryProblem,
-  shardCost,
   tallyLine,
   suiteCommand,
 } from './mutate.mjs';
@@ -497,78 +494,27 @@ test('a partition refuses a shard count it cannot honour, rather than returning 
   }
 });
 
-test('shards are balanced by measured suite time, not by mutation count', () => {
-  // The property that matters is that the split follows the cost. `@tflw/lang`'s 49 mutations are
-  // cheaper together than `tflw`'s seven, so a count-balanced split would be wrong by ~3×; the
-  // shard holding the most mutations must not be the most expensive one.
-  //
-  // `SHARD_COUNT`, NOT A LITERAL SIX (`M152e`). This probe was written at six because six was what
-  // `ci.yml` ran; the matrix has been twenty since, and nothing moved the probe with it. The
-  // difference is not cosmetic — see the ratio note below.
-  const shards = partition(MUTATIONS, SHARD_COUNT);
-  const costs = shards.map(shardCost);
-  const biggest = shards.indexOf(shards.reduce((a, b) => (b.length > a.length ? b : a)));
-  assert.ok(costs[biggest] <= Math.max(...costs), 'the largest shard by count is also the most expensive — the deal ignored cost');
-  // **1.7, raised from 1.5 in M128b, and the number is measured rather than moved to fit.**
-  //
-  // M128b added six mutations, five of them to `@tflw/runtime`. That fifth one crosses a chunking
-  // cliff: at four the packer splits runtime cleanly and the ratio is 1.205; at five it leaves one
-  // oversized chunk it cannot break up, and the ratio jumps to 1.584. Dropping *any* one of the five
-  // returns it to 1.205, which is what identifies this as a property of the packer rather than of
-  // the mutations.
-  //
-  // What the jump actually costs was measured before this constant was touched, because "the ratio
-  // got worse" and "CI got slower" are not the same claim. A sharded sweep's wall-clock is its
-  // *slowest* shard: this split's is 18m. A per-mutation LPT pack — perfectly balanced, ratio 1.006
-  // — comes out at 17m, because it pays each package's baseline again in every bin it touches
-  // (~18 extra minutes of CPU across the matrix to save one minute of clock). So the best achievable
-  // max is 17m against this registry, the current split is one minute off it, and a ratio of 1.584
-  // is describing a minute.
-  //
-  // The bar is kept, because the first assertion above is structural and this one is the only thing
-  // watching for a genuinely lopsided deal. It is set where the measurement puts it and not where it
-  // would be comfortable: at 1.7 the 1.584 split passes and the next real regression still fails.
-  // If it trips again, re-measure the max against the atom-LPT floor before moving it — that
-  // comparison, not the ratio, is what says whether CI is actually slower.
-  //
-  // IT TRIPPED, AND THE RE-MEASUREMENT MOVED THE SPLIT RATHER THAN THE BAR (`M152e`). Three
-  // mutations against `root:test:scripts` took the six-way ratio from 1.641 to 1.805, and the
-  // comparison the paragraph above demands says the six-way deal really is lopsided: max 59m
-  // against a per-mutation LPT floor of 45m. But six is not what CI runs. At twenty — `SHARD_COUNT`,
-  // which is now written down and held to `ci.yml` — the current packer's max is 14m against an LPT
-  // floor of 15m, so it is *at* the floor, and it gets there for 262 CPU-minutes where LPT costs
-  // 308. The bar is untouched; what changed is that the probe now measures the split that exists.
-  // The six-way number is left recorded here because it is real: if CI ever shards coarsely again,
-  // `root:test:scripts` is the chunk the packer cannot break up, and that is where to look.
-  //
-  // IT TRIPPED A THIRD TIME, AND THIS TIME THE RATIO WAS MEASURING THE WRONG END (`M189b`). Three
-  // runtime mutations took the registry from 334 to 337 and the max/min ratio from 1.55 to 4.89 —
-  // not because any shard got slow, but because the `min` collapsed: with one more runtime chunk
-  // the seeding round's 24th seed became the `@tflw/reporter` chunk (2.1m), and the three cheaper
-  // packages stacked onto it for a 3.8m shard. The max moved 17.4m -> 18.5m, and that minute is
-  // real (the CLI package's 9 mutations are cut in two at this target instead of three, the
-  // chunking cliff the M128b paragraph describes); a 3.8m shard beside it is an under-used runner,
-  // not a slower sweep. Re-cutting the CLI package into three was measured and does not help —
-  // the third piece stacks onto the `lang` seed for 18.7m — so at this registry 18.5m is what this
-  // packer can do, and the paragraph above says the comparison that decides is max against the
-  // floor, not max against min.
-  //
-  // So the bar now reads that comparison: the most expensive shard against the MEAN, which is
-  // the floor for a deal with these chunks (total cost is fixed by the chunking; only its spread
-  // is the packer's). Measured over eight registry sizes from 280 to 380 entries (the last two
-  // synthetic), max/mean sits between 1.12 and 1.37 for this packer, and max/min between 1.55
-  // and 9.89 — the old ratio would have failed at 280 and 300 entries too, had it been run there
-  // with today's `SUITE_SECONDS`. 1.5 leaves the packer its measured room and still refuses a deal
-  // where one shard runs half again as long as the average: a 24m shard beside a 15m mean is
-  // exactly the sweep this test exists to catch, and the min says nothing about it.
-  const mean = costs.reduce((a, b) => a + b, 0) / costs.length;
-  assert.ok(Math.max(...costs) / mean < 1.5, `shards are lopsided: max ${Math.round(Math.max(...costs) / 60)}m against a mean of ${(mean / 60).toFixed(1)}m — ${costs.map((c) => Math.round(c / 60) + 'm').join(', ')}`);
-});
-
-test('every package the registry names has a measured suite time', () => {
-  assert.equal(costProblem(), undefined);
-  const problem = costProblem([...MUTATIONS, { id: 'x', milestone: 'm127', pkg: '@tflw/unmeasured', file: 'x', what: 'x' }]);
-  assert.match(problem, /no measured suite time for: @tflw\/unmeasured/);
+test('every shard holds a slice of every package that has one to give, and the slices are level', () => {
+  // `M194` — the deal is by count, and what it owes is that no shard pays a baseline the others do
+  // not and no shard holds a package's whole tail. So for a package with at least `n` mutations
+  // every shard holds some, and no shard holds more than one more of it than another; a package
+  // with fewer than `n` is spread over `size` distinct shards. Measured on this registry, the
+  // heaviest shard by count sits within 1.1× of the mean; the bar is looser only so a registry
+  // that grows by one small package does not move it.
+  for (const n of [2, 8, 16]) {
+    const shards = partition(MUTATIONS, n);
+    const packages = new Map();
+    for (const m of MUTATIONS) packages.set(m.pkg ?? '@tflw/lang', (packages.get(m.pkg ?? '@tflw/lang') ?? 0) + 1);
+    for (const [pkg, size] of packages) {
+      const per = shards.map((s) => s.filter((m) => (m.pkg ?? '@tflw/lang') === pkg).length);
+      const holding = per.filter((c) => c > 0).length;
+      assert.equal(holding, Math.min(size, n), `n=${n}: ${pkg} (${size}) is held by ${holding} shard(s)`);
+      assert.ok(Math.max(...per) - Math.min(...per.filter((c) => c > 0)) <= 1, `n=${n}: ${pkg} is dealt ${per.join('/')}`);
+    }
+    const counts = shards.map((s) => s.length);
+    const mean = counts.reduce((a, b) => a + b, 0) / n;
+    assert.ok(Math.max(...counts) / mean < 1.25, `n=${n}: shards are lopsided by count — ${counts.join(', ')}`);
+  }
 });
 
 test('parseArgs understands --shard, and rejects every way of getting it wrong', () => {
@@ -653,7 +599,6 @@ test('a sweep writes down what it ran, and the file says the same thing the run 
     // `D573`, on the run that was already being spawned: the clock is reported when nothing is
     // wrong, which is the only condition under which a baseline can be established at all.
     assert.match(r.stdout, /⏱ this sweep took \d/);
-    assert.ok(!r.stdout.includes('OVER BUDGET'), r.stdout);
   } finally {
     if (readFileSync(LEXER, 'utf8') !== before) writeFileSync(LEXER, before);
     cleanup();
@@ -663,31 +608,16 @@ test('a sweep writes down what it ran, and the file says the same thing the run 
 // ---------------------------------------------------------------------------
 // M143a — the sweep's own clock (`M137g-03`, re-stated).
 
-test('a sweep reports its own clock, and is loud only when it crosses the budget', () => {
+test('a sweep reports its own clock, on every run', () => {
   // `M137g-03` asked for this and gave a falsified reason — it read JOB totals with a 14-minute apt
   // stall inside them and concluded the shard packer was unstable. The recommendation survives the
-  // reason: five passes of archaeology went into separating a heavy shard from a stalled download,
-  // and this line is what would have done it at a glance.
-  const quiet = elapsedLine({ ms: 13 * 60_000 + 36_000, budgetMs: 20 * 60_000 });
-  assert.equal(quiet, '⏱ this sweep took 13m36s (soft budget 20m00s).');
-  assert.ok(!quiet.includes('OVER BUDGET'));
-
+  // reason, and it survives `M194` taking the soft budget off the line: the budget was the runners'
+  // re-shard trigger, and the box driver reads the manifests' `actualSeconds` instead.
+  assert.equal(elapsedLine({ ms: 13 * 60_000 + 36_000 }), '⏱ this sweep took 13m36s.');
   // `D573` — unconditional. A number that appears only when something is already wrong cannot
   // establish a baseline, and the missing baseline is the whole reason this row stayed open.
-  assert.match(elapsedLine({ ms: 1_000, budgetMs: 20 * 60_000 }), /^⏱ this sweep took 1s/);
-
-  const loud = elapsedLine({ ms: 21 * 60_000, shard: { index: 11, of: 12 }, budgetMs: 20 * 60_000 });
-  assert.match(loud, /^⏱ shard 11 of 12 took 21m00s \(soft budget 20m00s\)\./);
-  assert.match(loud, /⚠ OVER BUDGET by 1m00s/);
-  // `M136a-01`'s rule, inside the message rather than in a plan nobody opens: a row cited by id is
-  // cited with its status, so the next reader does not go looking for an open `M131-06`.
-  assert.match(loud, /`M131-06`/);
-  assert.match(loud, /\(status: closed\)/);
-
-  // The budget is a ceiling to cross, not to reach. Exactly 20m is inside it — and the boundary
-  // matters because `D574` defers a re-shard behind two consecutive crossings, so an off-by-one
-  // here would start that clock a run early.
-  assert.ok(!elapsedLine({ ms: 20 * 60_000, budgetMs: 20 * 60_000 }).includes('OVER BUDGET'));
+  assert.match(elapsedLine({ ms: 1_000 }), /^⏱ this sweep took 1s/);
+  assert.equal(elapsedLine({ ms: 21 * 60_000, shard: { index: 11, of: 12 } }), '⏱ shard 11 of 12 took 21m00s.');
 
   // The shape a CI log gets read in, including the minute boundary in both directions.
   assert.equal(formatElapsed(59_400), '59s');
@@ -753,27 +683,5 @@ test('an output overflow is not a hang', () => {
   assert.deepEqual(classifySuiteFailure({ status: 1 }), { timedOut: false, overflowed: false });
 });
 
-test('the budget warning is one a real run can be watched tripping', () => {
-  // `SUITE_TIMEOUT_MS`'s rule applied to the second bound this file now carries: a threshold nobody
-  // has ever seen fire is a claim, not a control. Overriding it is how the loud path gets exercised
-  // without running a twenty-minute shard — which is exactly the reachability problem that left the
-  // sharded tally unasserted until `M127` made it pure.
-  const before = readFileSync(LEXER, 'utf8');
-  const { file, cleanup } = sandboxJournal();
-  try {
-    const r = spawnSync(process.execPath, [SCRIPT, 'bom-col'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-      env: withJournal(file, { TFLW_MUTATE_BUDGET_MS: '1' }),
-    });
-    // Loud and still green. The sweep is judged by its exit code and not by its clock: a budget
-    // that could fail a run would be a performance gate, and this repo has one of those already
-    // failing jobs with the work done and thrown away (PR #48).
-    assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
-    assert.match(r.stdout, /⏱ this sweep took \d/);
-    assert.match(r.stdout, /⚠ OVER BUDGET by /);
-  } finally {
-    if (readFileSync(LEXER, 'utf8') !== before) writeFileSync(LEXER, before);
-    cleanup();
-  }
-});
+// `M194` — the budget warning's own test ended here: `TFLW_MUTATE_BUDGET_MS=1` made the loud path
+// reachable, and the loud path left with the runners' re-shard trigger.
