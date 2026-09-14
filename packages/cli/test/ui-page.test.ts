@@ -10,11 +10,12 @@ import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtemp, cp, rm, readFile, mkdir, symlink } from 'node:fs/promises';
+import { mkdtemp, cp, rm, readFile, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Server } from 'node:http';
+import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer } from '../src/ui-server.js';
 import { roundDurationMs, type LoadMetrics, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
@@ -29,6 +30,10 @@ const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
 
 let scratch: string;
 let root: string;
+/** The fixture server's port for this process — a free one, written into the scratch copy of
+ * `tflw.config` in place of the file's 4717. Two page gates on one host (`M194`'s parallel sweep)
+ * cannot both hold 4717; the recorded trace in `reports/full` still says 4717 and that is history. */
+let fixturePort: number;
 let server: UiServer;
 let baseUrl: string;
 let browser: Browser;
@@ -55,6 +60,18 @@ before(async () => {
 
   root = join(scratch, 'project');
   await cp(join(fixtures, 'project'), root, { recursive: true });
+  fixturePort = await new Promise<number>((resolve, reject) => {
+    const probe = createNetServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address() as AddressInfo;
+      probe.close(() => resolve(port));
+    });
+  });
+  const configPath = join(root, 'tflw.config');
+  const config = await readFile(configPath, 'utf8');
+  assert.ok(config.includes('127.0.0.1:4717'), 'the fixture config names the default port');
+  await writeFile(configPath, config.replaceAll('127.0.0.1:4717', `127.0.0.1:${fixturePort}`));
   // A project with `playwright` installed, as one that wrote a trace is: this repository's
   // `node_modules`, linked in, is what `traceViewerDir` resolves through (U3).
   await symlink(join(here, '..', '..', '..', 'node_modules'), join(root, 'node_modules'), 'dir');
@@ -587,8 +604,8 @@ test('two runs\' findings side by side: the same finding\'s verdict in the other
 });
 
 test('a run from the page: the live pane fills from the stream, and the kept directory is what the page then shows', async () => {
-  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: () => Promise<Server> };
-  const target = await fixtureServer.startFixtureServer();
+  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
+  const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
     await page.goto(baseUrl);
     await page.locator('[data-tag="catalog"]').click();
@@ -638,8 +655,8 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
 });
 
 test('a run cancelled from the page: its kept directory says so above the report, with the exit the process ended with', async () => {
-  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: () => Promise<Server> };
-  const target = await fixtureServer.startFixtureServer();
+  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
+  const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
     await page.goto(baseUrl);
     const before = new Set(await page.locator('[data-report-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-report-row'))));
