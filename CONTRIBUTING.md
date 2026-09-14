@@ -78,7 +78,8 @@ npm run verify:own-identifiers:self-test
 npm run refresh:own-identifiers -- --check   # § needs the records
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
-node scripts/mutate.mjs <milestone>    # ‡ the CI form is different
+node scripts/mutate.mjs <milestone>    # § the milestone's own mutations; CI does not run it
+npm run sweep                          # § the whole registry on the box, before a milestone closes
 npm run verify:ledger                  # § never runs in CI, by decision
 ```
 
@@ -231,15 +232,29 @@ npm run verify:ledger                  # § never runs in CI, by decision
   (`check-coverage`) and its derivation is documented at length in `scripts/coverage.mjs`. **Do not
   lower it to make a red run green** — write the test the uncovered line is asking for. In CI it
   runs on the Node 22 leg only, since it is the same source under either runtime.
-- **`node scripts/mutate.mjs <milestone>`** — **‡ the CI form is different, deliberately.** CI runs
-  `--shard=i/33` across thirty-three machines, and a thirty-fourth job proves the shards' union is the
-  whole registry — and, since `M148`, that the cost model those shards were packed by still describes what
-  they actually cost. Locally you run the milestone you just wrote: `node scripts/mutate.mjs m98d`, or one
-  mutation by id. A bare `npm run verify:mutations` runs the **entire** registry and takes tens of
-  minutes. `--scope` is not a flag.
+- **`node scripts/mutate.mjs <milestone>`** — **§ CI does not run it.** From `M124` to `M192` the
+  registry ran on every pull request across a matrix of two-core runners (six, then thirty-three),
+  packed by a cost table and watched by a re-shard trigger, and the maintenance of that arrangement
+  took more of the project's time than the mutations did. Since `M194` the whole registry runs on
+  the machine this repository does its heavy work on, eight trees at once, **before a milestone
+  closes**: `npm run sweep`, its result recorded in the milestone's plan. Locally you run the
+  milestone you just wrote: `node scripts/mutate.mjs m98d`, or one mutation by id. `--scope` is not
+  a flag.
+- **`npm run sweep`** — **§ the whole registry, before a milestone closes.** Eight copies of the
+  tree on the box, one shard of the registry each, the manifests reassembled twice (there, and
+  here against this tree's registry) and read back into `runs/`. 35–65 minutes; nobody waits on
+  it. A survivor, a stale entry or a shard that did not report is red, and the milestone's plan
+  records the result either way.
 
-  **A demonstrated break for a product assertion means a registry entry, not a scratch sweep**
-  (`M147-05`, `M147f`). `D537` says every new assertion ships with a demonstrated break, and until
+  **The registry is frozen** (`M194`, D1010): a new entry only when a plan's green condition needs
+  to prove a gate can go red — never one per construct. The rule below stood from `M147f` to
+  `M192` and is kept as written because its reasoning was right about the *day* an entry is
+  written and wrong about every day after: in 299 ledger rows no mutation registered in an earlier
+  milestone ever survived a later full sweep. What a scratch sweep proves once is what a registry
+  entry keeps proving, and the ledger says the second proof was never needed.
+
+  ~~**A demonstrated break for a product assertion means a registry entry, not a scratch sweep**
+  (`M147-05`, `M147f`).~~ `D537` says every new assertion ships with a demonstrated break, and until
   this was written it was satisfied equally by an entry here and by an ad-hoc mutation run under
   `.mNNN-scratch/` and then deleted. Those are not the same grade of evidence: a scratch sweep proves
   an assertion *could* fail once, on the day it was written, while a registry entry keeps proving it
