@@ -84,7 +84,10 @@ export function startFixtureServer() {
     }
     if (req.method === 'GET' && path === '/stock') {
       stockChecks += 1;
-      return stockChecks % 4 === 0 ? send(500, { error: 'stock service unavailable' }) : send(200, { inStock: true, checks: stockChecks });
+      // The failing call is the slow one (a timed-out upstream, 40 ms), so the successful-only
+      // percentiles differ from the whole population's — `M192` U7: without that the two were
+      // equal on this corpus and the mutation that collapses them survived the gate.
+      return stockChecks % 4 === 0 ? void setTimeout(() => send(500, { error: 'stock service unavailable' }), 40) : send(200, { inStock: true, checks: stockChecks });
     }
     send(404, { error: `no route ${req.method} ${path}` });
   });

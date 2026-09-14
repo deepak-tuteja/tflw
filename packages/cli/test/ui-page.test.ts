@@ -363,7 +363,11 @@ test('the workload view: the shape, every stat, every threshold and every endpoi
     }
     assert.equal(await section.locator('[data-col="otherP95"]').count(), 0);
   }
-  // Non-vacuity: a breached threshold is drawn as one, an error-rate actual carries its unit.
+  // Non-vacuity: a breached threshold is drawn as one, an error-rate actual carries its unit —
+  // and the successful-only population differs from the whole one somewhere, or the rows that
+  // read `metrics.successful` would pass reading `metrics.durations` (U7: they did, until the
+  // fixture's failing call became its slow one).
+  assert.ok(loads.some((t) => t.metrics.successful.durations.p95 !== t.metrics.durations.p95 || t.metrics.successful.durations.p99 !== t.metrics.durations.p99), 'a workload whose successful-only percentiles differ from the whole population\'s');
   assert.ok((await page.locator('[data-threshold][data-ok="false"]').count()) >= 1);
   assert.ok((await page.locator('[data-threshold] [data-actual]').allTextContents()).some((s) => s.includes('%')));
   // Sorting the endpoint table: by p95 ascending, then descending, is the oracle's order.

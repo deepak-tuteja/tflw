@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="tflw" tests="14" failures="4" errors="0" time="9.840" timestamp="2026-09-14T20:08:50.726Z">
-  <testsuite name="tests/catalog.tflw" tests="3" failures="1" errors="0" time="0.014" timestamp="2026-09-14T20:08:50.726Z">
+<testsuites name="tflw" tests="14" failures="4" errors="0" time="10.070" timestamp="2026-09-14T21:47:33.013Z">
+  <testsuite name="tests/catalog.tflw" tests="3" failures="1" errors="0" time="0.015" timestamp="2026-09-14T21:47:33.013Z">
     <properties>
       <property name="env" value="headers"/>
-      <property name="seed" value="3165207048"/>
-      <property name="now" value="2026-09-14T20:08:50.725Z"/>
+      <property name="seed" value="2580871515"/>
+      <property name="now" value="2026-09-14T21:47:33.012Z"/>
     </properties>
-    <testcase name="lists the catalog and follows the first item" classname="tests/catalog.tflw" time="0.012"/>
+    <testcase name="lists the catalog and follows the first item" classname="tests/catalog.tflw" time="0.013"/>
     <testcase name="a missing item is a 404 with a reason" classname="tests/catalog.tflw" time="0.001"/>
     <testcase name="the price of a widget is what the shelf says" classname="tests/catalog.tflw" time="0.001">
       <failure message="expected body.price to equal 10, but got 12">expected body.price to equal 10, but got 12</failure>
     </testcase>
   </testsuite>
-  <testsuite name="tests/load.tflw" tests="4" failures="1" errors="0" time="0.000" timestamp="2026-09-14T20:08:50.726Z">
+  <testsuite name="tests/load.tflw" tests="4" failures="1" errors="0" time="0.000" timestamp="2026-09-14T21:47:33.013Z">
     <properties>
       <property name="env" value="headers"/>
-      <property name="seed" value="3165207048"/>
-      <property name="now" value="2026-09-14T20:08:50.725Z"/>
+      <property name="seed" value="2580871515"/>
+      <property name="now" value="2026-09-14T21:47:33.012Z"/>
     </properties>
     <testcase name="the catalog holds under a fixed amount of work — p95 duration &lt; 500" classname="tests/load.tflw" time="0.000"/>
     <testcase name="the catalog holds under a fixed amount of work — p95 duration for &quot;search&quot; &lt; 500" classname="tests/load.tflw" time="0.000"/>
@@ -25,24 +25,24 @@
       <failure message="threshold breached: actual 25.00% was not less than 5.00%">threshold breached: actual 25.00% was not less than 5.00%</failure>
     </testcase>
   </testsuite>
-  <testsuite name="tests/orders.tflw" tests="2" failures="0" errors="0" time="0.008" timestamp="2026-09-14T20:08:50.726Z">
+  <testsuite name="tests/orders.tflw" tests="2" failures="0" errors="0" time="0.008" timestamp="2026-09-14T21:47:33.013Z">
     <properties>
       <property name="env" value="headers"/>
-      <property name="seed" value="3165207048"/>
-      <property name="now" value="2026-09-14T20:08:50.725Z"/>
+      <property name="seed" value="2580871515"/>
+      <property name="now" value="2026-09-14T21:47:33.012Z"/>
     </properties>
     <testcase name="creates an order and reads its total back" classname="tests/orders.tflw" time="0.006"/>
     <testcase name="a warm-up endpoint answers on the second attempt" classname="tests/orders.tflw" time="0.002">
       <system-out>flaky: passed on attempt 2 of 2 (1 prior attempt failed)</system-out>
     </testcase>
   </testsuite>
-  <testsuite name="tests/security.tflw" tests="3" failures="1" errors="0" time="0.007" timestamp="2026-09-14T20:08:50.726Z">
+  <testsuite name="tests/security.tflw" tests="3" failures="1" errors="0" time="0.006" timestamp="2026-09-14T21:47:33.013Z">
     <properties>
       <property name="env" value="headers"/>
-      <property name="seed" value="3165207048"/>
-      <property name="now" value="2026-09-14T20:08:50.725Z"/>
+      <property name="seed" value="2580871515"/>
+      <property name="now" value="2026-09-14T21:47:33.012Z"/>
     </properties>
-    <testcase name="the catalog answers with safe headers" classname="tests/security.tflw" time="0.003"/>
+    <testcase name="the catalog answers with safe headers" classname="tests/security.tflw" time="0.002"/>
     <testcase name="the shop page answers with safe headers" classname="tests/security.tflw" time="0.002"/>
     <testcase name="a login sets a safe session cookie" classname="tests/security.tflw" time="0.002">
       <failure message="expected response to have no critical security violations, but found 1 — 3 rules — 1 applicable, 2 not applicable, 1 violation:
@@ -50,14 +50,14 @@
   - [critical] sec/cookie-not-httponly: cookie is readable by JavaScript (no HttpOnly) (cookie `session` — any XSS on this origin can read it)</failure>
     </testcase>
   </testsuite>
-  <testsuite name="tests/shop.tflw" tests="2" failures="1" errors="0" time="5.543" timestamp="2026-09-14T20:08:50.726Z">
+  <testsuite name="tests/shop.tflw" tests="2" failures="1" errors="0" time="5.565" timestamp="2026-09-14T21:47:33.013Z">
     <properties>
       <property name="env" value="headers"/>
-      <property name="seed" value="3165207048"/>
-      <property name="now" value="2026-09-14T20:08:50.725Z"/>
+      <property name="seed" value="2580871515"/>
+      <property name="now" value="2026-09-14T21:47:33.012Z"/>
     </properties>
-    <testcase name="the shop page greets and the button answers" classname="tests/shop.tflw" time="0.364"/>
-    <testcase name="the shelf never says sold out" classname="tests/shop.tflw" time="5.179">
+    <testcase name="the shop page greets and the button answers" classname="tests/shop.tflw" time="0.384"/>
+    <testcase name="the shelf never says sold out" classname="tests/shop.tflw" time="5.181">
       <failure message="expected `text &quot;Sold out&quot;` to be visible, but got no matching element">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</failure>
     </testcase>
   </testsuite>
