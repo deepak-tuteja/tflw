@@ -8786,6 +8786,52 @@ two-way gate demands land together, with `COVERS` extended for every new asserti
 `CONSTRUCTS.md`'s eleven graded a second time in their own table. Two censuses are never merged;
 the old one is the git history.
 
+### D990
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +2 more · lifted from `PLAN_M190B_CONTENDED_KILLS.md`</sub>
+
+**`D990` — an `assertion` kill is recorded only after the plant is re-run alone on the restored
+tree.** After `revertMutation`, if the roster's red set has any plant with a tally and a false
+clause, the sweep refreshes the vendored build and runs `verify-construct-acceptance.mjs --only
+<those plants>` with nothing mutated. A plant that is red *unmutated* is `contended`: its entry
+keeps the mutated run's clauses and gains `control: { unmutated: 'red', failed: [...], at }`; a
+plant green unmutated gains `control: { unmutated: 'green', at }`. Contended plants leave the row's
+`killed` list and enter `contended`; a mutation whose reds are all contended is `survived` with the
+list, and its detail block is kept (kind `contended`) so the evidence is in the artefact. Refusals
+and `held` get no control — a check-time refusal is deterministic and a held clause proves nothing
+either way.
+
+### D991
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/box-contention.mjs +1 more · lifted from `PLAN_M190B_CONTENDED_KILLS.md`</sub>
+
+**`D991` — the sweep refuses to start or to close a window beside a tenant with work in flight.**
+Before the baseline roster and inside `closeWindow` before the re-roster, the sweep reads
+`statsctl tenants` and `statsctl check --for tflw:load`. It refuses — exit 75, matrix untouched and
+resumable — when a `gpu-render` tenant's queue is non-empty, an `llm`/`moe` tenant is running, or
+`psi_mem_full60 ≥ 1.0`. The lock being held is not a reason (the sweep's own lease holds it). On
+Linux with no `statsctl` it refuses too — the box has one, and a box without it is not the box; on
+macOS the gate is skipped with a printed line (the sweep never runs there for real). Strict at the
+two points the plan can afford to stop; mid-window the per-kill control of `D990` is the measure.
+
+### D992
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/exec-argv.mjs +1 more · lifted from `PLAN_M190B_CONTENDED_KILLS.md`</sub>
+
+**`D992` — `exec.mjs` refuses a command whose last token is `&`.** The refusal names the rule: a
+detached run takes its lease on the box, never through the driver. The trailing-pipeline trap is
+not turned into a refusal here — a `| tee` is sometimes wanted and the false-green is the exit
+status, which `bash -c` with `pipefail` would change for every caller; that is its own row if it
+is ever taken.
+
+### D993
+
+<sub>cited from tflw-tests/scripts/lib/kill-detail.mjs · lifted from `PLAN_M190B_CONTENDED_KILLS.md`</sub>
+
+**`D993` — `contended` is the fifth kind, derived from fields.** `deriveKind`: asserted, failed
+non-empty, `control.unmutated === 'red'` → `contended`; the reader prints it beside the other
+four and the two-way `COVERS` gate excludes it (a contended relation must not be labelled).
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -12503,7 +12549,7 @@ the kind of credential the language does not renew.
 
 ### M190
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +1 more · lifted from `PLAN_M190_THE_RE_CENSUS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs +6 more · lifted from `PLAN_M190_THE_RE_CENSUS.md`</sub>
 
 **`M190` — the re-census, and the decider**
 
@@ -12513,5 +12559,20 @@ Since then the registry gained nine runtime mutations written for the never-red 
 (`M189b`, `D977`), eleven plants gained a hand kill each (`M189c`, `D976`), and 41 reached
 survivors were given a verdict by hand (`M189a`, `D974`). None of that has been run through the
 one instrument that grades the dogfood rather than describing it. This milestone runs it.
+
+### M190b
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/box-contention.mjs +4 more · lifted from `PLAN_M190B_CONTENDED_KILLS.md`</sub>
+
+**`M190b` — a kill under contention is not a kill**
+
+`M190` recorded one false `assertion` kill and one baseline drift, both while another session's
+ComfyUI swap-thrashed beside the sweep, and caught both by luck of placement: the false kill landed
+under a mutation the plant never reaches (so the reach control refused), and the drift landed in a
+baseline roster (so the window's re-roster saw it). A red that lands mid-window under a mutation the
+plant *does* reach is caught by nothing and stands as `covers`-eligible evidence. This milestone
+makes the census tell a kill from a contended run by measurement, and makes it refuse to start or
+continue beside a tenant that is rendering. It also closes the driver trap the overnight launch
+found.
 
 <!-- GENERATED:decisions:end -->
