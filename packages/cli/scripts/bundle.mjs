@@ -6,6 +6,8 @@
 
 import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, formatMessages } from 'esbuild';
 import { collectNotices, renderNotices } from '../../../scripts/third-party-notices.mjs';
@@ -187,13 +189,35 @@ const workerBuild = await build({
 });
 await reportWarnings('dist/mtls-worker.cjs', workerBuild);
 
-// M92a (review `B6-06`) — third-party attribution, from the union of *both* bundles' metafiles.
+// `M192` U0 — the page (`packages/ui`) is a Vite bundle that lands in THIS package's `dist/ui/`,
+// because `tflw ui` serves it and `files: ["dist"]` ships it. Built here, after the two esbuild
+// bundles and before the notice, for one reason: the notice below must describe every package the
+// tarball inlines, and the page inlines React, uPlot, TanStack and CodeMirror. Vite writes a
+// `metafile.json` beside its output (`packages/ui/scripts/metafile-plugin.ts`, the same
+// `{ inputs }` shape esbuild emits) which is read into the union and then removed — it was never
+// something to serve. Run as a subprocess rather than imported, so that this script stays a
+// plain esbuild build and Vite's own config stays where Vite expects it.
+// Vite is resolved FROM the ui package, not from the repo root: the root `node_modules/vite` is
+// VitePress's 5.x and the page builds on 8.x, nested under `packages/ui/node_modules` — the first
+// run on the box resolved the wrong one and failed inside rollup, which 8.x does not even use.
+const uiRoot = fileURLToPath(new URL('../../ui/', import.meta.url));
+const viteManifestPath = createRequire(uiRoot).resolve('vite/package.json');
+const viteBin = join(dirname(viteManifestPath), JSON.parse(readFileSync(viteManifestPath, 'utf8')).bin.vite);
+execFileSync(process.execPath, [viteBin, 'build', '--logLevel', 'warn'], {
+  cwd: uiRoot,
+  stdio: 'inherit',
+});
+const uiMetafilePath = new URL('../dist/ui/metafile.json', import.meta.url);
+const uiMetafile = JSON.parse(readFileSync(uiMetafilePath, 'utf8'));
+rmSync(uiMetafilePath);
+
+// M92a (review `B6-06`) — third-party attribution, from the union of *all three* bundles' metafiles.
 //
-// The tarball ships `dist/cli.cjs` and `dist/mtls-worker.cjs`, so the notice must cover both; the
-// union is taken rather than the CLI bundle alone because a package reaching only the worker (as
-// `undici` nearly does — it is deliberately kept out of `dist/cli.cjs`, see M35c above) is still
-// redistributed and still owes its notice.
-const notices = collectNotices({ inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs } });
+// The tarball ships `dist/cli.cjs`, `dist/mtls-worker.cjs` and `dist/ui/`, so the notice must cover
+// all three; the union is taken rather than the CLI bundle alone because a package reaching only
+// the worker (as `undici` nearly does — it is deliberately kept out of `dist/cli.cjs`, see M35c
+// above) or only the page is still redistributed and still owes its notice.
+const notices = collectNotices({ inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs, ...uiMetafile.inputs } });
 writeFileSync(new URL('../THIRD-PARTY-NOTICES.md', import.meta.url), renderNotices(pkg.name, notices), 'utf8');
 
 // M137a (`M136c-01`) — the cross-repo artifact contract, shipped as data rather than as code.
@@ -246,6 +270,6 @@ writeFileSync(
 // this whole milestone exists to remove.
 writeFileSync(
   new URL('../.bundle-meta.json', import.meta.url),
-  JSON.stringify({ inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs } }),
+  JSON.stringify({ inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs, ...uiMetafile.inputs } }),
   'utf8',
 );
