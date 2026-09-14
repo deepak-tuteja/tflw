@@ -8834,7 +8834,7 @@ four and the two-way `COVERS` gate excludes it (a contended relation must not be
 
 ### D994
 
-<sub>cited from SPEC.md · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-fmt.mjs · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
 
 **`D994` — `fmt` is a formatter over tokens, not a printer over the AST.** Tokens in, the same
 tokens out in the same order, only the whitespace between them decided by rules, comments kept
@@ -8842,9 +8842,18 @@ where they are. No AST change, no trivia in nodes. The printer waits for the fir
 (`M192` slice 2) and grows one node kind at a time. The GUI's write-back is span edits until then,
 the way `migrate.ts` and `reuse.ts` already write.
 
+### D996
+
+<sub>cited from tflw-tests/scripts/verify-fmt.mjs · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
+
+**`D996` — comments never move relative to code, and take their indentation from it.** A comment
+line stays a line; it takes the next code line's indent, except directly before a dedent, where it
+keeps the block it closes; a trailing comment gets two spaces before `#`; comment text is never
+touched, and a `#` inside a string is not a comment (the lexer already knows).
+
 ### D997
 
-<sub>cited from SPEC.md · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONTRIBUTING.md +3 more · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
 
 **`D997` — three surfaces, one function; both corpora reformatted in the round.** `tflw fmt
 [paths…]` writes in place and names what changed, `--check` writes nothing, lists what would
@@ -11109,7 +11118,7 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 ### M141
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +35 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +36 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **M141 — two answers to one question (Order 1 of the ledger drawdown)**
 
@@ -12598,7 +12607,7 @@ found.
 
 ### M191
 
-<sub>cited from SPEC.md · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONTRIBUTING.md +3 more · lifted from `PLAN_M191_TFLW_FMT.md`</sub>
 
 **`M191` — `tflw fmt`: the formatter, and the file as the only truth**
 
