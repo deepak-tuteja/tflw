@@ -118,6 +118,7 @@ import {
   readLastRun,
   describeRunFilter,
   writeEventsNdjson,
+  clearRunOwnedMembers,
   renderCliSummary,
   describeWorkload,
 } from '@tflw/reporter';
@@ -2046,6 +2047,11 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     }),
     redactor,
   );
+  // `M192b` (`M192-03`): a run owns `report/` whole. `findings.sarif`, `events.ndjson`, `assets/`
+  // and the two repro directories are written only when the run has something for them, and a run
+  // that does not must not leave the previous run's behind as its own. This is the first write
+  // into the directory, so it clears first.
+  await clearRunOwnedMembers(join(cwd, resolved.reportDir));
   // D332 — written after the run, from the collected findings, so `--workers N` and shards cannot
   // interleave partial files.
   await writeRepros(reproSubjects, join(cwd, resolved.reportDir));
@@ -2087,7 +2093,16 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // this left the file masking a value in its `run:end` line while printing it raw in the
   // `step:end`/`test:end` lines above it, in the one output mode built to be machine-consumed
   // somewhere else.
-  if (ndjsonActive) await writeEventsNdjson(ndjsonCollected.map((e) => redactEvent(e, redactor)), reportDir);
+  // `M192b`: handed over as a generator, so the redacted copies exist one at a time and the file
+  // is written a line at a time — the 612 MB stream that once became one string (`M192-01`).
+  if (ndjsonActive) {
+    await writeEventsNdjson(
+      (function* redacted() {
+        for (const e of ndjsonCollected) yield redactEvent(e, redactor);
+      })(),
+      reportDir,
+    );
+  }
 
   if (!ndjsonActive) {
     out.write(withTimestamps('\n' + renderCliSummary(merged, color), timestamps) + '\n');

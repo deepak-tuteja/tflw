@@ -12639,6 +12639,17 @@ browser test, and for Burp to triage findings. This arc is that answer, scoped b
 one rule the grilling settled first: **the `.tflw` file is the only truth, and the page is a
 projection of it** — never a second format.
 
+### M192b
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+
+**`M192b` — the three U7 rows, fixed in tflw (S0)**
+
+The stream written one line at a time (D1014), a hook's pair carrying `hook` (D1013), a run owning
+`report/` whole (D1015): `M192-01`, `M192-02`, `M192-03` closed, with their gates, SPEC §13, the
+two docs passages and a changelog section. Built 2026-09-15 as this plan's first stage, before the
+phases that grade the three.
+
 ### M194
 
 <sub>cited from CONTRIBUTING.md · lifted from `PLAN_M194_BOX_SWEEP.md`</sub>

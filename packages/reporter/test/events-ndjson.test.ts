@@ -36,3 +36,26 @@ test('writeEventsNdjson on an empty event list writes an empty file, not a stray
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('writeEventsNdjson takes any iterable and writes it a line at a time — a generator, which no `.map().join()` can consume (M192b, `M192-01`)', async () => {
+  // The defect was one string of every event; the shape that refuses it is a sink fed from an
+  // iterator, which is why the input here is a generator and not an array — an implementation
+  // that builds the file as a string from an array throws on this input before it writes a byte.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-events-ndjson-iter-'));
+  try {
+    let yielded = 0;
+    const events = (function* stream(): Generator<RunEvent> {
+      for (let i = 0; i < 2000; i++) {
+        yielded += 1;
+        yield { type: 'test:start', name: `t${i}`, file: 'a.tflw' };
+      }
+    })();
+    const path = await writeEventsNdjson(events, dir);
+    const lines = (await readFile(path, 'utf8')).trim().split('\n');
+    assert.equal(yielded, 2000);
+    assert.equal(lines.length, 2000);
+    assert.deepEqual(JSON.parse(lines[1999]!), { type: 'test:start', name: 't1999', file: 'a.tflw' });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

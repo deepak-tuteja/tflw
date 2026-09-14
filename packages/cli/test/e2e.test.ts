@@ -3129,12 +3129,25 @@ test('C4/B3-05+B3-07: every `test:start` is paired, and `run:start.total` foreca
       );
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
-      const events = stdout.trim().split('\n').map((l) => JSON.parse(l) as { type: string; total?: number; report?: { total: number } });
+      const events = stdout.trim().split('\n').map((l) => JSON.parse(l) as { type: string; name?: string; hook?: string; result?: { name: string }; total?: number; report?: { total: number } });
 
       const starts = events.filter((e) => e.type === 'test:start').length;
       const ends = events.filter((e) => e.type === 'test:end').length;
       assert.equal(starts, 3, 'before file, the test, after file');
       assert.equal(ends, starts, 'guarantee 1: every `test:start` has a matching `test:end`');
+      // `M192b` (`M192-02`): the hook's pair says it is a hook, on both halves, and the test's does
+      // not — a consumer counting work in flight goes by the field, never by the name.
+      assert.deepEqual(
+        events.filter((e) => e.type === 'test:start' || e.type === 'test:end').map((e) => [e.type, e.name ?? e.result!.name, e.hook ?? null]),
+        [
+          ['test:start', 'before file', 'before file'],
+          ['test:end', 'before file', 'before file'],
+          ['test:start', 'a real test', null],
+          ['test:end', 'a real test', null],
+          ['test:start', 'after file', 'after file'],
+          ['test:end', 'after file', 'after file'],
+        ],
+      );
 
       const runStart = events.find((e) => e.type === 'run:start')!;
       const runEnd = events.find((e) => e.type === 'run:end')!;
@@ -4911,7 +4924,7 @@ test('the built dist/cli.cjs runs a hygiene scan end to end and fails on a real 
 // no warning, a green run and an empty dashboard. So a run that did not scan must write **no file**,
 // and that is a fact about the CLI's wiring, not about the builder: `buildSarifLog` returning
 // `undefined` is worth nothing if `cli.ts` writes an empty document anyway.
-test('the built dist/cli.cjs writes no findings.sarif for a run that never scanned', async () => {
+test('the built dist/cli.cjs writes no findings.sarif for a run that never scanned — and removes one the run before it left (M192b)', async () => {
   const server: Server = createServer((_req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
   });
@@ -4923,6 +4936,12 @@ test('the built dist/cli.cjs writes no findings.sarif for a run that never scann
   try {
     await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
     await writeFile(join(dir, 'plain.tflw'), `test "no scan here"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+    // `M192-03`'s case: the run before this one scanned and left its SARIF, its stream and its
+    // assets. A run that produces none of them owns the directory anyway.
+    await mkdir(join(dir, 'report', 'assets'), { recursive: true });
+    await writeFile(join(dir, 'report', 'findings.sarif'), '{"version":"2.1.0","runs":[]}', 'utf8');
+    await writeFile(join(dir, 'report', 'events.ndjson'), '', 'utf8');
+    await writeFile(join(dir, 'report', 'assets', 'stale.png'), 'png', 'utf8');
 
     const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
     assert.match(stdout, /1\/1 passed/);
@@ -4932,6 +4951,7 @@ test('the built dist/cli.cjs writes no findings.sarif for a run that never scann
     const written = await readdir(join(dir, 'report'));
     assert.ok(written.includes('report.html') && written.includes('results.json') && written.includes('junit.xml'));
     assert.ok(!written.includes('findings.sarif'), 'an empty SARIF document is not neutral — it resolves every existing alert');
+    assert.ok(!written.includes('events.ndjson') && !written.includes('assets'), `the run before this one is still in report/: ${written.join(', ')}`);
   } finally {
     await rm(dir, { recursive: true, force: true });
     server.closeAllConnections();

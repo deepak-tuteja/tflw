@@ -3461,7 +3461,8 @@ const REGISTRY = [
     pkg: '@tflw/ui',
     file: 'packages/ui/src/live.ts',
     what: 'the live counter counts a passing `before file`/`after file` pair as a test done — the report never holds one, so the pane reads "106 of 105 done" on any corpus with a file hook',
-    find: "    if ((t.name === 'before file' || t.name === 'after file') && t.result.ok) continue;\n",
+    // Retargeted at `M192b`: the counter goes by the pair's `hook` field now (`M192-02`).
+    find: "    if (t.hook && t.result.ok) continue;\n",
     replace: '',
   },
   {

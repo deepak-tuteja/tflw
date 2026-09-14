@@ -190,7 +190,10 @@ still to do.
 ## `findings.sarif` — GitHub code scanning {#sarif}
 
 A run that evaluated at least one security, authorization or input-handling assertion also writes
-**`report/findings.sarif`** — SARIF 2.1.0, which GitHub's code-scanning UI ingests directly:
+**`report/findings.sarif`** — SARIF 2.1.0, which GitHub's code-scanning UI ingests directly. A run
+that evaluated none removes any `findings.sarif` the run before it left, along with
+`events.ndjson`, `assets/` and the repro directories: every member of `report/` after a run is that
+run's, so a step that uploads the file can only ever upload this run's findings.
 
 ```yaml
 - run: npx tflw run

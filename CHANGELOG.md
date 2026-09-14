@@ -998,6 +998,23 @@ multi-word call name. The parser always guessed "call", and reported the variabl
   duration parser, so both positions and both dialects agree. No corpus program used the spaced
   form.
 
+### Fixed — the run's own artefacts (M192b)
+
+- **`report/events.ndjson` is written one line at a time.** A whole-corpus run at `evidence full`
+  produced a 612 MB stream, and building it as one string hit V8's limit: `Invalid string length`,
+  exit 2 after every test had passed, and the tail of the live stream gone. The sink now streams
+  the redacted events through a write stream with backpressure; the exit is the suite's verdict
+  whatever the stream's size.
+- **A file hook's `test:start`/`test:end` pair says it is a hook.** Both halves carry
+  `hook: "before file"` or `hook: "after file"` (SPEC §13). A consumer showing work in flight
+  counts by the field: a passing hook is work and never a test, and a test named `before file` is
+  a test. `tflw ui`'s live counter had read *106 of 105 done* on a corpus whose first file has a
+  `before file`.
+- **A run owns `report/` whole.** `findings.sarif`, `events.ndjson`, `assets/` and the repro
+  directories are written only when a run has something for them; a run that does not now removes
+  the previous run's, so every member present after a run is that run's — a CI step uploading
+  `findings.sarif` can only upload this run's findings. `report/runs/` is untouched.
+
 ## [0.1.0] — 2026-07-06
 
 First public draft. API-only — the browser half lands in `0.2.0`.
