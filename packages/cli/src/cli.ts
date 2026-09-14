@@ -14,6 +14,8 @@ import { watch as fsWatch, existsSync, readFileSync, mkdirSync, openSync, writeS
 // `npx --yes` fetch an unpinned one from the registry.
 import { createRequire } from 'node:module';
 import { join, resolve, relative, dirname, basename } from 'node:path';
+import { discoverTests } from './project.js';
+import { UiServer, parseUiArgs, openInBrowser } from './ui-server.js';
 import {
   parseSource,
   parseConfigSource,
@@ -369,6 +371,8 @@ async function main(argv: string[]): Promise<number> {
       return migrateCommand(rest);
     case 'fmt':
       return fmtCommand(rest);
+    case 'ui':
+      return uiCommand(rest);
     case '--version':
     case '-v':
       process.stdout.write(`${await getVersion()}\n`);
@@ -381,7 +385,7 @@ async function main(argv: string[]): Promise<number> {
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
       err(
-        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw spec\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, or \`tflw migrate\`.`,
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw spec\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, \`tflw migrate\`, \`tflw fmt\`, or \`tflw ui\`.`,
       );
       return EXIT_USAGE;
   }
@@ -2424,6 +2428,66 @@ async function fmtCommand(argv: string[]): Promise<number> {
   return check && changed > 0 ? EXIT_FAIL : EXIT_OK;
 }
 
+/**
+ * `tflw ui` — `M192` (`D985`–`D988`). The server is `ui-server.ts`; this is the argv and the
+ * lifetime. It runs until Ctrl-C, like `tflw watch`, and prints the one URL a person needs. The
+ * bind is loopback and not configurable on purpose (`M192` §8): the page can start a run, and a
+ * run reads the project's `.env`.
+ */
+async function uiCommand(argv: string[]): Promise<number> {
+  const parsed = parseUiArgs(argv, process.cwd());
+  if ('usage' in parsed) {
+    err(parsed.usage);
+    return EXIT_USAGE;
+  }
+  if (!existsSync(join(parsed.root, 'tflw.config'))) {
+    err(`no \`tflw.config\` found in ${parsed.root}. \`tflw ui\` serves a project; run it where one is, or name the directory.`);
+    return EXIT_USAGE;
+  }
+  // Only the loader flags travel to the child (`--import tsx` when this is the source entry);
+  // `process.execArgv` whole would also carry a `--test` or `--inspect` this process was started
+  // under, and the child is `tflw run`, not a copy of whatever this one is.
+  // A bare package name (`--import tsx`) resolves from the CHILD's cwd, which is the project and
+  // has no `tsx`; it is resolved here, from this entry, into the absolute path the child can load.
+  const fromEntry = createRequire(process.argv[1]!);
+  const absolute = (v: string): string => {
+    try {
+      return fromEntry.resolve(v);
+    } catch {
+      return v;
+    }
+  };
+  const loaderFlags: string[] = [];
+  for (let i = 0; i < process.execArgv.length; i++) {
+    const a = process.execArgv[i]!;
+    const m = /^--(import|loader|require)(?:=(.*))?$/.exec(a);
+    if (!m) continue;
+    if (m[2] !== undefined) loaderFlags.push(`--${m[1]}=${absolute(m[2])}`);
+    else loaderFlags.push(a, absolute(process.execArgv[++i] ?? ''));
+  }
+  const server = new UiServer({ root: parsed.root, cliEntry: process.argv[1]!, execArgv: loaderFlags });
+  let port: number;
+  try {
+    port = await server.listen(parsed.port);
+  } catch (e) {
+    err(`could not listen on 127.0.0.1:${parsed.port}: ${e instanceof Error ? e.message : String(e)}`);
+    return EXIT_USAGE;
+  }
+  const url = `http://127.0.0.1:${port}/`;
+  process.stdout.write(`tflw ui — ${relative(process.cwd(), parsed.root) || '.'} at ${url} (loopback only; Ctrl-C to stop)\n`);
+  if (parsed.open) openInBrowser(url);
+  await new Promise<void>((resolveStop) => {
+    const stop = (): void => {
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+      server.close().finally(resolveStop);
+    };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+  });
+  return EXIT_OK;
+}
+
 function parseCheckArgs(argv: string[], command: 'check' | 'migrate'): CheckArgs {
   const files: string[] = [];
   let env: string | undefined;
@@ -3558,57 +3622,6 @@ function ndjsonEmit(out: { write: (text: string) => void }, collected: RunEvent[
   };
 }
 
-/** `exclude` (SPEC §3, D127, PLAN_DISCOVERY_EXCLUDE.md) — paths relative to `cwd` (== the
- * `tflw.config` directory, see `loadAndValidate`) that this walk skips: a directory is not
- * descended into, a `.tflw` file is not collected. Matched by exact relative-path equality at any
- * depth, not a glob (decision 5) — a no-op for a path that doesn't exist, same tolerance a
- * `.gitignore` line has for a pattern matching nothing (decision 4). Only affects this bare,
- * no-file-args walk — an explicit file arg inside an excluded path is resolved elsewhere and still
- * runs. */
-async function discoverTests(cwd: string, exclude: readonly string[] = [], reportDir?: string): Promise<string[]> {
-  const found: string[] = [];
-  // M137d — tflw's OWN output directory is never a source of tests, and this is a correctness fix
-  // rather than tidiness. The repro emitter writes runnable `.tflw` files under `reportDir`
-  // (`authz-repro/`, `input-repro/`), so without this the *next* bare `tflw run` in the same project
-  // discovers them and runs them as part of the suite — and they are designed to FAIL until the bug is
-  // fixed, so a run that found one weakness reports two failures, one of which is tflw's own artifact.
-  //
-  // **Latent since `M130b`**, not new here: `report/` starts with no dot and is not `node_modules`, so
-  // authorization repros have always been discoverable this way. Nothing had triggered it because no
-  // test ran twice in one directory with a finding; Tier 3's e2e does exactly that, and it turned up as
-  // `FAIL 1/6 passed` where five of the six "tests" were emitted repros.
-  //
-  // Deliberately not folded into `exclude`: that list is the user's statement about their own tree, it
-  // is echoed back in diagnostics, and a path the user never wrote does not belong in it.
-  const skipReport = reportDir === undefined ? undefined : relative(cwd, resolve(cwd, reportDir)).split('\\').join('/');
-  const walk = async (dir: string): Promise<void> => {
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
-      const full = join(dir, e.name);
-      // The equality test used to live inside the `isDirectory()` branch, so a file entry could
-      // never match and `exclude "b.tflw"` was a silent no-op (M73, review finding B6-10) — while
-      // §3.9 opens by calling these "paths" and a user who wants one known-broken file out of the
-      // default sweep has no reason to read that as directories-only. It is checked for both kinds
-      // now. Separators are normalised because `relative()` returns them platform-style, and
-      // nobody writes `exclude "a\\b"` — that mismatch was the same silent no-op on Windows.
-      const rel = relative(cwd, full).split('\\').join('/');
-      if (exclude.includes(rel)) continue;
-      // `''` would mean the report dir IS `cwd`, which cannot be skipped without discovering nothing —
-      // so a project configured that way keeps the old behaviour rather than silently finding no tests.
-      if (skipReport !== undefined && skipReport !== '' && rel === skipReport) continue;
-      if (e.isDirectory()) await walk(full);
-      else if (e.isFile() && e.name.endsWith('.tflw')) found.push(full);
-    }
-  };
-  await walk(cwd);
-  return found.sort();
-}
 
 // ---- tflw init -------------------------------------------------------------
 
@@ -3858,6 +3871,11 @@ function printUsage(): void {
       '                                                      a directory is walked, no path means the current directory. --check writes',
       '                                                      nothing, lists the files that would change and exits 1. A file that does not',
       '                                                      lex is reported and left alone',
+      '  tflw ui [dir] [--port <n>] [--no-open]             serve the page for a project on 127.0.0.1 (M192): the files and their',
+      '                                                      tests, a run started from the page as `tflw run --format ndjson` with',
+      '                                                      its stream relayed live, and every report directory the project holds.',
+      '                                                      Loopback only — reach it from elsewhere over `ssh -L`. --port defaults',
+      '                                                      to 4141; --no-open skips opening the browser',
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',
       '',

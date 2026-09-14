@@ -54,7 +54,7 @@ before(async () => {
   tarballPath = join(scratchDir, tgz);
 });
 
-test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/artifact-contract.json + package.json + README.md + LICENSE, with zero runtime dependencies', async () => {
+test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/artifact-contract.json + dist/ui/ + package.json + README.md + LICENSE, with zero runtime dependencies', async () => {
   const { stdout } = await execFileAsync('tar', ['-tzf', tarballPath]);
   const files = stdout
     .trim()
@@ -71,7 +71,14 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/
   // A published byte for a consumer nobody else has, and cheap: it is under a kilobyte, it is
   // generated from the emitter's own constants rather than authored, and the alternative — a
   // consumer spawning the CLI to learn a key name — is a gate people stop running.
-  assert.deepEqual(files, ['LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md', 'dist/artifact-contract.json', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
+  // `dist/ui/` (`M192` U0) — the page `tflw ui` serves, a Vite bundle whose asset names carry a
+  // content hash, so its members are asserted by shape rather than by name: exactly one
+  // `index.html`, at least one hashed script under `assets/`, and nothing else — in particular not
+  // the `metafile.json` the build writes beside it for the notice and then removes.
+  const ui = files.filter((f) => f.startsWith('dist/ui/'));
+  assert.deepEqual(ui.filter((f) => !/^dist\/ui\/assets\/index-[\w-]+\.(js|css)$/.test(f)), ['dist/ui/index.html']);
+  assert.ok(ui.some((f) => /^dist\/ui\/assets\/index-[\w-]+\.js$/.test(f)), 'the page ships no script');
+  assert.deepEqual(files.filter((f) => !f.startsWith('dist/ui/')), ['LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md', 'dist/artifact-contract.json', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
 
   // The other half of the same property, and the half a file list cannot express (M86). Excluding
   // `.map` files from the tarball is not by itself correct: a bundle built with source maps carries

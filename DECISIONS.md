@@ -8786,6 +8786,24 @@ two-way gate demands land together, with `COVERS` extended for every new asserti
 `CONSTRUCTS.md`'s eleven graded a second time in their own table. Two censuses are never merged;
 the old one is the git history.
 
+### D985
+
+<sub>cited from SPEC.md · lifted from `PLAN_M192_TFLW_UI.md`</sub>
+
+**`D985` — the file is the only truth and the page is a projection of it.** No GUI-owned format,
+no export step, no state the file cannot hold. Every edit the page will ever make is an AST edit
+written back by span edits (`migrate.ts`'s shape), normalised by `M191`'s `format`; a printer is
+needed only to *insert* a node with no span, and is grown one node kind at a time when slice 2
+first needs one (`D994`).
+
+### D988
+
+<sub>cited from SPEC.md · lifted from `PLAN_M192_TFLW_UI.md`</sub>
+
+**`D988` — the dogfood is the green condition and the fixture corpus is the CI gate.** The page
+is measured against 106 graded constructs before it ships, in the arrangement it will be used
+in (box, tunnel, headless), by a browser gate that reads the report directory as its oracle.
+
 ### D990
 
 <sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +2 more · lifted from `PLAN_M190B_CONTENDED_KILLS.md`</sub>
@@ -12618,5 +12636,20 @@ the extension lays a file out. This milestone adds the formatter as a pure funct
 lexer's tokens, three surfaces for it, and reformats both corpora so its check is green from the
 day it lands. The printer — source from an AST — is deferred to `M192` slice 2, grown one node
 kind at a time against a real insertion (`D994`).
+
+### M192
+
+<sub>cited from SPEC.md · lifted from `PLAN_M192_TFLW_UI.md`</sub>
+
+**`M192` — `tflw ui`: the page for a `.tflw` project**
+
+tflw is a text DSL with one pipeline behind four kinds of test — API, WebUI, workload, security —
+and every tool it ships speaks text: the CLI, the LSP server, the VS Code extension, the HTML
+report, JUnit, SARIF, the NDJSON event stream. What it has no answer to is the person who reaches
+for Postman to see a request, for JMeter to watch a load run, for Playwright's UI mode to watch a
+browser test, and for Burp to triage findings. This arc is that answer, scoped by grilling on
+2026-09-13/14 (eight questions, every one answered with the recommendation), and it is shaped by
+one rule the grilling settled first: **the `.tflw` file is the only truth, and the page is a
+projection of it** — never a second format.
 
 <!-- GENERATED:decisions:end -->

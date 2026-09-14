@@ -1,0 +1,17 @@
+/* One file of tokens (M192 §3). Dark by default — the report and the terminal it sits beside are. */
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --line: #262b36;
+  --fg: #e6e8ee;
+  --muted: #8b93a7;
+  --accent: #6cb6ff;
+  --pass: #4cd07d;
+  --fail: #ff6b6b;
+  --warn: #f5c542;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); }
+code, pre { font-family: var(--mono); }

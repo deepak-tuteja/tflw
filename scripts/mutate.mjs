@@ -3285,7 +3285,7 @@ const REGISTRY = [
     id: 'a-lone-exclude-line-is-ignored',
     milestone: 'm189b',
     pkg: 'tflw',
-    file: 'packages/cli/src/cli.ts',
+    file: 'packages/cli/src/project.ts', // `M192` U1 moved `discoverTests` out of cli.ts
     what: 'discovery honours `exclude` only when a config declares two or more of them — a single line, which is what SPEC §3.9\'s example and every config in the sibling write, is a silent no-op again (`B6-10`\'s shape, off by one instead of by kind). An explicit file argument still runs either way, so the half of `C96` that says "an explicit path still does not [skip]" cannot see this; the discovery half can',
     find: '      if (exclude.includes(rel)) continue;',
     replace: '      if (exclude.length > 1 && exclude.includes(rel)) continue;',
@@ -3366,6 +3366,33 @@ const REGISTRY = [
     what: 'the gate no longer compares comments, so a formatter that dropped every comment line would round-trip clean — the tokens are the same and the structure is the same, and 38% of the sibling\'s corpus is comments. The gate\'s own vacuity control',
     find: "  const ca = comments(before); const cb = comments(after);",
     replace: "  const ca: string[] = []; const cb: string[] = [];",
+  },
+  {
+    id: 'a-path-escape-is-served',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/cli/src/ui-server.ts',
+    what: '`safeJoin` stops judging: any path resolves and is served, so `/api/reports/current/../tflw.config` hands out the project\'s config and the page-bundle route serves anything under the disk. The one boundary every file route shares, removed',
+    find: "  return full === root || full.startsWith(root + sep) ? full : null;",
+    replace: "  return full;",
+  },
+  {
+    id: 'a-kept-run-copies-the-runs-it-sits-in',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/cli/src/ui-server.ts',
+    what: 'the copy that keeps a run aside no longer skips `runs/`, so each kept run carries every earlier kept run inside it — the report directory grows by its own history on every run',
+    find: "      if (entry.name === 'runs') continue;",
+    replace: "      if (entry.name === 'never') continue;",
+  },
+  {
+    id: 'cancel-forgets-to-mark-the-run',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/cli/src/ui-server.ts',
+    what: 'cancel signals the child and does not record that it did, so the run ends as `done` with a non-zero exit — a cancelled run reads as a failed one to the page and to the kept record',
+    find: "    live.record.status = 'cancelled';\n    // SIGINT",
+    replace: "    // SIGINT",
   },
 ];
 

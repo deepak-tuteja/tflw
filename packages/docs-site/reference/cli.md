@@ -15,6 +15,7 @@ const pickFlags = CLI_FLAGS.filter((f) => f.command === 'pick');
 const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
 const migrateFlags = CLI_FLAGS.filter((f) => f.command === 'migrate');
 const fmtFlags = CLI_FLAGS.filter((f) => f.command === 'fmt');
+const uiFlags = CLI_FLAGS.filter((f) => f.command === 'ui');
 const specFlags = CLI_FLAGS.filter((f) => f.command === 'spec');
 const globalFlags = CLI_FLAGS.filter((f) => f.command === 'global');
 </script>
@@ -236,6 +237,30 @@ block structure, and formats to itself on a second pass. That property is what l
 this opinionated: nothing the formatter does can change what a file means. The same function
 answers the editor's *Format Document* through `tflw lsp`, so format-on-save in VS Code needs no
 setting beyond the extension.
+
+## `tflw ui [dir]`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in uiFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+Serves the page for a project — the directory holding `tflw.config`, the current one by default —
+on `127.0.0.1` and prints the URL. The page is a projection of the project and of its report
+directory, never a second copy of either: it lists the discovered files and the tests in them, it
+starts a run as `tflw run --format ndjson` (the same command, the same files, the same report
+directory a terminal run writes) and relays the stream as it arrives, and it opens every report
+directory the project holds — the current one, and each run started from the page, which is kept
+aside as `report/runs/<id>/` when it ends. Nothing on the page writes a `.tflw` file.
+
+**Loopback only.** The bind address is not configurable: the page can start a run, and a run reads
+the project's `.env`. To reach it from another machine, tunnel it (`ssh -L 4141:127.0.0.1:4141`
+to that machine) rather than exposing it.
 
 ## `tflw docs [topic]`
 

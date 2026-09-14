@@ -19,6 +19,7 @@
     "packages/reporter",
     "packages/lsp-server",
     "packages/cli",
+    "packages/ui",
     "packages/vscode",
     "packages/docs-site"
   ],

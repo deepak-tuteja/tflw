@@ -119,7 +119,7 @@ export function renderNotices(productName, notices) {
     '',
     `License families present: ${families.map((f) => `\`${f}\``).join(', ')}.`,
     '',
-    'This file is generated from the bundle\'s own esbuild metafile at build time',
+    'This file is generated from the bundles\' own metafiles at build time',
     '(`scripts/third-party-notices.mjs`) — it describes what actually shipped, not what was declared.',
     '',
     '| package | version | license |',
