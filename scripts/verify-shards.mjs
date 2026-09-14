@@ -24,7 +24,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { MUTATIONS, RESHARD_AT, SHARD_BUDGET_SECONDS, SUITE_SECONDS } from './mutate.mjs';
+import { MUTATIONS } from './mutate.mjs';
 
 /** Every `shard-*.json` under `dir`, at any depth — `actions/download-artifact` puts each artifact
  *  in a directory of its own when it downloads them all at once, so the layout is not flat. */
@@ -114,117 +114,10 @@ export function checkManifests(manifests, expected = MUTATIONS.map((m) => m.id),
 /** Minutes, for a message a human reads under time pressure. */
 const mins = (s) => `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, '0')}s`;
 
-/**
- * A package's measured cost may exceed its `SUITE_SECONDS` entry by this much before the entry is
- * called stale — with an absolute floor, because a package whose suite runs in a second doubles on
- * runner noise alone and being wrong about it costs nothing.
- */
-const COST_DRIFT = 1.5;
-const COST_FLOOR_SECONDS = 15;
-
-/**
- * M148 (`M147-11`) — the half no shard can attest to about *itself*.
- *
- * A shard knows how long it took and cannot know whether that was normal; the packer knows what it
- * modelled and never finds out what happened. Both numbers are in the manifests, so this is where
- * they meet. Two failures, in the order they bite:
- *
- * 1. **A shard reached the re-shard trigger.** Not the limit — the trigger, at two-thirds of it.
- *    A shard that has already died leaves no manifest at all and fails the reassembly check above
- *    instead, which is a worse message for the same problem and arrives one run too late.
- *
- *    This is not a threshold that was missing. `mutate.mjs` has printed `⚠ OVER BUDGET` at this
- *    exact number since `D573`, and on run 32416405841 it printed it — 25m02s against 20m, on
- *    `main`, in a job that went green, one run before shard 12 was cancelled at the limit. What was
- *    missing is an observer that is not the thing being observed. A warning from a passing job is
- *    invisible; the same fact from a *different* job, as an exit code, is not.
- * 2. **`SUITE_SECONDS` is light for some package.** This is the upstream cause of (1) and the thing
- *    that had no gate: `costProblem()` in `mutate.mjs` asserts every package *has* a measured suite
- *    time, and until now nothing asserted the measurement was still true. It had drifted 3.5× on
- *    the root suite.
- *
- * A *heavy* entry is reported and does not fail. Heavy over-provisions — it can scatter a package
- * across more shards than it needs, which costs baselines, but it can never pack a shard that
- * cannot pay for itself. Only light does that, and only light is worth a red build.
- */
-export function checkShardCost(manifests, costs = SUITE_SECONDS, budget = SHARD_BUDGET_SECONDS) {
-  const problems = [];
-  const notes = [];
-  const timed = manifests.filter((m) => Number.isFinite(m.actualSeconds));
-  if (timed.length === 0) {
-    // Not a failure: manifests written before M148 carry no timings, and a check that goes red on
-    // the first run after it ships teaches everyone to ignore it.
-    notes.push('no shard reported a duration — these manifests predate the cost telemetry, so the shard budget was not checked.');
-    return { problems, notes };
-  }
-
-  const trigger = budget * RESHARD_AT;
-  for (const m of [...timed].sort((a, b) => b.actualSeconds - a.actualSeconds)) {
-    if (m.actualSeconds > trigger) {
-      problems.push(
-        `shard ${m.shard}/${m.of} took ${mins(m.actualSeconds)} of a ${mins(budget)} limit — past the ${Math.round(RESHARD_AT * 100)}% ` +
-          `re-shard trigger at ${mins(trigger)}. Widen the \`shard:\` list in ci.yml; the model in mutate.mjs prices every ` +
-          `count, so pick one whose longest shard is well under the trigger rather than the next number up.`,
-      );
-    }
-  }
-
-  // `M175e` / `M169-01` — EVERY measurement, not the max, AND THE GATE NAMES NO CAUSE.
-  //
-  // The row: this gate read one number per package, so *"a wedged runner and a stale SUITE_SECONDS
-  // entry emit the identical message"*. `PLAN_M175` §3 assumed the repair was a discriminator — a
-  // wedged runner is slow on every shard, a stale entry is slow only where that package is
-  // baselined, and the signatures differ within a single run. `M172e`'s 24-shard run was the first
-  // time the within-run spread was actually read, and it refutes that: nine shards carrying five
-  // root-suite mutations each came in at 80-121s per run against a `SUITE_SECONDS` of 108. **The
-  // constant was not stale. The runner was simply slow.** The case that motivated separating the two
-  // causes turned out to have only one of them, so the discriminator is withdrawn in the row.
-  //
-  // What survives is the spread itself. It is reported and nothing is inferred from it, because a
-  // gate that names the wrong cause is worse than one that names none — which is this row's own
-  // finding turned on its own repair. The reader gets the disagreement, the shape of the evidence,
-  // and both candidate explanations unranked.
-  const seen = new Map();
-  for (const m of timed) {
-    for (const [pkg, seconds] of Object.entries(m.costs ?? {})) {
-      if (!Number.isFinite(seconds)) continue;
-      seen.set(pkg, [...(seen.get(pkg) ?? []), seconds]);
-    }
-  }
-  /** `12s` · `12-19s across 4 shards` — the second form is the whole point of this stage. */
-  const spread = (xs) => {
-    const lo = Math.min(...xs), hi = Math.max(...xs);
-    return lo === hi
-      ? `${lo}s${xs.length > 1 ? ` on all ${xs.length} shards that ran it` : ''}`
-      : `${lo}-${hi}s across the ${xs.length} shards that ran it`;
-  };
-  for (const [pkg, all] of [...seen].sort(([a], [b]) => a.localeCompare(b))) {
-    const measured = Math.max(...all);
-    const declared = costs[pkg];
-    if (declared === undefined) {
-      problems.push(`a shard baselined \`${pkg}\`, which has no SUITE_SECONDS entry — the packer priced it at a default it did not measure.`);
-      continue;
-    }
-    if (measured > declared * COST_DRIFT && measured - declared >= COST_FLOOR_SECONDS) {
-      problems.push(
-        `SUITE_SECONDS['${pkg}'] says ${declared}s and this run measured ${spread(all)} — ${(measured / declared).toFixed(1)}× at the worst shard. ` +
-          `partition() packs by the declared number, so a disagreement does not merely mispredict a shard, it decides which mutations go in it.\n` +
-          `    This gate does not say which of the two it is, and that is deliberate (M169-01/M175e): a constant that is\n` +
-          `    wrong and a runner that is slow produce the same overrun, and M172e measured a case that read as the first\n` +
-          `    and was the second. The spread above is the evidence — one slow shard among many points away from the\n` +
-          `    constant; every shard alike points at it — and it is offered rather than interpreted.`,
-      );
-    } else if (declared > measured * COST_DRIFT && declared - measured >= COST_FLOOR_SECONDS) {
-      notes.push(`SUITE_SECONDS['${pkg}'] is ${declared}s against a measured ${spread(all)} — heavy, so it over-provisions rather than overruns. Not a failure; correct it when convenient.`);
-    } else if (all.length > 1 && Math.min(...all) * COST_DRIFT < measured) {
-      // `D880`-adjacent: the spread is the instrument this stage adds, so when it is wide enough to
-      // be worth reading it is printed even where nothing failed. A silent instrument is one nobody
-      // checks the day it matters.
-      notes.push(`SUITE_SECONDS['${pkg}'] is ${declared}s and the run measured ${spread(all)} — inside the drift bar, but the shards disagree with each other by more than ${COST_DRIFT}×, which is a property of the runner rather than of the constant.`);
-    }
-  }
-  return { problems, notes };
-}
+// `M194` — `checkShardCost` (M148's re-shard trigger and the `SUITE_SECONDS` drift check) lived
+// here until the sweep left the runners. Both measured a cost model that no longer exists; the
+// reassembly check above is the half that survives, because a hole in a sweep is a hole on any
+// machine. `mins` stays for the listing.
 
 function main(argv = process.argv) {
   const args = argv.slice(2);
@@ -265,33 +158,14 @@ function main(argv = process.argv) {
     return 2;
   }
 
-  // Coverage first, cost second, and both before the summary: a sweep with a hole in it is a worse
-  // fact than a slow one, and printing the reassembly line above a cost failure would read as a
-  // pass with a footnote.
-  const { problems: costProblems, notes } = checkShardCost(manifests);
-  for (const n of notes) console.log(`  · ${n}`);
-  if (costProblems.length > 0) {
-    console.error(`✗ the sweep reassembles, and its cost model no longer describes it:`);
-    for (const p of costProblems) console.error(`    ${p}`);
-    console.error(
-      `\n  This is not a mutation failing. Every mutation that ran, ran correctly — the shards are simply\n` +
-        `  packed by numbers that have stopped being true, and a shard that overruns \`timeout-minutes\` is\n` +
-        `  reported as a sweep that never happened.`,
-    );
-    return 2;
-  }
-
   const ran = manifests.reduce((a, m) => a + m.ids.length, 0);
   console.log(
     `✓ ${manifests.length} shard(s) reassemble into the whole registry: ${ran} of ${MUTATIONS.length} mutation(s), ` +
       `each run exactly once.`,
   );
   for (const m of [...manifests].sort((a, b) => a.shard - b.shard)) {
-    // The two timings are printed even when they pass. A budget you can only see when it is blown
-    // is how the 20m trigger went unnoticed for four milestones.
-    const timing = Number.isFinite(m.actualSeconds)
-      ? `  ${mins(m.actualSeconds).padStart(7)} actual  (modelled ${mins(m.modelledSeconds ?? 0)})`
-      : '';
+    // The timing is printed even when it passes: it is what the box driver's tree count is read from.
+    const timing = Number.isFinite(m.actualSeconds) ? `  ${mins(m.actualSeconds).padStart(7)}` : '';
     console.log(`    shard ${m.shard}/${m.of}  ${String(m.ids.length).padStart(3)} mutation(s)${timing}`);
   }
   return 0;
