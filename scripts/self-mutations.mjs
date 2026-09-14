@@ -188,7 +188,7 @@ export const SELF_MUTATIONS = [
     pkg: ROOT_SUITE,
     file: SELF,
     what: "`M147-09` restored: a mutation whose file is in one workspace and whose suite is in another is scored against the previous build, so it can only ever come back `SURVIVED`. A false survival, not a no-verdict — it reads as a measurement that the assertion is weak, and the response it invites is deleting the test that was right",
-    find: '  const rebuild = mutatedFile ? rebuildTargetFor(mutatedFile, pkg, workspaceName) : null;',
+    find: '  const rebuild = mutatedFile ? rebuildTargetFor(mutatedFile, pkg, workspaceName, workspaceBuilds) : null;',
     replace: '  const rebuild = null;',
   },
 

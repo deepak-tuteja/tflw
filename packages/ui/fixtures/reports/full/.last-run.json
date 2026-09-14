@@ -1,0 +1,8 @@
+{
+  "failed": [
+    {
+      "file": "tests/catalog.tflw",
+      "test": "the price of a widget is what the shelf says"
+    }
+  ]
+}

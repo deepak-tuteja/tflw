@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="tflw" tests="5" failures="1" errors="0" time="0.023" timestamp="2026-09-14T17:30:02.988Z">
+  <testsuite name="tests/catalog.tflw" tests="3" failures="1" errors="0" time="0.016" timestamp="2026-09-14T17:30:02.988Z">
+    <properties>
+      <property name="env" value="full"/>
+      <property name="seed" value="3473293618"/>
+      <property name="now" value="2026-09-14T17:30:02.987Z"/>
+    </properties>
+    <testcase name="lists the catalog and follows the first item" classname="tests/catalog.tflw" time="0.014"/>
+    <testcase name="a missing item is a 404 with a reason" classname="tests/catalog.tflw" time="0.001"/>
+    <testcase name="the price of a widget is what the shelf says" classname="tests/catalog.tflw" time="0.001">
+      <failure message="expected body.price to equal 10, but got 12">expected body.price to equal 10, but got 12</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="tests/orders.tflw" tests="2" failures="0" errors="0" time="0.006" timestamp="2026-09-14T17:30:02.988Z">
+    <properties>
+      <property name="env" value="full"/>
+      <property name="seed" value="3473293618"/>
+      <property name="now" value="2026-09-14T17:30:02.987Z"/>
+    </properties>
+    <testcase name="creates an order and reads its total back" classname="tests/orders.tflw" time="0.004"/>
+    <testcase name="a warm-up endpoint answers on the second attempt" classname="tests/orders.tflw" time="0.002">
+      <system-out>flaky: passed on attempt 2 of 2 (1 prior attempt failed)</system-out>
+    </testcase>
+  </testsuite>
+</testsuites>

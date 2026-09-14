@@ -1,0 +1,23 @@
+@smoke @catalog
+test "lists the catalog and follows the first item"
+  api GET /items
+  expect status equals 200
+  expect body.items has count 3
+  capture body.items[0].id as firstId
+  log "first item is {firstId}"
+  api GET /items/{firstId}
+  expect status equals 200
+  expect body.name equals "widget"
+
+@catalog
+test "a missing item is a 404 with a reason"
+  api GET /items/999
+  expect status equals 404
+  expect body.error equals "no such item"
+
+@smoke @catalog
+test "the price of a widget is what the shelf says"
+  api GET /items/1
+  expect status equals 200
+  expect body.price equals 10
+  expect body.name equals "widget"

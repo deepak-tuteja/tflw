@@ -719,6 +719,16 @@ test('a cross-workspace mutation rebuilds what it mutated', () => {
   // being built: `npm run build -w <undefined>` would fail the whole mutation for a path shape the
   // registry does not have.
   assert.equal(rebuildTargetFor('packages/not-a-workspace/src/x.ts', '@tflw/lang', nameOf), null);
+
+  // `M192` U2. A workspace with no `build` script has nothing to rebuild — its consumer builds
+  // from source (the page gate runs vite over `packages/ui/src` itself). Without this the sweep
+  // ran `npm run build -w @tflw/ui`, which fails on "missing script", and reported the failure as
+  // a red suite: three page mutations "killed" by a build that never ran.
+  const named = (dir) => ({ 'packages/lang': '@tflw/lang', 'packages/lsp-server': '@tflw/lsp-server', 'packages/ui': '@tflw/ui' })[dir] ?? null;
+  const builds = (dir) => dir !== 'packages/ui';
+  assert.equal(rebuildTargetFor('packages/ui/src/StepRow.tsx', 'tflw', named, builds), null);
+  // Control: the same predicate leaves the lang → lsp-server case rebuilt.
+  assert.equal(rebuildTargetFor('packages/lang/src/parser.ts', '@tflw/lsp-server', named, builds), '@tflw/lang');
 });
 
 test('an output overflow is not a hang', () => {
