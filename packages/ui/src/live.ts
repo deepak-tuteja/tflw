@@ -41,6 +41,24 @@ export function reduceLive(state: LiveState, event: RunEvent): LiveState {
   }
 }
 
+/** What the live counter says: tests ended, tests failed. A *passing* file hook emits a
+ * `test:start`/`test:end` pair the report will never hold (`interpreter.ts` `runFileHooks`, SPEC
+ * §13: the pair tracks work in flight, `run:start.total` counts tests), so it is shown as work and
+ * not counted as a test — a failing one enters the report and is counted. Found by `M192` U7 on
+ * the dogfood corpus, whose first file has a `before file`: the pane read "106 of 105 done". By
+ * name, because the stream marks a hook no other way (`M192-02`). */
+export function liveCounts(state: LiveState): { readonly done: number; readonly failed: number } {
+  let done = 0;
+  let failed = 0;
+  for (const t of state.tests) {
+    if (t.result === null) continue;
+    if ((t.name === 'before file' || t.name === 'after file') && t.result.ok) continue;
+    done += 1;
+    if (!t.result.ok) failed += 1;
+  }
+  return { done, failed };
+}
+
 export function addNoise(state: LiveState, line: string): LiveState {
   return { ...state, noise: [...state.noise, line] };
 }

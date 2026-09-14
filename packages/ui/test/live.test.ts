@@ -9,7 +9,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RunEvent, RunReport, TestResult, WorkloadTestResult } from '@tflw/runtime';
-import { EMPTY_LIVE, reduceLive } from '../src/live.ts';
+import { EMPTY_LIVE, liveCounts, reduceLive } from '../src/live.ts';
+import { exitExplained } from '../src/format.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const corpus = join(here, '..', 'fixtures', 'reports', 'full');
@@ -63,4 +64,37 @@ test('mid-stream, a test holds the steps that have arrived so far and no result'
   const shown = all.tests.find((x) => x.name === retried.name)!;
   assert.deepEqual(shown.steps, retried.steps);
   assert.ok(events.filter((e) => e.type === 'step:end' && e.test === retried.name).length > retried.steps.length, 'the stream carried the failed attempt too');
+});
+
+test('a passing file hook is work in flight, not a test: shown in the pane and left out of the count (M192 U7)', () => {
+  const hookStep = { kind: 'api', source: 'api GET /health', line: 2, ok: true, durationMs: 1 } as unknown as TestResult['steps'][number];
+  const stream: RunEvent[] = [
+    { type: 'run:start', total: 1, env: 'local', file: 'a.tflw' },
+    { type: 'test:start', name: 'before file', file: 'a.tflw' },
+    { type: 'test:end', result: { kind: 'functional', name: 'before file', ok: true, durationMs: 1, steps: [hookStep] }, file: 'a.tflw' },
+    { type: 'test:start', name: 'the one test', file: 'a.tflw' },
+    { type: 'test:end', result: { kind: 'functional', name: 'the one test', ok: false, durationMs: 1, steps: [] }, file: 'a.tflw' },
+    // A failing hook enters the report as its own entry (`hooks.test.ts`), so it counts.
+    { type: 'test:start', name: 'after file', file: 'a.tflw' },
+    { type: 'test:end', result: { kind: 'functional', name: 'after file', ok: false, durationMs: 1, steps: [], error: 'a `after file` hook failed' }, file: 'a.tflw' },
+  ];
+  const live = stream.reduce(reduceLive, EMPTY_LIVE);
+  assert.equal(live.tests.length, 3, 'every pair is shown');
+  assert.deepEqual(liveCounts(live), { done: 2, failed: 2 });
+  assert.equal(live.announced, 1);
+});
+
+test('an exit is explained only by the report verdict that produced it (M192 U7): 0 ok, 1 failed, 3 inconclusive, 130 aborted; anything else, a signal or a cancel is the page\'s to say', () => {
+  const done = (exitCode: number | null, signal: string | null = null, status: 'done' | 'cancelled' = 'done') => ({ status, exitCode, signal });
+  assert.equal(exitExplained(done(0), { ok: true }), true);
+  assert.equal(exitExplained(done(0), { ok: false }), false);
+  assert.equal(exitExplained(done(1), { ok: false }), true);
+  assert.equal(exitExplained(done(1), { ok: true }), false);
+  assert.equal(exitExplained(done(3), { ok: true, inconclusive: true }), true);
+  assert.equal(exitExplained(done(3), { ok: true }), false);
+  assert.equal(exitExplained(done(130), { ok: true, aborted: true }), true);
+  assert.equal(exitExplained(done(130), { ok: true }), false);
+  assert.equal(exitExplained(done(2), { ok: true }), false, 'the dogfood: a 326/326 report and exit 2');
+  assert.equal(exitExplained(done(null, 'SIGKILL'), { ok: true }), false);
+  assert.equal(exitExplained(done(130, null, 'cancelled'), { ok: true, aborted: true }), false, 'a cancel is the page\'s own gesture');
 });

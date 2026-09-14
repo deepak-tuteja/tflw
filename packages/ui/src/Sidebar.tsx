@@ -12,6 +12,11 @@ export interface SidebarProps {
   readonly onCancel: () => void;
 }
 
+/** Above this many tags the cloud opens folded: `M192` U7 found the dogfood's 90 tags pushing all
+ * 84 files below the first screen, and a file list nobody can see is not a project view. The
+ * fixture has five, so the fold's threshold is exercised only by the dogfood (§10). */
+export const FOLD_TAGS_ABOVE = 24;
+
 export function Sidebar({ project, running, onRun, onCancel }: SidebarProps) {
   const defaultEnv = project.envs.find((e) => e.isDefault)?.name ?? project.envs[0]?.name ?? '';
   const [env, setEnv] = useState(defaultEnv);
@@ -83,13 +88,19 @@ export function Sidebar({ project, running, onRun, onCancel }: SidebarProps) {
       </div>
 
       {allTags.length > 0 ? (
-        <div className="tags" data-tags>
-          {allTags.map((t) => (
-            <button key={t} className={`chip${tags.has(t) ? ' on' : ''}`} onClick={() => setTags(toggle(tags, t))} data-tag={t} aria-pressed={tags.has(t)}>
-              @{t}
-            </button>
-          ))}
-        </div>
+        <details className="tags-fold" open={allTags.length <= FOLD_TAGS_ABOVE} data-tags-fold={allTags.length}>
+          <summary className="muted">
+            {allTags.length} tag{allTags.length === 1 ? '' : 's'}
+            {tags.size > 0 ? ` · ${tags.size} picked` : ''}
+          </summary>
+          <div className="tags" data-tags>
+            {allTags.map((t) => (
+              <button key={t} className={`chip${tags.has(t) ? ' on' : ''}`} onClick={() => setTags(toggle(tags, t))} data-tag={t} aria-pressed={tags.has(t)}>
+                @{t}
+              </button>
+            ))}
+          </div>
+        </details>
       ) : null}
 
       <ul className="files" data-files>

@@ -133,12 +133,19 @@ test('a run from the API is a real tflw run: the stream arrives over SSE, the re
 
       // A late subscriber replays the whole stream and gets the end at once.
       const replay = await readSse(`${base}/api/runs/${record.id}/events`);
+      // U7: a run that refuses its own argv writes nothing — and `report/` still holds the run
+      // above, so presence alone would keep that as this run's record. Nothing is kept.
+      const refused = (await (await fetch(`${base}/api/run`, { method: 'POST', body: JSON.stringify({ workers: 0 }) })).json()) as RunRecord;
+      const refusedEnd = await readSse(`${base}/api/runs/${refused.id}/events`);
+      assert.equal(refusedEnd.end?.exitCode, 2);
+      assert.equal(refusedEnd.end?.kept, null, 'a run that wrote no report keeps no directory, whatever the previous run left');
+      assert.match(((await (await fetch(`${base}/api/runs/${refused.id}/stderr`)).json()) as { stderr: string }).stderr, /positive integer/);
       assert.deepEqual(replay.data, data);
       assert.equal(replay.end?.status, 'done');
 
       const runs = (await (await fetch(`${base}/api/runs`)).json()) as RunRecord[];
-      assert.equal(runs.length, 1);
-      assert.equal(runs[0]!.status, 'done');
+      assert.equal(runs.length, 2, 'newest first: the refused run, then the real one');
+      assert.deepEqual(runs.map((r) => [r.status, r.kept]), [['done', null], ['done', `report/runs/${record.id}`]]);
 
       const reports = (await (await fetch(`${base}/api/reports`)).json()) as ReportEntry[];
       assert.deepEqual(reports.map((r) => r.id), ['current', record.id]);

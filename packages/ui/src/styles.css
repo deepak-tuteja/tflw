@@ -32,7 +32,9 @@ code, pre { font-family: var(--mono); }
 button { font: inherit; cursor: pointer; }
 button.run, button.cancel { border: 0; border-radius: 4px; padding: 7px 10px; color: #0b0d11; background: var(--accent); font-weight: 600; text-align: left; }
 button.cancel { background: var(--warn); }
-.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.tags-fold { margin-bottom: 12px; }
+.tags-fold > summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; max-height: 40vh; overflow: auto; }
 .chip { background: var(--bg); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; }
 .chip.on { color: var(--fg); border-color: var(--accent); background: rgba(108, 182, 255, 0.12); }
 .files { list-style: none; margin: 0; padding: 0; }
@@ -46,7 +48,7 @@ button.cancel { background: var(--warn); }
 .badge.fail { color: var(--fail); }
 .badge.warn { color: var(--warn); }
 
-.runs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.runs { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .run-row { display: flex; align-items: center; gap: 8px; white-space: nowrap; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
 .run-row.selected { border-color: var(--accent); }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
@@ -150,3 +152,9 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .finding-fix p { margin: 0.25rem 0; }
 .badge.new { background: var(--warn); color: #111; }
 .findings a { color: var(--accent); }
+
+/* U7 — a kept directory whose process did not end the way its report says. */
+.run-exit { border: 1px solid var(--warn); border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+.run-exit pre.stderr { margin: 8px 0 0; }
+
+.declines-fold > summary { cursor: pointer; font-size: 13px; }
