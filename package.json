@@ -32,6 +32,7 @@
     "coverage": "node scripts/coverage.mjs",
     "verify:observability": "node scripts/verify-test-observability.mjs",
     "verify:mutations": "node scripts/mutate.mjs",
+    "sweep": "node scripts/sweep.mjs",
     "verify:ledger": "node scripts/verify-ledger.mjs",
     "verify:corpora": "node scripts/verify-corpora.mjs",
     "verify:lang-build": "node scripts/verify-lang-build.mjs",

@@ -217,41 +217,9 @@ const CLASSIFIED = [
     why: 'GATES since `M86` put `check-coverage` in `.c8rc.json`. Conditional in YAML (`if: matrix.node-version == 22`), which is why it carries a footnote marker rather than a checked sentence',
   },
 
-  // --- ci.yml, job `mutations` (24 shards) ------------------------------------------------------
-  { wf: 'ci.yml', job: 'mutations', cmd: 'npm ci', class: 'setup', why: 'dependency install, again — this job is a fresh runner' },
-  { wf: 'ci.yml', job: 'mutations', cmd: 'npx playwright install chromium firefox', class: 'setup', why: 'the sweep baselines `tflw`, whose cli suite launches real headed Chromium. `M143a` dropped `--with-deps` here first: this step stalled at 30m on nine of the then-twelve shards of run 32272901684, which applied zero mutations between them' },
-  {
-    wf: 'ci.yml',
-    job: 'mutations',
-    cmd: 'npm run build',
-    class: 'setup',
-    why: 'THE SAME COMMAND AS THE GATE ABOVE, and setup here: the sweep needs a bundle to mutate. This row is why the table is keyed by step rather than by command',
-  },
-  {
-    wf: 'ci.yml',
-    job: 'mutations',
-    cmd: 'xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/33 --manifest=shard-${{ matrix.shard }}.json',
-    class: 'gate',
-    local: 'node scripts/mutate.mjs <milestone>',
-    why: 'the CI form is a shard of the whole registry and is NOT what anybody types locally: `--shard` is a slice, `--scope` is not a flag, and a bare `npm run verify:mutations` runs the entire registry (tens of minutes). Locally you run the milestone you just wrote. This divergence is the reason `local` exists as a field',
-  },
-
-  // --- ci.yml, job `mutation-controls` ----------------------------------------------------------
-  {
-    wf: 'ci.yml',
-    job: 'mutation-controls',
-    cmd: 'echo "::error::the mutation shards did not all pass (${{ needs.mutations.result }}) — read the shard jobs for which mutation survived"',
-    class: 'ci-only',
-    why: 'a log annotation over `needs.mutations.result`; there is no local matrix to collapse',
-  },
-  { wf: 'ci.yml', job: 'mutation-controls', cmd: 'exit 1', class: 'ci-only', why: 'the second line of that annotation step' },
-  {
-    wf: 'ci.yml',
-    job: 'mutation-controls',
-    cmd: 'node scripts/verify-shards.mjs shards --of=33',
-    class: 'ci-only',
-    why: 'reads the twenty-four uploaded shard manifests and asserts their union is the registry, and \u2014 since M148 \u2014 that the cost model they were packed by still describes what they cost. Locally the sweep is one process and covers itself',
-  },
+  // --- ci.yml, jobs `mutations` and `mutation-controls` — gone at `M194` ---------------------
+  // The sweep runs on the box before a milestone closes (`npm run sweep`); nothing in ci.yml runs
+  // `mutate.mjs` or `verify-shards.mjs` any more, so there is no CI form to classify.
 
   // --- docs.yml, job `build` --------------------------------------------------------------------
   { wf: 'docs.yml', job: 'build', cmd: 'npm ci', class: 'setup', why: 'dependency install' },
@@ -282,6 +250,14 @@ const ABSENT_FROM_CI = [
   {
     local: 'npm run refresh:own-identifiers -- --check',
     why: 'the CURRENCY half of `M186c` (`D859`). It answers *is the manifest still what the records anchor*, so it needs the gitignored records and a CI checkout can never run it. Deliberately split from `npm run verify:own-identifiers`, which is in CI and answers a different question — *is the manifest the right shape, carrying names and no record text*. Both sides of that one are tracked, so putting them in one command would have made the CI half inherit a limit it does not have, and a gate that reports a skip it did not need is the shape `D527` names',
+  },
+  {
+    local: 'node scripts/mutate.mjs <milestone>',
+    why: '`M194` — the mutation sweep left the runners. A milestone\'s own mutations are run locally as it is written, and the whole registry runs on the box before the milestone closes (`npm run sweep`), recorded in its plan. Was a `gate` row over `ci.yml`\'s 33-shard matrix from `M124` to `M192`',
+  },
+  {
+    local: 'npm run sweep',
+    why: '`M194` — the whole registry, on the box, eight trees at once, before a milestone closes; the result goes in the plan. There is no CI form: the matrix that was one is why the sweep left',
   },
 ];
 

@@ -1882,22 +1882,8 @@ const REGISTRY = [
     find: 'THIS STEP GATES',
     replace: 'THIS STEP IS INFORMATIONAL',
   },
-  {
-    id: 'shard-count-of-stale',
-    milestone: 'm137a',
-    pkg: ROOT_SUITE,
-    file: '.github/workflows/ci.yml',
-    what: "`D449`'s own near-miss, frozen as a control. The reassembly job's `--of=` falls behind the `shard:` matrix — which is what actually happened during this milestone's re-shard, and it cost a full CI round trip: twelve shards each green about themselves, and a failure three jobs away from the two integers that disagreed. `verify-shards.mjs` still catches it at runtime and is still the only thing that can see a shard that never reported; this kills it in a second instead",
-    // M148 moved this with the 12 → 18 widen, `M151` with 18 → 20, `M169b` with 20 → 23, `M171c`
-    // with 23 → 24, `M189b` with 24 → 28 and `M192` U7 with 28 → 33. The
-    // `find:` has to quote the live workflow, and the `replace:` is deliberately the *previous*
-    // count rather than a nonsense one: the failure being controlled is a re-shard that updates
-    // some of the six copies and not the rest, so the mutant should look exactly like a
-    // half-finished widen. This entry is itself a seventh copy — it is the one that fails loudly
-    // and immediately when the workflow moves without it, which is why it is not held by a guard.
-    find: 'verify-shards.mjs shards --of=33',
-    replace: 'verify-shards.mjs shards --of=28',
-  },
+  // `shard-count-of-stale` (M137a, `D449`'s near-miss frozen as a control — the reassembly job's
+  // `--of=` falling behind the `shard:` matrix) was retired at `M194` with the matrix it quoted.
 
   // -- M137b (D433/D434/D457): the CSRF clause and the derived principal ----------------------------
   //
