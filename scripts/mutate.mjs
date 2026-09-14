@@ -3520,6 +3520,45 @@ const REGISTRY = [
     find: "        {table.getRowModel().rows.map((row) => (",
     replace: "        {table.getCoreRowModel().rows.map((row) => (",
   },
+  // U5 — the security kind. `D386`'s property (a withheld finding reads as withheld without
+  // disappearing), the report's order, the KB's entry for *this* rule, and the comparison's one
+  // number that is not a copy of the report.
+  {
+    id: 'a-withheld-finding-disappears',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/Findings.tsx',
+    what: 'a finding the baseline accepted is dropped from the page instead of badged *known/accepted* — the report agrees with the gate rather than describing the run, which is the property `D386` exists to forbid',
+    find: "  const sorted = sortFindings(findings);",
+    replace: "  const sorted = sortFindings(findings.filter((f) => !f.withheld));",
+  },
+  {
+    id: 'the-findings-are-in-raise-order',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/Findings.tsx',
+    what: 'the groups come in the order the scans raised them rather than worst-first — a serious row above a critical one, the console and `report.html` disagreeing with the page about which row to act on',
+    find: "  const sorted = sortFindings(findings);",
+    replace: "  const sorted = [...findings];",
+  },
+  {
+    id: 'every-finding-gets-the-same-fix',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/Findings.tsx',
+    what: 'the *possible fixes* under every finding are one rule\'s — a cookie finding told to add a nosniff header, with a CWE and references that belong to another weakness',
+    find: "  const entry = remediationFor(f.rule);",
+    replace: "  const entry = remediationFor('sec/nosniff-missing');",
+  },
+  {
+    id: 'the-compared-verdict-never-differs',
+    milestone: 'm192',
+    pkg: 'tflw',
+    file: 'packages/ui/src/Findings.tsx',
+    what: 'a finding the other run\'s baseline withheld reads *also in* rather than *known/accepted in* — the one thing a reader compares two scans for, flattened into presence',
+    find: "  if ((other.withheld ?? null) === (f.withheld ?? null)) return { state: 'same', words: 'also in' };",
+    replace: "  if (other) return { state: 'same', words: 'also in' };",
+  },
 ];
 
 /**

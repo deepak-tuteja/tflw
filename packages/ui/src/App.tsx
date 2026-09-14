@@ -7,6 +7,7 @@ import type { EndEvent, ProjectView, ReportDir, RunRecord, RunReport, RunRequest
 import { addNoise, EMPTY_LIVE, reduceLive, type LiveState } from './live';
 import { reportIdOf } from './format';
 import { LiveBody, ReportBody, ReportHeader } from './ReportView';
+import { Findings } from './Findings';
 import { RunList, type Selection } from './RunList';
 import { Sidebar } from './Sidebar';
 
@@ -152,6 +153,7 @@ export function App() {
                   </a>
                 ))}
             </p>
+            <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} />
             <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null }} />
           </article>
         ) : null}

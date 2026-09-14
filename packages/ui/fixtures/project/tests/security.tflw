@@ -1,0 +1,14 @@
+@security
+test "the catalog answers with safe headers"
+  api GET /items
+  expect response has no moderate security violations
+
+@security
+test "the shop page answers with safe headers"
+  api GET /
+  expect response has no serious security violations
+
+@security
+test "a login sets a safe session cookie"
+  api POST /login body { user: "fixture" }
+  expect response has no critical security violations

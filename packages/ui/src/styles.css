@@ -129,3 +129,24 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .endpoints th.sortable { cursor: pointer; user-select: none; font-weight: 500; color: var(--muted); }
 .endpoints th[data-sort='asc'], .endpoints th[data-sort='desc'] { color: var(--fg); }
 .compare select { margin-left: 0.25rem; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; font: inherit; }
+
+/* U5 - the security kind */
+.findings { border: 1px solid var(--line); border-radius: 6px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
+.findings h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+.findings h4 { margin: 0.5rem 0 0.25rem; font-weight: 500; }
+.findings details { margin: 0.5rem 0; }
+.findings summary { cursor: pointer; }
+.sev { display: inline-block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; padding: 0 0.4rem; border-radius: 3px; background: var(--line); }
+.sev-critical, .sev-serious { background: var(--fail); color: #fff; }
+.sev-moderate { background: var(--warn); color: #111; }
+.finding-list { margin: 0.25rem 0 0.5rem; padding-left: 1.25rem; }
+.finding { margin: 0.4rem 0; }
+.finding-off { opacity: 0.75; }
+.finding-where { color: var(--muted); }
+.finding-detail { white-space: pre-wrap; }
+.finding-withheld { color: var(--warn); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; margin-left: 0.5rem; }
+.finding-fp { font-size: 0.8rem; color: var(--muted); }
+.finding-fix { margin: 0.25rem 0 0; }
+.finding-fix p { margin: 0.25rem 0; }
+.badge.new { background: var(--warn); color: #111; }
+.findings a { color: var(--accent); }

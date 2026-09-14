@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "accepted": [
+    {
+      "fingerprint": "d1a3ef65f88fb550",
+      "rule": "sec/csp-missing",
+      "endpoint": "GET /"
+    }
+  ]
+}

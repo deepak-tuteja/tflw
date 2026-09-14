@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "tflw",
+          "informationUri": "https://deepak-tuteja.github.io/tflw/",
+          "version": "0.1.0",
+          "rules": [
+            {
+              "id": "sec/cookie-not-httponly",
+              "shortDescription": {
+                "text": "Cookie readable by JavaScript"
+              },
+              "fullDescription": {
+                "text": "A `Set-Cookie` header arrived without the `HttpOnly` attribute, so any script running on this origin can read the cookie through `document.cookie`."
+              },
+              "help": {
+                "text": "A `Set-Cookie` header arrived without the `HttpOnly` attribute, so any script running on this origin can read the cookie through `document.cookie`.\n\nIt converts any cross-site scripting flaw anywhere on the origin — including in a third-party script you did not write — into full session theft. `HttpOnly` is what keeps an XSS bug from being an account takeover.\n\nFix: Set `HttpOnly` on every cookie no client-side code needs to read. A session or authentication cookie always qualifies; a UI preference cookie that JavaScript genuinely reads is the only common exception, and it should not carry anything sensitive.\n\nIn NestJS: Pass the flag where the cookie is set — `res.cookie('sid', value, { httpOnly: true, secure: true, sameSite: 'lax' })` — or set `cookie: { httpOnly: true }` in the session middleware's options if a session library issues it.\n\nReferences:\nOWASP — Session Management Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html\nCWE-1004: Sensitive Cookie Without 'HttpOnly' Flag: https://cwe.mitre.org/data/definitions/1004.html",
+                "markdown": "A `Set-Cookie` header arrived without the `HttpOnly` attribute, so any script running on this origin can read the cookie through `document.cookie`.\n\nIt converts any cross-site scripting flaw anywhere on the origin — including in a third-party script you did not write — into full session theft. `HttpOnly` is what keeps an XSS bug from being an account takeover.\n\n**Fix** — Set `HttpOnly` on every cookie no client-side code needs to read. A session or authentication cookie always qualifies; a UI preference cookie that JavaScript genuinely reads is the only common exception, and it should not carry anything sensitive.\n\n**In NestJS** — Pass the flag where the cookie is set — `res.cookie('sid', value, { httpOnly: true, secure: true, sameSite: 'lax' })` — or set `cookie: { httpOnly: true }` in the session middleware's options if a session library issues it.\n\n**References**\n\n- [OWASP — Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)\n- [CWE-1004: Sensitive Cookie Without 'HttpOnly' Flag](https://cwe.mitre.org/data/definitions/1004.html)"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "external/cwe/cwe-1004"
+                ],
+                "security-severity": "9.5"
+              }
+            },
+            {
+              "id": "sec/csp-missing",
+              "shortDescription": {
+                "text": "No Content-Security-Policy on a document response"
+              },
+              "fullDescription": {
+                "text": "An HTML document was served with no `Content-Security-Policy` header, so nothing constrains where the page may load or execute script from."
+              },
+              "help": {
+                "text": "An HTML document was served with no `Content-Security-Policy` header, so nothing constrains where the page may load or execute script from.\n\nCSP is the control that limits the blast radius of an injection you have not found yet: with a policy, an injected `<script>` from another origin does not run; without one, it does. It is defence in depth rather than a fix for a specific bug, which is why its absence is worth recording even on a page you believe has no injection point.\n\nFix: Start with a restrictive policy and relax it against real console violations rather than guessing — `default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'`. Prefer nonces or hashes over `'unsafe-inline'`; a policy containing `'unsafe-inline'` for scripts provides very little of what CSP is for.\n\nIn NestJS: `helmet()` ships a `contentSecurityPolicy` default; override the directives it sets rather than disabling the middleware. For an API that only ever answers JSON, the honest fix is often that the endpoint should not be serving `text/html` at all.\n\nReferences:\nOWASP — Content Security Policy Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html\nCWE-693: Protection Mechanism Failure: https://cwe.mitre.org/data/definitions/693.html",
+                "markdown": "An HTML document was served with no `Content-Security-Policy` header, so nothing constrains where the page may load or execute script from.\n\nCSP is the control that limits the blast radius of an injection you have not found yet: with a policy, an injected `<script>` from another origin does not run; without one, it does. It is defence in depth rather than a fix for a specific bug, which is why its absence is worth recording even on a page you believe has no injection point.\n\n**Fix** — Start with a restrictive policy and relax it against real console violations rather than guessing — `default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'`. Prefer nonces or hashes over `'unsafe-inline'`; a policy containing `'unsafe-inline'` for scripts provides very little of what CSP is for.\n\n**In NestJS** — `helmet()` ships a `contentSecurityPolicy` default; override the directives it sets rather than disabling the middleware. For an API that only ever answers JSON, the honest fix is often that the endpoint should not be serving `text/html` at all.\n\n**References**\n\n- [OWASP — Content Security Policy Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html)\n- [CWE-693: Protection Mechanism Failure](https://cwe.mitre.org/data/definitions/693.html)"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "external/cwe/cwe-693"
+                ],
+                "security-severity": "7.5"
+              }
+            },
+            {
+              "id": "sec/nosniff-missing",
+              "shortDescription": {
+                "text": "No X-Content-Type-Options: nosniff"
+              },
+              "fullDescription": {
+                "text": "The response did not carry `X-Content-Type-Options: nosniff`, so a browser may ignore the declared `Content-Type` and infer one from the bytes."
+              },
+              "help": {
+                "text": "The response did not carry `X-Content-Type-Options: nosniff`, so a browser may ignore the declared `Content-Type` and infer one from the bytes.\n\nContent sniffing lets a response you consider inert — an uploaded file, a JSON error body, a plain-text export — be treated as HTML or script and executed in your origin. The header is the one-line instruction that the declared type is the type.\n\nFix: Send `X-Content-Type-Options: nosniff` on every response, not only on documents, and make sure the declared `Content-Type` is actually correct — the header is a promise the browser will now hold you to.\n\nIn NestJS: `helmet()` sets it globally. Where responses are written through a raw `Response`, set it in a global interceptor so a handler that bypasses the normal serializer cannot bypass the header too.\n\nReferences:\nOWASP — HTTP Security Response Headers Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html\nCWE-693: Protection Mechanism Failure: https://cwe.mitre.org/data/definitions/693.html",
+                "markdown": "The response did not carry `X-Content-Type-Options: nosniff`, so a browser may ignore the declared `Content-Type` and infer one from the bytes.\n\nContent sniffing lets a response you consider inert — an uploaded file, a JSON error body, a plain-text export — be treated as HTML or script and executed in your origin. The header is the one-line instruction that the declared type is the type.\n\n**Fix** — Send `X-Content-Type-Options: nosniff` on every response, not only on documents, and make sure the declared `Content-Type` is actually correct — the header is a promise the browser will now hold you to.\n\n**In NestJS** — `helmet()` sets it globally. Where responses are written through a raw `Response`, set it in a global interceptor so a handler that bypasses the normal serializer cannot bypass the header too.\n\n**References**\n\n- [OWASP — HTTP Security Response Headers Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html)\n- [CWE-693: Protection Mechanism Failure](https://cwe.mitre.org/data/definitions/693.html)"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "external/cwe/cwe-693"
+                ],
+                "security-severity": "5.0"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "sec/cookie-not-httponly",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "cookie `session` — any XSS on this origin can read it"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tests/security.tflw",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 14
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "POST /login",
+                  "kind": "resource"
+                }
+              ]
+            }
+          ],
+          "partialFingerprints": {
+            "tflwFindingV1": "f9ea851f1285230b"
+          },
+          "properties": {
+            "tflw/scan": "security",
+            "tflw/endpoint": "POST /login",
+            "tflw/site": "cookie session"
+          }
+        },
+        {
+          "ruleId": "sec/csp-missing",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "nothing constrains where this document may load script from"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tests/security.tflw",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 9
+                }
+              },
+              "logicalLocations": [
+                {
+                  "fullyQualifiedName": "GET /",
+                  "kind": "resource"
+                }
+              ]
+            }
+          ],
+          "partialFingerprints": {
+            "tflwFindingV1": "d1a3ef65f88fb550"
+          },
+          "suppressions": [
+            {
+              "kind": "external",
+              "justification": "accepted in the run's baseline file"
+            }
+          ],
+          "properties": {
+            "tflw/scan": "security",
+            "tflw/endpoint": "GET /",
+            "tflw/withheld": "baseline"
+          }
+        }
+      ],
+      "invocations": [
+        {
+          "executionSuccessful": false
+        }
+      ],
+      "properties": {
+        "tflw/notApplicable": [
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/authenticated-response-cacheable",
+            "because": [
+              "the request carried session or bearer credentials"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/cookie-not-secure",
+            "because": [
+              "the scheme is https AND the response sets a cookie"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/cookie-samesite-none",
+            "because": [
+              "the response sets a cookie"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/cors-wildcard-with-credentials",
+            "because": [
+              "the response carries Access-Control-Allow-Origin"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/hsts-missing",
+            "because": [
+              "the scheme is https"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/tls-version-old",
+            "because": [
+              "the scheme is https and the TLS probe succeeded"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/tls-weak-cipher",
+            "because": [
+              "the scheme is https and the TLS probe succeeded"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/x-frame-options",
+            "because": [
+              "the response is a document (Content-Type: text/html)"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
