@@ -4062,7 +4062,9 @@ export function partition(mutations, n) {
  * asserts it, because two numbers in two files describing one limit is the drift this whole area
  * keeps producing.
  */
-export const SHARD_BUDGET_SECONDS = 30 * 60;
+// 30 -> 35 at `M192` U7, with `ci.yml`'s `timeout-minutes` (its entry there says why); the
+// guard test in `verify-shards.test.mjs` is what keeps the two equal.
+export const SHARD_BUDGET_SECONDS = 35 * 60;
 export const RESHARD_AT = 2 / 3;
 
 /**
