@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { RunEvent, RunReport, TestResult } from '@tflw/runtime';
+import type { RunEvent, RunReport, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { EMPTY_LIVE, reduceLive } from '../src/live.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -24,20 +24,27 @@ test('the stream replayed through the reducer is results.json: every test, in or
   assert.equal(live.announced, report.total);
   assert.deepEqual(live.files, [...new Set(report.tests.map((t) => t.file))]);
   // A `test:end`'s result is the report's entry minus what the CLI adds at merge: `file`, which
-  // the event carries beside it (and the reducer keeps), and `concurrency`. Stated here rather
-  // than absorbed — a third field appearing on one side and not the other is a contract drift the
-  // page should notice.
+  // the event carries beside it (and the reducer keeps), and — for the functional kind only —
+  // `concurrency`, which a workload result carries on the stream already (U4 found the two kinds
+  // differ here). Stated rather than absorbed: a third field appearing on one side and not the
+  // other is a contract drift the page should notice.
   assert.equal(live.tests.length, report.tests.length);
   for (let i = 0; i < report.tests.length; i++) {
-    const { file, concurrency, ...entry } = report.tests[i] as TestResult;
+    const { file, concurrency, ...entry } = report.tests[i] as TestResult | WorkloadTestResult;
     const t = live.tests[i]!;
     assert.equal(t.file, file);
     assert.ok(concurrency !== undefined);
-    assert.deepEqual(t.result, entry);
+    const { file: _f, concurrency: streamed, ...got } = t.result as TestResult | WorkloadTestResult;
+    assert.equal(_f, undefined, 'the stream never carries file on the result');
+    if (entry.kind === 'workload') assert.equal(streamed, concurrency);
+    else assert.equal(streamed, undefined, 'a functional result gains concurrency only at merge');
+    assert.deepEqual(got, entry);
   }
   // Every test ended, so the steps shown are the result's own; before that they were the
-  // `step:end`s as they arrived, which for an unretried test are the same list.
-  for (const t of live.tests) assert.deepEqual(t.steps, (t.result as TestResult).steps);
+  // `step:end`s as they arrived, which for an unretried test are the same list. A workload has
+  // no steps and shows none.
+  for (const t of live.tests) assert.deepEqual(t.steps, t.result!.kind === 'workload' ? [] : (t.result as TestResult).steps);
+  assert.ok(live.tests.some((t) => t.result!.kind === 'workload'), 'the corpus holds the workload kind');
 });
 
 test('mid-stream, a test holds the steps that have arrived so far and no result', () => {

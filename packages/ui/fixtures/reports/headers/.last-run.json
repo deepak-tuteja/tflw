@@ -5,6 +5,10 @@
       "test": "the price of a widget is what the shelf says"
     },
     {
+      "file": "tests/load.tflw",
+      "test": "the stock check is not allowed to fail one call in four"
+    },
+    {
       "file": "tests/shop.tflw",
       "test": "the shelf never says sold out"
     }

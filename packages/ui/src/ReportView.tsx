@@ -10,6 +10,7 @@ import { BROWSER_KINDS, tracePath } from './assets';
 import { ms, when } from './format';
 import { reportFileUrl } from './api';
 import { StepRow } from './StepRow';
+import { Workload } from './Workload';
 
 /** What a WebUI test's evidence depends on and where it can be opened: the report it is in and
  * the level that report was run at. Absent for a live pane, which has neither yet. */
@@ -17,6 +18,8 @@ export interface ReportContext {
   readonly id: string;
   readonly evidenceLevel: RunReport['evidenceLevel'];
   readonly traceViewer: boolean;
+  /** U4 — a second report directory opened beside this one; the workload view shows both. */
+  readonly compare?: { readonly id: string; readonly data: RunReport } | null;
 }
 
 export function ReportHeader({ report }: { report: RunReport }) {
@@ -99,8 +102,11 @@ function Entry({ entry, context }: { entry: ReportEntry; context?: ReportContext
   switch (entry.kind) {
     case 'functional':
       return <Functional test={entry} context={context} />;
-    case 'workload':
-      return <Workload test={entry} />;
+    case 'workload': {
+      const c = context?.compare;
+      const other = c ? { id: c.id, test: c.data.tests.find((t): t is WorkloadTestResult => t.kind === 'workload' && t.name === entry.name) ?? null } : null;
+      return <Workload test={entry} other={other} />;
+    }
     case 'crawl':
       return <Crawl test={entry} />;
   }
@@ -214,35 +220,6 @@ function Steps({ steps }: { steps: readonly StepResult[] }) {
 
 /** A workload row as the report holds it — its verdict and its thresholds. The metrics, the
  * charts and the endpoint table are U4's; nothing here pretends to be them. */
-function Workload({ test }: { test: WorkloadTestResult }) {
-  return (
-    <section className={`test ${test.ok ? 'ok' : 'fail'}`} data-test data-kind="workload" data-name={test.name} data-ok={test.ok}>
-      <h3>
-        <span className={`dot ${test.ok ? 'ok' : 'fail'}`} />
-        <span data-test-name>{test.name}</span>
-        <span className="badge">workload</span>
-      </h3>
-      <p className="muted">
-        {test.metrics.iterations} iterations · {test.metrics.failures} failed
-      </p>
-      <table className="thresholds">
-        <tbody>
-          {test.thresholds.map((t, i) => (
-            <tr key={i} className={t.ok ? 'ok' : 'fail'} data-threshold>
-              <td>{t.ok ? '✓' : '✗'}</td>
-              <td>{t.label}</td>
-              <td>
-                {t.op === 'lessThan' ? '<' : '>'} {t.target}
-              </td>
-              <td>{t.actual === null ? 'no successful iterations' : t.actual}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
 function Crawl({ test }: { test: CrawlResult }) {
   return (
     <section className={`test ${test.ok ? 'ok' : 'fail'}`} data-test data-kind="crawl" data-name={test.name} data-ok={test.ok}>

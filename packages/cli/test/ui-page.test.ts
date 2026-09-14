@@ -17,7 +17,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer } from '../src/ui-server.js';
-import type { RunReport, StepResult, TestResult } from '@tflw/runtime';
+import { roundDurationMs, type LoadMetrics, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
+import { describeWorkload, formatThresholdActual, formatThresholdTarget } from '@tflw/reporter';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const uiRoot = join(here, '..', '..', 'ui');
@@ -75,6 +76,9 @@ after(async () => {
   await rm(scratch, { recursive: true, force: true });
 });
 
+/** The functional entries of a report — the workload kind carries metrics, not steps (U4). */
+const functional = (report: RunReport): TestResult[] => report.tests.filter((t): t is TestResult => t.kind === 'functional');
+
 async function openReport(id: string): Promise<void> {
   await page.goto(baseUrl);
   await page.locator(`[data-report-row="${id}"]`).click();
@@ -129,8 +133,8 @@ test('the functional view renders every test, step, detail, status and body the 
   let assertionsSeen = 0;
   let bodiesSeen = 0;
   for (const entry of report.tests) {
-    assert.equal(entry.kind, 'functional');
-    const t = entry as TestResult;
+    if (entry.kind !== 'functional') continue; // the workload kind has its own tests below (U4)
+    const t = entry;
     const section = page.locator(`[data-test][data-name="${t.name}"]`);
     assert.equal(await section.count(), 1, `${t.name} rendered once`);
     assert.equal(await section.getAttribute('data-ok'), String(t.ok));
@@ -161,10 +165,10 @@ test('the functional view renders every test, step, detail, status and body the 
     }
   }
   // Non-vacuity: the corpus carries a failed assertion with its got/expected, and bodies.
-  const failedAssertion = report.tests.flatMap((t) => (t as TestResult).steps).find((s) => !s.ok && s.kind === 'expect');
+  const failedAssertion = functional(report).flatMap((t) => t.steps).find((s) => !s.ok && s.kind === 'expect');
   assert.ok(failedAssertion?.detail?.includes(', but got '), 'the corpus has a failed assertion in the runtime\'s words');
   assert.ok(assertionsSeen >= 10 && bodiesSeen >= 5, `saw ${assertionsSeen} assertions and ${bodiesSeen} bodies`);
-  assert.ok(report.tests.some((t) => (t as TestResult).attempts), 'the corpus has a retried test');
+  assert.ok(functional(report).some((t) => t.attempts), 'the corpus has a retried test');
 });
 
 test('at `evidence headers only` the page states the level and shows the marker the report holds, never a body', async () => {
@@ -175,8 +179,8 @@ test('at `evidence headers only` the page states the level and shows the marker 
   assert.equal(await level.getAttribute('data-evidence-level'), report.evidenceLevel);
   const bodies = await page.locator('[data-body]').allTextContents();
   // In the page's order: a test's prior attempts are folded above its final steps.
-  const held = report.tests
-    .flatMap((t) => [...((t as TestResult).attempts ?? []).slice(0, -1).flatMap((a) => a.steps), ...(t as TestResult).steps])
+  const held = functional(report)
+    .flatMap((t) => [...(t.attempts ?? []).slice(0, -1).flatMap((a) => a.steps), ...t.steps])
     .filter((s) => s.response)
     .map((s) => s.response!.bodyText);
   assert.ok(held.length > 0 && held.every((b) => b === '[omitted by evidence level]'), 'the corpus is a headers-only run');
@@ -188,7 +192,7 @@ test('at `evidence headers only` the page states the level and shows the marker 
 test('WebUI at `evidence full`: the screenshot a step took, the failure shot, and the trace handed to Playwright\'s viewer', async () => {
   const report = oracle.full!;
   await openReport('full');
-  const shots = report.tests.flatMap((t) => (t as TestResult).steps.filter((s) => s.screenshot).map((s) => ({ test: t.name, step: s })));
+  const shots = functional(report).flatMap((t) => t.steps.filter((s) => s.screenshot).map((s) => ({ test: t.name, step: s })));
   assert.ok(shots.length >= 2 && shots.some((x) => x.step.ok) && shots.some((x) => !x.step.ok), 'the corpus has an explicit screenshot and a failure-first one');
   for (const { test: name, step } of shots) {
     const row = page.locator(`[data-test][data-name="${name}"] [data-step][data-line="${step.line}"]`);
@@ -212,7 +216,7 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
     );
     assert.deepEqual(size, [640, 400], 'the fixture viewport');
   }
-  const traced = report.tests.filter((t) => (t as TestResult).trace) as TestResult[];
+  const traced = functional(report).filter((t) => t.trace);
   assert.equal(traced.length, 1, 'the failed browser test kept its trace; the passing one did not');
   const section = page.locator(`[data-test][data-name="${traced[0]!.name}"]`);
   const line = section.locator('[data-trace]');
@@ -243,9 +247,9 @@ test('WebUI at `evidence headers only`: no screenshot, no trace, and the sentenc
   await openReport('headers');
   assert.equal(await page.locator('[data-screenshot]').count(), 0);
   assert.equal(await page.locator('[data-trace]').count(), 0);
-  const browserTests = report.tests.filter((t) => (t as TestResult).steps.some((s) => s.kind === 'open'));
+  const browserTests = functional(report).filter((t) => t.steps.some((s) => s.kind === 'open'));
   assert.equal(browserTests.length, 2, 'the corpus has two browser tests');
-  assert.ok(browserTests.every((t) => !(t as TestResult).trace && (t as TestResult).steps.every((s) => !s.screenshot)), 'the run withheld them (FS-01)');
+  assert.ok(browserTests.every((t) => !t.trace && t.steps.every((s) => !s.screenshot)), 'the run withheld them (FS-01)');
   const withheld = page.locator('[data-evidence-withheld]');
   assert.equal(await withheld.count(), browserTests.length);
   for (const t of browserTests) {
@@ -253,9 +257,216 @@ test('WebUI at `evidence headers only`: no screenshot, no trace, and the sentenc
     assert.equal(await p.getAttribute('data-evidence-withheld'), report.evidenceLevel);
   }
   // The `screenshot` step itself says it was not captured — the runtime's words, shown as its detail.
-  const shotStep = (browserTests[0] as TestResult).steps.find((s) => s.kind === 'screenshot')!;
+  const shotStep = browserTests[0]!.steps.find((s) => s.kind === 'screenshot')!;
   assert.match(shotStep.detail ?? '', /not captured \(evidence level\)/);
   assert.equal(await page.locator(`[data-test][data-name="${browserTests[0]!.name}"] [data-step][data-line="${shotStep.line}"] [data-detail]`).textContent(), shotStep.detail);
+});
+
+// ---- U4: the workload kind -----------------------------------------------------------------
+
+const workloads = (report: RunReport): WorkloadTestResult[] => report.tests.filter((t): t is WorkloadTestResult => t.kind === 'workload');
+/** The page's units, restated: `D809`'s rounding then ` ms`; a rate as the console prints it. */
+const dur = (n: number): string => `${roundDurationMs(n)} ms`;
+const pct = (f: number): string => `${(f * 100).toFixed(2)}%`;
+/** Every `[data-stat]` row the page shows, read from the oracle the same way. */
+const STATS: Record<string, (m: LoadMetrics) => string> = {
+  iterations: (m) => String(m.iterations),
+  failures: (m) => String(m.failures),
+  errorRate: (m) => pct(m.errorRate),
+  assertions: (m) => (m.assertions === null ? '—' : String(m.assertions)),
+  min: (m) => dur(m.durations.min),
+  avg: (m) => dur(m.durations.avg),
+  max: (m) => dur(m.durations.max),
+  p50: (m) => dur(m.durations.p50),
+  p90: (m) => dur(m.durations.p90),
+  p95: (m) => dur(m.durations.p95),
+  p99: (m) => dur(m.durations.p99),
+  'successful.iterations': (m) => String(m.successful.iterations),
+  'successful.p50': (m) => dur(m.successful.durations.p50),
+  'successful.p95': (m) => dur(m.successful.durations.p95),
+  'successful.p99': (m) => dur(m.successful.durations.p99),
+};
+
+/** uPlot's legend under the cursor: `{ label: value }`, read from the DOM the reader sees. */
+async function legendAt(chart: ReturnType<Page['locator']>, fraction: number): Promise<Record<string, string>> {
+  await chart.scrollIntoViewIfNeeded();
+  const box = (await chart.locator('.u-over').boundingBox())!;
+  // One pixel inside either edge, so the cursor snaps to the first or last point, never off-plot.
+  const px = Math.min(Math.max(box.width * fraction, 1), box.width - 1);
+  await page.mouse.move(box.x + px, box.y + box.height / 2);
+  const rows = await chart.locator('.u-legend .u-series').all();
+  const out: Record<string, string> = {};
+  for (const r of rows) out[(await r.locator('.u-label').textContent())!.trim()] = (await r.locator('.u-value').textContent())!.trim();
+  return out;
+}
+
+/** How many of a canvas's pixels are painted — a chart that drew nothing has none. */
+async function paintedPixels(chart: ReturnType<Page['locator']>): Promise<number> {
+  // Typed loosely: the cli's typecheck has no DOM lib, and this runs in the browser.
+  return chart.locator('canvas').evaluate((c) => {
+    const canvas = c as unknown as { width: number; height: number; getContext(k: '2d'): { getImageData(x: number, y: number, w: number, h: number): { data: Uint8ClampedArray } } };
+    const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    let n = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) n += 1;
+    return n;
+  });
+}
+
+test('the workload view: the shape, every stat, every threshold and every endpoint the report holds, in the report\'s words', async () => {
+  const report = oracle.full!;
+  const loads = workloads(report);
+  assert.ok(loads.length >= 2, 'the corpus has two workload tests');
+  assert.ok(loads.some((t) => t.ok) && loads.some((t) => !t.ok), 'one passes its thresholds and one breaches');
+  await openReport('full');
+  assert.equal(await page.locator('[data-test][data-kind="workload"]').count(), loads.length);
+  for (const t of loads) {
+    const section = page.locator(`[data-test][data-kind="workload"][data-name="${t.name}"]`);
+    assert.equal(await section.getAttribute('data-ok'), String(t.ok));
+    assert.equal((await section.locator('[data-workload-shape]').textContent())?.trim(), describeWorkload(t.workload));
+    assert.equal(await section.locator('[data-compared-with]').count(), 0, 'nothing is compared until asked');
+    for (const [key, read] of Object.entries(STATS)) {
+      assert.equal((await section.locator(`[data-stat="${key}"] [data-value]`).textContent())?.trim(), read(t.metrics), `${t.name}: ${key}`);
+    }
+    assert.equal(await section.locator('[data-stat] [data-other]').count(), 0);
+    const rows = section.locator('[data-threshold]');
+    assert.equal(await rows.count(), t.thresholds.length);
+    for (let i = 0; i < t.thresholds.length; i++) {
+      const th = t.thresholds[i]!;
+      const row = rows.nth(i);
+      assert.equal(await row.getAttribute('data-ok'), String(th.ok));
+      assert.equal(await row.getAttribute('data-label'), th.label);
+      assert.equal((await row.locator('[data-target]').textContent())?.trim(), `${th.op === 'lessThan' ? '<' : '>'} ${formatThresholdTarget(th)}`);
+      assert.equal((await row.locator('[data-actual]').textContent())?.trim(), `actual: ${formatThresholdActual(th)}`);
+    }
+    // The endpoint table — one row per identity, the endpoint's own numbers.
+    const endpoints = section.locator('[data-endpoint]');
+    assert.equal(await endpoints.count(), t.endpoints.length);
+    for (const e of t.endpoints) {
+      const row = section.locator(`[data-endpoint="${e.identity}"]`);
+      assert.equal((await row.locator('[data-col="iterations"]').textContent())?.trim(), String(e.metrics.iterations));
+      assert.equal((await row.locator('[data-col="failures"]').textContent())?.trim(), String(e.metrics.failures));
+      assert.equal((await row.locator('[data-col="errorRate"]').textContent())?.trim(), pct(e.metrics.errorRate));
+      for (const k of ['p50', 'p95', 'p99', 'max'] as const) assert.equal((await row.locator(`[data-col="${k}"]`).textContent())?.trim(), dur(e.metrics.durations[k]));
+    }
+    assert.equal(await section.locator('[data-col="otherP95"]').count(), 0);
+  }
+  // Non-vacuity: a breached threshold is drawn as one, an error-rate actual carries its unit.
+  assert.ok((await page.locator('[data-threshold][data-ok="false"]').count()) >= 1);
+  assert.ok((await page.locator('[data-threshold] [data-actual]').allTextContents()).some((s) => s.includes('%')));
+  // Sorting the endpoint table: by p95 ascending, then descending, is the oracle's order.
+  const multi = loads.find((t) => t.endpoints.length > 1)!;
+  const section = page.locator(`[data-test][data-kind="workload"][data-name="${multi.name}"]`);
+  const byP95 = [...multi.endpoints].sort((a, b) => a.metrics.durations.p95 - b.metrics.durations.p95).map((e) => e.identity);
+  assert.notDeepEqual(byP95, [...byP95].reverse(), 'the endpoints differ in p95, so the sort is observable');
+  const p95Header = section.locator('[data-endpoints] th', { hasText: /^p95/ });
+  await p95Header.click();
+  assert.equal(await p95Header.getAttribute('data-sort'), 'asc');
+  assert.deepEqual(await section.locator('[data-endpoint]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-endpoint'))), byP95);
+  await p95Header.click();
+  assert.equal(await p95Header.getAttribute('data-sort'), 'desc');
+  assert.deepEqual(await section.locator('[data-endpoint]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-endpoint'))), [...byP95].reverse());
+});
+
+test('the charts are the report\'s timeline and histogram: painted, one point per second, and the legend reads the report\'s numbers under the cursor', async () => {
+  const report = oracle.full!;
+  const loads = workloads(report);
+  await openReport('full');
+  const long = loads.find((t) => t.metrics.timeline.length >= 3)!;
+  const short = loads.find((t) => t.metrics.timeline.length === 1)!;
+  assert.ok(long && short, 'the corpus has a multi-second run and a one-second run');
+  for (const t of loads) {
+    const section = page.locator(`[data-test][data-kind="workload"][data-name="${t.name}"]`);
+    const n = t.metrics.timeline.length;
+    for (const id of ['latency', 'throughput', 'errors']) {
+      const chart = section.locator(`[data-chart="${id}"]`);
+      assert.equal(await chart.getAttribute('data-points'), String(n), `${t.name}: ${id} has one point per second`);
+      assert.ok((await paintedPixels(chart)) > 0, `${t.name}: ${id} painted something`);
+    }
+    assert.equal(await section.locator('[data-chart="latency"]').getAttribute('data-series'), '3');
+    assert.equal(await section.locator('[data-chart="histogram"]').getAttribute('data-points'), String(t.metrics.histogram.length));
+    // The legend under the cursor at the first and the last second is that second's own figures.
+    for (const [k, fraction] of [[0, 0], [n - 1, 1]] as const) {
+      const p = t.metrics.timeline[k]!;
+      const latency = await legendAt(section.locator('[data-chart="latency"]'), fraction);
+      assert.deepEqual(latency, { at: `${p.offsetSeconds}s`, p50: dur(p.p50), p95: dur(p.p95), p99: dur(p.p99) }, `${t.name}: latency at ${p.offsetSeconds}s`);
+      const throughput = await legendAt(section.locator('[data-chart="throughput"]'), fraction);
+      assert.deepEqual(throughput, { at: `${p.offsetSeconds}s`, 'requests/s': String(p.rps) });
+      const errors = await legendAt(section.locator('[data-chart="errors"]'), fraction);
+      assert.deepEqual(errors, { at: `${p.offsetSeconds}s`, 'error rate': `${Number((p.errorRate * 100).toFixed(2))}%` });
+    }
+    // The histogram: the first bucket's own value and count.
+    const first = t.metrics.histogram[0]!;
+    const last = t.metrics.histogram[t.metrics.histogram.length - 1]!;
+    assert.deepEqual(await legendAt(section.locator('[data-chart="histogram"]'), 0), { bucket: dur(first.value), iterations: String(first.count) });
+    assert.deepEqual(await legendAt(section.locator('[data-chart="histogram"]'), 1), { bucket: dur(last.value), iterations: String(last.count) });
+  }
+  // Non-vacuity: the multi-second run's p95 varies across its seconds, so the two reads differ
+  // by the report and not by the cursor.
+  const p95s = long.metrics.timeline.map((p) => dur(p.p95));
+  assert.ok(new Set(p95s).size > 1 || new Set(long.metrics.timeline.map((p) => String(p.rps))).size > 1, 'the run is not flat');
+  assert.ok((await page.locator('[data-threshold][data-ok="false"]').count()) >= 1);
+  assert.ok(short.metrics.errorRate > 0, 'the one-second run has an error rate to plot');
+});
+
+test('two report directories side by side: the compared run\'s figures in every table, its series dashed on every chart, and nothing once unpicked', async () => {
+  const a = oracle.full!;
+  const b = oracle.headers!;
+  await openReport('full');
+  await page.locator('[data-compare]').selectOption('headers');
+  await page.locator('[data-compared-with="headers"]').first().waitFor();
+  const loadsA = workloads(a);
+  assert.equal(await page.locator('[data-compared-with="headers"]').count(), loadsA.length);
+  let deltasSeen = 0;
+  for (const t of loadsA) {
+    const o = workloads(b).find((x) => x.name === t.name)!;
+    assert.ok(o, `${t.name} is in both runs`);
+    const section = page.locator(`[data-test][data-kind="workload"][data-name="${t.name}"]`);
+    for (const [key, read] of Object.entries(STATS)) {
+      const row = section.locator(`[data-stat="${key}"]`);
+      assert.equal((await row.locator('[data-value]').textContent())?.trim(), read(t.metrics), `${key}: this run`);
+      assert.equal((await row.locator('[data-other]').textContent())?.trim(), read(o.metrics), `${key}: the compared run`);
+      const delta = (await row.locator('[data-delta]').textContent())!.trim();
+      assert.match(delta, /^[+−±]/, `${key}: a signed difference`);
+      if (!delta.startsWith('±')) deltasSeen += 1;
+    }
+    // A duration difference is the two stated figures' difference, rounded the way they are.
+    const min = t.metrics.durations.min - o.metrics.durations.min;
+    assert.equal((await section.locator('[data-stat="min"] [data-delta]').textContent())?.trim(), `${min > 0 ? '+' : min < 0 ? '−' : '±'}${roundDurationMs(Math.abs(min))} ms`);
+    const rows = section.locator('[data-threshold]');
+    for (let i = 0; i < t.thresholds.length; i++) {
+      const th = t.thresholds[i]!;
+      const ot = o.thresholds.find((x) => x.label === th.label && x.op === th.op && x.target === th.target)!;
+      assert.equal((await rows.nth(i).locator('[data-actual-other]').textContent())?.trim(), formatThresholdActual(ot));
+    }
+    for (const e of t.endpoints) {
+      const oe = o.endpoints.find((x) => x.identity === e.identity)!;
+      const row = section.locator(`[data-endpoint="${e.identity}"]`);
+      assert.equal((await row.locator('[data-col="otherP95"]').textContent())?.trim(), dur(oe.metrics.durations.p95));
+      assert.equal((await row.locator('[data-col="otherErrorRate"]').textContent())?.trim(), pct(oe.metrics.errorRate));
+    }
+    // Every chart carries both runs; under the cursor the dashed series reads the other report.
+    assert.equal(await section.locator('[data-chart="latency"]').getAttribute('data-series'), '6');
+    assert.equal(await section.locator('[data-chart="throughput"]').getAttribute('data-series'), '2');
+    const union = [...new Set([...t.metrics.timeline, ...o.metrics.timeline].map((p) => p.offsetSeconds))].sort((x, y) => x - y);
+    assert.equal(await section.locator('[data-chart="latency"]').getAttribute('data-points'), String(union.length));
+    const at = union[union.length - 1]!;
+    const pa = t.metrics.timeline.find((p) => p.offsetSeconds === at);
+    const pb = o.metrics.timeline.find((p) => p.offsetSeconds === at);
+    const legend = await legendAt(section.locator('[data-chart="latency"]'), 1);
+    assert.equal(legend.at, `${at}s`);
+    assert.equal(legend.p95, pa ? dur(pa.p95) : '–');
+    assert.equal(legend['p95 (compared)'], pb ? dur(pb.p95) : '–');
+  }
+  assert.ok(deltasSeen > 0, 'the two runs differ somewhere, so a difference was actually shown');
+  // Unpicked: back to one run, and a different selection starts with none.
+  await page.locator('[data-compare]').selectOption('');
+  await page.locator('[data-compared-with]').first().waitFor({ state: 'detached' });
+  assert.equal(await page.locator('[data-stat] [data-other]').count(), 0);
+  await page.locator('[data-compare]').selectOption('headers');
+  await page.locator('[data-compared-with="headers"]').first().waitFor();
+  await openReport('headers');
+  assert.equal(await page.locator('[data-compared-with]').count(), 0, 'a comparison does not follow the selection');
+  assert.equal(await page.locator('[data-compare]').inputValue(), '');
 });
 
 test('a run from the page: the live pane fills from the stream, and the kept directory is what the page then shows', async () => {

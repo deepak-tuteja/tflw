@@ -19,6 +19,8 @@ export { renderCliSummary } from './cli-summary.js';
 // M89b (D-M89-5) — exported for the CLI's pre-run `scenario "…" — <description>` line, which is
 // the same string this renders into the summary and `report.html` because it is the same call.
 export { describeWorkload } from './workload-format.js';
+// `M192` U4 — the page gate grades the workload view against these, the same calls the page makes.
+export { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 export { renderJunitXml } from './junit.js';
 export { writeLastRun, readLastRun, renderLastRun, describeRunFilter, type LastRun, type LastRunFailure } from './last-run.js';
 export { writeEventsNdjson } from './events-ndjson.js';

@@ -264,6 +264,14 @@ which `tflw ui` serves under `/trace/` from the project's `playwright-core` — 
 and the archive never leaves the machine. Below `full` there is no screenshot and no trace, by
 decision, and the page says so under each browser test rather than leaving a gap.
 
+**A workload test is its metrics, charted.** The figures are `results.json`'s own — iterations,
+failures, error rate, the all-iterations and the successful-only percentiles, every threshold with
+its actual, one row per endpoint — in the units the console and `report.html` print. The four
+charts are the report's per-second timeline (latency p50/p95/p99, throughput, error rate) and its
+bucketed histogram; hover a chart and the legend reads that second's own numbers. Two runs compare
+by opening two report directories: pick one under *compare with* and every table gains the other
+run's column and the signed difference, and every chart its dashed series.
+
 **Loopback only.** The bind address is not configurable: the page can start a run, and a run reads
 the project's `.env`. To reach it from another machine, tunnel it (`ssh -L 4141:127.0.0.1:4141`
 to that machine) rather than exposing it.

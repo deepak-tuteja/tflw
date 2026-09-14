@@ -24,6 +24,10 @@ export function App() {
   const [reports, setReports] = useState<readonly ReportDir[]>([]);
   const [selected, setSelected] = useState<Selection>(null);
   const [report, setReport] = useState<{ id: string; data: RunReport } | null>(null);
+  // U4 — a second directory opened beside the selected one (§2 q6). Chosen per selection: it
+  // is dropped when the selection changes, so a comparison is always between two named runs.
+  const [compareId, setCompareId] = useState<string | null>(null);
+  const [compare, setCompare] = useState<{ id: string; data: RunReport } | null>(null);
   const [live, setLive] = useState<LiveRun | null>(null);
   const unsubscribe = useRef<(() => void) | null>(null);
 
@@ -49,10 +53,22 @@ export function App() {
   useEffect(() => {
     if (selected?.kind !== 'report') return;
     const id = selected.id;
+    setCompareId(null);
     getResults(id)
       .then((data) => setReport({ id, data }))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, [selected]);
+
+  useEffect(() => {
+    if (compareId === null) {
+      setCompare(null);
+      return;
+    }
+    const id = compareId;
+    getResults(id)
+      .then((data) => setCompare({ id, data }))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, [compareId]);
 
   const watch = useCallback(
     (id: string) => {
@@ -113,6 +129,21 @@ export function App() {
           <article className="report" data-report={report.id}>
             <ReportHeader report={report.data} />
             <p className="muted files-line">
+              {reports.length > 1 ? (
+                <label className="compare">
+                  compare with{' '}
+                  <select value={compareId ?? ''} onChange={(e) => setCompareId(e.target.value === '' ? null : e.target.value)} data-compare>
+                    <option value="">— nothing —</option>
+                    {reports
+                      .filter((r) => r.id !== report.id)
+                      .map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.id}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              ) : null}
               {reports
                 .find((r) => r.id === report.id)
                 ?.files.map((f) => (
@@ -121,7 +152,7 @@ export function App() {
                   </a>
                 ))}
             </p>
-            <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false }} />
+            <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null }} />
           </article>
         ) : null}
         {selected === null && !error ? <p className="muted empty">select a run</p> : null}

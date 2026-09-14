@@ -1,6 +1,9 @@
-// The fixture project's target — a `node:http` server with three items, orders, and one endpoint
-// that fails its first call (for the `retry 2` test). Started by `scripts/make-fixtures.mjs` and
-// by the page gate; never by `tflw ui` itself. `PORT` is the one `tflw.config` names.
+// The fixture project's target — a `node:http` server with three items, orders, one endpoint
+// that fails its first call (for the `retry 2` test), and two for the workload tests (U4): a
+// search that answers on a small deterministic latency ladder, so a histogram has more than one
+// bucket, and a stock check that fails every fourth call, so an error-rate threshold has
+// something to breach. Started by `scripts/make-fixtures.mjs` and by the page gate; never by
+// `tflw ui` itself. `PORT` is the one `tflw.config` names.
 import { createServer } from 'node:http';
 
 export const PORT = 4717;
@@ -14,6 +17,8 @@ const items = [
 export function startFixtureServer() {
   const orders = new Map();
   let warmups = 0;
+  let searches = 0;
+  let stockChecks = 0;
   const server = createServer((req, res) => {
     const send = (status, body) => {
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -61,6 +66,18 @@ export function startFixtureServer() {
     if (req.method === 'GET' && path === '/warmup') {
       warmups += 1;
       return warmups === 1 ? send(503, { error: 'warming up' }) : send(200, { ready: true, attempt: warmups });
+    }
+    if (req.method === 'GET' && path === '/search') {
+      searches += 1;
+      const q = url.searchParams.get('q') ?? '';
+      const hits = items.filter((i) => i.name.includes(q));
+      // 2, 6, 10, … 26 ms, cycling — seven rungs, so the buckets are spread, not one spike.
+      const delay = 2 + (searches % 7) * 4;
+      return void setTimeout(() => send(200, { q, hits }), delay);
+    }
+    if (req.method === 'GET' && path === '/stock') {
+      stockChecks += 1;
+      return stockChecks % 4 === 0 ? send(500, { error: 'stock service unavailable' }) : send(200, { inStock: true, checks: stockChecks });
     }
     send(404, { error: `no route ${req.method} ${path}` });
   });
