@@ -10609,7 +10609,7 @@ file (`packages/lsp-server/src/server.ts`), and the same verification setup.
 
 ### M124
 
-<sub>cited from SPEC.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md +6 more · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONTRIBUTING.md +7 more · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
 
 **`M124` — a literal the run will reject is a checker sentence**
 
@@ -11290,19 +11290,6 @@ number lands on a statement rather than on a story.
 Order 6's terminal part. Its subject was the twenty rows still open, and `D622` allowed most of them
 to be closed by ruling. Five closed by build instead, three of the five because the row's own
 disposition turned out to be cheaper than it read.
-
-### M148
-
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
-
-**9.2e `M148` — the excursion between `M147e` and `M147f`, and why it is not Order 6**
-
-`M147e` pushed as tflw PR #97 and went red on `mutation controls`. It had not caused it: `main` at
-`dab23f2` — `M147e`'s own base, i.e. Order 6 with four parts merged — was already red the same way.
-So the work between the two parts is a CI repair, filed as `M147-11` and built as **`M148`**, off
-`main`, merged before #97. It is deliberately **not** lettered into this milestone: `D626` gives
-Order 6 six parts each closing ledger rows about the language, and this closes one about the
-instrument that measures the language. Order 6's row set is unchanged.
 
 ### M149c
 
@@ -12639,7 +12626,7 @@ kind at a time against a real insertion (`D994`).
 
 ### M192
 
-<sub>cited from SPEC.md · lifted from `PLAN_M192_TFLW_UI.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M192_TFLW_UI.md`</sub>
 
 **`M192` — `tflw ui`: the page for a `.tflw` project**
 
@@ -12651,5 +12638,19 @@ browser test, and for Burp to triage findings. This arc is that answer, scoped b
 2026-09-13/14 (eight questions, every one answered with the recommendation), and it is shaped by
 one rule the grilling settled first: **the `.tflw` file is the only truth, and the page is a
 projection of it** — never a second format.
+
+### M194
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M194_BOX_SWEEP.md`</sub>
+
+**`M194` — the mutation sweep leaves the runners**
+
+The mutation registry runs on the build box before a milestone closes, eight trees at once, and
+its result is recorded in the milestone's plan (`npm run sweep`). CI's 33-shard matrix, the
+per-package cost model that packed it and the re-shard trigger that watched it are deleted, and
+the registry is frozen at 372 — a new entry only when a plan's green condition needs to prove a
+gate can go red. Decided on the ledger's evidence: across 299 rows, no mutation registered in an
+earlier milestone ever survived a later full sweep, so a mutation's value is spent at authoring and
+a per-push sweep of the whole registry bought nothing the ledger could show.
 
 <!-- GENERATED:decisions:end -->
