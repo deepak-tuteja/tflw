@@ -44,6 +44,7 @@ import {
   type ReuseOccurrence,
   type TestDecl,
   type Workload,
+  format as formatSource,
 } from '@tflw/lang';
 import {
   runProgram,
@@ -366,6 +367,8 @@ async function main(argv: string[]): Promise<number> {
       return refactorCommand(rest);
     case 'migrate':
       return migrateCommand(rest);
+    case 'fmt':
+      return fmtCommand(rest);
     case '--version':
     case '-v':
       process.stdout.write(`${await getVersion()}\n`);
@@ -2351,6 +2354,76 @@ interface CheckArgs {
  * from `check`'s diagnostics array; inventing that JSON contract with no consumer asking is the
  * mistake that produced this cluster. `CLI_FLAGS` has never listed `--format` under `migrate`, so
  * `--help` and the docs-site reference already agreed with this — only the parser didn't. */
+/**
+ * `tflw fmt` — `M191` (`D994`–`D997`). The formatter is `@tflw/lang`'s `format`, a function over the
+ * lexer's tokens; this is its file surface. A directory is walked (unlike `check`, whose positional
+ * is a file list by grammar): a formatter is run over a tree far more often than over one file, and
+ * `report/`, `node_modules/` and `.git/` are skipped because a repro tflw wrote is not something the
+ * user meant to format. `--check` is the CI form: nothing written, every file that would change
+ * listed, exit 1 if any would. A file the lexer refuses is named and left alone under both forms,
+ * and counts as a failure — a formatter that silently skips a broken file is a check that says
+ * "clean" about a file it never read.
+ */
+async function fmtCommand(argv: string[]): Promise<number> {
+  const paths: string[] = [];
+  let check = false;
+  for (const a of argv) {
+    if (a === '--check') check = true;
+    else if (a.startsWith('--')) unknownFlag('fmt', a);
+    else paths.push(a);
+  }
+  const cwd = process.cwd();
+  const SKIP = new Set(['node_modules', '.git', 'report']);
+  const files: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true });
+    entries.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+    for (const e of entries) {
+      if (SKIP.has(e.name)) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) await walk(full);
+      else if (e.isFile() && e.name.endsWith('.tflw')) files.push(full);
+    }
+  };
+  for (const p of paths.length === 0 ? ['.'] : paths) {
+    const full = resolve(cwd, p);
+    let stats;
+    try {
+      stats = await stat(full);
+    } catch {
+      err(`no such file or directory \`${p}\``);
+      return EXIT_USAGE;
+    }
+    if (stats.isDirectory()) await walk(full);
+    else files.push(full);
+  }
+  let changed = 0;
+  let refused = 0;
+  for (const file of files) {
+    const rel = relative(cwd, file).split('\\').join('/');
+    const source = await readFile(file, 'utf8');
+    const r = formatSource(source);
+    if (!r.ok) {
+      refused += 1;
+      err(`✗ ${rel}: not formatted — ${r.reason}`);
+      continue;
+    }
+    if (r.formatted === source) continue;
+    changed += 1;
+    if (check) process.stdout.write(`would format ${rel}\n`);
+    else {
+      await writeFile(file, r.formatted, 'utf8');
+      process.stdout.write(`formatted ${rel}\n`);
+    }
+  }
+  const n = files.length;
+  process.stdout.write(
+    `${n} file${n === 1 ? '' : 's'}, ${check ? `${changed} would change` : `${changed} formatted`}${refused > 0 ? `, ${refused} not formatted` : ''}.\n`,
+  );
+  if (refused > 0) return EXIT_FAIL;
+  return check && changed > 0 ? EXIT_FAIL : EXIT_OK;
+}
+
 function parseCheckArgs(argv: string[], command: 'check' | 'migrate'): CheckArgs {
   const files: string[] = [];
   let env: string | undefined;
@@ -3780,6 +3853,11 @@ function printUsage(): void {
       '                                                      "run `tflw migrate` to apply this automatically" is one it can act on — bare `check <locator>`',
       '                                                      deliberately is not, since only you can say whether it meant `tick` or an assertion.',
       '                                                      Works on files that do not parse; exits 2 if errors remain after the rewrite',
+      '  tflw fmt [paths...] [--check]                      format `.tflw` files in place (M191): two-space blocks, one space between',
+      '                                                      tokens, padded objects `{ a: 1 }`, aligned tables, comments where they are;',
+      '                                                      a directory is walked, no path means the current directory. --check writes',
+      '                                                      nothing, lists the files that would change and exits 1. A file that does not',
+      '                                                      lex is reported and left alone',
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',
       '',

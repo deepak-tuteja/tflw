@@ -14,6 +14,7 @@ const installFlags = CLI_FLAGS.filter((f) => f.command === 'install-browsers');
 const pickFlags = CLI_FLAGS.filter((f) => f.command === 'pick');
 const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
 const migrateFlags = CLI_FLAGS.filter((f) => f.command === 'migrate');
+const fmtFlags = CLI_FLAGS.filter((f) => f.command === 'fmt');
 const specFlags = CLI_FLAGS.filter((f) => f.command === 'spec');
 const globalFlags = CLI_FLAGS.filter((f) => f.command === 'global');
 </script>
@@ -189,6 +190,52 @@ job is the rewrite, not the verdict.
 
 It rewrites *keywords*, not prose. A migrated file can be entirely correct code and still name the
 old keyword in its comments and `test "…"` names — this is not a rename-symbol refactor.
+
+## `tflw fmt [paths]`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in fmtFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+Formats `.tflw` files in place. A path may be a file or a directory; a directory is walked for
+`.tflw` files (`node_modules/`, `.git/` and `report/` are skipped — a repro tflw wrote into
+`report/` is not something you meant to format); no path means the current directory. Each file
+that changed is named, then one summary line.
+
+**What it decides, and what it never touches.** Blocks indent two spaces per level. On a line,
+tokens are separated by one space, with none before `,` `:` `)` `]` and none after `(` `[`; objects
+are padded `{ a: 1 }`, arrays are `[1, 2]`, an interpolation `{name}` stays tight (that is the
+language's own rule: `{ IDENT }` is an interpolation and an object always has a `key:`). A
+multi-line `body { … }` indents its content one level past the line that opened it and puts the
+closer back at that line's indent. Data tables align by column. Blank lines collapse to one,
+trailing whitespace goes, the file ends in exactly one newline. **Comments never move**: a comment
+line stays a line, at the indentation of the code that follows it (or of the block it closes, when
+it sits at the end of one); a trailing comment gets two spaces before its `#`; comment text is
+never edited. Strings, numbers, paths and everything else inside a token are emitted byte for byte.
+
+Three spaces are kept as you wrote them, because the same two tokens mean two things and only the
+parser tells them apart: the space after a `-`/`+` (`price: -1` against `today - 10 days`), the
+space between a number and the word after it (`4s` is a duration, `3 seconds` is one too, `4 s` is
+an error), and the space between a name and a `[` (`body[0]` is an index, `equals [1, 2]` is a
+list).
+
+**A file that does not lex is not formatted.** It is named on stderr with the diagnostic, left
+byte-for-byte alone, and the command exits 1 — a formatter that silently skips a broken file is a
+check that says "clean" about a file it never read. Fix the file (`tflw check` says how), then
+format it.
+
+**The guarantee.** For every file it writes, the formatted text lexes to the same tokens in the
+same order (indentation and comments excluded), keeps every comment in text and order, keeps the
+block structure, and formats to itself on a second pass. That property is what lets the rules be
+this opinionated: nothing the formatter does can change what a file means. The same function
+answers the editor's *Format Document* through `tflw lsp`, so format-on-save in VS Code needs no
+setting beyond the extension.
 
 ## `tflw docs [topic]`
 

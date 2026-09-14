@@ -150,11 +150,11 @@ test "creating a coupon exercises a Type <select> and a 5-field fill form"
   open "/coupons"
   select "fixed" from field "Type"
   fill form
-    | "Code"                                             | unique("M40FixedCoupon") |
-    | "Value (percent: 0-100, fixed: currency amount)"    | "10.00"                 |
-    | "Expires at"                                        | "2027-01-01T10:00"      |
-    | "Minimum order amount"                              | "0"                     |
-    | "Usage limit"                                       | "5"                     |
+    | "Code"                                           | unique("M40FixedCoupon") |
+    | "Value (percent: 0-100, fixed: currency amount)" | "10.00"                  |
+    | "Expires at"                                     | "2027-01-01T10:00"       |
+    | "Minimum order amount"                           | "0"                      |
+    | "Usage limit"                                    | "5"                      |
   click button "Create coupon"
   expect css "tr:has(th:text-is('type')) td:text-is('fixed')" is visible
 

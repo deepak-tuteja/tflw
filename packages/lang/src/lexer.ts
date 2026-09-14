@@ -23,6 +23,29 @@ import { ABSOLUTE_URL_START } from './absoluteUrl.js';
 export interface LexResult {
   readonly tokens: readonly Token[];
   readonly diagnostics: readonly Diagnostic[];
+  /** One record per physical line, in order — the trivia the token stream drops (`M191`, `D994`). */
+  readonly lines: readonly LineInfo[];
+}
+
+/**
+ * What a physical line is made of besides its tokens. `M191` (`D994`): the formatter is a function
+ * over the token stream, and the token stream deliberately carries no indentation and no comments —
+ * `processLine` consumes both without a token so the parser stays indentation-agnostic. A formatter
+ * needs them back, and this is the channel: recorded beside the tokens, read by nothing else.
+ *
+ * `indent` is the width of leading whitespace (BOM excluded, as `handleIndent` sees it). `kind`
+ * says whether the line carried code, only a comment, or nothing. `comment` is the comment's text
+ * from its `#` to the end of the line, trailing whitespace included, for a comment-only line or a
+ * trailing comment on a code line. `continuation` is true when the line began inside an open
+ * `{`/`[` — a physical line of a logical one, with no indentation structure of its own.
+ */
+export interface LineInfo {
+  readonly line: number;
+  readonly offset: number;
+  readonly indent: number;
+  readonly kind: 'blank' | 'comment' | 'code';
+  readonly comment?: string;
+  readonly continuation: boolean;
 }
 
 /** Characters that may appear in a `/`-initiated PATH token.
@@ -185,6 +208,7 @@ const LOOKALIKE_SCRIPTS: readonly (readonly [string, RegExp])[] = [
 
 class Lexer {
   private readonly tokens: Token[] = [];
+  private readonly lines: LineInfo[] = [];
   private readonly diagnostics: Diagnostic[] = [];
   /** Indentation column stack; always begins with the base level 0. */
   private readonly indentStack: number[] = [0];
@@ -286,7 +310,7 @@ class Lexer {
     }
     this.push('eof', '', '', { start: endPos, end: endPos });
 
-    return { tokens: this.tokens, diagnostics: this.diagnostics };
+    return { tokens: this.tokens, diagnostics: this.diagnostics, lines: this.lines };
   }
 
   // -- per-line handling -----------------------------------------------------
@@ -307,10 +331,18 @@ class Lexer {
     // consequence rather than an assumption.
     this.scanHidden(line, 0, firstNonWs, lineStart, lineNo, 'the indentation');
 
+    const continuation = this.openBrackets.length > 0;
+    const bomWidth = lineStart === 0 && line[0] === BOM ? 1 : 0;
+
     // Blank or comment-only lines carry no structure.
     const rest = line.slice(firstNonWs);
     if (rest === '' || rest.startsWith('#')) {
       if (rest !== '') this.scanHidden(line, firstNonWs, line.length, lineStart, lineNo, 'a comment');
+      this.lines.push(
+        rest === ''
+          ? { line: lineNo, offset: lineStart, indent: firstNonWs - bomWidth, kind: 'blank', continuation }
+          : { line: lineNo, offset: lineStart, indent: firstNonWs - bomWidth, kind: 'comment', comment: rest, continuation },
+      );
       return;
     }
 
@@ -331,7 +363,6 @@ class Lexer {
     // A line continuing an already-open `{`/`[` from a previous line carries no indentation
     // structure of its own (P#46 gap, found dogfooding restful-booker: a hand-formatted
     // multi-line `body { … }` must be usable, the way Python suppresses NEWLINE inside brackets).
-    const continuingBracket = this.openBrackets.length > 0;
     // M98d (`M98d-01`, found by this milestone's own BOM probe and **pre-existing** — measured
     // failing identically on the M98c build). A byte-order mark is skipped as whitespace (M59,
     // `A1-04`), but skipping it still *counted* it, so the first line of any UTF-8-with-BOM file
@@ -339,9 +370,17 @@ class Lexer {
     // `TF016: expected a `test` … found an indented block`, on a file whose first line starts at
     // column 1. Windows editors and PowerShell redirection write that BOM by default. It is
     // subtracted from the indent width only — the column of every token on the line is unchanged.
-    const bomCol = lineStart === 0 && line[0] === BOM ? 1 : 0;
-    if (!continuingBracket) this.handleIndent(firstNonWs - bomCol, lineStart, lineNo);
+    if (!continuation) this.handleIndent(firstNonWs - bomWidth, lineStart, lineNo);
     const stop = this.lexContent(line, firstNonWs, lineStart, lineNo); // may open/close brackets
+    // `M191`: the line's trivia record. `stop` is the `#` of a trailing comment or the end of the
+    // line — `lexContent` is the only place that knows which, since a `#` inside a string is not
+    // a comment (D159).
+    const trailing = stop < line.length && line[stop] === '#' ? line.slice(stop) : undefined;
+    this.lines.push(
+      trailing === undefined
+        ? { line: lineNo, offset: lineStart, indent: firstNonWs - bomWidth, kind: 'code', continuation }
+        : { line: lineNo, offset: lineStart, indent: firstNonWs - bomWidth, kind: 'code', comment: trailing, continuation },
+    );
 
     // Only a logical end-of-line — i.e. we're not left inside an open `{`/`[` — gets a `newline`.
     if (this.openBrackets.length === 0) {

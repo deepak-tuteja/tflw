@@ -37,7 +37,7 @@ import { getHover } from './resolution/hover.js';
 import { getCompletions, variablesInScopeAt } from './resolution/completion.js';
 import { findRenameTargets } from './resolution/rename.js';
 import { getSignatureHelp } from './resolution/signatureHelp.js';
-import { getCompletionContext, getConfigCompletionContext, collectSemanticTokens, lex } from '@tflw/lang';
+import { getCompletionContext, getConfigCompletionContext, collectSemanticTokens, lex, format as formatSource } from '@tflw/lang';
 
 // Mirrors `syntaxes/tflw.tmLanguage.json`'s intent but sourced from `@tflw/lang`'s
 // `collectSemanticTokens` (PLAN.md decision 105) — lets VS Code color these using its own
@@ -148,8 +148,23 @@ export function startServer(options: StartServerOptions = {}): void {
         renameProvider: { prepareProvider: true },
         signatureHelpProvider: { triggerCharacters: ['(', ','] },
         semanticTokensProvider: { legend: SEMANTIC_TOKENS_LEGEND, full: true },
+        // `M191` (`D997`): the same `format` the CLI runs, so format-on-save needs no extension code.
+        documentFormattingProvider: true,
       },
     };
+  });
+
+  // `tflw fmt` over the open document. One edit replacing the whole text — the formatter is a
+  // function over the token stream and the document is small; a minimal edit set would be a
+  // second implementation of the same rules. A file the lexer refuses is not formatted: the
+  // diagnostics already on screen say why, and an empty edit list is the honest answer.
+  connection.onDocumentFormatting((params): TextEdit[] => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return [];
+    const text = doc.getText();
+    const r = formatSource(text);
+    if (!r.ok || r.formatted === text) return [];
+    return [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(text.length) }, newText: r.formatted }];
   });
 
   connection.onDidChangeConfiguration((change) => {
