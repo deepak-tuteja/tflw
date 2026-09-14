@@ -230,7 +230,7 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'mutations',
-    cmd: 'xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/28 --manifest=shard-${{ matrix.shard }}.json',
+    cmd: 'xvfb-run -a node scripts/mutate.mjs --shard=${{ matrix.shard }}/33 --manifest=shard-${{ matrix.shard }}.json',
     class: 'gate',
     local: 'node scripts/mutate.mjs <milestone>',
     why: 'the CI form is a shard of the whole registry and is NOT what anybody types locally: `--shard` is a slice, `--scope` is not a flag, and a bare `npm run verify:mutations` runs the entire registry (tens of minutes). Locally you run the milestone you just wrote. This divergence is the reason `local` exists as a field',
@@ -248,7 +248,7 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'mutation-controls',
-    cmd: 'node scripts/verify-shards.mjs shards --of=28',
+    cmd: 'node scripts/verify-shards.mjs shards --of=33',
     class: 'ci-only',
     why: 'reads the twenty-four uploaded shard manifests and asserts their union is the registry, and \u2014 since M148 \u2014 that the cost model they were packed by still describes what they cost. Locally the sweep is one process and covers itself',
   },

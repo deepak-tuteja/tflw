@@ -194,7 +194,13 @@ export const SUITE_SECONDS = {
   'tflw-vscode': 1,
   // Two samples, 169s and 185s. The larger, because `tflw` is the second-heaviest package and this
   // number's job is to stop a shard overrunning, not to predict its median.
-  tflw: 185,
+  //
+  // 185 -> 221 at `M192` U7. The page gate (`ui-page.test.ts`: a Vite build and fourteen browser
+  // tests, two of which wait on runs) joined this suite across U2-U7, and the first 28-shard runs
+  // carrying `M192`'s tflw-suite mutations said so: five shards of five tflw mutations each took
+  // 20m25s-22m06s (tflw #210, run 34893163748), six runs apiece — **204-221s** a run. The larger,
+  // by the rule above; at 185 the model priced those shards at 18m30s and they ran 1.19x that.
+  tflw: 221,
   // `M192` U2 — two pure suites, no browser: the reducer over the corpus and the metafile plugin.
   '@tflw/ui': 5,
   // TWO SAMPLES, AND THE LARGER IS TAKEN — the same rule as `tflw: 185` above, for the same reason:
@@ -1980,14 +1986,14 @@ const REGISTRY = [
     file: '.github/workflows/ci.yml',
     what: "`D449`'s own near-miss, frozen as a control. The reassembly job's `--of=` falls behind the `shard:` matrix — which is what actually happened during this milestone's re-shard, and it cost a full CI round trip: twelve shards each green about themselves, and a failure three jobs away from the two integers that disagreed. `verify-shards.mjs` still catches it at runtime and is still the only thing that can see a shard that never reported; this kills it in a second instead",
     // M148 moved this with the 12 → 18 widen, `M151` with 18 → 20, `M169b` with 20 → 23, `M171c`
-    // with 23 → 24 and `M189b` with 24 → 28. The
+    // with 23 → 24, `M189b` with 24 → 28 and `M192` U7 with 28 → 33. The
     // `find:` has to quote the live workflow, and the `replace:` is deliberately the *previous*
     // count rather than a nonsense one: the failure being controlled is a re-shard that updates
     // some of the six copies and not the rest, so the mutant should look exactly like a
     // half-finished widen. This entry is itself a seventh copy — it is the one that fails loudly
     // and immediately when the workflow moves without it, which is why it is not held by a guard.
-    find: 'verify-shards.mjs shards --of=28',
-    replace: 'verify-shards.mjs shards --of=24',
+    find: 'verify-shards.mjs shards --of=33',
+    replace: 'verify-shards.mjs shards --of=28',
   },
 
   // -- M137b (D433/D434/D457): the CSRF clause and the derived principal ----------------------------
@@ -4102,8 +4108,20 @@ export const RESHARD_AT = 2 / 3;
  * records — every wider count failed the max/min bar — no longer binds. See that file's
  * `M189b` entry for the priced table; 28 is the first count whose longest shard is the root-suite
  * chunk rather than a runtime one.
+ *
+ * 28 -> 33 at `M192` U7. The tflw suite grew by the page gate (`tflw: 221`, above) and the registry
+ * by 31 entries, 27 of them `tflw`-suite mutations of the page; the trigger fired on every
+ * `M192` PR's run (shards 1-2 at 20m02s-20m29s on #208, five shards over 20m on #210). Priced
+ * against the corrected table — modelled longest shard / max-over-mean / total CPU minutes:
+ *
+ *     n=28 23m12s / 1.25 / 521 · n=29-32 22m06s / 1.22-1.34 / 527 · **n=33 18m25s / 1.14 / 535**
+ *     n=34-47 18m25s / 1.17-1.55 · n=48 15m44s / 1.26 / 560
+ *
+ * 33 is the first count under the trigger, and the most level of the plateau it opens: its
+ * longest shard is four tflw mutations plus their baseline (5 x 221). The next drop needs 48 jobs
+ * a pull request for 2m41s. The model at 28 now prices 23m12s against the 22m06s that fired it.
  */
-export const SHARD_COUNT = 28;
+export const SHARD_COUNT = 33;
 
 /** Estimated wall-clock seconds for a shard, for `--list`'s benefit. The same model `partition()`
  *  packs by, so a listing that looks unbalanced *is* the balance the packer achieved. */
