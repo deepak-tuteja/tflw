@@ -129,8 +129,8 @@ jobs:
       # `M191` (`D997`). `tflw fmt`'s gate over this repository's own `.tflw` files: the same tokens
       # in the same order with trivia excluded, every comment kept, idempotent — and under `--check`
       # that every file is already formatted, so the formatter's own corpus can never fail the
-      # check it asks of everyone else's. The `tests/.checkonly` fixtures that are broken on purpose
-      # are refused by design and listed, not counted. Milliseconds, after the build.
+      # check it asks of the sibling's. A `.checkonly/` fixture that is broken on purpose is refused
+      # by design and listed, not counted. Milliseconds, after the build.
       - run: npm run verify:fmt-roundtrip -- --check
 
       # `M172e` (`M155-02`). The one gate here whose subject is the OTHER repository's build. A
