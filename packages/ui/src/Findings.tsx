@@ -1,0 +1,230 @@
+// The security kind (`M192` U5): the run's findings, as `RunReport.findings` holds them, in the
+// order and the words `report.html` and the console use — `sortFindings`, `findingsSummaryLine`
+// and the two label tables moved to `@tflw/runtime`'s pure `scan-words.ts` for exactly this
+// consumer, and the remediation KB read from `@tflw/reporter`'s source. Grouped by rule because
+// that is the reader's first question here (*what kind of weakness*), flat within a rule in the
+// report's own order; a withheld finding reads as withheld without disappearing (`D386`). With a
+// second directory open (U4's *compare with*) each finding says whether the other run had it, and
+// the other run's findings this one lacks are listed — a baseline diff drawn from two reports
+// rather than from a file, since the file's effect is already in `withheld`.
+
+import type { ReactNode } from 'react';
+import type { RunReport, ScanFinding } from './contract';
+import { findingsSummaryLine, SCAN_KIND_LABEL, sortFindings, WITHHELD_LABEL } from '../../runtime/src/scan-words.ts';
+import { remediationFor, type KbEntry } from '../../reporter/src/kb.ts';
+import { grantedProbeClauses } from '../../reporter/src/probe-clauses.ts';
+
+/** KB prose carries markdown-style backtick spans (`D408`); rendered as `<code>`, never as HTML. */
+function codeSpans(text: string): ReactNode[] {
+  return text.split(/`([^`]+)`/).map((part, i) => (i % 2 === 1 ? <code key={i}>{part}</code> : part));
+}
+
+/** A finding's identity for the comparison: the fingerprint when it has one, else its site. */
+const keyOf = (f: ScanFinding): string => f.fingerprint ?? `${f.rule} ${f.endpoint} ${f.location ?? ''}`;
+
+export function Findings({ report, compare }: { report: RunReport; compare?: { readonly id: string; readonly data: RunReport } | null }) {
+  const findings = report.findings ?? [];
+  const coverage = report.scanCoverage ?? [];
+  const targets = report.authorizedTargets ?? [];
+  const otherByKey = compare ? new Map((compare.data.findings ?? []).map((f) => [keyOf(f), f])) : null;
+  const mine = new Set(findings.map(keyOf));
+  const gone = compare ? sortFindings((compare.data.findings ?? []).filter((f) => !mine.has(keyOf(f)))) : [];
+  // Nothing to say and nothing compared: no block at all, rather than an empty heading.
+  if (findings.length === 0 && coverage.length === 0 && targets.length === 0 && gone.length === 0) return null;
+  const sorted = sortFindings(findings);
+  const byRule = new Map<string, ScanFinding[]>();
+  for (const f of sorted) byRule.set(f.rule, [...(byRule.get(f.rule) ?? []), f]);
+  const blind = report.scanBlindSpot;
+
+  return (
+    <section className="findings" data-findings data-findings-count={findings.length}>
+      <h2>Security findings</h2>
+      {targets.map((t) => (
+        <p className="muted" key={t.target} data-authorized-target={t.target}>
+          ℹ authorized target <code>{t.target}</code> — {t.reason}
+          {grantedProbeClauses(t).map((p) => (
+            <code key={p}> {p}</code>
+          ))}
+        </p>
+      ))}
+      {blind?.coverage && blind.coverage.apiSteps > 0 ? (
+        <p className="muted" data-authz-coverage={`${blind.coverage.withOwner}/${blind.coverage.apiSteps}`}>
+          ℹ authz coverage: {blind.coverage.withOwner} of {blind.coverage.apiSteps} api step{blind.coverage.apiSteps === 1 ? '' : 's'} in the suite sit in a test that declares an owner (
+          {Math.floor((blind.coverage.withOwner / blind.coverage.apiSteps) * 100)}%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.
+        </p>
+      ) : null}
+      {(blind?.declines ?? []).map((d, i) => (
+        <p className="muted" key={i} data-scan-decline={d.subject}>
+          ℹ {SCAN_KIND_LABEL[d.scan]} declined {d.count}×: <code>{d.subject}</code> — {d.reason}
+        </p>
+      ))}
+      {findings.length > 0 ? (
+        <p data-findings-summary>
+          {findingsSummaryLine(findings)}
+          {compare ? (
+            <span className="muted" data-findings-compared={compare.id}>
+              {' '}
+              · compared with <code>{compare.id}</code>: {gone.length} it had that this run does not
+            </span>
+          ) : null}
+        </p>
+      ) : (
+        <p className="muted" data-findings-summary>
+          no findings — {coverage.length > 0 ? 'the rules that ran are listed below' : 'no security assertion ran'}
+        </p>
+      )}
+      {[...byRule.entries()].map(([rule, list]) => (
+        <details key={rule} open data-rule={rule} data-severity={list[0]!.severity} data-rule-count={list.length}>
+          <summary>
+            <span className={`sev sev-${list[0]!.severity}`}>{list[0]!.severity}</span> <code>{rule}</code>
+            <span className="muted">
+              {' '}
+              · {list.length} finding{list.length === 1 ? '' : 's'}
+              {list.some((f) => f.withheld) ? ` · ${list.filter((f) => f.withheld).length} withheld` : ''}
+            </span>
+          </summary>
+          <ol className="finding-list">
+            {list.map((f, i) => (
+              <Finding key={`${keyOf(f)}-${i}`} f={f} other={otherByKey ? (otherByKey.get(keyOf(f)) ?? null) : undefined} otherId={compare?.id ?? null} />
+            ))}
+          </ol>
+        </details>
+      ))}
+      {gone.length > 0 ? (
+        <details open data-findings-gone={gone.length}>
+          <summary>
+            in <code>{compare!.id}</code> and not in this run · {gone.length}
+          </summary>
+          <ol className="finding-list">
+            {gone.map((f, i) => (
+              <li key={i} className="finding gone" data-finding-gone={keyOf(f)}>
+                <span className={`sev sev-${f.severity}`}>{f.severity}</span> <code>{f.rule}</code> · {f.endpoint}
+                {f.location ? ` · ${f.location}` : ''} — {f.description}
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : null}
+      {coverage.length > 0 ? (
+        <details data-scan-coverage>
+          <summary>which rules ran</summary>
+          {coverage.map((c) => (
+            <div key={c.scan} data-scan-census={c.scan}>
+              <h4>{SCAN_KIND_LABEL[c.scan]}</h4>
+              <p>
+                applied:{' '}
+                {c.applied.length > 0
+                  ? c.applied.map((r, i) => (
+                      <span key={r}>
+                        {i > 0 ? ', ' : ''}
+                        <code data-applied-rule={r}>{r}</code>
+                      </span>
+                    ))
+                  : 'none'}
+              </p>
+              <p>did not apply:</p>
+              <ul>
+                {c.notApplicable.length > 0 ? (
+                  c.notApplicable.map((n) => (
+                    <li key={n.rule} data-na-rule={n.rule}>
+                      <code>{n.rule}</code> — {n.because.join('; ')}
+                    </li>
+                  ))
+                ) : (
+                  <li>
+                    <em>every rule in this pack applied somewhere in the run</em>
+                  </li>
+                )}
+              </ul>
+            </div>
+          ))}
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
+/** What the compared run says about this finding: absent, the same verdict, or a different one —
+ * a finding the gate withheld there and not here is the baseline diff a reader is looking for. */
+function comparedState(f: ScanFinding, other: ScanFinding | null): { readonly state: 'absent' | 'same' | 'differs'; readonly words: string } {
+  if (!other) return { state: 'absent', words: 'not in' };
+  if ((other.withheld ?? null) === (f.withheld ?? null)) return { state: 'same', words: 'also in' };
+  return { state: 'differs', words: `${other.withheld ? WITHHELD_LABEL[other.withheld] : 'gating'} in` };
+}
+
+/** `other` is `undefined` with no comparison open, `null` when the compared run lacks the finding. */
+function Finding({ f, other, otherId }: { f: ScanFinding; other: ScanFinding | null | undefined; otherId: string | null }) {
+  const entry = remediationFor(f.rule);
+  const where = [f.endpoint, f.location, f.invariant].filter(Boolean).join(' · ');
+  const compared = other === undefined ? null : comparedState(f, other);
+  return (
+    <li className={`finding ${f.withheld ? 'finding-off' : 'finding-on'}`} data-finding={keyOf(f)} data-endpoint={f.endpoint} data-withheld={f.withheld ?? undefined} data-in-compared={compared?.state}>
+      <div className="finding-where">
+        {where}
+        {f.via ? ` · via ${f.via} seed` : ''}
+        {f.file ? (
+          <span className="muted" data-finding-source={`${f.file}:${f.line ?? ''}`}>
+            {' '}
+            · {f.file}
+            {f.line !== undefined ? `:${f.line}` : ''}
+          </span>
+        ) : null}
+        {f.withheld ? (
+          <span className="finding-withheld" data-withheld-label>
+            {WITHHELD_LABEL[f.withheld]}
+          </span>
+        ) : null}
+        {compared ? (
+          <span className={`badge ${compared.state === 'same' ? '' : 'new'}`} data-since={otherId!}>
+            {compared.words} {otherId}
+          </span>
+        ) : null}
+      </div>
+      <div data-finding-description>{f.description}</div>
+      <div className="finding-detail" data-finding-detail>
+        {f.detail}
+      </div>
+      {f.seeded ? (
+        <div className="finding-seeded" data-seeded={f.seeded.seed}>
+          seeded (seed {f.seeded.seed}) — <strong>promote this payload into the corpus</strong>: <code>{f.seeded.payload}</code>
+        </div>
+      ) : null}
+      {f.fingerprint ? (
+        <code className="finding-fp" data-fingerprint>
+          {f.fingerprint}
+        </code>
+      ) : (
+        <span className="finding-fp muted">— not baselinable</span>
+      )}
+      {entry ? <Fix entry={entry} /> : null}
+    </li>
+  );
+}
+
+function Fix({ entry }: { entry: KbEntry }) {
+  return (
+    <details className="finding-fix" data-fix>
+      <summary>possible fixes</summary>
+      <p className="fix-title">{entry.title}</p>
+      <p>{codeSpans(entry.what)}</p>
+      <p>{codeSpans(entry.why)}</p>
+      <p>
+        <strong>Fix</strong> — {codeSpans(entry.fixGeneric)}
+      </p>
+      <p>
+        <strong>In NestJS</strong> — {codeSpans(entry.fixNest)}
+      </p>
+      <p className="muted" data-cwe={entry.cwe}>
+        CWE-{entry.cwe} ·{' '}
+        {entry.refs.map((r, i) => (
+          <span key={r.url}>
+            {i > 0 ? ' · ' : ''}
+            <a href={r.url} rel="noreferrer" target="_blank">
+              {r.label}
+            </a>
+          </span>
+        ))}
+      </p>
+    </details>
+  );
+}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>testFlow report — 6/9 passed</title>
+<title>testFlow report — 8/12 passed</title>
 <style>
 :root{--bg:#0f1115;--card:#171a21;--fg:#e6e8ec;--mut:#9aa3b2;--ok:#3fb950;--fail:#f85149;--warn:#d29922;--info:#58a6ff;--line:#262b36;--code:#0b0d11}
 @media (prefers-color-scheme: light){:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f27;--mut:#5b6472;--ok:#1a7f37;--fail:#cf222e;--warn:#9a6700;--info:#0969da;--line:#e5e8ec;--code:#f3f4f6}}
@@ -199,19 +199,46 @@ svg{width:100%;height:auto;overflow:visible}
   <h1>testFlow report</h1>
   <div class="meta">
     <span class="badge fail">FAIL</span>
-    <span>6/9 passed · 3 failed</span>
+    <span>8/12 passed · 4 failed</span>
     <span>env <code>headers</code></span>
-    <span>seed <code>1238868228</code></span>
-    <span>now <code>2026-09-14T19:31:27.764Z</code></span>
-    <span>9815 ms</span>
-    <span>2026-09-14T19:31:27.765Z</span>
+    <span>seed <code>3165207048</code></span>
+    <span>now <code>2026-09-14T20:08:50.725Z</code></span>
+    <span>9840 ms</span>
+    <span>2026-09-14T20:08:50.726Z</span>
   </div>
   
   
-  
-  <div class="demo-badge">ℹ authz coverage: 0 of 10 api steps in the suite sit in a test that declares an owner (0%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>
-  
-  
+  <div class="demo-badge">ℹ authorized target <code>http://127.0.0.1:4717</code> — the fixture server beside this file</div>
+  <div class="demo-badge">ℹ authz coverage: 0 of 13 api steps in the suite sit in a test that declares an owner (0%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>
+  <section class="findings">
+    <h2>Security findings</h2>
+    <p class="findings-summary">2 findings — 1 failing, 1 known/accepted</p>
+    <table>
+      <thead><tr><th>severity</th><th>rule</th><th>fingerprint</th></tr></thead>
+      <tbody>
+      <tr class="finding finding-on"><td class="sev sev-critical">critical</td><td><code>sec/cookie-not-httponly</code> <div class="finding-where">POST /login · cookie session</div><div class="finding-detail">cookie `session` — any XSS on this origin can read it</div><details class="finding-fix"><summary>possible fixes</summary><p class="fix-title">Cookie readable by JavaScript</p><p class="fix-what">A <code>Set-Cookie</code> header arrived without the <code>HttpOnly</code> attribute, so any script running on this origin can read the cookie through <code>document.cookie</code>.</p><p class="fix-why">It converts any cross-site scripting flaw anywhere on the origin — including in a third-party script you did not write — into full session theft. <code>HttpOnly</code> is what keeps an XSS bug from being an account takeover.</p><p class="fix-do"><strong>Fix</strong> — Set <code>HttpOnly</code> on every cookie no client-side code needs to read. A session or authentication cookie always qualifies; a UI preference cookie that JavaScript genuinely reads is the only common exception, and it should not carry anything sensitive.</p><p class="fix-do"><strong>In NestJS</strong> — Pass the flag where the cookie is set — <code>res.cookie(&#39;sid&#39;, value, { httpOnly: true, secure: true, sameSite: &#39;lax&#39; })</code> — or set <code>cookie: { httpOnly: true }</code> in the session middleware&#39;s options if a session library issues it.</p><p class="fix-refs">CWE-1004 · <a href="https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html" rel="noreferrer">OWASP — Session Management Cheat Sheet</a> · <a href="https://cwe.mitre.org/data/definitions/1004.html" rel="noreferrer">CWE-1004: Sensitive Cookie Without &#39;HttpOnly&#39; Flag</a></p></details></td><td><code class="finding-fp">f9ea851f1285230b</code></td></tr>
+      <tr class="finding finding-off"><td class="sev sev-serious">serious</td><td><code>sec/csp-missing</code> <span class="finding-withheld">known/accepted</span><div class="finding-where">GET /</div><div class="finding-detail">nothing constrains where this document may load script from</div><details class="finding-fix"><summary>possible fixes</summary><p class="fix-title">No Content-Security-Policy on a document response</p><p class="fix-what">An HTML document was served with no <code>Content-Security-Policy</code> header, so nothing constrains where the page may load or execute script from.</p><p class="fix-why">CSP is the control that limits the blast radius of an injection you have not found yet: with a policy, an injected <code>&lt;script&gt;</code> from another origin does not run; without one, it does. It is defence in depth rather than a fix for a specific bug, which is why its absence is worth recording even on a page you believe has no injection point.</p><p class="fix-do"><strong>Fix</strong> — Start with a restrictive policy and relax it against real console violations rather than guessing — <code>default-src &#39;self&#39;; object-src &#39;none&#39;; frame-ancestors &#39;none&#39;; base-uri &#39;self&#39;</code>. Prefer nonces or hashes over <code>&#39;unsafe-inline&#39;</code>; a policy containing <code>&#39;unsafe-inline&#39;</code> for scripts provides very little of what CSP is for.</p><p class="fix-do"><strong>In NestJS</strong> — <code>helmet()</code> ships a <code>contentSecurityPolicy</code> default; override the directives it sets rather than disabling the middleware. For an API that only ever answers JSON, the honest fix is often that the endpoint should not be serving <code>text/html</code> at all.</p><p class="fix-refs">CWE-693 · <a href="https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html" rel="noreferrer">OWASP — Content Security Policy Cheat Sheet</a> · <a href="https://cwe.mitre.org/data/definitions/693.html" rel="noreferrer">CWE-693: Protection Mechanism Failure</a></p></details></td><td><code class="finding-fp">d1a3ef65f88fb550</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section class="scan-coverage">
+    <h2>Which rules ran</h2>
+    <div class="scan-census">
+      <h3>security</h3>
+      <p>applied: <code>sec/cookie-not-httponly</code>, <code>sec/csp-missing</code>, <code>sec/nosniff-missing</code></p>
+      <p>did not apply:</p>
+      <ul>
+        <li><code>sec/authenticated-response-cacheable</code> — the request carried session or bearer credentials</li>
+        <li><code>sec/cookie-not-secure</code> — the scheme is https AND the response sets a cookie</li>
+        <li><code>sec/cookie-samesite-none</code> — the response sets a cookie</li>
+        <li><code>sec/cors-wildcard-with-credentials</code> — the response carries Access-Control-Allow-Origin</li>
+        <li><code>sec/hsts-missing</code> — the scheme is https</li>
+        <li><code>sec/tls-version-old</code> — the scheme is https and the TLS probe succeeded</li>
+        <li><code>sec/tls-weak-cipher</code> — the scheme is https and the TLS probe succeeded</li>
+        <li><code>sec/x-frame-options</code> — the response is a document (Content-Type: text/html)</li>
+      </ul>
+    </div>
+  </section>
   
   <div class="engine-badge">browser <code>chromium</code></div>
   
@@ -250,18 +277,26 @@ svg{width:100%;height:auto;overflow:visible}
         <li><button type="button" class="testlink ok" data-target="t6">✓ a warm-up endpoint answers on the second attempt</button></li>
       </ul>
     </details>
+    <details class="filegroup fail" open data-file="tests/security.tflw">
+      <summary><span class="fgdot fail"></span><span class="fgname">tests/security.tflw</span><span class="fgcount">(3, 1 failed)</span></summary>
+      <ul class="testlist">
+        <li><button type="button" class="testlink ok" data-target="t7">✓ the catalog answers with safe headers</button></li>
+        <li><button type="button" class="testlink ok" data-target="t8">✓ the shop page answers with safe headers</button></li>
+        <li><button type="button" class="testlink fail" data-target="t9">✗ a login sets a safe session cookie</button></li>
+      </ul>
+    </details>
     <details class="filegroup fail" open data-file="tests/shop.tflw">
       <summary><span class="fgdot fail"></span><span class="fgname">tests/shop.tflw</span><span class="fgcount">(2, 1 failed)</span></summary>
       <ul class="testlist">
-        <li><button type="button" class="testlink ok" data-target="t7">✓ the shop page greets and the button answers</button></li>
-        <li><button type="button" class="testlink fail" data-target="t8">✗ the shelf never says sold out</button></li>
+        <li><button type="button" class="testlink ok" data-target="t10">✓ the shop page greets and the button answers</button></li>
+        <li><button type="button" class="testlink fail" data-target="t11">✗ the shelf never says sold out</button></li>
       </ul>
     </details>
   </div>
 </nav>
 <main>
 <section class="test ok" id="t0" data-file="tests/catalog.tflw">
-  <h2><span class="dot ok"></span>lists the catalog and follows the first item <span class="tms">13 ms</span></h2>
+  <h2><span class="dot ok"></span>lists the catalog and follows the first item <span class="tms">12 ms</span></h2>
   
   
   
@@ -269,8 +304,8 @@ svg{width:100%;height:auto;overflow:visible}
   
   <ol class="steps">
 <li class="step ok kind-api">
-    <div class="line"><span class="mark">✓</span><code>api GET /items</code><span class="sms">10 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (8.7ms)</div>
+    <div class="line"><span class="mark">✓</span><code>api GET /items</code><span class="sms">9 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (7.8ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items</div>
@@ -278,8 +313,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 8.720171999999991 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:27 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 7.764345999999989 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:50 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -313,8 +348,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 1.2909350000000472 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:27 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 1.2905140000000301 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:50 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -341,7 +376,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /items/999</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/items/999 → 404 (0.66ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/items/999 → 404 (0.68ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/items/999</div>
@@ -349,8 +384,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 404 Not Found · 0.6551619999999616 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:27 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 404 Not Found · 0.6806720000000155 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:50 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -385,8 +420,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.5471519999999828 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:27 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.5542419999999879 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:50 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -405,14 +440,14 @@ svg{width:100%;height:auto;overflow:visible}
 </section>
 <section class="test ok" id="t3" data-file="tests/load.tflw">
   <h2><span class="dot ok"></span>the catalog holds under a fixed amount of work <span class="tms">workload</span></h2>
-  <p class="generator-line ">generator: avg event-loop lag 0.5ms · max 1.8ms · cpu 5%</p>
+  <p class="generator-line ">generator: avg event-loop lag 0.3ms · max 1.7ms · cpu 5%</p>
   <div class="metrics-block">
   <p class="workload">run 120 iterations across 4 users</p>
   <table class="stats">
     <tr><th>iterations</th><td>120</td><th>failures</th><td>0</td><th>error rate</th><td>0.00%</td></tr>
     <tr><th>assertions</th><td colspan="5">240</td></tr>
-    <tr><th>min</th><td>1.9ms</td><th>avg</th><td>16ms</td><th>max</th><td>28ms</td></tr>
-    <tr><th>p50</th><td>16ms</td><th>p90</th><td>27ms</td><th>p95</th><td>28ms</td><th>p99</th><td>28ms</td></tr>
+    <tr><th>min</th><td>2.3ms</td><th>avg</th><td>16ms</td><th>max</th><td>30ms</td></tr>
+    <tr><th>p50</th><td>16ms</td><th>p90</th><td>27ms</td><th>p95</th><td>28ms</td><th>p99</th><td>29ms</td></tr>
   </table>
   
   <table class="thresholds"><tr class="ok"><td>✓</td><td>p95 duration &lt; 500ms</td><td>actual: 28ms</td></tr><tr class="ok"><td>✓</td><td>p95 duration for &quot;search&quot; &lt; 500ms</td><td>actual: 27ms</td></tr><tr class="ok"><td>✓</td><td>error rate &lt; 1.00%</td><td>actual: 0.00%</td></tr></table>
@@ -422,12 +457,12 @@ svg{width:100%;height:auto;overflow:visible}
   <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
   <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
     <line class="axis" x1="42" y1="138" x2="628" y2="138" />
-    <text class="axis-label" x="42" y="12">28</text>
+    <text class="axis-label" x="42" y="12">30</text>
     <text class="axis-label" x="42" y="136">0</text>
     <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
-    <polyline class="series-p50" points="42,66 237.3,66 432.7,75 628,66" fill="none" />
-    <polyline class="series-p95" points="42,16.5 237.3,12 432.7,12 628,12" fill="none" />
-    <polyline class="series-p99" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
+    <polyline class="series-p50" points="42,66.6 237.3,70.8 432.7,70.8 628,70.8" fill="none" />
+    <polyline class="series-p95" points="42,24.6 237.3,20.4 432.7,20.4 628,20.4" fill="none" />
+    <polyline class="series-p99" points="42,20.4 237.3,16.2 432.7,12 628,20.4" fill="none" />
   </svg>
 </div>
     <div class="chart">
@@ -438,7 +473,7 @@ svg{width:100%;height:auto;overflow:visible}
     <text class="axis-label" x="42" y="12">36</text>
     <text class="axis-label" x="42" y="136">0</text>
     <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
-    <polyline class="series-rps" points="42,26 237.3,12 432.7,22.5 628,71.5" fill="none" />
+    <polyline class="series-rps" points="42,26 237.3,12 432.7,26 628,68" fill="none" />
   </svg>
 </div>
     <div class="chart">
@@ -454,105 +489,111 @@ svg{width:100%;height:auto;overflow:visible}
   <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
   <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
     <line class="axis" x1="42" y1="138" x2="628" y2="138" />
-    <text class="axis-label" x="42" y="12">3</text>
-    <text class="axis-label" x="42" y="156">1.9ms</text>
-    <text class="axis-label" x="628" y="156" text-anchor="end">28ms</text>
-    <rect class="series-histogram" x="42" y="96" width="5.1" height="42"><title>1.9ms × 1</title></rect>
-    <rect class="series-histogram" x="48.1" y="96" width="5.1" height="42"><title>2.6ms × 1</title></rect>
-    <rect class="series-histogram" x="54.2" y="96" width="5.1" height="42"><title>2.8ms × 1</title></rect>
-    <rect class="series-histogram" x="60.3" y="96" width="5.1" height="42"><title>2.9ms × 1</title></rect>
-    <rect class="series-histogram" x="66.4" y="96" width="5.1" height="42"><title>2.9ms × 1</title></rect>
-    <rect class="series-histogram" x="72.5" y="96" width="5.1" height="42"><title>3.1ms × 1</title></rect>
-    <rect class="series-histogram" x="78.6" y="96" width="5.1" height="42"><title>3.2ms × 1</title></rect>
-    <rect class="series-histogram" x="84.7" y="96" width="5.1" height="42"><title>3.3ms × 1</title></rect>
-    <rect class="series-histogram" x="90.8" y="96" width="5.1" height="42"><title>3.4ms × 1</title></rect>
-    <rect class="series-histogram" x="96.9" y="96" width="5.1" height="42"><title>3.8ms × 1</title></rect>
-    <rect class="series-histogram" x="103.0" y="96" width="5.1" height="42"><title>3.8ms × 1</title></rect>
-    <rect class="series-histogram" x="109.1" y="96" width="5.1" height="42"><title>4ms × 1</title></rect>
-    <rect class="series-histogram" x="115.3" y="54" width="5.1" height="84"><title>4ms × 2</title></rect>
-    <rect class="series-histogram" x="121.4" y="96" width="5.1" height="42"><title>4.1ms × 1</title></rect>
-    <rect class="series-histogram" x="127.5" y="96" width="5.1" height="42"><title>4.2ms × 1</title></rect>
-    <rect class="series-histogram" x="133.6" y="96" width="5.1" height="42"><title>5.1ms × 1</title></rect>
-    <rect class="series-histogram" x="139.7" y="96" width="5.1" height="42"><title>6.4ms × 1</title></rect>
-    <rect class="series-histogram" x="145.8" y="96" width="5.1" height="42"><title>7ms × 1</title></rect>
-    <rect class="series-histogram" x="151.9" y="96" width="5.1" height="42"><title>7ms × 1</title></rect>
-    <rect class="series-histogram" x="158.0" y="96" width="5.1" height="42"><title>7.2ms × 1</title></rect>
-    <rect class="series-histogram" x="164.1" y="96" width="5.1" height="42"><title>7.3ms × 1</title></rect>
-    <rect class="series-histogram" x="170.2" y="96" width="5.1" height="42"><title>7.3ms × 1</title></rect>
-    <rect class="series-histogram" x="176.3" y="96" width="5.1" height="42"><title>7.5ms × 1</title></rect>
-    <rect class="series-histogram" x="182.4" y="96" width="5.1" height="42"><title>7.6ms × 1</title></rect>
-    <rect class="series-histogram" x="188.5" y="96" width="5.1" height="42"><title>7.6ms × 1</title></rect>
-    <rect class="series-histogram" x="194.6" y="96" width="5.1" height="42"><title>7.8ms × 1</title></rect>
-    <rect class="series-histogram" x="200.7" y="96" width="5.1" height="42"><title>7.9ms × 1</title></rect>
-    <rect class="series-histogram" x="206.8" y="96" width="5.1" height="42"><title>7.9ms × 1</title></rect>
-    <rect class="series-histogram" x="212.9" y="96" width="5.1" height="42"><title>8.1ms × 1</title></rect>
-    <rect class="series-histogram" x="219.0" y="96" width="5.1" height="42"><title>8.3ms × 1</title></rect>
-    <rect class="series-histogram" x="225.1" y="96" width="5.1" height="42"><title>8.4ms × 1</title></rect>
-    <rect class="series-histogram" x="231.2" y="96" width="5.1" height="42"><title>8.6ms × 1</title></rect>
-    <rect class="series-histogram" x="237.3" y="96" width="5.1" height="42"><title>9ms × 1</title></rect>
-    <rect class="series-histogram" x="243.4" y="96" width="5.1" height="42"><title>10ms × 1</title></rect>
-    <rect class="series-histogram" x="249.5" y="96" width="5.1" height="42"><title>11ms × 1</title></rect>
-    <rect class="series-histogram" x="255.6" y="96" width="5.1" height="42"><title>11ms × 1</title></rect>
-    <rect class="series-histogram" x="261.8" y="54" width="5.1" height="84"><title>11ms × 2</title></rect>
-    <rect class="series-histogram" x="267.9" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
-    <rect class="series-histogram" x="274.0" y="54" width="5.1" height="84"><title>12ms × 2</title></rect>
-    <rect class="series-histogram" x="280.1" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
-    <rect class="series-histogram" x="286.2" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
-    <rect class="series-histogram" x="292.3" y="12" width="5.1" height="126"><title>12ms × 3</title></rect>
-    <rect class="series-histogram" x="298.4" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
-    <rect class="series-histogram" x="304.5" y="96" width="5.1" height="42"><title>12ms × 1</title></rect>
-    <rect class="series-histogram" x="310.6" y="54" width="5.1" height="84"><title>13ms × 2</title></rect>
-    <rect class="series-histogram" x="316.7" y="96" width="5.1" height="42"><title>14ms × 1</title></rect>
-    <rect class="series-histogram" x="322.8" y="96" width="5.1" height="42"><title>14ms × 1</title></rect>
-    <rect class="series-histogram" x="328.9" y="96" width="5.1" height="42"><title>14ms × 1</title></rect>
-    <rect class="series-histogram" x="335" y="96" width="5.1" height="42"><title>15ms × 1</title></rect>
-    <rect class="series-histogram" x="341.1" y="96" width="5.1" height="42"><title>15ms × 1</title></rect>
-    <rect class="series-histogram" x="347.2" y="96" width="5.1" height="42"><title>15ms × 1</title></rect>
-    <rect class="series-histogram" x="353.3" y="96" width="5.1" height="42"><title>15ms × 1</title></rect>
-    <rect class="series-histogram" x="359.4" y="54" width="5.1" height="84"><title>16ms × 2</title></rect>
-    <rect class="series-histogram" x="365.5" y="54" width="5.1" height="84"><title>16ms × 2</title></rect>
-    <rect class="series-histogram" x="371.6" y="54" width="5.1" height="84"><title>16ms × 2</title></rect>
-    <rect class="series-histogram" x="377.7" y="96" width="5.1" height="42"><title>16ms × 1</title></rect>
-    <rect class="series-histogram" x="383.8" y="96" width="5.1" height="42"><title>16ms × 1</title></rect>
-    <rect class="series-histogram" x="389.9" y="96" width="5.1" height="42"><title>16ms × 1</title></rect>
-    <rect class="series-histogram" x="396.0" y="96" width="5.1" height="42"><title>16ms × 1</title></rect>
-    <rect class="series-histogram" x="402.1" y="96" width="5.1" height="42"><title>18ms × 1</title></rect>
-    <rect class="series-histogram" x="408.3" y="96" width="5.1" height="42"><title>19ms × 1</title></rect>
-    <rect class="series-histogram" x="414.4" y="96" width="5.1" height="42"><title>19ms × 1</title></rect>
-    <rect class="series-histogram" x="420.5" y="96" width="5.1" height="42"><title>19ms × 1</title></rect>
-    <rect class="series-histogram" x="426.6" y="12" width="5.1" height="126"><title>19ms × 3</title></rect>
-    <rect class="series-histogram" x="432.7" y="12" width="5.1" height="126"><title>19ms × 3</title></rect>
-    <rect class="series-histogram" x="438.8" y="12" width="5.1" height="126"><title>20ms × 3</title></rect>
-    <rect class="series-histogram" x="444.9" y="96" width="5.1" height="42"><title>20ms × 1</title></rect>
-    <rect class="series-histogram" x="451.0" y="54" width="5.1" height="84"><title>20ms × 2</title></rect>
-    <rect class="series-histogram" x="457.1" y="96" width="5.1" height="42"><title>21ms × 1</title></rect>
-    <rect class="series-histogram" x="463.2" y="96" width="5.1" height="42"><title>22ms × 1</title></rect>
-    <rect class="series-histogram" x="469.3" y="96" width="5.1" height="42"><title>22ms × 1</title></rect>
-    <rect class="series-histogram" x="475.4" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
-    <rect class="series-histogram" x="481.5" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
-    <rect class="series-histogram" x="487.6" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
-    <rect class="series-histogram" x="493.7" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
-    <rect class="series-histogram" x="499.8" y="96" width="5.1" height="42"><title>23ms × 1</title></rect>
-    <rect class="series-histogram" x="505.9" y="54" width="5.1" height="84"><title>24ms × 2</title></rect>
-    <rect class="series-histogram" x="512.0" y="54" width="5.1" height="84"><title>24ms × 2</title></rect>
-    <rect class="series-histogram" x="518.1" y="96" width="5.1" height="42"><title>24ms × 1</title></rect>
-    <rect class="series-histogram" x="524.2" y="96" width="5.1" height="42"><title>24ms × 1</title></rect>
-    <rect class="series-histogram" x="530.3" y="96" width="5.1" height="42"><title>25ms × 1</title></rect>
-    <rect class="series-histogram" x="536.4" y="96" width="5.1" height="42"><title>25ms × 1</title></rect>
-    <rect class="series-histogram" x="542.5" y="96" width="5.1" height="42"><title>25ms × 1</title></rect>
-    <rect class="series-histogram" x="548.6" y="54" width="5.1" height="84"><title>26ms × 2</title></rect>
-    <rect class="series-histogram" x="554.8" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
-    <rect class="series-histogram" x="560.9" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
-    <rect class="series-histogram" x="567.0" y="54" width="5.1" height="84"><title>27ms × 2</title></rect>
-    <rect class="series-histogram" x="573.1" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
-    <rect class="series-histogram" x="579.2" y="12" width="5.1" height="126"><title>27ms × 3</title></rect>
-    <rect class="series-histogram" x="585.3" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
-    <rect class="series-histogram" x="591.4" y="96" width="5.1" height="42"><title>27ms × 1</title></rect>
-    <rect class="series-histogram" x="597.5" y="96" width="5.1" height="42"><title>28ms × 1</title></rect>
-    <rect class="series-histogram" x="603.6" y="54" width="5.1" height="84"><title>28ms × 2</title></rect>
-    <rect class="series-histogram" x="609.7" y="54" width="5.1" height="84"><title>28ms × 2</title></rect>
-    <rect class="series-histogram" x="615.8" y="96" width="5.1" height="42"><title>28ms × 1</title></rect>
-    <rect class="series-histogram" x="621.9" y="96" width="5.1" height="42"><title>28ms × 1</title></rect>
+    <text class="axis-label" x="42" y="12">4</text>
+    <text class="axis-label" x="42" y="156">2.3ms</text>
+    <text class="axis-label" x="628" y="156" text-anchor="end">29.6ms</text>
+    <rect class="series-histogram" x="42" y="106.5" width="4.7" height="31.5"><title>2.3ms × 1</title></rect>
+    <rect class="series-histogram" x="47.7" y="106.5" width="4.7" height="31.5"><title>2.4ms × 1</title></rect>
+    <rect class="series-histogram" x="53.5" y="106.5" width="4.7" height="31.5"><title>2.9ms × 1</title></rect>
+    <rect class="series-histogram" x="59.2" y="106.5" width="4.7" height="31.5"><title>2.9ms × 1</title></rect>
+    <rect class="series-histogram" x="65.0" y="106.5" width="4.7" height="31.5"><title>3.4ms × 1</title></rect>
+    <rect class="series-histogram" x="70.7" y="106.5" width="4.7" height="31.5"><title>3.5ms × 1</title></rect>
+    <rect class="series-histogram" x="76.5" y="106.5" width="4.7" height="31.5"><title>3.6ms × 1</title></rect>
+    <rect class="series-histogram" x="82.2" y="106.5" width="4.7" height="31.5"><title>3.8ms × 1</title></rect>
+    <rect class="series-histogram" x="88.0" y="106.5" width="4.7" height="31.5"><title>3.9ms × 1</title></rect>
+    <rect class="series-histogram" x="93.7" y="106.5" width="4.7" height="31.5"><title>4ms × 1</title></rect>
+    <rect class="series-histogram" x="99.5" y="106.5" width="4.7" height="31.5"><title>4ms × 1</title></rect>
+    <rect class="series-histogram" x="105.2" y="106.5" width="4.7" height="31.5"><title>4ms × 1</title></rect>
+    <rect class="series-histogram" x="110.9" y="106.5" width="4.7" height="31.5"><title>4.1ms × 1</title></rect>
+    <rect class="series-histogram" x="116.7" y="106.5" width="4.7" height="31.5"><title>4.3ms × 1</title></rect>
+    <rect class="series-histogram" x="122.4" y="106.5" width="4.7" height="31.5"><title>4.5ms × 1</title></rect>
+    <rect class="series-histogram" x="128.2" y="106.5" width="4.7" height="31.5"><title>4.5ms × 1</title></rect>
+    <rect class="series-histogram" x="133.9" y="106.5" width="4.7" height="31.5"><title>4.6ms × 1</title></rect>
+    <rect class="series-histogram" x="139.7" y="106.5" width="4.7" height="31.5"><title>6.4ms × 1</title></rect>
+    <rect class="series-histogram" x="145.4" y="106.5" width="4.7" height="31.5"><title>6.7ms × 1</title></rect>
+    <rect class="series-histogram" x="151.2" y="106.5" width="4.7" height="31.5"><title>7.1ms × 1</title></rect>
+    <rect class="series-histogram" x="156.9" y="106.5" width="4.7" height="31.5"><title>7.2ms × 1</title></rect>
+    <rect class="series-histogram" x="162.6" y="106.5" width="4.7" height="31.5"><title>7.2ms × 1</title></rect>
+    <rect class="series-histogram" x="168.4" y="106.5" width="4.7" height="31.5"><title>7.3ms × 1</title></rect>
+    <rect class="series-histogram" x="174.1" y="106.5" width="4.7" height="31.5"><title>7.4ms × 1</title></rect>
+    <rect class="series-histogram" x="179.9" y="106.5" width="4.7" height="31.5"><title>7.6ms × 1</title></rect>
+    <rect class="series-histogram" x="185.6" y="106.5" width="4.7" height="31.5"><title>7.7ms × 1</title></rect>
+    <rect class="series-histogram" x="191.4" y="106.5" width="4.7" height="31.5"><title>7.8ms × 1</title></rect>
+    <rect class="series-histogram" x="197.1" y="106.5" width="4.7" height="31.5"><title>7.8ms × 1</title></rect>
+    <rect class="series-histogram" x="202.9" y="106.5" width="4.7" height="31.5"><title>8ms × 1</title></rect>
+    <rect class="series-histogram" x="208.6" y="106.5" width="4.7" height="31.5"><title>8.2ms × 1</title></rect>
+    <rect class="series-histogram" x="214.4" y="106.5" width="4.7" height="31.5"><title>8.2ms × 1</title></rect>
+    <rect class="series-histogram" x="220.1" y="106.5" width="4.7" height="31.5"><title>8.6ms × 1</title></rect>
+    <rect class="series-histogram" x="225.8" y="106.5" width="4.7" height="31.5"><title>8.8ms × 1</title></rect>
+    <rect class="series-histogram" x="231.6" y="106.5" width="4.7" height="31.5"><title>8.8ms × 1</title></rect>
+    <rect class="series-histogram" x="237.3" y="106.5" width="4.7" height="31.5"><title>11ms × 1</title></rect>
+    <rect class="series-histogram" x="243.1" y="75" width="4.7" height="63"><title>11ms × 2</title></rect>
+    <rect class="series-histogram" x="248.8" y="106.5" width="4.7" height="31.5"><title>11ms × 1</title></rect>
+    <rect class="series-histogram" x="254.6" y="75" width="4.7" height="63"><title>11ms × 2</title></rect>
+    <rect class="series-histogram" x="260.3" y="106.5" width="4.7" height="31.5"><title>11ms × 1</title></rect>
+    <rect class="series-histogram" x="266.1" y="75" width="4.7" height="63"><title>11ms × 2</title></rect>
+    <rect class="series-histogram" x="271.8" y="106.5" width="4.7" height="31.5"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="277.5" y="106.5" width="4.7" height="31.5"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="283.3" y="106.5" width="4.7" height="31.5"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="289.0" y="106.5" width="4.7" height="31.5"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="294.8" y="106.5" width="4.7" height="31.5"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="300.5" y="106.5" width="4.7" height="31.5"><title>12ms × 1</title></rect>
+    <rect class="series-histogram" x="306.3" y="106.5" width="4.7" height="31.5"><title>13ms × 1</title></rect>
+    <rect class="series-histogram" x="312.0" y="106.5" width="4.7" height="31.5"><title>13ms × 1</title></rect>
+    <rect class="series-histogram" x="317.8" y="106.5" width="4.7" height="31.5"><title>13ms × 1</title></rect>
+    <rect class="series-histogram" x="323.5" y="106.5" width="4.7" height="31.5"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="329.3" y="106.5" width="4.7" height="31.5"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="335" y="106.5" width="4.7" height="31.5"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="340.7" y="106.5" width="4.7" height="31.5"><title>15ms × 1</title></rect>
+    <rect class="series-histogram" x="346.5" y="106.5" width="4.7" height="31.5"><title>16ms × 1</title></rect>
+    <rect class="series-histogram" x="352.2" y="75" width="4.7" height="63"><title>16ms × 2</title></rect>
+    <rect class="series-histogram" x="358.0" y="106.5" width="4.7" height="31.5"><title>16ms × 1</title></rect>
+    <rect class="series-histogram" x="363.7" y="12" width="4.7" height="126"><title>16ms × 4</title></rect>
+    <rect class="series-histogram" x="369.5" y="75" width="4.7" height="63"><title>16ms × 2</title></rect>
+    <rect class="series-histogram" x="375.2" y="106.5" width="4.7" height="31.5"><title>17ms × 1</title></rect>
+    <rect class="series-histogram" x="381.0" y="106.5" width="4.7" height="31.5"><title>17ms × 1</title></rect>
+    <rect class="series-histogram" x="386.7" y="106.5" width="4.7" height="31.5"><title>18ms × 1</title></rect>
+    <rect class="series-histogram" x="392.5" y="106.5" width="4.7" height="31.5"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="398.2" y="106.5" width="4.7" height="31.5"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="403.9" y="75" width="4.7" height="63"><title>19ms × 2</title></rect>
+    <rect class="series-histogram" x="409.7" y="106.5" width="4.7" height="31.5"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="415.4" y="75" width="4.7" height="63"><title>19ms × 2</title></rect>
+    <rect class="series-histogram" x="421.2" y="106.5" width="4.7" height="31.5"><title>19ms × 1</title></rect>
+    <rect class="series-histogram" x="426.9" y="75" width="4.7" height="63"><title>19ms × 2</title></rect>
+    <rect class="series-histogram" x="432.7" y="106.5" width="4.7" height="31.5"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="438.4" y="106.5" width="4.7" height="31.5"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="444.2" y="106.5" width="4.7" height="31.5"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="449.9" y="106.5" width="4.7" height="31.5"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="455.6" y="106.5" width="4.7" height="31.5"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="461.4" y="106.5" width="4.7" height="31.5"><title>20ms × 1</title></rect>
+    <rect class="series-histogram" x="467.1" y="106.5" width="4.7" height="31.5"><title>22ms × 1</title></rect>
+    <rect class="series-histogram" x="472.9" y="106.5" width="4.7" height="31.5"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="478.6" y="106.5" width="4.7" height="31.5"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="484.4" y="75" width="4.7" height="63"><title>23ms × 2</title></rect>
+    <rect class="series-histogram" x="490.1" y="106.5" width="4.7" height="31.5"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="495.9" y="106.5" width="4.7" height="31.5"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="501.6" y="106.5" width="4.7" height="31.5"><title>23ms × 1</title></rect>
+    <rect class="series-histogram" x="507.4" y="106.5" width="4.7" height="31.5"><title>24ms × 1</title></rect>
+    <rect class="series-histogram" x="513.1" y="106.5" width="4.7" height="31.5"><title>24ms × 1</title></rect>
+    <rect class="series-histogram" x="518.8" y="106.5" width="4.7" height="31.5"><title>24ms × 1</title></rect>
+    <rect class="series-histogram" x="524.6" y="75" width="4.7" height="63"><title>24ms × 2</title></rect>
+    <rect class="series-histogram" x="530.3" y="106.5" width="4.7" height="31.5"><title>24ms × 1</title></rect>
+    <rect class="series-histogram" x="536.1" y="106.5" width="4.7" height="31.5"><title>24ms × 1</title></rect>
+    <rect class="series-histogram" x="541.8" y="106.5" width="4.7" height="31.5"><title>25ms × 1</title></rect>
+    <rect class="series-histogram" x="547.6" y="106.5" width="4.7" height="31.5"><title>25ms × 1</title></rect>
+    <rect class="series-histogram" x="553.3" y="106.5" width="4.7" height="31.5"><title>25ms × 1</title></rect>
+    <rect class="series-histogram" x="559.1" y="106.5" width="4.7" height="31.5"><title>26ms × 1</title></rect>
+    <rect class="series-histogram" x="564.8" y="106.5" width="4.7" height="31.5"><title>27ms × 1</title></rect>
+    <rect class="series-histogram" x="570.5" y="106.5" width="4.7" height="31.5"><title>27ms × 1</title></rect>
+    <rect class="series-histogram" x="576.3" y="75" width="4.7" height="63"><title>27ms × 2</title></rect>
+    <rect class="series-histogram" x="582.0" y="106.5" width="4.7" height="31.5"><title>27ms × 1</title></rect>
+    <rect class="series-histogram" x="587.8" y="75" width="4.7" height="63"><title>27ms × 2</title></rect>
+    <rect class="series-histogram" x="593.5" y="106.5" width="4.7" height="31.5"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="599.3" y="106.5" width="4.7" height="31.5"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="605.0" y="12" width="4.7" height="126"><title>28ms × 4</title></rect>
+    <rect class="series-histogram" x="610.8" y="106.5" width="4.7" height="31.5"><title>28ms × 1</title></rect>
+    <rect class="series-histogram" x="616.5" y="106.5" width="4.7" height="31.5"><title>29ms × 1</title></rect>
+    <rect class="series-histogram" x="622.3" y="106.5" width="4.7" height="31.5"><title>30ms × 1</title></rect>
   </svg>
 </div>
   </div>
@@ -562,8 +603,8 @@ svg{width:100%;height:auto;overflow:visible}
   <table class="stats">
     <tr><th>iterations</th><td>120</td><th>failures</th><td>0</td><th>error rate</th><td>0.00%</td></tr>
     
-    <tr><th>min</th><td>2ms</td><th>avg</th><td>15ms</td><th>max</th><td>27ms</td></tr>
-    <tr><th>p50</th><td>15ms</td><th>p90</th><td>27ms</td><th>p95</th><td>27ms</td><th>p99</th><td>27ms</td></tr>
+    <tr><th>min</th><td>2ms</td><th>avg</th><td>15ms</td><th>max</th><td>28ms</td></tr>
+    <tr><th>p50</th><td>15ms</td><th>p90</th><td>27ms</td><th>p95</th><td>27ms</td><th>p99</th><td>28ms</td></tr>
   </table>
   
   
@@ -573,12 +614,12 @@ svg{width:100%;height:auto;overflow:visible}
   <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
   <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
     <line class="axis" x1="42" y1="138" x2="628" y2="138" />
-    <text class="axis-label" x="42" y="12">27</text>
+    <text class="axis-label" x="42" y="12">28</text>
     <text class="axis-label" x="42" y="136">0</text>
     <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
-    <polyline class="series-p50" points="42,68 237.3,68 432.7,72.7 628,68" fill="none" />
-    <polyline class="series-p95" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
-    <polyline class="series-p99" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
+    <polyline class="series-p50" points="42,66 237.3,70.5 432.7,66 628,70.5" fill="none" />
+    <polyline class="series-p95" points="42,16.5 237.3,12 432.7,12 628,16.5" fill="none" />
+    <polyline class="series-p99" points="42,16.5 237.3,12 432.7,12 628,16.5" fill="none" />
   </svg>
 </div>
     <div class="chart">
@@ -589,7 +630,7 @@ svg{width:100%;height:auto;overflow:visible}
     <text class="axis-label" x="42" y="12">36</text>
     <text class="axis-label" x="42" y="136">0</text>
     <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
-    <polyline class="series-rps" points="42,26 237.3,12 432.7,22.5 628,71.5" fill="none" />
+    <polyline class="series-rps" points="42,26 237.3,12 432.7,26 628,68" fill="none" />
   </svg>
 </div>
     <div class="chart">
@@ -605,30 +646,33 @@ svg{width:100%;height:auto;overflow:visible}
   <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
   <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
     <line class="axis" x1="42" y1="138" x2="628" y2="138" />
-    <text class="axis-label" x="42" y="12">14</text>
+    <text class="axis-label" x="42" y="12">12</text>
     <text class="axis-label" x="42" y="156">2ms</text>
-    <text class="axis-label" x="628" y="156" text-anchor="end">27ms</text>
-    <rect class="series-histogram" x="42" y="111" width="26.9" height="27"><title>2ms × 3</title></rect>
-    <rect class="series-histogram" x="69.9" y="48" width="26.9" height="90"><title>3ms × 10</title></rect>
-    <rect class="series-histogram" x="97.8" y="102" width="26.9" height="36"><title>4ms × 4</title></rect>
-    <rect class="series-histogram" x="125.7" y="120" width="26.9" height="18"><title>6ms × 2</title></rect>
-    <rect class="series-histogram" x="153.6" y="39" width="26.9" height="99"><title>7ms × 11</title></rect>
-    <rect class="series-histogram" x="181.5" y="102" width="26.9" height="36"><title>8ms × 4</title></rect>
-    <rect class="series-histogram" x="209.4" y="120" width="26.9" height="18"><title>10ms × 2</title></rect>
-    <rect class="series-histogram" x="237.3" y="39" width="26.9" height="99"><title>11ms × 11</title></rect>
-    <rect class="series-histogram" x="265.2" y="102" width="26.9" height="36"><title>12ms × 4</title></rect>
-    <rect class="series-histogram" x="293.1" y="93" width="26.9" height="45"><title>14ms × 5</title></rect>
-    <rect class="series-histogram" x="321.0" y="57" width="26.9" height="81"><title>15ms × 9</title></rect>
-    <rect class="series-histogram" x="349.0" y="111" width="26.9" height="27"><title>16ms × 3</title></rect>
-    <rect class="series-histogram" x="376.9" y="102" width="26.9" height="36"><title>18ms × 4</title></rect>
-    <rect class="series-histogram" x="404.8" y="48" width="26.9" height="90"><title>19ms × 10</title></rect>
-    <rect class="series-histogram" x="432.7" y="111" width="26.9" height="27"><title>20ms × 3</title></rect>
-    <rect class="series-histogram" x="460.6" y="129" width="26.9" height="9"><title>21ms × 1</title></rect>
-    <rect class="series-histogram" x="488.5" y="120" width="26.9" height="18"><title>22ms × 2</title></rect>
-    <rect class="series-histogram" x="516.4" y="66" width="26.9" height="72"><title>23ms × 8</title></rect>
-    <rect class="series-histogram" x="544.3" y="75" width="26.9" height="63"><title>24ms × 7</title></rect>
-    <rect class="series-histogram" x="572.2" y="111" width="26.9" height="27"><title>26ms × 3</title></rect>
-    <rect class="series-histogram" x="600.1" y="12" width="26.9" height="126"><title>27ms × 14</title></rect>
+    <text class="axis-label" x="628" y="156" text-anchor="end">28ms</text>
+    <rect class="series-histogram" x="42" y="117" width="23.4" height="21"><title>2ms × 2</title></rect>
+    <rect class="series-histogram" x="66.4" y="22.5" width="23.4" height="115.5"><title>3ms × 11</title></rect>
+    <rect class="series-histogram" x="90.8" y="96" width="23.4" height="42"><title>4ms × 4</title></rect>
+    <rect class="series-histogram" x="115.3" y="127.5" width="23.4" height="10.5"><title>6ms × 1</title></rect>
+    <rect class="series-histogram" x="139.7" y="12" width="23.4" height="126"><title>7ms × 12</title></rect>
+    <rect class="series-histogram" x="164.1" y="96" width="23.4" height="42"><title>8ms × 4</title></rect>
+    <rect class="series-histogram" x="188.5" y="117" width="23.4" height="21"><title>10ms × 2</title></rect>
+    <rect class="series-histogram" x="212.9" y="43.5" width="23.4" height="94.5"><title>11ms × 9</title></rect>
+    <rect class="series-histogram" x="237.3" y="75" width="23.4" height="63"><title>12ms × 6</title></rect>
+    <rect class="series-histogram" x="261.8" y="127.5" width="23.4" height="10.5"><title>13ms × 1</title></rect>
+    <rect class="series-histogram" x="286.2" y="127.5" width="23.4" height="10.5"><title>14ms × 1</title></rect>
+    <rect class="series-histogram" x="310.6" y="43.5" width="23.4" height="94.5"><title>15ms × 9</title></rect>
+    <rect class="series-histogram" x="335" y="75" width="23.4" height="63"><title>16ms × 6</title></rect>
+    <rect class="series-histogram" x="359.4" y="75" width="23.4" height="63"><title>18ms × 6</title></rect>
+    <rect class="series-histogram" x="383.8" y="43.5" width="23.4" height="94.5"><title>19ms × 9</title></rect>
+    <rect class="series-histogram" x="408.3" y="117" width="23.4" height="21"><title>20ms × 2</title></rect>
+    <rect class="series-histogram" x="432.7" y="127.5" width="23.4" height="10.5"><title>21ms × 1</title></rect>
+    <rect class="series-histogram" x="457.1" y="96" width="23.4" height="42"><title>22ms × 4</title></rect>
+    <rect class="series-histogram" x="481.5" y="64.5" width="23.4" height="73.5"><title>23ms × 7</title></rect>
+    <rect class="series-histogram" x="505.9" y="85.5" width="23.4" height="52.5"><title>24ms × 5</title></rect>
+    <rect class="series-histogram" x="530.3" y="127.5" width="23.4" height="10.5"><title>25ms × 1</title></rect>
+    <rect class="series-histogram" x="554.8" y="96" width="23.4" height="42"><title>26ms × 4</title></rect>
+    <rect class="series-histogram" x="579.2" y="43.5" width="23.4" height="94.5"><title>27ms × 9</title></rect>
+    <rect class="series-histogram" x="603.6" y="96" width="23.4" height="42"><title>28ms × 4</title></rect>
   </svg>
 </div>
   </div>
@@ -638,8 +682,8 @@ svg{width:100%;height:auto;overflow:visible}
   <table class="stats">
     <tr><th>iterations</th><td>120</td><th>failures</th><td>0</td><th>error rate</th><td>0.00%</td></tr>
     
-    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.47ms</td><th>max</th><td>1ms</td></tr>
-    <tr><th>p50</th><td>0ms</td><th>p90</th><td>1ms</td><th>p95</th><td>1ms</td><th>p99</th><td>1ms</td></tr>
+    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.57ms</td><th>max</th><td>1ms</td></tr>
+    <tr><th>p50</th><td>1ms</td><th>p90</th><td>1ms</td><th>p95</th><td>1ms</td><th>p99</th><td>1ms</td></tr>
   </table>
   
   
@@ -652,7 +696,7 @@ svg{width:100%;height:auto;overflow:visible}
     <text class="axis-label" x="42" y="12">1</text>
     <text class="axis-label" x="42" y="136">0</text>
     <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
-    <polyline class="series-p50" points="42,138 237.3,138 432.7,138 628,12" fill="none" />
+    <polyline class="series-p50" points="42,12 237.3,12 432.7,12 628,138" fill="none" />
     <polyline class="series-p95" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
     <polyline class="series-p99" points="42,12 237.3,12 432.7,12 628,12" fill="none" />
   </svg>
@@ -665,7 +709,7 @@ svg{width:100%;height:auto;overflow:visible}
     <text class="axis-label" x="42" y="12">36</text>
     <text class="axis-label" x="42" y="136">0</text>
     <text class="axis-label" x="628" y="156" text-anchor="end">3s</text>
-    <polyline class="series-rps" points="42,26 237.3,12 432.7,22.5 628,71.5" fill="none" />
+    <polyline class="series-rps" points="42,26 237.3,12 432.7,26 628,68" fill="none" />
   </svg>
 </div>
     <div class="chart">
@@ -681,11 +725,11 @@ svg{width:100%;height:auto;overflow:visible}
   <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
   <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
     <line class="axis" x1="42" y1="138" x2="628" y2="138" />
-    <text class="axis-label" x="42" y="12">64</text>
+    <text class="axis-label" x="42" y="12">68</text>
     <text class="axis-label" x="42" y="156">0ms</text>
     <text class="axis-label" x="628" y="156" text-anchor="end">1ms</text>
-    <rect class="series-histogram" x="42" y="12" width="292" height="126"><title>0ms × 64</title></rect>
-    <rect class="series-histogram" x="335" y="27.8" width="292" height="110.3"><title>1ms × 56</title></rect>
+    <rect class="series-histogram" x="42" y="41.6" width="292" height="96.4"><title>0ms × 52</title></rect>
+    <rect class="series-histogram" x="335" y="12" width="292" height="126"><title>1ms × 68</title></rect>
   </svg>
 </div>
   </div>
@@ -693,14 +737,14 @@ svg{width:100%;height:auto;overflow:visible}
 </section>
 <section class="test fail" id="t4" data-file="tests/load.tflw">
   <h2><span class="dot fail"></span>the stock check is not allowed to fail one call in four <span class="tms">workload</span></h2>
-  <p class="generator-line ">generator: avg event-loop lag 0.5ms · max 1.8ms · cpu 5%</p>
+  <p class="generator-line ">generator: avg event-loop lag 0.3ms · max 1.7ms · cpu 5%</p>
   <div class="metrics-block">
   <p class="workload">run 40 iterations across 2 users</p>
   <table class="stats">
     <tr><th>iterations</th><td>40</td><th>failures</th><td>10</td><th>error rate</th><td>25.00%</td></tr>
     <tr><th>assertions</th><td colspan="5">40</td></tr>
-    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.72ms</td><th>max</th><td>1.7ms</td></tr>
-    <tr><th>p50</th><td>0.73ms</td><th>p90</th><td>1.3ms</td><th>p95</th><td>1.4ms</td><th>p99</th><td>1.7ms</td></tr>
+    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.82ms</td><th>max</th><td>1.5ms</td></tr>
+    <tr><th>p50</th><td>0.74ms</td><th>p90</th><td>1.4ms</td><th>p95</th><td>1.4ms</td><th>p99</th><td>1.4ms</td></tr>
   </table>
   
   <table class="thresholds"><tr class="fail"><td>✗</td><td>error rate &lt; 5.00%</td><td>actual: 25.00%</td></tr></table>
@@ -710,11 +754,11 @@ svg{width:100%;height:auto;overflow:visible}
   <div class="legend"><span class="legend-item series-p50">p50</span><span class="legend-item series-p95">p95</span><span class="legend-item series-p99">p99</span></div>
   <svg viewBox="0 0 640 160" role="img" aria-label="Latency over time">
     <line class="axis" x1="42" y1="138" x2="628" y2="138" />
-    <text class="axis-label" x="42" y="12">1.7</text>
+    <text class="axis-label" x="42" y="12">1.4</text>
     <text class="axis-label" x="42" y="136">0</text>
     <text class="axis-label" x="628" y="156" text-anchor="end">0s</text>
-    <polyline class="series-p50" points="42,83.9" fill="none" />
-    <polyline class="series-p95" points="42,34.2" fill="none" />
+    <polyline class="series-p50" points="42,71.4" fill="none" />
+    <polyline class="series-p95" points="42,12" fill="none" />
     <polyline class="series-p99" points="42,12" fill="none" />
   </svg>
 </div>
@@ -744,46 +788,44 @@ svg{width:100%;height:auto;overflow:visible}
     <line class="axis" x1="42" y1="138" x2="628" y2="138" />
     <text class="axis-label" x="42" y="12">2</text>
     <text class="axis-label" x="42" y="156">0ms</text>
-    <text class="axis-label" x="628" y="156" text-anchor="end">1.7ms</text>
-    <rect class="series-histogram" x="42" y="75" width="14.0" height="63"><title>0ms × 1</title></rect>
-    <rect class="series-histogram" x="57.0" y="75" width="14.0" height="63"><title>0.051ms × 1</title></rect>
-    <rect class="series-histogram" x="72.1" y="75" width="14.0" height="63"><title>0.11ms × 1</title></rect>
-    <rect class="series-histogram" x="87.1" y="75" width="14.0" height="63"><title>0.11ms × 1</title></rect>
-    <rect class="series-histogram" x="102.1" y="75" width="14.0" height="63"><title>0.23ms × 1</title></rect>
-    <rect class="series-histogram" x="117.1" y="75" width="14.0" height="63"><title>0.29ms × 1</title></rect>
-    <rect class="series-histogram" x="132.2" y="75" width="14.0" height="63"><title>0.32ms × 1</title></rect>
-    <rect class="series-histogram" x="147.2" y="75" width="14.0" height="63"><title>0.35ms × 1</title></rect>
-    <rect class="series-histogram" x="162.2" y="75" width="14.0" height="63"><title>0.36ms × 1</title></rect>
-    <rect class="series-histogram" x="177.2" y="75" width="14.0" height="63"><title>0.36ms × 1</title></rect>
-    <rect class="series-histogram" x="192.3" y="75" width="14.0" height="63"><title>0.37ms × 1</title></rect>
-    <rect class="series-histogram" x="207.3" y="75" width="14.0" height="63"><title>0.39ms × 1</title></rect>
-    <rect class="series-histogram" x="222.3" y="75" width="14.0" height="63"><title>0.45ms × 1</title></rect>
-    <rect class="series-histogram" x="237.3" y="75" width="14.0" height="63"><title>0.46ms × 1</title></rect>
-    <rect class="series-histogram" x="252.4" y="75" width="14.0" height="63"><title>0.5ms × 1</title></rect>
-    <rect class="series-histogram" x="267.4" y="75" width="14.0" height="63"><title>0.53ms × 1</title></rect>
-    <rect class="series-histogram" x="282.4" y="75" width="14.0" height="63"><title>0.53ms × 1</title></rect>
-    <rect class="series-histogram" x="297.4" y="75" width="14.0" height="63"><title>0.61ms × 1</title></rect>
-    <rect class="series-histogram" x="312.5" y="75" width="14.0" height="63"><title>0.64ms × 1</title></rect>
-    <rect class="series-histogram" x="327.5" y="75" width="14.0" height="63"><title>0.66ms × 1</title></rect>
-    <rect class="series-histogram" x="342.5" y="75" width="14.0" height="63"><title>0.73ms × 1</title></rect>
-    <rect class="series-histogram" x="357.5" y="75" width="14.0" height="63"><title>0.75ms × 1</title></rect>
-    <rect class="series-histogram" x="372.6" y="75" width="14.0" height="63"><title>0.78ms × 1</title></rect>
-    <rect class="series-histogram" x="387.6" y="75" width="14.0" height="63"><title>0.82ms × 1</title></rect>
-    <rect class="series-histogram" x="402.6" y="75" width="14.0" height="63"><title>0.83ms × 1</title></rect>
-    <rect class="series-histogram" x="417.6" y="75" width="14.0" height="63"><title>0.9ms × 1</title></rect>
-    <rect class="series-histogram" x="432.7" y="75" width="14.0" height="63"><title>0.91ms × 1</title></rect>
-    <rect class="series-histogram" x="447.7" y="75" width="14.0" height="63"><title>0.92ms × 1</title></rect>
-    <rect class="series-histogram" x="462.7" y="75" width="14.0" height="63"><title>0.94ms × 1</title></rect>
-    <rect class="series-histogram" x="477.7" y="75" width="14.0" height="63"><title>0.94ms × 1</title></rect>
-    <rect class="series-histogram" x="492.8" y="75" width="14.0" height="63"><title>1.1ms × 1</title></rect>
-    <rect class="series-histogram" x="507.8" y="75" width="14.0" height="63"><title>1.1ms × 1</title></rect>
-    <rect class="series-histogram" x="522.8" y="75" width="14.0" height="63"><title>1.1ms × 1</title></rect>
-    <rect class="series-histogram" x="537.8" y="12" width="14.0" height="126"><title>1.2ms × 2</title></rect>
-    <rect class="series-histogram" x="552.9" y="75" width="14.0" height="63"><title>1.3ms × 1</title></rect>
-    <rect class="series-histogram" x="567.9" y="75" width="14.0" height="63"><title>1.3ms × 1</title></rect>
-    <rect class="series-histogram" x="582.9" y="75" width="14.0" height="63"><title>1.4ms × 1</title></rect>
-    <rect class="series-histogram" x="597.9" y="75" width="14.0" height="63"><title>1.4ms × 1</title></rect>
-    <rect class="series-histogram" x="613.0" y="75" width="14.0" height="63"><title>1.7ms × 1</title></rect>
+    <text class="axis-label" x="628" y="156" text-anchor="end">1.4ms</text>
+    <rect class="series-histogram" x="42" y="12" width="14.8" height="126"><title>0ms × 2</title></rect>
+    <rect class="series-histogram" x="57.8" y="75" width="14.8" height="63"><title>0.037ms × 1</title></rect>
+    <rect class="series-histogram" x="73.7" y="75" width="14.8" height="63"><title>0.11ms × 1</title></rect>
+    <rect class="series-histogram" x="89.5" y="75" width="14.8" height="63"><title>0.32ms × 1</title></rect>
+    <rect class="series-histogram" x="105.4" y="75" width="14.8" height="63"><title>0.34ms × 1</title></rect>
+    <rect class="series-histogram" x="121.2" y="75" width="14.8" height="63"><title>0.37ms × 1</title></rect>
+    <rect class="series-histogram" x="137.0" y="75" width="14.8" height="63"><title>0.37ms × 1</title></rect>
+    <rect class="series-histogram" x="152.9" y="75" width="14.8" height="63"><title>0.37ms × 1</title></rect>
+    <rect class="series-histogram" x="168.7" y="75" width="14.8" height="63"><title>0.39ms × 1</title></rect>
+    <rect class="series-histogram" x="184.5" y="75" width="14.8" height="63"><title>0.4ms × 1</title></rect>
+    <rect class="series-histogram" x="200.4" y="75" width="14.8" height="63"><title>0.56ms × 1</title></rect>
+    <rect class="series-histogram" x="216.2" y="75" width="14.8" height="63"><title>0.6ms × 1</title></rect>
+    <rect class="series-histogram" x="232.1" y="75" width="14.8" height="63"><title>0.63ms × 1</title></rect>
+    <rect class="series-histogram" x="247.9" y="75" width="14.8" height="63"><title>0.64ms × 1</title></rect>
+    <rect class="series-histogram" x="263.7" y="75" width="14.8" height="63"><title>0.65ms × 1</title></rect>
+    <rect class="series-histogram" x="279.6" y="75" width="14.8" height="63"><title>0.71ms × 1</title></rect>
+    <rect class="series-histogram" x="295.4" y="75" width="14.8" height="63"><title>0.72ms × 1</title></rect>
+    <rect class="series-histogram" x="311.2" y="75" width="14.8" height="63"><title>0.73ms × 1</title></rect>
+    <rect class="series-histogram" x="327.1" y="75" width="14.8" height="63"><title>0.74ms × 1</title></rect>
+    <rect class="series-histogram" x="342.9" y="75" width="14.8" height="63"><title>0.74ms × 1</title></rect>
+    <rect class="series-histogram" x="358.8" y="75" width="14.8" height="63"><title>0.97ms × 1</title></rect>
+    <rect class="series-histogram" x="374.6" y="75" width="14.8" height="63"><title>1ms × 1</title></rect>
+    <rect class="series-histogram" x="390.4" y="12" width="14.8" height="126"><title>1ms × 2</title></rect>
+    <rect class="series-histogram" x="406.3" y="75" width="14.8" height="63"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="422.1" y="75" width="14.8" height="63"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="437.9" y="75" width="14.8" height="63"><title>1.1ms × 1</title></rect>
+    <rect class="series-histogram" x="453.8" y="75" width="14.8" height="63"><title>1.2ms × 1</title></rect>
+    <rect class="series-histogram" x="469.6" y="75" width="14.8" height="63"><title>1.2ms × 1</title></rect>
+    <rect class="series-histogram" x="485.5" y="75" width="14.8" height="63"><title>1.3ms × 1</title></rect>
+    <rect class="series-histogram" x="501.3" y="12" width="14.8" height="126"><title>1.3ms × 2</title></rect>
+    <rect class="series-histogram" x="517.1" y="75" width="14.8" height="63"><title>1.3ms × 1</title></rect>
+    <rect class="series-histogram" x="533.0" y="75" width="14.8" height="63"><title>1.3ms × 1</title></rect>
+    <rect class="series-histogram" x="548.8" y="75" width="14.8" height="63"><title>1.3ms × 1</title></rect>
+    <rect class="series-histogram" x="564.6" y="75" width="14.8" height="63"><title>1.4ms × 1</title></rect>
+    <rect class="series-histogram" x="580.5" y="75" width="14.8" height="63"><title>1.4ms × 1</title></rect>
+    <rect class="series-histogram" x="596.3" y="75" width="14.8" height="63"><title>1.4ms × 1</title></rect>
+    <rect class="series-histogram" x="612.2" y="75" width="14.8" height="63"><title>1.4ms × 1</title></rect>
   </svg>
 </div>
   </div>
@@ -793,7 +835,7 @@ svg{width:100%;height:auto;overflow:visible}
   <table class="stats">
     <tr><th>iterations</th><td>40</td><th>failures</th><td>10</td><th>error rate</th><td>25.00%</td></tr>
     
-    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.63ms</td><th>max</th><td>1ms</td></tr>
+    <tr><th>min</th><td>0ms</td><th>avg</th><td>0.72ms</td><th>max</th><td>1ms</td></tr>
     <tr><th>p50</th><td>1ms</td><th>p90</th><td>1ms</td><th>p95</th><td>1ms</td><th>p99</th><td>1ms</td></tr>
   </table>
   
@@ -836,11 +878,11 @@ svg{width:100%;height:auto;overflow:visible}
   <h3>Response time distribution <span class="chart-unit">(ms → count)</span></h3>
   <svg viewBox="0 0 640 160" role="img" aria-label="Response time distribution">
     <line class="axis" x1="42" y1="138" x2="628" y2="138" />
-    <text class="axis-label" x="42" y="12">25</text>
+    <text class="axis-label" x="42" y="12">29</text>
     <text class="axis-label" x="42" y="156">0ms</text>
     <text class="axis-label" x="628" y="156" text-anchor="end">1ms</text>
-    <rect class="series-histogram" x="42" y="62.4" width="292" height="75.6"><title>0ms × 15</title></rect>
-    <rect class="series-histogram" x="335" y="12" width="292" height="126"><title>1ms × 25</title></rect>
+    <rect class="series-histogram" x="42" y="90.2" width="292" height="47.8"><title>0ms × 11</title></rect>
+    <rect class="series-histogram" x="335" y="12" width="292" height="126"><title>1ms × 29</title></rect>
   </svg>
 </div>
   </div>
@@ -864,8 +906,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 201 Created · 4.238925999999992 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:32 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 201 Created · 4.247623999999632 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:55 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -892,7 +934,7 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /orders/{orderId}</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/orders/1 → 200 (0.92ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/orders/1 → 200 (0.93ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/orders/1</div>
@@ -900,8 +942,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.9219640000001164 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:32 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.9275629999992816 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:55 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -928,7 +970,7 @@ svg{width:100%;height:auto;overflow:visible}
     <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /warmup</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/warmup → 503 (0.67ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/warmup → 503 (0.66ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/warmup</div>
@@ -936,8 +978,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 503 Service Unavailable · 0.6726930000004359 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:32 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 503 Service Unavailable · 0.6634320000002845 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:55 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -954,7 +996,7 @@ svg{width:100%;height:auto;overflow:visible}
   <ol class="steps">
 <li class="step ok kind-api">
     <div class="line"><span class="mark">✓</span><code>api GET /warmup</code><span class="sms">1 ms</span></div>
-    <div class="detail ">GET http://127.0.0.1:4717/warmup → 200 (0.61ms)</div>
+    <div class="detail ">GET http://127.0.0.1:4717/warmup → 200 (0.58ms)</div>
     <details class="evidence"><summary>request &amp; response</summary><div class="trace">
     <div class="panel req">
       <div class="phead">→ GET http://127.0.0.1:4717/warmup</div>
@@ -962,8 +1004,8 @@ svg{width:100%;height:auto;overflow:visible}
       
     </div>
     <div class="panel res">
-        <div class="phead">← 200 OK · 0.6105719999995927 ms</div>
-        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 19:31:32 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <div class="phead">← 200 OK · 0.5782619999999952 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:55 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
         <pre class="body">[omitted by evidence level]</pre>
       </div>
   </div></details>
@@ -975,8 +1017,105 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
   </ol>
 </section>
-<section class="test ok" id="t7" data-file="tests/shop.tflw">
-  <h2><span class="dot ok"></span>the shop page greets and the button answers <span class="tms">361 ms</span></h2>
+<section class="test ok" id="t7" data-file="tests/security.tflw">
+  <h2><span class="dot ok"></span>the catalog answers with safe headers <span class="tms">3 ms</span></h2>
+  
+  
+  
+  
+  
+  <ol class="steps">
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api GET /items</code><span class="sms">2 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/items → 200 (1.5ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ GET http://127.0.0.1:4717/items</div>
+      
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 200 OK · 1.520354999999654 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:55 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
+        <pre class="body">[omitted by evidence level]</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect response has no moderate security violations</code><span class="sms">1 ms</span></div>
+    <div class="detail ">response has no moderate security violations — 11 rules — 1 applicable, 10 not applicable, 0 violations</div>
+    
+  </li>
+  </ol>
+</section>
+<section class="test ok" id="t8" data-file="tests/security.tflw">
+  <h2><span class="dot ok"></span>the shop page answers with safe headers <span class="tms">2 ms</span></h2>
+  
+  
+  
+  
+  
+  <ol class="steps">
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api GET /</code><span class="sms">1 ms</span></div>
+    <div class="detail ">GET http://127.0.0.1:4717/ → 200 (0.76ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ GET http://127.0.0.1:4717/</div>
+      
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 200 OK · 0.7622220000002926 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>text/html; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:55 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr></table>
+        <pre class="body">[omitted by evidence level]</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step ok kind-expect">
+    <div class="line"><span class="mark">✓</span><code>expect response has no serious security violations</code><span class="sms">1 ms</span></div>
+    <div class="detail ">response has no serious security violations — 7 rules — 1 applicable, 6 not applicable, 1 violation:
+  - [serious] sec/csp-missing: no Content-Security-Policy header (nothing constrains where this document may load script from)
+  note: 1 known/accepted — reported, not counted against this assertion.</div>
+    
+  </li>
+  </ol>
+</section>
+<section class="test fail" id="t9" data-file="tests/security.tflw">
+  <h2><span class="dot fail"></span>a login sets a safe session cookie <span class="tms">2 ms</span></h2>
+  <p class="error">expected response to have no critical security violations, but found 1 — 3 rules — 1 applicable, 2 not applicable, 1 violation:
+  - [critical] sec/cookie-not-httponly: cookie is readable by JavaScript (no HttpOnly) (cookie `session` — any XSS on this origin can read it)</p>
+  
+  
+  
+  
+  <ol class="steps">
+<li class="step ok kind-api">
+    <div class="line"><span class="mark">✓</span><code>api POST /login body { user: &quot;fixture&quot; }</code><span class="sms">1 ms</span></div>
+    <div class="detail ">POST http://127.0.0.1:4717/login → 200 (0.74ms)</div>
+    <details class="evidence"><summary>request &amp; response</summary><div class="trace">
+    <div class="panel req">
+      <div class="phead">→ POST http://127.0.0.1:4717/login</div>
+      <table class="headers"><tr><td>content-type</td><td>application/json</td></tr></table>
+      
+    </div>
+    <div class="panel res">
+        <div class="phead">← 200 OK · 0.7432619999999588 ms</div>
+        <table class="headers"><tr><td>connection</td><td>keep-alive</td></tr><tr><td>content-type</td><td>application/json; charset=utf-8</td></tr><tr><td>date</td><td>Mon, 14 Sep 2026 20:08:55 GMT</td></tr><tr><td>keep-alive</td><td>timeout=5</td></tr><tr><td>set-cookie</td><td>session=fixture-1; Path=/</td></tr><tr><td>transfer-encoding</td><td>chunked</td></tr><tr><td>x-content-type-options</td><td>nosniff</td></tr></table>
+        <pre class="body">[omitted by evidence level]</pre>
+      </div>
+  </div></details>
+  </li>
+<li class="step fail kind-expect">
+    <div class="line"><span class="mark">✗</span><code>expect response has no critical security violations</code><span class="sms">0 ms</span></div>
+    <div class="detail baddetail">expected response to have no critical security violations, but found 1 — 3 rules — 1 applicable, 2 not applicable, 1 violation:
+  - [critical] sec/cookie-not-httponly: cookie is readable by JavaScript (no HttpOnly) (cookie `session` — any XSS on this origin can read it)</div>
+    
+  </li>
+  </ol>
+</section>
+<section class="test ok" id="t10" data-file="tests/shop.tflw">
+  <h2><span class="dot ok"></span>the shop page greets and the button answers <span class="tms">364 ms</span></h2>
   
   
   
@@ -984,22 +1123,22 @@ svg{width:100%;height:auto;overflow:visible}
   
   <ol class="steps">
 <li class="step ok kind-open">
-    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">310 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">317 ms</span></div>
     <div class="detail ">open http://127.0.0.1:4717/</div>
     
   </li>
 <li class="step ok kind-expect">
-    <div class="line"><span class="mark">✓</span><code>expect text &quot;Fixture shop&quot; is visible</code><span class="sms">12 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>expect text &quot;Fixture shop&quot; is visible</code><span class="sms">13 ms</span></div>
     <div class="detail ">`text &quot;Fixture shop&quot;` to be visible</div>
     
   </li>
 <li class="step ok kind-click">
-    <div class="line"><span class="mark">✓</span><code>click button &quot;Buy a widget&quot;</code><span class="sms">34 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>click button &quot;Buy a widget&quot;</code><span class="sms">31 ms</span></div>
     <div class="detail ">click `button &quot;Buy a widget&quot;`</div>
     
   </li>
 <li class="step ok kind-expect">
-    <div class="line"><span class="mark">✓</span><code>expect text &quot;Bought one widget.&quot; is visible</code><span class="sms">2 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>expect text &quot;Bought one widget.&quot; is visible</code><span class="sms">1 ms</span></div>
     <div class="detail ">`text &quot;Bought one widget.&quot;` to be visible</div>
     
   </li>
@@ -1010,8 +1149,8 @@ svg{width:100%;height:auto;overflow:visible}
   </li>
   </ol>
 </section>
-<section class="test fail" id="t8" data-file="tests/shop.tflw">
-  <h2><span class="dot fail"></span>the shelf never says sold out <span class="tms">5169 ms</span></h2>
+<section class="test fail" id="t11" data-file="tests/shop.tflw">
+  <h2><span class="dot fail"></span>the shelf never says sold out <span class="tms">5179 ms</span></h2>
   <p class="error">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</p>
   
   
@@ -1019,7 +1158,7 @@ svg{width:100%;height:auto;overflow:visible}
   
   <ol class="steps">
 <li class="step ok kind-open">
-    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">14 ms</span></div>
+    <div class="line"><span class="mark">✓</span><code>open &quot;/&quot;</code><span class="sms">15 ms</span></div>
     <div class="detail ">open http://127.0.0.1:4717/</div>
     
   </li>
@@ -1029,7 +1168,7 @@ svg{width:100%;height:auto;overflow:visible}
     
   </li>
 <li class="step fail kind-expect">
-    <div class="line"><span class="mark">✗</span><code>expect text &quot;Sold out&quot; is visible</code><span class="sms">5144 ms</span></div>
+    <div class="line"><span class="mark">✗</span><code>expect text &quot;Sold out&quot; is visible</code><span class="sms">5152 ms</span></div>
     <div class="detail baddetail">expected `text &quot;Sold out&quot;` to be visible, but got no matching element</div>
     
   </li>

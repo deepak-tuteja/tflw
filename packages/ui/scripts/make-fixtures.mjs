@@ -41,7 +41,10 @@ for (const env of ['full', 'headers']) {
   const server = await startFixtureServer();
   try {
     await rm(join(project, 'report'), { recursive: true, force: true });
-    const { code, out } = await run(['run', '--env', env, '--format', 'ndjson', '--no-color']);
+    // The `headers` env runs against the project's baseline, so that corpus holds a finding the
+    // gate withheld (*known/accepted*) beside `full`'s, where the same finding gates (U5).
+    const baseline = env === 'headers' ? ['--baseline', 'security-baseline.json'] : [];
+    const { code, out } = await run(['run', '--env', env, '--format', 'ndjson', '--no-color', ...baseline]);
     if (!existsSync(join(project, 'report', 'results.json'))) throw new Error(`no results.json after env ${env} (exit ${code})\n${out}`);
     const dest = join(reports, env);
     await rm(dest, { recursive: true, force: true });

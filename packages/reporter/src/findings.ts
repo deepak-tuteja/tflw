@@ -12,7 +12,7 @@
 // should read as one row with one fingerprint rather than as two unrelated failures.
 
 import type { RunReport, ScanFinding, ScanRuleCensus, WithheldReason } from '@tflw/runtime';
-import { SCAN_KIND_LABEL, WITHHELD_LABEL } from '@tflw/runtime';
+import { SCAN_KIND_LABEL, WITHHELD_LABEL, findingsSummaryLine, sortFindings } from '@tflw/runtime';
 
 import { esc } from './escape.js';
 // M135a (D402) — R7's remediation KB. The reason it pays for itself twice: `report.html` gains
@@ -20,36 +20,9 @@ import { esc } from './escape.js';
 // entries.
 import { remediationFor, type KbEntry } from './kb.js';
 
-/** Severity order for display — worst first, so the row a reader acts on is the row they see. */
-const SEVERITY_ORDER: Readonly<Record<string, number>> = { critical: 0, serious: 1, moderate: 2, minor: 3 };
-
-/**
- * Sort findings for display: gating before withheld, then worst severity, then endpoint.
- *
- * Gating first because those are the ones failing the build right now; a baselined critical is
- * important but it is not what the reader came for. Within a bucket the order is fully determined,
- * so two runs of one suite produce byte-identical output and a diff shows a real change.
- */
-export function sortFindings(findings: readonly ScanFinding[]): ScanFinding[] {
-  return [...findings].sort(
-    (a, b) =>
-      Number(Boolean(a.withheld)) - Number(Boolean(b.withheld)) ||
-      (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9) ||
-      a.endpoint.localeCompare(b.endpoint) ||
-      a.rule.localeCompare(b.rule) ||
-      (a.location ?? '').localeCompare(b.location ?? ''),
-  );
-}
-
-/** The one-line tally: how many findings gate, and how many were withheld and why. */
-export function findingsSummaryLine(findings: readonly ScanFinding[]): string {
-  const gating = findings.filter((f) => !f.withheld).length;
-  const by = new Map<WithheldReason, number>();
-  for (const f of findings) if (f.withheld) by.set(f.withheld, (by.get(f.withheld) ?? 0) + 1);
-  const parts = [`${gating} failing`];
-  for (const [reason, n] of by) parts.push(`${n} ${WITHHELD_LABEL[reason]}`);
-  return `${findings.length} finding${findings.length === 1 ? '' : 's'} — ${parts.join(', ')}`;
-}
+// The order and the tally moved to `@tflw/runtime`'s `scan-words.ts` (`M192` U5 — the page
+// needs them in a browser); re-exported so this module's consumers and tests see the same names.
+export { sortFindings, findingsSummaryLine } from '@tflw/runtime';
 
 /**
  * KB prose is authored with markdown-style backtick code spans, because its other consumer is

@@ -9,6 +9,10 @@
       "test": "the stock check is not allowed to fail one call in four"
     },
     {
+      "file": "tests/security.tflw",
+      "test": "a login sets a safe session cookie"
+    },
+    {
       "file": "tests/shop.tflw",
       "test": "the shelf never says sold out"
     }

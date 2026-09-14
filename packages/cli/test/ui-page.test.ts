@@ -18,7 +18,8 @@ import type { Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer } from '../src/ui-server.js';
 import { roundDurationMs, type LoadMetrics, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
-import { describeWorkload, formatThresholdActual, formatThresholdTarget } from '@tflw/reporter';
+import { describeWorkload, formatThresholdActual, formatThresholdTarget, remediationFor } from '@tflw/reporter';
+import { findingsSummaryLine, sortFindings, WITHHELD_LABEL, SCAN_KIND_LABEL } from '@tflw/runtime';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const uiRoot = join(here, '..', '..', 'ui');
@@ -469,6 +470,101 @@ test('two report directories side by side: the compared run\'s figures in every 
   assert.equal(await page.locator('[data-compare]').inputValue(), '');
 });
 
+// ---- U5: the security kind -----------------------------------------------------------------
+
+test('the findings block: every finding the report holds, grouped by rule in the report\'s order, with its site, its words, its fingerprint, the gate\'s verdict and the KB\'s fix; and the rule census', async () => {
+  for (const id of ['full', 'headers']) {
+    const report = oracle[id]!;
+    const findings = report.findings ?? [];
+    assert.ok(findings.length >= 2, `${id}: the corpus holds findings`);
+    await openReport(id);
+    const block = page.locator('[data-findings]');
+    assert.equal(await block.getAttribute('data-findings-count'), String(findings.length));
+    assert.equal((await block.locator('[data-findings-summary]').textContent())?.trim(), findingsSummaryLine(findings));
+    for (const t of report.authorizedTargets ?? []) {
+      assert.equal((await block.locator(`[data-authorized-target="${t.target}"]`).textContent())?.trim(), `ℹ authorized target ${t.target} — ${t.reason}`);
+    }
+    const cov = report.scanBlindSpot?.coverage;
+    if (cov && cov.apiSteps > 0) assert.equal(await block.locator('[data-authz-coverage]').getAttribute('data-authz-coverage'), `${cov.withOwner}/${cov.apiSteps}`);
+    // Grouped by rule, worst first, and inside a group the report's own order.
+    const sorted = sortFindings(findings);
+    const rules = [...new Set(sorted.map((f) => f.rule))];
+    assert.deepEqual(await block.locator('[data-rule]').evaluateAll((els) => els.map((e) => e.getAttribute('data-rule'))), rules);
+    for (const rule of rules) {
+      const group = block.locator(`[data-rule="${rule}"]`);
+      const inRule = sorted.filter((f) => f.rule === rule);
+      assert.equal(await group.getAttribute('data-rule-count'), String(inRule.length));
+      assert.equal(await group.getAttribute('data-severity'), inRule[0]!.severity);
+      const rows = group.locator('[data-finding]');
+      assert.equal(await rows.count(), inRule.length);
+      for (let i = 0; i < inRule.length; i++) {
+        const f = inRule[i]!;
+        const row = rows.nth(i);
+        assert.equal(await row.getAttribute('data-finding'), f.fingerprint);
+        assert.equal(await row.getAttribute('data-endpoint'), f.endpoint);
+        assert.equal(await row.getAttribute('data-withheld'), f.withheld ?? null);
+        assert.equal(await row.getAttribute('data-in-compared'), null, 'nothing is compared until asked');
+        assert.equal((await row.locator('[data-finding-description]').textContent())?.trim(), f.description);
+        assert.equal((await row.locator('[data-finding-detail]').textContent())?.trim(), f.detail);
+        assert.equal((await row.locator('[data-fingerprint]').textContent())?.trim(), f.fingerprint);
+        assert.equal(await row.locator('[data-finding-source]').getAttribute('data-finding-source'), `${f.file}:${f.line}`);
+        if (f.withheld) assert.equal((await row.locator('[data-withheld-label]').textContent())?.trim(), WITHHELD_LABEL[f.withheld]);
+        else assert.equal(await row.locator('[data-withheld-label]').count(), 0);
+        // The KB's fix for this rule, folded, its CWE and its references — from the same entries
+        // `report.html` and the SARIF render.
+        const kb = remediationFor(f.rule)!;
+        assert.ok(kb, `${f.rule} has a KB entry`);
+        const fix = row.locator('[data-fix]');
+        assert.equal(await fix.evaluate((e) => (e as unknown as { open: boolean }).open), false);
+        assert.equal((await fix.locator('.fix-title').textContent())?.trim(), kb.title);
+        assert.equal(await fix.locator('[data-cwe]').getAttribute('data-cwe'), String(kb.cwe));
+        assert.deepEqual(await fix.locator('a').evaluateAll((as) => as.map((a) => [a.textContent, a.getAttribute('href')])), kb.refs.map((r) => [r.label, r.url]));
+      }
+    }
+    // The census: which rules applied and which stood down, with the reasons.
+    for (const c of report.scanCoverage ?? []) {
+      const census = block.locator(`[data-scan-census="${c.scan}"]`);
+      assert.equal((await census.locator('h4').textContent())?.trim(), SCAN_KIND_LABEL[c.scan]);
+      assert.deepEqual(await census.locator('[data-applied-rule]').evaluateAll((els) => els.map((e) => e.getAttribute('data-applied-rule'))), c.applied);
+      for (const n of c.notApplicable) assert.equal((await census.locator(`[data-na-rule="${n.rule}"]`).textContent())?.trim(), `${n.rule} — ${n.because.join('; ')}`);
+      assert.equal(await census.locator('[data-na-rule]').count(), c.notApplicable.length);
+    }
+  }
+  // Non-vacuity: the two corpora hold the same finding once gating and once withheld by the
+  // baseline, so both verdict renderings were asserted above.
+  const full = oracle.full!.findings!;
+  const headers = oracle.headers!.findings!;
+  assert.ok(full.some((f) => !f.withheld) && headers.some((f) => f.withheld === 'baseline'), 'gating in full, known/accepted in headers');
+  assert.ok(full.some((f) => f.severity === 'critical'), 'a critical finding, so the worst-first order is observable');
+});
+
+test('two runs\' findings side by side: the same finding\'s verdict in the other run, and the other run\'s findings this one lacks', async () => {
+  const a = oracle.full!.findings!;
+  const b = oracle.headers!.findings!;
+  await openReport('full');
+  await page.locator('[data-compare]').selectOption('headers');
+  await page.locator('[data-findings-compared="headers"]').waitFor();
+  let differs = 0;
+  for (const f of a) {
+    const row = page.locator(`[data-finding="${f.fingerprint}"]`);
+    const o = b.find((x) => x.fingerprint === f.fingerprint);
+    const same = o !== undefined && (o.withheld ?? null) === (f.withheld ?? null);
+    assert.equal(await row.getAttribute('data-in-compared'), o ? (same ? 'same' : 'differs') : 'absent');
+    const badge = (await row.locator('[data-since="headers"]').textContent())?.trim();
+    if (!o) assert.equal(badge, 'not in headers');
+    else if (same) assert.equal(badge, 'also in headers');
+    else {
+      assert.equal(badge, `${o.withheld ? WITHHELD_LABEL[o.withheld] : 'gating'} in headers`);
+      differs += 1;
+    }
+  }
+  assert.equal(differs, 1, 'exactly one finding the baseline withholds in headers and not in full');
+  assert.equal(await page.locator('[data-findings-gone]').count(), 0, 'headers has nothing full lacks');
+  await page.locator('[data-compare]').selectOption('');
+  await page.locator('[data-findings-compared]').waitFor({ state: 'detached' });
+  assert.equal(await page.locator('[data-in-compared]').count(), 0);
+});
+
 test('a run from the page: the live pane fills from the stream, and the kept directory is what the page then shows', async () => {
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: () => Promise<Server> };
   const target = await fixtureServer.startFixtureServer();
@@ -495,6 +591,23 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
     // And the run list gained the row, with the run's own counts.
     const row = page.locator(`[data-report-row="${id}"]`);
     assert.equal((await row.locator('[data-row-counts]').textContent())?.trim(), `${written.passed}/${written.total}`);
+    // A `@catalog` run asserts nothing about security, so it holds no findings and no block —
+    // and compared with `full`, every finding there is absent here, listed as what full has that
+    // this run does not (U5's absent branch, which the two corpora alone cannot show).
+    assert.equal(written.findings, undefined);
+    assert.equal(await page.locator('[data-finding]').count(), 0);
+    if ((await page.locator('[data-findings]').count()) > 0) assert.match((await page.locator('[data-findings-summary]').textContent())!, /^no findings/);
+    await openReport('full');
+    await page.locator('[data-compare]').selectOption(id);
+    await page.locator(`[data-findings-compared="${id}"]`).waitFor();
+    assert.equal(await page.locator('[data-in-compared="absent"]').count(), oracle.full!.findings!.length);
+    assert.equal((await page.locator('[data-since]').first().textContent())?.trim(), `not in ${id}`);
+    await openReport(id);
+    assert.equal(await page.locator('[data-finding]').count(), 0);
+    await page.locator('[data-compare]').selectOption('full');
+    await page.locator('[data-findings-gone]').waitFor();
+    assert.equal(await page.locator('[data-findings-gone]').getAttribute('data-findings-gone'), String(oracle.full!.findings!.length));
+    assert.deepEqual(await page.locator('[data-finding-gone]').evaluateAll((els) => els.map((e) => e.getAttribute('data-finding-gone'))), sortFindings(oracle.full!.findings!).map((f) => f.fingerprint));
   } finally {
     target.close();
   }

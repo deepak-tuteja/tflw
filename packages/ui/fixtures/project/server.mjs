@@ -1,8 +1,8 @@
 // The fixture project's target — a `node:http` server with three items, orders, one endpoint
-// that fails its first call (for the `retry 2` test), and two for the workload tests (U4): a
+// that fails its first call (for the `retry 2` test), two for the workload tests (U4): a
 // search that answers on a small deterministic latency ladder, so a histogram has more than one
 // bucket, and a stock check that fails every fourth call, so an error-rate threshold has
-// something to breach. Started by `scripts/make-fixtures.mjs` and by the page gate; never by
+// something to breach — and a login that sets a bare session cookie, for the security scan (U5). Started by `scripts/make-fixtures.mjs` and by the page gate; never by
 // `tflw ui` itself. `PORT` is the one `tflw.config` names.
 import { createServer } from 'node:http';
 
@@ -21,7 +21,9 @@ export function startFixtureServer() {
   let stockChecks = 0;
   const server = createServer((req, res) => {
     const send = (status, body) => {
-      res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+      // `nosniff` on the JSON routes and not on the page: the security scan (U5) then passes on
+      // the catalog and fails on the page, which is the pair the findings view needs.
+      res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'x-content-type-options': 'nosniff' });
       res.end(JSON.stringify(body));
     };
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -74,6 +76,11 @@ export function startFixtureServer() {
       // 2, 6, 10, … 26 ms, cycling — seven rungs, so the buckets are spread, not one spike.
       const delay = 2 + (searches % 7) * 4;
       return void setTimeout(() => send(200, { q, hits }), delay);
+    }
+    if (req.method === 'POST' && path === '/login') {
+      // A session cookie with none of its flags — a critical finding on purpose.
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'x-content-type-options': 'nosniff', 'set-cookie': 'session=fixture-1; Path=/' });
+      return res.end(JSON.stringify({ ok: true }));
     }
     if (req.method === 'GET' && path === '/stock') {
       stockChecks += 1;

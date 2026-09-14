@@ -272,6 +272,15 @@ bucketed histogram; hover a chart and the legend reads that second's own numbers
 by opening two report directories: pick one under *compare with* and every table gains the other
 run's column and the signed difference, and every chart its dashed series.
 
+**A security scan is its findings, grouped by rule.** The block above the tests is
+`results.json`'s `findings` in the order the console and `report.html` use — gating first, then
+withheld, worst severity first — each with its endpoint, its source line, its fingerprint, the
+gate's verdict (*known/accepted* for a baselined finding, which stays on the page rather than
+vanishing) and the same *possible fixes* entry `report.html` carries. *Which rules ran* lists what
+applied and what stood down, with the reasons. With a second run open under *compare with*, each
+finding says whether the other run had it and with what verdict, and the other run's findings this
+one lacks are listed — the baseline diff, drawn from two reports.
+
 **Loopback only.** The bind address is not configurable: the page can start a run, and a run reads
 the project's `.env`. To reach it from another machine, tunnel it (`ssh -L 4141:127.0.0.1:4141`
 to that machine) rather than exposing it.

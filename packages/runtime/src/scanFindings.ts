@@ -35,11 +35,8 @@ export interface FindingLocus extends FindingSite {
 /** Which scan produced a finding. The three matchers, in the order they shipped. */
 export type ScanKind = 'security' | 'authorization' | 'input-handling';
 
-export const SCAN_KIND_LABEL: Readonly<Record<ScanKind, string>> = {
-  security: 'security',
-  authorization: 'authorization',
-  'input-handling': 'input handling',
-};
+// The labels live in `scan-words.ts` (pure, browser-safe) and are re-exported here unchanged.
+export { SCAN_KIND_LABEL, WITHHELD_LABEL } from './scan-words.js';
 
 /**
  * One finding as it reaches `RunReport` and `report.html`.
@@ -112,11 +109,6 @@ export type CrawlVia = 'openapi' | 'traffic' | 'spider';
 
 export type WithheldReason = 'baseline' | 'fail-on' | 'seeded';
 
-export const WITHHELD_LABEL: Readonly<Record<WithheldReason, string>> = {
-  baseline: 'known/accepted',
-  'fail-on': 'below --fail-on',
-  seeded: 'seeded — never gates',
-};
 
 /**
  * The run-level collector, threaded on `TestCtx` exactly as `tlsProber` and `reproSink` are.
