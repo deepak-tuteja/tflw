@@ -11136,7 +11136,7 @@ which this scoping establishes are the same defect filed twice, ten milestones a
 
 ### M141
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +36 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md +37 more · lifted from `PLAN_M141_VACUOUS_CHECKS.md`</sub>
 
 **M141 — two answers to one question (Order 1 of the ledger drawdown)**
 
@@ -12584,7 +12584,7 @@ the kind of credential the language does not renew.
 
 ### M190
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs +6 more · lifted from `PLAN_M190_THE_RE_CENSUS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/discover-mutation-kills.mjs +7 more · lifted from `PLAN_M190_THE_RE_CENSUS.md`</sub>
 
 **`M190` — the re-census, and the decider**
 
@@ -12626,7 +12626,7 @@ kind at a time against a real insertion (`D994`).
 
 ### M192
 
-<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M192_TFLW_UI.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/regression.mjs +1 more · lifted from `PLAN_M192_TFLW_UI.md`</sub>
 
 **`M192` — `tflw ui`: the page for a `.tflw` project**
 
@@ -12641,7 +12641,7 @@ projection of it** — never a second format.
 
 ### M192b
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
 
 **`M192b` — the three U7 rows, fixed in tflw (S0)**
 
@@ -12659,9 +12659,20 @@ phases that grade the three.
 The mutation registry runs on the build box before a milestone closes, eight trees at once, and
 its result is recorded in the milestone's plan (`npm run sweep`). CI's 33-shard matrix, the
 per-package cost model that packed it and the re-shard trigger that watched it are deleted, and
-the registry is frozen at 372 — a new entry only when a plan's green condition needs to prove a
+the registry is frozen at 371 — a new entry only when a plan's green condition needs to prove a
 gate can go red. Decided on the ledger's evidence: across 299 rows, no mutation registered in an
 earlier milestone ever survived a later full sweep, so a mutation's value is spent at authoring and
 a per-push sweep of the whole registry bought nothing the ledger could show.
+
+### M195
+
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/lib/lsp-client.mjs, tflw-tests/scripts/regression.mjs +5 more · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+
+**`M195` — the parts of tflw no phase drives**
+
+The sibling's regression sweep becomes tflw's pre-merge dogfood by rule, and gains the
+phases for the parts nothing drove: `tflw ui`, an LSP session over a real corpus, `init`,
+`refactor apply` against a copy, `docs`/`spec` — and graders for the three defects U7 found by
+hand. Those three are fixed first (`M192b`), so the phases are green from the day they exist.
 
 <!-- GENERATED:decisions:end -->

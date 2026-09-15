@@ -276,10 +276,12 @@ jobs:
   # (34901152848) killed 374 of 374 mutations and was red on the trigger alone, and the count that
   # cleared it honestly was 43 — three waves under GitHub's 20-concurrent-job cap.
   #
-  # The sweep runs on the machine this repository does its heavy work on, K trees at once, before a
-  # milestone closes: `npm run sweep` (`scripts/sweep.mjs` → `scripts/sweep-box.sh`), its result
-  # recorded in the milestone's plan. The registry is frozen at 372 (`PLAN_M194_BOX_SWEEP.md`,
-  # D1010): in 299 ledger rows no mutation registered in an earlier milestone ever survived a later
-  # full sweep, so a mutation's value is spent at authoring and a per-push sweep of the whole
-  # registry bought nothing the ledger could show. `mutation controls` left branch protection with
-  # this job.
+  # `M194` moved the sweep to the machine this repository does its heavy work on (`npm run sweep`,
+  # `scripts/sweep.mjs` → `scripts/sweep-box.sh`, K trees at once) and `M195` retired it as a
+  # standing gate the same day: it is a tool, run when a survivor is suspected, and no rule runs
+  # it. The registry is frozen at 371 (`PLAN_M194_BOX_SWEEP.md`, D1010): in 299 ledger rows no
+  # mutation registered in an earlier milestone ever survived a later full sweep, so a mutation's
+  # value is spent at authoring — a milestone runs the mutations it writes — and a sweep of the
+  # whole registry, per push or per milestone, bought nothing the ledger could show. The
+  # end-to-end layer is the sibling's regression sweep, which a milestone runs against its build
+  # before it closes (`CONTRIBUTING.md`). `mutation controls` left branch protection with this job.
