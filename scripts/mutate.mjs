@@ -3519,6 +3519,28 @@ const REGISTRY = [
     find: 'export const FOLD_TAGS_ABOVE = 24;',
     replace: 'export const FOLD_TAGS_ABOVE = 0;',
   },
+  // `M196` (D1021) — the one entry the milestone adds under D1010's freeze: its green condition
+  // is that every window `check` offers is a frame, and this is the gate shown red.
+  {
+    id: 'a-window-need-not-be-a-frame',
+    milestone: 'm196',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/reuse.ts',
+    what: 'the reuse pass offers a window that reads a response before any api step inside it — an action `refactor apply` refuses with TF039 and a `call` could never satisfy (M195-01: twelve of twenty)',
+    find: '        if (!isResponseFrame(window)) continue;',
+    replace: '        if (!isResponseFrame(window) && false) continue;',
+  },
+  // D1022 — the frame's other end, the second entry: the sibling's fixpoint phase found it the
+  // day D1018 landed (`M196-02`), and its green condition is the same shape, a gate shown red.
+  {
+    id: 'the-caller-may-read-a-response-the-window-took',
+    milestone: 'm196',
+    pkg: '@tflw/lang',
+    file: 'packages/lang/src/reuse.ts',
+    what: 'the reuse pass offers a window whose response the caller reads after it — after extraction the caller\'s capture reads the response it had before the call, and `check` is clean over the result (M196-02: ten of seventy-eight tests red after every hint applied)',
+    find: '        if (window.some(stepEstablishesResponse) && readsResponseAfter(body, start + len)) continue;',
+    replace: '        if (window.some(stepEstablishesResponse) && readsResponseAfter(body, start + len) && false) continue;',
+  },
 ];
 
 /**

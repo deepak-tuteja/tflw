@@ -2344,7 +2344,14 @@ test "pay for an order"
   that would fail `tflw check` the moment it was applied. The exception is a reference inside a
   literal that *varies* across the occurrences: that literal becomes a real parameter, so each call
   site passes its own text and it resolves in the caller's scope, where the variable exists.
-  No IDE code action yet (P#2's other
+  **And a suite that still runs** (`M196`, D1018/D1022): a window is offered only if it is a
+  response frame at both ends, judged by the checker's own `TF039` walk. An action body is its own
+  frame at run time — a response never crosses a `call` in either direction — so a window that
+  reads a response before it establishes one would fail as an action (`M195-01`: twelve of twenty
+  hints over the dogfood suite, refused at apply time), and a window that establishes a response
+  the *caller* reads after it would leave that caller reading a stale response through a clean
+  `check` (`M196-02`: every hint applied, ten tests red). Neither is offered; a shorter window
+  that is a frame is its own candidate. No IDE code action yet (P#2's other
   named entry point) — `tflw refactor apply <id>` is the only way to apply a hint today.
 
 ## 9. UI steps (P#8–9, P#26) 🔧

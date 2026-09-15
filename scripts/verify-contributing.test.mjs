@@ -256,8 +256,8 @@ const ABSENT_FROM_CI = [
     why: '`M194` moved the mutation sweep off the runners and `M195` retired it as a standing gate: a milestone\'s own mutations are run as it is written, and nothing sweeps the whole registry by rule (`npm run sweep` is a tool, not a gate). Was a `gate` row over `ci.yml`\'s 33-shard matrix from `M124` to `M192`',
   },
   {
-    local: 'npm run regression --prefix ../testFlow-tests',
-    why: "`M195`/`D1011` — the sibling's regression sweep, the end-to-end layer, run at a milestone's close-out against the milestone's own build and recorded in its plan. It has a CI form, but in the *other* repository against the tflw its `main` last packed — days behind any tflw branch — and a cross-repo CI here would be the runner treadmill `M194` just left. So it is a rule, held by this row and by the plan's close-out line, not by a workflow",
+    local: 'TFLW_BIN=$PWD/packages/cli/dist/cli.cjs npm run regression --prefix ../testFlow-tests',
+    why: "`M195`/`D1011` — the sibling's regression sweep, the end-to-end layer, run at a milestone's close-out against the milestone's own build and recorded in its plan; the `TFLW_BIN` prefix is `M196`/`D1023` (`M196-01`: without it the sweep grades the sibling's vendored tarball, and `M195`'s own close-out did). It has a CI form, but in the *other* repository against the tflw its `main` last packed — days behind any tflw branch — and a cross-repo CI here would be the runner treadmill `M194` just left. So it is a rule, held by this row and by the plan's close-out line, not by a workflow",
   },
 ];
 
