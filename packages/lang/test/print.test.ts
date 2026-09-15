@@ -27,7 +27,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSource, print, PRINTABLE, CONTEXT_BOUND, format } from '../src/index.js';
-import type { Node, Program, TestDecl, Value } from '../src/index.js';
+import type { Node, Program, Subject, TestDecl, Value } from '../src/index.js';
 import { SYNTHETIC } from '../src/build.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -81,7 +81,7 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
@@ -267,20 +267,26 @@ test('a stage is spelled by its block, and a bare stage refuses', () => {
   assert.ok(!PRINTABLE.has('Stage'), 'a context-bound kind must not claim to be standalone-printable');
 });
 
-test('a quantified expect refuses rather than printing a path it cannot print', () => {
-  // `any`/`all` only ever quantify a body path, and body subjects are `A1`'s. Printing the
-  // quantifier while refusing everything it can quantify is a branch nothing can reach — the
-  // printer's mutation run found it by surviving, which is what an unreachable branch does.
-  const { program, diagnostics } = parseSource('test "t"\n  api GET /x\n  expect all body.id equals 1\n');
-  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], 'the fixture itself must parse');
-  const step = program.tests[0]!.body[1]!;
-  assert.equal(step.type, 'ExpectStmt');
-  const r = print(step);
-  assert.equal(r.ok, false);
-  // Specifically the quantifier's refusal, not merely *a* refusal: the subject underneath it is
-  // also unprintable, so a loose pattern passes whether or not the quantifier is ever looked at —
-  // which is how the first draft of this assertion let its mutation survive.
-  assert.match(r.reason ?? '', /`all` quantifier needs a body path/);
+test('a quantified expect prints its quantifier, which in `A0` it could not', () => {
+  // THE SHAPE OF THIS TEST CHANGED IN `A1-3`, and the change is the record. `any`/`all` only ever
+  // quantify a body path; in `A0` no body subject printed, so the branch emitting the quantifier
+  // was **unreachable** — and the mutation deleting it SURVIVED, which is what an unreachable
+  // branch does. It was made a refusal for exactly that reason, with a note that the refusal was
+  // standing in for an assertion nobody could make yet.
+  //
+  // `A1-3` prints body subjects, so the branch is live and the assertion is the one it was
+  // standing in for. The corpus round trip above now carries 98 quantified expects.
+  for (const line of ['expect all body.id equals 1', 'check any body.items[0].price is greater than 0', 'expect any {items.price} equals 5']) {
+    const printed = print(step(line), { indent: 1 });
+    assert.equal(printed.ok, true, `${line}: ${printed.reason ?? ''}`);
+    assert.equal(printed.text, `  ${line}`, line);
+  }
+
+  // The quantifier is not decoration: dropping it leaves a program that still parses and asserts
+  // something else, which is why the mutation that removes it has to redden.
+  const quantified = step('expect all body.id equals 1');
+  const plain = step('expect body.id equals 1');
+  assert.notDeepEqual(stripSpans(quantified), stripSpans(plain));
 });
 
 test('tags print on one line, which is what this corpus writes', () => {
@@ -660,4 +666,126 @@ test('the request half refuses the shapes that have no source', () => {
   const nc = print(noCondition);
   assert.equal(nc.ok, false);
   assert.match(nc.reason ?? '', /no condition to wait for/);
+});
+
+// ---- `A1-3` — the assertion -------------------------------------------------
+
+/** One row per response subject and per value matcher. Text again: `is` is a copula the AST does
+ *  not record, so which rows carry one is a printer decision a tree comparison cannot see. */
+const ASSERTION_SPELLINGS: readonly string[] = [
+  // the subjects
+  'expect status equals 200',
+  'expect duration is less than 500ms',
+  'expect request connects',
+  'expect header "content-type" contains "json"',
+  'expect body.items[0].price equals 9.99',
+  'expect body equals { a: 1 }',
+  'expect body text contains "Not Found"',
+  'expect body bytes has count 1024',
+  'expect body csv[0].name equals "x"',
+  'expect body pdf text contains "Invoice"',
+  'expect {orderId} is greater than 0',
+  // the matchers
+  'expect request fails',
+  'expect request fails matching "certificate"',
+  'expect body.items has count 3',
+  'expect body has value "x"',
+  'expect body matches subset { id: 1 }',
+  'expect body text matches "json"',
+  'expect body matches schema "ProductDto" from "/openapi.json"',
+  'expect body matches schema "ProductDto" from root "/openapi.json"',
+  'expect body bytes matches file "expected.pdf"',
+  // negation, softness, quantification
+  'check status not equals 404',
+  'expect body.name is not less than 3',
+  'expect all body.id equals 1',
+  'check any body.items[0].price is greater than 0',
+  // the three statements that read or announce a response
+  'capture body.accessToken as token',
+  'capture header "X-Trace" as trace',
+  'capture status as code',
+  'login("a", "b")',
+  'create order(env(K))',
+  'log "first item is {firstId}"',
+  'log warn "careful"',
+  'log error "bad" to console',
+];
+
+/** A step in a test that already has an `api` step, so a response subject has something to read. */
+function assertionStep(line: string): Node {
+  const { program, diagnostics } = parseSource(`test "t"\n  api GET /x\n  ${line}\n`);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], line);
+  const node = program.tests[0]?.body[1];
+  assert.ok(node, line);
+  return node;
+}
+
+test('every response subject and value matcher prints back as the line it was written as', () => {
+  for (const line of ASSERTION_SPELLINGS) {
+    const printed = print(assertionStep(line), { indent: 1 });
+    assert.equal(printed.ok, true, `${line}: ${printed.reason ?? ''}`);
+    assert.equal(printed.text, `  ${line}`, line);
+  }
+});
+
+test('a body path dots every property, including the first', () => {
+  // The one difference from an interpolation's path, where the first segment IS the name and takes
+  // no dot. Both directions still parse, which is what makes the error invisible without this.
+  assert.equal(print(assertionStep('expect body.id equals 1'), { indent: 1 }).text, '  expect body.id equals 1');
+  assert.equal(print(step('let a = {order.id}'), { indent: 1 }).text, '  let a = {order.id}');
+
+  // The whole body has no path at all, and an index opens one without a dot.
+  assert.equal(print(assertionStep('expect body equals { a: 1 }'), { indent: 1 }).text, '  expect body equals { a: 1 }');
+  assert.equal(print(assertionStep('expect body[0].id equals 1'), { indent: 1 }).text, '  expect body[0].id equals 1');
+});
+
+test('a `log` level is printed only when it is not the default', () => {
+  // THIRD INSTANCE OF ONE SHAPE, THIRD DIFFERENT ANSWER. `parseLogStep` defaults an omitted level
+  // to `info`, so `log "x"` and `log info "x"` are the same node and the AST cannot say which was
+  // written — `Stage`'s situation exactly. `Stage` REFUSED, because its two spellings parse to
+  // different programs; a JSON key is PICKED bare; and this is picked *omitted*, because that is
+  // what every `log` line in the corpus writes.
+  const implicit = assertionStep('log "x"');
+  const explicit = assertionStep('log info "x"');
+  assert.deepEqual(stripSpans(implicit), stripSpans(explicit));
+  assert.equal(print(explicit, { indent: 1 }).text, '  log "x"');
+  // A level that is not the default has to survive, or the assertion above is just "drop it".
+  assert.equal(print(assertionStep('log warn "x"'), { indent: 1 }).text, '  log warn "x"');
+  assert.equal(print(assertionStep('log debug "x" to html'), { indent: 1 }).text, '  log debug "x" to html');
+});
+
+test('the assertion half refuses what belongs to another door', () => {
+  // A locator, a page and an observed network request are the browser's vocabulary, and the three
+  // `has no … violations` families are the scanners'. They refuse BY NAME rather than silently, so
+  // the census in the gate above can be read as a worklist.
+  const locator = assertionStep('expect button "Buy" is visible');
+  const lr = print(locator);
+  assert.equal(lr.ok, false);
+  assert.match(lr.reason ?? '', /LocatorSubject/);
+
+  const scan = assertionStep('expect response has no security violations');
+  const sr = print(scan);
+  assert.equal(sr.ok, false);
+  assert.match(sr.reason ?? '', /hasNoSecurityViolations/);
+  // …but the SUBJECT under it prints, which is what makes that refusal name the matcher and not
+  // the subject — the `A0-1` finding about a loose pattern matching the wrong refusal.
+  assert.equal(print((scan as { subject: Subject }).subject).text, 'response');
+
+  // `of request to "…"` moves four otherwise-printable subjects onto traffic observed on a live
+  // page, so the CLAUSE is refused while its subject is not.
+  const observed = assertionStep('expect status of request to "/api/orders" equals 201');
+  const or = print(observed);
+  assert.equal(or.ok, false);
+  assert.match(or.reason ?? '', /reads traffic observed on a live page/);
+
+  // `capture {x} as y` is `TF0..`-rejected by the parser (`D130`), so a printer that emitted it
+  // would be writing a step nothing can read back.
+  const bad: Node = { type: 'CaptureStmt', subject: { type: 'ValueSubject', ref: [{ kind: 'prop', name: 'orderId' }], span: SYNTHETIC }, name: 'saved', span: SYNTHETIC } as unknown as Node;
+  const br = print(bad);
+  assert.equal(br.ok, false);
+  assert.match(br.reason ?? '', /cannot be a `\{variable\}`/);
+
+  // `connects` is the one matcher that never takes an operand at all.
+  const conn: Node = { type: 'Matcher', name: 'connects', negated: false, value: { type: 'NumberLit', value: 1, raw: '1', span: SYNTHETIC }, span: SYNTHETIC } as unknown as Node;
+  assert.match(print(conn).reason ?? '', /never takes an operand/);
 });
