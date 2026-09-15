@@ -27,7 +27,7 @@
  * Only the opening number is captured. A phrase carrying several targets (`decisions 93–96, 103`)
  * is one finding, not four: it is one sentence, read once, rewritten once.
  */
-export const BARE = /(?<![\w])(?:design\s+)?decisions?\s+(?:no\.\s*)?\d{1,3}[a-z]?/gi;
+export const BARE = /(?<![\w])(?:design\s+)?decisions?\s+(?:no\.\s*)?\d{1,4}[a-z]?/gi;
 
 /**
  * The same spelling with a **letter** where the number goes (`D716`). `PLAN_M13_LSP.md` numbers a
@@ -95,7 +95,7 @@ export const JSON_RULES = [
    * for the package-metadata corpus too — a `D105` or a `P#75` in a product blurb is exactly what
    * `D714` says to delete — so they are added here rather than kept on one side.
    */
-  // `M164-11`: `D\d{1,3}`, not `D\d{2,3}`. The arity arrived with the pattern when `M158c`/`D794`
+  // `M164-11`: `D\d{1,4}`, not `D\d{2,3}`. The arity arrived with the pattern when `M158c`/`D794`
   // merged this repository's two citation classifiers, and it was never measured against the
   // sequence it classifies: tflw numbers decisions from `D1` and publishes `D1`, `D5`, `D6`, `D7`
   // and `D9`, so at two digits this rule — the only one over shipped npm metadata and the public
@@ -106,7 +106,7 @@ export const JSON_RULES = [
   // Measured before widening (`D716`): zero `\bD\d\b` in every string of every tracked
   // `package.json` in both repositories and on all 41 tracked docs-site pages. Nothing moves
   // today; the value is the next leak.
-  { what: 'a decision', re: /\bD\d{1,3}\b/g },
+  { what: 'a decision', re: /\bD\d{1,4}\b/g },
   { what: 'a plan item', re: /\bP#\d+[a-z]?\b/g },
   /**
    * `M147e`, `(M3a)`. Label form carries no record name, so `NAMES_RECORD` provably cannot reach
@@ -114,7 +114,7 @@ export const JSON_RULES = [
    * false positives across every string in every tracked `package.json` in both repositories
    * (`D717`).
    */
-  { what: 'a milestone label', re: /(?<![\w#])M\d{1,3}[a-z]?\d?\b/g },
+  { what: 'a milestone label', re: /(?<![\w#])M\d{1,4}[a-z]?\d?\b/g },
   /** A review-ledger row: `M147-10`, `DT-4`, `FU-11`. Same evidence as the labels. */
   { what: 'a review-ledger row', re: /(?<![\w#])(?:[A-Z]{1,3}\d+|DT|FU)-\d+\b/g },
   /**

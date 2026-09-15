@@ -32,7 +32,7 @@ import { MANIFEST, readOwnRecords, renderManifest, ownIdentifiers } from './refr
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 /** The only shape an `identifiers` entry may take. Anchored both ends: a trailing clause is text. */
-export const IDENTIFIER = /^(P#\d{1,3}[a-z]?|D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)$/;
+export const IDENTIFIER = /^(P#\d{1,4}[a-z]?|D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)$/;
 
 export function shapeProblems(manifest) {
   const out = [];

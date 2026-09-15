@@ -976,7 +976,7 @@ test('every identifier the preamble names resolves in the index the preamble int
   const entries = publishedIds(readFileSync(join(ROOT, 'DECISIONS.md'), 'utf8'));
   assert.ok(entries.size > 400, 'sanity: the index was located');
 
-  const named = [...new Set([...PREAMBLE.matchAll(/`(P#\d{1,3}|D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)`/g)]
+  const named = [...new Set([...PREAMBLE.matchAll(/`(P#\d{1,4}|D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)`/g)]
     .map((m) => m[1]))];
   assert.ok(named.length >= 8, 'sanity: the preamble names worked examples');
 
@@ -1504,4 +1504,24 @@ test('NEGATIVE CONTROL — the sibling code reading is not the prose reading wea
   assert.equal(siblingProseCitations([{ path: 'src/a.ts', text }]).size, 0,
     'the prose reading refuses an undeclared file; if these two agreed here the corpus parameter would be doing nothing');
   assert.equal(siblingCodeCitations([{ path: 'src/a.ts', text }]).size, 5);
+});
+
+// `M199` — THE SYMMETRY GATE, and the reason this file needed one. The three-digit identifier bound
+// `M198-01` records survived four milestones and 91 green tests here, because it blinded anchors and
+// citations *together*: with no four-digit id published, none was ever demanded either, so
+// `conformance()` saw a corpus in which those decisions simply did not exist and exited 0. No
+// assertion in this file could catch that, because every one of them spells an identifier with the
+// same pattern it is testing — including the fixtures. This one does not. It reads the highest `D`
+// heading out of the real `DECISIONS.md` with an unbounded pattern of its own and requires the
+// shipped reader to agree with it. Narrow any bound back and this goes red naming the id that fell
+// off the end, which is the one thing a symmetric blindness can never be asked about from inside.
+test('the shipped reader sees the highest id DECISIONS.md actually carries', () => {
+  const text = readFileSync(join(ROOT, 'DECISIONS.md'), 'utf8');
+  const headings = [...text.matchAll(/^### D(\d+)[a-z]?$/gm)].map((m) => Number(m[1]));
+  assert.ok(headings.length > 0, 'no `### D…` headings at all — this gate is reading the wrong file');
+  const highest = `D${Math.max(...headings)}`;
+  assert.ok(publishedIds(text).has(highest),
+    `${highest} is a heading in DECISIONS.md and the shipped reader does not publish it — the identifier bound is narrower than the sequence it classifies (M198-01)`);
+  assert.deepEqual([...`see ${highest} here`.matchAll(CITATION)].map((m) => m[1]), [highest],
+    `${highest} publishes but CITATION cannot cite it — the two halves have to widen together, or the blindness is symmetric and silent again`);
 });

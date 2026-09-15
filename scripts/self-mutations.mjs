@@ -411,8 +411,8 @@ export const SELF_MUTATIONS = [
     pkg: ROOT_SUITE,
     file: 'scripts/gen-decisions.mjs',
     what: "`s` goes back into the sub-milestone class, so `packages/lang/test/teaching.test.ts:223`'s *\"keeps M84s exact wording\"* — a possessive whose apostrophe was dropped — cites `M84s` instead of `M84`. Both directions are wrong at once and that is what makes it worth a control: the real citation of an anchored milestone is LOST, and an identifier defined nowhere in the records is demanded in its place. Measured: no identifier ending in `s` exists in either corpus, so nothing else moves either way",
-    find: 'M\\d{1,3}[a-rt-z]?\\d?',
-    replace: 'M\\d{1,3}[a-z]?\\d?',
+    find: 'M\\d{1,4}[a-rt-z]?\\d?',
+    replace: 'M\\d{1,4}[a-z]?\\d?',
   },
   {
     id: 'a-range-crosses-two-sequences-again',
@@ -420,8 +420,8 @@ export const SELF_MUTATIONS = [
     pkg: ROOT_SUITE,
     file: 'scripts/gen-decisions.mjs',
     what: "the right endpoint's letter goes back to optional and the dash back to permitting space around it, which is how `M136b — D427` at `packages/lsp-server/test/protocol.test.ts:405` read as the span `M136`–`M427`: **290 invented identifiers out of two citations and a piece of sentence punctuation**, the largest single source of false demand in either repository. This house writes `` `X` — prose `` on most lines of most records, so the loose form is not a rare accident, it is the default shape of a sentence",
-    find: '[a-z]?[-–—]\\1(\\d{1,3})',
-    replace: '[a-z]?\\s*[-–—]\\s*(?:[DM])?(\\d{1,3})',
+    find: '[a-z]?[-–—]\\1(\\d{1,4})',
+    replace: '[a-z]?\\s*[-–—]\\s*(?:[DM])?(\\d{1,4})',
   },
   {
     id: 'ranges-expand-in-a-corpus-that-did-not-author-them',
@@ -533,7 +533,7 @@ export const SELF_MUTATIONS = [
     // GitHub anchor.
     file: 'scripts/citation-rules.mjs',
     what: "the decision pattern matches case-insensitively. Capitalisation is the whole reason this rule needs no URL-fragment exclusion: GitHub lowercases its heading anchors, so `SPEC.md#45-retries-d105-…` is an address and `D105` is a citation, and nothing but case tells them apart. `D691` clause 4 scoped an exclusion for this and measurement found it matched nothing — so the property is load-bearing and undefended by anything except the pattern's own flags",
-    find: "  { what: 'a decision', re: /\\bD\\d{1,3}\\b/g },",
-    replace: "  { what: 'a decision', re: /\\bD\\d{1,3}\\b/gi },",
+    find: "  { what: 'a decision', re: /\\bD\\d{1,4}\\b/g },",
+    replace: "  { what: 'a decision', re: /\\bD\\d{1,4}\\b/gi },",
   },
 ];

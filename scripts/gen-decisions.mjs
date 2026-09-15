@@ -49,7 +49,7 @@ const OUTPUT = 'DECISIONS.md';
  * measuring is the shape `M167` names; the row is amended in place rather than followed.
  *
  * `s` is not a sub-milestone letter. `packages/lang/test/teaching.test.ts:223` reads *"keeps M84s
- * exact wording"* — a possessive whose apostrophe was dropped — and `M\d{1,3}[a-z]?\d?` reads that
+ * exact wording"* — a possessive whose apostrophe was dropped — and `M\d{1,4}[a-z]?\d?` reads that
  * `s` as a sub-milestone of `M84`. The site's real citation is lost *and* an identifier nothing
  * defines is demanded in its place, which is the worst of both directions. Taking `s` out of the
  * class and allowing it as an uncaptured tail cites `M84`, which is what the sentence says.
@@ -57,7 +57,7 @@ const OUTPUT = 'DECISIONS.md';
  * prose, so the narrowing moves nothing today. It does imply a rule worth stating — do not mint a
  * sub-milestone `s`, because English already spells that.
  */
-export const CITATION = /(?<![\w#+=])(D\d{1,3}[a-rt-z]?|M\d{1,3}[a-rt-z]?\d?|P#\d{1,3}[a-rt-z]?)s?\b(?![+=])/g;
+export const CITATION = /(?<![\w#+=])(D\d{1,4}[a-rt-z]?|M\d{1,4}[a-rt-z]?\d?|P#\d{1,4}[a-rt-z]?)s?\b(?![+=])/g;
 
 /**
  * A range citation cites its interior (D681). `SPEC.md` writes `D93-D122` and `CHANGELOG.md` writes
@@ -80,7 +80,7 @@ export const CITATION = /(?<![\w#+=])(D\d{1,3}[a-rt-z]?|M\d{1,3}[a-rt-z]?\d?|P#\
  * An interior identifier reached only through a range has a published entry and no other citation,
  * so a range that quietly stops expanding turns its interior into orphans and `--check` goes red.
  */
-export const RANGE = /(?<![\w#])([DM])(\d{1,3})[a-z]?[-–—]\1(\d{1,3})[a-z]?\b/g;
+export const RANGE = /(?<![\w#])([DM])(\d{1,4})[a-z]?[-–—]\1(\d{1,4})[a-z]?\b/g;
 
 /**
  * Whether a file's range-shaped strings are ranges at all. `D861`: `RANGE` must not expand inside a
@@ -223,11 +223,11 @@ export function collectCitations(files, expands = expandsRanges) {
 // `refresh-sibling-citations.mjs --from-checkout` writes is byte-identical across this move.
 
 /** `testFlow-tests M22` — the sibling naming its own sequence. Blanked before collecting. */
-const SIBLING_OWN = /`?testFlow-tests\s+(?:M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
+const SIBLING_OWN = /`?testFlow-tests\s+(?:M\d{1,4}[a-z]?\d?|D\d{1,4}[a-z]?)`?/g;
 /** `tflw M22` — the sibling naming THIS sequence. The one spelling that overrides the default. */
-const SIBLING_THEIRS = /`?tflw\s+(M\d{1,3}[a-z]?\d?|D\d{1,3}[a-z]?)`?/g;
+const SIBLING_THEIRS = /`?tflw\s+(M\d{1,4}[a-z]?\d?|D\d{1,4}[a-z]?)`?/g;
 /** A bare `M<n>` in a file that has declared the sibling's own sequence as its default. */
-const SIBLING_UNQUALIFIED_M = /(?<![\w#])M\d{1,3}[a-z]?\d?\b/g;
+const SIBLING_UNQUALIFIED_M = /(?<![\w#])M\d{1,4}[a-z]?\d?\b/g;
 
 /**
  * `D711`'s per-file default, applied to one of the sibling's markdown files before collecting.
@@ -371,26 +371,26 @@ const TITLES_ITS_OWN = new Set(['h1', 'heading', 'boldLead']);
 // and the same reason to close it now rather than note it: what keeps it latent is a ranking, and
 // `checkDuplicateTitles` below is the first thing in this file that reads the losers.
 const ANCHORS = [
-  { kind: 'roadmap', only: 'PLAN.md', re: /^\s*[-*]\s+\*\*`?(M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—:-]/ },
+  { kind: 'roadmap', only: 'PLAN.md', re: /^\s*[-*]\s+\*\*`?(M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\s*[—:-]/ },
   // `PLAN.md`'s ordered list sometimes titles an item with the milestone it covers —
   // `109. **M15 — Docs site polish…**`. So `P#109` and `M15` name the same block, in the two
   // namespaces at once: the collision of §1.2 seen from the inside.
-  { kind: 'roadmapTitle', only: 'PLAN.md', re: /^\d{1,3}\.\s+\*\*`?(M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—:-]/ },
-  { kind: 'h1', re: /^#\s+.*?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—:-]/ },
-  { kind: 'heading', re: /^#{1,5}\s+(?:\d+\.\s*)?`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—.:-]/ },
+  { kind: 'roadmapTitle', only: 'PLAN.md', re: /^\d{1,3}\.\s+\*\*`?(M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\s*[—:-]/ },
+  { kind: 'h1', re: /^#\s+.*?`?(D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\s*[—:-]/ },
+  { kind: 'heading', re: /^#{1,5}\s+(?:\d+\.\s*)?`?(D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\s*[—.:-]/ },
   // `## M50 shipped 2026-08-02 — collapse `scenario` into `test``: a heading whose id is followed by
   // a word rather than a dash. It has to outrank `headingMid`, because that same line ends
   // `(D127, PLAN_DISCOVERY_EXCLUDE.md)` and a weaker rule reading the parenthetical first would
   // resolve the heading to the decision it *cites* instead of the milestone it *is*.
-  { kind: 'headingLoose', re: /^#{1,5}\s+`?(M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s+\w/ },
-  { kind: 'boldLead', re: /^\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—.:-]/ },
-  { kind: 'decisionsTaken', re: /^\*\*Decisions? taken:?\*\*\s*`?(D\d{1,3}[a-z]?)(?![-.]\d)`?\s*[—-]/ },
-  { kind: 'listBold', re: /^\s*[-*]\s+\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*[—.:-]/ },
+  { kind: 'headingLoose', re: /^#{1,5}\s+`?(M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\s+\w/ },
+  { kind: 'boldLead', re: /^\*\*`?(D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\s*[—.:-]/ },
+  { kind: 'decisionsTaken', re: /^\*\*Decisions? taken:?\*\*\s*`?(D\d{1,4}[a-z]?)(?![-.]\d)`?\s*[—-]/ },
+  { kind: 'listBold', re: /^\s*[-*]\s+\*\*`?(D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*[—.:-]/ },
   // `PROGRESS.md`'s commit table: `| `b017c9b` | **M71** — … |`, and its milestone status table:
   // `| M20 — test-coverage audit follow-up: … | ✅ | … |`. Both are already one-sentence statements
   // of what a milestone shipped, written when it shipped — which is the shape `D670` wants, found
   // rather than reconstructed.
-  { kind: 'progressTable', re: /^\|\s*`?[0-9a-f]{6,10}`?\s*\|\s*\*{0,2}`?(M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*[—-]/ },
+  { kind: 'progressTable', re: /^\|\s*`?[0-9a-f]{6,10}`?\s*\|\s*\*{0,2}`?(M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*[—-]/ },
   // A heading naming an id parenthetically — `### 1.1 Driver boundary (D5)` — is the section that
   // *takes* the decision under `PLAN_BROWSER_PERF_SECURITY.md`'s own numbering, and it outranks the
   // two generic table kinds: a cell in a scope or index table only *names* an id, and letting a name
@@ -404,14 +404,14 @@ const ANCHORS = [
   // of which are about the milestone rather than the milestone's own account of itself. And it stays
   // below `boldLead`, which is what keeps `M50`'s `### M50 shipped … (D127, …)` from resolving
   // `D127` to the milestone that cites it.
-  { kind: 'headingMid', re: /^#{1,5}\s+.*?[(`]`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?[),`]/ },
-  { kind: 'tableLead', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*[—:-]\s/ },
-  { kind: 'tableRow', re: /^\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*\|/ },
+  { kind: 'headingMid', re: /^#{1,5}\s+.*?[(`]`?(D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)(?![-.]\d)`?[),`]/ },
+  { kind: 'tableLead', re: /^\|\s*\*{0,2}`?(D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*[—:-]\s/ },
+  { kind: 'tableRow', re: /^\|\s*\*{0,2}`?(D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*\|/ },
   // An index table whose first column is the category and whose second is the id —
   // `| editors | \`M133\` | D24b's LSP/VS Code catch-up… |`. Weakest of all, so it can only ever win
   // where nothing else matched: `M133` is the one milestone in the corpus with neither a plan of its
   // own nor a `PROGRESS.md` entry, and this row of its arc's index is the only block that states it.
-  { kind: 'tableSecond', re: /^\|[^|]*\|\s*\*{0,2}`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*\|/ },
+  { kind: 'tableSecond', re: /^\|[^|]*\|\s*\*{0,2}`?(D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\*{0,2}\s*\|/ },
   // `> **`D753` — the timer's `Requires=` fired the run it was supposed to schedule.**` — a
   // `boldLead` inside a blockquote. Every form above anchors at the start of a line, so a title
   // written into a quote was invisible to all of them: `M169-03`, 50 accounts in `REVIEW_FINDINGS.md`
@@ -432,7 +432,7 @@ const ANCHORS = [
   //
   // `affine` outranks `RANK` in `pickAnchor`, so "last" is only last *within a file's tier*. That is
   // checked rather than assumed: the before/after map is asserted in `gen-decisions.test.mjs`.
-  { kind: 'quotedBoldLead', re: /^(?:>\s?)+\*\*`?(D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)(?![-.]\d)`?\s*[—.:-]/ },
+  { kind: 'quotedBoldLead', re: /^(?:>\s?)+\*\*`?(D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)(?![-.]\d)`?\s*[—.:-]/ },
 ];
 const RANK = Object.fromEntries(ANCHORS.map((a, i) => [a.kind, i]));
 
@@ -580,7 +580,7 @@ export function pickAnchor(id, anchors) {
   // it: after `PLAN_M130` comes `B`, not a separator, so the file scored as unrelated and `M130b`
   // was lifted from a caption inside its *parent* plan instead — a title over four numbered items,
   // published without them. The suffixed filename is tried first and the number-only one second.
-  const stem = /^([DM])(\d{1,3})([a-z]?)/.exec(id);
+  const stem = /^([DM])(\d{1,4})([a-z]?)/.exec(id);
   const affine = (a) => {
     if (!stem || stem[1] !== 'M') return 2;
     const file = basename(a.file);
@@ -1760,7 +1760,7 @@ export function conformance(citedIds, publishedIds) {
 /** Reads the ids `DECISIONS.md` actually publishes, from its own headings. */
 export function publishedIds(text) {
   const inner = text.slice(text.indexOf(START), text.indexOf(END));
-  return new Set([...inner.matchAll(/^### (P#\d{1,3}[a-z]?|D\d{1,3}[a-z]?|M\d{1,3}[a-z]?\d?)$/gm)].map((m) => m[1]));
+  return new Set([...inner.matchAll(/^### (P#\d{1,4}[a-z]?|D\d{1,4}[a-z]?|M\d{1,4}[a-z]?\d?)$/gm)].map((m) => m[1]));
 }
 
 function main() {
