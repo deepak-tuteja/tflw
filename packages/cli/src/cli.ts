@@ -9,7 +9,7 @@
 //   → writeReport(report.html) + writeJunitXml + renderCliSummary → exit code (0 pass / 1 test failure / 2 usage).
 
 import { readFile, readdir, writeFile, access, mkdir, stat } from 'node:fs/promises';
-import { watch as fsWatch, existsSync, readFileSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs';
+import { watch as fsWatch, existsSync, readFileSync, statSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs';
 // M92b (`B6-09`) — `install-browsers` resolves the consumer's own `playwright` instead of letting
 // `npx --yes` fetch an unpinned one from the registry.
 import { createRequire } from 'node:module';
@@ -1142,12 +1142,18 @@ async function loadAndValidate(
   }
 
   // 2. Select the active env and resolve the concrete settings.
+  // 3, moved ahead of 2's resolution by `M197` (D1024): a config URL's `env NAME default` override
+  //    reads the same environment `env()` does — `.env` overlaid by the process — so the two agree
+  //    about what "the environment" is; reading it is harmless (no network, no gate), and only
+  //    `runCommand` gates on `missingRequiredEnv` below.
+  const environ = await buildEnviron(cwd);
+
   let resolved;
   let activeEnvBlock;
   try {
     const envBlock = selectEnv(parsedConfig.config, { flag: envFlag, envVar: process.env.TFLW_ENV });
     activeEnvBlock = envBlock;
-    resolved = resolveConfig(parsedConfig.config, envBlock);
+    resolved = resolveConfig(parsedConfig.config, envBlock, environ);
   } catch (e) {
     if (e instanceof ConfigError) {
       err(e.message);
@@ -1155,11 +1161,6 @@ async function loadAndValidate(
     }
     throw e;
   }
-
-  // 3. Build the runtime environment (.env overlaid by the real process env) — reading it is
-  //    harmless (no network, no gate) so both commands can share this; only `runCommand` gates on
-  //    `missingRequiredEnv`, since `check` never touches a live API and shouldn't require secrets.
-  const environ = await buildEnviron(cwd);
 
   // Validate `api <service>` references inside `session` blocks against the active env's declared
   // services (decision 66) — a config-level check, done once (not per test file, unlike the
@@ -1390,6 +1391,18 @@ interface RunCommandWatchOptions {
  * `%SRCROOT%` has no meaning there, and the exporter's fallback is to emit what it already had.
  */
 function sourceRootOf(from: string): string | undefined {
+  // `M197` (D1032): a copy of a repository run beside it — the sibling's parallel sweep rsyncs
+  // one tree per worker, without `.git` — has no root of its own to find, and the walk lands on
+  // the real repository, so every URI starts with the copy's own path. The environment names
+  // the root in that case; a value that is not a directory is ignored, not trusted.
+  const forced = process.env.TFLW_SOURCE_ROOT?.trim();
+  if (forced) {
+    try {
+      if (statSync(forced).isDirectory()) return resolve(forced);
+    } catch {
+      /* fall through to the walk */
+    }
+  }
   let dir = resolve(from);
   for (;;) {
     if (existsSync(join(dir, '.git'))) return dir;

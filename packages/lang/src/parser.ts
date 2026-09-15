@@ -2302,6 +2302,7 @@ class Parser {
     const start = this.peek().span.start;
     this.advance(); // `authorized`
     if (!this.expectKw('target')) return null;
+    const targetFrom = this.parseUrlOverride();
     const target = this.expectString('a target base URL, e.g. `authorized target "https://staging.example.com"`');
     if (!target) return null;
     if (!this.expectKw('reason')) return null;
@@ -2309,7 +2310,7 @@ class Parser {
     if (!reason) return null;
     this.endLine();
     const probes = this.parseAuthorizedTargetSubClauses();
-    return { type: 'AuthorizedTargetDecl', target, reason, ...probes, span: this.spanFrom(start) };
+    return { type: 'AuthorizedTargetDecl', target, ...(targetFrom === null ? {} : { targetFrom }), reason, ...probes, span: this.spanFrom(start) };
   }
 
   /** The optional indented block under an `authorized target` (M130b, D330; M134a, D372). An absent
@@ -2606,21 +2607,46 @@ class Parser {
   private parseWebDecl(): WebDecl | null {
     const start = this.peek().span.start;
     this.advance(); // `web`
+    const urlFrom = this.parseUrlOverride();
     const url = this.expectString('a base URL string, e.g. `web "http://localhost:5173"`');
     if (!url) return null;
     this.endLine();
-    return { type: 'WebDecl', url, span: this.spanFrom(start) };
+    return { type: 'WebDecl', url, ...(urlFrom === null ? {} : { urlFrom }), span: this.spanFrom(start) };
+  }
+
+  /** `env NAME default` ahead — the non-secret URL override's shape (`M197`, D1024). Three tokens
+   *  are asked for rather than the keyword alone so that a service literally named `env` keeps
+   *  parsing as a service (`api env "http://…"`). */
+  private urlOverrideAhead(): boolean {
+    return this.isKw(this.peek(), 'env') && this.peek(1).type === 'ident' && this.isKw(this.peek(2), 'default');
+  }
+
+  /** The optional `env NAME default` before a config URL string (`M197`, D1024): the URL comes
+   *  from the environment variable `NAME` when it is set and non-empty, and from the literal that
+   *  follows otherwise. Deliberately not `env(NAME)`: that form is a secret, registered with the
+   *  redactor, and a base URL read through it would be masked in every request line of the
+   *  report. This one is plain — the SPEC says so beside the taint rule. Returns the name, or
+   *  `null` when the line has no override. */
+  private parseUrlOverride(): string | null {
+    if (!this.urlOverrideAhead()) return null;
+    this.advance(); // `env`
+    const name = this.advance().value;
+    this.advance(); // `default`
+    return name;
   }
 
   private parseApiServiceDecl(): ApiServiceDecl | null {
     const start = this.peek().span.start;
     this.advance(); // `api`
     let service: string | null = null;
-    if (this.check('ident')) service = this.advance().value; // named service before the URL
+    // A named service before the URL — unless the ident is the `env NAME default` override's own
+    // keyword, which `urlOverrideAhead` recognises by its three-token shape (D1024).
+    if (this.check('ident') && !this.urlOverrideAhead()) service = this.advance().value;
+    const urlFrom = this.parseUrlOverride();
     const url = this.expectString('a base URL string, e.g. `api "http://localhost:3001"`');
     if (!url) return null;
     this.endLine();
-    return { type: 'ApiServiceDecl', service, url, span: this.spanFrom(start) };
+    return { type: 'ApiServiceDecl', service, url, ...(urlFrom === null ? {} : { urlFrom }), span: this.spanFrom(start) };
   }
 
   private parseRequire(): RequireDecl | null {
@@ -2978,10 +3004,12 @@ class Parser {
     const tok = this.peek();
     if (this.isKw(tok, 'openapi')) {
       this.advance();
+      // `seed openapi root "/openapi.json"` — an ident before the string names the service (D1030).
+      const service = this.check('ident') ? this.advance().value : null;
       const source = this.expectString('a URL or path for the OpenAPI document, e.g. `seed openapi "/openapi.json"`');
       if (!source) return null;
       this.endLine();
-      return { type: 'OpenApiSeed', source, span: this.spanFrom(start) };
+      return { type: 'OpenApiSeed', source, ...(service === null ? {} : { service }), span: this.spanFrom(start) };
     }
     if (this.isKw(tok, 'traffic')) {
       this.advance();
@@ -2990,6 +3018,8 @@ class Parser {
     }
     if (this.isKw(tok, 'spider')) {
       this.advance();
+      // `seed spider adminConsole "/"` — an ident before the string names the service (D1030).
+      const service = this.check('ident') ? this.advance().value : null;
       const root = this.expectString('a URL or path to start the walk from, e.g. `seed spider "/admin"`');
       if (!root) return null;
       this.endLine();
@@ -2997,6 +3027,7 @@ class Parser {
       return {
         type: 'SpiderSeed',
         root,
+        ...(service === null ? {} : { service }),
         ...(caps.maxPages ? { maxPages: caps.maxPages } : {}),
         ...(caps.maxDepth ? { maxDepth: caps.maxDepth } : {}),
         span: this.spanFrom(start),
@@ -4174,9 +4205,11 @@ class Parser {
           const schemaName = this.expectString('a schema name string, e.g. `matches schema "ProductResponseDto"`');
           if (!schemaName) return null;
           if (!this.expectKw('from')) return null;
+          // `from root "/openapi.json"` — an ident before the string names the service (D1030).
+          const schemaService = this.check('ident') ? this.advance().value : null;
           const schemaSource = this.expectString('a URL or path to the OpenAPI document, e.g. `from "/openapi.json"`');
           if (!schemaSource) return null;
-          return { type: 'Matcher', name: 'matchesSchema', negated, value: null, schemaName, schemaSource, span: this.spanFrom(start) };
+          return { type: 'Matcher', name: 'matchesSchema', negated, value: null, schemaName, schemaSource, ...(schemaService === null ? {} : { schemaService }), span: this.spanFrom(start) };
         }
         if (this.isKw(this.peek(), 'file')) {
           this.advance();

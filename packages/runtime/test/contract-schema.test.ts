@@ -379,3 +379,33 @@ test('a failing schema assertion still reports where the schema came from (A12-0
     await server.close();
   }
 });
+
+// `M197` (D1030): `from <service> "path"` resolves a relative source against the NAMED service's
+// base — the shape `api <service> GET /path` already has. Before this the file's own header
+// comment said a non-default service's document needed an absolute URL, which is how the dogfood
+// suite came to write the stack's port into three test files (`api root` was declared and could
+// not be named here). The fixture makes the default base a path under which `/openapi.json` does
+// NOT exist, so a resolution against the wrong service is a fetch failure, not a quiet pass.
+test('M197 — `from <service> "…"` resolves the document against that service, not the default', async () => {
+  const server = await startWidgetServer();
+  const config = { ...testConfig(`${server.baseUrl}/v1`), services: { root: server.baseUrl } };
+  const source = `test "widget matches its schema through the root service"
+  api root GET /widgets/good
+  expect body matches schema "Widget" from root "/openapi.json"
+`;
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, []);
+  const { report } = await runProgram(program, config, { source });
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+
+  // CONTROL — the same document path against the default service (`…/v1/openapi.json`) is not
+  // there, so the unqualified form fails: the service qualifier did the resolving.
+  const unqualified = `test "the default service has no document"
+  api root GET /widgets/good
+  expect body matches schema "Widget" from "/openapi.json"
+`;
+  const r2 = await runProgram(parseSource(unqualified).program, config, { source: unqualified });
+  assert.equal(r2.report.ok, false, 'the unqualified source must resolve against the default base and miss');
+
+  await server.close();
+});

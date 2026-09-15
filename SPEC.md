@@ -128,6 +128,19 @@ env staging
 - Checker: unknown keys are errors, not ignored.
 - Active env selection precedence: `--env <name>` flag > `TFLW_ENV` env var > block marked
   `default`. No resolvable env → startup error.
+- **A config URL may come from the environment, with the literal as its default** (`M197`,
+  D1024): `api [<service>] env NAME default "<url>"`, `web env NAME default "<url>"`,
+  `authorized target env NAME default "<url>" reason "…"`. Resolved once at config load from the
+  same environment `env()` reads (`.env` overlaid by the process): the variable's value when it
+  is set and non-empty, the literal otherwise; an override that is not an absolute URL is a
+  startup error naming the variable. **This is not `env()` and the value is not a secret**: `env()`
+  registers what it reads with the redactor (§3.4), and a base URL masked to `•••(NAME)` in every
+  request line would make the report unreadable — so the override is plain, appears verbatim in
+  evidence, and needs no `require env` line (the default makes it optional; `TF077` does not
+  apply). The literal is what the checker validates (`TF036`, the demo-address rule, the
+  `authorized target` origin rules); the override is validated at load. Written for one suite
+  that runs against many deployments of the same service — a preview URL, or four copies of a
+  stack on one machine with the ports offset.
 - **Five timeout targets, in two families.** The **budgets** — `timeout step`, `timeout api`,
   `timeout browser` — are handed to an operation as its abort deadline. The **poll ceilings** —
   `timeout wait` (`wait until api`, and since M3b `wait until <ui condition>`, §9.5) and
@@ -417,7 +430,9 @@ session billing oauth2
   scope "billing.read billing.write"
 ```
 
-- `token url`/`client id`/`client secret` are required; `scope` is optional.
+- `token url`/`client id`/`client secret` are required; `scope` is optional. A relative
+  `token url` (`"/oauth/token"`) resolves against the active env's default `api` base the way a
+  step path does (`M197`/D1031); an absolute one is used as written.
 - Runtime posts a standard form-urlencoded client-credentials grant
   (`grant_type=client_credentials&client_id=…&client_secret=…&scope=…`) to `token url`, expects
   `access_token` in the JSON response (fails clearly if absent), and applies it as `Authorization:
@@ -1663,8 +1678,12 @@ expect body matches schema "ProductResponseDto" from "/openapi.json"
 ```
 
 - `"Name"` is the key under the fetched document's `components.schemas`; `"src"` is an absolute
-  URL, or a path resolved against the **default** `api` service's base URL (a non-default
-  service's document needs an absolute URL — a deliberate minimal-scope limitation).
+  URL, or a path resolved against an `api` service's base URL — the **default** service's, or the
+  one named between `from` and the string (`from root "/openapi.json"`, `M197`/D1030, the shape
+  `api root GET /path` has; an unknown name is `TF-unknown-service` like a step's).
+  `seed openapi <service> "…"` and `seed spider <service> "…"` in a `crawl` take the same
+  qualifier. Until `M197` a non-default service's document needed an absolute URL, which is how
+  a suite that declared `api root` came to write the host's port into its test files.
 - The document is fetched once and cached for the rest of the run (keyed by resolved URL) — every
   further `matches schema` assertion against the same source reuses it, including across
   `--parallel N` (the cache is per-process, so `--workers N`'s forked generators each keep their
@@ -3384,7 +3403,10 @@ empty results array as *everything previously reported is fixed* and resolves th
 a run that did not look must produce no file rather than an empty one. Absence is a signal a workflow
 can test; emptiness is a signal that reads as good news.
 
-A result anchors to **the `.tflw` assertion's file and line**, repo-relative with a `uriBaseId`, and
+A result anchors to **the `.tflw` assertion's file and line**, repo-relative with a `uriBaseId` —
+the root is the nearest directory with a `.git` at or above the run's, or the directory
+`TFLW_SOURCE_ROOT` names when it is set to one (`M197`/D1032: a copy of a repository run beside
+it has no `.git` and would anchor to paths under the copy's own name) — and
 carries the endpoint as a SARIF **logical location** — the endpoint is the finding's real subject,
 but its source is usually not in the repository being scanned and may not be in any repository. The
 four severities map onto SARIF's three levels (`critical`/`serious` → `error`, `moderate` →

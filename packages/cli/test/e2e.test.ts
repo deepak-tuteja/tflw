@@ -4916,6 +4916,46 @@ test('the built dist/cli.cjs runs a hygiene scan end to end and fails on a real 
   }
 });
 
+// `M197` (D1032) — the SARIF root when the run has no `.git` of its own. A result anchors
+// repo-relative and the root is found by walking up to `.git`; a copy of a repository run beside
+// it (the sibling's parallel sweep rsyncs one tree per worker) has none, the walk lands on the
+// real repository, and every URI starts with the copy's own path — which `sarif-acceptance`
+// refuses, correctly. `TFLW_SOURCE_ROOT` names the root in that case. Three runs of one planted
+// weakness: a `.git` marker in the run's own directory (the root is the marker's), the marker
+// one level up with the run in a subdirectory (the URI carries the subdirectory — the walk works),
+// and the same layout with the variable naming the subdirectory (the URI does not).
+test('the built dist/cli.cjs anchors a SARIF result to the `.git` root, or to TFLW_SOURCE_ROOT when set', async () => {
+  const server: Server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'sid=abc123; Path=/' }).end('{"ok":true}');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address');
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const top = await mkdtemp(join(tmpdir(), 'tflw-e2e-srcroot-'));
+  const run = join(top, 'suite');
+  try {
+    await mkdir(run, { recursive: true });
+    await writeFile(join(run, 'tflw.config'), `defaults\n  authorized target "${baseUrl}" reason "self-hosted end-to-end fixture"\nenv local default\n  api "${baseUrl}"\n`, 'utf8');
+    await writeFile(join(run, 'hygiene.tflw'), `test "response hygiene"\n  api GET /session\n  expect status equals 200\n  expect response has no security violations\n`, 'utf8');
+    const uriAfter = async (env: Record<string, string>) => {
+      await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: run, env: { ...process.env, ...env } }).catch(() => null);
+      const sarif = JSON.parse(await readFile(join(run, 'report', 'findings.sarif'), 'utf8')) as {
+        runs: { results: { locations: { physicalLocation: { artifactLocation: { uri: string } } }[] }[] }[];
+      };
+      return sarif.runs[0]!.results[0]!.locations[0]!.physicalLocation.artifactLocation.uri;
+    };
+    await mkdir(join(top, '.git'));
+    assert.equal(await uriAfter({}), 'suite/hygiene.tflw', 'the walk finds the marker one level up and the URI carries the subdirectory');
+    assert.equal(await uriAfter({ TFLW_SOURCE_ROOT: run }), 'hygiene.tflw', 'the variable names the run directory as the root and the URI is bare');
+    assert.equal(await uriAfter({ TFLW_SOURCE_ROOT: join(top, 'not-a-directory') }), 'suite/hygiene.tflw', 'CONTROL — a value that is not a directory is ignored, not trusted');
+  } finally {
+    await rm(top, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  }
+});
+
 // M135b (D404) — the other half of the write condition, and the one whose failure is silent.
 //
 // `upload-sarif` reads an empty `results` array as *everything previously reported is fixed* and

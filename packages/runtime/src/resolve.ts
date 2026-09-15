@@ -42,7 +42,23 @@ function envNames(config: ConfigFile): string {
   return config.envs.map((e) => e.name).join(', ') || '(none)';
 }
 
-export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig {
+/** A config URL's value under the `env NAME default "…"` override (`M197`, D1024): the variable's
+ *  value when it is set and non-empty, the literal otherwise. Read once, here, from `environ` —
+ *  never through `evalValue`'s `EnvRef` path, which registers what it reads with the redactor. A
+ *  base URL is not a secret, and one masked to `•••(NAME)` in every request line would make the
+ *  report unreadable; the SPEC says so beside `env()`'s taint rule. An override that is not an
+ *  absolute URL is refused the way the checker refuses the literal, naming the variable. */
+function urlFromOverride(literal: string, from: string | undefined, environ: NodeJS.ProcessEnv, what: string): string {
+  if (from === undefined) return literal;
+  const value = environ[from];
+  if (value === undefined || value === '') return literal;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    throw new ConfigError(`${what} reads ${from}, which is set to "${value}" — not an absolute URL with a scheme; unset it to use the default "${literal}"`);
+  }
+  return value;
+}
+
+export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS.ProcessEnv = process.env): ResolvedConfig {
   let apiBaseUrl: string | null = null;
   let webBaseUrl: string | null = null;
   const services: Record<string, string> = {};
@@ -72,12 +88,14 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
   const applyEntries = (entries: EnvBlock['entries']): void => {
     for (const entry of entries) {
       switch (entry.type) {
-        case 'ApiServiceDecl':
-          if (entry.service === null) apiBaseUrl = trimSlash(entry.url.value);
-          else services[entry.service] = trimSlash(entry.url.value);
+        case 'ApiServiceDecl': {
+          const url = urlFromOverride(entry.url.value, entry.urlFrom, environ, entry.service === null ? '`api`' : `\`api ${entry.service}\``);
+          if (entry.service === null) apiBaseUrl = trimSlash(url);
+          else services[entry.service] = trimSlash(url);
           break;
+        }
         case 'WebDecl':
-          webBaseUrl = trimSlash(entry.url.value);
+          webBaseUrl = trimSlash(urlFromOverride(entry.url.value, entry.urlFrom, environ, '`web`'));
           break;
         case 'HeaderDecl':
           headers.push({ name: entry.name.value, value: entry.value, service: entry.service });
@@ -122,7 +140,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock): ResolvedConfig
           // point of D311's prediction: the opt-ins ride along on the row and are ORed at their own
           // lookup (`grantedClasses`), so a third and fourth clause cost this file one field each.
           authorizedTargets.push({
-            target: entry.target.value,
+            target: urlFromOverride(entry.target.value, entry.targetFrom, environ, '`authorized target`'),
             reason: entry.reason.value,
             probeMutating: entry.probeMutating,
             probeOversized: entry.probeOversized,
