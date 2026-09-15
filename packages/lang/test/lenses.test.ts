@@ -1,0 +1,306 @@
+// `D1043`'s derivation — `M200` `A0-3`.
+//
+// The load-bearing test in this file is the tag control. `D1043` says a mode is derived from
+// constructs and never from a label, and the only way to assert that is to show the same body
+// landing in the same lenses with the tags removed, and a `@security` tag on a browser test
+// buying nothing. Everything else here could pass under an implementation that read the tags.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseSource, lensesOfTest, lensesOfCrawl, STEP_LENS, SUBJECT_LENS } from '../src/index.js';
+import type { Step, Subject } from '../src/index.js';
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+const lenses = (src: string): readonly string[] => {
+  const { program, diagnostics } = parseSource(src);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => `${d.code} ${d.message}`), [], src);
+  assert.equal(program.tests.length, 1, src);
+  return lensesOfTest(program.tests[0]!);
+};
+
+test('a lens is derived from the constructs a test carries', () => {
+  assert.deepEqual(lenses('test "t"\n  api GET /x\n  expect status equals 200\n'), ['api']);
+  assert.deepEqual(lenses('test "t"\n  open "/shop"\n  click button "Buy"\n'), ['browser']);
+  assert.deepEqual(lenses('test "t"\n  run 10 iterations across 2 users\n  api GET /x\n'), ['api', 'load']);
+  assert.deepEqual(lenses('test "t"\n  api GET /x\n  expect response has no security violations\n'), ['api', 'scan']);
+  // A test that does nothing a door is about is in no door, and that is an answer.
+  assert.deepEqual(lenses('test "t"\n  let x = 1\n  expect {x} equals 1\n'), []);
+});
+
+test('the tag buys nothing — the control that makes D1043 a claim about constructs', () => {
+  // `@load` and `@security` carry no runtime meaning: they are ordinary user tags beside
+  // `@orders` and `@flaky`. If the derivation read them, these four would disagree.
+  const workload = '  run 10 iterations across 2 users\n  api GET /x\n';
+  assert.deepEqual(lenses(`test "t"\n${workload}`), lenses(`@load\ntest "t"\n${workload}`));
+  assert.deepEqual(lenses(`@security @flaky @orders\ntest "t"\n${workload}`), ['api', 'load']);
+
+  // And a tag cannot put a test in a door its body has no evidence for.
+  assert.deepEqual(lenses('@security\ntest "t"\n  open "/shop"\n  click button "Buy"\n'), ['browser']);
+  assert.deepEqual(lenses('@load\ntest "t"\n  api GET /x\n  expect status equals 200\n'), ['api']);
+});
+
+test('the two fixture shapes the grilling turned on', () => {
+  // `load.tflw`'s tests ARE functional tests with a workload line round them — the case that
+  // makes "a mode is a kind of test" fail, since it belongs to two doors at once.
+  assert.deepEqual(
+    lenses('@load\ntest "the catalog holds"\n  run 120 iterations across 4 users\n  api GET /search?q=g as "search"\n  expect status equals 200\n  threshold p95 duration is less than 500ms\n'),
+    ['api', 'load'],
+  );
+  // `security.tflw`'s third test is an `api POST /login` with one severity gate.
+  assert.deepEqual(
+    lenses('@security\ntest "login resists"\n  api POST /login body { user: "a" }\n  expect response has no serious security violations\n'),
+    ['api', 'scan'],
+  );
+});
+
+test('accessibility is a browser assertion, not a fifth door', () => {
+  // Resolved by measurement in §1 and never put to the user: the matcher takes the `page`
+  // subject, and a crawl body cannot hold it.
+  assert.deepEqual(lenses('test "t"\n  open "/shop"\n  expect page has no critical a11y violations\n'), ['browser']);
+});
+
+test('a threshold alone is load evidence — D1044’s own case', () => {
+  // The LOAD lens may add a threshold to a test whose workload line is not written yet; the test
+  // has to appear in LOAD the moment it does, or the lens cannot see what it just wrote.
+  assert.deepEqual(lenses('test "t"\n  api GET /x\n  threshold error rate is less than 1%\n'), ['api', 'load']);
+});
+
+test('evidence nested inside a block still counts', () => {
+  assert.deepEqual(lenses('test "t"\n  open "/x"\n  within list "Cart"\n    click button "Remove"\n'), ['browser']);
+  assert.deepEqual(
+    lenses('test "t"\n  wait until api GET /jobs\n    expect status equals 200\n'),
+    ['api'],
+  );
+});
+
+test('a crawl is the SCANS door’s own declaration', () => {
+  const { program } = parseSource('crawl "the surface"\n  seed spider "/"\n  expect response has no security violations\n');
+  assert.equal(program.crawls.length, 1);
+  assert.deepEqual(lensesOfCrawl(program.crawls[0]!), ['scan']);
+});
+
+test('the classification tables cover their unions, checked against ast.ts itself', () => {
+  // `tsc` already proves this: both tables are `Record<Step['type'], …>`/`Record<Subject['type'],
+  // …>`, so a union member with no entry is a compile error. This is the second, independent
+  // control — it reads the union out of the source, so it also catches the tables being held to a
+  // union that quietly stopped being the real one.
+  const ast = readFileSync(join(here, '..', 'src', 'ast.ts'), 'utf8');
+  const members = (name: string): string[] => {
+    const start = ast.indexOf(`export type ${name} =`);
+    assert.ok(start > 0, `${name} not found in ast.ts`);
+    const body = ast.slice(start, ast.indexOf(';', start));
+    return [...body.matchAll(/\|\s*([A-Z][A-Za-z]*)/g)].map((m) => m[1]!);
+  };
+  assert.deepEqual(members('Step').filter((m) => !(m in STEP_LENS)), [], 'every Step is classified');
+  assert.deepEqual(members('Subject').filter((m) => !(m in SUBJECT_LENS)), [], 'every Subject is classified');
+  assert.deepEqual(Object.keys(STEP_LENS).filter((k) => !members('Step').includes(k)), [], 'STEP_LENS names no step that is not one');
+  assert.deepEqual(Object.keys(SUBJECT_LENS).filter((k) => !members('Subject').includes(k)), [], 'SUBJECT_LENS names no subject that is not one');
+});
+
+test('every test in the corpus classifies, and 30% of them land in more than one lens', () => {
+  // The measured shape of this corpus, pinned so that a change to the rule has to argue with it.
+  const SKIP = /^(node_modules|dist|\.git|runs|coverage)$|^\.m.*-scratch$/;
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    let entries: string[];
+    try { entries = readdirSync(dir); } catch { return; }
+    for (const entry of entries) {
+      if (SKIP.test(entry)) continue;
+      const p = join(dir, entry);
+      let st;
+      try { st = statSync(p); } catch { continue; }
+      if (st.isDirectory()) walk(p);
+      else if (entry.endsWith('.tflw')) files.push(p);
+    }
+  };
+  const root = resolve(here, '..', '..', '..');
+  walk(root);
+  walk(resolve(root, '..', 'testFlow-tests'));
+
+  let total = 0;
+  let multi = 0;
+  const combos = new Map<string, number>();
+  for (const file of files) {
+    const { program, diagnostics } = parseSource(readFileSync(file, 'utf8'));
+    if (diagnostics.some((d) => d.severity === 'error')) continue;
+    for (const t of program.tests) {
+      const ls = lensesOfTest(t);
+      total += 1;
+      if (ls.length > 1) multi += 1;
+      combos.set(ls.join('+') || '(none)', (combos.get(ls.join('+') || '(none)') ?? 0) + 1);
+    }
+  }
+  console.log(`\n  lens census — ${total} tests, ${multi} in more than one lens`);
+  for (const [k, n] of [...combos.entries()].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(5)}  ${k}`);
+  console.log('');
+
+  assert.ok(total > 400, `expected the corpus, classified ${total} tests`);
+  assert.ok(multi / total > 0.2, `${((100 * multi) / total).toFixed(1)}% of tests are multi-lens — D1043's whole argument`);
+  // Every multi-lens test in this corpus includes `api`: there is no browser+load, no
+  // browser+scan and no three-lens test in it. Recorded as measured, not required — a project
+  // that wrote one would be legal, and this assertion is deliberately not the one that forbids it.
+  assert.equal([...combos.keys()].filter((k) => k.includes('+') && !k.startsWith('api')).length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// The isolating table. Written after a mutation run in which FIVE mutations survived — a click
+// stopping being browser evidence, a response subject stopping being api evidence, a locator
+// subject, and both recursions — all for one reason: every fixture above carries **two** reasons
+// for the same conclusion. `within list "Cart"` was preceded by `open`, `expect status` sat beside
+// an `api` step, so no single classification was ever the only thing producing its lens and
+// deleting any one of them changed no answer.
+//
+// A fixture carrying two reasons for its conclusion tests neither. So: one minimal source per
+// classified node type, holding that construct and nothing else that could account for the
+// result. The tables are typed by the unions, so this is exhaustive by construction — a new node
+// kind is a compile error here as well as in `lenses.ts`.
+// ---------------------------------------------------------------------------
+
+/**
+ * One test body per step kind, isolating it, **with the lens it must produce written out here**.
+ *
+ * The expectation is spelled in this file and never read from `STEP_LENS`. The first draft did
+ * read it, and four mutations survived because of it: flipping `ClickStmt: 'browser'` to `null`
+ * flipped the expectation in the same breath, so the test compared the implementation with
+ * itself and agreed. A test that sources its expectation from the code under test asserts only
+ * that the code is self-consistent.
+ *
+ * `null` means the kind cannot be written in a test body at all, which is asserted rather than
+ * skipped — see the test below.
+ */
+const STEP_FORM: Readonly<Record<Step['type'], readonly [form: string, lenses: readonly string[]] | null>> = {
+  ApiStep: ['  api GET /x', ['api']],
+  WaitUntilApiStmt: ['  wait until api GET /x\n    expect {v} equals "a"', ['api']],
+  // `header` is dual-purpose and `csrf` is session-only: `parseStep` offers neither.
+  HeaderStmt: null,
+  CsrfStmt: null,
+  OpenStmt: ['  open "/x"', ['browser']],
+  ClickStmt: ['  click button "Buy"', ['browser']],
+  FillStmt: ['  fill field "Email" with "a@b.c"', ['browser']],
+  FillFormStmt: ['  fill form\n    | "Email" | "a@b.c" |', ['browser']],
+  SelectStmt: ['  select "Widget" from field "Size"', ['browser']],
+  TickStmt: ['  tick field "Accept terms"', ['browser']],
+  UntickStmt: ['  untick field "Accept terms"', ['browser']],
+  PressStmt: ['  press "Enter" on field "Search"', ['browser']],
+  HoverStmt: ['  hover button "Menu"', ['browser']],
+  ScrollStmt: ['  scroll to button "Load more"', ['browser']],
+  WithinBlock: ['  within list "Cart items"\n    log "inside"', ['browser']],
+  AcceptDialogStmt: ['  accept dialog with "Blue"', ['browser']],
+  DismissDialogStmt: ['  dismiss dialog', ['browser']],
+  SwitchToNewTabBlock: ['  switch to new tab\n    log "inside"', ['browser']],
+  SwitchToTabStmt: ['  switch to tab 1', ['browser']],
+  CloseTabStmt: ['  close tab', ['browser']],
+  DownloadBlock: ['  download as file\n    log "inside"', ['browser']],
+  DragStmt: ['  drag text "First" to text "Second"', ['browser']],
+  DropFileStmt: ['  drop file "./receipt.png" onto css "#dropzone"', ['browser']],
+  ScreenshotStmt: ['  screenshot "before payment"', ['browser']],
+  StubStmt: ['  stub POST "/pay" respond status 500', ['browser']],
+  WaitUntilUiStmt: ['  wait until button "Submit" is enabled', ['browser']],
+  ExpectStmt: ['  expect {v} equals "a"', []],
+  LetStmt: ['  let v = "a"', []],
+  CaptureStmt: ['  capture body.id as orderId', []],
+  LogStmt: ['  log "hello"', []],
+  GiveStmt: null, // an action's return; ends a step sequence, and a test is not an action
+  CallStmt: ['  call an action()', []],
+  PauseStmt: ['  pause 500ms', []],
+  MalformedStep: null, // the parser's recovery node — the absence of a construct
+};
+
+/** `expect <form> …`, one per subject kind (the forms are `specManifest.test.ts`'s own table),
+ *  with the lens it must produce written out here rather than read from `SUBJECT_LENS`. */
+const SUBJECT_FORM: Readonly<Record<Subject['type'], readonly [form: string, lenses: readonly string[]]>> = {
+  StatusSubject: ['status', ['api']],
+  DurationSubject: ['duration', ['api']],
+  HeaderSubject: ['header "content-type"', ['api']],
+  BodySubject: ['body.total', ['api']],
+  BodyTextSubject: ['body text', ['api']],
+  BodyBytesSubject: ['body bytes', ['api']],
+  BodyCsvSubject: ['body csv', ['api']],
+  BodyPdfTextSubject: ['body pdf text', ['api']],
+  RequestSubject: ['request', ['api']],
+  NetworkRequestSubject: ['request to "https://example.test/orders"', ['browser']],
+  LocatorSubject: ['button "Submit"', ['browser']],
+  PageSubject: ['page', ['browser']],
+  ResponseSubject: ['response', ['api']],
+  DialogMessageSubject: ['dialog message', ['browser']],
+  DialogTypeSubject: ['dialog type', ['browser']],
+  ValueSubject: ['{orderId}', []],
+};
+
+test('each step kind produces its own lens, alone, with nothing else to account for it', () => {
+  const wrong: string[] = [];
+  for (const [nodeType, entry] of Object.entries(STEP_FORM)) {
+    if (entry === null) continue;
+    const [form, expectedLenses] = entry;
+    const src = `test "t"\n${form}\n`;
+    const { program, diagnostics } = parseSource(src);
+    const errors = diagnostics.filter((d) => d.severity === 'error');
+    if (errors.length > 0) { wrong.push(`${nodeType}: ${errors.map((e) => `${e.code} ${e.message}`).join('; ')} — for ${JSON.stringify(form)}`); continue; }
+    const step = program.tests[0]?.body[0];
+    if (step?.type !== nodeType) { wrong.push(`${nodeType}: parsed as ${step?.type ?? 'nothing'}`); continue; }
+    const got = lensesOfTest(program.tests[0]!);
+    if (got.join('+') !== expectedLenses.join('+')) {
+      wrong.push(`${nodeType}: expected [${expectedLenses.join('+') || 'nothing'}], got [${got.join('+') || 'nothing'}]`);
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test('each subject produces its own lens, alone', () => {
+  const wrong: string[] = [];
+  for (const [nodeType, [form, expectedLenses]] of Object.entries(SUBJECT_FORM)) {
+    const src = `test "t"\n  expect ${form} equals "x"\n`;
+    const { program, diagnostics } = parseSource(src);
+    const errors = diagnostics.filter((d) => d.severity === 'error');
+    if (errors.length > 0) { wrong.push(`${nodeType}: ${errors.map((e) => e.code).join(',')} for \`${form}\``); continue; }
+    const got = lensesOfTest(program.tests[0]!);
+    if (got.join('+') !== expectedLenses.join('+')) {
+      wrong.push(`${nodeType}: expected [${expectedLenses.join('+') || 'nothing'}], got [${got.join('+') || 'nothing'}]`);
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test('the two step kinds that cannot be written in a test body are refused there', () => {
+  // `HeaderStmt` is dual-purpose and `CsrfStmt` is session-only — both are in the `Step` union and
+  // neither is offered by `parseStep`, which is why `STEP_FORM` files them as `null`. Asserted
+  // rather than skipped: a `null` that is merely "I did not work out the syntax" is a hole.
+  for (const form of ['  header "X-Token" is "abc"', '  csrf from body.token send as header "X-CSRF"']) {
+    const { diagnostics } = parseSource(`test "t"\n${form}\n`);
+    assert.ok(diagnostics.some((d) => d.severity === 'error'), `\`${form.trim()}\` should not parse in a test body`);
+  }
+});
+
+test('a `wait until api` body’s own evidence counts — the recursion, isolated', () => {
+  // The recursion into `expects` is only observable when an inner assertion carries evidence the
+  // outer step does not. `WaitUntilApiStmt` is already api, so a scan matcher inside it is the
+  // one thing that can tell the two apart.
+  const src = 'test "t"\n  wait until api GET /x\n    expect response has no security violations\n';
+  const { program, diagnostics } = parseSource(src);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), []);
+  assert.deepEqual(lensesOfTest(program.tests[0]!), ['api', 'scan']);
+});
+
+test('a block’s inner evidence counts — the recursion, isolated from the block itself', () => {
+  // `within`, `switch to new tab` and `download as` are each browser evidence in their own right,
+  // so a click nested inside one is indistinguishable from the block containing it and the
+  // recursion cannot be observed through it. The inner step has to carry a lens the block does
+  // not — which is why these three bodies hold an `api` step rather than another click.
+  const cases: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ['  within list "Cart items"\n    api GET /x', ['api', 'browser']],
+    ['  switch to new tab\n    api GET /x', ['api', 'browser']],
+    ['  download as file\n    api GET /x', ['api', 'browser']],
+  ];
+  const wrong: string[] = [];
+  for (const [form, expected] of cases) {
+    const { program, diagnostics } = parseSource(`test "t"\n${form}\n`);
+    const errors = diagnostics.filter((d) => d.severity === 'error');
+    if (errors.length > 0) { wrong.push(`${form}: ${errors.map((e) => e.code).join(',')}`); continue; }
+    const got = lensesOfTest(program.tests[0]!);
+    if (got.join('+') !== expected.join('+')) wrong.push(`${form}: expected [${expected.join('+')}], got [${got.join('+') || 'nothing'}]`);
+  }
+  assert.deepEqual(wrong, []);
+});

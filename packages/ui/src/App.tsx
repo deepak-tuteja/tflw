@@ -1,9 +1,18 @@
-// The shell (`M192` U2): the project on the left, the runs across the top, the selected run
-// below. State is what the server said and nothing else — the page holds no truth of its own.
+// The shell (`M192` U2, widened by `M200` `A0-3`): four doors, then the project on the left, the
+// runs across the top, the selected run below. State is what the server said and nothing else —
+// the page holds no truth of its own.
+//
+// The door lives in the URL hash and nowhere else (`D1045`). It is a view of a project rather
+// than a fact about one, so there is no `.tflw-ui/` anything to remember it in, and a link to
+// `#/load` is a link to the LOAD door of whatever project this server is serving.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelRun, getProject, getReports, getResults, getRuns, getStderr, reportFileUrl, startRun, subscribe } from './api';
-import type { EndEvent, ProjectView, ReportDir, RunRecord, RunReport, RunRequest } from './contract';
+import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest } from './contract';
+import { doorFromHash, hashForDoor } from './doors';
+import { Landing } from './Landing';
+import { DoorBar } from './DoorBar';
+import { LoadForm } from './LoadForm';
 import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
 import { exitExplained, reportIdOf } from './format';
 import { LiveBody, ReportBody, ReportHeader } from './ReportView';
@@ -19,6 +28,7 @@ interface LiveRun {
 }
 
 export function App() {
+  const [door, setDoorState] = useState<Lens | null>(() => doorFromHash(window.location.hash));
   const [project, setProject] = useState<ProjectView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RunRecord[]>([]);
@@ -34,6 +44,18 @@ export function App() {
   const [exitNote, setExitNote] = useState<{ id: string; run: RunRecord; stderr: string } | null>(null);
   const unsubscribe = useRef<(() => void) | null>(null);
 
+  // The hash is the source of truth for the door, so the back button works and a pasted link
+  // opens where it says. `setDoor` writes the hash; the listener is what actually moves the page.
+  useEffect(() => {
+    const onHash = () => setDoorState(doorFromHash(window.location.hash));
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const setDoor = useCallback((next: Lens | null) => {
+    window.location.hash = hashForDoor(next);
+    setDoorState(next);
+  }, []);
+
   const refreshLists = useCallback(async () => {
     const [r, p] = await Promise.all([getRuns(), getReports()]);
     setRuns(r);
@@ -41,10 +63,19 @@ export function App() {
     return p;
   }, []);
 
-  useEffect(() => {
-    getProject()
-      .then(setProject)
+  const [noProject, setNoProject] = useState(false);
+
+  const readProjectView = useCallback(() => {
+    return getProject()
+      .then((p) => {
+        setProject(p);
+        setNoProject(p === null);
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  useEffect(() => {
+    void readProjectView();
     refreshLists()
       .then((p) => {
         // Only when nothing was chosen meanwhile — a run started before the list arrived (U7's
@@ -52,7 +83,7 @@ export function App() {
         if (p[0]) setSelected((s) => s ?? { kind: 'report', id: p[0]!.id });
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  }, [refreshLists]);
+  }, [refreshLists, readProjectView]);
 
   // A selected report directory is read once — `results.json` is the merged `RunReport`.
   useEffect(() => {
@@ -132,10 +163,29 @@ export function App() {
     if (r) void cancelRun(r.id).then(refreshLists);
   }, [runs, refreshLists]);
 
+  if (door === null || noProject) {
+    // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back
+    // to the landing, which is where a project can be made (`A0-5`).
+    return <Landing project={project} error={error} noProject={noProject} onOpen={setDoor} onCreated={() => void readProjectView()} />;
+  }
+
   return (
     <div className="app">
-      {project ? <Sidebar project={project} running={running} onRun={onRun} onCancel={onCancel} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+      {project ? <Sidebar project={project} door={door} running={running} onRun={onRun} onCancel={onCancel} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
       <main className="main">
+        {project ? <DoorBar project={project} door={door} onDoor={setDoor} /> : null}
+        {/* `D1042`: the door decides what the "new test" surface is, and nothing else. LOAD's is
+            `A0-4`'s form; the other three doors have theirs in `A1`–`A3`. */}
+        {project && door === 'load' ? (
+          <LoadForm
+            project={project}
+            onWritten={() => {
+              // The page is a projection of the file (`D985`), so after a write the projection is
+              // re-read rather than patched — the server is what says what the file now holds.
+              void readProjectView();
+            }}
+          />
+        ) : null}
         <RunList runs={runs} reports={reports} selected={selected} onSelect={setSelected} />
         {error ? (
           <p className="error" data-error>

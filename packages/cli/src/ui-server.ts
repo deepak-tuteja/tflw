@@ -4,8 +4,23 @@
 // (`D985`), and this server is the whole of what it may touch: it reads the project (the config,
 // the discovered files, the tests in them), it runs `tflw run --format ndjson` as a child and
 // relays the stream (`D986` — the page is one more reader of the artefact CI reads), it lists and
-// serves report directories, and it cancels a run. **It never writes a `.tflw` file** — slice 1
-// has no write path at all, and the green condition greps this file for one.
+// serves report directories, and it cancels a run.
+//
+// **It writes exactly one kind of thing, through exactly one function** (`M200` `A0-2`, `D1049`).
+// Slice 1 had no write path at all and its green condition grepped this file to prove it; `A0`
+// makes the page an authoring surface, so that rule is replaced rather than dropped — the grep
+// now demands a single `writeFile` call site, inside `writeProjectFile` below, and nothing else.
+// A capability that arrives by widening a guard until it admits the new thing leaves no guard;
+// one that arrives by narrowing the guard to the new thing's own shape keeps it.
+//
+// **The server refuses, it does not author.** `@tflw/lang` has no dependencies and no Node
+// builtins, so the page runs `parse`/`print`/`format` itself and hands this route a finished
+// file. What the route adds is the part a client cannot be trusted with: the bytes on disk must
+// still be the bytes the client's edit was computed against (`If-Match`, a content hash), the
+// text must parse with no error diagnostic, and `format()` must already be a fixpoint on it. A
+// `.tflw` file that does not parse can therefore not be written through this server at all,
+// which is what `D985` is protecting — the file is the only truth, so an unreadable file is a
+// truth nobody can read.
 //
 // The run's record is its report directory (§2 q6). `tflw run` writes one directory per project
 // (`report dir`, config) and overwrites it, so a run from the page is exactly a run from the
@@ -20,11 +35,12 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readFile, readdir, stat, cp, mkdir } from 'node:fs/promises';
+import { readFile, readdir, stat, cp, mkdir, writeFile, rename, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve, relative, dirname, extname, sep } from 'node:path';
 import { createRequire } from 'node:module';
-import { parseSource, parseConfigSource } from '@tflw/lang';
+import { createHash, randomBytes } from 'node:crypto';
+import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, LENSES, type Lens } from '@tflw/lang';
 import { resolveConfig, selectEnv } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 
@@ -48,12 +64,33 @@ export interface ProjectTest {
   readonly tags: readonly string[];
   readonly line: number;
   readonly workload: boolean;
+  /**
+   * Which of the four doors this test appears behind (`D1043`), **derived from the constructs it
+   * carries** — never from `@load`, `@security` or any other tag, which the runtime has never read.
+   * Computed by `lensesOfTest` in `@tflw/lang` so that this server and the page compute it with
+   * the same code rather than with two implementations that can disagree.
+   *
+   * Empty is a real answer: a test of nothing but `let` and `expect {v}` does none of the four
+   * kinds of work. Measured over both repositories, 22 of 761 tests are empty here, and three of
+   * those are empty because their whole body is one `call` into an action declared in an imported
+   * file — evidence one indirection away, which a per-test pure function cannot follow.
+   */
+  readonly lenses: readonly Lens[];
+}
+
+/** A `crawl` declaration — the SCANS door's own, and a sibling to `test` rather than a kind of
+ *  one (`D432`). Its lenses are always `['scan']`. */
+export interface ProjectCrawl {
+  readonly name: string;
+  readonly line: number;
+  readonly lenses: readonly Lens[];
 }
 
 export interface ProjectFile {
   /** Relative to the root, `/`-separated. */
   readonly path: string;
   readonly tests: readonly ProjectTest[];
+  readonly crawls: readonly ProjectCrawl[];
   /** Parse diagnostics, counted — the page shows the file as unparseable, the LSP shows why. */
   readonly diagnostics: number;
 }
@@ -115,6 +152,22 @@ export function runArgv(req: RunRequest): string[] {
   return argv;
 }
 
+/**
+ * `tflw init [--load]` for a door — `M200` `A0-5` (`D1051`).
+ *
+ * The door decides what a new project is scaffolded with, which is the second half of `D1042`'s
+ * "a door decides where you land and what the new-test button scaffolds, and nothing else".
+ *
+ * **What it decides with is one flag, because `tflw init` has one flag.** LOAD gets `--load` and
+ * therefore a `load.tflw`; the other three get the plain scaffold. That is stated here rather
+ * than papered over: BROWSER has no scaffold of its own and SCANS has none either (§7's open
+ * fork, `A2`'s), so those two doors create a project that opens on an API example. A door that
+ * pretended otherwise would be a brochure.
+ */
+export function initArgv(door: Lens): string[] {
+  return door === 'load' ? ['init', '--load'] : ['init'];
+}
+
 /** The project as the page sees it: config envs, the discovered files, the tests in each. */
 export async function readProject(root: string): Promise<ProjectView> {
   const configText = await readFile(join(root, 'tflw.config'), 'utf8');
@@ -135,7 +188,11 @@ export async function readProject(root: string): Promise<ProjectView> {
         tags: t.tags,
         line: t.span.start.line,
         workload: t.workload !== null,
+        lenses: lensesOfTest(t),
       })),
+      // `crawls` is absent, not empty, on a program that declares none (`ast.ts:44` — it keeps
+      // 31 parser goldens asserting what they were written to assert).
+      crawls: (program.crawls ?? []).map((c) => ({ name: c.name.value, line: c.span.start.line, lenses: lensesOfCrawl(c) })),
       diagnostics: diagnostics.length,
     });
   }
@@ -190,6 +247,100 @@ export function safeJoin(base: string, requested: string): string | null {
   const full = resolve(base, requested);
   const root = resolve(base);
   return full === root || full.startsWith(root + sep) ? full : null;
+}
+
+/** The identity of a file's bytes, for `If-Match`. A content hash and not an mtime: two writes
+ *  inside one filesystem timestamp tick are indistinguishable by mtime, and a hash also survives
+ *  a checkout that rewrites timestamps without changing content. Short because it is compared,
+ *  never searched. */
+export function etagOf(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16);
+}
+
+export interface FileWriteRefusal {
+  readonly status: 400 | 404 | 409 | 422;
+  readonly error: string;
+  /** The diagnostic that stopped it, when the refusal is `422` and the text does not parse. */
+  readonly code?: string;
+  readonly line?: number;
+}
+
+/**
+ * Resolve a client-supplied project-relative path to a `.tflw` file inside the root.
+ *
+ * Three refusals, each for its own reason: outside the root (the boundary this whole server is),
+ * not a `.tflw` file (this route exists to write tests, and `tflw.config` or a `.env` reached
+ * through it would be a different capability wearing this one's clothes), and an absolute or
+ * drive-qualified path (which `resolve` would honour rather than join).
+ */
+export function resolveWritablePath(root: string, requested: string): string | FileWriteRefusal {
+  if (requested.length === 0) return { status: 400, error: 'no path' };
+  if (requested.includes('\0')) return { status: 400, error: 'not a path' };
+  const full = safeJoin(root, requested);
+  if (full === null) return { status: 400, error: 'outside the project' };
+  if (extname(full) !== '.tflw') return { status: 400, error: 'only a .tflw file can be written here' };
+  return full;
+}
+
+/**
+ * The only function in this file that writes. Everything it refuses, it refuses *before* opening
+ * anything for writing, so a rejected request leaves the file exactly as it was.
+ *
+ * `ifMatch` is the hash the client's edit was computed against: `null` means "this file should
+ * not exist yet", which is how a new test file is created and how two pages racing to create the
+ * same one are separated. A mismatch is `409` and carries the current hash, so the client can
+ * re-read and re-apply rather than guess.
+ *
+ * The write itself goes to a sibling temp file and is renamed over the target. `rename` within a
+ * directory is atomic on every filesystem tflw runs on, so a reader — `tflw run` in another
+ * terminal, most likely — sees either the old file or the new one and never a half-written one.
+ */
+export async function writeProjectFile(
+  root: string,
+  requested: string,
+  text: string,
+  ifMatch: string | null,
+): Promise<{ readonly path: string; readonly etag: string } | FileWriteRefusal> {
+  const resolved = resolveWritablePath(root, requested);
+  if (typeof resolved !== 'string') return resolved;
+
+  // Parse before anything else: the page is the author, and this is the claim the page cannot be
+  // trusted to make about itself.
+  const { diagnostics } = parseSource(text);
+  const error = diagnostics.find((d) => d.severity === 'error');
+  if (error) {
+    return { status: 422, error: error.message, code: error.code, line: error.span.start.line };
+  }
+  // And it must already be what `format` would write. Not a courtesy: it means the bytes the page
+  // holds and the bytes on disk are the same bytes, so the next `If-Match` the page sends is
+  // computed over something that exists. A server that silently reformatted would hand back an
+  // etag for a file the page has never seen.
+  const formatted = format(text);
+  if (!formatted.ok) return { status: 422, error: formatted.reason ?? 'the text cannot be formatted' };
+  if (formatted.formatted !== text) return { status: 422, error: 'the text is not formatted — run format() before sending it' };
+
+  let current: string | null;
+  try {
+    current = await readFile(resolved, 'utf8');
+  } catch {
+    current = null;
+  }
+  if (current === null && ifMatch !== null) return { status: 404, error: 'no such file — omit If-Match to create it' };
+  if (current !== null && ifMatch === null) return { status: 409, error: 'the file already exists — send its If-Match to replace it' };
+  if (current !== null && etagOf(current) !== ifMatch) {
+    return { status: 409, error: 'the file changed on disk since it was read' };
+  }
+
+  await mkdir(dirname(resolved), { recursive: true });
+  const temp = `${resolved}.tflw-ui-${randomBytes(6).toString('hex')}`;
+  try {
+    await writeFile(temp, text, 'utf8');
+    await rename(temp, resolved);
+  } catch (e) {
+    await unlink(temp).catch(() => {});
+    throw e;
+  }
+  return { path: relative(root, resolved).split(sep).join('/'), etag: etagOf(text) };
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -265,6 +416,35 @@ export class UiServer {
   /** The run's argv and its report directory, for the record and the copy. */
   private reportDirFor(): Promise<string> {
     return readProject(this.opts.root).then((p) => resolve(this.opts.root, p.reportDir));
+  }
+
+  /**
+   * Run `tflw init` in the project root and report what it made.
+   *
+   * Everything it says is the CLI's own words — the created-file list on success, the refusal on
+   * failure — because the page's account of what a project is has to be the tool's account or it
+   * is a second one.
+   */
+  async runInit(door: Lens): Promise<{ readonly ok: boolean; readonly created: readonly string[]; readonly output: string; readonly exitCode: number | null }> {
+    const argv = initArgv(door);
+    const child = spawn(process.execPath, [...(this.opts.execArgv ?? []), this.opts.cliEntry, ...argv], {
+      cwd: this.opts.root,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    child.stdout!.setEncoding('utf8');
+    child.stderr!.setEncoding('utf8');
+    child.stdout!.on('data', (c: string) => { output += c; });
+    child.stderr!.on('data', (c: string) => { output += c; });
+    const exitCode = await new Promise<number | null>((done) => child.on('close', (code) => done(code)));
+    // What is on disk afterwards, not what the child claimed: the page is a projection of the
+    // files (`D985`), and that holds for the files it just asked for as much as for any other.
+    const created: string[] = [];
+    for (const name of ['tflw.config', 'example.tflw', 'load.tflw', '.env.example', 'package.json']) {
+      if (existsSync(join(this.opts.root, name))) created.push(name);
+    }
+    return { ok: exitCode === 0, created, output: output.trim(), exitCode };
   }
 
   async startRun(request: RunRequest): Promise<RunRecord> {
@@ -400,11 +580,83 @@ export class UiServer {
     const method = req.method ?? 'GET';
 
     if (path === '/api/project' && method === 'GET') {
+      // "There is no project here" is a different answer from "this project is broken", and the
+      // landing has to tell them apart to know whether to offer to create one (`M200` `A0-5`).
+      // Until now both arrived as a 400 carrying a raw `ENOENT` with an absolute path in it,
+      // which is neither a usable signal nor a sentence to show anyone.
+      if (!existsSync(join(this.opts.root, 'tflw.config'))) {
+        return json(res, 404, { error: 'no tflw.config here — this directory is not a tflw project yet', noProject: true, root: this.opts.root });
+      }
       try {
         return json(res, 200, await readProject(this.opts.root));
       } catch (e) {
         return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
       }
+    }
+
+    // `GET /api/file?path=x.tflw` — the source and its etag. Slice 1 never served a file's text
+    // (`readProject` reads every file and returns only its tests), so the page had nothing to
+    // edit and nothing to compute an edit against.
+    if (path === '/api/file' && method === 'GET') {
+      const requested = url.searchParams.get('path') ?? '';
+      const resolved = resolveWritablePath(this.opts.root, requested);
+      if (typeof resolved !== 'string') return json(res, resolved.status, { error: resolved.error });
+      let text: string;
+      try {
+        text = await readFile(resolved, 'utf8');
+      } catch {
+        return json(res, 404, { error: `no ${requested}` });
+      }
+      return json(res, 200, { path: relative(this.opts.root, resolved).split(sep).join('/'), text, etag: etagOf(text) });
+    }
+
+    if (path === '/api/file' && method === 'PUT') {
+      let request: { path?: unknown; text?: unknown };
+      try {
+        request = JSON.parse(await readBody(req)) as { path?: unknown; text?: unknown };
+      } catch {
+        return json(res, 400, { error: 'the write request is not JSON' });
+      }
+      if (typeof request.path !== 'string' || typeof request.text !== 'string') {
+        return json(res, 400, { error: 'a write needs `path` and `text`' });
+      }
+      // `If-Match: *` is not accepted. HTTP reads it as "any current representation", which is
+      // precisely the check this route exists to make — a client that cannot name the version it
+      // edited has not read the file, and letting it through would make the 409 unreachable.
+      const header = req.headers['if-match'];
+      const ifMatch = typeof header === 'string' && header !== '*' ? header.replaceAll('"', '') : null;
+      if (header === '*') return json(res, 400, { error: 'If-Match must name a version, not `*`' });
+      const result = await writeProjectFile(this.opts.root, request.path, request.text, ifMatch);
+      if ('status' in result) {
+        const { status, ...rest } = result;
+        return json(res, status, rest);
+      }
+      return json(res, 200, result);
+    }
+
+    // `POST /api/init` — create a project here (`M200` `A0-5`, `D1051`).
+    //
+    // **Spawned, not written.** This server writes through exactly one call site (`D1049`) and
+    // that one writes `.tflw` files; a project is a `tflw.config`, an example, a `.env.example`
+    // and a `package.json`. Rather than widen the write gate until it admits all of those, the
+    // page asks the CLI to do it — the same way running is `tflw run` spawned — so the scaffolds
+    // the page creates are byte-for-byte the scaffolds a terminal creates, and there is one
+    // implementation of what a tflw project is.
+    //
+    // It needs no guard of its own against overwriting: `tflw init` refuses when a `tflw.config`
+    // is already there and exits non-zero, and that refusal is relayed verbatim.
+    if (path === '/api/init' && method === 'POST') {
+      let request: { door?: unknown };
+      try {
+        request = JSON.parse(await readBody(req)) as { door?: unknown };
+      } catch {
+        return json(res, 400, { error: 'the init request is not JSON' });
+      }
+      if (typeof request.door !== 'string' || !LENSES.includes(request.door as Lens)) {
+        return json(res, 400, { error: `a door is one of ${LENSES.join(', ')}` });
+      }
+      const result = await this.runInit(request.door as Lens);
+      return json(res, result.ok ? 200 : 409, result);
     }
 
     if (path === '/api/run' && method === 'POST') {
