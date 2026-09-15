@@ -79,7 +79,7 @@ npm run refresh:own-identifiers -- --check   # § needs the records
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
 node scripts/mutate.mjs <milestone>    # § the milestone's own mutations; CI does not run it
-npm run sweep                          # § the whole registry on the box, before a milestone closes
+npm run regression --prefix ../testFlow-tests   # § the sibling's sweep against this build, before a milestone closes
 npm run verify:ledger                  # § never runs in CI, by decision
 ```
 
@@ -235,16 +235,40 @@ npm run verify:ledger                  # § never runs in CI, by decision
 - **`node scripts/mutate.mjs <milestone>`** — **§ CI does not run it.** From `M124` to `M192` the
   registry ran on every pull request across a matrix of two-core runners (six, then thirty-three),
   packed by a cost table and watched by a re-shard trigger, and the maintenance of that arrangement
-  took more of the project's time than the mutations did. Since `M194` the whole registry runs on
-  the machine this repository does its heavy work on, eight trees at once, **before a milestone
-  closes**: `npm run sweep`, its result recorded in the milestone's plan. Locally you run the
-  milestone you just wrote: `node scripts/mutate.mjs m98d`, or one mutation by id. `--scope` is not
-  a flag.
-- **`npm run sweep`** — **§ the whole registry, before a milestone closes.** Eight copies of the
-  tree on the box, one shard of the registry each, the manifests reassembled twice (there, and
-  here against this tree's registry) and read back into `runs/`. 35–65 minutes; nobody waits on
-  it. A survivor, a stale entry or a shard that did not report is red, and the milestone's plan
-  records the result either way.
+  took more of the project's time than the mutations did. `M194` moved the sweep to the build box
+  and `M195` retired it as a standing gate the same day, on the ledger's evidence: in 299 rows no
+  mutation registered in an earlier milestone ever survived a later full sweep, so a sweep of the
+  whole registry has never once found anything, and the end-to-end layer (the sibling's
+  regression sweep, next bullet) is where a regression in tflw actually shows. What the registry
+  still does is prove a *new* gate can go red on the day it is written: a milestone that registers
+  a mutation runs it as it is written — `node scripts/mutate.mjs m98d`, or one mutation by id —
+  and records the kill in its plan. `--scope` is not a flag. `npm run sweep` (eight copies of the
+  tree on the box, one shard of the registry each, the manifests reassembled and read back into
+  `runs/`, 35–65 minutes) exists as a tool for the day a survivor is suspected, and no rule runs it.
+
+  **The registry is frozen** (`M194`, D1010): a new entry only when a plan's green condition needs
+  to prove a gate can go red — never one per construct. The rule below stood from `M147f` to
+  `M192` and is kept as written because its reasoning was right about the *day* an entry is
+  written and wrong about every day after: in 299 ledger rows no mutation registered in an earlier
+  milestone ever survived a later full sweep. What a scratch sweep proves once is what a registry
+  entry keeps proving, and the ledger says the second proof was never needed.
+
+- **`npm run regression --prefix ../testFlow-tests`** — **§ the sibling's sweep against this
+  build, before a milestone closes** (`M195`, D1011). The regression sweep in
+  [testFlow-tests](../testFlow-tests) is the end-to-end layer this repository has: every `tflw`
+  verb driven as a process against a real stack, `run` in every mode, `watch`, `pick`, `migrate`,
+  `ui`, `lsp`, `init`, `refactor apply`, the check diagnostics, the CLI flags, the security and
+  input acceptance corpora. It runs in *that* repository's CI on every push there — against
+  whatever tflw its `main` last packed, which is days behind a tflw branch. So a tflw milestone
+  runs it at close-out against its own build, on the box, and records the result in the plan.
+  It is the one standing sweep this project keeps: the mutation registry's left with `M195`,
+  because a sweep that has never found anything is time taken from writing the functional test
+  that would. Its driver (`node scripts/exec.mjs run` in the sibling, untracked
+  like this one, `D14`) syncs `../testFlow`, builds it, packs it and runs the sweep against the
+  branch, not the pin; without the box, `npm run regression` there needs Docker and ~40 minutes.
+  A phase red under this build is the milestone's to fix or to file before it closes. Before
+  `M195` the sweep had no rule and one accidental run (`M192` U7 drove `tflw ui` by hand and
+  found three defects in the run's own artefacts — the reason the rule exists).
 
   **The registry is frozen** (`M194`, D1010): a new entry only when a plan's green condition needs
   to prove a gate can go red — never one per construct. The rule below stood from `M147f` to

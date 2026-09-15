@@ -218,8 +218,8 @@ const CLASSIFIED = [
   },
 
   // --- ci.yml, jobs `mutations` and `mutation-controls` — gone at `M194` ---------------------
-  // The sweep runs on the box before a milestone closes (`npm run sweep`); nothing in ci.yml runs
-  // `mutate.mjs` or `verify-shards.mjs` any more, so there is no CI form to classify.
+  // Nothing in ci.yml runs `mutate.mjs` or `verify-shards.mjs` any more, so there is no CI form to
+  // classify; since `M195` no rule sweeps the registry anywhere (`npm run sweep` is a tool).
 
   // --- docs.yml, job `build` --------------------------------------------------------------------
   { wf: 'docs.yml', job: 'build', cmd: 'npm ci', class: 'setup', why: 'dependency install' },
@@ -253,11 +253,11 @@ const ABSENT_FROM_CI = [
   },
   {
     local: 'node scripts/mutate.mjs <milestone>',
-    why: '`M194` — the mutation sweep left the runners. A milestone\'s own mutations are run locally as it is written, and the whole registry runs on the box before the milestone closes (`npm run sweep`), recorded in its plan. Was a `gate` row over `ci.yml`\'s 33-shard matrix from `M124` to `M192`',
+    why: '`M194` moved the mutation sweep off the runners and `M195` retired it as a standing gate: a milestone\'s own mutations are run as it is written, and nothing sweeps the whole registry by rule (`npm run sweep` is a tool, not a gate). Was a `gate` row over `ci.yml`\'s 33-shard matrix from `M124` to `M192`',
   },
   {
-    local: 'npm run sweep',
-    why: '`M194` — the whole registry, on the box, eight trees at once, before a milestone closes; the result goes in the plan. There is no CI form: the matrix that was one is why the sweep left',
+    local: 'npm run regression --prefix ../testFlow-tests',
+    why: "`M195`/`D1011` — the sibling's regression sweep, the end-to-end layer, run at a milestone's close-out against the milestone's own build and recorded in its plan. It has a CI form, but in the *other* repository against the tflw its `main` last packed — days behind any tflw branch — and a cross-repo CI here would be the runner treadmill `M194` just left. So it is a rule, held by this row and by the plan's close-out line, not by a workflow",
   },
 ];
 
