@@ -8880,6 +8880,246 @@ in VS Code with no extension code); `tflw fmt --check` runs in both CIs. The sib
 and tflw's 4 are reformatted in this round's own PRs, because a formatter whose corpus fails its
 check is one nobody runs; the diff is whitespace by construction and the gate below is the proof.
 
+### D1010
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M194_BOX_SWEEP.md`</sub>
+
+- **D1010 — the registry is frozen at 371.** A mutation is registered only when a plan's green
+  condition needs to prove a gate can go red; never one per construct. Decided by the user on the
+  re-cut, on the ledger's evidence above. **The number said 372 until 2026-09-15 and was never
+  measured**: 374 minus the two retirements S1a named, written down while S1a was also retiring a
+  third (`shard-count-of-stale`). `M196` (D1021) added the first entry under this clause the
+  same day — `a-window-need-not-be-a-frame`, 372 — which is what the freeze permits and the
+  workflow comment now says without a number. `MUTATIONS.length` was 371 at every commit since #212 (325 in
+  `mutate.mjs`, 46 in `self-mutations.mjs`) and `sweep-box.sh` printed it on the first sweep it
+  ran; a count carried in prose next to a program that prints the count is `D767`'s shape, and
+  this line held it for a day. Corrected in the plan, `DECISIONS.md`, `ci.yml`'s comment and the
+  workspace records in the same edit.
+
+### D1011
+
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+
+- **D1011 — the sweep is tflw's pre-merge dogfood, by rule.** A tflw milestone's close-out runs
+  `npm run regression` on the box against the milestone's build (`exec.mjs run` syncs `../testFlow`
+  and builds it, so the box run is against the branch, not the pin) and records the result in the
+  plan ~~beside the mutation sweep's~~ — **and it is the only standing sweep** (amended at
+  close-out, 2026-09-15: the user stopped `M194`'s deferred registry sweep at ~11 min — *"a lot of
+  time consumption — we shall focus on writing better functional tests"* — and the ledger's
+  evidence for the freeze, no earlier-milestone mutation ever surviving a later sweep, is
+  evidence against the close-out sweep too. `npm run sweep` is a tool; `node scripts/mutate.mjs
+  <milestone>` at authoring is what a milestone owes the registry). One line in tflw's CONTRIBUTING and one in the milestone
+  template; ~20–40 min of box time per milestone. Chosen over (a) six phases with no rule — it
+  costs nothing but saying what U7 did by accident — and over (c) cross-repo CI, which is the
+  runner treadmill again (Docker on GitHub, four groups, 30-minute limits, a workflow taking a ref
+  it does not take today).
+
+### D1013
+
+<sub>cited from tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+
+- **D1013 — a hook's pair says it is a hook.** `M192-02`'s fix is a field, not a heuristic: the
+  `test:start`/`test:end` a file hook emits carries `hook: 'before file' | 'after file'`, SPEC §13
+  says so, and a consumer counts by the field. `tflw ui`'s `liveCounts` keys on it instead of the
+  name; a test literally named `before file` counts as a test again.
+
+### D1014
+
+<sub>cited from tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+
+- **D1014 — the stream is written as it arrives.** `M192-01`'s fix: `events.ndjson` is a sink the
+  runner appends one line to per event, never a string built at the end, and the run's exit is the
+  suite's verdict whatever the stream's size. The page's exit note (U7) stays: an exit the report
+  cannot explain is still explained.
+
+### D1015
+
+<sub>cited from tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+
+- **D1015 — a run owns `report/` whole.** `M192-03`'s fix: before writing, a run removes
+  `findings.sarif`, `events.ndjson` and `assets/` from the directory it is about to write, so every
+  member present afterwards is this run's. `report/runs/<id>/` kept by the page is untouched — it
+  is a run's own directory already.
+
+### D1016
+
+<sub>cited from tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-refactor.mjs · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+
+- **D1016 — `refactor apply` is scripted against a copy.** The recorded objection was that it
+  mutates the tracked corpus under human review; a phase that copies the corpus to a scratch
+  directory, applies one suggestion `check` offers, and asserts `check` is still clean and
+  `--tag smoke` still green mutates nothing tracked and answers *can it be applied at all*. The
+  human review of *whether* to apply stays human.
+
+### D1017
+
+<sub>cited from tflw-tests/scripts/lib/lsp-client.mjs, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-lsp.mjs · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+
+- **D1017 — `lsp-check` is a real client, not a mock.** A ~120-line stdio JSON-RPC client in the
+  sibling's `scripts/lib/` — `initialize`, open every file in one corpus directory, expect zero
+  diagnostics on the green corpus, a completion at one known site, a rename in a copy — because
+  the unit suite already mocks the transport and the gap is the transport.
+
+### D1018
+
+<sub>cited from SPEC.md · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+
+- **D1018 — a window is offered only if it is a frame, judged by the checker's own walk.**
+  `detectReuse` runs `checkResponseScopeInSteps` over the window's steps and drops any window it
+  diagnoses. Not a start-eligibility heuristic in `reuse.ts` ("must open on `api`"): that would be
+  a second statement of `TF039`'s rule, wrong the day `readsResponse` or the frame-opening set
+  (`api`, `wait until api`, a malformed `api` head) changes, and a window opening on a
+  value-subject `expect` is a legitimate frame the heuristic would refuse. One function, shared,
+  exported from `checker.ts` for the purpose. The refusal `refactor apply` makes today
+  (`B5-02`'s pre-write re-check) stays as the backstop it was.
+
+### D1020
+
+<sub>cited from tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-refactor.mjs · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+
+- **D1020 — the sibling's phase applies to a fixpoint.** `verify-refactor.mjs` applies the first
+  hint, re-runs `check`, and repeats until `check` offers none — bounded (a hint count that does
+  not fall after an accepted apply fails the phase; a hard cap of 40 rounds), every refusal
+  printed as today and **counted as a violation** (post-`M196`, a refused hint is a defect in
+  the pass, not a fact to print). Then `check` clean over the copy, and `tflw run` over the union
+  of every file any apply touched — the extracted actions execute against the stack. The phase
+  prints the trajectory (`round n: RFxxx → action … ; k hint(s) remain`) rather than asserting a
+  count, because each apply reshapes the next round's hints and the suite moves under it.
+
+### D1022
+
+<sub>cited from SPEC.md · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+
+- **D1022 — and the frame's other end** (found in S2, the fixpoint's first run). A window that
+  *establishes* a response is not offered when a caller step after the window reads the response
+  before the next establishing step: after extraction that step reads whatever response the
+  caller had before the `call`, because a response never crosses out of an action. `check` is
+  clean over the result — the caller's frame is `established` by an earlier `api` — so the run is
+  the only thing that sees it: every one of ten hints applied and checked clean, **10 of 78 tests
+  red** (`M196-02`; `capture body.id as agentId` after `get profile v2(…)` reading the
+  `/auth/register` response). `readsResponseAfter` in `reuse.ts`, over two predicates the
+  checker exports so the three definitions of "establishes"/"reads" are one
+  (`stepEstablishesResponse`, `stepReadsResponse`, with a parity test against the walk). A window
+  that establishes nothing is offered whatever follows it — it leaves the caller's response as it
+  found it (control test). This is what D1020 was for: one apply had passed for a whole day.
+
+### D1023
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+
+- **D1023 — the `M195` rule's gate line carries `TFLW_BIN`.** `M196-01`, found when S1's first
+  measurement did not move: the sibling's `regression.mjs` resolves the *released* tflw (its
+  vendored tarball) unless `TFLW_BIN` names another entry, `M195`'s rule never set it, and
+  `M195`'s own close-out sweep graded `main@de62bee` packed into `vendor/` — the log's first line
+  says `tflw[released] … <- default (the vendored tarball)`. The gate line is now
+  `TFLW_BIN=$PWD/packages/cli/dist/cli.cjs npm run regression --prefix ../testFlow-tests`, the
+  guard's `ABSENT_FROM_CI` row holds it, and the bullet says what the first printed line must
+  read (`<- TFLW_BIN`) for a close-out run to count. The sibling's driver is not changed: it
+  syncs and builds `../testFlow`, and the prefix names that build.
+
+### D1024
+
+<sub>cited from SPEC.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/stack-ports.mjs +3 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+
+- **D1024 — a config URL may name a non-secret environment override with the literal as its
+  default.** `api [service] env NAME default "<url>"`, `web env NAME default "<url>"`,
+  `authorized target env NAME default "<url>" reason "…"`. Resolved once at config load
+  (`resolveConfig`, from `environ`): the variable's value when set and non-empty, the literal
+  otherwise; validated exactly as the literal is (absolute URL, `allow hosts`, `TF0xx` as today).
+  **Not a secret** — never registered with the redactor, which is the whole reason it is not
+  `env()`; the SPEC says so beside `env()`'s taint rule. No `require env` needed (the default
+  makes it optional), so `TF077` does not apply. The bare literal form is unchanged.
+
+### D1025
+
+<sub>cited from tflw-tests/cli.mjs, tflw-tests/scripts/lib/stack-ports.mjs, tflw-tests/tflw.config · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+
+- **D1025 — the stack takes the same names.** `docker-compose.yml` publishes
+  `${TFLW_PORT_API:-4001}`, `${TFLW_PORT_INVENTORY:-4002}`, `${TFLW_PORT_WEB:-8090}`,
+  `${TFLW_PORT_WEB_ADMIN:-8091}`, `${TFLW_PORT_MTLS:-8443}` (+1, +2); `cli.mjs start` passes the
+  environment through and prints the ports it bound. A bare `node cli.mjs start` is unchanged.
+  The suite's config derives its URLs from the same numbers via D1024, and every script or
+  helper that names a port reads the variable with the same default — one vocabulary, stated in
+  `scripts/lib/stack-ports.mjs` and read by everything else.
+
+### D1026
+
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/lib/parallel-groups.mjs, tflw-tests/scripts/regression.mjs · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+
+- **D1026 — per group, four fixed stacks, CI's partition.** `regression.mjs --parallel-groups`
+  runs the four `PHASE_GROUPS` as four child processes of `regression.mjs --group <g>`, worker
+  `k` with `COMPOSE_PROJECT_NAME=tflw-<g>` and ports offset by `100·k`. Not a pool: the partition
+  is the one CI runs and the guards hold, and a box result reads leg-for-leg against a CI leg.
+  The serial run stays the default; `--parallel-groups` is the box's mode, named in tflw's
+  CONTRIBUTING gate line.
+
+### D1028
+
+<sub>cited from tflw-tests/scripts/lib/parallel-groups.mjs · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+
+- **D1028 — one summary.** The parent prints each worker's phase lines as they arrive, prefixed
+  by group, then one `=== regression summary ===` in `PHASES` order with the group each ran in,
+  the four stacks' wall, and the sweep's wall; exit non-zero if any worker did. The partition
+  guard and `verify:sweep-size` are unchanged — the number of phases is still printed, never
+  written.
+
+### D1030
+
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/security/tflw.config · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+
+- **D1030 — a document source may name its service** (found in S2's proof run, prediction 3).
+  `matches schema "X" from <service> "path"`, `seed openapi <service> "path"` and `seed spider
+  <service> "path"` resolve a
+  relative source against the named `api` service's base, the shape `api <service> GET /path`
+  has; an unknown name is the step's own unknown-service diagnostic. `contract.ts` had
+  documented *"a non-default service's document needs an absolute URL — a deliberate
+  minimal-scope limitation"*, and that limitation is exactly why three test files and the
+  security corpus's crawl wrote `http://localhost:4001/openapi.json` beside a config that
+  declared `api root`: the override cannot reach a literal inside a test, so the literal had to
+  stop being necessary.
+
+### D1031
+
+<sub>cited from SPEC.md · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+
+- **D1031 — a relative `token url` resolves against the default `api` base** (same run). The
+  `oauth2` sessions in `tflw.config` carried `token url "http://localhost:4001/v1/oauth/token"`
+  — a `Value`, so `env()` could have varied it and would have redacted it (§0). A step path's
+  rule applied to it removes the literal instead of parameterising it.
+
+### D1032
+
+<sub>cited from SPEC.md, tflw-tests/scripts/lib/parallel-groups.mjs · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+
+- **D1032 — `TFLW_SOURCE_ROOT` names the SARIF root when a run has no `.git` of its own** (found
+  by the third full run, the only red left). A result anchors repo-relative, and the root is found
+  by walking up to `.git`; from a worker copy the walk lands on the real repository and every URI
+  begins `.regression-workers/<g>/`, which `sarif-acceptance` refuses — correctly, D405's own
+  rule. A worker sets the variable to its tree; a value that is not a directory is ignored.
+
+### D1033
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/reach-verdicts.mjs · lifted from `PLAN_M198_THE_DRAWDOWN.md`</sub>
+
+- **D1033 — a verdict moves by a hand kill, recorded in the entry.** `reach-verdicts.json`
+  gains a third verdict, `asserted`, carrying `{plant, mutation applied, red line, at}` — the
+  same four facts `CONSTRUCTS.md`'s hand-kill table carries, so `verify:reach-verdicts` can
+  assert the two agree. No census re-measures the id: `kill-matrix.jsonl` keeps saying
+  `survived` for these rows, truthfully — it is the record of a sweep that ran on 09-13, and the
+  gate's sentence about it (`read:mutation-matrix`) says the reach verdicts are the newer fact.
+  Where an honest plant cannot be written, the verdict becomes `out-of-reach-by-design` **with the
+  reason in the entry** — the bin shrinks by reclassification only through a sentence a reader
+  can dispute.
+
+### D1035
+
+<sub>cited from tflw-tests/tflw-acceptance/conformance/arrival-server.mjs · lifted from `PLAN_M198_THE_DRAWDOWN.md`</sub>
+
+- **D1035 — the arrival server grows the routes the plants need, never apiV2.** A route whose
+  answer flips after N ms (`/after/:ms`), one that always fails (`/always-500`), one that records
+  the CSRF header by verb. apiV2 is the *target*; the arrival server is the *instrument*, and an
+  instrument route can be as artificial as the plant needs (`D745`'s split).
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>

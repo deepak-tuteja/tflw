@@ -313,7 +313,7 @@ function claimedIdentifiers() {
 // two are held together by that gate failing. Neither imports the other; a shared implementation
 // would agree with itself.
 //
-// `M164-10`: the D-form reads `D\d{1,3}`, not `D\d{2,3}`. `M154d` found these two implementations
+// `M164-10`: the D-form reads `D\d{1,4}`, not `D\d{2,3}`. `M154d` found these two implementations
 // disagreeing about single-digit decisions, widened the sibling's `CITATION`, `OWN` and `THEIRS`,
 // and left this file — the other half of the same pair — narrow, so the divergence it closed stayed
 // open in the direction nothing had exercised. Its own comment there states the rule it did not
