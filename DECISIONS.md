@@ -12690,4 +12690,19 @@ milestone makes the window pass the checker's own frame walk before it is offere
 sibling's `refactor-check` stops applying *one* hint and applies every hint to a fixpoint,
 running the extracted actions against the stack.
 
+### M197
+
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+
+**`M197` — the sweep runs its four groups at once**
+
+The sibling's regression sweep is tflw's one standing sweep (`M195`, D1011) and a close-out costs
+42 minutes on the box — of which about 28 are the stack's fresh restart before every phase
+and about 14 are tests. CI already runs the four phase groups on four runners in 16
+minutes; the box runs them serially because the stack binds one set of host ports and the
+suite's config names them as literals. This milestone gives a config URL a non-secret
+environment override with the literal as its default (`api env TFLW_API_BASE default "…"`), gives
+the compose stack the same variables, and runs the four groups as four workers, each with its own
+stack and its own copy of the tree. Expected: 42 → about 14 minutes per close-out.
+
 <!-- GENERATED:decisions:end -->

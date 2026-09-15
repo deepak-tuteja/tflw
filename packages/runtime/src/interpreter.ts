@@ -2509,7 +2509,11 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
     requestSteps: [mkStep('api', src, oauth2.span, false, start, error, request, response)],
   });
 
-  const tokenUrl = String(evalValue(oauth2.tokenUrl, ctx));
+  // `M197` (D1031): a relative `token url` resolves against the active env's default `api` base,
+  // the way a step path does — an identity provider that lives on the app's own origin no longer
+  // needs the origin written twice in one config (and the dogfood suite's had the port in it).
+  const rawTokenUrl = String(evalValue(oauth2.tokenUrl, ctx));
+  const tokenUrl = isAbsoluteUrl(rawTokenUrl) ? rawTokenUrl : `${resolveBaseUrl(null, config)}${ensureLeadingSlash(rawTokenUrl)}`;
   const clientId = String(evalValue(oauth2.clientId, ctx));
   const clientSecret = String(evalValue(oauth2.clientSecret, ctx));
   const scopeValue = oauth2.scope ? String(evalValue(oauth2.scope, ctx)) : undefined;
@@ -3048,7 +3052,7 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
   };
 
   const deps: CrawlDeps = {
-    loadDocument: (source) => loadOpenApiDocumentForCrawl(source, config),
+    loadDocument: (source, service) => loadOpenApiDocumentForCrawl(source, config, service),
     capturedTraffic: () => traffic,
     // `M137f` (`D442`/`D483`) — the walk's page fetch, and it is deliberately `deps.send` and not a
     // second transport. That is the whole safety argument for a *fetching* spider over a rendering
@@ -6101,7 +6105,7 @@ async function evaluateExpect(step: ExpectStmt, response: ResponseTrace | null, 
   // OpenAPI document, so it's the one matcher `evalMatcher` (pure, synchronous by design, P#13)
   // can't evaluate itself — dispatched here instead, bypassing it entirely.
   if (step.matcher.name === 'matchesSchema') {
-    return evaluateSchemaMatch(label, value, step.matcher.schemaName!.value, step.matcher.schemaSource!.value, config, step.matcher.negated);
+    return evaluateSchemaMatch(label, value, step.matcher.schemaName!.value, step.matcher.schemaSource!.value, config, step.matcher.negated, step.matcher.schemaService ?? null);
   }
   // `matches file "<path>"` (gap #17) reads a file off disk — same reason as `matchesSchema`
   // above, bypassing `evalMatcher` (pure, synchronous by design) entirely.

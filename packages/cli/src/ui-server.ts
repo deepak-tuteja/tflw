@@ -123,7 +123,7 @@ export async function readProject(root: string): Promise<ProjectView> {
   // The default env's view of `exclude` and `report dir` — both are `defaults`-only keys, so any
   // env gives the same answer; the default is the one a bare `tflw run` would take.
   const env = selectEnv(parsed.config, { envVar: process.env.TFLW_ENV });
-  const resolved = resolveConfig(parsed.config, env);
+  const resolved = resolveConfig(parsed.config, env); // the page reads `exclude`/`report dir` only — a URL override does not change either
   const files: ProjectFile[] = [];
   for (const file of await discoverTests(root, resolved.exclude, resolved.reportDir)) {
     const source = await readFile(file, 'utf8');

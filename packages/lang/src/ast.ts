@@ -206,6 +206,8 @@ export interface OpenApiSeed extends Node {
    * which would report a missing file for a document that lives on a server.
    */
   readonly source: StringLit;
+  /** `seed openapi <service> "path"` (`M197`, D1030) — as `Matcher.schemaService`. */
+  readonly service?: string;
 }
 
 /** `seed traffic` — the requests this run's own tests made, which is the seed that reaches code the
@@ -241,6 +243,9 @@ export interface SpiderSeed extends Node {
    * `path`: `fileReferenceDrift` would then demand a `TF043` file-existence check for a URL.
    */
   readonly root: StringLit;
+  /** `seed spider <service> "path"` (`M197`, D1030) — as `OpenApiSeed.service`: the named `api`
+   *  service whose base a relative `root` resolves against. */
+  readonly service?: string;
   /**
    * `D435`'s "browser half — bound it", as declared numbers rather than as constants nobody can see.
    * Both optional in the grammar and both defaulted by the runtime, because a cap is a property of the
@@ -1048,6 +1053,12 @@ export interface Matcher extends Node {
    * (absolute) or path (resolved against the default service's base URL). */
   readonly schemaName?: StringLit;
   readonly schemaSource?: StringLit;
+  /** `from <service> "path"` (`M197`, D1030): the named `api` service whose base a relative
+   *  `schemaSource` resolves against — the shape `api <service> GET /path` uses. Absent means the
+   *  default service, as before. Closes the "a non-default service's document needs an absolute
+   *  URL" limitation `contract.ts` documented, which was what kept the dogfood suite writing
+   *  `http://localhost:4001/openapi.json` where the config already declared `api root`. */
+  readonly schemaService?: string;
   /** `matches file "<path>"` (gap #17) — set only when `name === 'matchesFile'`. A plain string
    * literal, never `{var}`-interpolated (same deliberate choice as `schemaName`/`schemaSource`:
    * read directly, never run through `evalValue`). Resolved against the test file's own directory
@@ -1761,7 +1772,11 @@ export interface ReportDecl extends Node {
 
 export interface WebDecl extends Node {
   readonly type: 'WebDecl';
+  /** The default — the literal — and the whole value when `urlFrom` is absent. */
   readonly url: StringLit;
+  /** `web env NAME default "…"` (`M197`, D1024): the environment variable whose value, when set
+   *  and non-empty, replaces `url` at config load. Not a secret — see `parseUrlOverride`. */
+  readonly urlFrom?: string;
 }
 
 /** `insecure true|false` — disables TLS certificate verification for the whole run when true
@@ -1816,6 +1831,9 @@ export interface AllowHostsDecl extends Node {
 export interface AuthorizedTargetDecl extends Node {
   readonly type: 'AuthorizedTargetDecl';
   readonly target: StringLit;
+  /** `authorized target env NAME default "…"` (`M197`, D1024) — as `WebDecl.urlFrom`. The
+   *  permission compares origins, so the port is part of it and the override has to reach here. */
+  readonly targetFrom?: string;
   readonly reason: StringLit;
   /** The optional indented `probe mutating` sub-clause (M130b, D311/D330) — permission for
    * `has no authorization violations` to re-issue a `POST`/`PUT`/`PATCH`/`DELETE` under another
@@ -1963,6 +1981,8 @@ export interface ApiServiceDecl extends Node {
   /** Extra named service, or null for the default `api` base URL (P#29). */
   readonly service: string | null;
   readonly url: StringLit;
+  /** `api [service] env NAME default "…"` (`M197`, D1024) — as `WebDecl.urlFrom`. */
+  readonly urlFrom?: string;
 }
 
 export interface RequireDecl extends Node {

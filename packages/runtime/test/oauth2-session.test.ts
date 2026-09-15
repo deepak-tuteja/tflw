@@ -265,3 +265,35 @@ session admin oauth2
 
     await server.close();
   }));
+
+// `M197` (D1031): a relative `token url` resolves against the default `api` base like a step path.
+test('M197 — a relative `token url` resolves against the active env\'s api base', () =>
+  withClientCreds('id-9', 'secret-9', async () => {
+    const server = await startFixtureServer({
+      '/oauth/token': (_req, res, body) => {
+        assert.match(body, /client_id=id-9/);
+        json(res, 200, { access_token: 'tok-rel', expires_in: 3600 });
+      },
+      '/orders': (req, res) => json(res, 200, { auth: req.headers['authorization'] ?? null }),
+    });
+    // `tokenPath` alone — no `${baseUrl}` in front of it — is the whole of what this test changes
+    // against the first one in this file.
+    const configSource = `env local default
+  api "${server.baseUrl}"
+
+session admin oauth2
+  token url "/oauth/token"
+  client id env(CLIENT_ID)
+  client secret env(CLIENT_SECRET)
+
+require env CLIENT_ID, CLIENT_SECRET
+`;
+    const parsed = parseConfigSource(configSource);
+    assert.deepEqual(parsed.diagnostics, [], JSON.stringify(parsed.diagnostics));
+    const config = resolveConfig(parsed.config, selectEnv(parsed.config, {}));
+    const source = `test "reads orders" as admin\n  api GET /orders\n  expect status equals 200\n  expect body.auth equals "Bearer tok-rel"\n`;
+    const { program } = parseSource(source);
+    const { report } = await runProgram(program, config, { source });
+    assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+    await server.close();
+  }));

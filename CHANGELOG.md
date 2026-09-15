@@ -1029,6 +1029,22 @@ multi-word call name. The parser always guessed "call", and reported the variabl
   twenty hints offered and twelve refused became ten offered, ten applied to a fixpoint, and the
   fifteen files they touch green through the extracted actions.
 
+### Added — a config URL from the environment, a document source by service (M197)
+
+- **`api [<service>] env NAME default "<url>"`, `web env NAME default "<url>"`,
+  `authorized target env NAME default "<url>" reason "…"`.** The URL comes from the environment variable
+  when it is set and non-empty, from the literal otherwise — one suite against many deployments
+  of the same service, or four copies of one stack on one machine with the ports offset. Not
+  `env()`: that form is a secret and a base URL read through it would be masked in every request
+  line of the report; this one is plain and appears verbatim in evidence. An override that is not
+  an absolute URL is a startup error naming the variable.
+- **`matches schema "X" from <service> "path"`, `seed openapi <service> "path"`,
+  `seed spider <service> "path"`.** A relative document source resolves against the named `api` service's
+  base, the shape `api <service> GET /path` has; an unknown name is the step's own
+  unknown-service diagnostic. Until now a non-default service's document needed an absolute URL,
+  which is how a suite that declared `api root` came to write its host's port into test files.
+- **A relative `token url` resolves against the default `api` base**, like a step path.
+
 ## [0.1.0] — 2026-07-06
 
 First public draft. API-only — the browser half lands in `0.2.0`.

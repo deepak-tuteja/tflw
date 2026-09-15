@@ -3541,6 +3541,29 @@ const REGISTRY = [
     find: '        if (window.some(stepEstablishesResponse) && readsResponseAfter(body, start + len)) continue;',
     replace: '        if (window.some(stepEstablishesResponse) && readsResponseAfter(body, start + len) && false) continue;',
   },
+  // `M197` (D1024) — the one entry: the config URL override read neutered, so the literal always
+  // wins. The runtime test that sets the variable reds; the parser tests stay green, which is
+  // the point — a grammar that parses and a resolver that ignores it look identical to `check`.
+  {
+    id: 'the-url-override-is-never-read',
+    milestone: 'm197',
+    pkg: '@tflw/runtime',
+    file: 'packages/runtime/src/resolve.ts',
+    what: '`api env NAME default "…"` parses and the literal is used whatever the environment says — a sweep that sets the ports per worker runs every worker against one stack',
+    find: '  if (from === undefined) return literal;',
+    replace: '  if (from === undefined || true) return literal;',
+  },
+  // D1032 — the second entry: the source-root override never read, so a run without `.git` of its
+  // own anchors every SARIF result under the copy's path. The e2e case that sets it reds.
+  {
+    id: 'the-source-root-override-is-never-read',
+    milestone: 'm197',
+    pkg: 'tflw',
+    file: 'packages/cli/src/cli.ts',
+    what: '`TFLW_SOURCE_ROOT` parses and the walk to `.git` decides anyway — a worker copy anchors its SARIF results under `.regression-workers/<g>/`, which the sibling\'s gate refuses',
+    find: "  const forced = process.env.TFLW_SOURCE_ROOT?.trim();",
+    replace: "  const forced = undefined as string | undefined;",
+  },
 ];
 
 /**

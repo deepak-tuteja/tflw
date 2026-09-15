@@ -63,13 +63,14 @@ interface LoadedSchemaDoc {
   readonly document: OpenApiDocument;
 }
 
-/** Absolute (`http(s)://`) sources pass through; anything else is resolved against the default
- * service's base URL, the same convention a plain `api GET /path` step already uses with no
- * `<service>` prefix. A multi-service config needing a non-default service's document uses an
- * absolute URL — a documented, deliberately minimal-scope limitation. */
-function resolveSchemaSourceUrl(source: string, config: ResolvedConfig): string {
+/** Absolute (`http(s)://`) sources pass through; anything else is resolved against a service's
+ * base URL — the named one when `from <service> "…"` / `seed openapi <service> "…"` names it
+ * (`M197`, D1030), the default otherwise — the same convention an `api [<service>] GET /path` step
+ * uses. Until `M197` a non-default service's document needed an absolute URL, which is how the
+ * dogfood suite came to write the stack's port into three test files. */
+function resolveSchemaSourceUrl(source: string, config: ResolvedConfig, service: string | null = null): string {
   if (/^https?:\/\//i.test(source)) return source;
-  return resolveBaseUrl(null, config) + ensureLeadingSlash(source);
+  return resolveBaseUrl(service, config) + ensureLeadingSlash(source);
 }
 
 /** Recursively strips OpenAPI 3.0's `nullable: true` (a keyword plain JSON-Schema/ajv doesn't
@@ -177,8 +178,9 @@ async function loadSchemaDoc(url: string, config: ResolvedConfig): Promise<{ doc
 export async function loadOpenApiDocumentForCrawl(
   source: string,
   config: ResolvedConfig,
+  service: string | null = null,
 ): Promise<{ readonly url: string; readonly document: OpenApiDocument; readonly durationMs: number; readonly fetched: boolean }> {
-  const url = resolveSchemaSourceUrl(source, config);
+  const url = resolveSchemaSourceUrl(source, config, service);
   const { doc, fetched } = await loadSchemaDoc(url, config);
   return { url, document: doc.document, durationMs: doc.durationMs, fetched };
 }
@@ -192,8 +194,9 @@ export async function evaluateSchemaMatch(
   source: string,
   config: ResolvedConfig,
   negated: boolean,
+  service: string | null = null,
 ): Promise<MatchOutcome> {
-  const url = resolveSchemaSourceUrl(source, config);
+  const url = resolveSchemaSourceUrl(source, config, service);
   const { doc, fetched } = await loadSchemaDoc(url, config);
   const { ajv } = doc;
   // `D460` — the requirement `loadSchemaDoc` used to enforce, now stated by the reader that actually

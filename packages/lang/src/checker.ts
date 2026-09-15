@@ -1045,6 +1045,9 @@ function checkNoCallsInSteps(steps: readonly Step[], sessionName: string, diags:
 function checkStepService(step: Step, knownServices: readonly string[], diags: Diagnostic[]): void {
   if (step.type === 'ApiStep') checkService(step.service, step.span, knownServices, diags);
   else if (step.type === 'WaitUntilApiStmt') checkService(step.request.service, step.span, knownServices, diags);
+  // `M197` (D1030): `matches schema … from <service> "…"` names a service the same way a step does,
+  // and a typo there was an absolute-URL fetch failure at run time until it was a service name.
+  else if (step.type === 'ExpectStmt' && step.matcher.schemaService !== undefined) checkService(step.matcher.schemaService, step.span, knownServices, diags);
   else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
     for (const s of step.body) checkStepService(s, knownServices, diags);
   }
@@ -3524,7 +3527,8 @@ function checkBaseUrlsInSteps(steps: readonly Step[], env: EnvBaseUrls, diags: D
         const source = expect.matcher.schemaSource;
         // Absolute sources pass through `resolveSchemaSourceUrl` untouched and need no base URL —
         // the same test `contract.ts:44` applies, kept identical on purpose.
-        if (!env.api && expect.matcher.name === 'matchesSchema' && source && !/^https?:\/\//i.test(source.value)) {
+        // A source naming a service (D1030) resolves against that service's base, not `env.api`.
+        if (!env.api && expect.matcher.name === 'matchesSchema' && source && expect.matcher.schemaService === undefined && !/^https?:\/\//i.test(source.value)) {
           diags.push(missingBaseUrl('api', 'matches schema … from', source, env));
         }
         break;

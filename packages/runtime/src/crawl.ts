@@ -50,7 +50,7 @@ export interface CrawlRequest {
 export interface CrawlDeps {
   /** `seed openapi "<source>"` — resolves and fetches. Rejects for a document that will not load,
    *  which is a `TF068` runtime cause rather than a crash. */
-  readonly loadDocument: (source: string) => Promise<{ readonly url: string; readonly document: OpenApiDocument }>;
+  readonly loadDocument: (source: string, service?: string | null) => Promise<{ readonly url: string; readonly document: OpenApiDocument }>;
   /** `seed traffic` — every request this run's own tests have made so far, in order. */
   readonly capturedTraffic: () => readonly RequestTrace[];
   /** Resolves `request.path` and sends. Applies `allow hosts`, the blocked-port list, the session's
@@ -321,7 +321,7 @@ async function resolveSeeds(crawl: CrawlDecl, config: ResolvedConfig, deps: Craw
   for (const seed of crawl.seeds) {
     if (seed.type === 'OpenApiSeed') {
       try {
-        const { url, document } = await deps.loadDocument(seed.source.value);
+        const { url, document } = await deps.loadDocument(seed.source.value, seed.service ?? null);
         const surface = enumerateOpenApiSurface(document, excludes);
         // `D480` — the document decides where its own paths hang, and the configured origin decides
         // which deployment they hang on. The `api` base's *path* takes no part in this: it is the one
@@ -353,7 +353,12 @@ async function resolveSeeds(crawl: CrawlDecl, config: ResolvedConfig, deps: Craw
         maxPages: seed.maxPages ? seed.maxPages.value : SPIDER_DEFAULTS.maxPages,
         maxDepth: seed.maxDepth ? seed.maxDepth.value : SPIDER_DEFAULTS.maxDepth,
       };
-      const root = absoluteFor(seed.root.value, undefined, config);
+      // D1030: a named service's base, the default's otherwise — `absoluteFor`'s own rule.
+      const serviceBase = seed.service === undefined ? undefined : config.services[seed.service];
+      if (seed.service !== undefined && serviceBase === undefined) {
+        throw new Error(`seed spider ${seed.service}: unknown api service "${seed.service}"${Object.keys(config.services).length ? ` (known: ${Object.keys(config.services).join(', ')})` : ''}`);
+      }
+      const root = absoluteFor(seed.root.value, serviceBase, config);
       // `D483`'s first disclosure, and it is emitted **here**, before a single page is fetched. The
       // walk is the one phase whose total cannot be known in advance — that is `D435`'s "browser half
       // — bound it" — so what precedes it is the *cap* rather than the count. The property `D435` was
