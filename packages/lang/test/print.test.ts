@@ -27,7 +27,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSource, print, PRINTABLE, CONTEXT_BOUND, format } from '../src/index.js';
-import type { Node, Program, TestDecl } from '../src/index.js';
+import type { Node, Program, TestDecl, Value } from '../src/index.js';
+import { SYNTHETIC } from '../src/build.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..', '..');
@@ -80,15 +81,15 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
   if (node.type === 'TestDecl') {
-    const program = parseSource(text + '\n').program;
+    const program = parseSource(wrap(node, text)).program;
     return program.tests.length === 1 ? program.tests[0]! : null;
   }
-  const program = parseSource(`test "wrapper"\n${text}\n`).program;
+  const program = parseSource(wrap(node, text)).program;
   const host: TestDecl | undefined = program.tests[0];
   if (!host) return null;
   if (WORKLOADS.includes(node.type as (typeof WORKLOADS)[number])) return host.workload;
@@ -111,6 +112,12 @@ function collect(program: Program): Node[] {
 
 interface Tally { checked: number; refused: number; }
 
+/** The source the gate re-parses a printed node from — also what the format-fixpoint claim below
+ *  formats, so the two claims are made about the same bytes. */
+function wrap(node: Node, text: string): string {
+  return node.type === 'TestDecl' ? text + '\n' : `test "wrapper"\n${text}\n`;
+}
+
 test('every printable node in the corpus re-parses to the node it was printed from', () => {
   const files = [...corpus(repoRoot), ...corpus(siblingRoot)];
   assert.ok(files.length > 100, `expected the corpus, found ${files.length} files`);
@@ -118,6 +125,7 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   const tally = new Map<string, Tally>();
   const refusals = new Map<string, number>();
   const mismatches: string[] = [];
+  const unstable: string[] = [];
   let filesRead = 0;
 
   for (const file of files) {
@@ -147,6 +155,19 @@ test('every printable node in the corpus re-parses to the node it was printed fr
         t.checked += 1;
       } catch {
         mismatches.push(`${file}: ${node.type} printed as\n${printed.text}\n  …which re-parsed to a different node`);
+        continue;
+      }
+      // AND IT HAS TO BE WHAT `format` WOULD ALREADY HAVE WRITTEN, over the whole corpus rather
+      // than over one example. Every write path runs `format()` over the spliced result and
+      // `insertIntoSource` refuses rather than corrects when that is not a fixpoint, so a printer
+      // whose house style differs from the formatter's makes every insertion fail — and the tree
+      // comparison above is structurally blind to it, because two spellings of the same node are
+      // the same node. This is the `A0-1` tags-on-one-line finding asked as a property instead of
+      // remembered as an anecdote.
+      const source = wrap(node, printed.text);
+      const formatted = format(source);
+      if (!formatted.ok || formatted.formatted !== source) {
+        unstable.push(`${file}: ${node.type} printed as\n${printed.text}\n  …which \`format\` rewrites to\n${formatted.ok ? formatted.formatted : formatted.reason}`);
       }
     }
   }
@@ -164,6 +185,7 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // A gate that examined nothing is a failed gate, not a passed one.
   assert.ok(total > 0, 'the printer round-tripped no nodes at all');
   assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n\n')}\n`);
+  assert.deepEqual(unstable, [], `\n${unstable.slice(0, 10).join('\n\n')}\n`);
 });
 
 test('the printer refuses what it cannot print, and names the node kind', () => {
@@ -273,4 +295,244 @@ test('tags print on one line, which is what this corpus writes', () => {
   assert.equal(printed.text, '@load @authored @slow\ntest "t"\n  api GET /x');
   // And an untagged test opens on its own header line, with no empty tag line above it.
   assert.equal(print(parseSource('test "t"\n  api GET /x\n').program.tests[0]!).text, 'test "t"\n  api GET /x');
+});
+
+// ---- `A1-1` — the value grammar --------------------------------------------
+//
+// Five positions read one `Value` union, so the union is printed once and tested once. The
+// corpus gate above covers what the corpus writes (296 `let`s, reaching 27 of the 31 kinds).
+// What it cannot cover is the three ways a value is *unprintable*, because none of those shapes
+// occurs in 671 files — they are reachable only from a form building a tree by hand, which is
+// what this printer exists for. Those get built here, by hand, for the same reason.
+
+/** One source line per kind the value grammar has. Asserted as text rather than as a tree,
+ *  because a tree comparison cannot tell `{n: 3}` from `{ n: 3 }` and the formatter can. */
+const VALUE_SPELLINGS: readonly string[] = [
+  'let a = "hi {name}"',
+  'let a = 42',
+  'let a = 1.5',
+  'let a = 500ms',
+  'let a = true',
+  'let a = null',
+  'let a = other',
+  'let a = {order.items[0].id}',
+  'let a = env(API_KEY)',
+  'let a = {}',
+  'let a = { id: 1, "user name": "x" }',
+  'let a = []',
+  'let a = [1, "two", { n: 3 }]',
+  'let a = 1 + 2 * 3',
+  'let a = -5',
+  'let a = today',
+  // Four of the five date-offset units are here because the corpus cannot assert them: it holds
+  // **25 `days` and one `seconds`**, and that one `seconds` is the operand of `expect duration
+  // is less than 2 seconds` — a subject `A1-1` still refuses. The mutation that hardcodes the
+  // unit therefore SURVIVED a table whose only offset was a `days`, which is the percentage
+  // finding from `A0-1` in a second costume: a fixture whose value equals the mutant's constant
+  // asserts nothing.
+  'let a = today + 3 days',
+  'let a = today + 2 weeks',
+  'let a = today - 6 hours',
+  'let a = now - 30 minutes',
+  'let a = now + 45 seconds',
+  'let a = now - 10s',
+  'let a = format {d} as "yyyy-MM-dd"',
+  'let a = base64 encode("x")',
+  'let a = url decode({t})',
+  'let a = create order("Widget", 2)',
+  'let a = unique("ord")',
+  'let a = unique email',
+  'let a = unique number',
+  'let a = unique like "ORD-######"',
+  'let a = unique uuid',
+  'let a = random number 1 to 10',
+  'let a = random decimal 0 to 1',
+  'let a = random date in past',
+  'let a = random date in future',
+  'let a = random date between today - 7 days and today',
+  'let a = random of "a", "b", "c"',
+  'let a = random string 8',
+  'let a = random like "SKU-####"',
+  'let a = random uuid',
+  'let a = random password',
+  'let a = random password 16',
+];
+
+function step(line: string): Node {
+  const { program, diagnostics } = parseSource(`test "t"\n  ${line}\n`);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], line);
+  const node = program.tests[0]?.body[0];
+  assert.ok(node, line);
+  return node;
+}
+
+test('every kind the value grammar has prints back as the line it was written as', () => {
+  for (const line of VALUE_SPELLINGS) {
+    const printed = print(step(line), { indent: 1 });
+    assert.equal(printed.ok, true, `${line}: ${printed.reason ?? ''}`);
+    assert.equal(printed.text, `  ${line}`, line);
+  }
+  // The table is the claim, so it has to actually hold every kind. 16 `Value` members and 15
+  // generators; `Field` is context-bound and reached through `ObjectLit` on the row above.
+  const kinds = new Set<string>();
+  for (const line of VALUE_SPELLINGS) {
+    const visit = (n: unknown): void => {
+      if (Array.isArray(n)) { for (const x of n) visit(x); return; }
+      if (!n || typeof n !== 'object') return;
+      const node = n as Record<string, unknown>;
+      if (typeof node.type === 'string' && PRINTABLE.has(node.type)) kinds.add(node.type);
+      for (const [k, v] of Object.entries(node)) { if (k !== 'span') visit(v); }
+    };
+    visit((step(line) as { value: unknown }).value);
+  }
+  for (const kind of [
+    'StringLit', 'NumberLit', 'DurationLit', 'BoolLit', 'NullLit', 'VarRef', 'Interp', 'EnvRef',
+    'ObjectLit', 'ArrayLit', 'BinaryExpr', 'DateAtom', 'DateOffsetLit', 'FormatExpr',
+    'TransformExpr', 'CallExpr', 'UniquePrefixExpr', 'UniqueEmailExpr', 'UniqueNumberExpr',
+    'UniqueLikeExpr', 'UniqueUuidExpr', 'RandomNumberExpr', 'RandomDecimalExpr',
+    'RandomDateInPastExpr', 'RandomDateInFutureExpr', 'RandomDateBetweenExpr', 'RandomOfExpr',
+    'RandomStringExpr', 'RandomLikeExpr', 'RandomUuidExpr', 'RandomPasswordExpr',
+  ]) {
+    assert.ok(kinds.has(kind), `${kind} is in PRINTABLE but no row of VALUE_SPELLINGS contains one`);
+  }
+});
+
+test('a negative literal is the unary spelling, and both spellings are the same node', () => {
+  // `-x` is sugar for `0 - x` and the parser records only the result (`parser.ts:4986`), so the
+  // AST cannot say which was written and the printer picks. It picks the short one — which is
+  // what every negative number in a request body is — and that is safe precisely because the two
+  // parse to one node.
+  const unary = (step('let a = -5') as { value: unknown }).value;
+  const spelled = (step('let a = 0 - 5') as { value: unknown }).value;
+  assert.deepEqual(stripSpans(unary), stripSpans(spelled));
+  assert.equal(print(step('let a = 0 - 5'), { indent: 1 }).text, '  let a = -5');
+
+  // But only while the operand is an atom: `-(a * b)` printed as `-a * b` re-parses as
+  // `(-a) * b`, so that shape takes the long spelling instead.
+  assert.equal(print(step('let a = 0 - b * c'), { indent: 1 }).text, '  let a = 0 - b * c');
+});
+
+test('a tree this grammar has no parentheses for is refused, not approximated', () => {
+  // P#25 fences arithmetic at `+ - * /` with **no parens**, so precedence is the only grouping
+  // there is and a tree that disagrees with it has no source at all. The parser cannot build one
+  // — `parseMulDiv` only ever takes atoms — so this is built by hand, which is exactly the case
+  // a form reaches on its first day.
+  const n = (raw: string, value: number): Value => ({ type: 'NumberLit', value, raw, span: SYNTHETIC });
+  const sum: Value = { type: 'BinaryExpr', op: '+', left: n('1', 1), right: n('2', 2), span: SYNTHETIC };
+  const product: Value = { type: 'BinaryExpr', op: '*', left: sum, right: n('3', 3), span: SYNTHETIC };
+  const let_: Node = { type: 'LetStmt', name: 'a', value: product, span: SYNTHETIC } as Node;
+
+  const refused = print(let_);
+  assert.equal(refused.ok, false);
+  assert.match(refused.reason ?? '', /binds too loosely/);
+  assert.match(refused.reason ?? '', /no parentheses/);
+
+  // The same refusal one level down, and this one is about associativity rather than binding
+  // power: `parseAddSub` folds left, so `a - (b - c)` has no source either — printing
+  // `1 - 2 - 3` would re-parse as `(1 - 2) - 3`, which is a different number.
+  const nested: Node = { type: 'LetStmt', name: 'a', value: { type: 'BinaryExpr', op: '-', left: n('1', 1), right: { type: 'BinaryExpr', op: '-', left: n('2', 2), right: n('3', 3), span: SYNTHETIC }, span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  const rightAssoc = print(nested);
+  assert.equal(rightAssoc.ok, false);
+  assert.match(rightAssoc.reason ?? '', /binds too loosely/);
+
+  // The control: the same three numbers in the shape the grammar *does* express print fine, so
+  // the refusal above is about the tree and not about arithmetic.
+  const ok: Node = { type: 'LetStmt', name: 'a', value: { type: 'BinaryExpr', op: '+', left: n('1', 1), right: { type: 'BinaryExpr', op: '*', left: n('2', 2), right: n('3', 3), span: SYNTHETIC }, span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  const printed = print(ok);
+  assert.equal(printed.ok, true, printed.reason);
+  assert.equal(printed.text, 'let a = 1 + 2 * 3');
+});
+
+test('a word the value grammar claims cannot be written as a reference to itself', () => {
+  // `parseAtom` dispatches on the identifier before it will read one as a variable or a call
+  // name, so a variable called `today` prints source that is a `DateAtom` and a call to an
+  // action called `unique` prints a generator. Both are refused.
+  for (const word of ['unique', 'random', 'format', 'today', 'now', 'true', 'false', 'null']) {
+    const ref: Node = { type: 'LetStmt', name: 'a', value: { type: 'VarRef', name: word, span: SYNTHETIC }, span: SYNTHETIC } as Node;
+    const r = print(ref);
+    assert.equal(r.ok, false, `a variable called \`${word}\` should not print`);
+    assert.match(r.reason ?? '', /a word the value grammar claims/);
+  }
+  // `env` is the exception and it goes the other way: the parser takes `env` only when a `(`
+  // follows, so a *variable* called `env` round-trips and a one-argument *call* to an action of
+  // that name does not.
+  const envVar: Node = { type: 'LetStmt', name: 'a', value: { type: 'VarRef', name: 'env', span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  assert.equal(print(envVar).text, 'let a = env');
+  const envCall: Node = { type: 'LetStmt', name: 'a', value: { type: 'CallExpr', name: 'env', args: [], span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  const r = print(envCall);
+  assert.equal(r.ok, false);
+  assert.match(r.reason ?? '', /would be read as the value grammar's own `env`/);
+});
+
+test('a generator that is still reading cannot have a sibling printed after it', () => {
+  // `random of a, b` reads values until the commas stop, so it swallows whatever is printed next
+  // in a comma list: `[random of 1, 2]` is ONE generator with two choices and never an array of
+  // two. The tree below therefore has no source.
+  const n = (v: number): Value => ({ type: 'NumberLit', value: v, raw: String(v), span: SYNTHETIC });
+  const greedy: Value = { type: 'RandomOfExpr', choices: [n(1)], span: SYNTHETIC };
+  const bad: Node = { type: 'LetStmt', name: 'a', value: { type: 'ArrayLit', elements: [greedy, n(2)], span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  const r = print(bad);
+  assert.equal(r.ok, false);
+  assert.match(r.reason ?? '', /can only be the last array element/);
+
+  // Last is fine, and that is the control: the refusal is about the position, not the generator.
+  const good: Node = { type: 'LetStmt', name: 'a', value: { type: 'ArrayLit', elements: [n(2), greedy], span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  const okPrint = print(good);
+  assert.equal(okPrint.ok, true, okPrint.reason);
+  assert.equal(okPrint.text, 'let a = [2, random of 1]');
+
+  // `random password`'s length is optional and taken only when a value-shaped token follows
+  // (`looksLikeValueStart`: a string, a number, `{` or `-`), so it absorbs a `-` and not a `+`.
+  // Two operators, one tree shape, opposite verdicts — which is what makes this a rule rather
+  // than a blanket refusal.
+  const pw: Value = { type: 'RandomPasswordExpr', span: SYNTHETIC } as Value;
+  const minus: Node = { type: 'LetStmt', name: 'a', value: { type: 'BinaryExpr', op: '-', left: pw, right: n(1), span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  const plus: Node = { type: 'LetStmt', name: 'a', value: { type: 'BinaryExpr', op: '+', left: pw, right: n(1), span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  const minusPrint = print(minus);
+  assert.equal(minusPrint.ok, false);
+  assert.match(minusPrint.reason ?? '', /would be swallowed into it/);
+  assert.equal(print(plus).text, 'let a = random password + 1');
+
+  // Give that same `random password` a length and it stops being the special case: the length is
+  // read by the full `parseValue`, so `random password 16 + 1` makes the sum the length and BOTH
+  // operators are refused. Without this row the mutation collapsing the two cases into one
+  // survives, because the length-less half behaves identically under it.
+  const pw16: Value = { type: 'RandomPasswordExpr', length: n(16), span: SYNTHETIC } as Value;
+  for (const op of ['+', '-'] as const) {
+    const withLength: Node = { type: 'LetStmt', name: 'a', value: { type: 'BinaryExpr', op, left: pw16, right: n(1), span: SYNTHETIC }, span: SYNTHETIC } as Node;
+    assert.equal(print(withLength).ok, false, `random password 16 ${op} 1`);
+  }
+
+  // And a generator whose own tail is an open `parseValue` absorbs either operator, because
+  // `random number 1 to 10 + 5` reads the sum as the bound.
+  const rn: Value = { type: 'RandomNumberExpr', from: n(1), to: n(10), span: SYNTHETIC };
+  const after: Node = { type: 'LetStmt', name: 'a', value: { type: 'BinaryExpr', op: '+', left: rn, right: n(5), span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  assert.equal(print(after).ok, false);
+
+  // The comma rule has to follow the tail too, not just look at the value in hand. `x + random of
+  // 1` ends in a `random of`, so as a non-final array element it swallows the element after it
+  // exactly as a bare one would — and a guard that only inspects the top node misses it.
+  const throughBinary: Value = { type: 'BinaryExpr', op: '+', left: { type: 'VarRef', name: 'x', span: SYNTHETIC }, right: greedy, span: SYNTHETIC };
+  const hidden: Node = { type: 'LetStmt', name: 'a', value: { type: 'ArrayLit', elements: [throughBinary, n(2)], span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  const hiddenPrint = print(hidden);
+  assert.equal(hiddenPrint.ok, false);
+  assert.match(hiddenPrint.reason ?? '', /can only be the last array element/);
+  // Last, it prints — the control that keeps the claim about position.
+  const hiddenLast: Node = { type: 'LetStmt', name: 'a', value: { type: 'ArrayLit', elements: [n(2), throughBinary], span: SYNTHETIC }, span: SYNTHETIC } as Node;
+  assert.equal(print(hiddenLast).text, 'let a = [2, x + random of 1]');
+});
+
+test('an object key is bare when it is a name and quoted when it is not', () => {
+  // `parseObject` accepts an identifier or a string and stores the same `string` for both
+  // (`parser.ts:5395`), so the AST cannot say which was written and the printer chooses. This is
+  // the `Stage` normalisation with the opposite resolution: `Stage` refused because the two
+  // spellings parse to different programs, and this one picks because they parse to one.
+  const printed = print(step('let a = { id: 1, "user name": "x", "2fa": true }'), { indent: 1 });
+  assert.equal(printed.ok, true, printed.reason);
+  assert.equal(printed.text, '  let a = { id: 1, "user name": "x", "2fa": true }');
+
+  // A quoted key that IS a name comes back bare — a text difference with no tree behind it.
+  const quoted = step('let a = { "id": 1 }');
+  assert.equal(print(quoted, { indent: 1 }).text, '  let a = { id: 1 }');
+  assert.deepEqual(stripSpans(step('let a = { id: 1 }')), stripSpans(quoted));
 });
