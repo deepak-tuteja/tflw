@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource } from '../src/index.js';
-import { checkUnknownVariables } from '../src/checker.js';
+import { checkUnknownVariables, isResponseFrame, stepEstablishesResponse, stepReadsResponse } from '../src/checker.js';
 import { detectReuse, renderCallSiteReplacement, type SuiteEntry } from '../src/reuse.js';
 
 function entry(path: string, source: string): SuiteEntry {
@@ -341,4 +341,98 @@ test('a deduped action name is one tflw can actually parse (the bug half 2 surfa
     numbered.diagnostics.some((d) => d.severity === 'error'),
     'a numeric suffix in an action name is expected to be a parse error — that is why `nextFreeActionName` exists',
   );
+});
+
+// `M196` (D1018, `M195-01`): a window is offered only if it is a response frame on its own. The
+// action `refactor apply` renders from a window runs in its own frame (`call` opens one and a
+// response never crosses it), so three `expect`s that read the response of an `api` step *outside*
+// the window are an action the checker refuses with `TF039` and the runtime could never satisfy.
+// Measured over the sibling's suite before this: twenty hints offered, twelve refused, every one of
+// the twelve opening on a step that read the previous `api`'s response.
+
+const CONFLICT_TAIL = `  expect status equals 409
+  expect body.title equals "Conflict"
+  expect body.detail contains "referenced"
+`;
+
+test('M196 — a window that reads a response before any api step inside it is not offered', () => {
+  const src = `test "delete a referenced product"\n  api DELETE /products/1\n${CONFLICT_TAIL}\ntest "checkout over stock"\n  api POST /checkout body { qty: 99 }\n${CONFLICT_TAIL}`;
+  const hints = detectReuse([entry('t.tflw', src)]);
+  assert.deepEqual(hints, [], `the shared 409 tail follows two different api steps — no frame contains it:\n${JSON.stringify(hints, null, 2)}`);
+});
+
+test('M196 — the same steps with their api step inside the window are one hint', () => {
+  const src = `test "delete a referenced product"\n  api DELETE /products body { id: "p1" }\n${CONFLICT_TAIL}\ntest "delete another referenced product"\n  api DELETE /products body { id: "p2" }\n${CONFLICT_TAIL}`;
+  const hints = detectReuse([entry('t.tflw', src)]);
+  assert.equal(hints.length, 1, JSON.stringify(hints, null, 2));
+  assert.equal(hints[0]!.occurrences.length, 2);
+  assert.match(hints[0]!.actionSource, /^action delete products\(\w+\)\n  api DELETE \/products body \{ id: \{\w+\} \}\n  expect status equals 409\n/);
+});
+
+test('M196 — CONTROL: a window opening on an expect that reads no response is still offered', () => {
+  // UI locator subjects are routed away from the response path (`readsResponse`'s complement), so a
+  // window that opens on one is a legitimate frame with no `api` anywhere. This is what D1018's
+  // "ask the checker's walk" buys over a "must open on `api`" rule in `reuse.ts`, which would
+  // refuse this window and every browser-only extraction with it.
+  // The two tests reach the tail by different steps (a click, a key press), so the tail is the
+  // whole window and its first step is the `expect`.
+  const tail = `  expect button "Sign out" is visible\n  click button "Cart"\n  expect text "Your cart" is visible\n`;
+  const src = `test "alice"\n  click button "Log In"\n${tail}\ntest "bob"\n  press "Enter"\n${tail}`;
+  const hints = detectReuse([entry('t.tflw', src)]);
+  assert.equal(hints.length, 1, JSON.stringify(hints, null, 2));
+  assert.ok(hints[0]!.actionSource.includes('expect button "Sign out" is visible'), hints[0]!.actionSource);
+});
+
+// D1022 — the frame's other end. A window that establishes a response is not offered when the
+// caller reads that response after the window: after extraction the caller's `capture` would read
+// whatever response it had before the `call`. `check` is clean over the result (the caller's frame
+// is established by an earlier `api`), which is why the sibling's fixpoint phase found it as ten
+// failing tests and not as a diagnostic (`M196-02`).
+
+const PROFILE = `  api GET /auth/profile\n  expect status equals 200\n  expect body.role equals "user"\n`;
+
+test('M196 — a window whose response the caller reads after it is not offered', () => {
+  const src = `test "agent"\n  api POST /auth/register\n  capture body.accessToken as agentToken\n${PROFILE}  capture body.id as agentId\n\ntest "alice"\n  api POST /auth/register\n  capture body.accessToken as aliceToken\n${PROFILE}  capture body.id as aliceId\n`;
+  const hints = detectReuse([entry('t.tflw', src)]);
+  assert.deepEqual(hints, [], `the capture after the window reads the profile response:\n${JSON.stringify(hints, null, 2)}`);
+});
+
+test('M196 — CONTROL: the same window followed by another api step is offered', () => {
+  const src = `test "agent"\n  api POST /auth/register\n  capture body.accessToken as agentToken\n${PROFILE}  api GET /health\n  capture body.status as s1\n\ntest "alice"\n  api POST /auth/register\n  capture body.accessToken as aliceToken\n${PROFILE}  api GET /health\n  capture body.status as s2\n`;
+  const hints = detectReuse([entry('t.tflw', src)]);
+  assert.equal(hints.length, 1, JSON.stringify(hints, null, 2));
+  assert.ok(hints[0]!.actionSource.startsWith('action get profile()\n  api GET /auth/profile\n'), hints[0]!.actionSource);
+});
+
+test('M196 — CONTROL: a window that establishes nothing is offered whatever the caller reads after it', () => {
+  // Three UI steps between an `api` and its `capture`: the window leaves the caller's response
+  // exactly as it found it, so the capture after it is unaffected by the extraction.
+  const ui = `  click button "Refresh"\n  expect text "Updated" is visible\n  click button "Close"\n`;
+  const src = `test "one"\n  api GET /orders/1\n${ui}  capture body.id as a\n\ntest "two"\n  api GET /orders/2\n${ui}  capture body.id as b\n`;
+  const hints = detectReuse([entry('t.tflw', src)]);
+  assert.equal(hints.length, 1, JSON.stringify(hints, null, 2));
+});
+
+test('M196 — CONTROL: the two predicates agree with the walk TF039 runs (one definition, D1018/D1022)', () => {
+  // Every step shape the fixtures above use, and the negative ones: if `stepReadsResponse` says a
+  // step reads, the walk must flag it alone in a frame; if `stepEstablishesResponse` says a step
+  // establishes, the walk must be silent about an `expect status` after it.
+  const stepsOf = (body: string) => parseSource(`test "t"\n${body}`).program.tests[0]!.body;
+  const cases: [string, boolean, boolean][] = [
+    ['  api GET /x\n', true, false],
+    ['  wait until api GET /x\n    expect status equals 200\n', true, false],
+    ['  expect status equals 200\n', false, true],
+    ['  expect body.role equals "user"\n', false, true],
+    ['  capture body.id as x\n', false, true],
+    ['  expect text "Updated" is visible\n', false, false],
+    ['  click button "Close"\n', false, false],
+  ];
+  for (const [body, establishes, reads] of cases) {
+    const [step] = stepsOf(body);
+    assert.ok(step, body);
+    assert.equal(stepEstablishesResponse(step), establishes, `establishes: ${body}`);
+    assert.equal(stepReadsResponse(step), reads, `reads: ${body}`);
+    assert.equal(isResponseFrame([step]), !reads, `alone in a frame: ${body}`);
+    if (establishes) assert.equal(isResponseFrame([step, ...stepsOf('  expect status equals 200\n')]), true, `establishes for the walk: ${body}`);
+  }
 });

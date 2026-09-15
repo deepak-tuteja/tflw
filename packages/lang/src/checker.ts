@@ -1694,6 +1694,49 @@ export function checkResponseScopes(program: Program): Diagnostic[] {
   return diags;
 }
 
+/** Whether a run of steps is a response frame on its own — nothing in it reads a response before
+ *  an `api` step inside it establishes one. `M196` (D1018): the reuse pass asks this of every
+ *  candidate window, because the action `refactor apply` renders from a window *is* a frame at run
+ *  time (`call` opens one), so a window that is not one is a hint the checker refuses with `TF039`
+ *  on the pre-write re-check (`M195-01`: twelve of twenty over the sibling's suite). Asked of the
+ *  same walk `check` runs rather than restated in `reuse.ts` as "must open on `api`" — a
+ *  value-subject `expect` reads no response and is a legitimate opening step, and the frame-opening
+ *  set (`api`, `wait until api`, a malformed `api` head) is this function's to know. */
+export function isResponseFrame(steps: readonly Step[]): boolean {
+  const diags: Diagnostic[] = [];
+  checkResponseScopeInSteps(steps, diags);
+  return diags.length === 0;
+}
+
+/** Whether a step opens a response frame's response — the set `checkResponseScopeInSteps` marks
+ *  `established` on. One definition, so the reuse pass's back-of-window rule (D1022) and the front
+ *  one (`isResponseFrame`) cannot disagree with `TF039` about what an `api` step is. */
+export function stepEstablishesResponse(step: Step): boolean {
+  switch (step.type) {
+    case 'ApiStep':
+    case 'WaitUntilApiStmt':
+      return true;
+    case 'MalformedStep':
+      return step.head === 'api' || step.head === 'wait until api';
+    default:
+      return false;
+  }
+}
+
+/** Whether a step reads the frame's last response — the set `TF039` fires on when nothing has
+ *  established one: an `expect`/`check` on a response subject, every `capture`, `csrf from`. */
+export function stepReadsResponse(step: Step): boolean {
+  switch (step.type) {
+    case 'ExpectStmt':
+      return readsResponse(step.subject);
+    case 'CaptureStmt':
+    case 'CsrfStmt':
+      return true;
+    default:
+      return false;
+  }
+}
+
 /** One response scope — one `execSteps` frame — walked in isolation (M97b, D142). Lifted out of
  *  `checkResponseScopes` so a `session` body, which is exactly one such frame at run time, can be
  *  checked without inventing a synthetic `TestDecl` to wrap it in. */

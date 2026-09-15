@@ -1015,6 +1015,20 @@ multi-word call name. The parser always guessed "call", and reported the variabl
   the previous run's, so every member present after a run is that run's — a CI step uploading
   `findings.sarif` can only upload this run's findings. `report/runs/` is untouched.
 
+### Fixed — a reuse hint is an action that runs (M196)
+
+- **A reuse window is a response frame, at both ends.** An action body is its own frame at run
+  time — a response never crosses a `call` in either direction — and the reuse pass had windowed
+  step sequences without asking. A window that read a response before any `api` inside it was
+  offered as a hint and refused by `tflw refactor apply` with the checker's own `TF039`: twelve of
+  the twenty hints over the dogfood suite, applied by nobody until a sweep tried (`M195-01`).
+  A window that *established* a response the caller read after it was worse: every hint applied,
+  `tflw check` clean, and ten tests red — the caller's `capture` reading the response it had
+  before the `call` (`M196-02`). Both windows are now dropped by the checker's own walk, exported
+  for the purpose; a shorter window that is a frame is its own candidate. Over the dogfood suite:
+  twenty hints offered and twelve refused became ten offered, ten applied to a fixpoint, and the
+  fifteen files they touch green through the extracted actions.
+
 ## [0.1.0] — 2026-07-06
 
 First public draft. API-only — the browser half lands in `0.2.0`.

@@ -12666,7 +12666,7 @@ a per-push sweep of the whole registry bought nothing the ledger could show.
 
 ### M195
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/lib/lsp-client.mjs, tflw-tests/scripts/regression.mjs +5 more · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +7 more · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
 
 **`M195` — the parts of tflw no phase drives**
 
@@ -12674,5 +12674,20 @@ The sibling's regression sweep becomes tflw's pre-merge dogfood by rule, and gai
 phases for the parts nothing drove: `tflw ui`, an LSP session over a real corpus, `init`,
 `refactor apply` against a copy, `docs`/`spec` — and graders for the three defects U7 found by
 hand. Those three are fixed first (`M192b`), so the phases are green from the day they exist.
+
+### M196
+
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+
+**`M196` — a reuse window is a frame**
+
+`tflw check` offers reuse hints that `tflw refactor apply` refuses with the checker's own `TF039`
+(`M195-01`: twelve of twenty over the sibling's suite). The cause is not the refusal — an action
+body is its own response frame at run time, so an extracted action that opens on `expect status`
+has no response to read and would fail when called, not only when checked. The cause is that
+`detectReuse` windows step sequences without asking whether the window is a frame. This
+milestone makes the window pass the checker's own frame walk before it is offered, and the
+sibling's `refactor-check` stops applying *one* hint and applies every hint to a fixpoint,
+running the extracted actions against the stack.
 
 <!-- GENERATED:decisions:end -->

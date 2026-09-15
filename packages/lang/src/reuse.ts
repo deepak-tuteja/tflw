@@ -26,7 +26,7 @@
 //     a v1 requirement.
 
 import type { GeneratorExpr, Program, Step, TestDecl, Value } from './ast.js';
-import { checkUnknownVariables, freeVariableRefs } from './checker.js';
+import { checkUnknownVariables, freeVariableRefs, isResponseFrame, stepEstablishesResponse, stepReadsResponse } from './checker.js';
 import { lex } from './lexer.js';
 import { parse, STATEMENT_KEYWORDS } from './parser.js';
 import type { Span } from './token.js';
@@ -414,6 +414,17 @@ function stableKey(shapes: readonly unknown[]): string {
   return JSON.stringify(shapes);
 }
 
+/** Whether any step from `from` on reads the response before another step establishes one — the
+ *  caller-side half of the frame rule (D1022). */
+function readsResponseAfter(body: readonly Step[], from: number): boolean {
+  for (let i = from; i < body.length; i++) {
+    const step = body[i]!;
+    if (stepEstablishesResponse(step)) return false;
+    if (stepReadsResponse(step)) return true;
+  }
+  return false;
+}
+
 function windowClaimed(claimed: boolean[][], slotIdx: number, start: number, len: number): boolean {
   for (let i = start; i < start + len; i++) if (claimed[slotIdx]![i]) return true;
   return false;
@@ -456,6 +467,22 @@ export function detectReuse(entries: readonly SuiteEntry[]): ReuseHint[] {
           }
         }
         if (!eligible) continue;
+        // `M196` (D1018): the window must be a frame. The action rendered from it runs in its own
+        // response scope (a response never crosses a `call`), so a window whose first response-
+        // reading step precedes its first `api` is an action `TF039` refuses at apply time and the
+        // runtime would fail at call time — `M195-01` measured twelve such of twenty offered. Judged
+        // by the checker's own walk, not restated here; dropped, not shortened (D1019) — every
+        // shorter window at every start is its own candidate in this loop already.
+        const window = body.slice(start, start + len);
+        if (!isResponseFrame(window)) continue;
+        // D1022 — and the frame's other end. If the window establishes a response, the caller's
+        // steps after it read *that* response until the next `api` — and after extraction they
+        // would read whatever the caller had before the `call`, because a response never crosses
+        // out of an action. `check` cannot see it (the caller's frame is `established` by an
+        // earlier `api`), so the run reads a stale response. Found by the sibling's fixpoint phase
+        // the day D1018 landed: every one of ten hints applied and checked clean, ten of
+        // seventy-eight tests failed (`M196-02`). Such a window is not offered.
+        if (window.some(stepEstablishesResponse) && readsResponseAfter(body, start + len)) continue;
         const shapes = slot.analyses.slice(start, start + len).map((a) => a!.shape);
         const key = stableKey(shapes);
         let bucket = buckets.get(key);
