@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "refs/pull/102/head",
-  "sha": "e6bce7e95b330c6a902ff6df23c1d1fb8de610e6",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/e6bce7e95b330c6a902ff6df23c1d1fb8de610e6",
+  "ref": "refs/pull/103/head",
+  "sha": "9ad38cd35ad6219ea26895fe898b5e8a5c34c650",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/9ad38cd35ad6219ea26895fe898b5e8a5c34c650",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -21,7 +21,7 @@
     "tflw-acceptance/perf/profile/FINDINGS_M36_CONCURRENCY.md",
     "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md"
   ],
-  "codeFiles": 802,
+  "codeFiles": 814,
   "checkFixtures": [
     "TF001",
     "TF002",
@@ -133,10 +133,14 @@
     ],
     "D206": [
       "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/self-report.tflw",
       "tflw-acceptance/perf/profile/open-model-fetch-repro.mjs"
     ],
     "D207": [
-      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/self-report.tflw"
     ],
     "D21": [
       "VULNS.md",
@@ -729,6 +733,7 @@
       "tests/.constructs/locator-near-miss.tflw",
       "tests/.constructs/step-observables.tflw",
       "webV2/admin/src/views/products/list.ejs",
+      "webV2/src/pages/DiagnoseFixturePage.tsx",
       "webV2/src/pages/LocatorFixturePage.tsx",
       "webV2/src/pages/StepFixturePage.tsx"
     ],
@@ -807,6 +812,7 @@
       "scripts/verify-construct-acceptance.mjs",
       "tests/.constructs/config-keys/two-steps.tflw",
       "tflw-acceptance/conformance/arrival-server.mjs",
+      "tflw-acceptance/conformance/sessions.tflw",
       "tflw-acceptance/conformance/shapes.tflw"
     ],
     "D746": [
@@ -1277,7 +1283,8 @@
     ],
     "D976": [
       "CONSTRUCTS.md",
-      "scripts/lib/constructs.mjs"
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/reach-verdicts.mjs"
     ],
     "D977": [
       "CONSTRUCTS.md"
@@ -1346,12 +1353,20 @@
       "scripts/verify-tflw-resolution.mjs"
     ],
     "M118": [
+      "CONSTRUCTS.md",
       "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
       "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/self-report.tflw",
+      "tflw-acceptance/mutation/reach-verdicts.json",
       "tflw-acceptance/perf/profile/open-model-fetch-repro.mjs"
     ],
     "M119": [
-      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md"
+      "CONSTRUCTS.md",
+      "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
+      "scripts/lib/constructs.mjs",
+      "tflw-acceptance/mutation/reach-verdicts.json",
+      "webV2/src/pages/DiagnoseFixturePage.tsx"
     ],
     "M121": [
       "tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md",
@@ -1365,7 +1380,8 @@
       "scripts/perf-conformance.mjs",
       "tests/.checkonly/data-table-extension.tflw",
       "tests/.checkonly/hold-exceeds-wait-timeout.tflw",
-      "tests/.checkonly/invalid-literal-operand.tflw"
+      "tests/.checkonly/invalid-literal-operand.tflw",
+      "tests/.constructs/wait-budgets.tflw"
     ],
     "M128": [
       "CONTRIBUTING.md",
@@ -1847,9 +1863,11 @@
       "CONSTRUCTS.md",
       "scripts/lib/constructs.mjs",
       "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/wait-budgets.tflw",
       "tflw-acceptance/conformance/arrival-server.mjs",
       "tflw-acceptance/conformance/subjects.tflw",
-      "tflw-acceptance/conformance/teardown.tflw"
+      "tflw-acceptance/conformance/teardown.tflw",
+      "webV2/src/pages/WaitFixturePage.tsx"
     ],
     "M159": [
       "CONSTRUCTS.md",
@@ -2108,7 +2126,22 @@
       "tflw-acceptance/evidence/M154h-01/README.md",
       "tests/mixed/storefront.tflw"
     ],
+    "M189": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/locator-diagnosis.tflw",
+      "tests/.constructs/wait-budgets.tflw",
+      "tflw-acceptance/conformance/aborted.tflw",
+      "tflw-acceptance/conformance/no-verdict.tflw",
+      "tflw-acceptance/conformance/self-report.tflw",
+      "tflw-acceptance/conformance/short-run.tflw",
+      "tflw-acceptance/conformance/singletons.tflw",
+      "webV2/src/pages/DiagnoseFixturePage.tsx",
+      "webV2/src/pages/WaitFixturePage.tsx"
+    ],
     "M189a": [
+      "CONSTRUCTS.md",
       "CONTRIBUTING.md",
       ".github/workflows/ci.yml",
       "scripts/lib/mutation-covers.mjs",
@@ -2116,9 +2149,13 @@
       "scripts/lib/reach.mjs",
       "scripts/measure-mutation-reach.mjs",
       "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-construct-acceptance.mjs",
       "scripts/verify-contributing.mjs",
       "scripts/verify-reach-verdicts.mjs",
-      "tflw-acceptance/mutation/reach-verdicts.json"
+      "tests/.constructs/locator-diagnosis.tflw",
+      "tests/.constructs/wait-budgets.tflw",
+      "tflw-acceptance/mutation/reach-verdicts.json",
+      "webV2/src/pages/DiagnoseFixturePage.tsx"
     ],
     "M189b": [
       "CONSTRUCTS.md",
@@ -2130,6 +2167,7 @@
       "CONSTRUCTS.md",
       "scripts/lib/constructs.mjs",
       "scripts/lib/mutation-covers.mjs",
+      "scripts/lib/reach-verdicts.mjs",
       "scripts/verify-construct-acceptance.mjs",
       "tests/.constructs/config-keys/defaults-runtime.config",
       "tflw-acceptance/conformance/arrival-server.mjs",
@@ -2162,6 +2200,34 @@
       ".github/workflows/ci.yml",
       "scripts/verify-contributing.mjs",
       "scripts/verify-fmt.mjs"
+    ],
+    "M194": [
+      "CONTRIBUTING.md",
+      "scripts/lib/reach-verdicts.mjs"
+    ],
+    "M198": [
+      "CONSTRUCTS.md",
+      "CONTRIBUTING.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/lib/reach-verdicts.mjs",
+      "scripts/read-mutation-matrix.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "scripts/verify-reach-verdicts.mjs",
+      "tests/.constructs/locator-diagnosis.tflw",
+      "tests/.constructs/session-context.tflw",
+      "tests/.constructs/wait-budgets.tflw",
+      "tflw-acceptance/conformance/aborted.tflw",
+      "tflw-acceptance/conformance/arrival-server.mjs",
+      "tflw-acceptance/conformance/no-verdict.tflw",
+      "tflw-acceptance/conformance/self-report.tflw",
+      "tflw-acceptance/conformance/sessions.tflw",
+      "tflw-acceptance/conformance/short-run.tflw",
+      "tflw-acceptance/conformance/singletons.tflw",
+      "tflw-acceptance/conformance/tflw.config",
+      "tflw-acceptance/conformance/waits.tflw",
+      "tflw-acceptance/mutation/reach-verdicts.json",
+      "webV2/src/pages/DiagnoseFixturePage.tsx",
+      "webV2/src/pages/WaitFixturePage.tsx"
     ],
     "M22": [
       "CONTRIBUTING.md",
@@ -2258,7 +2324,8 @@
       "tflw-acceptance/perf/README.md"
     ],
     "M3a": [
-      "README.md"
+      "README.md",
+      "tests/.constructs/wait-budgets.tflw"
     ],
     "M3b": [
       "README.md"
@@ -2366,7 +2433,9 @@
       "tflw-acceptance/perf/README.md",
       "scripts/lib/perf-ladder.mjs",
       "scripts/perf-conformance.mjs",
+      "scripts/verify-construct-acceptance.mjs",
       "scripts/verify-perf-parity.mjs",
+      "tflw-acceptance/conformance/no-verdict.tflw",
       "tflw-acceptance/perf/artillery/checkout-burst.yml",
       "tflw-acceptance/perf/k6/checkout-burst.js"
     ],
@@ -2484,6 +2553,10 @@
     ],
     "D246": [
       "tests/.checkonly/absolute-url.tflw"
+    ],
+    "D248": [
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/wait-budgets.tflw"
     ],
     "D266": [
       "tests/.checkonly/service-with-absolute-url.tflw"
@@ -2707,6 +2780,10 @@
     ],
     "D633": [
       "tests/.checkonly/duplicate-table-column.tflw"
+    ],
+    "D640": [
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/waits.tflw"
     ],
     "D642": [
       "scripts/verify-check-diagnostics.mjs"
@@ -3067,6 +3144,17 @@
     "M105": [
       "scripts/verify-pick.mjs"
     ],
+    "M107": [
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/self-report.tflw"
+    ],
+    "M111": [
+      "tflw-acceptance/conformance/aborted.tflw"
+    ],
+    "M114": [
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/aborted.tflw"
+    ],
     "M116": [
       "tests/.checkonly/capture-uncapturable-subject.tflw",
       "tests/.checkonly/mask-without-snapshot.tflw",
@@ -3160,7 +3248,8 @@
       "tests/.checkonly/unparseable-import.tflw"
     ],
     "M147d": [
-      "scripts/verify-check-diagnostics.mjs"
+      "scripts/verify-check-diagnostics.mjs",
+      "tflw-acceptance/conformance/waits.tflw"
     ],
     "M147e": [
       "scripts/verify-check-diagnostics.mjs"
@@ -3245,6 +3334,11 @@
       "scripts/verify-notation-parity.mjs",
       "scripts/verify-provenance.mjs",
       "scripts/verify-sweep-size.mjs"
+    ],
+    "M169": [
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tflw-acceptance/conformance/no-verdict.tflw"
     ],
     "M169a": [
       "scripts/verify-notation-parity.mjs"
@@ -3472,7 +3566,8 @@
       "tests/.checkonly/matcher-subject-mismatch.tflw"
     ],
     "M97c": [
-      "tests/.checkonly/missing-referenced-file.tflw"
+      "tests/.checkonly/missing-referenced-file.tflw",
+      "tests/.constructs/session-context.tflw"
     ],
     "M97d": [
       "tests/.checkonly/action-call-cycle.tflw"
