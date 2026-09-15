@@ -25,12 +25,16 @@
 // examined **zero of 652 files** during `A0` and reported success for doing it.
 import { INDENT } from './format.js';
 import type {
+  ApiBody,
   ApiHeader,
+  ApiRequestSpec,
   ApiStep,
   ArrayLit,
   BinaryExpr,
   CallExpr,
+  DataTable,
   ExpectStmt,
+  FormField,
   LetStmt,
   Matcher,
   Node,
@@ -43,6 +47,7 @@ import type {
   TestDecl,
   ThresholdDecl,
   Value,
+  WaitUntilApiStmt,
   Workload,
 } from './ast.js';
 
@@ -90,6 +95,16 @@ export const PRINTABLE = new Set<string>([
   // own rather than a corner of each: `InlineBody` is one node kind and what lives under it is
   // thirty-one.
   'LetStmt',
+  // `A1-2` — the request. The five body forms, the per-step retry clause, the polling form of an
+  // api step, and `with each`.
+  'InlineBody',
+  'FileBody',
+  'FormBody',
+  'TextBody',
+  'UploadBody',
+  'WaitUntilApiStmt',
+  'InlineDataTable',
+  'FileDataTable',
   'VarRef',
   'Interp',
   'EnvRef',
@@ -130,13 +145,14 @@ export const PRINTABLE = new Set<string>([
  *
  * `Field` is the second and arrived with `A1-1`, for the ordinary reason rather than the
  * interesting one: `name: 1` is not a program, so there is no source a printed field could be
- * re-parsed from. It is printed by `printObject` and compared through its parent.
+ * re-parsed from. It is printed by `printObject` and compared through its parent. `FormField` and
+ * `RetryAfterClause` joined it in `A1-2` on the same ordinary grounds.
  *
  * Expect more of these as `A1`–`A4` widen the printer. The shape to watch for is a node whose
  * field was normalised on the way in, because a normalisation is a spelling decision the AST
  * stopped recording.
  */
-export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field']);
+export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'RetryAfterClause']);
 
 class Refusal extends Error {
   constructor(readonly nodeType: string, readonly detail?: string) {
@@ -179,6 +195,17 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printPause(node as PauseStmt);
     case 'LetStmt':
       return pad(level) + printLet(node as LetStmt);
+    case 'WaitUntilApiStmt':
+      return printWaitUntilApi(node as WaitUntilApiStmt, level);
+    case 'InlineBody':
+    case 'FileBody':
+    case 'FormBody':
+    case 'TextBody':
+    case 'UploadBody':
+      return pad(level) + printBody(node as ApiBody);
+    case 'InlineDataTable':
+    case 'FileDataTable':
+      return printTable(node as DataTable, level).join('\n');
     case 'Stage':
       return refuse('Stage', 'a stage is spelled by its block — `to N for <dur>` in a `step`, `hold N for <dur>` in a `spike` — so it cannot be printed on its own');
     case 'RampUsersWorkload':
@@ -225,9 +252,9 @@ function printTest(t: TestDecl, level: number): string {
   if (t.sessions.length > 0) header += ' as ' + t.sessions.join(', ');
   if (t.retry > 0) header += ' retry ' + String(t.retry);
   if (t.concurrency === 'parallel') header += ' parallel';
-  // `with each` is a table, and a table is `A1`'s: refusing here is cheaper than emitting a test
-  // whose rows silently vanished.
-  if (t.table) refuse('TestDecl', '`with each` tables are not printable yet');
+  // `with each` sits between the tags and the header — outside the declaration it belongs to,
+  // which is why it is emitted here and not from the body loop (`A1-2`).
+  if (t.table) lines.push(...printTable(t.table, level));
   lines.push(header);
 
   const inner = level + 1;
@@ -323,21 +350,123 @@ function printPause(p: PauseStmt): string {
 // ---- steps -----------------------------------------------------------------
 
 function printApiStep(a: ApiStep, level: number): string {
-  if (a.body) refuse('ApiStep', `a request body (${a.body.type}) is not printable yet`);
-  if (a.retryAfter) refuse('ApiStep', '`retry honoring "Retry-After"` is not printable yet');
-  let head = pad(level) + 'api ';
-  if (a.service) head += a.service + ' ';
-  head += a.method + ' ' + a.path.raw;
-  if (a.tag) head += ' as ' + printString(a.tag);
-  if (a.timeoutMs !== null) head += ' timeout ' + duration(a.timeoutMs);
-  if (!a.followRedirects) head += ' without redirects';
-  const lines = [head];
-  for (const h of a.headers) lines.push(pad(level + 1) + printHeader(h));
+  const lines = [pad(level) + 'api ' + requestLine(a) + (a.tag ? ' as ' + printString(a.tag) : '')];
+  lines.push(...apiBlock(a, a.retryAfter, level));
   return lines.join('\n');
+}
+
+/**
+ * `[<service>] METHOD <path> [body] [timeout <dur>] [without redirects]` — the line
+ * `parseApiRequestLine` reads, shared by `api` and `wait until api` exactly as it is there.
+ *
+ * THE CLAUSE ORDER IS THE GRAMMAR'S, NOT THE AST'S, and that is a correction rather than a
+ * choice. `A0-1` wrote `as` immediately after the path because `tag` sits next to `path` in
+ * `ApiRequestSpec`, and the parser takes `as` *last* — after `timeout` and `without redirects`.
+ * A step carrying a tag AND a timeout therefore printed `api GET /x as "l" timeout 2s`, which
+ * does not parse. No gate could see it: the corpus holds 10 `as` labels and 6 `timeout`s and the
+ * two sets are disjoint, so the property held on every file that exists. Found by reading
+ * `parseApiRequestLine` while scoping `A1-2`, and pinned by a test below.
+ */
+function requestLine(spec: ApiRequestSpec): string {
+  let line = '';
+  if (spec.service) {
+    if (!isBareIdent(spec.service)) refuse('ApiStep', `\`${spec.service}\` is not a service name this language can write`);
+    line += spec.service + ' ';
+  }
+  line += spec.method + ' ' + spec.path.raw;
+  if (spec.body) line += ' ' + printBody(spec.body);
+  if (spec.timeoutMs !== null) line += ' timeout ' + duration(spec.timeoutMs);
+  if (!spec.followRedirects) line += ' without redirects';
+  return line;
+}
+
+/** The indented block under an api step: `header "…" is <v>` lines, then the retry clause. Both
+ *  live in the same block and `parseApiHeaders` accepts them in either order; the clause is
+ *  printed last because that is where the corpus puts it. */
+function apiBlock(spec: ApiRequestSpec, retryAfter: ApiStep['retryAfter'], level: number): string[] {
+  const lines = spec.headers.map((h) => pad(level + 1) + printHeader(h));
+  if (retryAfter) lines.push(`${pad(level + 1)}retry honoring "Retry-After" up to ${num(retryAfter.max)}`);
+  return lines;
+}
+
+/**
+ * `wait until api …` — the same request line, a `timeout wait <dur>` budget of its own, and a
+ * block of `header` lines and `expect`s.
+ *
+ * `waitMs` is NOT `request.timeoutMs` and printing them into one clause would silently change the
+ * program: `timeout` is how long one poll's HTTP request may take and `timeout wait` is the whole
+ * poll budget (`ast.ts`'s note on `WaitUntilApiStmt.waitMs`). They are two clauses on one line and
+ * the grammar puts them in that order, which `atWaitBudget` is what disambiguates.
+ */
+function printWaitUntilApi(w: WaitUntilApiStmt, level: number): string {
+  let head = pad(level) + 'wait until api ' + requestLine(w.request);
+  if (w.waitMs !== null) head += ' timeout wait ' + duration(w.waitMs);
+  const lines = [head, ...apiBlock(w.request, null, level)];
+  for (const e of w.expects) lines.push(printExpect(e, level + 1));
+  if (w.expects.length === 0) refuse('WaitUntilApiStmt', 'a `wait until api` with no `expect` has no condition to wait for');
+  return lines.join('\n');
+}
+
+/** The five request bodies (SPEC §5.2). Each is one keyword and its own shape; the values inside
+ *  are `A1-1`'s. */
+function printBody(b: ApiBody): string {
+  switch (b.type) {
+    case 'InlineBody':
+      return 'body ' + printValue(b.value);
+    case 'FileBody':
+      return 'body from ' + printString(b.path);
+    case 'TextBody':
+      return 'body text ' + printString(b.value);
+    case 'FormBody':
+      return 'form ' + printFormFields(b.fields);
+    case 'UploadBody': {
+      let out = `upload ${printString(b.filePath)} as ${printString(b.fieldName)}`;
+      if (b.contentType) out += ' type ' + printString(b.contentType);
+      if (b.extra.length > 0) out += ' form ' + printFormFields(b.extra);
+      return out;
+    }
+    default:
+      return refuse((b as Node).type);
+  }
+}
+
+/** `k=v, k=v` — keys are bare identifiers by grammar (`parseFormFields` takes an `ident` and
+ *  nothing else), so unlike a JSON key there is no quoted spelling to fall back to. */
+function printFormFields(fields: readonly FormField[]): string {
+  if (fields.length === 0) refuse('FormBody', 'a form body needs at least one field');
+  return fields
+    .map((f, i) => {
+      if (!isBareIdent(f.key)) refuse('FormField', `\`${f.key}\` is not a form field name this language can write — a form key is a bare identifier`);
+      return `${f.key}=${printValue(f.value)}${openGuard(f.value, i === fields.length - 1, 'form field')}`;
+    })
+    .join(', ');
 }
 
 function printHeader(h: ApiHeader): string {
   return `header ${printString(h.name)} is ${printValue(h.value)}`;
+}
+
+/**
+ * `with each` — the table sits ABOVE the `test` header and below the tags (`parseTest`), which is
+ * the one construct in this language whose source position is outside the declaration it belongs
+ * to.
+ *
+ * The inline form's cells are padded to the widest entry in their column, because that is what
+ * `format` writes and the printer has to be a fixpoint of it.
+ */
+function printTable(t: DataTable, level: number): string[] {
+  if (t.type === 'FileDataTable') return [pad(level) + 'with each from ' + printString(t.path)];
+  if (t.columns.length === 0) refuse('InlineDataTable', 'a `with each` table needs at least one column');
+  if (t.rows.length === 0) refuse('InlineDataTable', 'a `with each` table needs at least one data row');
+  for (const c of t.columns) if (!isBareIdent(c)) refuse('InlineDataTable', `\`${c}\` is not a column name this language can write — column names are bare words`);
+  const cells: string[][] = [[...t.columns]];
+  for (const row of t.rows) {
+    if (row.length !== t.columns.length) refuse('InlineDataTable', `a row has ${String(row.length)} cell(s) and the header has ${String(t.columns.length)}`);
+    cells.push(row.map((v) => printValue(v)));
+  }
+  const width = t.columns.map((_, i) => Math.max(...cells.map((r) => r[i]!.length)));
+  const line = (row: readonly string[]): string => pad(level + 1) + '| ' + row.map((c, i) => c.padEnd(width[i]!)).join(' | ') + ' |';
+  return [pad(level) + 'with each', ...cells.map(line)];
 }
 
 function printExpect(e: ExpectStmt, level: number): string {

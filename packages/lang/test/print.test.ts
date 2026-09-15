@@ -81,7 +81,7 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
@@ -535,4 +535,129 @@ test('an object key is bare when it is a name and quoted when it is not', () => 
   const quoted = step('let a = { "id": 1 }');
   assert.equal(print(quoted, { indent: 1 }).text, '  let a = { id: 1 }');
   assert.deepEqual(stripSpans(step('let a = { id: 1 }')), stripSpans(quoted));
+});
+
+// ---- `A1-2` — the request --------------------------------------------------
+
+/** One source per shape the request half of the grammar has. Text again, not trees, because the
+ *  clause ORDER is the whole point of the first row and a tree cannot see it. */
+const REQUEST_SPELLINGS: readonly string[] = [
+  'api POST /orders body { itemId: 1, qty: 2 }',
+  'api POST /orders body [1, 2]',
+  'api POST /x body from "./payloads/order.json"',
+  'api POST /x body text "not-json-data"',
+  'api POST /auth/login form email=env(ADMIN_EMAIL), password=env(ADMIN_PW)',
+  'api POST /x upload "../payloads/sample.png" as "image"',
+  'api POST /x upload "./f.png" as "image" type "image/png" form caption="hi", n=2',
+  'api root GET /health',
+  'api GET /x timeout 2s',
+  'api GET /x without redirects',
+  'api GET /x as "checkout"',
+];
+
+test('every shape the request line has prints back as the line it was written as', () => {
+  for (const line of REQUEST_SPELLINGS) {
+    const printed = print(step(line), { indent: 1 });
+    assert.equal(printed.ok, true, `${line}: ${printed.reason ?? ''}`);
+    assert.equal(printed.text, `  ${line}`, line);
+  }
+});
+
+test('the request line is spelled in the grammar’s clause order, not the AST’s field order', () => {
+  // THIS IS AN `A0-1` DEFECT, found while reading `parseApiRequestLine` to scope `A1-2`.
+  // `ApiRequestSpec` lists `tag` beside `path`, so the first printer emitted `as` right after the
+  // path — and the parser takes `as` LAST, after `timeout` and `without redirects`. A step with a
+  // tag AND a timeout therefore printed `api GET /x as "l" timeout 2s`, which does not parse at
+  // all: `unexpected \`timeout\` at end of step`.
+  //
+  // NO GATE COULD HAVE SEEN IT. The corpus holds 10 `as` labels and 6 `timeout`s and the two sets
+  // are **disjoint**, so the per-node round trip was green on every file that exists. The shape
+  // below is the one a form produces the moment somebody names a request and bounds it.
+  const all = 'api GET /x body { a: 1 } timeout 2s without redirects as "label"';
+  const printed = print(step(all), { indent: 1 });
+  assert.equal(printed.ok, true, printed.reason);
+  assert.equal(printed.text, `  ${all}`);
+
+  // And it re-parses, which is the claim the text assertion above is standing in for.
+  const { diagnostics } = parseSource(`test "t"\n${printed.text}\n`);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), []);
+});
+
+test('an api step’s indented block carries its headers and its retry clause', () => {
+  const withHeaders = 'api GET /orders/all\n    header "Authorization" is "Bearer {t}"\n    header "Accept" is "application/json"';
+  assert.equal(print(step(withHeaders), { indent: 1 }).text, `  ${withHeaders}`);
+  const withRetry = 'api GET /jobs/1\n    retry honoring "Retry-After" up to 3';
+  assert.equal(print(step(withRetry), { indent: 1 }).text, `  ${withRetry}`);
+});
+
+test('`wait until api` keeps its two timeouts apart', () => {
+  // `timeout` is how long one poll’s request may take; `timeout wait` is the whole poll budget
+  // (`ast.ts` on `WaitUntilApiStmt.waitMs`). They are different clauses on one line and folding
+  // them together would silently change the program rather than the text.
+  const both = 'wait until api GET /jobs/1 timeout 3s timeout wait 5m\n    header "X" is "y"\n    expect status equals 200';
+  const printed = print(step(both), { indent: 1 });
+  assert.equal(printed.ok, true, printed.reason);
+  assert.equal(printed.text, `  ${both}`);
+
+  const bare = 'wait until api GET /jobs/1\n    expect status equals 200';
+  assert.equal(print(step(bare), { indent: 1 }).text, `  ${bare}`);
+});
+
+test('a `with each` table sits above the test it belongs to, and its columns are padded', () => {
+  // The one construct whose source position is OUTSIDE the declaration that owns it: the table is
+  // parsed between the tags and the `test` header, so it is emitted from `printTest` rather than
+  // from the body loop.
+  const table = 'with each\n  | a | bb   |\n  | 1 | "xx" |\n  | 2 | "y"  |\ntest "t"\n  api GET /x';
+  const { program, diagnostics } = parseSource(`${table}\n`);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), []);
+  const printed = print(program.tests[0]!);
+  assert.equal(printed.ok, true, printed.reason);
+  // The padding is not decoration: `format` writes it, and the printer must be a fixpoint of
+  // `format` or every insertion through `insertIntoSource` is refused.
+  assert.equal(printed.text, table);
+  const formatted = format(printed.text + '\n');
+  assert.equal(formatted.formatted, printed.text + '\n');
+
+  const fromFile = 'with each from "./data/x.csv"\ntest "t"\n  api GET /x';
+  assert.equal(print(parseSource(`${fromFile}\n`).program.tests[0]!).text, fromFile);
+
+  // Tags stay above the table, which is where `parseTest` reads them.
+  const tagged = '@smoke @orders\nwith each\n  | row     |\n  | "alpha" |\ntest "t {row}"\n  api GET /x';
+  assert.equal(print(parseSource(`${tagged}\n`).program.tests[0]!).text, tagged);
+});
+
+test('the request half refuses the shapes that have no source', () => {
+  const sl = (v: string): Value => ({ type: 'StringLit', value: v, parts: [{ kind: 'text', value: v }], span: SYNTHETIC });
+  const n = (v: number): Value => ({ type: 'NumberLit', value: v, raw: String(v), span: SYNTHETIC });
+
+  // `form` with no fields: `parseFormFields` demands one, so `api POST /x form` is not a program.
+  const emptyForm: Node = { type: 'ApiStep', service: null, method: 'POST', path: { type: 'PathExpr', raw: '/x', span: SYNTHETIC }, body: { type: 'FormBody', fields: [], span: SYNTHETIC }, headers: [], timeoutMs: null, followRedirects: true, retryAfter: null, tag: null, span: SYNTHETIC } as unknown as Node;
+  const ef = print(emptyForm);
+  assert.equal(ef.ok, false);
+  assert.match(ef.reason ?? '', /at least one field/);
+
+  // A form key is a bare identifier by grammar and has NO quoted spelling — unlike a JSON key,
+  // which is the row above this one in `A1-1`. Same-looking field, opposite verdict.
+  const badKey: Node = { type: 'ApiStep', service: null, method: 'POST', path: { type: 'PathExpr', raw: '/x', span: SYNTHETIC }, body: { type: 'FormBody', fields: [{ type: 'FormField', key: 'user name', value: sl('x'), span: SYNTHETIC }], span: SYNTHETIC }, headers: [], timeoutMs: null, followRedirects: true, retryAfter: null, tag: null, span: SYNTHETIC } as unknown as Node;
+  const bk = print(badKey);
+  assert.equal(bk.ok, false);
+  assert.match(bk.reason ?? '', /a form key is a bare identifier/);
+
+  // A ragged table: `parseDataTable` reports a cell-count mismatch rather than building one, so a
+  // printed one would be a file the author could not have written.
+  const ragged: Node = { type: 'InlineDataTable', columns: ['a', 'b'], rows: [[n(1)]], span: SYNTHETIC } as unknown as Node;
+  const rg = print(ragged);
+  assert.equal(rg.ok, false);
+  assert.match(rg.reason ?? '', /1 cell\(s\) and the header has 2/);
+
+  // A table with a header and no rows is `TF0..`'s EMPTY_BLOCK, and one with no columns is not a
+  // table at all.
+  assert.match(print({ type: 'InlineDataTable', columns: ['a'], rows: [], span: SYNTHETIC } as unknown as Node).reason ?? '', /at least one data row/);
+  assert.match(print({ type: 'InlineDataTable', columns: [], rows: [], span: SYNTHETIC } as unknown as Node).reason ?? '', /at least one column/);
+
+  // A `wait until api` with no `expect` waits for nothing: the block is where the condition lives.
+  const noCondition: Node = { type: 'WaitUntilApiStmt', request: { service: null, method: 'GET', path: { type: 'PathExpr', raw: '/x', span: SYNTHETIC }, body: null, headers: [], timeoutMs: null, followRedirects: true, retryAfter: null, tag: null }, expects: [], waitMs: null, span: SYNTHETIC } as unknown as Node;
+  const nc = print(noCondition);
+  assert.equal(nc.ok, false);
+  assert.match(nc.reason ?? '', /no condition to wait for/);
 });
