@@ -27,9 +27,14 @@ import { INDENT } from './format.js';
 import type {
   ApiHeader,
   ApiStep,
+  ArrayLit,
+  BinaryExpr,
+  CallExpr,
   ExpectStmt,
+  LetStmt,
   Matcher,
   Node,
+  ObjectLit,
   PathSegment,
   PauseStmt,
   Stage,
@@ -80,6 +85,37 @@ export const PRINTABLE = new Set<string>([
   'DurationLit',
   'BoolLit',
   'NullLit',
+  // `A1-1` — the whole value grammar. Five positions read this one union (a request body, a
+  // `let`, a header value, a matcher operand, a call argument), which is why it is a slice of its
+  // own rather than a corner of each: `InlineBody` is one node kind and what lives under it is
+  // thirty-one.
+  'LetStmt',
+  'VarRef',
+  'Interp',
+  'EnvRef',
+  'ObjectLit',
+  'ArrayLit',
+  'BinaryExpr',
+  'DateAtom',
+  'DateOffsetLit',
+  'FormatExpr',
+  'TransformExpr',
+  'CallExpr',
+  'UniquePrefixExpr',
+  'UniqueEmailExpr',
+  'UniqueNumberExpr',
+  'UniqueLikeExpr',
+  'UniqueUuidExpr',
+  'RandomNumberExpr',
+  'RandomDecimalExpr',
+  'RandomDateInPastExpr',
+  'RandomDateInFutureExpr',
+  'RandomDateBetweenExpr',
+  'RandomOfExpr',
+  'RandomStringExpr',
+  'RandomLikeExpr',
+  'RandomUuidExpr',
+  'RandomPasswordExpr',
 ]);
 
 /**
@@ -92,11 +128,15 @@ export const PRINTABLE = new Set<string>([
  * cannot express a ramp at all. So the node does not carry enough to print itself, and printing it
  * without asking its parent produces source that parses — into a different program.
  *
+ * `Field` is the second and arrived with `A1-1`, for the ordinary reason rather than the
+ * interesting one: `name: 1` is not a program, so there is no source a printed field could be
+ * re-parsed from. It is printed by `printObject` and compared through its parent.
+ *
  * Expect more of these as `A1`–`A4` widen the printer. The shape to watch for is a node whose
  * field was normalised on the way in, because a normalisation is a spelling decision the AST
  * stopped recording.
  */
-export const CONTEXT_BOUND = new Set<string>(['Stage']);
+export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field']);
 
 class Refusal extends Error {
   constructor(readonly nodeType: string, readonly detail?: string) {
@@ -137,6 +177,8 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printThreshold(node as ThresholdDecl);
     case 'PauseStmt':
       return pad(level) + printPause(node as PauseStmt);
+    case 'LetStmt':
+      return pad(level) + printLet(node as LetStmt);
     case 'Stage':
       return refuse('Stage', 'a stage is spelled by its block — `to N for <dur>` in a `step`, `hold N for <dur>` in a `spike` — so it cannot be printed on its own');
     case 'RampUsersWorkload':
@@ -261,6 +303,19 @@ function printThreshold(t: ThresholdDecl): string {
   return `threshold ${metric}${scope} ${op} ${bound}`;
 }
 
+/**
+ * `let <name> = <value>` — opened in `A1-1` rather than `A1-3` where §4b put it, and the reason is
+ * the arc's own: a value printer with no position that reaches it has a gate that examines zero
+ * nodes, which is exactly the whole-file-gate failure §1 measured before `A0` began. `let` is the
+ * cheapest position that reaches the vocabulary — the census puts **27 of the 31 value kinds**
+ * behind it, against a request body's 12 — so it is what turns `A1-1` from a claim into a
+ * measurement. `capture`, `call` and `log` stay in `A1-3`.
+ */
+function printLet(l: LetStmt): string {
+  if (!isBareIdent(l.name)) refuse('LetStmt', `\`${l.name}\` is not a variable name this language can write`);
+  return `let ${l.name} = ${printValue(l.value)}`;
+}
+
 function printPause(p: PauseStmt): string {
   return p.maxMs === null ? `pause ${duration(p.minMs)}` : `pause ${duration(p.minMs)} to ${duration(p.maxMs)}`;
 }
@@ -324,8 +379,44 @@ function operand(m: Matcher): string {
 }
 
 // ---- values ----------------------------------------------------------------
+//
+// `A1-1`. Five positions in this language read one `Value` union — a request body, a `let`, a
+// header value, a matcher operand and a call argument — so the union is printed once, here, and
+// the four slices above it inherit the whole vocabulary rather than each opening a corner of it.
+// Measured off the corpus (PLAN §4a): a request body reaches 12 of these kinds and a `let`
+// reaches 27, of which 15 are generators.
+//
+// THREE WAYS A VALUE CAN BE UNPRINTABLE, AND NONE OF THEM IS A MISSING BRANCH.
+//
+//  1. *Precedence with no parentheses.* `BinaryExpr` is a closed `+ - * /` grammar with **no
+//     parens** (P#25, the hard fence) and no parenthesised escape hatch, so a tree whose shape
+//     disagrees with the grammar's own precedence has no source at all. `printBinary` refuses it.
+//  2. *A word that means something else in value position.* `parseAtom` dispatches on the ident
+//     itself — `today`, `random`, `unique`, `format`, `true`… — so a variable or an action named
+//     one of them cannot be written down as a reference to itself. `RESERVED_IN_VALUE` refuses.
+//  3. *A construct that absorbs what follows it.* `random of a, b` eats commas until they stop,
+//     and `random password` takes an optional length, so both can swallow a sibling that was
+//     meant to stand beside them. `endsOpenToComma`/`endsOpenToValue` decide where that is safe.
+//
+// Every one of the three is the `Stage` family from `A0-1` again — the grammar decided something
+// the AST does not record — and every one is a refusal rather than a best effort, for the reason
+// in this file's header: printed source that parses into a different program is the failure this
+// printer exists to make impossible.
 
-function printValue(v: Value): string {
+/** Words `parseAtom` claims before it will read an ident as a variable or a call name. A `VarRef`
+ *  or `CallExpr` spelled with one of these prints source that means something else entirely —
+ *  `today` becomes a `DateAtom`, `unique(x)` a generator — so it is refused instead.
+ *
+ *  `env` is deliberately absent for `VarRef` and present for `CallExpr`: the parser takes `env`
+ *  only when an `(` follows it (`parser.ts:5051`), so a bare variable called `env` round-trips and
+ *  a one-argument call to an action called `env` does not. */
+const RESERVED_IN_VALUE = new Set(['unique', 'random', 'format', 'base64', 'hex', 'url', 'today', 'now', 'true', 'false', 'null']);
+
+/** Binding power, matching `parseAddSub`/`parseMulDiv`. Left-associative, two levels, no parens. */
+const BINDS: Readonly<Record<BinaryExpr['op'], number>> = { '+': 1, '-': 1, '*': 2, '/': 2 };
+const ATOM = 3;
+
+function printValue(v: Value, need = 1): string {
   switch (v.type) {
     case 'StringLit':
       return printString(v);
@@ -337,8 +428,202 @@ function printValue(v: Value): string {
       return v.value ? 'true' : 'false';
     case 'NullLit':
       return 'null';
+    case 'VarRef':
+      if (RESERVED_IN_VALUE.has(v.name)) refuse('VarRef', `\`${v.name}\` is a word the value grammar claims, so a variable of that name cannot be written as itself`);
+      if (!isBareIdent(v.name)) refuse('VarRef', `\`${v.name}\` is not a name this language can write`);
+      return v.name;
+    case 'Interp':
+      return '{' + printRef(v.ref) + '}';
+    case 'EnvRef':
+      if (!isBareIdent(v.name)) refuse('EnvRef', `\`${v.name}\` is not an environment-variable name this language can write`);
+      return `env(${v.name})`;
+    case 'ObjectLit':
+      return printObject(v);
+    case 'ArrayLit':
+      return printArray(v);
+    case 'BinaryExpr':
+      return printBinary(v, need);
+    case 'DateAtom':
+      return v.which;
+    case 'DateOffsetLit':
+      return `${num(v.amount)} ${v.unit}`;
+    case 'FormatExpr':
+      // `format <value> as "<pattern>"` — the value is read by the full `parseValue`, so it
+      // needs no bracketing, and the trailing pattern string closes the expression.
+      return `format ${printValue(v.value)} as ${printString(v.pattern)}`;
+    case 'TransformExpr':
+      return `${v.kind} ${v.direction}(${printValue(v.value)})`;
+    case 'CallExpr':
+      return printCall(v);
     default:
-      return refuse(v.type);
+      return printGenerator(v);
+  }
+}
+
+/** `{ a: 1, b: "x" }` — on one line, which is what this corpus writes: of 1,823 inline request
+ *  bodies **1,811 are single-line**, the longest 300 characters and the widest 7 fields. The
+ *  twelve that were wrapped by hand come back joined; that is a text difference the per-node gate
+ *  is right to ignore, because `ObjectLit` records fields and not line breaks. */
+function printObject(o: ObjectLit): string {
+  if (o.fields.length === 0) return '{}';
+  const parts = o.fields.map((f, i) => `${printKey(f.key)}: ${printValue(f.value)}${openGuard(f.value, i === o.fields.length - 1, 'object field')}`);
+  return `{ ${parts.join(', ')} }`;
+}
+
+function printArray(a: ArrayLit): string {
+  if (a.elements.length === 0) return '[]';
+  return '[' + a.elements.map((e, i) => printValue(e) + openGuard(e, i === a.elements.length - 1, 'array element')).join(', ') + ']';
+}
+
+function printCall(c: CallExpr): string {
+  const first = c.name.split(' ')[0] ?? '';
+  if (RESERVED_IN_VALUE.has(first) || first === 'env') refuse('CallExpr', `a call whose name starts with \`${first}\` would be read as the value grammar's own \`${first}\``);
+  for (const word of c.name.split(' ')) if (!isBareIdent(word)) refuse('CallExpr', `\`${c.name}\` is not a call name this language can write`);
+  const args = c.args.map((a, i) => printValue(a) + openGuard(a, i === c.args.length - 1, 'call argument'));
+  return `${c.name}(${args.join(', ')})`;
+}
+
+/**
+ * A field of a JSON object is written bare when it is an identifier and quoted when it is not —
+ * `parseObject` accepts either (`parser.ts:5395`) and stores the same `string` for both, so the
+ * spelling is the printer's to choose and the tree cannot tell which was written. Bare is the
+ * corpus convention; quoting is what makes `{"user name": 1}` expressible at all.
+ *
+ * This is the `Stage` normalisation again with the opposite resolution: `Stage` refused because
+ * the two spellings parse to *different* programs, and this one picks because they parse to the
+ * same one.
+ */
+function printKey(key: string): string {
+  if (isBareIdent(key)) return key;
+  return '"' + escape(key) + '"';
+}
+
+function isBareIdent(name: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
+}
+
+/**
+ * Precedence, with the escape hatch this grammar has instead of parentheses.
+ *
+ * `-x` is sugar for `0 - x` and the parser records only the sugar's result (`parser.ts:4986`), so
+ * a `BinaryExpr` subtracting from a literal `0` may be written either way — and the unary
+ * spelling is an *atom*, which is the one way a subtraction can stand where a subtraction may not.
+ * That covers every negative literal in the language. What it does not cover is an addition under
+ * a multiplication, and there is no source for that at all, so it refuses.
+ */
+function printBinary(b: BinaryExpr, need: number): string {
+  // `-x` binds as tightly as `x` does, but only while `x` is itself an atom: printing `-a * b`
+  // for `(0 - (a * b))` re-parses as `((0 - a) * b)`, a different tree.
+  if (b.op === '-' && b.left.type === 'NumberLit' && b.left.value === 0 && b.right.type !== 'BinaryExpr') {
+    return '-' + printValue(b.right, ATOM);
+  }
+  const binds = BINDS[b.op];
+  if (binds < need) {
+    refuse('BinaryExpr', `\`${b.op}\` binds too loosely to stand here and this grammar has no parentheses (P#25), so no source expresses this tree`);
+  }
+  // The operator itself has to survive the operand in front of it.
+  const tail = tailReads(b.left);
+  if (tail === 'value' || (tail === 'minus' && b.op === '-')) {
+    refuse('BinaryExpr', `the left operand ends in a generator that is still reading, so a following \`${b.op}\` would be swallowed into it rather than applied to it`);
+  }
+  return `${printValue(b.left, binds)} ${b.op} ${printValue(b.right, binds + 1)}`;
+}
+
+/**
+ * WHERE A PRINTED VALUE STOPS, AND WHY THAT IS A CORRECTNESS QUESTION.
+ *
+ * Most values close themselves — a string ends on its quote, `unique(x)` and `base64 encode(x)`
+ * on their `)`, `format x as "p"` on its pattern. Five generators do not: `random number … to
+ * <v>`, `random decimal … to <v>`, `random date between … and <v>`, `random string <v>` and
+ * `random password [<v>]` all end with a call into `parseValue`, and `random of a, b` reads
+ * values until the commas stop. A value printed in front of one of those siblings is not beside
+ * it, it is *inside* it.
+ *
+ * So `tailReads` says what the printed form is still willing to swallow:
+ *
+ *   'value'      an open `parseValue` — takes any following operator and any following operand
+ *   'minus'      a bare `random password`, whose optional length is taken only when a
+ *                value-shaped token follows (`looksLikeValueStart`, `parser.ts:5326`: a string,
+ *                a number, `{` or `-`) — so `random password + 1` is safe and `- 1` is not
+ *   'none'       closed
+ *
+ * and `commaGreedy` says the same thing about a comma, which only `random of` reads.
+ *
+ * None of these shapes occurs in the 671-file corpus, which is exactly why they are written down
+ * rather than discovered: the per-node gate can only find defects in constructs somebody has
+ * already written, and a form can build one of these on its first day.
+ */
+type Tail = 'value' | 'minus' | 'none';
+
+function tailReads(v: Value): Tail {
+  switch (v.type) {
+    case 'RandomNumberExpr':
+    case 'RandomDecimalExpr':
+    case 'RandomDateBetweenExpr':
+      return 'value';
+    case 'RandomStringExpr':
+      return 'value';
+    case 'RandomPasswordExpr':
+      return v.length === undefined ? 'minus' : 'value';
+    case 'RandomOfExpr':
+      return v.choices.length === 0 ? 'none' : tailReads(v.choices[v.choices.length - 1]!);
+    case 'BinaryExpr':
+      // The unary spelling prints `-<right>`, so its tail is the right operand's either way.
+      return tailReads(v.right);
+    default:
+      return 'none';
+  }
+}
+
+function commaGreedy(v: Value): boolean {
+  if (v.type === 'RandomOfExpr') return true;
+  if (v.type === 'BinaryExpr') return commaGreedy(v.right);
+  return false;
+}
+
+/** Guard for a comma-separated position: everything but the last entry must close on its comma. */
+function openGuard(v: Value, isLast: boolean, position: string): string {
+  if (isLast || !commaGreedy(v)) return '';
+  refuse(v.type, `\`random of\` reads values until the commas stop, so it can only be the last ${position}`);
+}
+
+function printGenerator(v: Value): string {
+  switch (v.type) {
+    case 'UniquePrefixExpr':
+      return `unique(${printValue(v.prefix)})`;
+    case 'UniqueEmailExpr':
+      return 'unique email';
+    case 'UniqueNumberExpr':
+      return 'unique number';
+    case 'UniqueLikeExpr':
+      return `unique like ${printString(v.pattern)}`;
+    case 'UniqueUuidExpr':
+      return 'unique uuid';
+    case 'RandomNumberExpr':
+      return `random number ${printValue(v.from)} to ${printValue(v.to)}`;
+    case 'RandomDecimalExpr':
+      return `random decimal ${printValue(v.from)} to ${printValue(v.to)}`;
+    case 'RandomDateInPastExpr':
+      return 'random date in past';
+    case 'RandomDateInFutureExpr':
+      return 'random date in future';
+    case 'RandomDateBetweenExpr':
+      return `random date between ${printValue(v.from)} and ${printValue(v.to)}`;
+    case 'RandomOfExpr': {
+      if (v.choices.length === 0) refuse('RandomOfExpr', '`random of` needs at least one choice');
+      const choices = v.choices.map((c, i) => printValue(c) + openGuard(c, i === v.choices.length - 1, 'choice'));
+      return `random of ${choices.join(', ')}`;
+    }
+    case 'RandomStringExpr':
+      return `random string ${printValue(v.length)}`;
+    case 'RandomLikeExpr':
+      return `random like ${printString(v.pattern)}`;
+    case 'RandomUuidExpr':
+      return 'random uuid';
+    case 'RandomPasswordExpr':
+      return v.length === undefined ? 'random password' : `random password ${printValue(v.length)}`;
+    default:
+      return refuse((v as Node).type);
   }
 }
 
