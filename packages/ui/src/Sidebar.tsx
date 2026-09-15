@@ -1,12 +1,24 @@
-// The project and the run controls (`M192` U2). What is shown is what `GET /api/project` read
-// from the files — names, tags, lines, envs — and what can be asked is exactly what `tflw run`
-// takes: files, `--tag`, `--env`, `--workers`. Nothing here edits a file (`D985`).
+// The project and the run controls (`M192` U2, narrowed to a door by `M200` `A0-3`). What is
+// shown is what `GET /api/project` read from the files — names, tags, lines, envs — and what can
+// be asked is exactly what `tflw run` takes: files, `--tag`, `--env`, `--workers`.
+//
+// THE DOOR NARROWS THE LIST, NOT THE TEST. A test is listed here when its own constructs put it
+// behind the door you came through (`D1043`), and a test behind three doors is listed under all
+// three. What it *shows* when opened is decided by its constructs and never by the door
+// (`D1044`), so nothing below hides a line of a file.
+//
+// AND IT STILL SHOWS WHAT IT IS NOT LISTING. A file whose tests are all behind other doors is
+// named with a count rather than dropped, because a project pane that silently omits two thirds
+// of a project is how someone concludes the tool lost their tests.
 
 import { useMemo, useState } from 'react';
-import type { ProjectView, RunRequest } from './contract';
+import type { Lens, ProjectView, RunRequest } from './contract';
+import { DOOR_BY_ID } from './doors';
 
 export interface SidebarProps {
   readonly project: ProjectView;
+  /** The door the reader came through — which tests this pane lists. */
+  readonly door: Lens;
   readonly running: boolean;
   readonly onRun: (request: RunRequest) => void;
   readonly onCancel: () => void;
@@ -17,18 +29,33 @@ export interface SidebarProps {
  * fixture has five, so the fold's threshold is exercised only by the dogfood (§10). */
 export const FOLD_TAGS_ABOVE = 24;
 
-export function Sidebar({ project, running, onRun, onCancel }: SidebarProps) {
+export function Sidebar({ project, door, running, onRun, onCancel }: SidebarProps) {
   const defaultEnv = project.envs.find((e) => e.isDefault)?.name ?? project.envs[0]?.name ?? '';
   const [env, setEnv] = useState(defaultEnv);
   const [workers, setWorkers] = useState('');
   const [files, setFiles] = useState<ReadonlySet<string>>(new Set());
   const [tags, setTags] = useState<ReadonlySet<string>>(new Set());
 
+  /** The project as this door sees it: each file with only the tests and crawls behind the door,
+   *  plus how many of its tests are behind some other one. */
+  const inDoor = useMemo(
+    () =>
+      project.files
+        .map((f) => ({
+          file: f,
+          tests: f.tests.filter((t) => t.lenses.includes(door)),
+          crawls: f.crawls.filter((c) => c.lenses.includes(door)),
+          elsewhere: f.tests.filter((t) => !t.lenses.includes(door)).length,
+        }))
+        .filter((e) => e.tests.length > 0 || e.crawls.length > 0 || e.elsewhere > 0),
+    [project, door],
+  );
+
   const allTags = useMemo(() => {
     const seen = new Set<string>();
-    for (const f of project.files) for (const t of f.tests) for (const tag of t.tags) seen.add(tag);
+    for (const e of inDoor) for (const t of e.tests) for (const tag of t.tags) seen.add(tag);
     return [...seen].sort();
-  }, [project]);
+  }, [inDoor]);
 
   const toggle = <T,>(set: ReadonlySet<T>, v: T): Set<T> => {
     const next = new Set(set);
@@ -46,7 +73,8 @@ export function Sidebar({ project, running, onRun, onCancel }: SidebarProps) {
     return req;
   };
 
-  const testCount = project.files.reduce((n, f) => n + f.tests.length, 0);
+  const testCount = inDoor.reduce((n, e) => n + e.tests.length + e.crawls.length, 0);
+  const otherCount = project.files.reduce((n, f) => n + f.tests.length, 0) - project.files.reduce((n, f) => n + f.tests.filter((t) => t.lenses.includes(door)).length, 0);
 
   return (
     <aside className="sidebar">
@@ -55,7 +83,8 @@ export function Sidebar({ project, running, onRun, onCancel }: SidebarProps) {
           {project.root.split('/').filter(Boolean).pop() ?? project.root}
         </div>
         <div className="muted" data-project-counts>
-          {project.files.length} file{project.files.length === 1 ? '' : 's'} · {testCount} test{testCount === 1 ? '' : 's'}
+          {project.files.length} file{project.files.length === 1 ? '' : 's'} · {testCount} behind {DOOR_BY_ID[door].label}
+          {otherCount > 0 ? <span data-project-elsewhere={otherCount}> · {otherCount} behind another door</span> : null}
         </div>
       </div>
 
@@ -104,7 +133,7 @@ export function Sidebar({ project, running, onRun, onCancel }: SidebarProps) {
       ) : null}
 
       <ul className="files" data-files>
-        {project.files.map((f) => (
+        {inDoor.map(({ file: f, tests, crawls, elsewhere }) => (
           <li key={f.path} data-file={f.path}>
             <label className="file-row">
               <input type="checkbox" checked={files.has(f.path)} onChange={() => setFiles(toggle(files, f.path))} data-file-check={f.path} />
@@ -116,10 +145,26 @@ export function Sidebar({ project, running, onRun, onCancel }: SidebarProps) {
               ) : null}
             </label>
             <ul className="tests-in-file">
-              {f.tests.map((t) => (
-                <li key={`${t.line}-${t.name}`} data-project-test={t.name} data-line={t.line}>
+              {crawls.map((c) => (
+                <li key={`crawl-${c.line}`} data-project-crawl={c.name} data-line={c.line}>
+                  <span className="muted ln">{c.line}</span> {c.name}
+                  <span className="badge">crawl</span>
+                </li>
+              ))}
+              {tests.map((t) => (
+                <li key={`${t.line}-${t.name}`} data-project-test={t.name} data-line={t.line} data-test-lenses={t.lenses.join(' ')}>
                   <span className="muted ln">{t.line}</span> {t.name}
                   {t.workload ? <span className="badge">workload</span> : null}
+                  {/* Every OTHER door this test is behind, named on the test itself — `D1043`'s
+                      "a test carrying several appears in several", made visible where it matters
+                      rather than asserted in a plan. */}
+                  {t.lenses
+                    .filter((l) => l !== door)
+                    .map((l) => (
+                      <span key={l} className="badge also" data-also={l}>
+                        {DOOR_BY_ID[l].label}
+                      </span>
+                    ))}
                   {t.tags.map((tag) => (
                     <span key={tag} className="tag">
                       @{tag}
@@ -127,6 +172,11 @@ export function Sidebar({ project, running, onRun, onCancel }: SidebarProps) {
                   ))}
                 </li>
               ))}
+              {elsewhere > 0 ? (
+                <li className="muted elsewhere" data-file-elsewhere={elsewhere}>
+                  {elsewhere} more behind {elsewhere === 1 ? 'another door' : 'other doors'}
+                </li>
+              ) : null}
             </ul>
           </li>
         ))}

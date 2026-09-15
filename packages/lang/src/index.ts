@@ -15,6 +15,10 @@ export * from './spec-data.js';
 export { RUNTIME_RULES, type RuntimeRule, type Decidability } from './conformance.js';
 export { lex, type LexResult, type LineInfo } from './lexer.js';
 export { format, roundTrip, compareTexts, joinTokens, INDENT, type FormatResult } from './format.js';
+export { print, PRINTABLE, CONTEXT_BOUND, type PrintResult } from './print.js';
+export { lensesOfTest, lensesOfCrawl, LENSES, STEP_LENS, SUBJECT_LENS, MATCHER_LENS, type Lens } from './lenses.js';
+export { insertIntoSource, type Insertion, type InsertResult } from './insert.js';
+export { buildWorkload, buildThreshold, buildTest, stringLit, SYNTHETIC, type BuildResult, type WorkloadSpec, type ThresholdSpec, type TestSpec, type StageSpec } from './build.js';
 export {
   parse as parseTokens,
   parseConfig as parseConfigTokens,

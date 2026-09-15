@@ -11,7 +11,10 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UiServer, readProject, runArgv, safeJoin, parseUiArgs, traceViewerDir, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, readProject, runArgv, initArgv, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, etagOf, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { readdir } from 'node:fs/promises';
+
+const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cliEntry = join(here, '..', 'src', 'cli.ts');
@@ -76,7 +79,11 @@ test('readProject: envs, discovered files with their tests, the excluded dir and
       assert.deepEqual(p.files.map((f) => f.path).sort(), ['broken.tflw', 'deep/slow.tflw', 'health.tflw']);
       const health = p.files.find((f) => f.path === 'health.tflw')!;
       // `line` is where the declaration starts, tags included — the line a click should land on.
-      assert.deepEqual(health.tests, [{ name: 'health', tags: ['smoke', 'api'], line: 1, workload: false }]);
+      // `lenses` is `M200` `A0-3`'s derivation (`D1043`): `health` makes a request, so it is
+      // behind API — and its `@api` tag is beside the point, since the same tag on a test that
+      // made no request would put it behind nothing.
+      assert.deepEqual(health.tests, [{ name: 'health', tags: ['smoke', 'api'], line: 1, workload: false, lenses: ['api'] }]);
+      assert.deepEqual(health.crawls, []);
       assert.equal(health.diagnostics, 0);
       assert.ok(p.files.find((f) => f.path === 'broken.tflw')!.diagnostics > 0, 'the broken file reports its diagnostics');
     } finally {
@@ -269,8 +276,235 @@ test('the trace viewer: served under /trace/ from the project\'s own playwright-
   }
 });
 
-test('the server has no write path to a .tflw file — the green condition, grepped on the source', async () => {
+test('the server writes through exactly one call site — the green condition, narrowed, not dropped', async () => {
+  // Slice 1's clause was "no write path at all", grepped on this source. `M200` `A0-2` makes the
+  // page an authoring surface, so the clause is replaced by its successor rather than deleted: a
+  // guard widened until it admits the new thing is no guard, and this one is narrowed to the new
+  // thing's own shape. Exactly one `writeFile`, in `writeProjectFile`, and no other write verb.
   const source = await readFile(join(here, '..', 'src', 'ui-server.ts'), 'utf8');
-  assert.doesNotMatch(source, /writeFile|appendFile|createWriteStream|openSync|writeSync/, 'ui-server.ts must not write files; slice 1 is a viewer (D985)');
+  const writes = source.match(/\bwriteFile\(/g) ?? [];
+  assert.equal(writes.length, 1, `ui-server.ts must write through exactly one call site, found ${writes.length}`);
+  const fn = source.slice(source.indexOf('export async function writeProjectFile'));
+  assert.ok(fn.length > 0, 'the one write lives in writeProjectFile');
+  assert.match(fn.slice(0, fn.indexOf('\n}\n')), /\bwriteFile\(/, 'the one writeFile call is inside writeProjectFile');
+  assert.doesNotMatch(source, /appendFile|createWriteStream|openSync|writeSync|truncate\(/, 'no other write verb (D985)');
   assert.match(source, /\bcp\(/, 'the one copy it makes — a report directory kept aside — is here');
+});
+
+test('GET /api/file serves a file’s text and its etag, and refuses what is not one', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await fixtureProject(baseUrl);
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      const res = await fetch(`${base}/api/file?path=health.tflw`);
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { path: string; text: string; etag: string };
+      assert.equal(body.path, 'health.tflw');
+      assert.equal(body.text, await readFile(join(dir, 'health.tflw'), 'utf8'));
+      assert.equal(body.etag, etagOf(body.text));
+
+      assert.equal((await fetch(`${base}/api/file?path=nope.tflw`)).status, 404);
+      assert.equal((await fetch(`${base}/api/file?path=../escape.tflw`)).status, 400);
+      assert.equal((await fetch(`${base}/api/file?path=tflw.config`)).status, 400, 'the config is not a test file');
+      assert.equal((await fetch(`${base}/api/file?path=`)).status, 400);
+    } finally {
+      await ui.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('PUT /api/file creates, updates on a matching etag, and refuses a stale one', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await fixtureProject(baseUrl);
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+    const put = (body: unknown, ifMatch?: string) =>
+      fetch(`http://127.0.0.1:${port}/api/file`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', ...(ifMatch === undefined ? {} : { 'if-match': ifMatch }) },
+        body: JSON.stringify(body),
+      });
+    let port = 0;
+    try {
+      port = await ui.listen(0);
+      const created = `test "new"\n  api GET /health\n  expect status equals 200\n`;
+
+      // Create: no If-Match means "this should not exist yet".
+      const a = await put({ path: 'made/by-the-page.tflw', text: created });
+      assert.equal(a.status, 200);
+      const firstEtag = ((await a.json()) as { etag: string }).etag;
+      assert.equal(await readFile(join(dir, 'made', 'by-the-page.tflw'), 'utf8'), created, 'the bytes on disk are the bytes sent');
+
+      // Creating it a second time is the two-pages-racing case, and is refused — with its OWN
+      // message. Both refusals are 409 and the client's remedy differs: "you did not read it
+      // first" is a different instruction from "re-read and re-apply, it moved". Asserting only
+      // the status made this branch invisible, because the etag guard below returns 409 for the
+      // same request anyway — found by the mutation that deleted it and survived.
+      const twice = await put({ path: 'made/by-the-page.tflw', text: created });
+      assert.equal(twice.status, 409);
+      assert.match(((await twice.json()) as { error: string }).error, /already exists/);
+
+      // Update with the etag it was created under.
+      const updated = `test "new"\n  api GET /health\n  expect status equals 201\n`;
+      const b = await put({ path: 'made/by-the-page.tflw', text: updated }, firstEtag);
+      assert.equal(b.status, 200);
+      const secondEtag = ((await b.json()) as { etag: string }).etag;
+      assert.notEqual(secondEtag, firstEtag);
+      assert.equal(await readFile(join(dir, 'made', 'by-the-page.tflw'), 'utf8'), updated);
+
+      // The stale etag is prediction §6.2's case: the file moved under the page.
+      const stale = await put({ path: 'made/by-the-page.tflw', text: created }, firstEtag);
+      assert.equal(stale.status, 409);
+      assert.match(((await stale.clone().json()) as { error: string }).error, /changed on disk/);
+      assert.equal(await readFile(join(dir, 'made', 'by-the-page.tflw'), 'utf8'), updated, 'a refused write changes nothing');
+
+      // An etag for a file that is not there.
+      assert.equal((await put({ path: 'made/ghost.tflw', text: created }, firstEtag)).status, 404);
+
+      // `*` is refused outright: it means "whatever is there now", which is the check itself.
+      assert.equal((await put({ path: 'made/by-the-page.tflw', text: created }, '*')).status, 400);
+
+      // A quoted etag is the same etag — HTTP quotes these by convention.
+      assert.equal((await put({ path: 'made/by-the-page.tflw', text: created }, `"${secondEtag}"`)).status, 200);
+    } finally {
+      await ui.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('PUT /api/file refuses text that does not parse or is not formatted, and leaves the file alone', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await fixtureProject(baseUrl);
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+    try {
+      const port = await ui.listen(0);
+      const before = await readFile(join(dir, 'health.tflw'), 'utf8');
+      const etag = etagOf(before);
+      const put = (text: string) =>
+        fetch(`http://127.0.0.1:${port}/api/file`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', 'if-match': etag },
+          body: JSON.stringify({ path: 'health.tflw', text }),
+        });
+
+      const bad = await put('test "t"\n  api GET\n');
+      assert.equal(bad.status, 422);
+      const detail = (await bad.json()) as { error: string; code?: string; line?: number };
+      assert.ok(detail.code?.startsWith('TF'), `a refusal names its diagnostic, got ${JSON.stringify(detail)}`);
+      assert.equal(detail.line, 2);
+
+      // Correct tflw, wrong shape: four spaces where `format` writes two.
+      const unformatted = await put('test "t"\n    api GET /health\n');
+      assert.equal(unformatted.status, 422);
+      assert.match(((await unformatted.json()) as { error: string }).error, /not formatted/);
+
+      assert.equal(await readFile(join(dir, 'health.tflw'), 'utf8'), before, 'neither refusal touched the file');
+      const left = await readdirSafe(dir);
+      assert.deepEqual(left.filter((f) => f.includes('tflw-ui-')), [], 'no temp file is left behind');
+    } finally {
+      await ui.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('writeProjectFile refuses a path that is not a .tflw inside the project', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-write-'));
+  try {
+    const ok = `test "t"\n  api GET /x\n`;
+    for (const [path, status] of [['../out.tflw', 400], ['/etc/x.tflw', 400], ['tflw.config', 400], ['notes.md', 400], ['', 400]] as const) {
+      const r = await writeProjectFile(dir, path, ok, null);
+      assert.ok('status' in r, `${path} should be refused`);
+      assert.equal((r as { status: number }).status, status, path);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('initArgv: one flag, because `tflw init` has one flag', () => {
+  // The door decides what a new project is scaffolded with — and what it can decide with today is
+  // `--load` or nothing. BROWSER and SCANS have no scaffold of their own (§7's open fork is the
+  // security one), so they create the plain project. Stated here so that a door growing a
+  // scaffold is a change to this line and not an accident.
+  assert.deepEqual(initArgv('load'), ['init', '--load']);
+  assert.deepEqual(initArgv('api'), ['init']);
+  assert.deepEqual(initArgv('browser'), ['init']);
+  assert.deepEqual(initArgv('scan'), ['init']);
+});
+
+test('GET /api/project says "not a project here" as its own answer, not as an ENOENT', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-empty-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+  try {
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    const res = await fetch(`${base}/api/project`);
+    assert.equal(res.status, 404);
+    const body = (await res.json()) as { noProject?: boolean; error: string };
+    assert.equal(body.noProject, true);
+    // The sentence a person reads, not a filesystem error with an absolute path in it.
+    assert.match(body.error, /not a tflw project yet/);
+    assert.doesNotMatch(body.error, /ENOENT/);
+  } finally {
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('POST /api/init creates a project by spawning tflw init, and the LOAD door gets a load test', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-init-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+  try {
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    const init = (door: string) => fetch(`${base}/api/init`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ door }) });
+
+    const res = await init('load');
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { ok: boolean; created: string[] };
+    assert.equal(body.ok, true);
+    // `created` is what is on disk afterwards, not what the child claimed (`D985`).
+    assert.ok(body.created.includes('tflw.config'));
+    assert.ok(body.created.includes('load.tflw'), 'the LOAD door scaffolds a load test');
+    await access(join(dir, 'load.tflw'));
+
+    // The project now reads, and the scaffolded load test is behind LOAD by derivation.
+    const view = (await (await fetch(`${base}/api/project`)).json()) as { files: { path: string; tests: { lenses: string[] }[] }[] };
+    const scaffold = view.files.find((f) => f.path === 'load.tflw');
+    assert.ok(scaffold, 'the scaffolded file is discovered');
+    assert.ok(scaffold.tests.every((t) => t.lenses.includes('load')), 'the scaffold is what puts it behind LOAD, not its name');
+
+    // Doing it again is refused by `tflw init` itself, in its own words, and nothing is rewritten.
+    const before = await readFile(join(dir, 'tflw.config'), 'utf8');
+    const again = await init('load');
+    assert.equal(again.status, 409);
+    const refusal = (await again.json()) as { ok: boolean; output: string };
+    assert.equal(refusal.ok, false);
+    assert.match(refusal.output, /already exists/);
+    assert.equal(await readFile(join(dir, 'tflw.config'), 'utf8'), before);
+
+    // And a door that is not one is refused before anything is spawned.
+    assert.equal((await init('nope')).status, 400);
+  } finally {
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a door with no scaffold of its own still creates a project, and does not pretend otherwise', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-init-api-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+  try {
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    const res = await fetch(`${base}/api/init`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ door: 'scan' }) });
+    const body = (await res.json()) as { ok: boolean; created: string[] };
+    assert.equal(body.ok, true);
+    assert.ok(body.created.includes('tflw.config'));
+    assert.ok(body.created.includes('example.tflw'));
+    assert.ok(!body.created.includes('load.tflw'), 'SCANS has no scaffold yet, and does not get LOAD’s');
+  } finally {
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

@@ -1,0 +1,113 @@
+// The landing (`D1042`, `M200` `A0-3`): four doors, each carrying what this project actually holds
+// behind it — counted by derivation, never by tag.
+//
+// The count is the honest part. A door showing "12 tests" that the project does not have would be
+// a brochure; these numbers are `lensesOfTest` run over the same files `tflw run` would run, so a
+// door with nothing behind it says so and stays open anyway — an empty LOAD door is exactly where
+// someone goes to write their first workload test.
+
+import { useState } from 'react';
+import { DOORS, countByDoor, lenslessCount } from './doors';
+import { initProject } from './api';
+import type { Lens, ProjectView } from './contract';
+
+export interface LandingProps {
+  readonly project: ProjectView | null;
+  readonly error: string | null;
+  /** True when this directory holds no `tflw.config` — the landing then offers to create one
+   *  rather than showing four doors onto nothing (`M200` `A0-5`). */
+  readonly noProject: boolean;
+  readonly onOpen: (door: Lens) => void;
+  readonly onCreated: () => void;
+}
+
+export function Landing({ project, error, noProject, onOpen, onCreated }: LandingProps) {
+  const [creating, setCreating] = useState<Lens | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  /**
+   * Creating a project *is* choosing a door: `tflw init --load` and `tflw init` write different
+   * files, so the question "what am I here to do" is answered before anything exists, which is
+   * the only moment it can steer what gets written (`D1042`, `D1051`).
+   */
+  const create = async (door: Lens): Promise<void> => {
+    setCreating(door);
+    setFailure(null);
+    const result = await initProject(door);
+    setCreating(null);
+    if (!result.ok) {
+      setFailure(result.output || 'tflw init did not finish');
+      return;
+    }
+    onCreated();
+    onOpen(door);
+  };
+
+  const counts = countByDoor(project);
+  const lensless = lenslessCount(project);
+  const name = project ? (project.root.split('/').filter(Boolean).pop() ?? project.root) : null;
+
+  return (
+    <div className="landing" data-landing>
+      <header className="landing-head">
+        <h1>tflw</h1>
+        <p className="muted">{noProject ? 'There is no project here yet. Pick what you are here to do, and one will be made for it.' : 'What are you here to do?'}</p>
+      </header>
+
+      {error ? (
+        <p className="error" data-error>
+          {error}
+        </p>
+      ) : null}
+      {failure ? (
+        <pre className="error" data-init-error>
+          {failure}
+        </pre>
+      ) : null}
+
+      <div className="doors" data-doors>
+        {DOORS.map((door) => (
+          <button
+            key={door.id}
+            className="door"
+            onClick={() => void (noProject ? create(door.id) : onOpen(door.id))}
+            disabled={creating !== null}
+            data-door={door.id}
+            data-door-count={counts[door.id]}
+          >
+            <span className="door-label">{door.label}</span>
+            <span className="door-blurb">{door.blurb}</span>
+            <span className="muted door-like">{door.like}</span>
+            <span className="door-count muted" data-door-state={noProject ? 'create' : 'open'}>
+              {creating === door.id
+                ? 'making it…'
+                : noProject
+                  ? // `tflw init` has one flag, so only LOAD scaffolds something of its own. Said
+                    // plainly rather than implied: BROWSER and SCANS have no scaffold yet (§7).
+                    door.id === 'load'
+                    ? 'create a project, with a load test to start from'
+                    : 'create a project'
+                  : project === null
+                    ? '—'
+                    : counts[door.id] === 0
+                      ? 'nothing here yet'
+                      : `${counts[door.id]} here`}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {project ? (
+        <footer className="landing-foot muted" data-landing-project>
+          <code>{name}</code> · {project.files.length} file{project.files.length === 1 ? '' : 's'}
+          {lensless > 0 ? (
+            <span data-lensless={lensless}>
+              {' '}
+              · {lensless} test{lensless === 1 ? '' : 's'} behind no door — {lensless === 1 ? 'it carries' : 'they carry'} no construct any door is about
+            </span>
+          ) : null}
+        </footer>
+      ) : null}
+    </div>
+  );
+}

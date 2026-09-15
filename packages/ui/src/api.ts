@@ -8,11 +8,52 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export const getProject = () => getJson<ProjectView>('/api/project');
+/** `null` when this directory holds no `tflw.config` — which the landing offers to fix, and which
+ *  is a different answer from a project that does not read (`M200` `A0-5`). */
+export async function getProject(): Promise<ProjectView | null> {
+  const res = await fetch('/api/project', { cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`/api/project: ${res.status} ${(await res.json() as { error?: string }).error ?? ''}`);
+  return (await res.json()) as ProjectView;
+}
+
+/** Create a project here, by spawning `tflw init` — the terminal's own scaffolds (`D1051`). */
+export async function initProject(door: string): Promise<{ ok: boolean; created: string[]; output: string }> {
+  const res = await fetch('/api/init', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ door }) });
+  return (await res.json()) as { ok: boolean; created: string[]; output: string };
+}
 export const getRuns = () => getJson<RunRecord[]>('/api/runs');
 export const getReports = () => getJson<ReportDir[]>('/api/reports');
 export const getResults = (reportId: string) => getJson<RunReport>(`/api/reports/${encodeURIComponent(reportId)}/results.json`);
 export const reportFileUrl = (reportId: string, file: string) => `/api/reports/${encodeURIComponent(reportId)}/${file}`;
+
+/** A file's source and the version the next write will be checked against (`D1049`). */
+export interface FileView {
+  readonly path: string;
+  readonly text: string;
+  readonly etag: string;
+}
+
+export const getFile = (path: string) => getJson<FileView>(`/api/file?path=${encodeURIComponent(path)}`);
+
+/**
+ * Write a whole file back. `ifMatch` is the etag the edit was computed against, or `null` to
+ * create a file that should not exist yet.
+ *
+ * The server refuses three things and each needs different words from the page, so the refusal
+ * comes back whole rather than as a thrown string: `409` the file moved under us, `422` the text
+ * does not parse (with the diagnostic's code and line), `422` it is not formatted.
+ */
+export async function putFile(path: string, text: string, ifMatch: string | null): Promise<{ ok: true; etag: string } | { ok: false; status: number; error: string; code?: string; line?: number }> {
+  const res = await fetch('/api/file', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', ...(ifMatch === null ? {} : { 'if-match': ifMatch }) },
+    body: JSON.stringify({ path, text }),
+  });
+  const body = (await res.json()) as { etag?: string; error?: string; code?: string; line?: number };
+  if (res.ok && body.etag) return { ok: true, etag: body.etag };
+  return { ok: false, status: res.status, error: body.error ?? `${res.status}`, code: body.code, line: body.line };
+}
 
 export async function startRun(request: RunRequest): Promise<RunRecord> {
   const res = await fetch('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });

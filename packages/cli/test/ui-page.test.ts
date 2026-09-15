@@ -94,28 +94,42 @@ after(async () => {
   await rm(scratch, { recursive: true, force: true });
 });
 
+/**
+ * The door every pre-`M200` test enters by (`D1042`). The landing is the root now, so a test that
+ * wants the shell has to say which door it came through — and API is the one the fixture project
+ * is mostly behind (8 of its 13 entries). The report and run panes are not door-specific: a
+ * report holds whatever ran, and the door narrows only the project pane (`D1044`).
+ */
+const API_DOOR = '#/api';
+
 /** The functional entries of a report — the workload kind carries metrics, not steps (U4). */
 const functional = (report: RunReport): TestResult[] => report.tests.filter((t): t is TestResult => t.kind === 'functional');
 
 async function openReport(id: string): Promise<void> {
-  await page.goto(baseUrl);
+  await page.goto(`${baseUrl}${API_DOOR}`);
   await page.locator(`[data-report-row="${id}"]`).click();
   await page.locator(`[data-report="${id}"]`).waitFor();
 }
 
-test('the sidebar is the project: every file, test, line and tag the server read, and the envs', async () => {
-  await page.goto(baseUrl);
+test('the sidebar is the project behind this door: every file, test, line and tag the server read, and the envs', async () => {
+  await page.goto(`${baseUrl}${API_DOOR}`);
   await page.locator('[data-files]').waitFor();
-  const project = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; line: number; tags: string[] }[] }[]; envs: { name: string; isDefault: boolean }[] };
+  const project = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; line: number; tags: string[]; lenses: string[] }[] }[]; envs: { name: string; isDefault: boolean }[] };
   assert.ok(project.files.length >= 2, 'the fixture project has two files');
   for (const f of project.files) {
+    const behind = f.tests.filter((t) => t.lenses.includes('api'));
     const row = page.locator(`[data-file="${f.path}"]`);
+    // A file with nothing behind this door and nothing behind another is not listed at all; the
+    // fixture has no such file, which this assertion would catch if one arrived.
     assert.equal(await row.count(), 1, `file ${f.path} listed once`);
-    for (const t of f.tests) {
+    for (const t of behind) {
       const item = row.locator(`[data-project-test="${t.name}"]`);
       assert.equal(await item.getAttribute('data-line'), String(t.line));
       const text = await item.textContent();
       for (const tag of t.tags) assert.ok(text?.includes(`@${tag}`), `${t.name} shows @${tag}`);
+    }
+    for (const t of f.tests.filter((x) => !x.lenses.includes('api'))) {
+      assert.equal(await row.locator(`[data-project-test="${t.name}"]`).count(), 0, `${t.name} is behind another door and is not listed here`);
     }
   }
   const options = await page.locator('[data-env-select] option').allTextContents();
@@ -123,12 +137,19 @@ test('the sidebar is the project: every file, test, line and tag the server read
     options,
     project.envs.map((e) => `${e.name}${e.isDefault ? ' (default)' : ''}`),
   );
+  // The counts line is the door's own arithmetic since `A0-3`, and it states BOTH halves: what
+  // is behind this door and what is behind another. A pane that silently listed ten of twelve
+  // tests is how someone concludes the tool lost their tests.
   const counts = await page.locator('[data-project-counts]').textContent();
-  const total = project.files.reduce((n, f) => n + f.tests.length, 0);
-  assert.equal(counts, `${project.files.length} files · ${total} tests`);
+  const behindApi = project.files.reduce((n, f) => n + f.tests.filter((t) => t.lenses.includes('api')).length, 0);
+  const elsewhere = project.files.reduce((n, f) => n + f.tests.length, 0) - behindApi;
+  assert.equal(counts, `${project.files.length} files · ${behindApi} behind API · ${elsewhere} behind another door`);
+  assert.ok(elsewhere > 0, 'the fixture must hold a test behind some other door, or the clause above is never rendered');
   // U7: the tag cloud folds above `FOLD_TAGS_ABOVE` (the dogfood's 90 hid every file); the
-  // fixture's few stay open, and the fold names the count either way.
-  const allTags = new Set(project.files.flatMap((f) => f.tests.flatMap((t) => t.tags)));
+  // fixture's few stay open, and the fold names the count either way. Behind a door, the cloud is
+  // the tags of the tests this door lists — a tag on nothing visible is a filter that empties the
+  // pane when pressed.
+  const allTags = new Set(project.files.flatMap((f) => f.tests.filter((t) => t.lenses.includes('api')).flatMap((t) => t.tags)));
   const fold = page.locator('[data-tags-fold]');
   assert.equal(await fold.getAttribute('data-tags-fold'), String(allTags.size));
   assert.ok(allTags.size <= 24, 'the fixture is under the fold (`FOLD_TAGS_ABOVE` in Sidebar.tsx, restated — the cli typecheck has no jsx)');
@@ -141,7 +162,7 @@ test('the sidebar is the project: every file, test, line and tag the server read
 });
 
 test('the run list is the report directories, each row carrying its own results.json counts', async () => {
-  await page.goto(baseUrl);
+  await page.goto(`${baseUrl}${API_DOOR}`);
   for (const id of ['full', 'headers']) {
     const row = page.locator(`[data-report-row="${id}"]`);
     await row.waitFor();
@@ -607,7 +628,7 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
-    await page.goto(baseUrl);
+    await page.goto(`${baseUrl}${API_DOOR}`);
     await page.locator('[data-tag="catalog"]').click();
     await page.locator('[data-run]').click();
     await page.locator('[data-live]').waitFor();
@@ -658,7 +679,7 @@ test('a run cancelled from the page: its kept directory says so above the report
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
-    await page.goto(baseUrl);
+    await page.goto(`${baseUrl}${API_DOOR}`);
     const before = new Set(await page.locator('[data-report-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-report-row'))));
     await page.locator('[data-tag="load"]').click();
     await page.locator('[data-run]').click();
@@ -692,7 +713,7 @@ test('a run cancelled from the page: its kept directory says so above the report
 });
 
 test('a run that could not start: the live pane keeps its exit and stderr, drawn as the failure it is, and nothing is kept', async () => {
-  await page.goto(baseUrl);
+  await page.goto(`${baseUrl}${API_DOOR}`);
   // `--workers 0` — `tflw run` refuses it (usage, exit 2) before any report is written.
   const before = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string }[];
   await page.locator('[data-workers]').fill('0');
@@ -721,4 +742,328 @@ test('a run that could not start: the live pane keeps its exit and stderr, drawn
   await page.locator(`[data-run-row="${run.id}"]`).click();
   await page.locator(`[data-live="${run.id}"] [data-stderr]`).waitFor({ timeout: 30_000 });
   await page.locator('[data-workers]').fill('');
+});
+
+// ---------------------------------------------------------------------------
+// `M200` `A0-3` — the shell: four doors, a lens derived from constructs, a switcher.
+// Graded against `GET /api/project`, which carries the derivation the server computed with
+// `@tflw/lang`'s own function — never against a number written in this file.
+// ---------------------------------------------------------------------------
+
+/** The project as the server derived it, used as this section's oracle. */
+async function projectView(): Promise<{ files: { path: string; tests: { name: string; lenses: string[] }[]; crawls: { name: string; lenses: string[] }[] }[] }> {
+  return (await (await fetch(`${baseUrl}/api/project`)).json()) as never;
+}
+
+test('the landing is four doors, each counting what is actually behind it', async () => {
+  await page.goto(baseUrl);
+  await page.locator('[data-landing]').waitFor();
+  const view = await projectView();
+  const expected: Record<string, number> = { api: 0, browser: 0, load: 0, scan: 0 };
+  for (const f of view.files) {
+    for (const t of f.tests) for (const l of t.lenses) expected[l] = (expected[l] ?? 0) + 1;
+    for (const c of f.crawls) for (const l of c.lenses) expected[l] = (expected[l] ?? 0) + 1;
+  }
+  assert.deepEqual((await page.locator('[data-door]').evaluateAll((els) => els.map((e) => e.getAttribute('data-door')))), ['api', 'browser', 'load', 'scan']);
+  for (const [id, n] of Object.entries(expected)) {
+    assert.equal(await page.locator(`[data-door="${id}"]`).getAttribute('data-door-count'), String(n), `the ${id} door's count`);
+  }
+  // The fixture exercises all four derivations, which is what makes the assertion above mean
+  // something: three doors with a zero would pass a count that was always zero.
+  assert.ok(expected.api > 0 && expected.browser > 0 && expected.load > 0 && expected.scan > 0, `the fixture must exercise every door: ${JSON.stringify(expected)}`);
+});
+
+test('a door opens the project, and the URL is the only place the choice lives', async () => {
+  await page.goto(baseUrl);
+  await page.locator('[data-door="load"]').click();
+  await page.locator('[data-files]').waitFor();
+  assert.equal(new URL(page.url()).hash, '#/load');
+  assert.equal(await page.locator('[data-doorbar]').getAttribute('data-doorbar'), 'load');
+
+  // The back button works, because the hash is the state.
+  await page.goBack();
+  await page.locator('[data-landing]').waitFor();
+
+  // And a pasted link opens where it says, with nothing remembered from the visit above.
+  await page.goto(`${baseUrl}#/scan`);
+  await page.locator('[data-files]').waitFor();
+  assert.equal(await page.locator('[data-doorbar]').getAttribute('data-doorbar'), 'scan');
+});
+
+test('the door narrows the list and never the test — a test behind two doors is listed under both', async () => {
+  const view = await projectView();
+  const multi = view.files.flatMap((f) => f.tests).filter((t) => t.lenses.length > 1);
+  assert.ok(multi.length > 0, 'the fixture must hold a multi-lens test — D1043’s whole case');
+
+  for (const test_ of multi) {
+    for (const lens of test_.lenses) {
+      await page.goto(`${baseUrl}#/${lens}`);
+      const item = page.locator(`[data-project-test="${test_.name}"]`);
+      await item.waitFor();
+      assert.equal(await item.getAttribute('data-test-lenses'), test_.lenses.join(' '), `${test_.name} carries its whole derivation behind ${lens}`);
+      // The other doors it is behind are named on the row itself.
+      for (const other of test_.lenses.filter((l) => l !== lens)) {
+        assert.equal(await item.locator(`[data-also="${other}"]`).count(), 1, `${test_.name} names its ${other} door while in ${lens}`);
+      }
+    }
+  }
+});
+
+test('the derivation is about constructs, not tags — the page shows it where the tag disagrees', async () => {
+  // `security.tflw`'s tests carry `@security` AND an `api` step, so they are behind API as well.
+  // `shop.tflw`'s carry no such tag and are behind BROWSER. If the page were reading tags, the
+  // first would be missing from API and the second from BROWSER.
+  const view = await projectView();
+  const tagged = view.files.find((f) => f.path.endsWith('security.tflw'));
+  assert.ok(tagged, 'the fixture has security.tflw');
+  await page.goto(`${baseUrl}#/api`);
+  await page.locator('[data-files]').waitFor();
+  for (const t of tagged.tests) {
+    assert.equal(await page.locator(`[data-project-test="${t.name}"]`).count(), 1, `${t.name} is behind API because it makes a request, whatever its tag says`);
+  }
+});
+
+test('the switcher moves between doors without leaving the project', async () => {
+  await page.goto(`${baseUrl}#/api`);
+  await page.locator('[data-doorbar]').waitFor();
+  const view = await projectView();
+  const browserTests = view.files.flatMap((f) => f.tests).filter((t) => t.lenses.includes('browser') && !t.lenses.includes('api'));
+  assert.ok(browserTests.length > 0, 'the fixture has a browser-only test');
+  assert.equal(await page.locator(`[data-project-test="${browserTests[0]!.name}"]`).count(), 0, 'not listed behind API');
+
+  await page.locator('[data-door-tab="browser"]').click();
+  await page.locator(`[data-project-test="${browserTests[0]!.name}"]`).waitFor();
+  assert.equal(new URL(page.url()).hash, '#/browser');
+
+  // And back to the landing, by the one control that says so.
+  await page.locator('[data-door-home]').click();
+  await page.locator('[data-landing]').waitFor();
+});
+
+// ---------------------------------------------------------------------------
+// `M200` `A0-4` — the LOAD door writes a file. §5's green condition, in a real browser:
+// pick LOAD, build a workload test by form, write it, and find those bytes on disk — then run
+// the project and read the charts of the test the page itself wrote.
+// ---------------------------------------------------------------------------
+
+test('the LOAD form writes a real file, and the bytes on disk are the bytes it previewed', async () => {
+  await page.goto(`${baseUrl}#/load`);
+  await page.reload(); // the form's fields are component state, and a hash change does not reset them
+  await page.locator('[data-load-form]').waitFor();
+
+  // A file to write into, chosen by the form's own picker rather than by this test.
+  const target = 'tests/load.tflw';
+  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator('[data-load-name]').fill('written by the page');
+  await page.locator('[data-load-tags]').fill('load authored');
+  await page.locator('[data-load-shape]').selectOption('iterations');
+  await page.locator('[data-load-field="count"]').fill('42');
+  await page.locator('[data-load-field="vus"]').fill('3');
+  await page.locator('[data-threshold-metric="0"]').selectOption('errorRate');
+  await page.locator('[data-threshold-bound="0"]').fill('0.23');
+
+  // The preview is the bytes the PUT will carry — the same value, not a rendering of it.
+  const preview = await page.locator('[data-load-preview]').textContent();
+  assert.ok(preview?.includes('@load @authored'), preview ?? '');  // one line, the corpus convention
+  assert.ok(preview?.includes('test "written by the page"'), preview ?? '');
+  assert.ok(preview?.includes('run 42 iterations across 3 users'), preview ?? '');
+  // `0.23%` is one of the 1,007 two-decimal percentages a naive `* 100` breaks on.
+  assert.ok(preview?.includes('threshold error rate is less than 0.23%'), preview ?? '');
+
+  const before = await readFile(join(root, target), 'utf8');
+  await page.locator('[data-load-save]').click();
+  await page.locator('[data-load-wrote]').waitFor();
+
+  const after = await readFile(join(root, target), 'utf8');
+  assert.notEqual(after, before, 'the file changed');
+  assert.equal(after, preview, 'the bytes on disk are exactly what the page showed');
+
+  // And it is a file `tflw run` can read — asserted by the tool itself, not by this test's eye.
+  const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+  assert.ok(!/error/i.test(check), check);
+
+  // The page's own projection agrees: the new test is behind LOAD, derived from the workload
+  // line it just wrote and not from the `@load` tag beside it.
+  const view = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; lenses: string[]; workload: boolean }[] }[] };
+  const written = view.files.find((f) => f.path === target)?.tests.find((t) => t.name === 'written by the page');
+  assert.ok(written, 'the server sees the test the page wrote');
+  assert.equal(written.workload, true);
+  assert.ok(written.lenses.includes('load'));
+});
+
+test('an existing test gains a threshold from the LOAD lens, and nothing else in the file moves', async () => {
+  // §5's second clause, and `D1044`'s own case: a test authored as an API test picks up load
+  // evidence from this door without any of its other steps being touched.
+  const target = 'tests/catalog.tflw';
+  const before = await readFile(join(root, target), 'utf8');
+
+  await page.goto(`${baseUrl}#/load`);
+  await page.reload(); // the form's fields are component state, and a hash change does not reset them
+  await page.locator('[data-load-form]').waitFor();
+  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator('[data-load-mode]').selectOption('existing');
+  const first = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; lenses: string[] }[] }[] };
+  const victim = first.files.find((f) => f.path === target)!.tests[0]!;
+  assert.ok(!victim.lenses.includes('load'), `${victim.name} must not already be behind LOAD`);
+
+  await page.locator('[data-load-test]').selectOption(victim.name);
+  // The workload checkbox stays untouched: this clause is `D1044`'s — a threshold alone, and the
+  // test keeps running the way it always did.
+  assert.equal(await page.locator('[data-load-also-workload]').isChecked(), false, 'a workload line is opt-in');
+  await page.locator('[data-threshold-metric="0"]').selectOption('duration');
+  await page.locator('[data-threshold-percentile="0"]').fill('95');
+  await page.locator('[data-threshold-bound="0"]').fill('500');
+  await page.locator('[data-load-save]').click();
+  await page.locator('[data-load-wrote]').waitFor();
+
+  const after = await readFile(join(root, target), 'utf8');
+  // Every line the author wrote is still there, in order, with one line added.
+  const added = after.split('\n').filter((l) => !before.split('\n').includes(l));
+  assert.deepEqual(added, ['  threshold p95 duration is less than 500ms'], after);
+
+  const view = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; lenses: string[] }[] }[] };
+  const now = view.files.find((f) => f.path === target)!.tests.find((t) => t.name === victim.name)!;
+  assert.ok(now.lenses.includes('load'), 'a threshold alone is load evidence (D1044)');
+  assert.ok(now.lenses.includes('api'), 'and it is still behind API — a door grants nothing and takes nothing away');
+});
+
+test('a write against a file that moved underneath is refused, and says what to do', async () => {
+  // Prediction §6.2: the write route's first defect is concurrency. Here it is, deliberately —
+  // the page holds an etag, a terminal changes the file, and the page must not win.
+  const target = 'tests/orders.tflw';
+  await page.goto(`${baseUrl}#/load`);
+  await page.reload(); // the form's fields are component state, and a hash change does not reset them
+  await page.locator('[data-load-form]').waitFor();
+  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator('[data-load-name]').fill('racing the terminal');
+  await page.locator('[data-load-preview]').waitFor();
+
+  // Somebody else edits it after the page read it.
+  const current = await readFile(join(root, target), 'utf8');
+  await writeFile(join(root, target), `${current}\n# touched by someone else\n`);
+
+  await page.locator('[data-load-save]').click();
+  const message = await page.locator('[data-load-error]').textContent();
+  assert.match(message ?? '', /changed on disk/);
+  assert.match(message ?? '', /reopen the file/);
+  const afterRefusal = await readFile(join(root, target), 'utf8');
+  assert.ok(afterRefusal.includes('# touched by someone else'), 'the other edit survived');
+  assert.ok(!afterRefusal.includes('racing the terminal'), 'and the page did not win');
+});
+
+test('ticking the workload box turns a functional test into a load test, and the derivation follows', async () => {
+  // The opt-in branch. Without this, the checkbox's `true` path is code no test reaches — which
+  // in this round has three times been the thing a surviving mutation was pointing at.
+  const target = 'tests/orders.tflw';
+  await page.goto(`${baseUrl}#/load`);
+  await page.reload();
+  await page.locator('[data-load-form]').waitFor();
+  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator('[data-load-mode]').selectOption('existing');
+
+  const before = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; lenses: string[]; workload: boolean }[] }[] };
+  const victim = before.files.find((f) => f.path === target)!.tests.find((t) => !t.workload)!;
+  await page.locator('[data-load-test]').selectOption(victim.name);
+  await page.locator('[data-load-also-workload]').check();
+  await page.locator('[data-load-shape]').selectOption('hold');
+  await page.locator('[data-load-unit]').selectOption('rps');
+  await page.locator('[data-load-field="target"]').fill('5');
+  await page.locator('[data-load-field="seconds"]').fill('2');
+  await page.locator('[data-threshold-metric="0"]').selectOption('errorRate');
+  await page.locator('[data-threshold-bound="0"]').fill('1');
+
+  const preview = await page.locator('[data-load-preview]').textContent();
+  assert.ok(preview?.includes('  hold 5 rps for 2s'), preview ?? '');
+  await page.locator('[data-load-save]').click();
+  await page.locator('[data-load-wrote]').waitFor();
+
+  const after = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; lenses: string[]; workload: boolean }[] }[] };
+  const now = after.files.find((f) => f.path === target)!.tests.find((t) => t.name === victim.name)!;
+  assert.equal(now.workload, true, 'it has a workload line now');
+  assert.ok(now.lenses.includes('load') && now.lenses.includes('api'), 'behind both doors, by what it carries');
+
+  // And a test that already has one cannot be given a second: the box is disabled for it.
+  await page.locator('[data-load-test]').selectOption(victim.name);
+  assert.equal(await page.locator('[data-load-also-workload]').isDisabled(), true);
+});
+
+// ---------------------------------------------------------------------------
+// `M200` `A0-5` / §5's green condition, whole: open the page on a directory that is not a tflw
+// project, pick LOAD, and come out the other side having run a workload test the page wrote.
+// Its own server over its own empty directory, because the fixture project above is a project.
+// ---------------------------------------------------------------------------
+
+test('a directory that is not a project: pick LOAD, get one, write a test into it, run it, read its charts', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-green-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage();
+  try {
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    await fresh.goto(base);
+
+    // 1. The landing says there is nothing here, and offers to make one rather than showing four
+    //    doors onto an empty project.
+    await fresh.locator('[data-landing]').waitFor();
+    assert.equal(await fresh.locator('[data-door="load"] [data-door-state]').getAttribute('data-door-state'), 'create');
+    assert.match((await fresh.locator('[data-door="load"]').textContent()) ?? '', /create a project, with a load test/);
+
+    // 2. Picking LOAD creates the project and lands in the LOAD door. `tflw init --load`, spawned
+    //    — so what is on disk is what a terminal would have written.
+    await fresh.locator('[data-door="load"]').click();
+    await fresh.locator('[data-load-form]').waitFor();
+    assert.equal(new URL(fresh.url()).hash, '#/load');
+    const scaffold = await readFile(join(dir, 'load.tflw'), 'utf8');
+    const fromTerminal = await mkdtemp(join(tmpdir(), 'tflw-terminal-'));
+    execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init', '--load'], { cwd: fromTerminal, stdio: 'pipe' });
+    assert.equal(scaffold, await readFile(join(fromTerminal, 'load.tflw'), 'utf8'), 'the page and the terminal write the same bytes');
+    await rm(fromTerminal, { recursive: true, force: true });
+
+    // 3. Point the new project at the fixture server, so a run has something to call.
+    const config = await readFile(join(dir, 'tflw.config'), 'utf8');
+    await writeFile(join(dir, 'tflw.config'), config.replace(/api "[^"]*"/, `api "http://127.0.0.1:${fixturePort}"`));
+
+    // 4. Write a workload test by form, into the file the door scaffolded.
+    await fresh.reload();
+    await fresh.locator('[data-load-form]').waitFor();
+    await fresh.locator('[data-load-file]').selectOption('load.tflw');
+    await fresh.locator('[data-load-name]').fill('the health check under load');
+    await fresh.locator('[data-load-tags]').fill('load');
+    await fresh.locator('[data-load-shape]').selectOption('iterations');
+    await fresh.locator('[data-load-field="count"]').fill('4');
+    await fresh.locator('[data-load-field="vus"]').fill('2');
+    await fresh.locator('[data-threshold-metric="0"]').selectOption('errorRate');
+    await fresh.locator('[data-threshold-bound="0"]').fill('100');
+    const preview = (await fresh.locator('[data-load-preview]').textContent()) ?? '';
+    await fresh.locator('[data-load-save]').click();
+    await fresh.locator('[data-load-wrote]').waitFor();
+    assert.equal(await readFile(join(dir, 'load.tflw'), 'utf8'), preview, 'the bytes on disk are the bytes previewed');
+
+    // A form cannot write a test that calls anything, so give it one step from the outside — the
+    // same splice the page performs, through the same route. `A1` is what makes this a form.
+    const withStep = (await readFile(join(dir, 'load.tflw'), 'utf8')).replace(
+      '  run 4 iterations across 2 users\n',
+      '  run 4 iterations across 2 users\n  api GET /health\n  expect status equals 200\n',
+    );
+    const etag = ((await (await fetch(`${base}/api/file?path=load.tflw`)).json()) as { etag: string }).etag;
+    const put = await fetch(`${base}/api/file`, { method: 'PUT', headers: { 'content-type': 'application/json', 'if-match': etag }, body: JSON.stringify({ path: 'load.tflw', text: withStep }) });
+    assert.equal(put.status, 200, await put.text());
+
+    // 5. Run it from the page and read the charts of the test the page wrote.
+    await fresh.reload();
+    await fresh.locator('[data-files]').waitFor();
+    await fresh.locator('[data-file-check="load.tflw"]').check();
+    await fresh.locator('[data-run]').click();
+    await fresh.locator('[data-report]').waitFor({ timeout: 60_000 });
+    const chart = fresh.locator('[data-report] canvas').first();
+    await chart.waitFor();
+    assert.ok((await chart.boundingBox())!.width > 0, 'the workload charts are painted');
+
+    // 6. And the file is readable by the tool with no page involved.
+    const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: dir, encoding: 'utf8', stdio: 'pipe' });
+    assert.ok(!/error/i.test(check), check);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
