@@ -32,10 +32,13 @@ import type {
   ArrayLit,
   BinaryExpr,
   CallExpr,
+  CallStmt,
+  CaptureStmt,
   DataTable,
   ExpectStmt,
   FormField,
   LetStmt,
+  LogStmt,
   Matcher,
   Node,
   ObjectLit,
@@ -105,6 +108,21 @@ export const PRINTABLE = new Set<string>([
   'WaitUntilApiStmt',
   'InlineDataTable',
   'FileDataTable',
+  // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
+  // statements that read or announce a response.
+  'DurationSubject',
+  'HeaderSubject',
+  'BodySubject',
+  'BodyTextSubject',
+  'BodyBytesSubject',
+  'BodyCsvSubject',
+  'BodyPdfTextSubject',
+  'RequestSubject',
+  'ValueSubject',
+  'ResponseSubject',
+  'CaptureStmt',
+  'CallStmt',
+  'LogStmt',
   'VarRef',
   'Interp',
   'EnvRef',
@@ -197,6 +215,24 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printLet(node as LetStmt);
     case 'WaitUntilApiStmt':
       return printWaitUntilApi(node as WaitUntilApiStmt, level);
+    case 'CaptureStmt':
+      return pad(level) + printCapture(node as CaptureStmt);
+    case 'CallStmt':
+      return pad(level) + printCallStmt(node as CallStmt);
+    case 'LogStmt':
+      return pad(level) + printLog(node as LogStmt);
+    case 'StatusSubject':
+    case 'DurationSubject':
+    case 'HeaderSubject':
+    case 'BodySubject':
+    case 'BodyTextSubject':
+    case 'BodyBytesSubject':
+    case 'BodyCsvSubject':
+    case 'BodyPdfTextSubject':
+    case 'RequestSubject':
+    case 'ValueSubject':
+    case 'ResponseSubject':
+      return pad(level) + printSubject(node as Subject);
     case 'InlineBody':
     case 'FileBody':
     case 'FormBody':
@@ -470,22 +506,88 @@ function printTable(t: DataTable, level: number): string[] {
 }
 
 function printExpect(e: ExpectStmt, level: number): string {
-  if (e.masks.length > 0) refuse('ExpectStmt', '`mask` clauses are not printable yet');
-  // `any`/`all` quantify a body path and nothing else, and body subjects are `A1`'s — so a branch
-  // that emitted the quantifier here could never be reached, which is exactly how the mutation run
-  // found it: the mutation that deletes the quantifier SURVIVED, because no printable expect has
-  // one. Unreachable code in a printer is untested code in a printer.
-  if (e.quantifier) refuse('ExpectStmt', `the \`${e.quantifier}\` quantifier needs a body path, which is not printable yet`);
+  // `mask <locator>` is only meaningful on `matches snapshot`, and a locator is `A3`'s.
+  if (e.masks.length > 0) refuse('ExpectStmt', '`mask` clauses need a locator, which is not printable yet');
   const keyword = e.soft ? 'check' : 'expect';
-  return `${pad(level)}${keyword} ${printSubject(e.subject)} ${printMatcher(e.matcher)}`;
+  // `A1-3`: the quantifier is emitted for real now. In `A0` this branch was a REFUSAL, because
+  // `any`/`all` only ever quantify a body path and no body subject printed — a branch that could
+  // not be reached, which the mutation run caught by surviving the deletion of it.
+  const quantifier = e.quantifier ? e.quantifier + ' ' : '';
+  return `${pad(level)}${keyword} ${quantifier}${printSubject(e.subject)} ${printMatcher(e.matcher)}`;
 }
 
+/**
+ * The response subjects (SPEC §5.3). Everything here reads the last `api` step's response scope;
+ * the locator, page, dialog and `request to "…"` subjects are the browser's and are `A3`'s.
+ *
+ * `of request to "…"` moves any of four of these off the response scope and onto traffic observed
+ * on a live page, so the clause goes with the browser vocabulary that gives it meaning — refused
+ * here by name rather than silently dropped, which would print an assertion against the wrong
+ * response.
+ */
 function printSubject(s: Subject): string {
-  if (s.type !== 'StatusSubject') refuse(s.type, 'only the `status` subject prints in A0');
-  if (s.of) refuse('StatusSubject', '`of request to "…"` is not printable yet');
-  return 'status';
+  switch (s.type) {
+    case 'StatusSubject':
+      return 'status' + networkRefRefusal(s.of, 'status');
+    case 'DurationSubject':
+      return 'duration';
+    case 'RequestSubject':
+      return 'request';
+    case 'ResponseSubject':
+      return 'response';
+    case 'HeaderSubject':
+      return `header ${printString(s.name)}` + networkRefRefusal(s.of, 'header "…"');
+    case 'BodySubject':
+      return 'body' + printBodyPath(s.path) + networkRefRefusal(s.of, 'body');
+    case 'BodyTextSubject':
+      return 'body text' + networkRefRefusal(s.of, 'body text');
+    case 'BodyBytesSubject':
+      return 'body bytes';
+    case 'BodyCsvSubject':
+      return 'body csv' + printBodyPath(s.path);
+    case 'BodyPdfTextSubject':
+      return 'body pdf text';
+    case 'ValueSubject':
+      return '{' + printRef(s.ref) + '}';
+    default:
+      return refuse(s.type, 'only the response subjects print in A1 — the browser’s are A3’s');
+  }
 }
 
+function networkRefRefusal(of: { type: 'NetworkRequestRef' } | null, subject: string): string {
+  if (of) refuse('NetworkRequestRef', `\`${subject} of request to "…"\` reads traffic observed on a live page, which is A3's`);
+  return '';
+}
+
+/**
+ * `body.items[0].price` — every property segment is dotted, including the first, because `body`
+ * precedes it. That is the one difference from `printRef`, whose first segment IS the name and so
+ * takes no dot; getting it wrong either way produces a path that still parses.
+ */
+function printBodyPath(path: readonly PathSegment[]): string {
+  let out = '';
+  for (const seg of path) {
+    if (seg.kind === 'prop') {
+      if (!isBareIdent(seg.name)) refuse('BodySubject', `\`${seg.name}\` is not a property name this language can write`);
+      out += '.' + seg.name;
+    } else if (seg.kind === 'index') {
+      out += `[${num(seg.index)}]`;
+    } else {
+      refuse('PathSegment', `unknown segment kind \`${(seg as { kind: string }).kind}\``);
+    }
+  }
+  return out;
+}
+
+/**
+ * The value matchers (SPEC §6.2). The state matchers (`visible`/`hidden`/…) are the browser's and
+ * the three `has no … violations` families are the scanners', so both refuse here.
+ *
+ * `is` IS NOT RECORDED. `parseMatcher` consumes an optional `is` copula and discards it, so
+ * `equals` and `is equals` are the same node — the `Field.key` situation again, and picked the
+ * same way: the corpus writes `equals 200` bare and `is less than 500ms` with the copula, so that
+ * is what this writes.
+ */
 function printMatcher(m: Matcher): string {
   const not = m.negated ? 'not ' : '';
   switch (m.name) {
@@ -493,13 +595,67 @@ function printMatcher(m: Matcher): string {
       return `${not}equals ${operand(m)}`;
     case 'contains':
       return `${not}contains ${operand(m)}`;
+    case 'matches':
+      return `${not}matches ${operand(m)}`;
+    case 'matchesSubset':
+      return `${not}matches subset ${operand(m)}`;
+    case 'matchesSchema': {
+      if (!m.schemaName || !m.schemaSource) refuse('Matcher', '`matches schema` needs a schema name and a source');
+      const service = m.schemaService === undefined ? '' : m.schemaService + ' ';
+      if (m.schemaService !== undefined && !isBareIdent(m.schemaService)) refuse('Matcher', `\`${m.schemaService}\` is not a service name this language can write`);
+      return `${not}matches schema ${printString(m.schemaName)} from ${service}${printString(m.schemaSource)}`;
+    }
+    case 'matchesFile':
+      if (!m.filePath) refuse('Matcher', '`matches file` needs a path');
+      return `${not}matches file ${printString(m.filePath)}`;
     case 'lessThan':
       return `is ${not}less than ${operand(m)}`;
     case 'greaterThan':
       return `is ${not}greater than ${operand(m)}`;
+    case 'hasCount':
+      return `${not}has count ${operand(m)}`;
+    case 'hasValue':
+      return `${not}has value ${operand(m)}`;
+    case 'connects':
+      // The one matcher that never takes an operand at all (`ast.ts` on `Matcher.value`).
+      if (m.value) refuse('Matcher', '`connects` never takes an operand');
+      return `${not}connects`;
+    case 'fails':
+      // …and the one whose operand is optional, spelled with its own keyword.
+      return m.value ? `${not}fails matching ${printValue(m.value)}` : `${not}fails`;
     default:
       return refuse('Matcher', `the \`${m.name}\` matcher is not printable yet`);
   }
+}
+
+/** `capture <subject> as <name>` — the subject vocabulary is `printSubject`'s, minus the value
+ *  subject, which `parseCapture` rejects by name (`D130`: that statement is a `let` with a second
+ *  name). Refusing it here keeps the printer from writing a step the parser will not read. */
+function printCapture(c: CaptureStmt): string {
+  if (c.subject.type === 'ValueSubject') refuse('CaptureStmt', '`capture` reads a value out of a response, so its subject cannot be a `{variable}` (`D130`)');
+  if (!isBareIdent(c.name)) refuse('CaptureStmt', `\`${c.name}\` is not a variable name this language can write`);
+  return `capture ${printSubject(c.subject)} as ${c.name}`;
+}
+
+/**
+ * `log [level] "message" [to <destination>]`.
+ *
+ * THE LEVEL IS NORMALISED ON THE WAY IN, third instance of that shape and third different answer.
+ * `parseLogStep` defaults an omitted level to `'info'`, so `log "x"` and `log info "x"` are one
+ * node. `Stage` refused because its two spellings mean different programs; a JSON key is picked
+ * bare; and this is picked *omitted*, because that is what all eight `log` lines in the corpus
+ * write and because the shorter one is what a form should emit.
+ */
+function printLog(l: LogStmt): string {
+  const level = l.level === 'info' ? '' : l.level + ' ';
+  const to = l.destination === null ? '' : ' to ' + l.destination;
+  return `log ${level}${printString(l.message)}${to}`;
+}
+
+/** A bare call as a statement (`M6`, `P#2`) — the same `CallExpr` a value position takes, with its
+ *  result discarded, so its name is bound by the same rules. */
+function printCallStmt(c: CallStmt): string {
+  return printCall(c.call);
 }
 
 function operand(m: Matcher): string {
