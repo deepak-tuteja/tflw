@@ -7567,7 +7567,7 @@ premise moves.
 
 ### D822
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-second-run.mjs · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/parallel-groups.mjs, tflw-tests/scripts/regression.mjs +1 more · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
 
 **D822 — no automated guard is built for accumulated-state degradation (amended by `M181c`)**
 
@@ -12677,7 +12677,7 @@ hand. Those three are fixed first (`M192b`), so the phases are green from the da
 
 ### M196
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +2 more · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
 
 **`M196` — a reuse window is a frame**
 
@@ -12692,7 +12692,7 @@ running the extracted actions against the stack.
 
 ### M197
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +25 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
 
 **`M197` — the sweep runs its four groups at once**
 
