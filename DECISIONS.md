@@ -4139,7 +4139,7 @@ mirror, disk space).
 
 ### D206
 
-<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md, tflw-tests/tflw-acceptance/perf/profile/open-model-fetch-repro.mjs · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md, tflw-tests/scripts/verify-construct-acceptance.mjs +2 more · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
 
 **D206 — the open model sends over `node:http`, not `fetch`**
 
@@ -4150,7 +4150,7 @@ same lesson arriving a second time, at a path `M45` explicitly declined to cover
 
 ### D207
 
-<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/tflw-acceptance/conformance/self-report.tflw · lifted from `PLAN_M121_OPEN_MODEL_CLIENT.md`</sub>
 
 **D207 — a shared agent pair per open scenario, not per arrival, and explicitly not "pinning"**
 
@@ -4202,7 +4202,7 @@ configured the runtime refuses the step; the checker warns.
 
 ### D248
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-construct-acceptance.mjs +1 more · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D248 — `FU-14`: a speculative diagnosis at ~3 s, and the deadline does not move**
 
@@ -6247,7 +6247,7 @@ spelling.**
 
 ### D640
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D640** — *a `wait until` step may set its own poll budget, spelled `timeout wait <duration>`, on
   both forms.* It is the only per-step override of `timeout wait` in the language, and it is
@@ -6505,7 +6505,7 @@ trustworthy arrival curve; the box can.
 
 ### D729
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/tests/.constructs/locator-near-miss.tflw +4 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/tests/.constructs/locator-near-miss.tflw +5 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D729` — UI plants prefer a real flow; a harness page is the fallback.**
 Most of the uncovered browser surface has a believable home: an invoice PDF download on
@@ -6722,7 +6722,7 @@ is checked against it") applied to a value instead of a document.
 
 ### D745
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +5 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +6 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D745` — the workload-shape plants are graded against a standalone counter, not against apiV2.
 This inverts `D726`'s placement in order to keep `D726`'s principle.**
@@ -8734,7 +8734,7 @@ the reached set and lives in a hand table a gate holds equal to the measured set
 
 ### D976
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/reach-verdicts.mjs · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
 
 **`D976` — deepening is bounded and each repair carries its own kill.** Eleven constructs, each
 verified by a hand mutation reddening its plant, recorded in the row. The census (`M190`) is
@@ -8923,7 +8923,7 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
 
 ### M3a
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/README.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/README.md +1 more · lifted from `PROGRESS.md`</sub>
 
 **M3a — browser core: Playwright peer, interaction steps, selector model, UI expects, dialogs**
 
@@ -10105,7 +10105,7 @@ gets `SPEC` ~~§16.1~~ **§13** restated, which means `docs-data.generated.ts` r
 
 ### M89
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/README.md +6 more · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/README.md +8 more · lifted from `PLAN_M89_WORKLOAD_TRUTH.md`</sub>
 
 **`M89` — workload results are made to describe the run that actually happened.** Cluster C3: a
 workload's reported population included iterations that never completed, so percentiles, error
@@ -10272,7 +10272,7 @@ not started.
 
 ### M97c
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/missing-referenced-file.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/missing-referenced-file.tflw, tflw-tests/tests/.constructs/session-context.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **`M97c` — shipped 2026-08-06**
 
@@ -10483,7 +10483,7 @@ folding a layout decision into a wording change would have buried it.
 
 ### M107
 
-<sub>cited from SPEC.md · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/tflw-acceptance/conformance/self-report.tflw · lifted from `PROGRESS.md`</sub>
 
 **M107 — the flaky control that was telling the truth (2026-08-08)**
 
@@ -10522,9 +10522,18 @@ arity and a source path, but not a body — and the row filed it as a *when*, no
 
 **`M110b` — every example in `SPEC.md`'s diagnostics table is executed.** The `Example` cell stopped being prose: it is generated from source that `packages/lang/test/diagnosticExamples.test.ts` runs through the same checker pass list `tflw check` runs, asserting both the code it emits and any output quoted after `→`. Four rows were wrong before it, `TF003` among them. `M110b-02` — the four docs-site CLI tables collapsing into one shared module — was filed here and closed later.
 
+### M111
+
+<sub>cited from tflw-tests/tflw-acceptance/conformance/aborted.tflw · lifted from `PROGRESS.md`</sub>
+
+**M111 — report honesty (`FU-06`, `FU-07`, `B6-03`, `B6-05`), 2026-08-08**
+
+Status: ✅ done. Branch `m111-report-honesty`, off `m110-doc-truth-2`. The last queued cluster in
+`REVIEW_FINDINGS.md`; four rows, all closed.
+
 ### M114
 
-<sub>cited from SPEC.md · lifted from `REVIEW_FINDINGS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/tflw-acceptance/conformance/aborted.tflw · lifted from `REVIEW_FINDINGS.md`</sub>
 
 **Filed by `M114` (2026-08-09)**
 
@@ -10559,7 +10568,7 @@ milestone takes all 8, because they collapse into **three new rules and one exte
 
 ### M118
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md +2 more · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +6 more · lifted from `PLAN_M118_FIRST_RUN.md`</sub>
 
 **M118 — the first two minutes**
 
@@ -10570,7 +10579,7 @@ stays `TF054`.
 
 ### M119
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/perf/profile/FINDINGS_M121_OPEN_MODEL_FETCH.md · lifted from `REVIEW_FINDINGS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +4 more · lifted from `REVIEW_FINDINGS.md`</sub>
 
 **Filed by `M119` (2026-08-09)**
 
@@ -10609,7 +10618,7 @@ file (`packages/lsp-server/src/server.ts`), and the same verification setup.
 
 ### M124
 
-<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONTRIBUTING.md +7 more · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONTRIBUTING.md +8 more · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
 
 **`M124` — a literal the run will reject is a checker sentence**
 
@@ -11258,7 +11267,7 @@ Ledger at grill time: **341 rows — 45 open (S2 0 · S3 21 · S4 24), 286 close
 
 ### M147d
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **9.2b The six decisions `M147d` has taken, stated**
 
@@ -11642,7 +11651,7 @@ roster and ratchet. **`D511` merge order: tflw first, then testFlow-tests.**
 
 ### M157g
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +3 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +5 more · lifted from `PLAN_M157_TEARDOWN.md`</sub>
 
 **`M157g` — 2026-08-31, the clause that was vacuous and flaky from one cause**
 
@@ -11974,6 +11983,23 @@ behavioural test that resolves a doubled declaration of each key and asserts whi
 **`M168` — the constructs nothing can be shown to test, and the one that was misfiled**
 
 <!-- plan:closes M168-01, M168-03, M168-04, M168-07 -->
+
+### M169
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs, tflw-tests/tflw-acceptance/conformance/no-verdict.tflw · lifted from `PLAN_M169_CITATION_RESOLUTION.md`</sub>
+
+**`M169` — a citation must resolve; it does not have to publish**
+
+<!-- plan:closes M164-07, M164-08 -->
+<!-- plan:closes-at M169d -->
+> The second marker is not decoration. This plan ships in four stages and `milestoneTokens` records
+> the bare number as well as the suffixed one, so without it `M169a: …` reaching `main` marks the
+> whole of `M169` shipped and the guard immediately reports `M164-07` — which `M169b` owes — as a
+> stale claim. That is the failure `M125b1` paid for; `closesAt` exists because of it.
+>
+> `M164-06` is deliberately **not** in the closes list. This milestone changes the position its row was
+> filed under rather than satisfying it, and §8 says why a re-scope is the honest bookkeeping and a
+> close would not be.
 
 ### M169a
 
@@ -12526,9 +12552,25 @@ the kind of credential the language does not renew.
 |---|---|---|
 | `M188c` | tflw-tests | **`M154h-01` closed on its own evidence.** `tflw-acceptance/evidence/M154h-01/` — `failure.png`, `network.txt` (the three review calls, method/status/time), `step.json` (the failing test record, base64 stripped) — and a README stating the bar for the directory: evidence that cannot be regenerated. `storefront.tflw`'s header paragraph rewritten from "did not reproduce, stays open" to the diagnosis. One precondition assertion before the second attempt: the comment field is empty (the reset has rendered), so the ordering the test now rests on is asserted, not implied. |
 
+### M189
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs +9 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+
+**`M189` — reached but not asserted**
+
+The dogfood proves tflw *parses and runs* everything it ships — 184 of 199 constructs rostered,
+102 of 104 apiV2 routes hit, every page of both frontends opened — and proves tflw *computes the
+right answer* for seven constructs by evidence. `M164b`'s census (2026-09-01) is the measurement:
+25 of 276 registry mutations killed anything, the 294 kill relations are 267 **refusals** (the
+mutated build refused the fixture, so the plant asserted nothing) against 19 assertions, and of
+the 123 runtime candidates — the ones that keep a fixture parseable and change what it returns —
+**99 survived the whole roster**. Every one of those 99 is killed by tflw's own unit tests
+(`mutate.mjs` exits 1 on a survivor), so each is a precise sentence: *tflw's suite can tell this
+line from its opposite, and the dogfood cannot.*
+
 ### M189a
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/lib/mutation-covers.mjs +7 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +12 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
 
 **`M189a` — reach (sibling)**
 
@@ -12569,7 +12611,7 @@ the kind of credential the language does not renew.
 
 ### M189c
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +5 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/mutation-covers.mjs +6 more · lifted from `PLAN_M189_REACHED_BUT_NOT_ASSERTED.md`</sub>
 
 **`M189c` — the eleven (sibling)**
 
@@ -12652,7 +12694,7 @@ phases that grade the three.
 
 ### M194
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M194_BOX_SWEEP.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/reach-verdicts.mjs · lifted from `PLAN_M194_BOX_SWEEP.md`</sub>
 
 **`M194` — the mutation sweep leaves the runners**
 
@@ -12704,5 +12746,25 @@ suite's config names them as literals. This milestone gives a config URL a non-s
 environment override with the literal as its default (`api env TFLW_API_BASE default "…"`), gives
 the compose stack the same variables, and runs the four groups as four workers, each with its own
 stack and its own copy of the tree. Expected: 42 → about 14 minutes per close-out.
+
+### M198
+
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/lib/constructs.mjs +19 more · lifted from `PLAN_M198_THE_DRAWDOWN.md`</sub>
+
+**`M198` — the drawdown: thirty-four mutations the dogfood runs through and never grades**
+
+`M189a` measured which surviving registry mutations the acceptance roster *reaches*, and gave
+each reached survivor a verdict by hand: 34 are `not-asserted` — a plant executes the mutated
+line and its known answer does not depend on what the line did. They are the last open rows in
+the ledger (`M189-02`–`M189-07`, all S4), and they are exactly the work the user chose over the
+mutation sweep after `M194`: better functional tests, not more mutants. This milestone writes the
+plants. Its rule is `M189c`'s (`D976`): a plant enters the roster only with its own kill — the
+registry mutation it was written for, applied on the box, the vendored build refreshed, the plant
+run alone, red, the red line quoted in `CONSTRUCTS.md`. **There is no census.** The plan's first
+draft graded the drawdown by re-running the mutation sweep over the 34 ids, and the user asked
+the right question — *is this even required? this is the mutation testing we discussed* — and it
+is not: the sweep was retired on 2026-09-15 (`M194`/`M195`) in favour of exactly this kind of
+test, and the hand kill proves per plant what the census would prove per roster, in two minutes
+and one browser instead of an hour and hundreds. The verdict table records the hand kill.
 
 <!-- GENERATED:decisions:end -->
