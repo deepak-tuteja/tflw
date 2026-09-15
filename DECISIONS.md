@@ -8890,7 +8890,7 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
   measured**: 374 minus the two retirements S1a named, written down while S1a was also retiring a
   third (`shard-count-of-stale`). `M196` (D1021) added the first entry under this clause the
   same day — `a-window-need-not-be-a-frame`, 372 — which is what the freeze permits and the
-  workflow comment now says without a number. `MUTATIONS.length` was 371 at every commit since #212 (325 in
+  workflow comment now says without a number. `MUTATIONS.length` was 371 at every commit since tflw#212 (325 in
   `mutate.mjs`, 46 in `self-mutations.mjs`) and `sweep-box.sh` printed it on the first sweep it
   ran; a count carried in prose next to a program that prints the count is `D767`'s shape, and
   this line held it for a day. Corrected in the plan, `DECISIONS.md`, `ci.yml`'s comment and the
