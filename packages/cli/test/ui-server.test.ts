@@ -458,15 +458,14 @@ test('writeProjectFile refuses a path that is not a .tflw inside the project', a
   }
 });
 
-test('initArgv: one flag, because `tflw init` has one flag', () => {
-  // The door decides what a new project is scaffolded with — and what it can decide with today is
-  // `--load` or nothing. BROWSER and SCANS have no scaffold of their own (§7's open fork is the
-  // security one), so they create the plain project. Stated here so that a door growing a
-  // scaffold is a change to this line and not an accident.
+test('initArgv: a door scaffolds with the flag it has, and two doors now have one', () => {
+  // `D1051` said "one flag, because `tflw init` has one flag" and `A2-4` (`D1053`) gave it a
+  // second. BROWSER still has no scaffold of its own and gets the plain project — stated here so
+  // that a door growing a scaffold is a change to this line and not an accident.
   assert.deepEqual(initArgv('load'), ['init', '--load']);
+  assert.deepEqual(initArgv('scan'), ['init', '--scan']);
   assert.deepEqual(initArgv('api'), ['init']);
   assert.deepEqual(initArgv('browser'), ['init']);
-  assert.deepEqual(initArgv('scan'), ['init']);
 });
 
 test('GET /api/project says "not a project here" as its own answer, not as an ENOENT', async () => {

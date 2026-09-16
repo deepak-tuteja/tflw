@@ -100,6 +100,81 @@ async function withOrdersServer<T>(fn: (baseUrl: string) => Promise<T>): Promise
   }
 }
 
+test('`tflw init --scan` scaffolds a project that refuses its own scan, and says exactly how to permit it', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-'));
+  try {
+    execFileSync('node', [cliEntry, 'init', '--scan'], { cwd: dir, stdio: 'pipe' });
+    const config = await readFile(join(dir, 'tflw.config'), 'utf8');
+    await access(join(dir, 'scan.tflw'));
+
+    // **The scan scaffold does NOT point at the demo service**, and that is the slice's finding
+    // rather than a preference: `tflw://demo` is a non-special scheme, whose origin serialises as
+    // the string `"null"`, and `authorized target` names origins — so there is nothing there an
+    // author could authorize, and `TF060`'s repair line prints `authorized target "null"`
+    // (`M200-02`). A scan project needs a real host.
+    // Asserted on the `api` DECLARATION, not on the file: the scaffold's comment names
+    // `tflw://demo` on purpose, to say why it is not using it. A first draft forbade the string
+    // anywhere and failed on the sentence explaining the decision.
+    const apiLines = config.split('\n').filter((l) => /^\s*api\s/.test(l));
+    assert.deepEqual(apiLines, ['  api "http://localhost:3001"'], 'one real host, and not the demo scheme');
+
+    // The declaration is present and INERT. `D21`/`D291`: this line is a person affirming they may
+    // point a scanner at a host, so a scaffold that wrote a live one would make the affirmation on
+    // their behalf — the checkbox `D291` says `D21` exists instead of.
+    const declaration = 'authorized target "http://localhost:3001" reason "<why you may scan it>"';
+    assert.match(config, new RegExp('^#\\s+' + declaration.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'm'),
+      'the declaration must be written, and written commented out');
+
+    // So the scaffold refuses its own scan — which is the point, not a defect.
+    // Diagnostics go to STDERR; a first draft read only `stdout` and asserted against `''`.
+    let checkOutput = '';
+    try {
+      await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+      assert.fail('the scan scaffold must not check clean before a human authorizes the target');
+    } catch (e) {
+      const r = e as { stdout?: string; stderr?: string };
+      checkOutput = (r.stdout ?? '') + (r.stderr ?? '');
+    }
+    assert.match(checkOutput, /error\[TF060\]/);
+
+    // **THE DRIFT GATE.** `TF060`'s repair line and the line this scaffold commented into the
+    // config must be the same bytes — otherwise the tool gives two pieces of advice about one act,
+    // which is exactly the state `M200-02` records for the demo base. Asserting the identity is
+    // what keeps the two from drifting the first time either is reworded.
+    assert.ok(
+      checkOutput.includes('`' + declaration + '`'),
+      `TF060's repair must be the line the scaffold wrote.\n  wanted: ${declaration}\n  in:\n${checkOutput}`,
+    );
+
+    // And uncommenting it — the one act the scaffold is asking a person to perform — is enough.
+    await writeFile(join(dir, 'tflw.config'), config.replace('#   ' + declaration, '  ' + declaration), 'utf8');
+    const { stdout: after } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+    assert.match(after, /no problems found/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`tflw init`\'s two scaffold flags are independent, and an unknown one is still refused', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-flags-'));
+  try {
+    // A project may want both; neither flag implies or suppresses the other.
+    execFileSync('node', [cliEntry, 'init', '--load', '--scan'], { cwd: dir, stdio: 'pipe' });
+    await access(join(dir, 'load.tflw'));
+    await access(join(dir, 'scan.tflw'));
+
+    // `B6-11`'s quiet variant: `tflw init --lod` once scaffolded without `load.tflw` and exited 0.
+    const bad = await mkdtemp(join(tmpdir(), 'tflw-flags-'));
+    try {
+      await assert.rejects(execFileAsync('node', [cliEntry, 'init', '--scna'], { cwd: bad }));
+    } finally {
+      await rm(bad, { recursive: true, force: true });
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('the built dist/cli.cjs runs a real test file against a real server and writes report.html', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-'));

@@ -173,19 +173,22 @@ export function runArgv(req: RunRequest): string[] {
 }
 
 /**
- * `tflw init [--load]` for a door — `M200` `A0-5` (`D1051`).
+ * `tflw init [--load|--scan]` for a door — `M200` `A0-5` (`D1051`), amended by `A2-4` (`D1053`).
  *
  * The door decides what a new project is scaffolded with, which is the second half of `D1042`'s
  * "a door decides where you land and what the new-test button scaffolds, and nothing else".
  *
- * **What it decides with is one flag, because `tflw init` has one flag.** LOAD gets `--load` and
- * therefore a `load.tflw`; the other three get the plain scaffold. That is stated here rather
- * than papered over: BROWSER has no scaffold of its own and SCANS has none either (§7's open
- * fork, `A2`'s), so those two doors create a project that opens on an API example. A door that
- * pretended otherwise would be a brochure.
+ * **`D1051` said "what it decides with is one flag, because `tflw init` has one flag", and `A2-4`
+ * gave it a second.** That sentence is amended here rather than deleted, because the shape it
+ * described was right and only its arithmetic moved: SCANS now gets `--scan` and therefore a
+ * `scan.tflw` plus the commented `authorized target` `D1053` argues for. BROWSER still has no
+ * scaffold of its own and still gets the plain project — stated rather than papered over, because
+ * a door that pretended otherwise would be a brochure.
  */
 export function initArgv(door: Lens): string[] {
-  return door === 'load' ? ['init', '--load'] : ['init'];
+  if (door === 'load') return ['init', '--load'];
+  if (door === 'scan') return ['init', '--scan'];
+  return ['init'];
 }
 
 /** The project as the page sees it: config envs, the discovered files, the tests in each. */
