@@ -27,7 +27,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSource, print, PRINTABLE, CONTEXT_BOUND, format } from '../src/index.js';
-import type { Node, Program, Subject, TestDecl, Value } from '../src/index.js';
+import type { Node, Program, Step, Subject, TestDecl, Value } from '../src/index.js';
 import { SYNTHETIC } from '../src/build.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -256,10 +256,14 @@ test('a stage is spelled by its block, and a bare stage refuses', () => {
   // A jump prints differently in the two blocks, from an identical node.
   const jumpInStep = parseSource('test "t"\n  step rps\n    to 10 for 2s\n  api GET /x\n').program.tests[0]!.workload!;
   const jumpInSpike = parseSource('test "t"\n  spike rps\n    hold 10 for 2s\n  api GET /x\n').program.tests[0]!.workload!;
-  assert.deepEqual(stripSpans((jumpInStep as { stages: unknown[] }).stages), stripSpans((jumpInSpike as { stages: unknown[] }).stages));
+  // Narrowed rather than cast: `Workload` is a union and only some members carry `stages`, which is
+  // exactly what the hand-written `{ stages: unknown[] }` shape was papering over.
+  assert.equal(jumpInStep.type, 'StepRpsWorkload');
+  assert.equal(jumpInSpike.type, 'SpikeRpsWorkload');
+  assert.deepEqual(stripSpans(jumpInStep.stages), stripSpans(jumpInSpike.stages));
   assert.notEqual(print(jumpInStep).text, print(jumpInSpike).text);
 
-  const stage = (jumpInSpike as { stages: Node[] }).stages[0]!;
+  const stage = jumpInSpike.stages[0]!;
   const bare = print(stage);
   assert.equal(bare.ok, false);
   assert.match(bare.reason ?? '', /cannot be printed on its own/);
@@ -364,7 +368,7 @@ const VALUE_SPELLINGS: readonly string[] = [
   'let a = random password 16',
 ];
 
-function step(line: string): Node {
+function step(line: string): Step {
   const { program, diagnostics } = parseSource(`test "t"\n  ${line}\n`);
   assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], line);
   const node = program.tests[0]?.body[0];
@@ -389,7 +393,9 @@ test('every kind the value grammar has prints back as the line it was written as
       if (typeof node.type === 'string' && PRINTABLE.has(node.type)) kinds.add(node.type);
       for (const [k, v] of Object.entries(node)) { if (k !== 'span') visit(v); }
     };
-    visit((step(line) as { value: unknown }).value);
+    const let_ = step(line);
+    assert.equal(let_.type, 'LetStmt');
+    visit(let_.value);
   }
   for (const kind of [
     'StringLit', 'NumberLit', 'DurationLit', 'BoolLit', 'NullLit', 'VarRef', 'Interp', 'EnvRef',
@@ -408,8 +414,12 @@ test('a negative literal is the unary spelling, and both spellings are the same 
   // AST cannot say which was written and the printer picks. It picks the short one — which is
   // what every negative number in a request body is — and that is safe precisely because the two
   // parse to one node.
-  const unary = (step('let a = -5') as { value: unknown }).value;
-  const spelled = (step('let a = 0 - 5') as { value: unknown }).value;
+  const unaryStmt = step('let a = -5');
+  const spelledStmt = step('let a = 0 - 5');
+  assert.equal(unaryStmt.type, 'LetStmt');
+  assert.equal(spelledStmt.type, 'LetStmt');
+  const unary = unaryStmt.value;
+  const spelled = spelledStmt.value;
   assert.deepEqual(stripSpans(unary), stripSpans(spelled));
   assert.equal(print(step('let a = 0 - 5'), { indent: 1 }).text, '  let a = -5');
 
@@ -712,7 +722,7 @@ const ASSERTION_SPELLINGS: readonly string[] = [
 ];
 
 /** A step in a test that already has an `api` step, so a response subject has something to read. */
-function assertionStep(line: string): Node {
+function assertionStep(line: string): Step {
   const { program, diagnostics } = parseSource(`test "t"\n  api GET /x\n  ${line}\n`);
   assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], line);
   const node = program.tests[0]?.body[1];
@@ -806,7 +816,9 @@ test('A2-1: the a11y matcher prints, and not one a11y assertion does', () => {
   // is true of the matcher and false of anything a user could write. **A node printing is not the
   // statement containing it printing** — and a tool that measures a rule needs a control as much as
   // the rule does.
-  const m = (assertionStep('expect page has no a11y violations') as { matcher: Node }).matcher;
+  const a11y = assertionStep('expect page has no a11y violations');
+  assert.equal(a11y.type, 'ExpectStmt');
+  const m = a11y.matcher;
   assert.equal(print(m).text, 'has no a11y violations');
   assert.equal(print(m).ok, true);
 

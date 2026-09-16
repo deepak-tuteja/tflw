@@ -78,8 +78,13 @@ test('evidence nested inside a block still counts', () => {
 
 test('a crawl is the SCANS door’s own declaration', () => {
   const { program } = parseSource('crawl "the surface"\n  seed spider "/"\n  expect response has no security violations\n');
-  assert.equal(program.crawls.length, 1);
-  assert.deepEqual(lensesOfCrawl(program.crawls[0]!), ['scan']);
+  // `Program.crawls` is absent-when-empty by design (`ast.ts`: a required field would put
+  // `"crawls": []` into every program's serialised AST and redden 31 parser goldens), so presence
+  // is asserted rather than assumed.
+  const crawls = program.crawls;
+  assert.ok(crawls, 'the program declares a crawl');
+  assert.equal(crawls.length, 1);
+  assert.deepEqual(lensesOfCrawl(crawls[0]!), ['scan']);
 });
 
 test('the classification tables cover their unions, checked against ast.ts itself', () => {

@@ -10,7 +10,7 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApiStep, buildExpect, buildTest, buildThreshold, buildWorkload, format, insertIntoSource, parseSource, print, stringLit, type ApiStepSpec, type ExpectSpec, type Insertion } from '../src/index.js';
+import { buildApiStep, buildExpect, buildTest, buildThreshold, buildWorkload, format, insertIntoSource, parseSource, print, stringLit, type ApiStepSpec, type ExpectSpec, type Insertion, type StringLit } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -244,14 +244,16 @@ test('an insert into a file that was never formatted formats the whole file, and
 
 const apiStep = (spec: ApiStepSpec) => {
   const r = buildApiStep(spec);
+  // `assert.equal` is declared `asserts actual is T` in `@types/node`, so this narrows `r` to its
+  // ok variant — a `if (!r.ok) throw` after it is unreachable, and `tsc` types it `never`.
   assert.equal(r.ok, true, r.ok ? '' : r.reason);
-  if (!r.ok) throw new Error(r.reason);
   return r.node;
 };
 const expectStmt = (spec: ExpectSpec) => {
   const r = buildExpect(spec);
+  // `assert.equal` is declared `asserts actual is T` in `@types/node`, so this narrows `r` to its
+  // ok variant — a `if (!r.ok) throw` after it is unreachable, and `tsc` types it `never`.
   assert.equal(r.ok, true, r.ok ? '' : r.reason);
-  if (!r.ok) throw new Error(r.reason);
   return r.node;
 };
 
@@ -264,9 +266,11 @@ test('a built string literal breaks into the same parts the parser would give it
   const built = stringLit('Bearer {token}');
   const { program } = parseSource('test "t"\n  api GET /x\n    header "A" is "Bearer {token}"\n');
   const step = program.tests[0]!.body[0]!;
+  // Narrowed by the assertion above, so the header reads off `ApiStep` itself rather than through
+  // a hand-written shape that had to restate `readonly` to compile.
   assert.equal(step.type, 'ApiStep');
-  const parsed = (step as { headers: { value: unknown }[] }).headers[0]!.value;
-  assert.deepEqual(built.parts, (parsed as { parts: unknown }).parts);
+  const parsed = step.headers[0]!.value;
+  assert.deepEqual(built.parts, (parsed as StringLit).parts);
   assert.equal(built.parts.length, 2, 'two parts: the literal text and the reference');
 });
 
@@ -365,7 +369,6 @@ test('the API door can add work to a test another door started, which closes `A0
       const w = workload({ kind: 'iterations', perUser: false, count: 50, vus: 2 });
       const t = buildTest({ name: 'the catalog holds', tags: ['load'], workload: w, thresholds: [], body: [] });
       assert.equal(t.ok, true, t.ok ? '' : t.reason);
-      if (!t.ok) throw new Error(t.reason);
       return t.node;
     })(),
   });
