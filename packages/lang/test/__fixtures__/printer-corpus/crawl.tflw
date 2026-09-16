@@ -1,0 +1,18 @@
+# `M201` `S4` — the crawl declaration and its three seeds.
+#
+# **This file exists to be PRINTED, not to be run** — see `values.tflw` for the whole argument. A
+# crawl walks a running service; nothing here walks anything.
+
+crawl "the documented surface, from its own schema"
+  seed openapi "/openapi.json"
+  expect response has no critical security violations
+
+crawl "whatever the recorded traffic touched"
+  seed traffic
+  expect response has no critical security violations
+
+crawl "the console, followed from its front door"
+  seed spider adminConsole "/"
+    max pages 60
+    max depth 2
+  expect response has no critical security violations

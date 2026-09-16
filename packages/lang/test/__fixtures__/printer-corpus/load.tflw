@@ -1,0 +1,81 @@
+# `M201` `S4` — the ten workload shapes and the `Stage` lines two of them are built from.
+#
+# **This file exists to be PRINTED, not to be run** — see `values.tflw` for the whole argument.
+#
+# **Two of the ten had never been written down anywhere.** `SpikeUsersWorkload` and
+# `StepUsersWorkload` are declared `PRINTABLE`, have printers and parser branches, and occur in
+# neither this repository nor `testFlow-tests` — so until this file no coverage gate had exercised
+# either, in any tier, on any machine (`M200-05`, `M201` `S1`). Their spelling is taken from
+# `parser.ts`'s own `parseStepOrSpikeWorkload`, which reads the unit as `users` or `rps` off the
+# same header and hands both to the same stage block, and not from an example, because there is no
+# example to take it from.
+
+@printer
+test "ramp users"
+  ramp to 20 users over 4s
+  api GET /items
+  expect status equals 200
+
+@printer
+test "ramp rps"
+  ramp to 50 rps over 4s
+  api GET /items
+  expect status equals 200
+
+@printer
+test "hold users"
+  hold 2 users for 2s
+  api GET /items
+  expect status equals 200
+
+@printer
+test "hold rps"
+  hold 5 rps for 8s
+  api GET /items
+  expect status equals 200
+
+@printer
+test "step users"
+  step users
+    to 20 for 2s
+    to 80 for 2s
+  api GET /items
+  expect status equals 200
+
+@printer
+test "step rps"
+  step rps
+    to 20 for 2s
+    to 80 for 2s
+  api GET /items
+  expect status equals 200
+
+@printer
+test "spike users"
+  spike users
+    hold 10 for 2s
+    to 120 over 1s
+    hold 10 for 2s
+  api GET /items
+  expect status equals 200
+
+@printer
+test "spike rps"
+  spike rps
+    hold 10 for 2s
+    to 120 over 1s
+    hold 10 for 2s
+  api GET /items
+  expect status equals 200
+
+@printer
+test "shared iterations"
+  run 120 iterations across 4 users
+  api GET /items
+  expect status equals 200
+
+@printer
+test "iterations per user"
+  run 12 iterations per user across 5 users
+  api GET /items
+  expect status equals 200

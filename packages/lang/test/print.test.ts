@@ -37,50 +37,54 @@ const repoRoot = resolve(here, '..', '..', '..');
 const siblingRoot = resolve(repoRoot, '..', 'testFlow-tests');
 
 /**
- * **THIS GATE'S CORPUS IS THE OTHER REPOSITORY, AND UNTIL `A4-1` NOTHING SAID SO** (`M200-05`).
+ * **THIS GATE'S CORPUS WAS THE OTHER REPOSITORY, AND UNTIL `A4-1` NOTHING SAID SO** (`M200-05`).
+ * `M201` is the repair, and it changes what the word "corpus" means in this file.
  *
- * `.tflw` files in *this* repository are almost all scratch copies or pulled run artefacts, which
- * the walker above skips by name. What is left is **6 files that parse clean and declare
- * anything**, against the sibling's 254 — so every number `D1048`'s ratchet pins (`ExpectStmt`
- * 2987, `Locator` 2158, …) is a measurement of `testFlow-tests`, taken on a developer machine
- * that happens to have both trees.
+ * `A4-1` found this gate walking `repoRoot` **and** `siblingRoot`, with every number `D1048`'s
+ * ratchet pinned — `ExpectStmt` 2987, `Locator` 2158 — being a measurement of `testFlow-tests`
+ * taken on a developer machine that happens to have both trees. CI has one tree by decision
+ * (`D710` refuses a sibling checkout; `D511` fixes the merge order), so the first push would have
+ * met those floors at roughly 1% of their pin. `A4-1` mitigated it with two declared tiers, both
+ * pinned; `M201` removes the reason the borrowing started, which is that this repository had no
+ * printer corpus of its own.
  *
- * CI has one tree. `D710` refuses a sibling checkout in this repository's CI and `D511` fixes the
- * merge order regardless, so that is not going to change — which means the floors above would have
- * met `ExpectStmt: 26` on the first push and gone red, and the `files.length > 100` guard would
- * have failed before them. The branch has never been pushed, which is the only reason this was
- * still ahead of us rather than behind.
+ * It has one now: `__fixtures__/printer-corpus/`, authored against the printer's declared sets
+ * rather than harvested from whatever somebody happened to write, which is the distinction
+ * `§2.1` of the plan turns on. A harvested corpus measures usage. `SpikeUsersWorkload` and
+ * `StepUsersWorkload` are the proof it is the wrong instrument for coverage: declared `PRINTABLE`,
+ * with printers and parser branches, and present in **neither** working tree, so no gate had ever
+ * run them anywhere.
  *
- * So the gate declares its corpus and runs in one of **two tiers**, which is `D874`'s shape
- * (*every guard declares the corpus it reads*) and `D683`'s rule (*a gate whose corpus is narrower
- * than its subject reports a clean number, never a smaller one* — so it must say which corpus it
- * got). The correctness claims — re-parses to the same tree, `format` leaves it alone — run in
- * both tiers on whatever files exist, because those need a corpus, not a *particular* corpus. Only
- * the counting claims are tier-specific, and the in-repo tier has its own non-vacuous floors
- * rather than being skipped: a skipped ratchet is the vacuity this repository keeps a ledger for.
+ * So there are two sets of files now, and they are not tiers — they have different jobs:
  *
- * `TFLW_PRINT_CORPUS=repo` forces the in-repo tier on a machine that has both trees. That exists
- * because the defect above was undetectable from here — CI's behaviour could not be reproduced on
- * the box at all, and a gate whose other half you cannot run is a gate you are not maintaining.
+ *   · **`corpus(repoRoot)` is THE CORPUS.** Every counting claim in this file is made about it and
+ *     only it: the per-kind floors, the whole-file floor, the 116-of-116 completeness gate. It is
+ *     present on every machine and in CI, so those numbers are the same everywhere.
+ *   · **`extras()` is the sibling when it happens to be there.** 37,934 real nodes, worth more as
+ *     round-trip pressure than anything authored — so the *correctness* claims still run over them
+ *     (prints, re-parses to the same tree, `format` leaves it alone). **No floor and no coverage
+ *     claim rests on them.** A machine without the sibling gets the same verdict, more slowly
+ *     arrived at.
+ *
+ * That is `D874`'s shape (*every guard declares the corpus it reads*) with the declaration made
+ * once rather than per tier. `TFLW_PRINT_CORPUS=repo` is retired and `TFLW_PRINT_EXTRAS=off`
+ * replaces it: the old variable chose between two tiers with different pinned numbers, so the two
+ * runs could not be compared; the new one drops the extras from runs that must agree, which makes
+ * "no claim rests on the sibling" a thing you run rather than a thing this docblock says.
  */
-// Lazy, not a module-level `const`: `corpus` closes over `SKIP_DIR`, which is declared below, so
-// resolving the tier at module load put that binding in its temporal dead zone.
-let tierCache: 'both' | 'repo' | null = null;
-const tier = (): 'both' | 'repo' =>
-  (tierCache ??= process.env.TFLW_PRINT_CORPUS === 'repo' || corpus(siblingRoot).length === 0 ? 'repo' : 'both');
-const corpusFiles = (): string[] => {
-  const files = tier() === 'repo' ? corpus(repoRoot) : [...corpus(repoRoot), ...corpus(siblingRoot)];
-  // **A FLOOR IS BLIND IN EXACTLY ONE DIRECTION — that the gate read MORE than it claimed** — and
-  // that is the direction `M200-05` hid in: this gate has read the sibling since `A0-1` while its
-  // docblock said "the corpus", and every floor passed because more input clears a floor. So the
-  // tier's identity is asserted rather than its size. Without this, breaking tier detection toward
-  // the wider corpus is invisible, which a mutation demonstrated.
-  if (tier() === 'repo') {
-    const strays = files.filter((f) => f.startsWith(siblingRoot));
-    assert.deepEqual(strays, [], `the repo tier read ${strays.length} sibling files`);
-  }
-  return files;
-};
+const corpusFiles = (): string[] => corpus(repoRoot);
+/**
+ * The sibling's files, when this machine has them. Pressure, never a number.
+ *
+ * `TFLW_PRINT_EXTRAS=off` drops them, and **that must change no verdict** — which is the whole
+ * claim `M201` makes and therefore has to be runnable rather than asserted in prose. It replaces
+ * `A4-1`'s `TFLW_PRINT_CORPUS=repo`, and the difference is the point: that variable selected
+ * between two tiers with **different pinned numbers**, so the two runs were not comparable. This
+ * one selects between two runs that must agree, so comparing them is the test.
+ */
+const extras = (): string[] =>
+  process.env.TFLW_PRINT_EXTRAS === 'off' ? [] : corpus(siblingRoot);
+const allFiles = (): string[] => [...corpusFiles(), ...extras()];
 
 /** Directories that hold copies rather than sources: pulled run artefacts and scratch. */
 const SKIP_DIR = /^(node_modules|dist|\.git|runs|coverage)$|^\.m.*-scratch$/;
@@ -206,26 +210,39 @@ function wrap(node: Node, text: string): string {
 
 test('every printable node in the corpus re-parses to the node it was printed from', () => {
   const files = corpusFiles();
-  // Tier-aware, because `> 100` is a claim about the sibling's tree and this gate may not have it.
-  const least = tier() === 'both' ? 100 : 4;
-  assert.ok(files.length > least, `expected the ${tier()} corpus, found ${files.length} files`);
+  // A claim about THIS repository's corpus, which every machine and CI both have. It was
+  // `tier() === 'both' ? 100 : 4` until `M201` `S4`, and the 100 was a claim about the sibling's
+  // tree — the exact shape `M200-05` names.
+  assert.ok(files.length >= 12, `expected this repository's printer corpus, found ${files.length} files`);
+  const extra = extras();
 
   const tally = new Map<string, Tally>();
+  /** The extras' counters, kept apart so nothing here can be read as a claim about them. */
+  const pressure = new Map<string, Tally>();
   const refusals = new Map<string, number>();
   const mismatches: string[] = [];
   const unstable: string[] = [];
   let filesRead = 0;
+  let extraFilesRead = 0;
+  let extraNodes = 0;
 
-  for (const file of files) {
+  for (const file of [...files, ...extra]) {
+    // **The corpus is counted; the extras are only pressed.** Both halves are printed, re-parsed
+    // and compared — a mismatch anywhere is a mismatch — but only in-repo nodes reach `tally`,
+    // which is what the floors below read. That is the whole of `M201` `S4`: the numbers this
+    // file pins are numbers CI can reach.
+    const inCorpus = !file.startsWith(siblingRoot);
     const source = readFileSync(file, 'utf8');
     const { program, diagnostics } = parseSource(source);
     // A file the parser itself rejects holds recovery nodes, not authored ones.
     if (diagnostics.some((d) => d.severity === 'error')) continue;
-    filesRead += 1;
+    if (inCorpus) filesRead += 1; else extraFilesRead += 1;
 
     for (const node of collect(program)) {
-      const t = tally.get(node.type) ?? { checked: 0, refused: 0 };
-      tally.set(node.type, t);
+      if (!inCorpus) extraNodes += 1;
+      const into = inCorpus ? tally : pressure;
+      const t = into.get(node.type) ?? { checked: 0, refused: 0 };
+      into.set(node.type, t);
       // `A3-1`: a locator is an INLINE fragment, not a line — its host `click ` already carries
       // the indentation, so asking for level 1 would print `  click   button "Sign in"`.
       const printed = print(node, { indent: ROOTS.has(node.type) || INLINE.has(node.type) ? 0 : 1 });
@@ -264,7 +281,13 @@ test('every printable node in the corpus re-parses to the node it was printed fr
 
   const rows = [...tally.entries()].sort((a, b) => b[1].checked - a[1].checked);
   const total = rows.reduce((n, [, t]) => n + t.checked, 0);
-  console.log(`\n  printer coverage [${tier()} corpus] — ${filesRead} files, ${total} nodes round-tripped\n`);
+  const pressed = [...pressure.values()].reduce((n, t) => n + t.checked, 0);
+  console.log(
+    `\n  printer coverage — ${filesRead} corpus files, ${total} nodes round-tripped` +
+    (extraFilesRead > 0
+      ? `  (+ ${extraFilesRead} sibling files, ${pressed} of ${extraNodes} nodes, pressure only — no floor reads them)`
+      : '  (the sibling is not checked out here; the numbers below are unchanged by that)') + '\n',
+  );
   for (const [kind, t] of rows) console.log(`    ${kind.padEnd(26)} ${String(t.checked).padStart(6)} checked  ${String(t.refused).padStart(6)} refused`);
   if (refusals.size > 0) {
     console.log('\n  refused, by reason:');
@@ -283,45 +306,45 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // suite, because the narrow test below still passed while the 2,158-node claim silently stopped
   // being made.
   //
-  // A FLOOR, not an equality, because that is what a ratchet is. Coverage rising needs no edit;
-  // coverage falling is either a printer that regressed or a corpus that lost fixtures, and both
-  // are things somebody should have to state. Moving a row down is allowed the way the headcount
-  // gate allows it — in the same change, with the reason on the row.
+  // **`M201` `S4` REPLACES THE TABLE WITH A CLAIM ASKED OF THE DECLARED SET**, which is `A4-5`'s
+  // move one level further in. `A3-1` through `A4-4` maintained a hand-written floor per kind, in
+  // two copies after `A4-1` — `FLOOR_BOTH` and `FLOOR_REPO`, one per tier — and every one of those
+  // numbers was a measurement of two working trees on one day. Now that the corpus is authored
+  // here against the printer's own sets, the ratchet's real subject can be stated directly:
   //
-  // TWO TIERS, one per corpus (`M200-05`, above). The `both` row is what every slice from `A3-1`
-  // on measured; the `repo` row is what CI can actually see, and it is pinned rather than skipped
-  // so that the tier CI runs still ratchets on something.
-  const FLOOR_BOTH: ReadonlyArray<readonly [string, number]> = [
-    ['ExpectStmt', 2987], ['Locator', 2158], ['ApiStep', 1758], ['CaptureStmt', 751],
-    ['ClickStmt', 728], ['TestDecl', 546], ['FillStmt', 417], ['LetStmt', 296],
-    ['WithinBlock', 393], ['OpenStmt', 231], ['CallStmt', 168], ['LogStmt', 55], ['ThresholdDecl', 42],
-    ['WaitUntilApiStmt', 25], ['CrawlDecl', 11], ['PauseStmt', 4],
-    // `A4-2` — the file header. `ActionDecl` refuses 3 of 22: a body holding a step that does not
-    // print yet, which is the tail rather than a defect in this slice.
-    ['HookDecl', 82], ['ImportDecl', 28], ['UseDecl', 21], ['ActionDecl', 19], ['GiveStmt', 8],
-    // `A4-3` — the form family. The in-repo tier reaches none of these, which is `M200-05`.
-    ['FillFormStmt', 23], ['SelectStmt', 12], ['TickStmt', 5], ['UntickStmt', 2],
-    // `A4-4` — the tail. Every kind the corpus contains now round-trips; 0 refused, everywhere.
-    ['AcceptDialogStmt', 12], ['WaitUntilUiStmt', 7], ['DismissDialogStmt', 5], ['ScreenshotStmt', 4],
-    ['StubStmt', 4], ['DropFileStmt', 3], ['HoverStmt', 2], ['ScrollStmt', 2], ['DragStmt', 2],
-    ['SwitchToTabStmt', 2], ['DownloadBlock', 1], ['PressStmt', 1], ['SwitchToNewTabBlock', 1], ['CloseTabStmt', 1],
-  ];
-  // Measured, not guessed: 6 files, 71 nodes. Thin, and the thinness is the finding rather than
-  // the fix — `M200-05` carries the open half, which is that this repository has no printer corpus
-  // of its own and the honest repair is to give it one, not to keep borrowing the sibling's.
-  const FLOOR_REPO: ReadonlyArray<readonly [string, number]> = [
-    ['ExpectStmt', 26], ['ApiStep', 14], ['TestDecl', 11], ['Locator', 5], ['ThresholdDecl', 4],
-    ['CaptureStmt', 3], ['SharedIterationsWorkload', 2], ['PauseStmt', 2], ['OpenStmt', 2],
-    ['LogStmt', 1], ['ClickStmt', 1],
-    ['ActionDecl', 1], ['GiveStmt', 1],   // `A4-2`; the in-repo corpus holds no hook and no import
-    ['TestDecl', 12], ['ScreenshotStmt', 1],   // `A4-4`
-  ];
-  const FLOOR = tier() === 'both' ? FLOOR_BOTH : FLOOR_REPO;
-  const fell = FLOOR
-    .map(([kind, floor]) => [kind, floor, tally.get(kind)?.checked ?? 0] as const)
-    .filter(([, floor, got]) => got < floor)
-    .map(([kind, floor, got]) => `${kind}: ${got} round-tripped, floor is ${floor}`);
-  assert.deepEqual(fell, [], `\nprinter coverage fell — a kind stopped round-tripping, or the corpus lost fixtures:\n  ${fell.join('\n  ')}\n`);
+  //   1. **every kind this gate asks for is checked at least once**, derived from `ASKED` rather
+  //      than from a list beside it, so a kind added to `ASKED` needs no second edit and a kind
+  //      that stops round-tripping reddens on the row it stopped;
+  //   2. **nothing is refused**, over corpus and extras alike — `A4-4` took the refusal census to
+  //      empty and this is where that stays true;
+  //   3. a volume floor, which is the one thing a derived claim cannot make: a corpus that loses
+  //      most of its fixtures still satisfies (1) and (2) with one node each.
+  //
+  // What is deliberately NOT kept is a floor over the sibling. A number like `ExpectStmt: 2987` is
+  // a claim about `testFlow-tests`, and making claims about another repository is the defect
+  // (`M200-05`), not the mitigation.
+  const unchecked = [...ASKED].filter((k) => (tally.get(k)?.checked ?? 0) === 0).sort();
+  assert.deepEqual(
+    unchecked,
+    [],
+    `\n${unchecked.length} kind(s) this gate asks for were never round-tripped by the corpus:\n  ${unchecked.join('\n  ')}\n` +
+    `  (a kind in ASKED with no fixture is a claim nothing checks — add one to __fixtures__/printer-corpus/)\n`,
+  );
+  const refusedKinds = [...tally.entries()].filter(([, t]) => t.refused > 0).map(([k, t]) => `${k}: ${t.refused}`);
+  assert.deepEqual(refusedKinds, [], `\nthe printer refused nodes it is declared able to write:\n  ${refusedKinds.join('\n  ')}\n`);
+  // **AN EQUALITY, AND THAT IS `M201`'s SHARPEST EDIT.** Every previous version of this pin was a
+  // floor, on the reasoning that coverage rising should need no edit. `M200-05` is what a floor
+  // costs: **a floor is blind in exactly one direction — that the gate read MORE than it claimed**
+  // — and that is the direction the defect ran, which is why it survived four slices that each
+  // *added* a floor row. An equality is blind in neither. It is the headcount gate's rule applied
+  // here (`verify-test-counts`' `EXPECTED`): the number moves in the change that moves the corpus,
+  // with the reason on the row, and a number that moves on its own is a defect by definition.
+  //
+  // `M201` `S4`: **283 nodes over 12 files**, this repository's own, on every machine and in CI.
+  const EXPECTED_NODES = 283;
+  const EXPECTED_FILES = 12;
+  assert.equal(filesRead, EXPECTED_FILES, `the corpus read ${filesRead} files, expected ${EXPECTED_FILES} — a fixture was added or lost`);
+  assert.equal(total, EXPECTED_NODES, `the corpus round-tripped ${total} nodes, expected ${EXPECTED_NODES} — move the number in the change that moved the corpus`);
   assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n\n')}\n`);
   assert.deepEqual(unstable, [], `\n${unstable.slice(0, 10).join('\n\n')}\n`);
 });
@@ -347,11 +370,14 @@ test('every printable node in the corpus re-parses to the node it was printed fr
  * author's comments, and unlike the byte property it is checkable on every file.
  */
 test('every clean file in the corpus round-trips through the printer whole', () => {
-  const files = corpusFiles();
-  assert.ok(files.length > (tier() === 'both' ? 100 : 4), `expected the ${tier()} corpus, found ${files.length} files`);
+  const files = [...corpusFiles(), ...extras()];
+  assert.ok(corpusFiles().length >= 12, `expected this repository's printer corpus, found ${corpusFiles().length} files`);
 
   let eligible = 0;
   let roundTripped = 0;
+  // Counted apart, because only the corpus half may carry a floor (`M201` `S4`).
+  let corpusEligible = 0;
+  let corpusRoundTripped = 0;
   const refusedBy = new Map<string, number>();
   const mismatches: string[] = [];
   const unstable: string[] = [];
@@ -369,7 +395,9 @@ test('every clean file in the corpus round-trips through the printer whole', () 
     // A file of nothing but comments parses to an empty program and would "round-trip" as the
     // empty string. Counting that would inflate the ratchet with files the printer never touched.
     if (declared === 0) continue;
+    const inCorpus = !file.startsWith(siblingRoot);
     eligible += 1;
+    if (inCorpus) corpusEligible += 1;
 
     const printed = print(program, { indent: 0 });
     if (!printed.ok) {
@@ -387,6 +415,7 @@ test('every clean file in the corpus round-trips through the printer whole', () 
     try {
       assert.deepEqual(stripSpans(back.program), stripSpans(program));
       roundTripped += 1;
+      if (inCorpus) corpusRoundTripped += 1;
     } catch {
       mismatches.push(`${file}: printed whole, re-parsed to a different program`);
       continue;
@@ -402,7 +431,10 @@ test('every clean file in the corpus round-trips through the printer whole', () 
     }
   }
 
-  console.log(`\n  whole-file round trip [${tier()} corpus] — ${roundTripped} of ${eligible} files printed and re-parsed to the same program\n`);
+  console.log(
+    `\n  whole-file round trip — ${roundTripped} of ${eligible} files printed and re-parsed to the same program` +
+    ` (${corpusRoundTripped} of ${corpusEligible} from the corpus, the rest pressure)\n`,
+  );
   if (refusedBy.size > 0) {
     console.log('  refused, by reason — this census is `A4`\'s worklist:');
     for (const [reason, n] of [...refusedBy.entries()].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(4)}  ${reason}`);
@@ -412,13 +444,26 @@ test('every clean file in the corpus round-trips through the printer whole', () 
   assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n')}\n`);
   assert.deepEqual(unstable, [], `\n${unstable.slice(0, 10).join('\n')}\n`);
 
-  // The same ratchet `D1048` puts on node coverage, for the same reason and with the same rule:
-  // it may only rise, and moving it down happens in the change that caused it with the reason on
-  // the row. `A4-1` sets it where `§4h`'s greedy analysis predicted `Program` alone would land.
-  const FLOOR_FILES = tier() === 'both' ? 260 : 6;   // `A4-4`: 241 -> **260 of 260**, the tail
-  assert.ok(
-    roundTripped >= FLOOR_FILES,
-    `whole-file coverage fell: ${roundTripped} files round-tripped, floor is ${FLOOR_FILES}`,
+  // **AN EQUALITY, NOT A FLOOR, AND THAT IS `M201` `S4`'s ONE REAL STRENGTHENING.** `A4-4` took
+  // this to 260 of 260 and pinned 260, which is a floor over a corpus — it falls to a number
+  // whenever the corpus changes size, and on a machine without the sibling it had to fall to 6.
+  // *Every eligible file round-trips* is the same claim with the corpus factored out: it reads
+  // identically here, in CI, and on any tree this is ever pointed at, and it goes red on the first
+  // file the printer cannot write rather than on the 261st.
+  assert.equal(
+    roundTripped,
+    eligible,
+    `${eligible - roundTripped} of ${eligible} eligible files did not round-trip whole`,
+  );
+  // And the corpus half is pinned by equality for the reason above: a floor here is satisfied by
+  // the extras the moment anything confuses the two counters, which is exactly how `M200-05` hid.
+  // `M201` `S4`: 6 -> **12** — 15 files, 3 of them the `migrate-corpus` fixtures the parser
+  // rejects by design.
+  const EXPECTED_CORPUS_FILES = 12;
+  assert.equal(
+    corpusRoundTripped,
+    EXPECTED_CORPUS_FILES,
+    `${corpusRoundTripped} of ${corpusEligible} corpus files round-tripped, expected ${EXPECTED_CORPUS_FILES}`,
   );
 });
 
@@ -799,7 +844,10 @@ test('every step keyword the language accepts round-trips through the printer', 
  */
 test('every node kind in the corpus is declared printable, context-bound, or refusing', () => {
   const seen = new Set<string>();
-  for (const file of corpusFiles()) {
+  // `allFiles()`, not `corpusFiles()`: this is a correctness claim, not a count. A kind that turns
+  // up in the sibling with no declaration here is exactly as much a defect as one that turns up
+  // in the corpus, and reading the wider set can only make this gate harder to pass.
+  for (const file of allFiles()) {
     const { program, diagnostics } = parseSource(readFileSync(file, 'utf8'));
     // Deliberately NOT skipping files the parser rejected: `MalformedStep` lives only in those,
     // and a gate that skipped them could not see the one kind it exists to account for.
@@ -868,14 +916,13 @@ test('every node kind in the corpus is declared printable, context-bound, or ref
  * claim over a subset nobody had named.
  */
 const OWED: ReadonlySet<string> = new Set<string>([
-  // `M201` `S3` — 42 -> **17**. `browser.tflw` takes the pointer and keyboard steps, the form
-  // family, dialogs, tabs, downloads, the network stub and both scoping blocks. What is left is
-  // `S4`: the ten workloads and their `Stage`, the crawl and its three seeds, and the file header.
-  'CrawlDecl', 'HoldRpsWorkload', 'HoldUsersWorkload', 'HookDecl',
-  'ImportDecl', 'OpenApiSeed', 'PerVuIterationsWorkload', 'RampRpsWorkload',
-  'RampUsersWorkload', 'SpiderSeed', 'SpikeRpsWorkload', 'SpikeUsersWorkload',
-  'Stage', 'StepRpsWorkload', 'StepUsersWorkload', 'TrafficSeed',
-  'UseDecl',
+  // `M201` `S4` — **empty.** 87 -> 42 (`S2`) -> 17 (`S3`) -> **0**: every kind the printer declares
+  // is now reached by this repository's own corpus, so `116 of 116` is a claim CI makes too.
+  //
+  // It stays here rather than being deleted with the last row. The set is the mechanism by which a
+  // kind may be added to the language before its fixture exists — one row, with the reason on it,
+  // and the gate stays honest instead of going red in a way that invites deleting the assertion.
+  // An empty set is also the only state in which the equality below reads as a completeness claim.
 ]);
 
 /** Every node kind occurring in an in-repo file that prints and re-parses to the same program. */
@@ -911,6 +958,40 @@ function kindsCoveredInRepo(): { covered: Set<string>; read: string[]; roundTrip
   }
   return { covered, read: all, roundTripped };
 }
+
+/**
+ * `M201` `S4` — **the switch that makes "no claim rests on the sibling" a thing you run.**
+ *
+ * `A4-1`'s `TFLW_PRINT_CORPUS=repo` selected between two tiers with different pinned numbers, so
+ * the two runs could not be compared and the variable only ever proved that the narrower tier was
+ * green on its own terms. `TFLW_PRINT_EXTRAS=off` is the opposite: the two runs must agree on
+ * every number, which is what makes running both a test rather than a demonstration.
+ *
+ * The mutation sweep found the switch itself unkillable by any *claim* in this file — which is
+ * correct and is the finding, not a gap: a property that says "turning this off changes no
+ * verdict" cannot be defended by a verdict. So it is defended here directly, with its own vacuity
+ * control, because on a machine with no sibling `extras()` is empty for a reason that has nothing
+ * to do with the switch.
+ */
+test('the extras switch is honoured, so the corpus-only shape is runnable from here', () => {
+  const before = process.env.TFLW_PRINT_EXTRAS;
+  try {
+    process.env.TFLW_PRINT_EXTRAS = 'off';
+    assert.deepEqual(extras(), [], '`TFLW_PRINT_EXTRAS=off` must drop the sibling entirely');
+    // THE VACUITY CONTROL, and it has to set the variable itself rather than read the ambient one.
+    // The first draft asserted the other half under whatever the process was launched with, so it
+    // went red under the very run it exists to make possible (`TFLW_PRINT_EXTRAS=off` for the
+    // whole file) — and on a sibling-less machine it would have passed for a reason unrelated to
+    // the switch, which is `M141`'s shape. Both halves are now asked of the function directly.
+    delete process.env.TFLW_PRINT_EXTRAS;
+    if (corpus(siblingRoot).length > 0) {
+      assert.ok(extras().length > 0, 'the sibling is checked out here, so only the switch may empty it');
+    }
+  } finally {
+    if (before === undefined) delete process.env.TFLW_PRINT_EXTRAS;
+    else process.env.TFLW_PRINT_EXTRAS = before;
+  }
+});
 
 test('every node kind the printer declares is reached by THIS repository\'s own corpus', () => {
   const { covered, read, roundTripped } = kindsCoveredInRepo();
