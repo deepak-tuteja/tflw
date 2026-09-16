@@ -27,7 +27,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSource, print, PRINTABLE, CONTEXT_BOUND, format } from '../src/index.js';
-import type { Node, Program, Step, Subject, TestDecl, Value } from '../src/index.js';
+import type { ActionDecl, HookDecl, Node, Program, Step, Subject, TestDecl, Value } from '../src/index.js';
 import { SYNTHETIC, buildTest } from '../src/build.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -127,7 +127,7 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', 'OpenStmt', 'ClickStmt', 'FillStmt', 'WithinBlock', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', 'OpenStmt', 'ClickStmt', 'FillStmt', 'WithinBlock', 'ImportDecl', 'UseDecl', 'HookDecl', 'ActionDecl', 'GiveStmt', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
@@ -140,6 +140,17 @@ function reparse(node: Node, text: string): Node | null {
     // are different SHAPES, not just different lengths.
     const crawls = parseSource(wrap(node, text)).program.crawls;
     return crawls && crawls.length === 1 ? crawls[0]! : null;
+  }
+  // `A4-2` — the file header. Each lands in its own `Program` array, and each array must hold
+  // exactly one, which is what makes "the printer emitted two declarations" a failure rather than
+  // a thing the comparison silently reads past.
+  if (node.type === 'ImportDecl' || node.type === 'UseDecl' || node.type === 'HookDecl' || node.type === 'ActionDecl') {
+    const p = parseSource(wrap(node, text)).program;
+    const found =
+      node.type === 'ImportDecl' ? p.imports :
+      node.type === 'UseDecl' ? p.uses :
+      node.type === 'HookDecl' ? p.hooks : p.actions;
+    return found.length === 1 ? found[0]! : null;
   }
   const program = parseSource(wrap(node, text)).program;
   const host: TestDecl | undefined = program.tests[0];
@@ -170,7 +181,10 @@ interface Tally { checked: number; refused: number; }
 
 /** The source the gate re-parses a printed node from — also what the format-fixpoint claim below
  *  formats, so the two claims are made about the same bytes. */
-const ROOTS = new Set<string>(['TestDecl', 'CrawlDecl']);
+// `A4-2` adds four: the file header is all top-level, so none of it may be indented into a host
+// `test`. `GiveStmt` is the exception in the family — it is a STEP, legal in a test, an action and
+// a hook alike (measured), so it takes the ordinary wrapper.
+const ROOTS = new Set<string>(['TestDecl', 'CrawlDecl', 'ImportDecl', 'UseDecl', 'HookDecl', 'ActionDecl']);
 
 /** Kinds that print as a fragment of a line rather than as a line — `A3-1`. */
 const INLINE = new Set<string>(['Locator']);
@@ -280,6 +294,9 @@ test('every printable node in the corpus re-parses to the node it was printed fr
     ['ClickStmt', 728], ['TestDecl', 546], ['FillStmt', 417], ['LetStmt', 296],
     ['WithinBlock', 393], ['OpenStmt', 231], ['CallStmt', 168], ['LogStmt', 55], ['ThresholdDecl', 42],
     ['WaitUntilApiStmt', 25], ['CrawlDecl', 11], ['PauseStmt', 4],
+    // `A4-2` — the file header. `ActionDecl` refuses 3 of 22: a body holding a step that does not
+    // print yet, which is the tail rather than a defect in this slice.
+    ['HookDecl', 82], ['ImportDecl', 28], ['UseDecl', 21], ['ActionDecl', 19], ['GiveStmt', 8],
   ];
   // Measured, not guessed: 6 files, 71 nodes. Thin, and the thinness is the finding rather than
   // the fix — `M200-05` carries the open half, which is that this repository has no printer corpus
@@ -288,6 +305,7 @@ test('every printable node in the corpus re-parses to the node it was printed fr
     ['ExpectStmt', 26], ['ApiStep', 14], ['TestDecl', 11], ['Locator', 5], ['ThresholdDecl', 4],
     ['CaptureStmt', 3], ['SharedIterationsWorkload', 2], ['PauseStmt', 2], ['OpenStmt', 2],
     ['LogStmt', 1], ['ClickStmt', 1],
+    ['ActionDecl', 1], ['GiveStmt', 1],   // `A4-2`; the in-repo corpus holds no hook and no import
   ];
   const FLOOR = tier() === 'both' ? FLOOR_BOTH : FLOOR_REPO;
   const fell = FLOOR
@@ -388,7 +406,7 @@ test('every clean file in the corpus round-trips through the printer whole', () 
   // The same ratchet `D1048` puts on node coverage, for the same reason and with the same rule:
   // it may only rise, and moving it down happens in the change that caused it with the reason on
   // the row. `A4-1` sets it where `§4h`'s greedy analysis predicted `Program` alone would land.
-  const FLOOR_FILES = tier() === 'both' ? 131 : 4;
+  const FLOOR_FILES = tier() === 'both' ? 231 : 5;   // `A4-2`: 131 -> 231, the file header
   assert.ok(
     roundTripped >= FLOOR_FILES,
     `whole-file coverage fell: ${roundTripped} files round-tripped, floor is ${FLOOR_FILES}`,
@@ -454,6 +472,10 @@ test('a whole file prints in the order it was written, not in the AST array orde
  */
 test('a printed file separates its declarations with exactly one blank line', () => {
   const source = [
+    'import "./a.tflw"',
+    'import "./b.tflw"',
+    'use "./helpers.ts"',
+    '',
     'test "first"',
     '  api GET /a',
     '  expect status equals 200',
@@ -470,9 +492,10 @@ test('a printed file separates its declarations with exactly one blank line', ()
   assert.ok(printed.ok, printed.ok ? '' : printed.reason);
   const lines = printed.text.split('\n');
 
-  // Every declaration after the first has exactly one blank line in front of it. `A4-2` adds the
-  // other half — `import`/`use` grouped with none — when those kinds start printing.
-  assert.ok(lines.length > 0 && lines[0]!.startsWith('test '), `the file should open with its first declaration:\n${printed.text}`);
+  // `A4-2`'s half: consecutive one-line declarations are grouped with nothing between them.
+  assert.deepEqual(lines.slice(0, 3), ['import "./a.tflw"', 'import "./b.tflw"', 'use "./helpers.ts"'],
+    `the one-line declarations were not grouped:\n${printed.text}`);
+  // …and every other declaration has exactly one blank line in front of it.
   for (const [i, line] of lines.entries()) {
     if (i === 0 || !line.startsWith('test ')) continue;
     assert.equal(lines[i - 1], '', `\`${line}\` has no blank line before it:\n${printed.text}`);
@@ -501,6 +524,109 @@ test('a program whose spans are all synthetic prints in array order', () => {
     ['test "one"', 'test "two"'],
     `array order was not preserved for a built program:\n${printed.text}`,
   );
+});
+
+/**
+ * `A4-2` — the file header's spellings, asserted where the corpus cannot assert them.
+ *
+ * The whole-file round trip covers most of this transitively, but two of these would have been
+ * caught late and confusingly: `before each` parses as `TF010` rather than as a hook, and
+ * `action foo` without parentheses is `TF010` too. Both were live traps — `A4-1`'s first fixture
+ * was rejected for exactly the first one — so they are named here rather than left to a diff on a
+ * 260-file census.
+ */
+test('the file header round-trips in all four hook forms and both action shapes', () => {
+  const source = [
+    'import "./shared/helpers.tflw"',
+    'use "./helpers.ts"',
+    '',
+    // All four hook spellings. `each` is written by writing NOTHING — it is the scope you get.
+    'before',
+    '  log "before each test"',
+    '',
+    'before file',
+    '  log "once, first"',
+    '',
+    'after',
+    '  log "after each test"',
+    '',
+    'after file',
+    '  log "once, last"',
+    '',
+    // The parameter list is mandatory even when empty, and 13 of the corpus's 22 actions are this.
+    'action root()',
+    '  log "no parameters"',
+    '',
+    // A multi-word name — 16 of 22 — with parameters and a `give`.
+    'action create order(name, size)',
+    '  let id = "{name}-{size}"',
+    '  give id',
+    '',
+    'test "uses them"',
+    '  api GET /a',
+    '  expect status equals 200',
+    '',
+  ].join('\n');
+
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], 'the fixture must parse clean');
+  assert.equal(program.hooks.length, 4);
+  assert.equal(program.actions.length, 2);
+
+  const printed = print(program, { indent: 0 });
+  assert.ok(printed.ok, printed.ok ? '' : printed.reason);
+
+  // Asserted on the DECLARATION lines, not on the whole text: the first draft asked whether the
+  // printed file contained `before each` anywhere, and the fixture's own `log "before each test"`
+  // answered yes. A substring is not a rule unless it is taken from the right lines.
+  const headers = printed.text.split('\n').filter((l) => l !== '' && !l.startsWith(' '));
+  assert.deepEqual(headers, [
+    'import "./shared/helpers.tflw"',
+    'use "./helpers.ts"',
+    // `each` is written by writing NOTHING — `before each` is `TF010`, not a second spelling.
+    'before',
+    'before file',
+    'after',
+    'after file',
+    // The parameter list is mandatory even when empty.
+    'action root()',
+    'action create order(name, size)',
+    'test "uses them"',
+  ], `the header's own lines:\n${printed.text}`);
+
+  const back = parseSource(printed.text + '\n');
+  assert.deepEqual(back.diagnostics.filter((d) => d.severity === 'error'), [], `the printed header did not parse back:\n${printed.text}`);
+  assert.deepEqual(stripSpans(back.program), stripSpans(program));
+});
+
+/**
+ * `A4-2` — the empty-block refusals, which **the corpus cannot reach**: it holds 0 hooks and 0
+ * actions with an empty body, so the whole-file gate would never exercise either branch. `D1046`'s
+ * rule is that a printer never writes a line the parser will not read back, and `parseBlock` raises
+ * `TF015` for both — so this is the same claim `printCrawl` and `printWithin` already make, asked
+ * of the two kinds that arrived with this slice.
+ */
+test('a hook or an action with no steps refuses rather than printing a header alone', () => {
+  const hook: HookDecl = { type: 'HookDecl', when: 'before', scope: 'each', body: [], span: SYNTHETIC };
+  const hookResult = print(hook, { indent: 0 });
+  assert.equal(hookResult.ok, false);
+  assert.match(hookResult.ok ? '' : hookResult.reason ?? '', /HookDecl.*no steps/);
+
+  const action: ActionDecl = { type: 'ActionDecl', name: 'root', params: [], body: [], span: SYNTHETIC };
+  const actionResult = print(action, { indent: 0 });
+  assert.equal(actionResult.ok, false);
+  assert.match(actionResult.ok ? '' : actionResult.reason ?? '', /ActionDecl.*no steps/);
+
+  // And the other refusal the AST makes possible: `name` is a plain `string`, so nothing in the
+  // type stops a caller handing over something that is not a list of bare identifiers.
+  const named: ActionDecl = {
+    type: 'ActionDecl', name: 'create order!', params: [],
+    body: [{ type: 'LogStmt', level: 'info', destination: null, message: { type: 'StringLit', value: 'x', parts: [{ kind: 'text', value: 'x' }], span: SYNTHETIC }, span: SYNTHETIC }],
+    span: SYNTHETIC,
+  };
+  const namedResult = print(named, { indent: 0 });
+  assert.equal(namedResult.ok, false);
+  assert.match(namedResult.ok ? '' : namedResult.reason ?? '', /not an action name/);
 });
 
 test('the printer refuses what it cannot print, and names the node kind', () => {
