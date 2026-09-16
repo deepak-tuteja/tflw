@@ -38,7 +38,7 @@ const siblingRoot = resolve(repoRoot, '..', 'testFlow-tests');
 
 /**
  * **THIS GATE'S CORPUS WAS THE OTHER REPOSITORY, AND UNTIL `A4-1` NOTHING SAID SO** (`M200-05`).
- * `M201` is the repair, and it changes what the word "corpus" means in this file.
+ * `M201` is the repair (`D1056`), and it changes what the word "corpus" means in this file.
  *
  * `A4-1` found this gate walking `repoRoot` **and** `siblingRoot`, with every number `D1048`'s
  * ratchet pinned — `ExpectStmt` 2987, `Locator` 2158 — being a measurement of `testFlow-tests`
@@ -332,7 +332,7 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   );
   const refusedKinds = [...tally.entries()].filter(([, t]) => t.refused > 0).map(([k, t]) => `${k}: ${t.refused}`);
   assert.deepEqual(refusedKinds, [], `\nthe printer refused nodes it is declared able to write:\n  ${refusedKinds.join('\n  ')}\n`);
-  // **AN EQUALITY, AND THAT IS `M201`'s SHARPEST EDIT.** Every previous version of this pin was a
+  // **AN EQUALITY, AND THAT IS `M201`'s SHARPEST EDIT** (`D1058`). Every previous version of this pin was a
   // floor, on the reasoning that coverage rising should need no edit. `M200-05` is what a floor
   // costs: **a floor is blind in exactly one direction — that the gate read MORE than it claimed**
   // — and that is the direction the defect ran, which is why it survived four slices that each
@@ -444,7 +444,7 @@ test('every clean file in the corpus round-trips through the printer whole', () 
   assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n')}\n`);
   assert.deepEqual(unstable, [], `\n${unstable.slice(0, 10).join('\n')}\n`);
 
-  // **AN EQUALITY, NOT A FLOOR, AND THAT IS `M201` `S4`'s ONE REAL STRENGTHENING.** `A4-4` took
+  // **AN EQUALITY, NOT A FLOOR** (`D1058`), and that is `M201` `S4`'s one real strengthening. `A4-4` took
   // this to 260 of 260 and pinned 260, which is a floor over a corpus — it falls to a number
   // whenever the corpus changes size, and on a machine without the sibling it had to fall to 6.
   // *Every eligible file round-trips* is the same claim with the corpus factored out: it reads
@@ -877,7 +877,7 @@ test('every node kind in the corpus is declared printable, context-bound, or ref
 });
 
 /**
- * `M201` `S1` — **the partition gate's other direction, and the second node-kind claim in this
+ * `M201` `S1` (`D1057`) — **the partition gate's other direction, and the second node-kind claim in this
  * file that reads the same in CI as it does on a developer machine.**
  *
  * The gate above asserts *corpus ⊆ declared*: every kind that occurs is accounted for. That
@@ -907,7 +907,7 @@ test('every node kind in the corpus is declared printable, context-bound, or ref
  * round-trips and demanding one would be demanding a contradiction. What IS demanded is that it
  * occur in this repository at all, so that declaring it is not free.
  *
- * **THE PRINTER'S SUBJECT IS THE TEST-FILE LANGUAGE, AND UNTIL NOW NOTHING SAID SO.** `ast.ts`
+ * **THE PRINTER'S SUBJECT IS THE TEST-FILE LANGUAGE, AND UNTIL NOW NOTHING SAID SO** (`D1059`). `ast.ts`
  * declares 143 node kinds; these three sets declare 117. The 26 outside them are, every one of
  * them, the **config-file language** — `ConfigFile`, `DefaultsBlock`, `EnvBlock`, `ApiServiceDecl`,
  * `TimeoutDecl`, `RedactDecl` and their neighbours — which `tflw.config` holds and no `.tflw` file
