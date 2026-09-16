@@ -31,9 +31,10 @@ import {
   type Insertion,
   type LocatorSpec,
   type MatcherName,
+  parseSource,
   type Step,
 } from '@tflw/lang';
-import { getFile, putFile, type FileView } from './api';
+import { getFile, pickLocators, putFile, type FileView } from './api';
 import { diagnose } from './diagnose';
 import type { ProjectView } from './contract';
 
@@ -69,6 +70,28 @@ interface Row {
 
 const EMPTY_ROW: Row = { action: 'click', locator: { kind: 'button', value: '' }, value: '', matcher: 'visible' };
 
+/**
+ * Read one line of `tflw pick`'s output as a locator, or `null` if it is not one — `M200` `A3-6`.
+ *
+ * **CLASSIFIED BY THE GRAMMAR, NOT BY EXCLUDING THE BANNERS.** `pick` prints `opening <url> …` and
+ * `ready — click any element …` before the first locator, so the obvious filter is to skip those
+ * two sentences — and it would break the day either is reworded, silently, by turning a banner
+ * into a suggestion. Asking the parser whether `click <line>` is a click step is the same question
+ * asked of the only thing entitled to answer it, and it is immune to wording.
+ *
+ * This is also why the route streams lines unclassified: the server has no parser and should not
+ * grow one to do this (`D1049`).
+ */
+export function locatorFromPickLine(line: string): LocatorSpec | null {
+  const text = line.trim();
+  if (text === '') return null;
+  const { program, diagnostics } = parseSource(`test "pick"\n  click ${text}\n`);
+  if (diagnostics.some((d) => d.severity === 'error')) return null;
+  const step = program.tests[0]?.body[0];
+  if (!step || step.type !== 'ClickStmt') return null;
+  return { kind: step.locator.kind, value: step.locator.value.value };
+}
+
 export function BrowserForm({ project, onWritten }: BrowserFormProps) {
   const paths = useMemo(() => project.files.map((f) => f.path), [project]);
   const [path, setPath] = useState(paths[0] ?? '');
@@ -85,6 +108,10 @@ export function BrowserForm({ project, onWritten }: BrowserFormProps) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [wrote, setWrote] = useState<string | null>(null);
+  /** Which field a running pick session will fill — a row index as a string, or `'scope'`. */
+  const [picking, setPicking] = useState<string | null>(null);
+  const [picked, setPicked] = useState<readonly LocatorSpec[]>([]);
+  const [stopPick, setStopPick] = useState<{ stop: () => void } | null>(null);
 
   useEffect(() => {
     if (!path) return;
@@ -99,6 +126,46 @@ export function BrowserForm({ project, onWritten }: BrowserFormProps) {
   const patchRow = useCallback((i: number, patch: Partial<Row>) => {
     setRows((current) => current.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   }, []);
+
+  /** Where a picked locator lands: `'scope'` is the `within` field, anything else a row index. */
+  const applyPicked = useCallback((locator: LocatorSpec) => {
+    if (picking === null) return;
+    if (picking === 'scope') setScope(locator);
+    else patchRow(Number(picking), { locator });
+  }, [picking, patchRow]);
+
+  /**
+   * Open a `tflw pick` session for one field.
+   *
+   * The session opens against the path this form is already writing, so what the author picks from
+   * is the page the test will open — not a URL typed twice. When a test is being *extended* rather
+   * than written, the form has no `open` of its own, so the path falls back to the site root; the
+   * author can still navigate in the real browser `pick` opened, and every click keeps reporting.
+   */
+  const startPick = useCallback((field: string) => {
+    stopPick?.stop();
+    setPicked([]);
+    setPicking(field);
+    setProblem(null);
+    const unsubscribe = pickLocators(mode === 'new' ? openPath : '/', {
+      line: (text) => {
+        const locator = locatorFromPickLine(text);
+        if (locator) setPicked((current) => [locator, ...current]);
+      },
+      problem: (text) => setProblem(text.trim()),
+      end: () => setPicking(null),
+    });
+    setStopPick({ stop: unsubscribe });
+  }, [mode, openPath, stopPick]);
+
+  const endPick = useCallback(() => {
+    stopPick?.stop();
+    setStopPick(null);
+    setPicking(null);
+  }, [stopPick]);
+
+  // A pick session is a browser process; leaving this door must not leave it running.
+  useEffect(() => () => stopPick?.stop(), [stopPick]);
 
   /**
    * The steps this form is currently describing, or the first refusal that stops it.
@@ -199,6 +266,18 @@ export function BrowserForm({ project, onWritten }: BrowserFormProps) {
         ))}
       </select>
       <input value={value.value} onChange={(e) => onChange({ ...value, value: e.target.value })} data-browser-value={key} />
+      {/* `D1055` — the one field in this arc nobody can type without looking at the page. Disabled
+          where there is no page to look at, rather than hidden: a control that vanishes teaches
+          nothing, and the reason is one `web` line in `tflw.config`. */}
+      <button
+        className="ghost"
+        onClick={() => (picking === key ? endPick() : startPick(key))}
+        disabled={project.webBaseUrl === null || (picking !== null && picking !== key)}
+        title={project.webBaseUrl === null ? 'this env declares no `web` base, so there is no page to pick from' : undefined}
+        data-browser-pick={key}
+      >
+        {picking === key ? 'stop' : 'pick…'}
+      </button>
     </span>
   );
 
@@ -275,6 +354,31 @@ export function BrowserForm({ project, onWritten }: BrowserFormProps) {
           </>
         ) : null}
       </div>
+
+      {picking !== null ? (
+        <div className="picking" data-browser-picking={picking}>
+          <p className="muted">
+            a browser is open at <code>{project.webBaseUrl}</code> — click any element and its locator appears here. Every
+            one is <em>verified</em> to resolve to exactly the element you clicked, which is why this is worth spawning a
+            real browser for rather than guessing from a selector.
+          </p>
+          {picked.length === 0 ? (
+            <p className="muted" data-browser-picked={0}>
+              nothing picked yet.
+            </p>
+          ) : (
+            <ul className="picked" data-browser-picked={picked.length}>
+              {picked.map((p, i) => (
+                <li key={`${p.kind}:${p.value}:${i}`}>
+                  <button className="ghost" onClick={() => applyPicked(p)} data-browser-apply={i}>
+                    {p.kind} &quot;{p.value}&quot;
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
 
       <div className="authoring-rows" data-browser-rows={rows.length}>
         {rows.map((row, i) => (

@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UiServer, readProject, runArgv, initArgv, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, dropScratch, etagOf, SCAFFOLDED, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, dropScratch, etagOf, SCAFFOLDED, type RunRecord, type ReportEntry } from '../src/ui-server.js';
 import { readdir } from 'node:fs/promises';
 
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
@@ -643,6 +643,142 @@ test('every file `tflw init` can create is a file the page is told about', async
   names.delete('.gitignore');
 
   assert.deepEqual([...names].sort(), [...SCAFFOLDED].sort(), 'a name `tflw init` can write is missing from SCAFFOLDED (or vice versa)');
+});
+
+test('pickUrl composes what `tflw pick` needs from what an author types', () => {
+  // **`tflw pick` READS NO CONFIG AND REQUIRES AN ABSOLUTE URL, by its own design** — its doc
+  // comment says it "has no notion of a `web` base URL", unlike `open "/path"` inside a file,
+  // which resolves against one. An author types a path, because that is what `open` takes, so
+  // somebody has to close the gap; doing it server-side is `A2-3`'s shape, where the page is
+  // handed a fact composed from the config the server already read.
+  assert.equal(pickUrl('http://localhost:3000', '/checkout'), 'http://localhost:3000/checkout');
+
+  // Exactly one slash, however either side was written — the commonest way a composed URL goes
+  // wrong, and the one nobody notices until a 404 that looks like a routing bug.
+  assert.equal(pickUrl('http://localhost:3000/', '/checkout'), 'http://localhost:3000/checkout');
+  assert.equal(pickUrl('http://localhost:3000', 'checkout'), 'http://localhost:3000/checkout');
+  assert.equal(pickUrl('http://localhost:3000/', 'checkout'), 'http://localhost:3000/checkout');
+  assert.equal(pickUrl('http://localhost:3000', '/'), 'http://localhost:3000/');
+
+  // An absolute URL is taken verbatim: the author pasted the whole thing, and joining it to a base
+  // would produce a URL neither of them meant.
+  assert.equal(pickUrl('http://localhost:3000', 'https://example.test/x'), 'https://example.test/x');
+
+  // **`null` is a question, not a failure.** An env with no `web` base has no page to pick from —
+  // and cannot run a browser test at all — so the door says so instead of spawning a browser at a
+  // URL it invented.
+  assert.equal(pickUrl(null, '/checkout'), null);
+
+  // One URL and nothing else, so the page cannot ask for a session a terminal could not open.
+  assert.deepEqual(pickArgv('http://localhost:3000/checkout'), ['pick', 'http://localhost:3000/checkout']);
+});
+
+test('GET /api/pick refuses when the env declares no `web` base, rather than opening a browser', async () => {
+  // The refusal is the interesting half: this route spawns a REAL, VISIBLE browser, so the
+  // condition under which it must not is worth a test of its own. `409` and a sentence naming the
+  // line to add — the same shape the SCANS door uses for `authorized target`.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-pick-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  api url "http://127.0.0.1:1"\n', 'utf8');
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    const res = await fetch(`${base}/api/pick?path=/checkout`);
+    assert.equal(res.status, 409);
+    const body = (await res.json()) as { error: string };
+    assert.match(body.error, /declares no `web` base/);
+    assert.match(body.error, /web "http:\/\/localhost:3000"/, 'the refusal names the line to add');
+
+    // And `readProject` reports the same fact the route decided on, so the door can disable the
+    // control instead of offering one that always refuses.
+    assert.equal((await readProject(dir)).webBaseUrl, null);
+  } finally {
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('GET /api/pick streams the child’s lines, and the child dies with the connection', async () => {
+  // **THE STREAM IS THE SESSION** — the property this route's shape exists for. There is no start
+  // call and no stop call, so a session that is never streamed is never started and an orphan is
+  // unconstructible. That matters more here than anywhere else in this server: `tflw pick` opens a
+  // real, visible browser, and an orphan is a process somebody has to find and kill on a machine
+  // they may be sharing.
+  //
+  // Driven against a STUB entry rather than the real CLI, deliberately. The real command needs a
+  // human to click something before it emits a locator, and launching a browser per test run on a
+  // shared box to assert a banner is a cost with no claim attached. What is being tested here is
+  // this server's plumbing — spawn, line-split, SSE framing, lifetime — and the stub makes every
+  // one of those observable.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-pick-live-'));
+  const stub = join(dir, 'stub.mjs');
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
+    // Prints the argv it was given, then a locator, then stays alive — so the test can prove the
+    // URL reached the command AND that disconnecting is what ends it.
+    await writeFile(
+      stub,
+      [
+        'import { writeFileSync } from "node:fs";',
+        'process.stdout.write(`argv ${process.argv.slice(2).join(" ")}\n`);',
+        'process.stdout.write(`button "Sign in"\n`);',
+        // **BOUNDED, so that leaking it cannot hang anything.** The stub must outlive the assertions
+        // to prove the stream is live, and must not outlive the test — otherwise a mutation that
+        // drops the kill leaves a child holding piped stdio, the test file never exits, and the
+        // failure the assertions correctly produce is invisible behind a hang. `A3-6` paid 180
+        // seconds and a hand-killed run to learn that.
+        'const alive = setInterval(() => {}, 250);',
+        'setTimeout(() => { clearInterval(alive); process.exit(0); }, 3000);',
+        // The stub RECORDS the signal, so the claim below can be positive: the file appearing is
+        // the child having been stopped, and a leaked child never writes it.
+        `process.on("SIGINT", () => { writeFileSync(${JSON.stringify(join(dir, 'stopped'))}, "1"); process.exit(0); });`,
+      ].join('\n'),
+      'utf8',
+    );
+    const ui = new UiServer({ root: dir, cliEntry: stub, execArgv: [], staticDir: join(dir, 'no-static') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      const controller = new AbortController();
+      const res = await fetch(`${base}/api/pick?path=/checkout`, { signal: controller.signal });
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get('content-type') ?? '', /text\/event-stream/);
+
+      const reader = res.body!.getReader();
+      let seen = '';
+      while (!seen.includes('Sign in')) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        seen += new TextDecoder().decode(value);
+      }
+      // The composed URL reached the command, through `pickArgv`, as one argument.
+      assert.match(seen, /argv pick http:\/\/localhost:3000\/checkout/);
+      // …and the locator line arrives as its own SSE message, JSON-encoded so a line containing a
+      // quote cannot break the framing.
+      assert.match(seen, /data: "button \\"Sign in\\""/);
+
+      // **DISCONNECTING STOPS IT, ASSERTED POSITIVELY AND WITH A DEADLINE.** The first draft
+      // aborted, slept, and asserted nothing — so the mutation that leaks the child did not redden
+      // this test, it **HUNG** it: the stub stayed alive holding piped stdio, the test file never
+      // exited, and the mutation runner sat there until it was killed by hand. A hang is a far
+      // worse signal than a failure, because it is indistinguishable from slowness and it blocks
+      // everything behind it — on a shared box, the lock included.
+      //
+      // The stub writes a file on SIGINT, so what is asserted is the signal ARRIVING rather than
+      // the absence of a symptom, and a leak fails in two seconds instead of never.
+      controller.abort();
+      const stopped = join(dir, 'stopped');
+      const deadline = Date.now() + 2000;
+      let signalled = false;
+      while (Date.now() < deadline && !signalled) {
+        signalled = await access(stopped).then(() => true).catch(() => false);
+        if (!signalled) await new Promise((r) => setTimeout(r, 25));
+      }
+      assert.ok(signalled, 'closing the stream must stop the pick session — a leaked child is a browser window nobody can find');
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('DELETE /api/scratch drops the file, and the project view stops counting it', async () => {

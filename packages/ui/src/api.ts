@@ -72,6 +72,43 @@ export async function dropScratch(ifMatch: string | null): Promise<{ ok: true; r
   return { ok: false, status: res.status, error: body.error ?? `${res.status}` };
 }
 
+/**
+ * A `tflw pick` session — `M200` `A3-6` (`D1055`).
+ *
+ * **Opening the stream is what starts the session, and closing it is what ends it.** There is no
+ * start call and no stop call: the route binds the child's life to the connection, so the
+ * unsubscribe this returns closes the browser `pick` opened. That is the property that matters —
+ * a real, visible browser process that nothing can orphan.
+ *
+ * Lines arrive unclassified, because `pick` prints two banner lines before the first locator and a
+ * server that filtered by matching their wording would be coupled to it. The caller classifies,
+ * with the grammar.
+ */
+export function pickLocators(
+  path: string,
+  on: { line: (text: string) => void; problem: (text: string) => void; end: () => void },
+): () => void {
+  const source = new EventSource(`/api/pick?path=${encodeURIComponent(path)}`);
+  source.onmessage = (m: MessageEvent<string>) => on.line(JSON.parse(m.data) as string);
+  source.addEventListener('problem', (m) => on.problem(JSON.parse((m as MessageEvent<string>).data) as string));
+  source.addEventListener('end', () => {
+    source.close();
+    on.end();
+  });
+  // A route that refuses — no `web` base, not a project — answers JSON rather than a stream, and
+  // `EventSource` reports that only as a generic error. It is surfaced as a problem rather than
+  // swallowed, because a picker that silently does nothing is worse than one that says why.
+  source.onerror = () => {
+    source.close();
+    on.problem('the pick session could not be started — check that this env declares a `web` base');
+    on.end();
+  };
+  return () => {
+    source.close();
+    on.end();
+  };
+}
+
 export async function startRun(request: RunRequest): Promise<RunRecord> {
   const res = await fetch('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });
   if (!res.ok) throw new Error(`POST /api/run: ${res.status} ${await res.text()}`);
