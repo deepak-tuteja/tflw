@@ -53,6 +53,7 @@ import type {
   PauseStmt,
   Program,
   Step,
+  MalformedStep,
   ActionDecl,
   AcceptDialogStmt,
   DownloadBlock,
@@ -276,6 +277,23 @@ export const PRINTABLE = new Set<string>([
  */
 export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'RetryAfterClause', 'FillFormRow']);
 
+/**
+ * The kinds that refuse **by construction**, and will not gain a printer in any round (`A4-5`).
+ *
+ * `MalformedStep` is the whole set and is likely to stay it. It is what the parser leaves behind
+ * where a step could not be read — `head` is the keyword it began with, and there is no second
+ * field — so printing one would mean inventing the rest of a line the author never finished. It is
+ * not part of `A4`'s tail and never was (`§4f`): it occurs 24 times across 20 files and **0 of
+ * them reach either gate**, because a `MalformedStep` exists only where the parser has already
+ * raised an error diagnostic and both gates skip such a file before they look at a node.
+ *
+ * It is declared rather than left to the `default` branch for the same reason `CONTEXT_BOUND` is:
+ * a census that reads as a worklist needs its remainder to be **known-empty**. With these three
+ * sets, every node kind the corpus contains is accounted for by name — which is what turns
+ * `D1048`'s ratchet into a statement about the language rather than a running total.
+ */
+export const REFUSES_BY_CONSTRUCTION = new Set<string>(['MalformedStep']);
+
 class Refusal extends Error {
   constructor(readonly nodeType: string, readonly detail?: string) {
     super(detail ? `no printer for ${nodeType}: ${detail}` : `no printer for ${nodeType}`);
@@ -458,6 +476,14 @@ function printNode(node: Node, level: number): string {
     case 'BoolLit':
     case 'NullLit':
       return pad(level) + printValue(node as Value);
+    case 'MalformedStep':
+      // `A4-5`. **Declared, not defaulted.** A `MalformedStep` is the parser's recovery node for a
+      // step it could not read: it carries the keyword the step began with and nothing else, so
+      // printing one would mean inventing the rest of a line the author never finished. It is the
+      // one node kind in the language that must refuse forever, and saying so here — rather than
+      // letting it fall through to the default — is what makes the gate's census read as a
+      // worklist whose remainder is **known-empty** rather than as one with an unexplained entry.
+      return refuse('MalformedStep', `\`${(node as MalformedStep).head} …\` is a step the parser could not read, so there is nothing to print`);
     default:
       return refuse(node.type);
   }
