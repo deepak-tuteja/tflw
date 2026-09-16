@@ -224,7 +224,7 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // are things somebody should have to state. Moving a row down is allowed the way the headcount
   // gate allows it — in the same change, with the reason on the row.
   const FLOOR: ReadonlyArray<readonly [string, number]> = [
-    ['ExpectStmt', 2408], ['Locator', 2158], ['ApiStep', 1758], ['CaptureStmt', 751],
+    ['ExpectStmt', 2987], ['Locator', 2158], ['ApiStep', 1758], ['CaptureStmt', 751],
     ['ClickStmt', 728], ['TestDecl', 546], ['FillStmt', 417], ['LetStmt', 296],
     ['OpenStmt', 231], ['CallStmt', 168], ['LogStmt', 55], ['ThresholdDecl', 42],
     ['WaitUntilApiStmt', 25], ['CrawlDecl', 11], ['PauseStmt', 4],
@@ -954,11 +954,16 @@ test('A2-1: the a11y matcher prints, and not one a11y assertion does', () => {
   assert.equal(print(m).text, 'has no a11y violations');
   assert.equal(print(m).ok, true);
 
+  // **`A3-3` TAUGHT THE PRINTER `page`, AND ALL 16 A11Y ASSERTIONS NOW PRINT WHOLE.** `A2-1` wrote
+  // the line below as *"when `A3` teaches the printer `page`, this assertion starts passing with no
+  // change here"* — right about the mechanism and wrong about this file: nothing in the a11y
+  // printer moved, exactly as predicted, and the test still had to be inverted, because a claim
+  // that something REFUSES goes red the day it stops. That is the third refusal assertion in this
+  // arc to come due (`§6t`), and the reason the round now prefers asserting what a refusal SAYS
+  // over asserting that one happens.
   const whole = print(assertionStep('expect page has no serious a11y violations'));
-  assert.equal(whole.ok, false);
-  assert.match(whole.reason ?? '', /PageSubject/);
-  // When `A3` teaches the printer `page`, this assertion starts passing with no change here —
-  // which is the point of asserting the reason rather than only the refusal.
+  assert.equal(whole.ok, true, whole.reason);
+  assert.equal(whole.text.trim(), 'expect page has no serious a11y violations');
 });
 
 test('A2-1: a scan matcher never takes an operand', () => {
@@ -1068,19 +1073,57 @@ test('A3-2: the three browser statements, including the two click kinds the corp
   assert.equal(envFill.text, 'fill field "Email" with env(USER_A_EMAIL)');
 });
 
+test('A3-3: the five state words, the copula the tree does not keep, and the two browser subjects', () => {
+  // **ALL FIVE, because the parser holds them in ONE closed family** (`STATE_WORDS`) with one
+  // spelling. Slicing them by frequency — `visible` 585 against `disabled` 1 — would have invented
+  // a distinction the grammar does not make and left `is disabled` refusing while `is hidden`
+  // printed, which is not a rule anybody could recover from the output. `§4g` named two; the
+  // grammar named five.
+  for (const word of ['visible', 'hidden', 'enabled', 'disabled', 'checked']) {
+    assert.equal(print(assertionStep(`expect button "Buy" is ${word}`)).text.trim(), `expect button "Buy" is ${word}`);
+    assert.equal(print(assertionStep(`expect button "Buy" is not ${word}`)).text.trim(), `expect button "Buy" is not ${word}`);
+  }
+
+  // **THE COPULA IS OPTIONAL AND THE TREE DOES NOT KEEP IT** (`FS-08`) — the fifth member of the
+  // normalisation family. `expect button "Buy" visible` and `… is visible` parse to the identical
+  // node, so both round-trip and the printer must simply choose. The choice is measured, not
+  // preferred: **623 of 623** state assertions in the corpus are written with `is`, and `format`
+  // preserves whichever spelling it is handed rather than normalising, so there was no formatter
+  // answer to inherit. Asserted as a CONVERGENCE — two spellings in, one out — because that is the
+  // claim, and a test that only checked the `is` form would pass against a printer that echoed
+  // whatever it was given, which is not what this node can do.
+  const withCopula = assertionStep('expect button "Buy" is visible');
+  const without = assertionStep('expect button "Buy" visible');
+  assert.deepEqual(stripSpans(withCopula), stripSpans(without), 'the copula leaves no trace in the tree');
+  assert.equal(print(without).text.trim(), 'expect button "Buy" is visible');
+
+  // A state is operand-free — not one of the corpus's 622 carries a value — so the guard exists
+  // and is unreachable from source, the same shape as `connects` and resolved the same way: tested
+  // against the contract, since the node is constructible by anything holding the type.
+  const withOperand: Node = { type: 'Matcher', name: 'visible', negated: false, value: { type: 'BoolLit', value: true, span: SYNTHETIC }, span: SYNTHETIC } as unknown as Node;
+  assert.match(print(withOperand).reason ?? '', /never takes an operand/);
+
+  // `page` carries no data at all — `ast.ts` calls it and `response` deliberately parallel — and
+  // teaching it is what unblocks the 16 a11y assertions that have printed since `A2-1` and been
+  // unreachable because their only subject would not.
+  assert.equal(print(assertionStep('expect page has no a11y violations')).text.trim(), 'expect page has no a11y violations');
+  assert.equal(print(assertionStep('expect page has no critical a11y violations')).text.trim(), 'expect page has no critical a11y violations');
+
+  // And a state matcher is not tied to a locator: the corpus puts one on a `status` and one on a
+  // `{value}`. Nonsense to a reader, accepted by the grammar, and the printer must not assume a
+  // subject it was never promised.
+  assert.equal(print(assertionStep('expect status is visible')).text.trim(), 'expect status is visible');
+});
+
 test('the assertion half refuses what belongs to another door', () => {
   // A locator, a page and an observed network request are the browser's vocabulary. They refuse BY
   // NAME rather than silently, so the census in the gate above can be read as a worklist.
   //
-  // **The scan half of this test retired in `A2-1`**, which is what made those matchers print. It
-  // is not deleted, because the claim it was making — the refusal names the MATCHER and not the
-  // subject under it — is still the claim worth holding; it is now made by the positive test
-  // below, over a matcher that is still nobody's (`matchesSnapshot`, `A3`'s).
-  const locator = assertionStep('expect button "Buy" is visible');
-  const lr = print(locator);
-  assert.equal(lr.ok, false);
-  assert.match(lr.reason ?? '', /LocatorSubject/);
-
+  // **Two halves of this test have now retired** — the scan half in `A2-1`, the locator half in
+  // `A3-3`. Neither was deleted, because the claim each was making is about the SHAPE of a
+  // refusal (it names the node kind, so the gate's census reads as a worklist) rather than about
+  // which node happens to carry it. What is left is the part still nobody's.
+  //
   // `of request to "…"` moves four otherwise-printable subjects onto traffic observed on a live
   // page, so the CLAUSE is refused while its subject is not.
   const observed = assertionStep('expect status of request to "/api/orders" equals 201');

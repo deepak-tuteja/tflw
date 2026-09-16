@@ -132,6 +132,11 @@ export const PRINTABLE = new Set<string>([
   'OpenStmt',
   'ClickStmt',
   'FillStmt',
+  // `A3-3` — the assertion half. `PageSubject` is 17 occurrences and unblocks the **16 a11y
+  // matchers** that have printed since `A2-1` and been unreachable because their only subject
+  // would not (`§6o`).
+  'LocatorSubject',
+  'PageSubject',
   // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
   // statements that read or announce a response.
   'DurationSubject',
@@ -270,6 +275,8 @@ function printNode(node: Node, level: number): string {
     case 'RequestSubject':
     case 'ValueSubject':
     case 'ResponseSubject':
+    case 'LocatorSubject':
+    case 'PageSubject':
       return pad(level) + printSubject(node as Subject);
     case 'InlineBody':
     case 'FileBody':
@@ -664,8 +671,15 @@ function printSubject(s: Subject): string {
       return 'body pdf text';
     case 'ValueSubject':
       return '{' + printRef(s.ref) + '}';
+    // `A3-3` — the browser's two subjects. `LocatorSubject` is a locator and nothing else, and
+    // `PageSubject` carries no data at all: `ast.ts` calls it and `ResponseSubject` deliberately
+    // parallel, bare subjects whose meaning comes entirely from the matcher after them.
+    case 'LocatorSubject':
+      return printLocator(s.locator);
+    case 'PageSubject':
+      return 'page';
     default:
-      return refuse(s.type, 'only the response subjects print in A1 — the browser’s are A3’s');
+      return refuse(s.type, 'this subject is not printable yet');
   }
 }
 
@@ -767,6 +781,28 @@ function printMatcher(m: Matcher): string {
       return `${not}has count ${operand(m)}`;
     case 'hasValue':
       return `${not}has value ${operand(m)}`;
+    // `A3-3` — the five state words, printed by one branch because the parser holds them in one
+    // closed family (`STATE_WORDS` in `parser.ts`) with one spelling. Splitting them by frequency
+    // — `visible` 585 against `disabled` 1 — would invent a distinction the grammar does not make
+    // and leave `is disabled` refusing while `is hidden` printed, for no reason a reader could
+    // recover.
+    //
+    // **`is` IS AN OPTIONAL COPULA AND THE AST DOES NOT RECORD IT** (`FS-08`), so `expect button
+    // "Buy" visible` and `… is visible` parse to the identical node. That makes this the fifth
+    // member of the normalisation family (`§6p`) — a spelling the tree stopped keeping — and it is
+    // settled by measurement rather than taste: **623 of 623** state assertions in the corpus are
+    // written with `is`, and `format` preserves whichever spelling it is given rather than
+    // choosing, so the formatter had no answer to inherit. It also matches the two matchers above
+    // that already emit the copula, `is less than` and `is greater than`.
+    case 'visible':
+    case 'hidden':
+    case 'enabled':
+    case 'disabled':
+    case 'checked':
+      // Operand-free like `connects`, and measured so: not one of the corpus's 622 state matchers
+      // carries a value.
+      if (m.value) refuse('Matcher', `\`${m.name}\` is a state, so it never takes an operand`);
+      return `is ${not}${m.name}`;
     case 'connects':
       // The one matcher that never takes an operand at all (`ast.ts` on `Matcher.value`).
       if (m.value) refuse('Matcher', '`connects` never takes an operand');
