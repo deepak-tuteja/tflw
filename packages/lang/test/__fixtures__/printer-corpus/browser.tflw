@@ -1,0 +1,66 @@
+# `M201` `S3` — the browser vocabulary: the pointer and keyboard steps, the form family, dialogs,
+# tabs, downloads, network stubs and the two blocks that scope what follows them.
+#
+# **This file exists to be PRINTED, not to be run** — see `values.tflw` for the whole argument. No
+# browser starts; the gate parses, prints, re-parses and compares. The selectors and labels are
+# lifted from real sites in the sibling at each node's own span, which is why they read like a shop
+# rather than like a test of a printer.
+
+@printer
+test "the pointer and keyboard steps"
+  open "/orders"
+  hover button "Open menu"
+  scroll to button "Bottom marker"
+  press "Escape"
+  drag css ".drag-handle" to css "table tbody tr:last-child"
+  drop file "./payloads/sample.csv" onto css ".drop-zone"
+
+@printer
+test "the form family, including the table that fills one in a single step"
+  open "/login"
+  fill form
+    | "Email"    | "admin@example.test" |
+    | "Password" | "hunter2"            |
+  click button "Log in"
+  fill field "Search" with "widget"
+  select "member" from field "New member's role"
+  tick field "Subscribe to updates"
+  untick field "Send me offers"
+
+@printer
+test "a block scopes the steps under it"
+  open "/orders"
+  within list "Backordered items"
+    click button "Remove"
+  expect css "#readout" is visible
+
+@printer
+test "dialogs, and the two subjects only a dialog has"
+  open "/admin/items"
+  click button "Rename"
+  expect dialog type equals "prompt"
+  expect dialog message equals "New name for zeta?"
+  accept dialog
+  click button "Delete"
+  dismiss dialog
+
+@printer
+test "tabs and downloads, each a block or a step of its own"
+  open "/orders"
+  switch to new tab
+    click text "View receipt (PDF)"
+  switch to tab 1
+  close tab
+  download as file
+    click text "Download orders CSV"
+
+@printer
+test "a stubbed request, a poll on the page, and an assertion about the network"
+  stub GET "https://payments.example.test/v1/authorize" respond status 200 body { token: "tok_1" }
+  open "/checkout"
+  click button "Pay"
+  wait until text "Payment received" is visible for 2s timeout wait 10s
+  expect request to "/v1/products" with method "GET" was made
+  capture status of request to "/health" as health
+  capture page as snapshot
+  log "{health} {snapshot}"
