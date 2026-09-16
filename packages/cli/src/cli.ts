@@ -15,7 +15,7 @@ import { watch as fsWatch, existsSync, readFileSync, statSync, mkdirSync, openSy
 import { createRequire } from 'node:module';
 import { join, resolve, relative, dirname, basename } from 'node:path';
 import { discoverTests } from './project.js';
-import { UiServer, parseUiArgs, openInBrowser } from './ui-server.js';
+import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH } from './ui-server.js';
 import {
   parseSource,
   parseConfigSource,
@@ -3743,11 +3743,16 @@ async function initCommand(argv: string[]): Promise<number> {
  * whether the file was created or changed at all. */
 async function ensureGitignore(cwd: string): Promise<boolean> {
   const gitignorePath = join(cwd, '.gitignore');
-  // `scratch.tflw` is `D1047`'s exploration file — one path, overwritten by the page's Send
-  // button, and never something to commit. Added here so a project `init` makes is right from the
-  // start; an existing project gets a notice on the page instead of a silent edit to a file the
-  // author owns (`M200` `A1-5`).
-  const required = ['.env', 'report/', 'scratch.tflw'];
+  // The scratch is `D1047`'s exploration file — one path, overwritten by the page's Send button,
+  // and never something to commit. Added here so a project `init` makes is right from the start;
+  // an existing project gets a notice on the page instead of a silent edit to a file the author
+  // owns (`M200` `A1-5`).
+  //
+  // Taken from `SCRATCH_PATH` rather than spelled again (`M205` Q15): this line and that constant
+  // are one fact, and when the name gained its leading dot a second literal here would have
+  // ignored a file that no longer exists while leaving the real one committable. A duplicated
+  // string is the drift this repository files more often than any other.
+  const required = ['.env', 'report/', SCRATCH_PATH];
   let existing = '';
   try {
     existing = await readFile(gitignorePath, 'utf8');

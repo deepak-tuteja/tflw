@@ -216,6 +216,22 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState<{ request: StepResult['request']; response: StepResult['response']; ok: boolean; detail?: string } | null>(null);
 
+  /**
+   * The scratch file's hash as this page last knew it — `M205` S3, closing `M205-05`.
+   *
+   * Send and Discard both need it, and both used to fetch it: `getFile(scratchPath).catch(() =>
+   * null)` before each one. On a project nobody has explored yet that is a request whose only
+   * possible answer is `404`, and the browser logs a failed request as a console error **whether
+   * or not the caller catches it** — so the first Send in any project printed one. A page that
+   * logs a benign error by routine is a page whose next real error is invisible.
+   *
+   * Seeded from the project view, which reads the file the server already has in hand, and moved
+   * forward by each write's own response. Deliberately **not** re-seeded when `project` refreshes:
+   * this page's own last write is the fresher fact, and a scratch changed by another terminal is
+   * supposed to surface as the `409` that guard exists for rather than be silently re-read.
+   */
+  const [scratchEtag, setScratchEtag] = useState<string | null>(project.scratchEtag);
+
   /** The scratch file's whole contents: one test, this request, these assertions. Not spliced
    *  into anything — an exploration replaces the file rather than joining it. */
   const scratchText = useMemo((): { ok: true; text: string } | { ok: false; reason: string } => {
@@ -236,16 +252,15 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
     setProblem(null);
     setSent(null);
     try {
-      // `null` rather than an etag: the scratch file is this button's alone and may not exist yet,
-      // and the write route reads a missing file plus `If-Match: null` as "create it". A stale
-      // etag here would be a 409 about a file nobody else edits.
-      const scratch = await getFile(project.scratchPath).catch(() => null);
-      const put = await putFile(project.scratchPath, scratchText.text, scratch?.etag ?? null);
+      // `null` when there is no scratch yet, which the write route reads as "create it"; the hash
+      // this page last wrote otherwise. No read precedes the write — see `scratchEtag` above.
+      const put = await putFile(project.scratchPath, scratchText.text, scratchEtag);
       if (!put.ok) {
         setProblem(put.code ? `${put.code} at line ${put.line}: ${put.error}` : put.error);
         setSending(false);
         return;
       }
+      setScratchEtag(put.etag);
       const record = await startRun({ files: [project.scratchPath], only: SCRATCH_TEST, evidence: 'full' });
       const end = await new Promise<EndEvent>((resolve) => {
         const stop = subscribe(record.id, { event: () => undefined, noise: () => undefined, end: (e) => { stop(); resolve(e); } });
@@ -272,7 +287,7 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
       setProblem(e instanceof Error ? e.message : String(e));
     }
     setSending(false);
-  }, [scratchText, project.scratchPath]);
+  }, [scratchText, project.scratchPath, scratchEtag]);
 
   /**
    * `[Discard]` — the scratch file is removed and *then* the pane goes.
@@ -289,16 +304,16 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
    * a scratch that moved under this page belongs to another terminal.
    */
   const discard = useCallback(async () => {
-    const scratch = await getFile(project.scratchPath).catch(() => null);
-    if (scratch) {
-      const res = await dropScratch(scratch.etag);
+    if (scratchEtag !== null) {
+      const res = await dropScratch(scratchEtag);
       if (!res.ok) {
         setProblem(res.status === 409 ? `${res.error} — the scratch file changed under this page` : res.error);
         return;
       }
+      setScratchEtag(null);
     }
     setSent(null);
-  }, [project.scratchPath]);
+  }, [scratchEtag]);
 
   /** `D1052` — recomputed with the preview, from the same bytes, so what is shown and what is
    *  judged cannot be two different files. */

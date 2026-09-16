@@ -116,6 +116,23 @@ export interface ProjectView {
   readonly scratchPath: string;
   readonly scratchIgnored: boolean;
   /**
+   * The scratch file's current hash, or `null` when there is no scratch file (`M205` S3, closing
+   * `M205-05`).
+   *
+   * The page needs it to write: `PUT /api/file` reads `If-Match: null` as *this file should not
+   * exist yet*, so a page that guesses gets a `409` on its second Send. It used to learn it by
+   * asking — `getFile(scratchPath).catch(() => null)` before every write — and on a project that
+   * has never been explored that is a **`GET` whose only possible answer is `404`**, which the
+   * browser logs as an error whether or not the caller catches it. A page that logs one benign
+   * error by routine is a page whose next real error is invisible, which is the defect
+   * mac-dashboard's `M13` found the expensive way.
+   *
+   * Seeding it here removes the request rather than silencing it, and the page carries the etag
+   * forward from each write's own response. A scratch changed by another terminal therefore
+   * surfaces as the `409` that guard exists for, instead of being papered over by a re-read.
+   */
+  readonly scratchEtag: string | null;
+  /**
    * The env's `web` base, or `null` when it declares none (`M200` `A3-6`).
    *
    * The BROWSER door reads it for two things: composing the URL `tflw pick` opens, and knowing
@@ -163,8 +180,25 @@ export interface ProjectView {
   };
 }
 
-/** Where `Send` writes. One file, overwritten, never merged — it is an exploration, not a suite. */
-export const SCRATCH_PATH = 'scratch.tflw';
+/**
+ * Where `Send` writes. One file, overwritten, never merged — it is an exploration, not a suite.
+ *
+ * **The leading dot is load-bearing** (`M205` Q15, closing `M205-04`). It was `scratch.tflw`, and
+ * `discoverTests` found it like any other test: after one explore-then-write the sidebar read
+ * `2 files - 3 behind API` for two tests the author wrote, and a bare `tflw run` issued the same
+ * request twice, reporting a test nobody thinks exists. `.gitignore` listed it, which is why this
+ * was invisible — **being ignored by git is not being excluded from discovery**, and the two were
+ * conflated.
+ *
+ * A dot is the whole repair, and it is the repair because it needs no code. `project.ts`'s walk
+ * already skips every dot-prefixed entry, files and directories alike, so the scratch leaves
+ * discovery in **every project, old and new**, with no `exclude` key to scaffold and no new
+ * branch to keep true. `extname('.scratch.tflw')` is still `.tflw`, so `resolveWritablePath`
+ * accepts it unchanged and `D1049`'s one write call site is untouched. An explicit file argument
+ * is resolved rather than discovered (`cli.ts`'s run path, and `discoverTests`' own docblock says
+ * so), so `Send`'s `tflw run .scratch.tflw` still runs it.
+ */
+export const SCRATCH_PATH = '.scratch.tflw';
 
 /**
  * Every file `tflw init` can write, under any flag — what `runInit` reports as `created`.
@@ -310,7 +344,22 @@ export async function readProject(root: string): Promise<ProjectView> {
     apiBaseUrl: resolved.apiBaseUrl,
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
   };
-  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
+  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
+}
+
+/**
+ * The scratch file's hash, or `null` when it is not there (`M205` S3).
+ *
+ * Synchronous and beside `scratchIsIgnored` on purpose: both are one small read of one known path
+ * at the edge of a route that already reads every test file in the project, and splitting them
+ * across two shapes would suggest a difference that is not there.
+ */
+function scratchEtagOf(root: string): string | null {
+  try {
+    return etagOf(readFileSync(join(root, SCRATCH_PATH), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -479,11 +528,19 @@ export async function writeProjectFile(
  * `[Discard]` removes the scratch file — `M200` `A2-6`, closing §7's oldest open fork (`D1054`).
  *
  * **`A1-5` emptied it, and the measurement says emptying is not dropping.** An emptied
- * `scratch.tflw` is still a file, so `discoverTests` still finds it, so `readProject` still
- * returns it and the landing's footer still counts it: a project with one test reads
- * `2 files` forever after somebody explores an endpoint once and changes their mind. Nothing
+ * `scratch.tflw` is still a file, so `discoverTests` still found it, so `readProject` still
+ * returned it and the landing's footer still counted it: a project with one test read
+ * `2 files` forever after somebody explored an endpoint once and changed their mind. Nothing
  * clears it, because nothing else writes that path. Measured on a scaffolded project — `files=1`
  * before Send, `files=2` after, and **still `files=2` after Discard**.
+ *
+ * `M205` Q15's leading dot takes discovery out of that argument — a `.scratch.tflw` is invisible
+ * to the walk whether it is empty or full — and Discard survives it intact, because counting was
+ * never the whole reason. What is left is the one that does not depend on discovery: an author
+ * who explored and changed their mind asked for the file to be **gone**, and a file that is empty
+ * is still a file in their tree, in their editor's tab strip and in `git status`. The
+ * measurement above is kept as written rather than trimmed to what still holds, because it is
+ * what settled the fork.
  *
  * The fork was argued from the server's write surface and never from what the author sees, which
  * is how it came out wrong. `D1049`'s gate is *one `writeFile` call site*, and it stands here

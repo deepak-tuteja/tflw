@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Server } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
-import { UiServer } from '../src/ui-server.js';
+import { UiServer, SCRATCH_PATH } from '../src/ui-server.js';
 import { checkProgram, parseSource } from '@tflw/lang';
 import { roundDurationMs, type LoadMetrics, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
 import { describeWorkload, formatThresholdActual, formatThresholdTarget, remediationFor } from '@tflw/reporter';
@@ -1599,8 +1599,25 @@ test('Send writes a scratch file, runs it for real, and shows the response out o
   await page.locator('[data-api-path]').fill('/items');
   await page.locator('[data-expect-operand="0"]').fill('200');
 
+  const projectFiles = async (): Promise<number> =>
+    ((await (await fetch(`${baseUrl}/api/project`)).json()) as { files: unknown[] }).files.length;
+  const filesBefore = await projectFiles();
+
+  // No console error on the first Send in a project that has never been explored (`M205-05`).
+  // The page used to read the scratch's etag before writing it, which on a fresh project is a
+  // request whose only possible answer is `404` — and the browser logs a failed request whether
+  // or not the caller catches it, which this one did. Listened for rather than read back, because
+  // a console message is not retrievable after the fact.
+  const consoleErrors: string[] = [];
+  const onConsole = (m: { type(): string; text(): string }): void => {
+    if (m.type() === 'error') consoleErrors.push(m.text());
+  };
+  page.on('console', onConsole);
+
   await page.locator('[data-api-send]').click();
   await page.locator('[data-api-response]').waitFor({ timeout: 30_000 });
+  page.off('console', onConsole);
+  assert.deepEqual(consoleErrors, [], 'Send logged to the console on a project with no scratch file');
 
   // THE RESPONSE IS A REAL ONE. The fixture server beside the project answered it, and the bytes
   // came back through `results.json` rather than through a second HTTP client in the page —
@@ -1620,11 +1637,20 @@ test('Send writes a scratch file, runs it for real, and shows the response out o
   // server built, which is the only place the request is distinguishable from its outcome.
   const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { argv: string[]; request: { evidence?: string; only?: string } }[];
   const latest = runs[0]!;
-  assert.deepEqual(latest.argv, ['run', '--format', 'ndjson', '--no-color', '--only', 'scratch', '--evidence', 'full', 'scratch.tflw']);
+  assert.deepEqual(latest.argv, ['run', '--format', 'ndjson', '--no-color', '--only', 'scratch', '--evidence', 'full', SCRATCH_PATH]);
+
+  // **THE SCRATCH IS NOT A TEST IN THIS PROJECT** — `M205` Q15, closing `M205-04`. It used to be:
+  // `discoverTests` found `scratch.tflw` like any other file, so one exploration took a one-test
+  // project to `2 files · 3 behind API` and a bare `tflw run` issued the same request twice,
+  // reporting a test the author does not think exists. `.gitignore` listed it, which is why
+  // nobody saw it — being ignored by git is not being excluded from discovery. The leading dot is
+  // the repair, and this is the assertion that says so: the count does not move for a Send.
+  assert.equal(await projectFiles(), filesBefore, 'Send added a file to the project view');
+  assert.equal(SCRATCH_PATH[0], '.', 'the scratch is dot-prefixed, which is the whole mechanism');
 
   // And the scratch file on disk is a file a terminal can re-run by hand — the claim that keeps
   // "one execution path" honest.
-  const scratch = await readFile(join(root, 'scratch.tflw'), 'utf8');
+  const scratch = await readFile(join(root, SCRATCH_PATH), 'utf8');
   assert.equal(scratch, 'test "scratch"\n  api GET /items\n  expect status equals 200\n');
   const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
   assert.ok(!/error/i.test(check), check);
@@ -1632,18 +1658,20 @@ test('Send writes a scratch file, runs it for real, and shows the response out o
   // `[Discard]` drops it — and what "drops" means is the project going back to the shape it had
   // before Send, which is the claim `A1-5` could not make and did not notice it could not.
   //
-  // **THE FILE COUNT IS THE ASSERTION, not the file's contents.** `A1-5` emptied the scratch and
-  // asserted `trim() === ''`, which is true of a file that is still there — so `discoverTests`
-  // still found it, `readProject` still returned it, and the landing footer read `2 files` on a
-  // one-test project forever after a single exploration. Every gate in that slice passed. Asking
-  // the server what the project *is*, before and after, is the question that separates emptying
-  // from dropping; `scratch.tflw` being absent is the mechanism and is asserted second.
-  const filesBefore = ((await (await fetch(`${baseUrl}/api/project`)).json()) as { files: unknown[] }).files.length;
+  // **`A1-5` emptied the scratch and asserted `trim() === ''`**, which is true of a file that is
+  // still there — so `discoverTests` still found it, `readProject` still returned it, and the
+  // landing footer read `2 files` on a one-test project forever after a single exploration. Every
+  // gate in that slice passed. `A2-6` made Discard remove the file, and asserted the project's
+  // file count dropping by one as the thing emptying could not do.
+  //
+  // **That assertion is gone, and its absence is the finding.** Q15's leading dot means the
+  // scratch is not in the project view at any point — the count is pinned above, across Send — so
+  // "the count drops by one" has stopped being a true sentence about a working Discard. What is
+  // left is what Discard always meant: the file is **gone**, not emptied.
   await page.locator('[data-api-discard]').click();
   await page.locator('[data-api-response]').waitFor({ state: 'detached' });
-  const filesAfter = ((await (await fetch(`${baseUrl}/api/project`)).json()) as { files: unknown[] }).files.length;
-  assert.equal(filesAfter, filesBefore - 1, `Discard left the scratch in the project view: ${filesBefore} -> ${filesAfter}`);
-  await assert.rejects(() => readFile(join(root, 'scratch.tflw'), 'utf8'), /ENOENT/, 'the scratch file is gone, not emptied');
+  assert.equal(await projectFiles(), filesBefore, 'Discard moved the project view, which the scratch is not in');
+  await assert.rejects(() => readFile(join(root, SCRATCH_PATH), 'utf8'), /ENOENT/, 'the scratch file is gone, not emptied');
   } finally {
     await new Promise<void>((done) => target.close(() => done()));
   }
@@ -1669,23 +1697,23 @@ test('Send reports a request that could not be sent, rather than an empty pane',
 });
 
 test('the page says when the scratch file is not ignored, rather than editing .gitignore itself', async () => {
-  // A project `tflw init` makes lists `scratch.tflw`; an older one does not, and the page tells
+  // A project `tflw init` makes lists the scratch; an older one does not, and the page tells
   // the author instead of silently changing a file they own. The fixture project has no
   // `.gitignore` at all, which is the case that matters — absence, not a wrong rule.
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
   await page.locator('[data-api-form]').waitFor();
   const notice = await page.locator('[data-api-scratch-unignored]').textContent();
-  assert.match(notice ?? '', /scratch\.tflw/);
+  assert.ok((notice ?? '').includes(SCRATCH_PATH), notice ?? '');
   assert.match(notice ?? '', /gitignore/);
 
   // THE CONTROL, AND IT HAS TO BE ON THE PAGE. Asserting the server's fact flips is not asserting
   // the notice reads it: the mutation showing the notice unconditionally survived a version of
   // this test that checked only `/api/project`. So the line is added, the page reloaded, and the
   // notice has to be gone.
-  await writeFile(join(root, '.gitignore'), 'scratch.tflw\n', 'utf8');
+  await writeFile(join(root, '.gitignore'), `${SCRATCH_PATH}\n`, 'utf8');
   const view = (await (await fetch(`${baseUrl}/api/project`)).json()) as { scratchPath: string; scratchIgnored: boolean };
-  assert.equal(view.scratchPath, 'scratch.tflw');
+  assert.equal(view.scratchPath, SCRATCH_PATH);
   assert.equal(view.scratchIgnored, true);
 
   await page.reload();
