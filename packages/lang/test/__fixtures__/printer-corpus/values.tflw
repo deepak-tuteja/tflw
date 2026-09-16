@@ -1,0 +1,79 @@
+# `M201` `S2` — the value families: every literal, every generator, every expression.
+#
+# **This file exists to be PRINTED, not to be run.** It is one of the authored files that make
+# `print.test.ts`'s node-kind claim a claim about this repository rather than about the sibling
+# (`M200-05`). Its only job is that every node kind below occurs here, so the gate can print it,
+# re-parse it, and compare — which means the shapes matter and the values do not.
+#
+# Every spelling is lifted from a real site in `testFlow-tests` at the node's own span, never from
+# a docblock: `M200` `A4-1` lost three rounds to invented syntax and `A4-2`/`A4-4` arrived right
+# first time by reading the corpus. Where the sibling's only site was a deliberately invalid
+# fixture (`random number 5 to 1`, an empty range authored to make the checker complain) the
+# operands are corrected here — this file is meant to pass.
+
+@printer
+test "the literals"
+  api GET /items
+  expect status equals 200
+  expect body.inStock equals true
+  expect body.discontinued equals false
+  expect body.nextCursor equals null
+  expect body.count equals 3
+  expect body.name equals "widget"
+  expect duration is less than 5000ms
+
+@printer
+test "an array literal reaches the parser through a request body"
+  api POST /v1/orders body { items: [], tags: ["new", "sale"], nested: { depth: 2 } }
+  expect status equals 201
+
+@printer
+test "the random generators"
+  let a = random uuid
+  let b = random string 12
+  let c = random number 1 to 99
+  let d = random decimal 1 to 5
+  let e = random password 16
+  let f = random like "SKU-####-??"
+  let g = random of "red", "blue", "green"
+  let h = random date in future
+  let i = random date in past
+  let j = random date between today - 10 days and today
+  log "drew {a} {b} {c} {d} {e} {f} {g} {h} {i} {j}"
+
+@printer
+test "the unique generators"
+  let a = unique uuid
+  let b = unique email
+  let c = unique number
+  let d = unique like "ORD-######"
+  let e = unique("W3-Widget")
+  log "drew {a} {b} {c} {d} {e}"
+
+@printer
+test "dates, offsets and the arithmetic over them"
+  let base = today
+  let later = today + 3 days
+  let earlier = today - 2 weeks
+  let shipDate = format today + 3 days as "yyyy-MM-dd"
+  log "{base} {later} {earlier} {shipDate}"
+
+@printer
+test "the transforms"
+  let encoded = base64 encode("widget")
+  let decoded = base64 decode("d2lkZ2V0")
+  let hexed = hex encode("widget")
+  let escaped = url encode("a b&c")
+  log "{encoded} {decoded} {hexed} {escaped}"
+
+# An environment read and a call are both VALUES, not statements, so they belong here rather than
+# with the file header — the sibling's only site for either is inside an action's argument list.
+action signIn(email, password)
+  api POST /v1/sessions body { email: "{email}", password: "{password}" }
+  expect status equals 200
+
+@printer
+test "an environment read, and a call that spends two of them"
+  signIn(env(USER_A_EMAIL), env(USER_A_PW))
+  let who = env(USER_A_EMAIL)
+  log "signed in as {who}"
