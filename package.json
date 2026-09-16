@@ -48,7 +48,10 @@
     "refresh:own-identifiers": "node scripts/refresh-own-identifiers.mjs",
     "docs:decisions": "node scripts/gen-decisions.mjs",
     "docs:provenance": "node scripts/gen-decisions.mjs --provenance",
-    "docs:demand": "node scripts/gen-decisions.mjs --demand"
+    "docs:demand": "node scripts/gen-decisions.mjs --demand",
+    "example": "node examples/storefront/run.mjs --tag functional",
+    "example:ui": "node packages/cli/dist/cli.cjs ui examples/storefront",
+    "example:load": "node examples/storefront/run.mjs --tag workload"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

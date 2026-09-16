@@ -23,7 +23,14 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 const CHECK = argv.includes('--check');
 const roots = argv.filter((a) => a !== '--check');
-if (roots.length === 0) roots.push(path.resolve(HERE, '..', 'packages'));
+// The declared corpus (`D874`): `packages/` **and** `examples/`. It was `packages/` alone until
+// `M203` `S4`, and the omission was silent in the worst way — the example project added four
+// tracked `.tflw` files and this gate went on reporting the same 17 it had reported before them,
+// green. A corpus expressed as one hard-coded root does not grow when the repository does, and
+// nothing said so; the count only looked wrong beside a number from a different gate.
+if (roots.length === 0) {
+  roots.push(path.resolve(HERE, '..', 'packages'), path.resolve(HERE, '..', 'examples'));
+}
 const SKIP = new Set(['node_modules', '.git', 'dist', 'report']);
 
 const files = [];

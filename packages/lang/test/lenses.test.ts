@@ -173,7 +173,8 @@ test('every test in the corpus classifies, and a third of them land in more than
   // two trees: it could not see the sibling arriving, which is how it passed here for the whole of
   // `M200`, and it could not survive the sibling leaving, which is how it failed in CI.
   // `M203` `S3` — the doors corpus (`__fixtures__/doors-corpus/`, 2 files, 8 tests + 1 crawl) joined this repository's corpus: 42 -> 50 (its 8 tests; the crawl is counted by `combos`, not by `total`).
-  const EXPECTED_TESTS = 50;
+  // `M203` `S4` — the example project (`examples/storefront/tests/`, 4 files, 11 tests + 1 crawl) joined this repository's corpus: 50 -> 61 (its 11 tests; the crawl is counted by `combos`, not by `total`).
+  const EXPECTED_TESTS = 61;
   assert.equal(mine.total, EXPECTED_TESTS,
     `the corpus classified ${mine.total} tests, expected ${EXPECTED_TESTS} — move the number in the change that moved the corpus`);
 
@@ -406,6 +407,28 @@ test('the doors corpus carries every lens combination the language admits, and e
   // blindness the equality above removes.
   assert.deepEqual([...found].filter(([, where]) => where.length !== 1).map(([k, w]) => `${k}: ${w.join(', ')}`), [],
     'exactly one declaration per combination');
+});
+
+test('the example project reaches every door — the artefact a reader opens, held to the same nine', () => {
+  // A SECOND corpus, declared (`D874`): `examples/storefront`, which unlike `doors-corpus` is
+  // **runnable** — `npm run example` starts its server and runs it green. That is the whole
+  // difference between the two, and the reason both exist: one proves the nine are expressible,
+  // the other proves they are livable. If an example drifts out of covering a door, the door it
+  // drops is the one a new reader never discovers.
+  const EXAMPLE = join(here, '..', '..', '..', 'examples', 'storefront', 'tests');
+  const found = new Set<string>();
+  for (const entry of readdirSync(EXAMPLE)) {
+    if (!entry.endsWith('.tflw')) continue;
+    const { program, diagnostics } = parseSource(readFileSync(join(EXAMPLE, entry), 'utf8'));
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), [], entry);
+    for (const t of program.tests) found.add(lensesOfTest(t).join('+') || '(none)');
+    for (const c of program.crawls ?? []) found.add(lensesOfCrawl(c).join('+'));
+  }
+  // A superset is fine here and is NOT fine in the corpus gate above. The difference is what each
+  // corpus is for: `doors-corpus` is the specimen sheet and an extra entry there would be a second
+  // copy of a claim; this is a shop, and a shop may have two catalogue tests.
+  assert.deepEqual([...REACHABLE].filter((k) => !found.has(k)), [],
+    'the example must still reach every door — a reader opens this one, not the fixtures');
 });
 
 test('`scan` without `api` is unreachable for a test — asked of every non-api subject there is', () => {
