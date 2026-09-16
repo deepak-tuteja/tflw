@@ -157,6 +157,15 @@ export interface ProjectView {
 /** Where `Send` writes. One file, overwritten, never merged — it is an exploration, not a suite. */
 export const SCRATCH_PATH = 'scratch.tflw';
 
+/**
+ * Every file `tflw init` can write, under any flag — what `runInit` reports as `created`.
+ *
+ * A door's scaffold belongs here the day the CLI learns to write it; `A2-4` added `--scan` and
+ * this list did not move for four commits. See `runInit` for why it is an allow-list and not a
+ * directory read.
+ */
+export const SCAFFOLDED = ['tflw.config', 'example.tflw', 'load.tflw', 'scan.tflw', '.env.example', 'package.json'] as const;
+
 /** What `tflw run` is asked for. Every field maps to one CLI flag, and nothing else reaches the
  * argv: the page cannot run anything a terminal could not. */
 export interface RunRequest {
@@ -427,6 +436,51 @@ export async function writeProjectFile(
   return { path: relative(root, resolved).split(sep).join('/'), etag: etagOf(text) };
 }
 
+/**
+ * `[Discard]` removes the scratch file — `M200` `A2-6`, closing §7's oldest open fork (`D1054`).
+ *
+ * **`A1-5` emptied it, and the measurement says emptying is not dropping.** An emptied
+ * `scratch.tflw` is still a file, so `discoverTests` still finds it, so `readProject` still
+ * returns it and the landing's footer still counts it: a project with one test reads
+ * `2 files` forever after somebody explores an endpoint once and changes their mind. Nothing
+ * clears it, because nothing else writes that path. Measured on a scaffolded project — `files=1`
+ * before Send, `files=2` after, and **still `files=2` after Discard**.
+ *
+ * The fork was argued from the server's write surface and never from what the author sees, which
+ * is how it came out wrong. `D1049`'s gate is *one `writeFile` call site*, and it stands here
+ * untouched: this route does not write, and it takes **no path** — `SCRATCH_PATH` is a constant
+ * of this module, so there is no parameter to point somewhere else. A general `DELETE /api/file`
+ * would have been the widening `D1049` refuses; a verb that can only ever drop the scratch buffer
+ * is the same guard narrowed to the new capability's own shape.
+ *
+ * `ifMatch` is kept for the reason `A1-5` had it: a scratch file that changed under the page is a
+ * run in another terminal, and dropping it silently would be the one destructive surprise this
+ * route can produce. Absent is success, not `404` — Discard's promise is that the file is gone,
+ * and it is.
+ */
+export async function dropScratch(
+  root: string,
+  ifMatch: string | null,
+): Promise<{ readonly removed: boolean } | FileWriteRefusal> {
+  const resolved = resolveWritablePath(root, SCRATCH_PATH);
+  // Unreachable — `SCRATCH_PATH` is a `.tflw` constant — but the refusal is relayed rather than
+  // asserted away, so a future change to that constant fails loudly instead of deleting elsewhere.
+  if (typeof resolved !== 'string') return resolved;
+
+  let current: string | null;
+  try {
+    current = await readFile(resolved, 'utf8');
+  } catch {
+    current = null;
+  }
+  if (current === null) return { removed: false };
+  if (ifMatch !== null && etagOf(current) !== ifMatch) {
+    return { status: 409, error: 'the file changed on disk since it was read' };
+  }
+  await unlink(resolved);
+  return { removed: true };
+}
+
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
@@ -524,8 +578,19 @@ export class UiServer {
     const exitCode = await new Promise<number | null>((done) => child.on('close', (code) => done(code)));
     // What is on disk afterwards, not what the child claimed: the page is a projection of the
     // files (`D985`), and that holds for the files it just asked for as much as for any other.
+    //
+    // **`SCAFFOLDED` IS THE LIST OF EVERY NAME `tflw init` CAN WRITE, AND IT IS A LIST BECAUSE
+    // THIS ROUTINE MUST NOT REPORT ARBITRARY FILES.** `A2-6` found it holding four of five: the
+    // names were written in `A0-5` when `load.tflw` was the only door-specific scaffold, `A2-4`
+    // taught the CLI `--scan` without adding `scan.tflw` here, and so the SCANS door wrote the
+    // file and told the page it had not — a projection reading the disk through a list that had
+    // stopped describing it. Reading the *directory* instead was the obvious repair and is the
+    // wrong one: `init` runs in a directory the author may already keep files in, and `created`
+    // would start naming them. So the list stays, and the gate on it is that a door's scaffold is
+    // asserted **on disk** before it is asserted here (`ui-server.test.ts`), which is the order
+    // that can tell "not written" from "not reported".
     const created: string[] = [];
-    for (const name of ['tflw.config', 'example.tflw', 'load.tflw', '.env.example', 'package.json']) {
+    for (const name of SCAFFOLDED) {
       if (existsSync(join(this.opts.root, name))) created.push(name);
     }
     return { ok: exitCode === 0, created, output: output.trim(), exitCode };
@@ -711,6 +776,22 @@ export class UiServer {
       const ifMatch = typeof header === 'string' && header !== '*' ? header.replaceAll('"', '') : null;
       if (header === '*') return json(res, 400, { error: 'If-Match must name a version, not `*`' });
       const result = await writeProjectFile(this.opts.root, request.path, request.text, ifMatch);
+      if ('status' in result) {
+        const { status, ...rest } = result;
+        return json(res, status, rest);
+      }
+      return json(res, 200, result);
+    }
+
+    // `DELETE /api/scratch` — drop `D1047`'s scratch buffer (`M200` `A2-6`, `D1054`).
+    //
+    // No path, by construction: the one file this verb can reach is `SCRATCH_PATH`. See
+    // `dropScratch` for why that is what keeps `D1049` intact rather than widened.
+    if (path === '/api/scratch' && method === 'DELETE') {
+      const header = req.headers['if-match'];
+      if (header === '*') return json(res, 400, { error: 'If-Match must name a version, not `*`' });
+      const ifMatch = typeof header === 'string' ? header.replaceAll('"', '') : null;
+      const result = await dropScratch(this.opts.root, ifMatch);
       if ('status' in result) {
         const { status, ...rest } = result;
         return json(res, status, rest);

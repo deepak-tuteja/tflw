@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UiServer, readProject, runArgv, initArgv, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, etagOf, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, readProject, runArgv, initArgv, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, dropScratch, etagOf, SCAFFOLDED, type RunRecord, type ReportEntry } from '../src/ui-server.js';
 import { readdir } from 'node:fs/promises';
 
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
@@ -568,18 +568,114 @@ test('POST /api/init creates a project by spawning tflw init, and the LOAD door 
 });
 
 test('a door with no scaffold of its own still creates a project, and does not pretend otherwise', async () => {
+  // **THIS TEST SAID `scan` AND MEANT "the door without a scaffold", AND `A2-4` GAVE SCANS ONE.**
+  // It went on passing, because its only negative claim was that SCANS does not get *LOAD's*
+  // file — which stayed true while the sentence in its own title stopped being. `A2-6` repoints it
+  // at BROWSER, which is the door that genuinely has none, and gives SCANS the positive assertion
+  // that would have gone red the day the title expired.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-init-api-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+  try {
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    const res = await fetch(`${base}/api/init`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ door: 'browser' }) });
+    const body = (await res.json()) as { ok: boolean; created: string[] };
+    assert.equal(body.ok, true);
+    assert.ok(body.created.includes('tflw.config'));
+    assert.ok(body.created.includes('example.tflw'));
+    assert.ok(!body.created.includes('load.tflw'), 'BROWSER has no scaffold yet, and does not get LOAD’s');
+    assert.ok(!body.created.includes('scan.tflw'), 'nor SCANS’');
+  } finally {
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('POST /api/init for SCANS scaffolds the scan and the authorization it must not grant', async () => {
+  // The claim `A2-4` built and left unasserted at this surface (`D1053`). `e2e.test.ts` proves the
+  // CLI's own `--scan`; this proves the *door* reaches it, which is the half that had drifted —
+  // the landing's own words for this door said "create a project" until `A2-6`.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-init-scan-'));
   const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
   try {
     const base = `http://127.0.0.1:${await ui.listen(0)}`;
     const res = await fetch(`${base}/api/init`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ door: 'scan' }) });
     const body = (await res.json()) as { ok: boolean; created: string[] };
     assert.equal(body.ok, true);
-    assert.ok(body.created.includes('tflw.config'));
-    assert.ok(body.created.includes('example.tflw'));
-    assert.ok(!body.created.includes('load.tflw'), 'SCANS has no scaffold yet, and does not get LOAD’s');
+    // ON DISK FIRST, because that is the claim — and because the two can disagree, which is what
+    // this test found. `runInit` reports "what is on disk afterwards, not what the child claimed",
+    // and did it by probing a **hardcoded list of five names** written when `load.tflw` was the
+    // only door-specific scaffold; `A2-4` added `scan.tflw` to the CLI and not to that list, so
+    // the SCANS door wrote the file and told the page it had not.
+    await access(join(dir, 'scan.tflw'));
+    const config = await readFile(join(dir, 'tflw.config'), 'utf8');
+    // The declaration arrives commented out — the whole of `D1053`. A scaffold writing a live
+    // `authorized target` would be the page forging a permission on the author's behalf.
+    assert.match(config, /^\s*#.*authorized target/m, `the declaration is written commented out:\n${config}`);
+    // And then that the page is told, which is the half that was false.
+    assert.ok(body.created.includes('scan.tflw'), `SCANS scaffolds its own test: ${body.created.join(', ')}`);
   } finally {
     await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('every file `tflw init` can create is a file the page is told about', async () => {
+  // **THE DRIFT GATE `A2-6` NEEDED AND DID NOT HAVE.** `runInit` reports `created` by probing a
+  // fixed list of names, and `A2-4` taught `initCommand` to write `scan.tflw` without extending
+  // it — so for four commits the SCANS door wrote a scaffold and reported four files instead of
+  // five. Neither side is wrong in isolation, which is why only a test that reads BOTH can see it;
+  // this is `M62`'s third-surface check pointed at a second pair of surfaces.
+  //
+  // The CLI's own `created` array is the truth, read out of its source rather than re-listed here,
+  // because a gate that restates one side is a third place to forget.
+  const source = await readFile(join(here, '..', 'src', 'cli.ts'), 'utf8');
+  const seed = /const created = \[([^\]]*)\]/.exec(source);
+  assert.ok(seed, 'initCommand still seeds `created` with the config');
+  const names = new Set<string>([
+    ...[...seed[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!),
+    ...[...source.matchAll(/created\.push\('([^']+)'\)/g)].map((m) => m[1]!),
+  ]);
+
+  // `.gitignore` is the one deliberate omission, and for a reason `existsSync` cannot work
+  // around: `ensureGitignore` APPENDS to an existing file, so the CLI can honestly report it as
+  // touched while `runInit`'s probe — which only knows whether a path exists — would report it as
+  // created in every project that already had one. Named here so that omission stays a decision.
+  names.delete('.gitignore');
+
+  assert.deepEqual([...names].sort(), [...SCAFFOLDED].sort(), 'a name `tflw init` can write is missing from SCAFFOLDED (or vice versa)');
+});
+
+test('DELETE /api/scratch drops the file, and the project view stops counting it', async () => {
+  // `D1054`, and the measurement that overturned §7's recommendation. The assertion is the
+  // *project's* shape either side of the drop, because that is what emptying could not restore
+  // and what `A1-5`'s own gate — `trim() === ''`, true of a file that is still there — could not
+  // see. `readProject` is asked directly rather than through the page, so the claim holds with no
+  // browser in it.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-drop-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  api url "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(join(dir, 'kept.tflw'), 'test "kept"\n  api GET /x\n  expect status equals 200\n', 'utf8');
+    const before = (await readProject(dir)).files.length;
+
+    const scratchText = 'test "scratch"\n  api GET /y\n  expect status equals 200\n';
+    await writeFile(join(dir, 'scratch.tflw'), scratchText, 'utf8');
+    assert.equal((await readProject(dir)).files.length, before + 1, 'a scratch file is a file to the project view — which is the whole finding');
+
+    // A stale `If-Match` is refused and the file survives: dropping somebody else's run silently
+    // is the one destructive surprise this route could produce.
+    const stale = await dropScratch(dir, etagOf('something else entirely'));
+    assert.ok('status' in stale && stale.status === 409, `a stale etag is 409: ${JSON.stringify(stale)}`);
+    await access(join(dir, 'scratch.tflw'));
+
+    const dropped = await dropScratch(dir, etagOf(scratchText));
+    assert.deepEqual(dropped, { removed: true });
+    assert.equal((await readProject(dir)).files.length, before, 'the project is the shape it was before Send');
+    await assert.rejects(() => access(join(dir, 'scratch.tflw')), /ENOENT/);
+
+    // Idempotent, and absent is not a failure: Discard promises the file is not there, and it is
+    // not. A `404` here would make a second click an error about a success.
+    assert.deepEqual(await dropScratch(dir, null), { removed: false });
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });

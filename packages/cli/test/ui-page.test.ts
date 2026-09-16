@@ -1433,11 +1433,21 @@ test('Send writes a scratch file, runs it for real, and shows the response out o
   const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
   assert.ok(!/error/i.test(check), check);
 
-  // `[Discard]` drops it: the pane goes and the file is emptied rather than left holding a test
-  // somebody later wonders about.
+  // `[Discard]` drops it — and what "drops" means is the project going back to the shape it had
+  // before Send, which is the claim `A1-5` could not make and did not notice it could not.
+  //
+  // **THE FILE COUNT IS THE ASSERTION, not the file's contents.** `A1-5` emptied the scratch and
+  // asserted `trim() === ''`, which is true of a file that is still there — so `discoverTests`
+  // still found it, `readProject` still returned it, and the landing footer read `2 files` on a
+  // one-test project forever after a single exploration. Every gate in that slice passed. Asking
+  // the server what the project *is*, before and after, is the question that separates emptying
+  // from dropping; `scratch.tflw` being absent is the mechanism and is asserted second.
+  const filesBefore = ((await (await fetch(`${baseUrl}/api/project`)).json()) as { files: unknown[] }).files.length;
   await page.locator('[data-api-discard]').click();
   await page.locator('[data-api-response]').waitFor({ state: 'detached' });
-  assert.equal((await readFile(join(root, 'scratch.tflw'), 'utf8')).trim(), '');
+  const filesAfter = ((await (await fetch(`${baseUrl}/api/project`)).json()) as { files: unknown[] }).files.length;
+  assert.equal(filesAfter, filesBefore - 1, `Discard left the scratch in the project view: ${filesBefore} -> ${filesAfter}`);
+  await assert.rejects(() => readFile(join(root, 'scratch.tflw'), 'utf8'), /ENOENT/, 'the scratch file is gone, not emptied');
   } finally {
     await new Promise<void>((done) => target.close(() => done()));
   }

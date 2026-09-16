@@ -55,6 +55,23 @@ export async function putFile(path: string, text: string, ifMatch: string | null
   return { ok: false, status: res.status, error: body.error ?? `${res.status}`, code: body.code, line: body.line };
 }
 
+/**
+ * Drop the scratch file — what `[Discard]` does (`D1054`).
+ *
+ * `ifMatch` is the version the page last read; a mismatch comes back as `409` so the page can say
+ * the file moved rather than delete somebody else's work. A scratch that is already gone is
+ * `{ removed: false }` and not a failure — the promise is that it is not there.
+ */
+export async function dropScratch(ifMatch: string | null): Promise<{ ok: true; removed: boolean } | { ok: false; status: number; error: string }> {
+  const res = await fetch('/api/scratch', {
+    method: 'DELETE',
+    headers: ifMatch === null ? {} : { 'if-match': ifMatch },
+  });
+  const body = (await res.json()) as { removed?: boolean; error?: string };
+  if (res.ok) return { ok: true, removed: body.removed ?? false };
+  return { ok: false, status: res.status, error: body.error ?? `${res.status}` };
+}
+
 export async function startRun(request: RunRequest): Promise<RunRecord> {
   const res = await fetch('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });
   if (!res.ok) throw new Error(`POST /api/run: ${res.status} ${await res.text()}`);

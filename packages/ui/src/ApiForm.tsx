@@ -28,7 +28,7 @@ import {
   type ExpectSpec,
   type SubjectSpec,
 } from '@tflw/lang';
-import { getFile, putFile, startRun, subscribe, getResults, type FileView } from './api';
+import { getFile, putFile, dropScratch, startRun, subscribe, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
 
@@ -275,18 +275,23 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
   }, [scratchText, project.scratchPath]);
 
   /**
-   * `[Discard]` — the scratch file is emptied and *then* the pane goes.
+   * `[Discard]` — the scratch file is removed and *then* the pane goes.
    *
    * THE ORDER IS THE POINT, and the first draft had it backwards: clearing the pane first made it
    * vanish while the write was still in flight, so the disappearance said nothing about the file
-   * and a refused discard was invisible. Written this way, the pane going is the write having
+   * and a refused discard was invisible. Written this way, the pane going is the removal having
    * landed, and a failure keeps the pane and says why — which is also what lets the gate assert
-   * the file's contents the moment the pane detaches.
+   * the file is gone the moment the pane detaches.
+   *
+   * **`A1-5` emptied it; `A2-6` removes it (`D1054`).** An emptied scratch is still a file, so the
+   * landing went on counting it forever — measured `2 files` on a one-test project after a single
+   * explore-and-change-your-mind. The etag is still read first for the same reason it always was:
+   * a scratch that moved under this page belongs to another terminal.
    */
   const discard = useCallback(async () => {
     const scratch = await getFile(project.scratchPath).catch(() => null);
     if (scratch) {
-      const res = await putFile(project.scratchPath, '', scratch.etag);
+      const res = await dropScratch(scratch.etag);
       if (!res.ok) {
         setProblem(res.status === 409 ? `${res.error} — the scratch file changed under this page` : res.error);
         return;
