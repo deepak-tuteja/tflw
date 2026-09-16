@@ -127,7 +127,7 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', 'OpenStmt', 'ClickStmt', 'FillStmt', 'WithinBlock', 'ImportDecl', 'UseDecl', 'HookDecl', 'ActionDecl', 'GiveStmt', 'FillFormStmt', 'SelectStmt', 'TickStmt', 'UntickStmt', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', 'OpenStmt', 'ClickStmt', 'FillStmt', 'WithinBlock', 'ImportDecl', 'UseDecl', 'HookDecl', 'ActionDecl', 'GiveStmt', 'FillFormStmt', 'SelectStmt', 'TickStmt', 'UntickStmt', 'ScreenshotStmt', 'WaitUntilUiStmt', 'StubStmt', 'DropFileStmt', 'HoverStmt', 'DragStmt', 'ScrollStmt', 'PressStmt', 'AcceptDialogStmt', 'DismissDialogStmt', 'SwitchToTabStmt', 'SwitchToNewTabBlock', 'CloseTabStmt', 'DownloadBlock', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
@@ -299,6 +299,10 @@ test('every printable node in the corpus re-parses to the node it was printed fr
     ['HookDecl', 82], ['ImportDecl', 28], ['UseDecl', 21], ['ActionDecl', 19], ['GiveStmt', 8],
     // `A4-3` — the form family. The in-repo tier reaches none of these, which is `M200-05`.
     ['FillFormStmt', 23], ['SelectStmt', 12], ['TickStmt', 5], ['UntickStmt', 2],
+    // `A4-4` — the tail. Every kind the corpus contains now round-trips; 0 refused, everywhere.
+    ['AcceptDialogStmt', 12], ['WaitUntilUiStmt', 7], ['DismissDialogStmt', 5], ['ScreenshotStmt', 4],
+    ['StubStmt', 4], ['DropFileStmt', 3], ['HoverStmt', 2], ['ScrollStmt', 2], ['DragStmt', 2],
+    ['SwitchToTabStmt', 2], ['DownloadBlock', 1], ['PressStmt', 1], ['SwitchToNewTabBlock', 1], ['CloseTabStmt', 1],
   ];
   // Measured, not guessed: 6 files, 71 nodes. Thin, and the thinness is the finding rather than
   // the fix — `M200-05` carries the open half, which is that this repository has no printer corpus
@@ -308,6 +312,7 @@ test('every printable node in the corpus re-parses to the node it was printed fr
     ['CaptureStmt', 3], ['SharedIterationsWorkload', 2], ['PauseStmt', 2], ['OpenStmt', 2],
     ['LogStmt', 1], ['ClickStmt', 1],
     ['ActionDecl', 1], ['GiveStmt', 1],   // `A4-2`; the in-repo corpus holds no hook and no import
+    ['TestDecl', 12], ['ScreenshotStmt', 1],   // `A4-4`
   ];
   const FLOOR = tier() === 'both' ? FLOOR_BOTH : FLOOR_REPO;
   const fell = FLOOR
@@ -408,7 +413,7 @@ test('every clean file in the corpus round-trips through the printer whole', () 
   // The same ratchet `D1048` puts on node coverage, for the same reason and with the same rule:
   // it may only rise, and moving it down happens in the change that caused it with the reason on
   // the row. `A4-1` sets it where `§4h`'s greedy analysis predicted `Program` alone would land.
-  const FLOOR_FILES = tier() === 'both' ? 241 : 5;   // `A4-3`: 231 -> 241, the form family
+  const FLOOR_FILES = tier() === 'both' ? 260 : 6;   // `A4-4`: 241 -> **260 of 260**, the tail
   assert.ok(
     roundTripped >= FLOOR_FILES,
     `whole-file coverage fell: ${roundTripped} files round-tripped, floor is ${FLOOR_FILES}`,
@@ -662,6 +667,54 @@ test('a `fill form` with no rows refuses, and a row cannot be printed on its own
   assert.equal(rowResult.ok, false);
   assert.match(rowResult.ok ? '' : rowResult.reason ?? '', /FillFormRow/);
   assert.ok(CONTEXT_BOUND.has('FillFormRow'), 'a kind that only prints through its parent is declared, not just refused');
+});
+
+/**
+ * `A4-4` — the branches of the tail that **the 260-file corpus does not reach**, and only those.
+ *
+ * Measured rather than guessed (`.m200-scratch/probe-branches.mjs`): every other optional branch
+ * these printers have is exercised by real files — `accept dialog with` 2, a ref with a method 9
+ * and without 5, `wait until … for` 3 and a `timeout wait` 1, a snapshot name 5, `mask` on 5
+ * statements. Writing tests for those would re-assert what the whole-file gate already checks over
+ * the corpus. What it cannot check is what nobody has written: a locator-scoped `press`, a `stub`
+ * with no body, and the empty blocks that do not parse at all.
+ */
+test('the tail`s unwritten branches print, and its empty blocks refuse', () => {
+  // `press "Enter" on field "Search"` — the corpus has one `press` and it is bare.
+  const pressed = parseSource('test "t"\n  press "Enter" on field "Search"\n').program.tests[0]!.body[0]!;
+  assert.equal(pressed.type, 'PressStmt');
+  const pr = print(pressed, { indent: 1 });
+  assert.ok(pr.ok, pr.ok ? '' : pr.reason);
+  assert.equal(pr.text.trim(), 'press "Enter" on field "Search"');
+
+  // A stub with no body — all four in the corpus carry one.
+  const stubbed = parseSource('test "t"\n  stub GET "https://x.test/y" respond status 204\n').program.tests[0]!.body[0]!;
+  assert.equal(stubbed.type, 'StubStmt');
+  const sr = print(stubbed, { indent: 1 });
+  assert.ok(sr.ok, sr.ok ? '' : sr.reason);
+  assert.equal(sr.text.trim(), 'stub GET "https://x.test/y" respond status 204');
+
+  // The two blocks with no steps. `parseBlock` raises `TF015` for both, so printing a header alone
+  // would emit source the parser cannot read back — `printCrawl`'s rule, applied to the last two
+  // block-shaped kinds in the language.
+  const newTab = print({ type: 'SwitchToNewTabBlock', body: [], span: SYNTHETIC } as unknown as Node, { indent: 1 });
+  assert.equal(newTab.ok, false);
+  assert.match(newTab.ok ? '' : newTab.reason ?? '', /SwitchToNewTabBlock.*no steps/);
+
+  const download = print({ type: 'DownloadBlock', name: 'file', body: [], span: SYNTHETIC } as unknown as Node, { indent: 1 });
+  assert.equal(download.ok, false);
+  assert.match(download.ok ? '' : download.reason ?? '', /DownloadBlock.*no steps/);
+
+  // `download as <name>` binds a bare identifier, and the AST holds a plain `string`.
+  const badName = print({ type: 'DownloadBlock', name: 'my file', body: [{ type: 'CloseTabStmt', span: SYNTHETIC }], span: SYNTHETIC } as unknown as Node, { indent: 1 });
+  assert.equal(badName.ok, false);
+  assert.match(badName.ok ? '' : badName.reason ?? '', /is not a name this language can bind/);
+
+  // `snapshotName` is optional on the type and required in practice, so the printer refuses rather
+  // than emitting `matches snapshot` with nothing after it.
+  const noName = print({ type: 'Matcher', name: 'matchesSnapshot', negated: false, value: null, span: SYNTHETIC } as unknown as Node, { indent: 1 });
+  assert.equal(noName.ok, false);
+  assert.match(noName.ok ? '' : noName.reason ?? '', /needs a name/);
 });
 
 test('the printer refuses what it cannot print, and names the node kind', () => {
@@ -1598,12 +1651,15 @@ test('the assertion half refuses what belongs to another door', () => {
   // refusal (it names the node kind, so the gate's census reads as a worklist) rather than about
   // which node happens to carry it. What is left is the part still nobody's.
   //
-  // `of request to "…"` moves four otherwise-printable subjects onto traffic observed on a live
-  // page, so the CLAUSE is refused while its subject is not.
+  // **AND THE THIRD HALF RETIRED IN `A4-4`**, which is what closing a printer looks like: `of
+  // request to "…"` now PRINTS, because a `NetworkRequestRef` has a printer. The assertion is
+  // inverted rather than deleted, for the reason the other two were — the claim is about a
+  // refusal's shape, and a round-trip through the construct is the stronger statement of the
+  // opposite. This is the last of the three.
   const observed = assertionStep('expect status of request to "/api/orders" equals 201');
-  const or = print(observed);
-  assert.equal(or.ok, false);
-  assert.match(or.reason ?? '', /reads traffic observed on a live page/);
+  const or = print(observed, { indent: 1 });
+  assert.ok(or.ok, or.ok ? '' : or.reason);
+  assert.equal(or.text.trim(), 'expect status of request to "/api/orders" equals 201');
 
   // `capture {x} as y` is `TF0..`-rejected by the parser (`D130`), so a printer that emitted it
   // would be writing a step nothing can read back.
