@@ -13018,7 +13018,7 @@ and one browser instead of an hour and hundreds. The verdict table records the h
 
 ### M200
 
-<sub>cited from SPEC.md · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
 
 **`M200` — the page learns to write: four modes over one language**
 
