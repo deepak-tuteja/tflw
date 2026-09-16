@@ -219,6 +219,15 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .request-line { display: flex; align-items: flex-end; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 .request-line label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 120px; font-size: 12px; color: var(--muted); }
 .request-line label:nth-child(2) { flex: 3 1 240px; }
+/* `M205` — `flex-basis` is measured along the **container's** main axis, and `.request-line label`
+   above is the one `flex-direction: column` container under `.authoring`. The shared rule at
+   `.authoring input, .authoring select` says `flex: 1 1 120px` meaning *a width*, which it is in
+   every other band because every other band is a row; here the same declaration is a **height**,
+   and it rendered these four controls at 120-130px against every sibling control's 26-30px. No
+   test could see it: the control held the right value, in the right place, at the wrong size.
+   The control keeps its natural height and takes its width from the column's cross-axis stretch.
+   A new column-direction container under `.authoring` needs a line like this one. */
+.request-line label > input, .request-line label > select { flex: none; }
 .headers-form, .body-form, .expects-form, .fields { display: grid; gap: 6px; margin-top: 10px; }
 .headers-form .row, .expects-form .row, .fields .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .body-form { align-items: start; }

@@ -1696,3 +1696,52 @@ test('the page says when the scratch file is not ignored, rather than editing .g
   await page.reload();
   await page.locator('[data-api-scratch-unignored]').waitFor();
 });
+
+test('the request line stands as tall as every other control, and says so against a browser that has rectangles', async () => {
+  // `M205` S1. `styles.css`'s shared `.authoring input, .authoring select { flex: 1 1 120px }` is a
+  // WIDTH in every band of this form, because every other band is a row; `.request-line label` is
+  // the one `flex-direction: column` container under `.authoring`, and there the same declaration
+  // is a HEIGHT. Measured on the live page at `main` `f539654`: method/path/service/label at
+  // 120-130px against every sibling control's 26-30px, the request line 151px of a 904px pane.
+  //
+  // No fake DOM can see this. jsdom has no layout, so every one of these controls reports a zero
+  // rectangle there and holds exactly the right value in exactly the right place — which is why
+  // this lived through `A1-4` and every gate written since. It belongs here or nowhere.
+  await page.goto(`${baseUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-api-form]').waitFor();
+
+  /** Every control's height, off the browser's own rectangles — no DOM types, and none needed. */
+  const heights = async (selector: string): Promise<number[]> => {
+    const all = page.locator(selector);
+    const out: number[] = [];
+    for (let i = 0; i < (await all.count()); i += 1) {
+      const box = await all.nth(i).boundingBox();
+      assert.ok(box, `${selector} #${i} has no rectangle`);
+      out.push(Math.round(box.height));
+    }
+    return out;
+  };
+  const lineSel = '.request-line label > input, .request-line label > select';
+  // The oracle is the form's OTHER controls, not a number written here: a padding or font change
+  // should move the whole band together and leave this gate green, and that is the point of it.
+  const otherSel = '.authoring :is(input, select):not(.request-line *)';
+
+  const line = await heights(lineSel);
+  const others = await heights(otherSel);
+  assert.equal(line.length, 4, 'method, path, service, label');
+  assert.ok(others.length >= 4, 'there are other controls to compare against');
+  const tallestOther = Math.max(...others);
+  for (const h of line) {
+    assert.ok(h <= tallestOther + 2, `a request-line control is ${h}px against the form's tallest other control at ${tallestOther}px`);
+  }
+
+  // THE CONTROL. Put the axis-dependent declaration back, exactly as it was, and the four have to
+  // blow past their siblings again — otherwise this test would pass on a page where the fix was
+  // never applied, which is the failure mode this repository files most often.
+  await page.addStyleTag({ content: '.request-line label > input, .request-line label > select { flex: 1 1 120px !important; }' });
+  for (const h of await heights(lineSel)) {
+    assert.ok(h > tallestOther + 40, `with the shared rule reaching the column container a control should tower, got ${h}px`);
+  }
+  await page.reload(); // the injected sheet dies with the document, so the next test starts clean
+});
