@@ -3816,12 +3816,13 @@ test "health check"
  * they will find it, and `TF060` goes on refusing every scan assertion until a person uncomments
  * it. The error is the signpost; it now points at a line already in the file.
  *
- * **The `reason` is a visible placeholder rather than an empty string, deliberately.** Nothing
- * validates it — `checkAuthorizedTargets` never reads it, so `reason ""` passes `tflw check`
- * (`M200-01`, filed not fixed) — so the scaffold cannot make a blank one fail. A placeholder that
- * lands in the report and reads as unfinished is the honest second-best: it fails where a human
- * looks rather than nowhere at all. Spelled as `TF060`'s own help line spells it, so the tool gives
- * one piece of advice rather than two.
+ * **The `reason` is deliberately EMPTY, and that only became the right answer once `M200-01` was
+ * fixed.** While a blank reason checked green, the best a scaffold could do was a visible
+ * placeholder — something that reached the report reading as unfinished, failing where a human
+ * looks rather than nowhere at all. `TF082` refuses a blank one, so the empty string is now the
+ * stronger choice: uncommenting cannot produce a green run with a placeholder claim in the report.
+ * The two steps each name the next action — `TF060` says *uncomment this*, `TF082` says *now say
+ * why* — and neither can be satisfied by accident.
  */
 const SCAFFOLD_SCAN_CONFIG = `# testFlow config — declaration-only. Pick the active env with --env, TFLW_ENV, or the
 # \`default\` marker below.
@@ -3839,7 +3840,7 @@ env local default
 # \`has no … violations\` assertion (TF060), which is the point: nobody but you can make this
 # affirmation.
 #
-#   authorized target "http://localhost:3001" reason "<why you may scan it>"
+#   authorized target "http://localhost:3001" reason ""
 `;
 
 // `tflw init --scan` (`M200` `A2-4`, `D1053`). One ordinary `test`, not a `crawl`, and the choice is

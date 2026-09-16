@@ -121,35 +121,47 @@ test('`tflw init --scan` scaffolds a project that refuses its own scan, and says
     // The declaration is present and INERT. `D21`/`D291`: this line is a person affirming they may
     // point a scanner at a host, so a scaffold that wrote a live one would make the affirmation on
     // their behalf — the checkbox `D291` says `D21` exists instead of.
-    const declaration = 'authorized target "http://localhost:3001" reason "<why you may scan it>"';
-    assert.match(config, new RegExp('^#\\s+' + declaration.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'm'),
-      'the declaration must be written, and written commented out');
+    const declaration = 'authorized target "http://localhost:3001" reason ""';
+    assert.ok(config.includes('#   ' + declaration), `the declaration must be written, and written commented out:\n${config}`);
 
-    // So the scaffold refuses its own scan — which is the point, not a defect.
-    // Diagnostics go to STDERR; a first draft read only `stdout` and asserted against `''`.
-    let checkOutput = '';
-    try {
-      await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
-      assert.fail('the scan scaffold must not check clean before a human authorizes the target');
-    } catch (e) {
-      const r = e as { stdout?: string; stderr?: string };
-      checkOutput = (r.stdout ?? '') + (r.stderr ?? '');
-    }
-    assert.match(checkOutput, /error\[TF060\]/);
+    // **The scaffold is a two-step signpost, and each step names the next action.** Neither can be
+    // satisfied by accident, which is the whole of `D1053`.
+    const check = async (): Promise<string> => {
+      try {
+        const { stdout, stderr } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
+        return stdout + stderr;
+      } catch (e) {
+        const r = e as { stdout?: string; stderr?: string };
+        // Diagnostics go to STDERR; a first draft read only `stdout` and asserted against `''`.
+        return (r.stdout ?? '') + (r.stderr ?? '');
+      }
+    };
 
-    // **THE DRIFT GATE.** `TF060`'s repair line and the line this scaffold commented into the
-    // config must be the same bytes — otherwise the tool gives two pieces of advice about one act,
-    // which is exactly the state `M200-02` records for the demo base. Asserting the identity is
-    // what keeps the two from drifting the first time either is reworded.
+    // Step 1: as scaffolded, the scan is refused for want of the declaration.
+    const step1 = await check();
+    assert.match(step1, /error\[TF060\]/);
+    // **THE DRIFT GATE, on the origin.** `TF060`'s repair and the commented line must name the same
+    // host written the same way — the state `M200-02` records is exactly the two disagreeing, where
+    // the repair read `authorized target "null"` against a config nobody could match it to.
     assert.ok(
-      checkOutput.includes('`' + declaration + '`'),
-      `TF060's repair must be the line the scaffold wrote.\n  wanted: ${declaration}\n  in:\n${checkOutput}`,
+      step1.includes('`authorized target "http://localhost:3001" '),
+      `TF060's repair must name the origin the scaffold wrote:\n${step1}`,
     );
 
-    // And uncommenting it — the one act the scaffold is asking a person to perform — is enough.
+    // Step 2: uncommenting alone is not enough — the claim is still blank, which is `TF082`
+    // (`M200-01`). Before that rule existed this step checked GREEN and shipped an empty claim in
+    // the report, which is strictly worse than an absent one.
     await writeFile(join(dir, 'tflw.config'), config.replace('#   ' + declaration, '  ' + declaration), 'utf8');
-    const { stdout: after } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
-    assert.match(after, /no problems found/);
+    const step2 = await check();
+    assert.doesNotMatch(step2, /error\[TF060\]/, 'the declaration now covers the base');
+    assert.match(step2, /error\[TF082\]/, 'an uncommented declaration with no reason must not pass');
+
+    // Step 3: a written reason, and only then, is clean.
+    const filled = (await readFile(join(dir, 'tflw.config'), 'utf8'))
+      .replace('reason ""', 'reason "agreed pentest window, ticket SEC-412"');
+    await writeFile(join(dir, 'tflw.config'), filled, 'utf8');
+    const step3 = await check();
+    assert.match(step3, /no problems found/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

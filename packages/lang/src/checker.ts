@@ -454,6 +454,10 @@ function checkAuthorizedTargetLiteral(entry: ConfigEntry, diags: Diagnostic[]): 
     });
     return;
   }
+  // `literalOrigin` now answers `null` for an opaque origin as well as for an unparseable string,
+  // which is what finally makes this branch cover what its message has always said. `localhost:8443`
+  // parses — with protocol `localhost:` — so it reached here with the STRING `"null"` as its origin
+  // and was accepted, which is the exact slip this rule exists to catch (`M200-02`).
   if (literalOrigin(raw) === null) {
     diags.push({
       code: Codes.AUTHORIZED_TARGET_WILDCARD,
@@ -463,6 +467,26 @@ function checkAuthorizedTargetLiteral(entry: ConfigEntry, diags: Diagnostic[]): 
       // Naming the consequence matters more than naming the fix: silently authorizing nothing is
       // the failure mode, and it looks exactly like a working config until a scan is written.
       hint: 'it is compared against the env\'s base URL by origin (scheme + host + port), so a bare hostname authorizes nothing — write `https://staging.example.com` or `https://localhost:8443`',
+    });
+  }
+  // `TF082` (`M200-01`) — the half of this declaration nothing was reading. The target was
+  // validated from the day it shipped; the `reason` was required by the GRAMMAR and by nothing
+  // else, so `reason ""` checked green and put an empty claim into the report. Checked after the
+  // target so that a declaration wrong in both halves reports the address first, which is the one
+  // that has to be right before the sentence is worth writing.
+  //
+  // **An interpolated reason is accepted without inspection**, the same treatment `checkDemoUrl`
+  // above gives an interpolated URL: what it resolves to is not knowable here, and refusing it
+  // would reject a config that is entirely above board — `M131a`'s lesson about demanding a repair
+  // nobody can perform.
+  if (entry.reason.parts.some((part) => part.kind === 'interp')) return;
+  if (entry.reason.value.trim() === '') {
+    diags.push({
+      code: Codes.AUTHORIZED_TARGET_REASON_EMPTY,
+      severity: 'error',
+      message: `\`authorized target "${raw}"\` has no reason`,
+      span: entry.reason.span,
+      hint: 'this sentence is printed in the run summary and embedded in the report, so the claim travels with the evidence — write why you are permitted to scan this host, e.g. `reason "pentest window agreed with the platform team, ticket SEC-412"` (SPEC §3.10, D21)',
     });
   }
 }
@@ -4160,9 +4184,55 @@ function literalOrigin(url: string): string | null {
   // a flag no one can type, as the repair for a suite that is entirely above board.
   if (url.includes('{') || url.includes('}')) return null;
   try {
-    return new URL(url).origin.toLowerCase();
+    const origin = new URL(url).origin;
+    // **An OPAQUE origin is not an origin, and `URL` reports it as the four characters `null`.**
+    // `M200-02`. Every scheme the WHATWG spec does not call *special* — `tflw:`, and also anything
+    // shaped `host:port`, where `localhost:8443` parses with protocol `localhost:` — serialises its
+    // origin as the STRING `"null"`, which is not the value `null` and so sailed through the guard
+    // above. Two consequences, and the second is the one that matters:
+    //
+    //   1. `TF061`'s "must be an absolute URL with a scheme" accepted `localhost:8443` — the exact
+    //      slip it exists to catch.
+    //   2. `targetCoversBaseUrl` compares two origins for EQUALITY, so any two opaque-origin URLs
+    //      covered each other: `authorized target "localhost:8443"` authorized a scan of
+    //      `tflw://demo`. D21's control returned a false positive — permission for a host nobody
+    //      named — and `tflw init`'s own scaffold has an opaque `api` base, so the reachable form
+    //      was *forget the scheme in a project the tool made for you*.
+    //
+    // Returning `null` puts both cases back under this file's standing signal for "not decidable
+    // here", which is the same answer `M131a` gave the `{interpolation}` case and for the same
+    // reason: a comparison that cannot be made must not be reported as having succeeded.
+    return origin === 'null' ? null : origin.toLowerCase();
   } catch {
     return null;
+  }
+}
+
+/**
+ * **This URL parses and has no origin anyone could ever declare** (`M200-02`).
+ *
+ * The distinction `literalOrigin` alone cannot make, and the one that decides whether a base URL is
+ * *skipped* or *refused*. Both come back `null` from it, and they are opposite situations:
+ *
+ * - **Interpolated** (`https://{API_HOST}/v1`) — undecidable *here*. The author may well have a
+ *   perfectly good declaration; this pass simply cannot resolve the text, so it says nothing.
+ *   `M131a`'s rule, and the reason it exists is that the alternative was printing a repair nobody
+ *   could type.
+ * - **Opaque** (`tflw://demo`, `localhost:8443`) — decidable, and the answer is *there is nothing
+ *   here to authorize*. No `authorized target` can ever cover it, because `TF060` compares origins
+ *   and this address has none. Skipping it would let the scan run with no authorization at all,
+ *   which is measured: with these dropped, `tflw run` executed a security scan against the demo
+ *   service with no declaration in the config.
+ *
+ * So opaque bases stay in the scannable set and are refused with a message that names the real
+ * repair — point `api` at a host — rather than one demanding a declaration that cannot be written.
+ */
+function hasOpaqueOrigin(url: string): boolean {
+  if (url.includes('{') || url.includes('}')) return false;
+  try {
+    return new URL(url).origin === 'null';
+  } catch {
+    return false;
   }
 }
 
@@ -4209,15 +4279,24 @@ export function checkAuthorizedTargets(program: Program, opts: ProgramCheckOptio
   const uncovered = scannable.filter((s) => !declared.targets.some((t) => targetCoversBaseUrl(t.target, s.url)));
   if (uncovered.length === 0) return diags;
 
-  const shapes = uncovered.map((u) => `authorized target "${u.origin}" reason "<why you may scan it>"`);
+  // An opaque base cannot be authorized at all, so it gets its own sentence rather than a shape
+  // built out of its origin — which is where `authorized target "null"` came from (`M200-02`).
+  const opaque = uncovered.filter((u) => u.origin === null);
+  const shapes = uncovered.filter((u) => u.origin !== null).map((u) => `authorized target "${u.origin}" reason "<why you may scan it>"`);
   // The label rides along even when there is only one uncovered origin, because D343's widening is
   // exactly what makes "which one?" a real question: before it, the answer was always the default
   // `api` base and naming it would have been noise. A message that quotes a service's URL without
   // saying it is a service sends the reader to the wrong line of `tflw.config`.
   const reach = `against ${uncovered.map((u) => `"${u.url}" (${u.label})`).join(' and ')}`;
-  const hint = declared.targets.length
-    ? `env \`${declared.envName}\` authorizes ${declared.targets.map((t) => `"${t.target}"`).join(', ')}, which does not cover ${uncovered.length === 1 ? "this base URL's origin" : 'every origin this env can scan'}. Add ${shapes.map((s) => `\`${s}\``).join(' and ')} to \`tflw.config\` (SPEC §3.10)`
-    : `env \`${declared.envName}\` declares no \`authorized target\`. Add ${shapes.map((s) => `\`${s}\``).join(' and ')} to \`tflw.config\` — the reason is printed in the run summary and embedded in the report, so the claim travels with the evidence (SPEC §3.10, D21)`;
+  const opaqueSentence = opaque.length === 0
+    ? ''
+    : `${opaque.map((u) => `\`${u.url}\``).join(' and ')} ${opaque.length === 1 ? 'has' : 'have'} no origin to authorize — \`authorized target\` names a scheme, host and port, and this address has none, so no declaration can cover it. Point \`api\` at the service you mean to scan, e.g. \`api "http://localhost:3001"\``;
+  const shapeSentence = shapes.length === 0
+    ? ''
+    : declared.targets.length
+      ? `env \`${declared.envName}\` authorizes ${declared.targets.map((t) => `"${t.target}"`).join(', ')}, which does not cover ${shapes.length === 1 ? "this base URL's origin" : 'every origin this env can scan'}. Add ${shapes.map((s) => `\`${s}\``).join(' and ')} to \`tflw.config\` (SPEC §3.10)`
+      : `env \`${declared.envName}\` declares no \`authorized target\`. Add ${shapes.map((s) => `\`${s}\``).join(' and ')} to \`tflw.config\` — the reason is printed in the run summary and embedded in the report, so the claim travels with the evidence (SPEC §3.10, D21)`;
+  const hint = [shapeSentence, opaqueSentence].filter((x) => x !== '').join('. Also: ');
 
   forEachExpect(program, (expect) => {
     // M130b/D315 — the gate covers every scan this declaration authorizes, and `authorization
@@ -4247,12 +4326,17 @@ export function checkAuthorizedTargets(program: Program, opts: ProgramCheckOptio
  * signal for "not decidable here", and it is why the runtime half of `TF065` is the load-bearing
  * one rather than a belt to this pass's braces.
  */
-function scannableOrigins(declared: EnvAuthorizedTargets): { readonly label: string; readonly url: string; readonly origin: string }[] {
-  const out: { label: string; url: string; origin: string }[] = [];
+function scannableOrigins(declared: EnvAuthorizedTargets): { readonly label: string; readonly url: string; readonly origin: string | null }[] {
+  const out: { label: string; url: string; origin: string | null }[] = [];
   const add = (label: string, url: string | null): void => {
     if (url === null) return;
     const origin = literalOrigin(url);
+    // `origin: null` here means OPAQUE, never *interpolated* — an interpolated URL is still dropped,
+    // because this pass genuinely cannot say anything about it. An opaque one is kept so `TF060`
+    // can refuse it: nothing can authorize an address with no origin, and dropping it silently let
+    // the scan run unauthorized (`M200-02`).
     if (origin !== null) out.push({ label, url, origin });
+    else if (hasOpaqueOrigin(url)) out.push({ label, url, origin: null });
   };
   add('the default `api` base', declared.apiBaseUrl);
   for (const s of declared.services) add(`service \`@${s.name}\``, s.url);
