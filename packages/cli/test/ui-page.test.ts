@@ -1229,3 +1229,114 @@ test('a header that interpolates a variable the test already captured checks cle
   const unbound = parseSource(source.replace('  capture body.items[0].id as firstId\n', ''));
   assert.ok(checkProgram(unbound.program).some((d) => d.code === 'TF030'), 'the control must fail');
 });
+
+// ---------------------------------------------------------------------------
+// `M200` `A1-5` — `D1047`'s Send. One execution path and one artefact kind: the page writes a
+// scratch file through the same route the save button uses, runs the same `tflw run` the sidebar
+// runs, and reads the response out of `results.json`.
+// ---------------------------------------------------------------------------
+
+test('Send writes a scratch file, runs it for real, and shows the response out of the report', async () => {
+  // The fixture server has to be up, because Send really sends. The first draft of this test
+  // omitted it and the pane came back saying `no response` with tflw's own
+  // `connection refused; is the service actually listening at that host:port?` — which is the
+  // whole machinery working and reporting the truth, and is why `D1047` puts the request through
+  // a run rather than through a client the page owns.
+  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
+  const target = await fixtureServer.startFixtureServer(fixturePort);
+  try {
+  await page.goto(`${baseUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-api-form]').waitFor();
+
+  await page.locator('[data-api-method]').selectOption('GET');
+  await page.locator('[data-api-path]').fill('/items');
+  await page.locator('[data-expect-operand="0"]').fill('200');
+
+  await page.locator('[data-api-send]').click();
+  await page.locator('[data-api-response]').waitFor({ timeout: 30_000 });
+
+  // THE RESPONSE IS A REAL ONE. The fixture server beside the project answered it, and the bytes
+  // came back through `results.json` rather than through a second HTTP client in the page —
+  // which is the whole of `D1047`.
+  assert.equal(await page.locator('[data-api-response]').getAttribute('data-api-response'), '200', await page.locator('[data-api-response]').innerHTML());
+  assert.equal(await page.locator('[data-api-response]').getAttribute('data-api-response-ok'), 'true');
+  const url = await page.locator('[data-api-response-url]').textContent();
+  assert.match(url ?? '', /^GET http:\/\/127\.0\.0\.1:\d+\/items$/);
+  const body = await page.locator('[data-api-response-body]').textContent();
+  assert.ok(body && JSON.parse(body), `the body is the server's own JSON: ${body ?? ''}`);
+
+  // WHAT THE PAGE ASKED FOR, not what this project would have given anyway. The fixture's default
+  // env carries no `evidence` key and so is already `full`, which makes `--evidence full`
+  // invisible in the result — the mutation removing it survived every assertion below until this
+  // one. The same goes for `--only`: with one test in the file, running the whole file and
+  // running only that test produce identical reports. So the claim is made against the argv the
+  // server built, which is the only place the request is distinguishable from its outcome.
+  const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { argv: string[]; request: { evidence?: string; only?: string } }[];
+  const latest = runs[0]!;
+  assert.deepEqual(latest.argv, ['run', '--format', 'ndjson', '--no-color', '--only', 'scratch', '--evidence', 'full', 'scratch.tflw']);
+
+  // And the scratch file on disk is a file a terminal can re-run by hand — the claim that keeps
+  // "one execution path" honest.
+  const scratch = await readFile(join(root, 'scratch.tflw'), 'utf8');
+  assert.equal(scratch, 'test "scratch"\n  api GET /items\n  expect status equals 200\n');
+  const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+  assert.ok(!/error/i.test(check), check);
+
+  // `[Discard]` drops it: the pane goes and the file is emptied rather than left holding a test
+  // somebody later wonders about.
+  await page.locator('[data-api-discard]').click();
+  await page.locator('[data-api-response]').waitFor({ state: 'detached' });
+  assert.equal((await readFile(join(root, 'scratch.tflw'), 'utf8')).trim(), '');
+  } finally {
+    await new Promise<void>((done) => target.close(() => done()));
+  }
+});
+
+test('Send reports a request that could not be sent, rather than an empty pane', async () => {
+  // The control for the case above, and the reason the response pane reads a REPORT rather than a
+  // client of its own: with nothing listening, what comes back is tflw's own diagnosis of the
+  // failure — the same sentence a terminal prints — instead of a fetch error the page invented.
+  await page.goto(`${baseUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-api-form]').waitFor();
+  await page.locator('[data-api-method]').selectOption('GET');
+  await page.locator('[data-api-path]').fill('/items');
+  await page.locator('[data-expect-operand="0"]').fill('200');
+  await page.locator('[data-api-send]').click();
+  await page.locator('[data-api-response]').waitFor({ timeout: 30_000 });
+
+  assert.equal(await page.locator('[data-api-response]').getAttribute('data-api-response-ok'), 'false');
+  const detail = await page.locator('[data-api-response-detail]').textContent();
+  assert.match(detail ?? '', /connection refused|fetch failed/);
+  assert.equal(await page.locator('[data-api-response-body]').count(), 0, 'no body, because there was no response');
+});
+
+test('the page says when the scratch file is not ignored, rather than editing .gitignore itself', async () => {
+  // A project `tflw init` makes lists `scratch.tflw`; an older one does not, and the page tells
+  // the author instead of silently changing a file they own. The fixture project has no
+  // `.gitignore` at all, which is the case that matters — absence, not a wrong rule.
+  await page.goto(`${baseUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-api-form]').waitFor();
+  const notice = await page.locator('[data-api-scratch-unignored]').textContent();
+  assert.match(notice ?? '', /scratch\.tflw/);
+  assert.match(notice ?? '', /gitignore/);
+
+  // THE CONTROL, AND IT HAS TO BE ON THE PAGE. Asserting the server's fact flips is not asserting
+  // the notice reads it: the mutation showing the notice unconditionally survived a version of
+  // this test that checked only `/api/project`. So the line is added, the page reloaded, and the
+  // notice has to be gone.
+  await writeFile(join(root, '.gitignore'), 'scratch.tflw\n', 'utf8');
+  const view = (await (await fetch(`${baseUrl}/api/project`)).json()) as { scratchPath: string; scratchIgnored: boolean };
+  assert.equal(view.scratchPath, 'scratch.tflw');
+  assert.equal(view.scratchIgnored, true);
+
+  await page.reload();
+  await page.locator('[data-api-form]').waitFor();
+  assert.equal(await page.locator('[data-api-scratch-unignored]').count(), 0, 'the notice goes when the line is there');
+
+  await rm(join(root, '.gitignore'), { force: true });
+  await page.reload();
+  await page.locator('[data-api-scratch-unignored]').waitFor();
+});

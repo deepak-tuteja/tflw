@@ -240,6 +240,13 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
   margin: 12px 0 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line);
   border-radius: 6px; font-size: 12px; max-height: 40vh; overflow: auto; white-space: pre;
 }
+/* `A1-5` — Send's response pane. Deliberately the same `.preview` block for the body, because it
+   is the same kind of thing: bytes that came from somewhere real, shown verbatim. */
+.response { margin-top: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.response-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.response-head code { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.response-head button { margin-left: auto; background: var(--bg); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font: inherit; cursor: pointer; }
+.response-headers { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; font-size: 12px; color: var(--muted); max-height: 20vh; overflow: auto; }
 .preview-diagnostics { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12px; }
 .preview-diagnostics li { color: var(--muted); }
 .preview-diagnostics li.error { color: var(--fail); }

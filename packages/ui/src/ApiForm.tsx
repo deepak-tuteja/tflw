@@ -28,9 +28,9 @@ import {
   type ExpectSpec,
   type SubjectSpec,
 } from '@tflw/lang';
-import { getFile, putFile, type FileView } from './api';
+import { getFile, putFile, startRun, subscribe, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
-import type { ProjectView } from './contract';
+import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
 
 export interface ApiFormProps {
   readonly project: ProjectView;
@@ -82,6 +82,10 @@ interface ExpectRow {
   readonly matcher: MatcherKind;
   readonly operand: string;
 }
+
+/** The one test name Send writes. Fixed, because `--only` has to name it and an exploration
+ *  that renamed itself on every press would leave a file nobody could re-run by hand. */
+const SCRATCH_TEST = 'scratch';
 
 const EMPTY_ROW: ExpectRow = { soft: false, quantifier: '', subject: 'status', argument: '', matcher: 'equals', operand: '200' };
 
@@ -194,6 +198,102 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
     const result = insertIntoSource(file.text, { kind: 'test', node: test.node });
     return result.ok ? { ok: true, text: result.text } : { ok: false, reason: result.reason };
   }, [file, mode, testName, name, tags, rows, stepSpec]);
+
+  /**
+   * `D1047`'s Send: write a scratch file, run it for real, read the response out of the report.
+   *
+   * THERE IS NO SECOND EXECUTION PATH, and that is the whole decision. The rejected alternative
+   * was a pane that fires the request through tflw's own HTTP client with no run and no report —
+   * Postman's actual feel, and a place where a request could succeed unsaved and fail saved. So
+   * Send writes `scratch.tflw` through the same `PUT /api/file` the save button uses, starts the
+   * same `tflw run` the sidebar starts, and reads `results.json` — one execution path, one
+   * artefact kind, and a page that cannot disagree with a terminal or with CI.
+   *
+   * `--evidence full` is what makes it a response pane at all: below that level a step record
+   * carries no `request`/`response` (`D987`), so the level is asked for explicitly rather than
+   * hoped for from the project's config.
+   */
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<{ request: StepResult['request']; response: StepResult['response']; ok: boolean; detail?: string } | null>(null);
+
+  /** The scratch file's whole contents: one test, this request, these assertions. Not spliced
+   *  into anything — an exploration replaces the file rather than joining it. */
+  const scratchText = useMemo((): { ok: true; text: string } | { ok: false; reason: string } => {
+    const step = buildApiStep(stepSpec());
+    if (!step.ok) return { ok: false, reason: step.reason };
+    const built = rows.map((r) => buildExpect(expectSpec(r)));
+    const bad = built.find((b) => !b.ok);
+    if (bad && !bad.ok) return { ok: false, reason: bad.reason };
+    const test = buildTest({ name: SCRATCH_TEST, tags: [], workload: null, thresholds: [], body: [step.node, ...built.flatMap((b) => (b.ok ? [b.node] : []))] });
+    if (!test.ok) return { ok: false, reason: test.reason };
+    const result = insertIntoSource('', { kind: 'test', node: test.node });
+    return result.ok ? { ok: true, text: result.text } : { ok: false, reason: result.reason };
+  }, [stepSpec, rows]);
+
+  const send = useCallback(async () => {
+    if (!scratchText.ok) return;
+    setSending(true);
+    setProblem(null);
+    setSent(null);
+    try {
+      // `null` rather than an etag: the scratch file is this button's alone and may not exist yet,
+      // and the write route reads a missing file plus `If-Match: null` as "create it". A stale
+      // etag here would be a 409 about a file nobody else edits.
+      const scratch = await getFile(project.scratchPath).catch(() => null);
+      const put = await putFile(project.scratchPath, scratchText.text, scratch?.etag ?? null);
+      if (!put.ok) {
+        setProblem(put.code ? `${put.code} at line ${put.line}: ${put.error}` : put.error);
+        setSending(false);
+        return;
+      }
+      const record = await startRun({ files: [project.scratchPath], only: SCRATCH_TEST, evidence: 'full' });
+      const end = await new Promise<EndEvent>((resolve) => {
+        const stop = subscribe(record.id, { event: () => undefined, noise: () => undefined, end: (e) => { stop(); resolve(e); } });
+      });
+      if (!end.kept) {
+        setProblem('the run wrote no report — nothing to read a response from');
+        setSending(false);
+        return;
+      }
+      const report: RunReport = await getResults(end.kept.split('/').pop() ?? end.kept);
+      // Narrowed on `kind`, not duck-typed on `.steps` — `ReportEntry` has three members and
+      // `D462` exists because thirteen sites in this repository read it as two. A scratch run is
+      // always functional (Send writes no workload line and no crawl), so anything else here is a
+      // mistake worth being unable to compile past rather than worth guessing through.
+      const functional = report.tests.filter((t): t is Extract<typeof t, { kind: 'functional' }> => t.kind === 'functional');
+      const step = functional.flatMap((t) => t.steps).find((x) => x.kind === 'api');
+      if (!step) {
+        setProblem('the run reported no api step — check the request above');
+        setSending(false);
+        return;
+      }
+      setSent({ request: step.request, response: step.response, ok: step.ok, detail: step.detail });
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+    setSending(false);
+  }, [scratchText, project.scratchPath]);
+
+  /**
+   * `[Discard]` — the scratch file is emptied and *then* the pane goes.
+   *
+   * THE ORDER IS THE POINT, and the first draft had it backwards: clearing the pane first made it
+   * vanish while the write was still in flight, so the disappearance said nothing about the file
+   * and a refused discard was invisible. Written this way, the pane going is the write having
+   * landed, and a failure keeps the pane and says why — which is also what lets the gate assert
+   * the file's contents the moment the pane detaches.
+   */
+  const discard = useCallback(async () => {
+    const scratch = await getFile(project.scratchPath).catch(() => null);
+    if (scratch) {
+      const res = await putFile(project.scratchPath, '', scratch.etag);
+      if (!res.ok) {
+        setProblem(res.status === 409 ? `${res.error} — the scratch file changed under this page` : res.error);
+        return;
+      }
+    }
+    setSent(null);
+  }, [project.scratchPath]);
 
   /** `D1052` — recomputed with the preview, from the same bytes, so what is shown and what is
    *  judged cannot be two different files. */
@@ -413,6 +513,11 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
       )}
 
       <div className="authoring-actions">
+        {/* `D1047` — Send writes `scratch.tflw` and runs it for real, so what comes back is a
+            report and not a second execution path. */}
+        <button onClick={() => void send()} disabled={!scratchText.ok || sending || busy} data-api-send>
+          {sending ? 'sending…' : 'send'}
+        </button>
         <button className="run" onClick={() => void save()} disabled={!pending.ok || busy} data-api-save>
           {busy ? 'writing…' : `write ${path}`}
         </button>
@@ -427,6 +532,47 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
           </span>
         ) : null}
       </div>
+
+      {/* An exploration is not a suite, so the file it uses is one path, overwritten, and not
+          something to commit. A project `tflw init` made ignores it; an older one is told rather
+          than edited behind the author's back (`A1-5`). */}
+      {!project.scratchIgnored ? (
+        <p className="muted" data-api-scratch-unignored={project.scratchPath}>
+          send writes <code>{project.scratchPath}</code>, and this project's <code>.gitignore</code> does not list it —
+          add that line, or expect it in <code>git status</code>.
+        </p>
+      ) : null}
+
+      {sent ? (
+        <div className="response" data-api-response={sent.response?.status ?? ''} data-api-response-ok={String(sent.ok)}>
+          <header className="response-head">
+            <span className={`verdict ${sent.ok ? 'ok' : 'fail'}`}>{sent.response ? `${sent.response.status} ${sent.response.statusText}` : 'no response'}</span>
+            {sent.request ? (
+              <code data-api-response-url>
+                {sent.request.method} {sent.request.url}
+              </code>
+            ) : null}
+            <button onClick={() => void discard()} data-api-discard>
+              discard
+            </button>
+          </header>
+          {sent.detail ? <p className="muted" data-api-response-detail>{sent.detail}</p> : null}
+          {sent.response ? (
+            <>
+              <ul className="response-headers" data-api-response-headers={Object.keys(sent.response.headers).length}>
+                {Object.entries(sent.response.headers).map(([k, v]) => (
+                  <li key={k}>
+                    <code>{k}</code>: {v}
+                  </li>
+                ))}
+              </ul>
+              <pre className="preview" data-api-response-body>
+                {sent.response.bodyText}
+              </pre>
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -36,7 +36,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile, readdir, stat, cp, mkdir, writeFile, rename, unlink } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, relative, dirname, extname, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes } from 'node:crypto';
@@ -104,7 +104,21 @@ export interface ProjectView {
    * from the project (`M192` U3). The page shows *open trace* when it does and the
    * `npx playwright show-trace` line when it does not. */
   readonly traceViewer: boolean;
+  /** `D1047`'s scratch file, and whether git will ignore it (`M200` `A1-5`).
+   *
+   * The path is fixed so that exploring an endpoint always overwrites one file rather than
+   * littering a project. `scratchIgnored` is an **exact-line** check against `.gitignore`, which
+   * is the same shape `tflw init` writes with — so it is right for every project `init` made and
+   * a *false negative* for a project whose ignore rule is spelled another way (`*.tflw`, a
+   * directory rule, a global excludes file). A false negative costs a notice the author can
+   * dismiss; the alternative — shelling out to `git check-ignore` — puts a subprocess behind a
+   * read route for a line of advice. */
+  readonly scratchPath: string;
+  readonly scratchIgnored: boolean;
 }
+
+/** Where `Send` writes. One file, overwritten, never merged — it is an exploration, not a suite. */
+export const SCRATCH_PATH = 'scratch.tflw';
 
 /** What `tflw run` is asked for. Every field maps to one CLI flag, and nothing else reaches the
  * argv: the page cannot run anything a terminal could not. */
@@ -114,6 +128,11 @@ export interface RunRequest {
   readonly only?: string;
   readonly env?: string;
   readonly workers?: number;
+  /** `--evidence LEVEL` (`M200` `A1-5`) — `D1047`'s Send needs `full`, because that is the level
+   *  at which a step record carries its `request` and `response` (§1). Raw text, validated by
+   *  `runCommand` against `EVIDENCE_LEVELS` exactly as a terminal's `--evidence` is: the page
+   *  cannot ask for a level a terminal could not. */
+  readonly evidence?: string;
 }
 
 export type RunStatus = 'running' | 'done' | 'cancelled';
@@ -148,6 +167,7 @@ export function runArgv(req: RunRequest): string[] {
   // One `--tag a,b`, the CLI's own spelling (comma-joined, AND across the list).
   if (req.tags && req.tags.length > 0) argv.push('--tag', req.tags.join(','));
   if (req.only) argv.push('--only', req.only);
+  if (req.evidence) argv.push('--evidence', req.evidence);
   for (const f of req.files ?? []) argv.push(f);
   return argv;
 }
@@ -196,7 +216,25 @@ export async function readProject(root: string): Promise<ProjectView> {
       diagnostics: diagnostics.length,
     });
   }
-  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null };
+  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root) };
+}
+
+/**
+ * Whether `.gitignore` carries the scratch path as a line of its own (`A1-5`).
+ *
+ * The same exact-line test `tflw init`'s own `ensureGitignore` writes with, and deliberately no
+ * more: a project whose rule is `*.tflw` or a directory pattern gets a **false negative**, which
+ * costs a dismissible notice. The accurate answer is `git check-ignore`, and putting a subprocess
+ * behind a read route to render one line of advice is a worse trade than being wrong quietly in
+ * the safe direction.
+ */
+function scratchIsIgnored(root: string): boolean {
+  try {
+    const text = readFileSync(join(root, '.gitignore'), 'utf8');
+    return text.split('\n').some((line) => line.trim() === SCRATCH_PATH);
+  } catch {
+    return false;
+  }
 }
 
 /** Playwright's own trace viewer — the static page `npx playwright show-trace` serves — resolved
