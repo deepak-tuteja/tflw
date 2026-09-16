@@ -1,0 +1,18 @@
+# The `scan` lens alone — `M203` `S3`.
+#
+# A crawl is the only thing in the language that reaches the SCANS door **without** reaching the
+# API door: `lensesOfCrawl` returns `['scan']` unconditionally, whatever the body holds, because a
+# crawl's requests are ones nobody wrote (an `api` step inside one is `TF070`). Every other route
+# to `scan` is a severity matcher, and those take api-bearing subjects.
+#
+# It is in its own file rather than beside the tests, for a reason the gate depends on: `crawls` is
+# a separate array on `Program` and a separate field on `ProjectFile`, so a file carrying one and
+# no tests is the shape that proves `readProject` reads both (`verify-test-counts.mjs` records the
+# cost of not having had one — the mutation that stopped crawls counting toward the SCANS door
+# survived a full page run, because three `api`+`scan` tests carried the count).
+#
+# Parsed, never run — see `tflw.config`.
+
+crawl "scan"
+  seed openapi "/openapi.json"
+  expect response has no security violations

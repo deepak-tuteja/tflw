@@ -341,8 +341,12 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // with the reason on the row, and a number that moves on its own is a defect by definition.
   //
   // `M201` `S4`: **283 nodes over 12 files**, this repository's own, on every machine and in CI.
-  const EXPECTED_NODES = 283;
-  const EXPECTED_FILES = 12;
+  // `M203` `S3` — the doors corpus (`__fixtures__/doors-corpus/`, 2 files, 8 tests + 1 crawl) joined this repository's corpus: 12 -> 14 files and 283 -> 322 nodes. It is authored for the DOOR claim, not this one
+  // (`lenses.test.ts`), but it is `.tflw` in this repository so the printer's corpus reads it like any
+  // other — which is the point of `D1056`'s one-corpus rule and is why these two numbers moved in the
+  // same commit that wrote the files.
+  const EXPECTED_NODES = 322;
+  const EXPECTED_FILES = 14;
   assert.equal(filesRead, EXPECTED_FILES, `the corpus read ${filesRead} files, expected ${EXPECTED_FILES} — a fixture was added or lost`);
   assert.equal(total, EXPECTED_NODES, `the corpus round-tripped ${total} nodes, expected ${EXPECTED_NODES} — move the number in the change that moved the corpus`);
   assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n\n')}\n`);
@@ -459,7 +463,8 @@ test('every clean file in the corpus round-trips through the printer whole', () 
   // the extras the moment anything confuses the two counters, which is exactly how `M200-05` hid.
   // `M201` `S4`: 6 -> **12** — 15 files, 3 of them the `migrate-corpus` fixtures the parser
   // rejects by design.
-  const EXPECTED_CORPUS_FILES = 12;
+  // `M203` `S3` — the doors corpus (`__fixtures__/doors-corpus/`, 2 files, 8 tests + 1 crawl) joined this repository's corpus: 12 -> 14.
+  const EXPECTED_CORPUS_FILES = 14;
   assert.equal(
     corpusRoundTripped,
     EXPECTED_CORPUS_FILES,
