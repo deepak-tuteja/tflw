@@ -53,6 +53,10 @@ import type {
   PauseStmt,
   Program,
   ActionDecl,
+  FillFormStmt,
+  SelectStmt,
+  TickStmt,
+  UntickStmt,
   GiveStmt,
   HookDecl,
   ImportDecl,
@@ -161,6 +165,17 @@ export const PRINTABLE = new Set<string>([
   'HookDecl',
   'ActionDecl',
   'GiveStmt',
+  // `A4-3` — the form family, and the largest browser remnant. `FillFormStmt` is the only browser
+  // statement in the language that is a BLOCK of rows rather than a line, which is why it sat at
+  // the head of `§4g`'s tail and why it arrives with the three line-shaped kinds that finish a
+  // form: choose an option, tick a box, untick it.
+  // `FillFormRow` is NOT here — it is `CONTEXT_BOUND`, the fifth member, because `| "Email" | "x" |`
+  // is not a step and there is no source a printed row could be re-parsed from. The two sets are
+  // disjoint by convention: this one means *printable on its own*.
+  'FillFormStmt',
+  'SelectStmt',
+  'TickStmt',
+  'UntickStmt',
   // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
   // statements that read or announce a response.
   'DurationSubject',
@@ -217,13 +232,14 @@ export const PRINTABLE = new Set<string>([
  * `Field` is the second and arrived with `A1-1`, for the ordinary reason rather than the
  * interesting one: `name: 1` is not a program, so there is no source a printed field could be
  * re-parsed from. It is printed by `printObject` and compared through its parent. `FormField` and
- * `RetryAfterClause` joined it in `A1-2` on the same ordinary grounds.
+ * `RetryAfterClause` joined it in `A1-2` on the same ordinary grounds. `FillFormRow` joined
+ * them in `A4-3`, likewise: `| "Email" | "x" |` is a row of a block, not a step.
  *
  * Expect more of these as `A1`–`A4` widen the printer. The shape to watch for is a node whose
  * field was normalised on the way in, because a normalisation is a spelling decision the AST
  * stopped recording.
  */
-export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'RetryAfterClause']);
+export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'RetryAfterClause', 'FillFormRow']);
 
 class Refusal extends Error {
   constructor(readonly nodeType: string, readonly detail?: string) {
@@ -294,6 +310,20 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printLog(node as LogStmt);
     case 'Locator':
       return pad(level) + printLocator(node as Locator);
+    case 'FillFormStmt':
+      return printFillForm(node as FillFormStmt, level);
+    case 'FillFormRow':
+      // Printed by `printFillForm` and compared through it — `| "Email" | "x" |` is not a step, so
+      // there is no source a printed row could be re-parsed from on its own (`CONTEXT_BOUND`).
+      return refuse('FillFormRow', 'a form row is spelled by its `fill form` block, so it cannot be printed on its own');
+    case 'SelectStmt': {
+      const sel = node as SelectStmt;
+      return pad(level) + `select ${printValue(sel.value)} from ${printLocator(sel.locator)}`;
+    }
+    case 'TickStmt':
+      return pad(level) + 'tick ' + printLocator((node as TickStmt).locator);
+    case 'UntickStmt':
+      return pad(level) + 'untick ' + printLocator((node as UntickStmt).locator);
     case 'OpenStmt':
       return pad(level) + printOpen(node as OpenStmt);
     case 'ClickStmt':
@@ -458,6 +488,32 @@ function printAction(a: ActionDecl, level: number): string {
   }
   const lines = [pad(level) + `action ${a.name}(${a.params.join(', ')})`];
   for (const step of a.body) lines.push(printNode(step, level + 1));
+  return lines.join('\n');
+}
+
+/**
+ * `fill form` and its rows (`A4-3`).
+ *
+ * **The only browser statement that is a block rather than a line**, and it borrows `printTable`'s
+ * layout rather than inventing one: each column padded to its widest cell, `| a | b |`, indented
+ * one level under the header. That is what the corpus writes and what `with each` already prints,
+ * and matching it is not cosmetic — every write path runs `format` over the spliced result and
+ * `insertIntoSource` refuses rather than corrects when the printer's house style is not the
+ * formatter's (`D1049`).
+ *
+ * A form with no rows is `TF015` — the parser answers `MalformedStep`, measured — so it refuses,
+ * which is `printCrawl`'s, `printWithin`'s, `printHook`'s and `printAction`'s rule again.
+ */
+function printFillForm(f: FillFormStmt, level: number): string {
+  if (f.rows.length === 0) {
+    refuse('FillFormStmt', 'a `fill form` with no rows does not parse — the block needs at least one');
+  }
+  const cells = f.rows.map((r) => [printString(r.field), printValue(r.value)]);
+  const width = [0, 1].map((i) => Math.max(...cells.map((r) => r[i]!.length)));
+  const lines = [pad(level) + 'fill form'];
+  for (const row of cells) {
+    lines.push(pad(level + 1) + '| ' + row.map((c, i) => c.padEnd(width[i]!)).join(' | ') + ' |');
+  }
   return lines.join('\n');
 }
 
