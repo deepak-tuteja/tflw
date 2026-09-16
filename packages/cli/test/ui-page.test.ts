@@ -996,6 +996,110 @@ test('ticking the workload box turns a functional test into a load test, and the
 });
 
 // ---------------------------------------------------------------------------
+// `M200` `A3-5` — the BROWSER door. Two tests: the door writing a whole test with a `within`
+// around it, and the door adding steps to a test that already opened a page. The split matters
+// because the second deliberately writes NO `open` — a browser test navigates once.
+// ---------------------------------------------------------------------------
+
+test('the BROWSER form writes a whole test — open, a scoped block, and an assertion', async () => {
+  await page.goto(`${baseUrl}#/browser`);
+  await page.reload();
+  await page.locator('[data-browser-form]').waitFor();
+
+  const target = 'tests/orders.tflw';
+  await page.locator('[data-browser-file]').selectOption(target);
+  const before = await readFile(join(root, target), 'utf8');
+
+  await page.locator('[data-browser-mode]').selectOption('new');
+  await page.locator('[data-browser-name]').fill('the cart holds what was added');
+  await page.locator('[data-browser-tags]').fill('web');
+  await page.locator('[data-browser-open]').fill('/catalogue');
+
+  // Row 0 is a click, which is the default because `click` is 766 of the corpus' browser steps.
+  await page.locator('[data-browser-value="0"]').fill('Add to cart');
+
+  // **THE SCOPE IS A `within`, AND IT WRAPS THE ROWS RATHER THAN SITTING BESIDE THEM.** A form
+  // that emitted the block and the steps as siblings would preview something that parses and means
+  // something else, which no diagnostic would catch — so the assertion below is on INDENTATION.
+  await page.locator('[data-browser-scoped]').check();
+  await page.locator('[data-browser-kind="scope"]').selectOption('css');
+  await page.locator('[data-browser-value="scope"]').fill('#cart');
+
+  await page.locator('[data-browser-add]').click();
+  await page.locator('[data-browser-action="1"]').selectOption('expect');
+  await page.locator('[data-browser-kind="1"]').selectOption('text');
+  await page.locator('[data-browser-value="1"]').fill('Subtotal');
+  await page.locator('[data-browser-matcher="1"]').selectOption('visible');
+
+  const preview = (await page.locator('[data-browser-preview]').textContent()) ?? '';
+  assert.match(preview, /open "\/catalogue"/);
+  // Four spaces, not two: the click and the assertion are INSIDE the block, and a `within` printed
+  // as a sibling would show them at two.
+  assert.match(preview, /\n {2}within css "#cart"\n {4}click button "Add to cart"\n {4}expect text "Subtotal" is visible/);
+  // **AND EACH STEP EXACTLY ONCE**, which the shape assertion above cannot say. A form that
+  // emitted the block AND its steps as siblings — `[block, ...steps]` rather than `[block]` —
+  // still satisfies every pattern above, because the block and its indented children are all
+  // still there; the duplicates simply follow. Found by a mutation that survived the first draft.
+  for (const line of ['click button "Add to cart"', 'expect text "Subtotal" is visible', 'within css "#cart"']) {
+    assert.equal(preview.split(line).length - 1, 1, `${line} must appear exactly once:\n${preview}`);
+  }
+
+  await page.locator('[data-browser-save]').click();
+  await page.locator('[data-browser-wrote]').waitFor();
+
+  const after = await readFile(join(root, target), 'utf8');
+  assert.equal(after, preview, 'what was shown is what was written');
+  assert.notEqual(after, before);
+
+  // And `tflw check` reads it — the claim that makes the preview worth anything (`D1052`).
+  const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+  assert.ok(!/error/i.test(check), check);
+
+  await writeFile(join(root, target), before, 'utf8');
+});
+
+test('the BROWSER form adds steps to a test that already opened a page, and writes no second `open`', async () => {
+  // A browser test navigates once — 270 `open`s across 244 browser tests — so adding steps to an
+  // existing one must NOT re-open. A second `open` would reload the page out from under whatever
+  // the test had already set up, and it would still parse, check and run: a defect no gate but
+  // this one can see.
+  await page.goto(`${baseUrl}#/browser`);
+  await page.reload();
+  await page.locator('[data-browser-form]').waitFor();
+
+  const target = 'tests/orders.tflw';
+  await page.locator('[data-browser-file]').selectOption(target);
+  const before = await readFile(join(root, target), 'utf8');
+  const openedBefore = (before.match(/^\s*open /gm) ?? []).length;
+
+  await page.locator('[data-browser-mode]').selectOption('existing');
+  const testName = await page.locator('[data-browser-test] option:nth-child(2)').getAttribute('value');
+  assert.ok(testName, 'the fixture file must hold a test to extend');
+  await page.locator('[data-browser-test]').selectOption(testName);
+  await page.locator('[data-browser-action="0"]').selectOption('fill');
+  await page.locator('[data-browser-kind="0"]').selectOption('field');
+  await page.locator('[data-browser-value="0"]').fill('Coupon');
+  await page.locator('[data-browser-operand="0"]').fill('"SAVE10"');
+
+  const preview = (await page.locator('[data-browser-preview]').textContent()) ?? '';
+  assert.match(preview, /fill field "Coupon" with "SAVE10"/);
+  assert.equal((preview.match(/^\s*open /gm) ?? []).length, openedBefore, 'adding steps must not add an `open`');
+
+  await page.locator('[data-browser-save]').click();
+  await page.locator('[data-browser-wrote]').waitFor();
+
+  const after = await readFile(join(root, target), 'utf8');
+  assert.equal(after, preview);
+  // …and it landed inside the test that was picked.
+  const lines = after.split('\n');
+  const header = lines.findIndex((l) => l.includes(`test "${testName}"`));
+  const filled = lines.findIndex((l) => l.includes('fill field "Coupon"'));
+  assert.ok(header >= 0 && filled > header, `the step must sit under its test:\n${after}`);
+
+  await writeFile(join(root, target), before, 'utf8');
+});
+
+// ---------------------------------------------------------------------------
 // `M200` `A2-3` — the SCANS door. Two tests, and the split is the door's whole character: the
 // fixture project DECLARES an `authorized target`, so it exercises the authorized path; a project
 // `tflw init --scan` just made does not, so it exercises the one thing no other door has to show.

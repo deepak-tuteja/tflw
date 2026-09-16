@@ -12,7 +12,7 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { ApiBody, ApiHeader, ApiStep, ExpectStmt, FindingSeverity, HttpMethod, Matcher, MatcherName, PathSegment, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, Workload } from './ast.js';
+import type { ApiBody, ApiHeader, ApiStep, ClickKind, ClickStmt, ExpectStmt, FillStmt, FindingSeverity, HttpMethod, Locator, LocatorKind, Matcher, MatcherName, OpenStmt, PathSegment, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, WithinBlock, Workload } from './ast.js';
 import { parse as parseTokens, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
 
@@ -326,16 +326,57 @@ export type SubjectSpec =
   | { readonly kind: 'value'; readonly ref: string }
   /** `expect response has no … violations` (`M200` `A2-3`). The whole-response subject, which only
    *  the scan matchers take — every other matcher wants a part of it. */
-  | { readonly kind: 'response' };
+  | { readonly kind: 'response' }
+  /** `expect button "Buy" is visible` (`M200` `A3-5`). The browser's subject — 641 of them in the
+   *  corpus, more than every response subject but `status`. */
+  | { readonly kind: 'locator'; readonly locator: LocatorSpec }
+  /** `expect page has no a11y violations` (`M200` `A3-5`). Carries no data of its own; `ast.ts`
+   *  calls it and `response` deliberately parallel. */
+  | { readonly kind: 'page' };
+
+/**
+ * A locator, as a form holds it — `M200` `A3-5`.
+ *
+ * **Two fields, because the node has two**, on all 2,296 corpus instances with no optional clause
+ * anywhere (`§4f`). That is why the BROWSER form is a dropdown beside a text box rather than a
+ * panel: there is nothing else to offer.
+ */
+export interface LocatorSpec {
+  readonly kind: LocatorKind;
+  readonly value: string;
+}
 
 /** Matchers the forms offer: every one that takes an operand or takes none, minus the state and
  *  snapshot families, which belong to doors that can actually produce them. **The scan family was
  *  in that list until `A2-3`, which is the door that can** — so it is below rather than excluded. */
-const OPERANDLESS: ReadonlySet<MatcherName> = new Set<MatcherName>(['connects', 'fails', 'hasNoSecurityViolations', 'hasNoAuthzViolations', 'hasNoInputHandlingViolations']);
+const OPERANDLESS: ReadonlySet<MatcherName> = new Set<MatcherName>([
+  'connects', 'fails',
+  'hasNoSecurityViolations', 'hasNoAuthzViolations', 'hasNoInputHandlingViolations',
+  // `A3-5` — `hasNoA11yViolations` joins its three siblings now that `page` is reachable, and the
+  // five state words join for the reason `A3-3` gave: `parser.ts` holds them in one closed
+  // `STATE_WORDS` family, and 0 of the corpus' 622 carries a value.
+  'hasNoA11yViolations',
+  'visible', 'hidden', 'enabled', 'disabled', 'checked',
+]);
 
-/** The three scan families a SCANS form can write. `hasNoA11yViolations` is deliberately absent:
- *  its only subject is `page`, which no printer or builder here reaches until `A3`. */
-const SCAN_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>(['hasNoSecurityViolations', 'hasNoAuthzViolations', 'hasNoInputHandlingViolations']);
+/** The five state words, as one closed family — `parser.ts`'s `STATE_WORDS` (`A3-3`). */
+const STATE_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>(['visible', 'hidden', 'enabled', 'disabled', 'checked']);
+
+/**
+ * The scan families, each with the subject it grades — `M200` `A2-3`, completed in `A3-5`.
+ *
+ * **A map rather than a set, because `a11y` does not take the same subject as the other three.**
+ * `hasNoA11yViolations` grades the live `page`; the other three grade the last `response`. That
+ * asymmetry is the whole reason `A2-3` had to leave a11y out — its subject did not exist yet —
+ * and writing it as a set with one subject rule would have made `expect response has no a11y
+ * violations` buildable, which `parseExpect` does not accept.
+ */
+const SCAN_SUBJECT: ReadonlyMap<MatcherName, Subject['type']> = new Map<MatcherName, Subject['type']>([
+  ['hasNoSecurityViolations', 'ResponseSubject'],
+  ['hasNoAuthzViolations', 'ResponseSubject'],
+  ['hasNoInputHandlingViolations', 'ResponseSubject'],
+  ['hasNoA11yViolations', 'PageSubject'],
+]);
 
 export function buildExpect(spec: ExpectSpec): BuildResult<ExpectStmt> {
   const subject = buildSubject(spec.subject);
@@ -362,13 +403,105 @@ export function buildExpect(spec: ExpectSpec): BuildResult<ExpectStmt> {
   //   - it never takes an operand, like `connects`;
   //   - its only subject here is `response` — `page` is `A3`'s, and `parseExpect` takes no other;
   //   - the severity floor belongs to it and to nothing else.
-  const isScan = SCAN_MATCHERS.has(spec.matcher);
-  if (isScan && value !== null) return bad(`\`${spec.matcher}\` grades a whole response against a rule family and takes no value`);
-  if (isScan && subject.node.type !== 'ResponseSubject') return bad('a `has no … violations` matcher grades the whole response — pick the `response` subject');
+  const scanSubject = SCAN_SUBJECT.get(spec.matcher);
+  const isScan = scanSubject !== undefined;
+  if (isScan && value !== null) return bad(`\`${spec.matcher}\` grades a whole subject against a rule family and takes no value`);
+  if (isScan && subject.node.type !== scanSubject) {
+    return bad(
+      scanSubject === 'PageSubject'
+        ? 'a11y findings are read off the live page — pick the `page` subject'
+        : 'a `has no … violations` matcher grades the whole response — pick the `response` subject',
+    );
+  }
   if (spec.severityFloor !== undefined && !isScan) return bad('a severity floor belongs to `has no … violations`, which is the only matcher that grades findings');
+  // The state family takes no operand and this is where that is said, but its SUBJECT is
+  // deliberately unrestricted — the grammar puts no rule there and the corpus proves it, carrying
+  // `expect status is visible` and one on a `{value}`. `A3-3`'s printer made the same call: a
+  // builder that invented a locator-only rule would refuse two files that exist.
+  if (value !== null && STATE_MATCHERS.has(spec.matcher)) return bad(`\`${spec.matcher}\` is a state, so it is true or false on its own and takes no value`);
 
   const matcher: Matcher = { type: 'Matcher', name: spec.matcher, negated: false, value, span: SYNTHETIC, ...(spec.severityFloor === undefined ? {} : { severityFloor: spec.severityFloor }) };
   return { ok: true, node: { type: 'ExpectStmt', soft: spec.soft, quantifier: spec.quantifier, subject: subject.node, matcher, masks: [], span: SYNTHETIC } };
+}
+
+/** Every locator kind the grammar has, for a form's dropdown — the parser's own list, re-exported
+ *  rather than re-typed, so a seventh kind reaches the form the day it reaches the language. */
+export const LOCATOR_KINDS: readonly LocatorKind[] = ['button', 'field', 'text', 'list', 'css', 'xpath'];
+
+/**
+ * `button "Sign in"` — `M200` `A3-5`.
+ *
+ * The only refusal is an empty value, and it is worth one because the parser accepts `button ""`
+ * happily: a locator matching nothing is a test that fails at run time for a reason the file does
+ * not show. A form can say so in the field instead.
+ */
+export function buildLocator(spec: LocatorSpec): BuildResult<Locator> {
+  if (spec.value.trim().length === 0) {
+    return bad(`a \`${spec.kind}\` locator needs something to match — the accessible name, the text, or the selector`);
+  }
+  return { ok: true, node: { type: 'Locator', kind: spec.kind, value: stringLit(spec.value), span: SYNTHETIC } };
+}
+
+/** `open "/checkout"` — `M200` `A3-5`. The path is a plain interpolation-aware string, so unlike
+ *  `buildApiStep`'s it carries no method or service to gate a contextual `/` on, and is resolved
+ *  against the env's `web` base rather than its `api` one. */
+export function buildOpen(path: string): BuildResult<OpenStmt> {
+  if (path.trim().length === 0) return bad('`open` needs a path — the page to navigate to, resolved against the env’s `web` base');
+  return { ok: true, node: { type: 'OpenStmt', path: stringLit(path), span: SYNTHETIC } };
+}
+
+export interface ClickSpec {
+  readonly locator: LocatorSpec;
+  /** `single` is 770 of the corpus's 774 clicks; the other two are two each. */
+  readonly kind: ClickKind;
+}
+
+/** `click button "Buy"` / `double click …` / `right click …` — `M200` `A3-5`. */
+export function buildClick(spec: ClickSpec): BuildResult<ClickStmt> {
+  const locator = buildLocator(spec.locator);
+  if (!locator.ok) return locator;
+  return { ok: true, node: { type: 'ClickStmt', kind: spec.kind, locator: locator.node, span: SYNTHETIC } };
+}
+
+export interface FillSpec {
+  readonly locator: LocatorSpec;
+  /** As typed, parsed as a **value** — so `"text"`, `{captured}` and `env(NAME)` all work. The
+   *  corpus fills with `StringLit` 422 times, `EnvRef` 12 and `Interp` 3, so a field that only
+   *  accepted a string would be right 96% of the time and unable to express the rest. */
+  readonly value: string;
+}
+
+/** `fill field "Email" with {email}` — `M200` `A3-5`. */
+export function buildFill(spec: FillSpec): BuildResult<FillStmt> {
+  const locator = buildLocator(spec.locator);
+  if (!locator.ok) return locator;
+  if (spec.value.trim() === '') return bad('`fill` needs a value — what to type into the field');
+  const parsed = parseValueText(spec.value);
+  if (!parsed.ok) return bad(parsed.reason);
+  return { ok: true, node: { type: 'FillStmt', locator: locator.node, value: parsed.node, span: SYNTHETIC } };
+}
+
+export interface WithinSpec {
+  readonly locator: LocatorSpec;
+  /** `within frame …` steps into the frame the selector resolves to, rather than scoping to a
+   *  subtree of the same document. 4 of the corpus's 404 blocks. */
+  readonly frame: boolean;
+  readonly body: readonly Step[];
+}
+
+/**
+ * `within [frame] <locator>` and its body — `M200` `A3-5`.
+ *
+ * The empty body is refused here as well as in the printer, and deliberately in both: the printer
+ * refuses because the bytes would not parse back, and this refuses because a form that let you
+ * build one would only find out at the write. Same rule, two surfaces, because they answer to
+ * different callers.
+ */
+export function buildWithin(spec: WithinSpec): BuildResult<WithinBlock> {
+  const locator = buildLocator(spec.locator);
+  if (!locator.ok) return locator;
+  if (spec.body.length === 0) return bad('a `within` scopes the steps inside it, so it needs at least one');
+  return { ok: true, node: { type: 'WithinBlock', locator: locator.node, frame: spec.frame, body: spec.body, span: SYNTHETIC } };
 }
 
 function buildSubject(spec: SubjectSpec): BuildResult<Subject> {
@@ -393,6 +526,13 @@ function buildSubject(spec: SubjectSpec): BuildResult<Subject> {
     }
     case 'response':
       return { ok: true, node: { type: 'ResponseSubject', span: SYNTHETIC } };
+    case 'page':
+      return { ok: true, node: { type: 'PageSubject', span: SYNTHETIC } };
+    case 'locator': {
+      const locator = buildLocator(spec.locator);
+      if (!locator.ok) return locator;
+      return { ok: true, node: { type: 'LocatorSubject', locator: locator.node, span: SYNTHETIC } };
+    }
     case 'value': {
       const path = bodyPath(spec.ref);
       if (typeof path === 'string') return bad(path);
