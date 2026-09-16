@@ -580,8 +580,44 @@ function printBodyPath(path: readonly PathSegment[]): string {
 }
 
 /**
- * The value matchers (SPEC §6.2). The state matchers (`visible`/`hidden`/…) are the browser's and
- * the three `has no … violations` families are the scanners', so both refuse here.
+ * The scan phrase each `has no … violations` matcher is spelled with (`parser.ts`'s
+ * `SCAN_MATCHER_NAMES`, read backwards). A `Record` keyed by the matcher name rather than a
+ * lookup through the parser's own tuple, for the reason that tuple gives for being a `Record`:
+ * a fifth scan becomes a type error here until it is given a phrase.
+ */
+const SCAN_PHRASES: Readonly<Record<'hasNoA11yViolations' | 'hasNoSecurityViolations' | 'hasNoAuthzViolations' | 'hasNoInputHandlingViolations', string>> = {
+  hasNoA11yViolations: 'a11y',
+  hasNoSecurityViolations: 'security',
+  hasNoAuthzViolations: 'authorization',
+  hasNoInputHandlingViolations: 'input handling',
+};
+
+/**
+ * `[not] has no [<severity>] <phrase> violations` (`M3e`/`M128b`/`M130b`/`M134a`).
+ *
+ * **The `not` goes in front of `has`, not in front of `no`.** `parseMatcher` consumes the negation
+ * prefix before it ever reaches `has`, so the only spelling that parses is `not has no …` — which
+ * reads badly and is what all 57 negated assertions in the corpus write, because that is how an
+ * acceptance test says *the scanner found something*. Writing the double negative the way it reads
+ * would have produced a line the parser cannot take back.
+ *
+ * **The severity is a floor and is omitted more often than not** — 72 of 102 corpus assertions name
+ * none. Unlike `log`'s level (`printLog`, the third normalisation instance) there is nothing to pick
+ * here: `severityFloor` is `undefined` when the word was absent and a `FindingSeverity` when it was
+ * present, so the AST still records the spelling and the printer just follows it.
+ */
+function printScanMatcher(m: Matcher, phrase: string): string {
+  // Every scan matcher is a state matcher: `parseScanViolationsMatcher` builds it with `value: null`
+  // and there is no spelling that supplies one. Same guard, and same reason, as `connects`.
+  if (m.value) refuse('Matcher', `\`has no ${phrase} violations\` never takes an operand`);
+  const not = m.negated ? 'not ' : '';
+  const severity = m.severityFloor === undefined ? '' : m.severityFloor + ' ';
+  return `${not}has no ${severity}${phrase} violations`;
+}
+
+/**
+ * The value matchers (SPEC §6.2), plus the four scan families. The state matchers
+ * (`visible`/`hidden`/…) are the browser's, so those still refuse here.
  *
  * `is` IS NOT RECORDED. `parseMatcher` consumes an optional `is` copula and discards it, so
  * `equals` and `is equals` are the same node — the `Field.key` situation again, and picked the
@@ -623,6 +659,11 @@ function printMatcher(m: Matcher): string {
     case 'fails':
       // …and the one whose operand is optional, spelled with its own keyword.
       return m.value ? `${not}fails matching ${printValue(m.value)}` : `${not}fails`;
+    case 'hasNoA11yViolations':
+    case 'hasNoSecurityViolations':
+    case 'hasNoAuthzViolations':
+    case 'hasNoInputHandlingViolations':
+      return printScanMatcher(m, SCAN_PHRASES[m.name]);
     default:
       return refuse('Matcher', `the \`${m.name}\` matcher is not printable yet`);
   }

@@ -754,22 +754,97 @@ test('a `log` level is printed only when it is not the default', () => {
   assert.equal(print(assertionStep('log debug "x" to html'), { indent: 1 }).text, '  log debug "x" to html');
 });
 
+test('A2-1: the three response scan families, every severity, and the negation that reads backwards', () => {
+  // Three of the four families, because these are the three whose SUBJECT prints — see the a11y
+  // test below, which is the finding this slice turned up. `input handling` is the two-word
+  // phrase, the only one a naive `split(' ')` would break.
+  for (const src of [
+    'expect response has no security violations',
+    'expect response has no authorization violations',
+    'expect response has no input handling violations',
+  ]) {
+    assert.equal(print(assertionStep(src)).text, src, src);
+  }
+
+  // The floor is a word the AST either has or has not — all four of them, because a fixture using
+  // only `critical` cannot see a printer that hardcodes one (`A1-1`'s date-offset finding, whose
+  // table held 25 `days` and exactly one `seconds`).
+  for (const sev of ['minor', 'moderate', 'serious', 'critical'] as const) {
+    const src = `expect response has no ${sev} security violations`;
+    assert.equal(print(assertionStep(src)).text, src, src);
+  }
+
+  // **`not` goes in front of `has`.** `parseMatcher` eats the negation prefix before it reaches
+  // `has`, so `has not no …` and `has no not …` are both unparseable — and 57 of the corpus'
+  // 102 scan assertions are negated, because that is how an acceptance test says the scanner
+  // FOUND something. Asserted with a floor as well as without, since negation and severity are
+  // independent positions in one line and a printer can order them wrongly only when both appear.
+  assert.equal(
+    print(assertionStep('expect response not has no security violations')).text,
+    'expect response not has no security violations',
+  );
+  assert.equal(
+    print(assertionStep('expect response not has no moderate authorization violations')).text,
+    'expect response not has no moderate authorization violations',
+  );
+
+  // `check` is the other statement that carries these, and it reaches the same matcher.
+  assert.equal(
+    print(assertionStep('check response has no critical authorization violations')).text,
+    'check response has no critical authorization violations',
+  );
+});
+
+test('A2-1: the a11y matcher prints, and not one a11y assertion does', () => {
+  // **The finding that re-sliced this round.** `hasNoA11yViolations` is spelled by the same
+  // production as the other three and prints for free — but its only subject is `page`, which is
+  // `A3`'s, so every one of the corpus' 16 a11y assertions still refuses. The refusal comes from
+  // the SUBJECT.
+  //
+  // This is worth a test rather than a note because the refusal census that sliced `A2` measured
+  // `print(node)` per node and therefore counted all 16 as moving from refused to printable, which
+  // is true of the matcher and false of anything a user could write. **A node printing is not the
+  // statement containing it printing** — and a tool that measures a rule needs a control as much as
+  // the rule does.
+  const m = (assertionStep('expect page has no a11y violations') as { matcher: Node }).matcher;
+  assert.equal(print(m).text, 'has no a11y violations');
+  assert.equal(print(m).ok, true);
+
+  const whole = print(assertionStep('expect page has no serious a11y violations'));
+  assert.equal(whole.ok, false);
+  assert.match(whole.reason ?? '', /PageSubject/);
+  // When `A3` teaches the printer `page`, this assertion starts passing with no change here —
+  // which is the point of asserting the reason rather than only the refusal.
+});
+
+test('A2-1: a scan matcher never takes an operand', () => {
+  // `parseScanViolationsMatcher` builds these with `value: null` and no spelling supplies one, so
+  // this guard is unreachable from any source text — the same shape as `connects`, and resolved
+  // the way `diagnose`'s unreachable guard was in `A1-4`: the printer is an exported module with a
+  // contract, and that contract covers a node built by hand, which `build.ts` does for the forms.
+  const withOperand: Node = {
+    type: 'Matcher', name: 'hasNoSecurityViolations', negated: false,
+    value: { type: 'NumberLit', value: 1, raw: '1', span: SYNTHETIC }, span: SYNTHETIC,
+  } as unknown as Node;
+  const r = print(withOperand);
+  assert.equal(r.ok, false);
+  assert.match(r.reason ?? '', /never takes an operand/);
+  // Names the phrase the author writes, not the internal matcher name.
+  assert.match(r.reason ?? '', /has no security violations/);
+});
+
 test('the assertion half refuses what belongs to another door', () => {
-  // A locator, a page and an observed network request are the browser's vocabulary, and the three
-  // `has no … violations` families are the scanners'. They refuse BY NAME rather than silently, so
-  // the census in the gate above can be read as a worklist.
+  // A locator, a page and an observed network request are the browser's vocabulary. They refuse BY
+  // NAME rather than silently, so the census in the gate above can be read as a worklist.
+  //
+  // **The scan half of this test retired in `A2-1`**, which is what made those matchers print. It
+  // is not deleted, because the claim it was making — the refusal names the MATCHER and not the
+  // subject under it — is still the claim worth holding; it is now made by the positive test
+  // below, over a matcher that is still nobody's (`matchesSnapshot`, `A3`'s).
   const locator = assertionStep('expect button "Buy" is visible');
   const lr = print(locator);
   assert.equal(lr.ok, false);
   assert.match(lr.reason ?? '', /LocatorSubject/);
-
-  const scan = assertionStep('expect response has no security violations');
-  const sr = print(scan);
-  assert.equal(sr.ok, false);
-  assert.match(sr.reason ?? '', /hasNoSecurityViolations/);
-  // …but the SUBJECT under it prints, which is what makes that refusal name the matcher and not
-  // the subject — the `A0-1` finding about a loose pattern matching the wrong refusal.
-  assert.equal(print((scan as { subject: Subject }).subject).text, 'response');
 
   // `of request to "…"` moves four otherwise-printable subjects onto traffic observed on a live
   // page, so the CLAUSE is refused while its subject is not.
