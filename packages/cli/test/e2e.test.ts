@@ -5513,3 +5513,83 @@ test('fmt: formats a tree in place, --check lists and exits 1, a broken file is 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('`tflw ui` on an empty directory serves a blank project, and refuses only a path that is not a directory', async () => {
+  // `M205` S2, closing `M205-01`. `A0-5` built a whole surface for a directory that is not a
+  // project yet — the landing's create affordance, `POST /api/init`, and `GET /api/project`
+  // answering `noProject` as its own 404 rather than as an `ENOENT` carrying an absolute path —
+  // and `uiCommand` refused to start at all without a `tflw.config`, so none of it could be
+  // reached by the shipped binary. Both gates for it construct `UiServer` directly
+  // (`ui-page.test.ts`'s not-a-project test, `ui-server.test.ts`'s `noProject` assertion), which
+  // is why two green test layers sat above a dead surface: they graded a configuration of the
+  // server that `tflw ui` could not produce.
+  //
+  // THIS TEST SPAWNS THE BINARY. That is the whole point of it — the claim is about the only door
+  // to the surface, and every existing gate goes around that door. The old refusal itself had no
+  // test anywhere in this repository, which is how it blocked `A0-5` for a whole milestone in
+  // silence.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-ui-blank-'));
+  const child = spawn('node', [cliEntry, 'ui', dir, '--no-open', '--port', '0'], { cwd: dir });
+  let out = '';
+  child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+  child.stderr.on('data', (d: Buffer) => (out += d.toString()));
+  const exited = new Promise<number | null>((resolve) => child.on('exit', (code) => resolve(code)));
+  try {
+    const started = Date.now();
+    while (!/http:\/\/127\.0\.0\.1:\d+\//.test(out)) {
+      if (Date.now() - started > 20000) throw new Error(`\`tflw ui\` never printed a URL; output so far:\n${out}`);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const base = /(http:\/\/127\.0\.0\.1:\d+\/)/.exec(out)![1]!;
+
+    // The page itself is served — the bundle `bundle.mjs` puts in `dist/ui/`, not a 503.
+    const page = await fetch(base);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /<div id="root">|<script/);
+
+    // And the project route says what it was built to say, through the binary this time.
+    const before = await fetch(`${base}api/project`);
+    assert.equal(before.status, 404);
+    assert.deepEqual(((await before.json()) as { noProject?: boolean }).noProject, true);
+
+    // The create affordance now reaches something: `POST /api/init` spawns `tflw init` and the
+    // directory becomes a project the same route can then describe. This is the half that was
+    // unreachable, so asserting the 404 alone would leave the finding half-closed.
+    const made = await fetch(`${base}api/init`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ door: 'api' }),
+    });
+    assert.equal(made.status, 200, await made.text());
+    await access(join(dir, 'tflw.config'));
+    const after = await fetch(`${base}api/project`);
+    assert.equal(after.status, 200);
+    assert.ok(((await after.json()) as { files: unknown[] }).files.length >= 1, 'the project it just made has a test in it');
+  } finally {
+    child.kill('SIGINT');
+    await Promise.race([exited, new Promise((r) => setTimeout(r, 10000))]);
+    await rm(dir, { recursive: true, force: true });
+  }
+
+  // THE CONTROLS. What the old guard was worth is a mistyped path, and that is still refused —
+  // for the reason it is actually wrong. A directory that does not exist, and a path that is a
+  // file, are mistakes; a directory with no config is a new project.
+  const parent = await mkdtemp(join(tmpdir(), 'tflw-ui-bad-'));
+  try {
+    await writeFile(join(parent, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1/"\n', 'utf8');
+    await assert.rejects(execFileAsync('node', [cliEntry, 'ui', join(parent, 'tsets'), '--no-open']), (e: unknown) => {
+      const { code, stderr } = e as { code?: number; stderr: string };
+      assert.equal(code, 2);
+      assert.match(stderr, /no such directory/);
+      return true;
+    });
+    await assert.rejects(execFileAsync('node', [cliEntry, 'ui', join(parent, 'tflw.config'), '--no-open']), (e: unknown) => {
+      const { code, stderr } = e as { code?: number; stderr: string };
+      assert.equal(code, 2);
+      assert.match(stderr, /is a file, not a directory/);
+      return true;
+    });
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+});

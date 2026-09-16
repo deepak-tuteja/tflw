@@ -250,13 +250,21 @@ setting beyond the extension.
   </tbody>
 </table>
 
-Serves the page for a project — the directory holding `tflw.config`, the current one by default —
-on `127.0.0.1` and prints the URL. The page is a projection of the project and of its report
+Serves the page for a directory — the one holding `tflw.config`, the current one by default — on
+`127.0.0.1` and prints the URL. **A directory with no `tflw.config` opens too**, as a blank
+project: the page says so and offers to create one, which runs `tflw init` for you. What is
+refused is a path that is not a directory at all, because that is a typo rather than a new
+project. The page is a projection of the project and of its report
 directory, never a second copy of either: it lists the discovered files and the tests in them, it
 starts a run as `tflw run --format ndjson` (the same command, the same files, the same report
 directory a terminal run writes) and relays the stream as it arrives, and it opens every report
 directory the project holds — the current one, and each run started from the page, which is kept
-aside as `report/runs/<id>/` when it ends. Nothing on the page writes a `.tflw` file.
+aside as `report/runs/<id>/` when it ends.
+
+**The page can also author a test**, through one write route with one call site: a form per door
+previews the exact bytes it is about to write and `tflw check` judges them before the write, the
+file on disk is the only truth, and `tflw.config` is not reachable through that route. The forms
+and what each door scaffolds are not documented here yet.
 
 **What a browser test shows is what the report holds.** At `evidence full` the screenshots a run
 took are on the page and a failed test's Playwright trace opens in Playwright's own trace viewer,
