@@ -27,7 +27,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSource, print, PRINTABLE, CONTEXT_BOUND, format } from '../src/index.js';
-import type { ActionDecl, HookDecl, Node, Program, Step, Subject, TestDecl, Value } from '../src/index.js';
+import type { ActionDecl, FillFormStmt, HookDecl, Node, Program, Step, Subject, TestDecl, Value } from '../src/index.js';
 import { SYNTHETIC, buildTest } from '../src/build.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -127,7 +127,7 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', 'OpenStmt', 'ClickStmt', 'FillStmt', 'WithinBlock', 'ImportDecl', 'UseDecl', 'HookDecl', 'ActionDecl', 'GiveStmt', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', 'OpenStmt', 'ClickStmt', 'FillStmt', 'WithinBlock', 'ImportDecl', 'UseDecl', 'HookDecl', 'ActionDecl', 'GiveStmt', 'FillFormStmt', 'SelectStmt', 'TickStmt', 'UntickStmt', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
@@ -297,6 +297,8 @@ test('every printable node in the corpus re-parses to the node it was printed fr
     // `A4-2` — the file header. `ActionDecl` refuses 3 of 22: a body holding a step that does not
     // print yet, which is the tail rather than a defect in this slice.
     ['HookDecl', 82], ['ImportDecl', 28], ['UseDecl', 21], ['ActionDecl', 19], ['GiveStmt', 8],
+    // `A4-3` — the form family. The in-repo tier reaches none of these, which is `M200-05`.
+    ['FillFormStmt', 23], ['SelectStmt', 12], ['TickStmt', 5], ['UntickStmt', 2],
   ];
   // Measured, not guessed: 6 files, 71 nodes. Thin, and the thinness is the finding rather than
   // the fix — `M200-05` carries the open half, which is that this repository has no printer corpus
@@ -406,7 +408,7 @@ test('every clean file in the corpus round-trips through the printer whole', () 
   // The same ratchet `D1048` puts on node coverage, for the same reason and with the same rule:
   // it may only rise, and moving it down happens in the change that caused it with the reason on
   // the row. `A4-1` sets it where `§4h`'s greedy analysis predicted `Program` alone would land.
-  const FLOOR_FILES = tier() === 'both' ? 231 : 5;   // `A4-2`: 131 -> 231, the file header
+  const FLOOR_FILES = tier() === 'both' ? 241 : 5;   // `A4-3`: 231 -> 241, the form family
   assert.ok(
     roundTripped >= FLOOR_FILES,
     `whole-file coverage fell: ${roundTripped} files round-tripped, floor is ${FLOOR_FILES}`,
@@ -629,24 +631,64 @@ test('a hook or an action with no steps refuses rather than printing a header al
   assert.match(namedResult.ok ? '' : namedResult.reason ?? '', /not an action name/);
 });
 
+/**
+ * `A4-3` — the two claims the corpus cannot make about `fill form`.
+ *
+ * A form with no rows is `TF015`, so the parser answers `MalformedStep` and **no corpus file can
+ * ever hold an empty `FillFormStmt`** — the branch is reachable only from a built node. And a
+ * `FillFormRow` is `CONTEXT_BOUND`, the fifth member: `| "Email" | "x" |` is not a step, so there
+ * is no source a printed row could be re-parsed from and the gate never asks it directly.
+ *
+ * What is NOT here is column alignment, and that is a measurement rather than an omission:
+ * **`format` re-aligns pipe tables** (verified — it rewrites an unaligned `fill form` to the same
+ * widths this printer emits), so the whole-file gate's fixpoint claim already holds the printer to
+ * it. Blank lines between declarations needed their own test precisely because `format` does the
+ * opposite there and preserves what it is given. One formatter, two layout decisions, two
+ * different gates — which is why each was checked rather than assumed.
+ */
+test('a `fill form` with no rows refuses, and a row cannot be printed on its own', () => {
+  const empty: FillFormStmt = { type: 'FillFormStmt', rows: [], span: SYNTHETIC };
+  const emptyResult = print(empty, { indent: 1 });
+  assert.equal(emptyResult.ok, false);
+  assert.match(emptyResult.ok ? '' : emptyResult.reason ?? '', /FillFormStmt.*no rows/);
+
+  // The row exists in the corpus — take a real one rather than building it, so the refusal is
+  // asserted of the node the printer actually meets.
+  const { program } = parseSource('test "t"\n  fill form\n    | "Email" | "a@b.c" |\n');
+  const step = program.tests[0]!.body[0]!;
+  assert.equal(step.type, 'FillFormStmt');
+  const row = (step as FillFormStmt).rows[0]!;
+  const rowResult = print(row, { indent: 2 });
+  assert.equal(rowResult.ok, false);
+  assert.match(rowResult.ok ? '' : rowResult.reason ?? '', /FillFormRow/);
+  assert.ok(CONTEXT_BOUND.has('FillFormRow'), 'a kind that only prints through its parent is declared, not just refused');
+});
+
 test('the printer refuses what it cannot print, and names the node kind', () => {
   // **THIS TEST HAS NOW BEEN REPOINTED TWICE, AND THAT IS THE INTERESTING PART.** It read
   // `open "/x"` until `A3-2` gave `OpenStmt` a printer, exactly as `A1-3`'s refusal assertion had
   // to move when `A2-1` made its subject print. A test whose subject is *whatever is not built
   // yet* is a test that goes red on success, and each round has paid a small tax for it.
   //
-  // `fill form` is the choice that costs least next: it is `A4`'s by `§4g`, a real construct the
-  // grammar accepts rather than a parse error, and the claim being made — the refusal names the
-  // NODE KIND, so the gate's census can be read as a worklist — is about the refusal's shape and
-  // not about which node carries it. When `A4` closes the printer this moves one last time, to
-  // `MalformedStep`, which must refuse forever (`§4f`) and is the only permanent anchor there is.
-  const { program } = parseSource('test "t"\n  fill form\n    | "Email" | "a@b.c" |\n');
+  // **AND THIS IS THE LAST TIME, BECAUSE `A4-3` MOVED IT TO THE ONLY PERMANENT ANCHOR THERE IS.**
+  // It read `open "/x"`, then `fill form`; each round it named whatever was not built yet, so it
+  // went red on success and each round paid a small tax. `MalformedStep` cannot ever stop
+  // refusing: it is the parser's recovery node for a step it could not read, it carries only the
+  // keyword the step began with, and printing it would mean inventing the rest — so a printer that
+  // accepted one would be writing source from nothing. It is not part of `A4`'s tail and never was
+  // (`§4f`); `A4-5` gives it a **declared** status beside `CONTEXT_BOUND` so the census's remainder
+  // is known-empty rather than unexplained.
+  //
+  // The claim is unchanged: a refusal names the NODE KIND, so the gate's census reads as a
+  // worklist. The fixture is a `fill form` with no rows — `TF015`, measured — which is the shape
+  // this test used to assert *printed*, one slice ago.
+  const { program } = parseSource('test "t"\n  fill form\n');
   const step = program.tests[0]!.body[0]!;
-  assert.equal(step.type, 'FillFormStmt', 'the fixture must be the construct, not a parse error');
+  assert.equal(step.type, 'MalformedStep', 'the fixture must be a recovery node, not a construct');
   const r = print(step);
   assert.equal(r.ok, false);
   assert.equal(r.text, '');
-  assert.match(r.reason ?? '', /FillFormStmt/);
+  assert.match(r.reason ?? '', /MalformedStep/);
 });
 
 test('printed source is what `format` would already have written', () => {
