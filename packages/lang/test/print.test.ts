@@ -26,7 +26,9 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSource, print, PRINTABLE, CONTEXT_BOUND, format } from '../src/index.js';
+import { parseSource, print, PRINTABLE, CONTEXT_BOUND, REFUSES_BY_CONSTRUCTION, format } from '../src/index.js';
+import { STEP_KEYWORDS } from '../src/spec-data.js';
+import { RETIRED_STATEMENT_KEYWORDS } from '../src/parser.js';
 import type { ActionDecl, FillFormStmt, HookDecl, Node, Program, Step, Subject, TestDecl, Value } from '../src/index.js';
 import { SYNTHETIC, buildTest } from '../src/build.js';
 
@@ -715,6 +717,115 @@ test('the tail`s unwritten branches print, and its empty blocks refuse', () => {
   const noName = print({ type: 'Matcher', name: 'matchesSnapshot', negated: false, value: null, span: SYNTHETIC } as unknown as Node, { indent: 1 });
   assert.equal(noName.ok, false);
   assert.match(noName.ok ? '' : noName.reason ?? '', /needs a name/);
+});
+
+/**
+ * `A4-5` — **`D1048`'s closing claim, asked of the LANGUAGE rather than of the corpus.**
+ *
+ * `D1048` said `A4` takes the printer to *115 of 115*, and 115 was a count of the node kinds that
+ * happened to occur in two working trees on one day. That number is now 114 printable and one
+ * declared refusal — but it is the wrong shape for a closing gate, because a corpus that loses a
+ * fixture makes the claim easier and a corpus that gains one makes it harder, and neither has
+ * anything to do with whether the printer is finished.
+ *
+ * `STEP_KEYWORDS` is the better anchor and it already exists: every step keyword the language
+ * accepts, each carrying its own authored `example`, and held in step with the parser by
+ * `stepKeywords.test.ts`. So the claim this gate makes is **every step a tflw author may write,
+ * the printer can write back** — which cannot go stale, and which goes red the day a keyword is
+ * added without a printer rather than the day somebody notices.
+ *
+ * The retired spellings are excluded by name: `uncheck` and `think` are statement keywords only so
+ * that dispatch reaches them and can name their replacement outright (`parser.ts`), so they parse
+ * to a diagnostic and not to a step, and demanding a printer for one would be demanding a printer
+ * for an error message.
+ */
+test('every step keyword the language accepts round-trips through the printer', () => {
+  const retired = new Set<string>(RETIRED_STATEMENT_KEYWORDS);
+  const steps = STEP_KEYWORDS.filter((k) => k.family !== 'workload' && !retired.has(k.id));
+  assert.ok(steps.length > 20, `expected the step vocabulary, found ${steps.length}`);
+
+  const unprintable: string[] = [];
+  const unparsed: string[] = [];
+  let checked = 0;
+
+  for (const entry of steps) {
+    // The `example` is authored as inline code — strip the backticks the manifest renders with.
+    const example = entry.example.replace(/^`|`$/g, '');
+    // `give` is only meaningful inside an `action`, and `expect`/`capture` want a response, but
+    // every one of them PARSES inside a plain test, which is all this gate needs.
+    //
+    // **Two of the thirty are BLOCK headers, not steps** — `within` and `download as`, measured
+    // rather than listed: their documented example is a line that opens a block, so on its own it
+    // is `TF015`. The gate discovers which those are by retrying with a body rather than carrying
+    // a hardcoded set, so a block keyword added later needs no edit here.
+    const attempt = (source: string): Step | null => {
+      const { program, diagnostics } = parseSource(source);
+      const step = program.tests[0]?.body[0];
+      if (diagnostics.some((d) => d.severity === 'error') || !step || step.type === 'MalformedStep') return null;
+      return step;
+    };
+    const step = attempt(`test "w"\n  ${example}\n`) ?? attempt(`test "w"\n  ${example}\n    pause 1ms\n`);
+    if (!step) {
+      unparsed.push(`${entry.id}: ${example}`);
+      continue;
+    }
+    const printed = print(step, { indent: 1 });
+    if (!printed.ok) { unprintable.push(`${entry.id}: ${printed.reason ?? 'refused'}`); continue; }
+    // And it must mean the same thing, not merely produce something.
+    const back = parseSource(`test "w"\n${printed.text}\n`).program.tests[0]?.body[0];
+    if (!back) { unprintable.push(`${entry.id}: printed source did not re-parse to a step`); continue; }
+    try {
+      assert.deepEqual(stripSpans(back), stripSpans(step));
+      checked += 1;
+    } catch {
+      unprintable.push(`${entry.id}: re-parsed to a different step`);
+    }
+  }
+
+  console.log(`\n  step vocabulary — ${checked} of ${steps.length} keywords round-trip from their own documented example\n`);
+  // A manifest example that does not parse is `stepKeywords.test.ts`'s business, not this gate's —
+  // but it must be reported rather than skipped, or this loop could silently examine nothing.
+  assert.deepEqual(unparsed, [], `\nthese documented examples do not parse:\n  ${unparsed.join('\n  ')}\n`);
+  assert.deepEqual(unprintable, [], `\nthe printer cannot write these back:\n  ${unprintable.join('\n  ')}\n`);
+  assert.equal(checked, steps.length, 'every keyword must be checked, not merely not-failed');
+});
+
+/**
+ * `A4-5` — the three sets account for every node kind the corpus contains, by name.
+ *
+ * This is what makes the refusal census above readable as a worklist: its remainder is
+ * **known-empty**. `PRINTABLE` is printable on its own, `CONTEXT_BOUND` only through a parent, and
+ * `REFUSES_BY_CONSTRUCTION` never — and the three are disjoint.
+ */
+test('every node kind in the corpus is declared printable, context-bound, or refusing', () => {
+  const seen = new Set<string>();
+  for (const file of corpusFiles()) {
+    const { program, diagnostics } = parseSource(readFileSync(file, 'utf8'));
+    // Deliberately NOT skipping files the parser rejected: `MalformedStep` lives only in those,
+    // and a gate that skipped them could not see the one kind it exists to account for.
+    void diagnostics;
+    const visit = (n: unknown): void => {
+      if (Array.isArray(n)) { for (const x of n) visit(x); return; }
+      if (!n || typeof n !== 'object') return;
+      const node = n as Node & Record<string, unknown>;
+      if (typeof node.type === 'string') seen.add(node.type);
+      for (const [k, v] of Object.entries(node)) { if (k !== 'span') visit(v); }
+    };
+    visit(program);
+  }
+  assert.ok(seen.size > 40, `expected the corpus's node kinds, found ${seen.size}`);
+
+  const undeclared = [...seen].filter(
+    (k) => !PRINTABLE.has(k) && !CONTEXT_BOUND.has(k) && !REFUSES_BY_CONSTRUCTION.has(k),
+  ).sort();
+  assert.deepEqual(undeclared, [], `\n${undeclared.length} node kind(s) occur and are declared nowhere:\n  ${undeclared.join('\n  ')}\n`);
+
+  // Disjoint, so a kind cannot be claimed by two sets and quietly mean neither.
+  for (const k of CONTEXT_BOUND) assert.ok(!PRINTABLE.has(k), `${k} is in both PRINTABLE and CONTEXT_BOUND`);
+  for (const k of REFUSES_BY_CONSTRUCTION) {
+    assert.ok(!PRINTABLE.has(k) && !CONTEXT_BOUND.has(k), `${k} refuses by construction and is also declared printable`);
+  }
+  console.log(`\n  node-kind partition — ${seen.size} kinds in the corpus, all declared; ${REFUSES_BY_CONSTRUCTION.size} refuse by construction\n`);
 });
 
 test('the printer refuses what it cannot print, and names the node kind', () => {
