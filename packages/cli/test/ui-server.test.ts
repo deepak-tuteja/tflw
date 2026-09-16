@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UiServer, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, dropScratch, etagOf, SCAFFOLDED, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
 import { readdir } from 'node:fs/promises';
 
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
@@ -101,8 +101,8 @@ test('runArgv maps a request onto tflw run flags and nothing else', () => {
   // below `full` a step record carries no `request`/`response` at all (`D987`). It is raw text
   // here and validated by `runCommand` against `EVIDENCE_LEVELS`, exactly as a terminal's own
   // `--evidence` is, so the page still cannot ask for a level a terminal could not.
-  assert.deepEqual(runArgv({ evidence: 'full', only: 'scratch', files: ['scratch.tflw'] }), [
-    'run', '--format', 'ndjson', '--no-color', '--only', 'scratch', '--evidence', 'full', 'scratch.tflw',
+  assert.deepEqual(runArgv({ evidence: 'full', only: 'scratch', files: [SCRATCH_PATH] }), [
+    'run', '--format', 'ndjson', '--no-color', '--only', 'scratch', '--evidence', 'full', SCRATCH_PATH,
   ]);
 });
 
@@ -115,13 +115,14 @@ test('the project view names the scratch file and says whether git will ignore i
   try {
     await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
     const without = await readProject(dir);
-    assert.equal(without.scratchPath, 'scratch.tflw');
+    assert.equal(without.scratchPath, SCRATCH_PATH);
+    assert.equal(without.scratchEtag, null, 'a project with no scratch file has no hash to seed the page with');
     assert.equal(without.scratchIgnored, false, 'no .gitignore at all');
 
     await writeFile(join(dir, '.gitignore'), '.env\nreport/\n', 'utf8');
     assert.equal((await readProject(dir)).scratchIgnored, false, 'a .gitignore without the line');
 
-    await writeFile(join(dir, '.gitignore'), '.env\nreport/\nscratch.tflw\n', 'utf8');
+    await writeFile(join(dir, '.gitignore'), `.env\nreport/\n${SCRATCH_PATH}\n`, 'utf8');
     assert.equal((await readProject(dir)).scratchIgnored, true);
 
     // A rule that WOULD ignore it but is spelled differently reads as false — stated here rather
@@ -781,12 +782,21 @@ test('GET /api/pick streams the child’s lines, and the child dies with the con
   }
 });
 
-test('DELETE /api/scratch drops the file, and the project view stops counting it', async () => {
-  // `D1054`, and the measurement that overturned §7's recommendation. The assertion is the
-  // *project's* shape either side of the drop, because that is what emptying could not restore
-  // and what `A1-5`'s own gate — `trim() === ''`, true of a file that is still there — could not
-  // see. `readProject` is asked directly rather than through the page, so the claim holds with no
-  // browser in it.
+test('DELETE /api/scratch drops the file, which the project view never counted', async () => {
+  // `D1054`, amended by `M205` Q15. This test was written the other way up: it asserted that a
+  // scratch file **is** a file to the project view (`before + 1`) — *"which is the whole
+  // finding"* — because at `A2-6` it was, and Discard's claim was that the count came back down.
+  //
+  // Q15 removed the premise rather than the symptom. `SCRATCH_PATH` is dot-prefixed now, and
+  // `discoverTests` skips every dot-prefixed entry, so the count never goes up and there is
+  // nothing for Discard to bring down. The first assertion is therefore **inverted, not
+  // deleted**: the scratch is invisible to the project view with the file sitting right there,
+  // which is `M205-04`'s repair stated where it can be read off one function.
+  //
+  // What Discard still promises is unchanged, and is the rest of this test: the file is gone,
+  // another terminal's scratch is not dropped silently, and a second click is not an error about
+  // a success. `readProject` is asked directly rather than through the page, so the claim holds
+  // with no browser in it.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-drop-'));
   try {
     await writeFile(join(dir, 'tflw.config'), 'env local\n  api url "http://127.0.0.1:1"\n', 'utf8');
@@ -794,19 +804,21 @@ test('DELETE /api/scratch drops the file, and the project view stops counting it
     const before = (await readProject(dir)).files.length;
 
     const scratchText = 'test "scratch"\n  api GET /y\n  expect status equals 200\n';
-    await writeFile(join(dir, 'scratch.tflw'), scratchText, 'utf8');
-    assert.equal((await readProject(dir)).files.length, before + 1, 'a scratch file is a file to the project view — which is the whole finding');
+    await writeFile(join(dir, SCRATCH_PATH), scratchText, 'utf8');
+    const withScratch = await readProject(dir);
+    assert.equal(withScratch.files.length, before, 'the scratch is a file on disk and not a test in the project — `M205-04`');
+    assert.equal(withScratch.scratchEtag, etagOf(scratchText), 'and the page is handed its hash, so it never has to ask for it');
 
     // A stale `If-Match` is refused and the file survives: dropping somebody else's run silently
     // is the one destructive surprise this route could produce.
     const stale = await dropScratch(dir, etagOf('something else entirely'));
     assert.ok('status' in stale && stale.status === 409, `a stale etag is 409: ${JSON.stringify(stale)}`);
-    await access(join(dir, 'scratch.tflw'));
+    await access(join(dir, SCRATCH_PATH));
 
     const dropped = await dropScratch(dir, etagOf(scratchText));
     assert.deepEqual(dropped, { removed: true });
-    assert.equal((await readProject(dir)).files.length, before, 'the project is the shape it was before Send');
-    await assert.rejects(() => access(join(dir, 'scratch.tflw')), /ENOENT/);
+    await assert.rejects(() => access(join(dir, SCRATCH_PATH)), /ENOENT/);
+    assert.equal((await readProject(dir)).scratchEtag, null, 'and the seed goes with it');
 
     // Idempotent, and absent is not a failure: Discard promises the file is not there, and it is
     // not. A `404` here would make a second click an error about a success.

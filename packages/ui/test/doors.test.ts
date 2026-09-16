@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { countByDoor, lenslessCount, doorFromHash, hashForDoor, DOORS } from '../src/doors';
 import type { ProjectView } from '../src/contract';
 
-const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', envs: [], reportDir: './report', files, traceViewer: false, scratchPath: 'scratch.tflw', scratchIgnored: true, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [] }, webBaseUrl: null });
+const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', envs: [], reportDir: './report', files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [] }, webBaseUrl: null });
 
 const file = (path: string, tests: Array<readonly string[]>, crawls: Array<readonly string[]> = []): ProjectView['files'][number] => ({
   path,
