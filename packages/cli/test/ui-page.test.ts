@@ -771,7 +771,14 @@ test('the landing is four doors, each counting what is actually behind it', asyn
   }
   // The fixture exercises all four derivations, which is what makes the assertion above mean
   // something: three doors with a zero would pass a count that was always zero.
-  assert.ok(expected.api > 0 && expected.browser > 0 && expected.load > 0 && expected.scan > 0, `the fixture must exercise every door: ${JSON.stringify(expected)}`);
+  // Read through a helper rather than as properties: `expected` is a `Record<string, number>` and
+  // `noUncheckedIndexedAccess` types every lookup on one as possibly `undefined`, which is right —
+  // the keys come from lens derivation, not from a closed union.
+  const seen = (door: string): number => expected[door] ?? 0;
+  assert.ok(
+    seen('api') > 0 && seen('browser') > 0 && seen('load') > 0 && seen('scan') > 0,
+    `the fixture must exercise every door: ${JSON.stringify(expected)}`,
+  );
 });
 
 test('a door opens the project, and the URL is the only place the choice lives', async () => {
