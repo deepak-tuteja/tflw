@@ -996,6 +996,149 @@ test('ticking the workload box turns a functional test into a load test, and the
 });
 
 // ---------------------------------------------------------------------------
+// `M200` `A2-3` — the SCANS door. Two tests, and the split is the door's whole character: the
+// fixture project DECLARES an `authorized target`, so it exercises the authorized path; a project
+// `tflw init --scan` just made does not, so it exercises the one thing no other door has to show.
+// ---------------------------------------------------------------------------
+
+test('the SCANS form grades a response a test already fetches, and writes the assertion into that test', async () => {
+  await page.goto(`${baseUrl}#/scan`);
+  await page.reload();
+  await page.locator('[data-scan-form]').waitFor();
+
+  // The fixture declares `authorized target "http://127.0.0.1:4717"`, so the notice is ABSENT —
+  // which is the control that keeps the other test's assertion about the declaration rather than
+  // about a banner that is always there.
+  assert.equal(await page.locator('[data-scan-unauthorized]').count(), 0);
+
+  const target = 'tests/orders.tflw';
+  await page.locator('[data-scan-file]').selectOption(target);
+  const before = await readFile(join(root, target), 'utf8');
+  const testName = await page.locator('[data-scan-test] option:nth-child(2)').getAttribute('value');
+  assert.ok(testName, 'the fixture file must hold a test to grade');
+  await page.locator('[data-scan-test]').selectOption(testName);
+  await page.locator('[data-scan-family]').selectOption('hasNoInputHandlingViolations');
+  await page.locator('[data-scan-floor]').selectOption('serious');
+  await page.locator('[data-scan-soft]').check();
+
+  // Every field is in the line, in the grammar's order — and `check`/`expect`, the family and the
+  // floor are three independent positions, so a preview carrying only one of them could not tell a
+  // printer that dropped another.
+  const preview = (await page.locator('[data-scan-preview]').textContent()) ?? '';
+  assert.match(preview, /check response has no serious input handling violations/);
+
+  await page.locator('[data-scan-save]').click();
+  await page.locator('[data-scan-wrote]').waitFor();
+
+  // The bytes on disk are the bytes previewed — the claim every door in this arc makes.
+  const after = await readFile(join(root, target), 'utf8');
+  assert.equal(after, preview, 'what was shown is what was written');
+  assert.notEqual(after, before);
+  assert.match(after, /check response has no serious input handling violations/);
+
+  // …and it landed INSIDE the test that was picked, not at the end of the file.
+  const lines = after.split('\n');
+  const header = lines.findIndex((l) => l.includes(`test "${testName}"`));
+  const assertionLine = lines.findIndex((l) => l.includes('has no serious input handling violations'));
+  assert.ok(header >= 0 && assertionLine > header, `the assertion must sit under its test:\n${after}`);
+
+  await writeFile(join(root, target), before, 'utf8');
+});
+
+test('a project with no `authorized target`: the SCANS form says so, shows the TF060 it will get, and writes anyway', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-door-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage();
+  try {
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    await fresh.goto(base);
+
+    // 1. The landing offers to create one, and SCANS now has a scaffold of its own to offer —
+    //    `D1053`. Before `A2-4` this door created the plain project and said so.
+    await fresh.locator('[data-landing]').waitFor();
+    assert.equal(await fresh.locator('[data-door="scan"] [data-door-state]').getAttribute('data-door-state'), 'create');
+    await fresh.locator('[data-door="scan"]').click();
+    await fresh.locator('[data-scan-form]').waitFor();
+
+    // 2. What `tflw init --scan` wrote is what a terminal writes, byte for byte — the claim
+    //    `A0-5` makes about `--load`, now made about the flag `D1053` added.
+    const scaffold = await readFile(join(dir, 'scan.tflw'), 'utf8');
+    const fromTerminal = await mkdtemp(join(tmpdir(), 'tflw-terminal-scan-'));
+    execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init', '--scan'], { cwd: fromTerminal, stdio: 'pipe' });
+    assert.equal(scaffold, await readFile(join(fromTerminal, 'scan.tflw'), 'utf8'), 'the page and the terminal write the same bytes');
+    assert.equal(
+      await readFile(join(dir, 'tflw.config'), 'utf8'),
+      await readFile(join(fromTerminal, 'tflw.config'), 'utf8'),
+      'including the commented-out declaration, which is the whole of `D1053`',
+    );
+    await rm(fromTerminal, { recursive: true, force: true });
+
+    // 3. **THE NOTICE.** The declaration is commented out, so the env authorizes nothing, and this
+    //    door says it in the one place the author is about to act — naming the file it lives in,
+    //    which this page deliberately cannot write (`D1049`/`D291`).
+    const notice = (await fresh.locator('[data-scan-unauthorized]').textContent()) ?? '';
+    assert.match(notice, /declares no/);
+    assert.match(notice, /TF060/);
+    assert.match(notice, /tflw\.config/);
+
+    // 4. **AND THE DIAGNOSTIC, WHICH IS THE WIRING THIS SLICE EXISTS FOR.** `diagnose` ran
+    //    `checkProgram` with NO options until `A2-3`, and `TF060` needs the env's declarations —
+    //    so this panel would have shown a clean file and the author would have met the error in a
+    //    terminal. That is exactly the surprise `D1052` exists to prevent, on the one door where
+    //    it is guaranteed rather than possible.
+    await fresh.locator('[data-scan-file]').selectOption('scan.tflw');
+    await fresh.locator('[data-scan-mode]').selectOption('new');
+    await fresh.locator('[data-scan-name]').fill('the page can ask for a scan');
+    await fresh.locator('[data-scan-path]').fill('/health');
+    await fresh.locator('[data-scan-diagnostics]').waitFor();
+    // TWO of them, and the second one is the point: the panel judges the whole file the PUT will
+    // carry, so the scaffold's own `scan.tflw` assertion is refused alongside the one being added.
+    // A test that took `.first()` without saying how many there are would have passed just as well
+    // against a panel that showed one.
+    const tf060s = fresh.locator('[data-diagnostic-code="TF060"]');
+    assert.equal(await tf060s.count(), 2, 'the scaffolded assertion and the new one are both TF060');
+    const tf060 = await tf060s.first().textContent();
+    assert.ok(tf060?.includes('authorized target'), tf060 ?? 'the panel must carry TF060');
+
+    // 5. It never blocks. `D1052`: a half-written test is a legitimate intermediate state.
+    //
+    // **And what it writes is READ BACK, not just counted.** The first draft asserted the test name
+    // appeared and stopped, so two mutations survived: one that wrote the assertion with no request
+    // for it to grade, and one that dropped `as <session>`. A scan grades the LAST response, so a
+    // test that asserts one without fetching anything is a file `tflw check` rejects; and an
+    // authorization scan re-issues the request under other principals, so a test with no owner
+    // gives it nothing to compare against. Both are this door's whole subject, and neither was
+    // covered by a test that only checked something had been written.
+    await fresh.locator('[data-scan-session]').fill('shopper');
+    await fresh.locator('[data-scan-family]').selectOption('hasNoAuthzViolations');
+    assert.equal(await fresh.locator('[data-scan-save]').isDisabled(), false);
+    await fresh.locator('[data-scan-save]').click();
+    await fresh.locator('[data-scan-wrote]').waitFor();
+
+    const written = await readFile(join(dir, 'scan.tflw'), 'utf8');
+    const body = written.slice(written.indexOf('test "the page can ask for a scan"'));
+    assert.match(body, /^test "the page can ask for a scan" as shopper$/m, 'the principal the scan compares against');
+    assert.match(body, /^ {2}api GET \/health$/m, 'the request the assertion grades');
+    assert.match(body, /^ {2}expect response has no authorization violations$/m);
+    // …and in that order: the request has to precede the assertion that reads its response.
+    assert.ok(body.indexOf('api GET /health') < body.indexOf('has no authorization violations'), body);
+
+    // 6. And the notice is not a decoration: uncommenting the declaration — the one act the
+    //    scaffold asks for — takes both it and the diagnostic away. Without this the assertions
+    //    above hold for a banner that is always on.
+    const config = await readFile(join(dir, 'tflw.config'), 'utf8');
+    await writeFile(join(dir, 'tflw.config'), config.replace(/^#   (authorized target .*)$/m, '  $1reason-placeholder').replace('reason ""reason-placeholder', 'reason "the fixture server beside this test"'), 'utf8');
+    await fresh.reload();
+    await fresh.locator('[data-scan-form]').waitFor();
+    assert.equal(await fresh.locator('[data-scan-unauthorized]').count(), 0, 'the notice must read the config, not be permanent');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // `M200` `A0-5` / §5's green condition, whole: open the page on a directory that is not a tflw
 // project, pick LOAD, and come out the other side having run a workload test the page wrote.
 // Its own server over its own empty directory, because the fixture project above is a project.
