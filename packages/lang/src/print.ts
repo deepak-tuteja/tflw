@@ -52,7 +52,21 @@ import type {
   PathSegment,
   PauseStmt,
   Program,
+  Step,
   ActionDecl,
+  AcceptDialogStmt,
+  DownloadBlock,
+  DragStmt,
+  DropFileStmt,
+  HoverStmt,
+  NetworkRequestRef,
+  PressStmt,
+  ScreenshotStmt,
+  ScrollStmt,
+  StubStmt,
+  SwitchToNewTabBlock,
+  SwitchToTabStmt,
+  WaitUntilUiStmt,
   FillFormStmt,
   SelectStmt,
   TickStmt,
@@ -176,6 +190,27 @@ export const PRINTABLE = new Set<string>([
   'SelectStmt',
   'TickStmt',
   'UntickStmt',
+  // `A4-4` — the tail proper: twelve kinds, 19 files, nothing above 8 occurrences. Every spelling
+  // here was lifted from the corpus at the node's own span rather than read off a docblock
+  // (`.m200-scratch/probe-tail.mjs`), because `A4-1` and `A4-2` each paid for the other way.
+  'ScreenshotStmt',
+  'WaitUntilUiStmt',
+  'StubStmt',
+  'DropFileStmt',
+  'HoverStmt',
+  'DragStmt',
+  'ScrollStmt',
+  'PressStmt',
+  'AcceptDialogStmt',
+  'DismissDialogStmt',
+  'DialogTypeSubject',
+  'DialogMessageSubject',
+  'NetworkRequestRef',
+  'NetworkRequestSubject',
+  'SwitchToTabStmt',
+  'SwitchToNewTabBlock',
+  'CloseTabStmt',
+  'DownloadBlock',
   // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
   // statements that read or announce a response.
   'DurationSubject',
@@ -312,6 +347,49 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printLocator(node as Locator);
     case 'FillFormStmt':
       return printFillForm(node as FillFormStmt, level);
+    case 'ScreenshotStmt':
+      return pad(level) + 'screenshot ' + printString((node as ScreenshotStmt).name);
+    case 'HoverStmt':
+      return pad(level) + 'hover ' + printLocator((node as HoverStmt).locator);
+    case 'ScrollStmt':
+      return pad(level) + 'scroll to ' + printLocator((node as ScrollStmt).locator);
+    case 'DragStmt': {
+      const d = node as DragStmt;
+      return pad(level) + `drag ${printLocator(d.from)} to ${printLocator(d.to)}`;
+    }
+    case 'DropFileStmt': {
+      const d = node as DropFileStmt;
+      return pad(level) + `drop file ${printString(d.filePath)} onto ${printLocator(d.locator)}`;
+    }
+    case 'PressStmt': {
+      const pr = node as PressStmt;
+      return pad(level) + 'press ' + printString(pr.keys) + (pr.locator ? ' on ' + printLocator(pr.locator) : '');
+    }
+    case 'AcceptDialogStmt': {
+      const a = node as AcceptDialogStmt;
+      // `with` is the language's argument-carrying preposition, and it is `accept`-only: there is
+      // nothing to answer a dialog *with* while dismissing it (`D800`).
+      return pad(level) + 'accept dialog' + (a.text ? ' with ' + printValue(a.text) : '');
+    }
+    case 'DismissDialogStmt':
+      return pad(level) + 'dismiss dialog';
+    case 'CloseTabStmt':
+      return pad(level) + 'close tab';
+    case 'SwitchToTabStmt':
+      return pad(level) + 'switch to tab ' + num((node as SwitchToTabStmt).index);
+    case 'SwitchToNewTabBlock':
+      return printStepBlock('switch to new tab', (node as SwitchToNewTabBlock).body, 'SwitchToNewTabBlock', level);
+    case 'DownloadBlock': {
+      const d = node as DownloadBlock;
+      if (!isBareIdent(d.name)) refuse('DownloadBlock', `\`${d.name}\` is not a name this language can bind`);
+      return printStepBlock(`download as ${d.name}`, d.body, 'DownloadBlock', level);
+    }
+    case 'StubStmt':
+      return printStub(node as StubStmt, level);
+    case 'WaitUntilUiStmt':
+      return printWaitUntilUi(node as WaitUntilUiStmt, level);
+    case 'NetworkRequestRef':
+      return pad(level) + printNetworkRef(node as NetworkRequestRef);
     case 'FillFormRow':
       // Printed by `printFillForm` and compared through it — `| "Email" | "x" |` is not a step, so
       // there is no source a printed row could be re-parsed from on its own (`CONTEXT_BOUND`).
@@ -515,6 +593,38 @@ function printFillForm(f: FillFormStmt, level: number): string {
     lines.push(pad(level + 1) + '| ' + row.map((c, i) => c.padEnd(width[i]!)).join(' | ') + ' |');
   }
   return lines.join('\n');
+}
+
+/**
+ * `switch to new tab` and `download as <name>` (`A4-4`) — a header line and an indented block,
+ * which is `printWithin`'s shape without a locator. Both refuse an empty body for the reason every
+ * block in this printer does: `parseBlock` raises `TF015` and the bytes would not read back.
+ */
+function printStepBlock(header: string, steps: readonly Step[], kind: string, level: number): string {
+  if (steps.length === 0) refuse(kind, `a \`${header}\` with no steps does not parse — the block needs at least one`);
+  const lines = [pad(level) + header];
+  for (const step of steps) lines.push(printNode(step, level + 1));
+  return lines.join('\n');
+}
+
+/** `stub GET "…" respond status 200 [body { … }]` (`A4-4`). */
+function printStub(s: StubStmt, level: number): string {
+  let line = `stub ${s.method} ${printString(s.urlPattern)} respond status ${printValue(s.status)}`;
+  if (s.body) line += ' body ' + printValue(s.body);
+  return pad(level) + line;
+}
+
+/**
+ * `wait until <subject> [not] <matcher> [for <hold>] [timeout wait <budget>]` (`A4-4`).
+ *
+ * The UI sibling of `wait until api`, and a single line rather than a block: there is no request
+ * to re-issue, so the condition is the subject and matcher it already carries.
+ */
+function printWaitUntilUi(w: WaitUntilUiStmt, level: number): string {
+  let line = `wait until ${printSubject(w.subject)} ${printMatcher(w.matcher)}`;
+  if (w.holdMs !== null) line += ' for ' + duration(w.holdMs);
+  if (w.waitMs !== null) line += ' timeout wait ' + duration(w.waitMs);
+  return pad(level) + line;
 }
 
 function printTest(t: TestDecl, level: number): string {
@@ -824,14 +934,16 @@ function printTable(t: DataTable, level: number): string[] {
 }
 
 function printExpect(e: ExpectStmt, level: number): string {
-  // `mask <locator>` is only meaningful on `matches snapshot`, and a locator is `A3`'s.
-  if (e.masks.length > 0) refuse('ExpectStmt', '`mask` clauses need a locator, which is not printable yet');
   const keyword = e.soft ? 'check' : 'expect';
   // `A1-3`: the quantifier is emitted for real now. In `A0` this branch was a REFUSAL, because
   // `any`/`all` only ever quantify a body path and no body subject printed — a branch that could
   // not be reached, which the mutation run caught by surviving the deletion of it.
   const quantifier = e.quantifier ? e.quantifier + ' ' : '';
-  return `${pad(level)}${keyword} ${quantifier}${printSubject(e.subject)} ${printMatcher(e.matcher)}`;
+  // `A4-4`: `mask <locator>` is a TRAILING clause on the same line, repeated once per mask —
+  // `expect css "main" matches snapshot "x" mask field "A" mask css "B"`. It refused from `A0`
+  // until now for want of a locator printer.
+  const masks = e.masks.map((m) => ' mask ' + printLocator(m)).join('');
+  return `${pad(level)}${keyword} ${quantifier}${printSubject(e.subject)} ${printMatcher(e.matcher)}${masks}`;
 }
 
 /**
@@ -846,7 +958,7 @@ function printExpect(e: ExpectStmt, level: number): string {
 function printSubject(s: Subject): string {
   switch (s.type) {
     case 'StatusSubject':
-      return 'status' + networkRefRefusal(s.of, 'status');
+      return 'status' + networkRefClause(s.of);
     case 'DurationSubject':
       return 'duration';
     case 'RequestSubject':
@@ -854,11 +966,11 @@ function printSubject(s: Subject): string {
     case 'ResponseSubject':
       return 'response';
     case 'HeaderSubject':
-      return `header ${printString(s.name)}` + networkRefRefusal(s.of, 'header "…"');
+      return `header ${printString(s.name)}` + networkRefClause(s.of);
     case 'BodySubject':
-      return 'body' + printBodyPath(s.path) + networkRefRefusal(s.of, 'body');
+      return 'body' + printBodyPath(s.path) + networkRefClause(s.of);
     case 'BodyTextSubject':
-      return 'body text' + networkRefRefusal(s.of, 'body text');
+      return 'body text' + networkRefClause(s.of);
     case 'BodyBytesSubject':
       return 'body bytes';
     case 'BodyCsvSubject':
@@ -874,14 +986,34 @@ function printSubject(s: Subject): string {
       return printLocator(s.locator);
     case 'PageSubject':
       return 'page';
-    default:
-      return refuse(s.type, 'this subject is not printable yet');
+    // `A4-4` — the dialog pair carries no data either, for `PageSubject`'s reason, and the network
+    // subject is its `ref` and nothing else.
+    case 'DialogTypeSubject':
+      return 'dialog type';
+    case 'DialogMessageSubject':
+      return 'dialog message';
+    case 'NetworkRequestSubject':
+      return printNetworkRef(s.ref);
   }
+  // **EVERY SUBJECT IN THE LANGUAGE NOW PRINTS**, so there is no `default` here: TypeScript
+  // narrows the switch to `never`, and adding a branch for it would be a line no input can reach —
+  // the same call `A4-1` made on the column tiebreak and `A4-2` on the one-line grouping rule. If
+  // a subject is added later, this function stops compiling, which is a better gate than a
+  // refusal nobody would ever see.
 }
 
-function networkRefRefusal(of: { type: 'NetworkRequestRef' } | null, subject: string): string {
-  if (of) refuse('NetworkRequestRef', `\`${subject} of request to "…"\` reads traffic observed on a live page, which is A3's`);
-  return '';
+/**
+ * `status of request to "/health"` — the clause that points a response subject at traffic observed
+ * on the page instead of at the last api response (`A4-4`; it refused from `A0` until now, because
+ * a `NetworkRequestRef` had no printer).
+ */
+function networkRefClause(of: NetworkRequestRef | null): string {
+  return of ? ' of ' + printNetworkRef(of) : '';
+}
+
+/** `request to "/v1/products" [with method "GET"]` — shared by the subject and the clause. */
+function printNetworkRef(ref: NetworkRequestRef): string {
+  return `request to ${printString(ref.urlPattern)}` + (ref.method ? ` with method ${printString(ref.method)}` : '');
 }
 
 /**
@@ -1011,6 +1143,18 @@ function printMatcher(m: Matcher): string {
     case 'hasNoAuthzViolations':
     case 'hasNoInputHandlingViolations':
       return printScanMatcher(m, SCAN_PHRASES[m.name]);
+    // `A4-4`. The corpus spells the negation `not was made`, so it takes the same `not` prefix
+    // every other matcher here does and needs no special case.
+    // `A4-4`. `snapshotName` is optional on the type and required in practice — it is set only
+    // when `name === 'matchesSnapshot'` — so the printer refuses rather than emitting
+    // `matches snapshot` with nothing after it, which is the shape `matches schema` and
+    // `matches file` already use two branches above.
+    case 'matchesSnapshot':
+      if (!m.snapshotName) refuse('Matcher', '`matches snapshot` needs a name');
+      return `${not}matches snapshot ${printString(m.snapshotName)}`;
+    case 'wasMade':
+      if (m.value) refuse('Matcher', '`was made` never takes an operand');
+      return `${not}was made`;
     default:
       return refuse('Matcher', `the \`${m.name}\` matcher is not printable yet`);
   }
