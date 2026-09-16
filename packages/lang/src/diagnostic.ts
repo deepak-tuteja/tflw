@@ -490,6 +490,32 @@ export const Codes = {
   // `TF072`'s rule, and for its reason: the later line is the one to delete, and three declarations
   // of one key are two mistakes.
   CONFIG_DUPLICATE_KEY: 'TF081',
+
+  /**
+   * `TF082` — **an `authorized target` whose `reason` says nothing** (`M200-01`, `M200`/`A2-4`).
+   *
+   * `D291` states this declaration's purpose in as many words: *"`reason` is required, and is the
+   * point. It is not documentation of the config; it is the sentence that gets printed in the CLI
+   * summary and embedded in the report, so every artifact a run produces records what was claimed
+   * and by whom it was written. A declaration with no reason would be a checkbox, and a checkbox is
+   * what `D21` exists instead of."*
+   *
+   * The **grammar** required the keyword and nothing required the **string** to say anything, so
+   * `reason ""` checked green and every scan behind it went green with it — and the artifact then
+   * carried an empty claim, which is strictly worse than an absent one. An absent declaration is
+   * refused by `TF060`; an empty one is indistinguishable in the report from a considered
+   * affirmation.
+   *
+   * **Its own code rather than `TF061`'s**, on `D419`'s one-code-one-repair bar. `TF061` says *this
+   * target does not name one origin* and its repair is to rewrite the URL; this says *this claim is
+   * blank* and its repair is to write a sentence. Two repairs, two codes.
+   *
+   * **Whitespace-only counts as blank**, because `reason "   "` fails for exactly the reason
+   * `reason ""` does and a rule that accepted it would be asking the author to find the loophole.
+   * Nothing else about the text is judged — a checker cannot grade a justification, and pretending
+   * to would be the same overreach in the other direction.
+   */
+  AUTHORIZED_TARGET_REASON_EMPTY: 'TF082',
 } as const;
 
 // ---------------------------------------------------------------------------

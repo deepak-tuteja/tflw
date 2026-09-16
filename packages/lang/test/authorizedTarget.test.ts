@@ -51,6 +51,74 @@ test('`reason` is required, not optional', () => {
   assert.ok(codes.length > 0, 'a declaration with no reason must not parse');
 });
 
+// --- TF082: a reason that says nothing (`M200-01`) ---------------------------
+//
+// The grammar required the KEYWORD from the day this shipped and nothing required the STRING to say
+// anything, so `reason ""` checked green for four milestones and put an empty claim into every
+// report behind it — which is strictly worse than an absent one, because an absent declaration is
+// refused by `TF060` and an empty one is indistinguishable in the artifact from a considered
+// affirmation. Found while `M200` `A2-4` was deciding what its scaffold should write on that line.
+
+test('TF082: an empty reason is rejected — the test above asserted the keyword, not the sentence', () => {
+  assert.deepEqual(configCodes('defaults', '  authorized target "https://localhost:8443" reason ""'), ['TF082']);
+});
+
+test('TF082: whitespace-only is blank too, or the rule would be asking for the loophole', () => {
+  assert.deepEqual(configCodes('defaults', '  authorized target "https://localhost:8443" reason "   "'), ['TF082']);
+  assert.deepEqual(configCodes('defaults', '  authorized target "https://localhost:8443" reason "\t "'), ['TF082']);
+});
+
+test('TF082: the hint says what the sentence is FOR, because that is what makes it writable', () => {
+  const d = firstDiag(['defaults', '  authorized target "https://localhost:8443" reason ""']);
+  assert.equal(d?.code, 'TF082');
+  assert.match(d?.hint ?? '', /printed in the run summary and embedded in the report/);
+  // And it carries a concrete example, so the repair is insertable rather than described.
+  assert.match(d?.hint ?? '', /reason "pentest window/);
+});
+
+test('TF082: the span is the REASON, not the whole declaration', () => {
+  // The target may be perfectly good; pointing at the whole line would send the reader looking at
+  // the half that is right.
+  const d = firstDiag(['defaults', '  authorized target "https://localhost:8443" reason ""']);
+  const line = '  authorized target "https://localhost:8443" reason ""';
+  assert.equal(d?.span.start.line, 2);
+  assert.equal(d?.span.start.column, line.indexOf('reason "') + 'reason '.length + 1);
+});
+
+test('TF082: nothing else about the text is judged — a checker cannot grade a justification', () => {
+  // One character is enough. The rule is about a claim being MADE, not about it being good; an
+  // overreach in that direction would be the same mistake pointed the other way.
+  assert.deepEqual(configCodes('defaults', '  authorized target "https://localhost:8443" reason "x"'), []);
+});
+
+test('TF082: an interpolated reason is accepted without inspection', () => {
+  // The same treatment `checkDemoUrl` gives an interpolated URL: what it resolves to is not knowable
+  // here, so refusing it would demand a repair nobody can perform — `M131a`'s lesson, which is in
+  // this very file's `literalOrigin`.
+  assert.deepEqual(
+    configCodes('env staging', '  api "https://stg.example.com"', '  authorized target "https://stg.example.com" reason "{TICKET}"'),
+    [],
+  );
+});
+
+test('TF082 and TF061 are separate codes because they have separate repairs (D419)', () => {
+  // A declaration wrong in BOTH halves reports BOTH, address first: the origin has to be right
+  // before the sentence is worth writing. `TF061`'s repair is *rewrite the URL*; `TF082`'s is
+  // *write a sentence* — one code with two repairs would be the thing `D419` bars, and one code
+  // swallowing the other would hide half the work.
+  assert.deepEqual(configCodes('defaults', '  authorized target "localhost:8443" reason ""'), ['TF061', 'TF082']);
+});
+
+test('TF061: `localhost:8443` is refused — it PARSES, with `localhost:` as its scheme', () => {
+  // `M200-02`. This is the slip `TF061` exists to catch and the one it could not see: a bare
+  // `host:port` is a valid URL whose origin is OPAQUE, and `URL` serialises that as the four
+  // characters `null` — not the value `null` — so it sailed through the guard. The sibling half of
+  // the same defect was worse: two opaque origins compared EQUAL, so this declaration authorized a
+  // scan of `tflw://demo`, a host it does not name.
+  assert.deepEqual(configCodes('defaults', '  authorized target "localhost:8443" reason "a real reason"'), ['TF061']);
+  assert.deepEqual(configCodes('defaults', '  authorized target "tflw://demo" reason "a real reason"'), ['TF061']);
+});
+
 // --- TF061: what cannot be said ---------------------------------------------
 
 test('TF061: a wildcard target is rejected', () => {
