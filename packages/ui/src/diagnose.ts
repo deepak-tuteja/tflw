@@ -18,14 +18,28 @@
 // the checker the CLI runs, in the browser, over the exact bytes the PUT will carry. Measured on
 // the five fixture files with no options at all: **0 diagnostics**, which is what makes a panel
 // worth showing rather than noise worth ignoring.
-import { checkProgram, parseSource, type Diagnostic } from '@tflw/lang';
+import { checkProgram, parseSource, type Diagnostic, type ProgramCheckOptions } from '@tflw/lang';
 
-/** The diagnostics `tflw check` would report for this file, worst first. */
-export function diagnose(text: string): readonly Diagnostic[] {
+/**
+ * The diagnostics `tflw check` would report for this file, worst first.
+ *
+ * **`opts` arrived in `A2-3`, and its absence was a hole `D1052` could not see.** Run with no
+ * options, `checkProgram` cannot raise `TF060` — the rule needs the env's `authorized target`
+ * declarations and its `api` base, which live in `tflw.config` and not in the file being written.
+ * For the API and LOAD doors that costs nothing, because their forms cannot produce a file whose
+ * only fault is an authorization one. For SCANS it is the *whole* case: a scan assertion in a
+ * project with no declaration is `TF060` **every time**, which is precisely what `D1053`'s
+ * scaffold is built around — so without this the SCANS door would preview a clean file and write
+ * one that fails in a terminal, the exact surprise `D1052` exists to prevent.
+ *
+ * The caller passes the server's `authorization` block through unchanged (`ProjectView`), so the
+ * page never assembles a second account of what the config says.
+ */
+export function diagnose(text: string, opts: ProgramCheckOptions = {}): readonly Diagnostic[] {
   const { program, diagnostics } = parseSource(text);
   // A parse error is the write route's own `422` and is already shown as a refusal; adding the
   // checker's opinion of a broken tree on top of it would report one mistake twice.
   if (diagnostics.some((d) => d.severity === 'error')) return [];
   const rank = (d: Diagnostic) => (d.severity === 'error' ? 0 : d.severity === 'warning' ? 1 : 2);
-  return [...checkProgram(program)].sort((a, b) => rank(a) - rank(b) || a.span.start.line - b.span.start.line);
+  return [...checkProgram(program, opts)].sort((a, b) => rank(a) - rank(b) || a.span.start.line - b.span.start.line);
 }

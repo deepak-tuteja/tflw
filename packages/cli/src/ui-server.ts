@@ -115,6 +115,43 @@ export interface ProjectView {
    * read route for a line of advice. */
   readonly scratchPath: string;
   readonly scratchIgnored: boolean;
+  /**
+   * The active env's authorization facts, so the page's `tflw check` preview can run
+   * `checkAuthorizedTargets` (`M200` `A2-3`).
+   *
+   * **`D1052` said the form shows what `tflw check` will say, and for SCANS it could not.**
+   * `diagnose` ran `checkProgram` with no options, and `TF060` — the one diagnostic certain to
+   * fire on a fresh scan project, and the whole reason `D1053`'s scaffold exists — needs the
+   * env's declarations and base URL. The page had no way to learn either, so the SCANS door
+   * would have previewed a clean file and written one that fails in a terminal: exactly the
+   * surprise `D1052` exists to prevent, on the one door where it is guaranteed rather than
+   * possible.
+   *
+   * Read off `resolved`, like the rest of this function, because `resolve.ts` has already
+   * composed `defaults` + `env` — a second composition here is the two-copies-of-one-rule shape
+   * this file keeps warning about. Shaped as `EnvAuthorizedTargets` so the page hands it to the
+   * checker unchanged rather than translating, which is where a second account would creep in.
+   */
+  readonly authorization: {
+    readonly envName: string;
+    /**
+     * `resolved.authorizedTargets` verbatim — **including the `probe` opt-ins**, which the first
+     * draft of this type left out. They travel on the wire whether the type names them or not, so
+     * omitting them would have been a type that under-describes its own JSON; and they are not
+     * noise here, because `probe mutating` is what lets `has no authorization violations` re-issue
+     * a write, and a SCANS form has a use for knowing it.
+     */
+    readonly targets: readonly {
+      readonly target: string;
+      readonly reason: string;
+      readonly probeMutating: boolean;
+      readonly probeOversized: boolean;
+      readonly probeTraversal: boolean;
+      readonly probeCiphers: boolean;
+    }[];
+    readonly apiBaseUrl: string | null;
+    readonly services: readonly { readonly name: string; readonly url: string }[];
+  };
 }
 
 /** Where `Send` writes. One file, overwritten, never merged — it is an exploration, not a suite. */
@@ -219,7 +256,13 @@ export async function readProject(root: string): Promise<ProjectView> {
       diagnostics: diagnostics.length,
     });
   }
-  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root) };
+  const authorization = {
+    envName: resolved.envName,
+    targets: resolved.authorizedTargets,
+    apiBaseUrl: resolved.apiBaseUrl,
+    services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
+  };
+  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root), authorization };
 }
 
 /**

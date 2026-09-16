@@ -458,6 +458,48 @@ test('writeProjectFile refuses a path that is not a .tflw inside the project', a
   }
 });
 
+test('readProject carries the env\'s authorization, composed the way `resolve.ts` composes it', async () => {
+  // `M200` `A2-3`. The page's `tflw check` preview cannot raise `TF060` without this, and `TF060`
+  // is the SCANS door's commonest diagnostic by construction. Read off `resolved`, so a declaration
+  // in `defaults` and a base URL in the env arrive as ONE answer — the composition `resolve.ts`
+  // already does, not a second one here.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-authz-'));
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      [
+        'defaults',
+        '  authorized target "https://staging.example.com" reason "agreed window"',
+        '',
+        'env local default',
+        '  api "https://staging.example.com/v1"',
+        '  api billing "https://billing.example.com"',
+        '',
+        'env other',
+        '  api "https://other.example.com"',
+      ].join('\n') + '\n',
+      'utf8',
+    );
+    await writeFile(join(dir, 't.tflw'), 'test "t"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+
+    const view = await readProject(dir);
+    assert.equal(view.authorization.envName, 'local', 'the DEFAULT env, which is what a bare `tflw run` takes');
+    // The probe opt-ins come with it. They travel on the wire regardless, so the type names them
+    // rather than under-describing its own JSON — and `probe mutating` is the one that decides
+    // whether an authorization scan may re-issue a write, which a SCANS form has a use for.
+    assert.deepEqual(view.authorization.targets, [
+      { target: 'https://staging.example.com', reason: 'agreed window', probeMutating: false, probeOversized: false, probeTraversal: false, probeCiphers: false },
+    ]);
+    // The base is the active env's, not `defaults`' — the two blocks are composed, not concatenated.
+    assert.equal(view.authorization.apiBaseUrl, 'https://staging.example.com/v1');
+    // And the declared services come too: `D343` widened `TF060` to cover them, so a view that
+    // dropped them would let the page show a clean preview for a scan against a different host.
+    assert.deepEqual(view.authorization.services, [{ name: 'billing', url: 'https://billing.example.com' }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('initArgv: a door scaffolds with the flag it has, and two doors now have one', () => {
   // `D1051` said "one flag, because `tflw init` has one flag" and `A2-4` (`D1053`) gave it a
   // second. BROWSER still has no scaffold of its own and gets the plain project — stated here so

@@ -12,7 +12,7 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { ApiBody, ApiHeader, ApiStep, ExpectStmt, HttpMethod, Matcher, MatcherName, PathSegment, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, Workload } from './ast.js';
+import type { ApiBody, ApiHeader, ApiStep, ExpectStmt, FindingSeverity, HttpMethod, Matcher, MatcherName, PathSegment, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, Workload } from './ast.js';
 import { parse as parseTokens, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
 
@@ -134,14 +134,29 @@ export interface TestSpec {
   readonly workload: Workload | null;
   readonly thresholds: readonly ThresholdDecl[];
   readonly body: TestDecl['body'];
+  /**
+   * `as peer, shopper` — the principals the test runs under (`M200` `A2-3`).
+   *
+   * The comment below has said since `A0-4` that *a form that grows one of those sets it here*,
+   * and the SCANS door is the first that must: `has no authorization violations` re-issues the
+   * request under **other** principals, so a test with no owner gives it nothing to compare
+   * against and the assertion reports *not probed* rather than passing or failing. Optional,
+   * because the other two families read the response the test already fetched.
+   */
+  readonly sessions?: readonly string[];
 }
 
 /** A whole `test`, with the fields a form does not offer left at the parser's own defaults —
- *  `retry 0`, `sequential`, no sessions, no table. A form that grows one of those sets it here. */
+ *  `retry 0`, `sequential`, no table. `sessions` stopped being one of those in `A2-3`. */
 export function buildTest(spec: TestSpec): BuildResult<TestDecl> {
   if (spec.name.trim().length === 0) return bad('a test needs a name');
   for (const tag of spec.tags) {
     if (!/^[A-Za-z][\w-]*$/.test(tag)) return bad(`\`@${tag}\` is not a tag — a tag starts with a letter and holds letters, digits, \`_\` or \`-\``);
+  }
+  for (const session of spec.sessions ?? []) {
+    // Same rule the parser reads a session name by (`expect('ident')`), stated here so the refusal
+    // lands in the field rather than as a file the parser rejects.
+    if (!/^[A-Za-z_][\w]*$/.test(session)) return bad(`\`${session}\` is not a session name — it starts with a letter or \`_\` and holds letters, digits or \`_\``);
   }
   return {
     ok: true,
@@ -149,7 +164,7 @@ export function buildTest(spec: TestSpec): BuildResult<TestDecl> {
       type: 'TestDecl',
       name: stringLit(spec.name),
       tags: spec.tags,
-      sessions: [],
+      sessions: spec.sessions ?? [],
       retry: 0,
       table: null,
       workload: spec.workload,
@@ -289,6 +304,15 @@ export interface ExpectSpec {
   readonly matcher: MatcherName;
   /** The operand as typed; parsed as a value, so `200`, `"json"` and `{ id: 1 }` all work. */
   readonly operand: string | null;
+  /**
+   * `has no [<severity>] … violations`'s optional floor (`M200` `A2-3`).
+   *
+   * A **floor**, not an exact-match filter: `serious` also counts `critical`. Omitted means every
+   * severity counts, and that is the commoner spelling — 72 of the corpus' 102 scan assertions name
+   * none. Meaningful only for the scan matchers; supplying it with any other is a refusal rather
+   * than a silent drop, because a form that ignored it would show a severity the file does not have.
+   */
+  readonly severityFloor?: FindingSeverity;
 }
 
 export type SubjectSpec =
@@ -299,11 +323,19 @@ export type SubjectSpec =
   | { readonly kind: 'body'; readonly path: string }
   | { readonly kind: 'bodyText' }
   | { readonly kind: 'bodyBytes' }
-  | { readonly kind: 'value'; readonly ref: string };
+  | { readonly kind: 'value'; readonly ref: string }
+  /** `expect response has no … violations` (`M200` `A2-3`). The whole-response subject, which only
+   *  the scan matchers take — every other matcher wants a part of it. */
+  | { readonly kind: 'response' };
 
-/** Matchers the API form offers: every one that takes an operand or takes none, minus the state,
- *  snapshot and scan families, which belong to doors that can actually produce them. */
-const OPERANDLESS: ReadonlySet<MatcherName> = new Set<MatcherName>(['connects', 'fails']);
+/** Matchers the forms offer: every one that takes an operand or takes none, minus the state and
+ *  snapshot families, which belong to doors that can actually produce them. **The scan family was
+ *  in that list until `A2-3`, which is the door that can** — so it is below rather than excluded. */
+const OPERANDLESS: ReadonlySet<MatcherName> = new Set<MatcherName>(['connects', 'fails', 'hasNoSecurityViolations', 'hasNoAuthzViolations', 'hasNoInputHandlingViolations']);
+
+/** The three scan families a SCANS form can write. `hasNoA11yViolations` is deliberately absent:
+ *  its only subject is `page`, which no printer or builder here reaches until `A3`. */
+const SCAN_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>(['hasNoSecurityViolations', 'hasNoAuthzViolations', 'hasNoInputHandlingViolations']);
 
 export function buildExpect(spec: ExpectSpec): BuildResult<ExpectStmt> {
   const subject = buildSubject(spec.subject);
@@ -325,7 +357,17 @@ export function buildExpect(spec: ExpectSpec): BuildResult<ExpectStmt> {
   }
   if (value !== null && spec.matcher === 'connects') return bad('`connects` is true or false on its own and takes no value');
 
-  const matcher: Matcher = { type: 'Matcher', name: spec.matcher, negated: false, value, span: SYNTHETIC };
+  // The scan family (`M200` `A2-3`). Three rules, each of them a refusal the form can show in a
+  // field rather than a file the parser would reject:
+  //   - it never takes an operand, like `connects`;
+  //   - its only subject here is `response` — `page` is `A3`'s, and `parseExpect` takes no other;
+  //   - the severity floor belongs to it and to nothing else.
+  const isScan = SCAN_MATCHERS.has(spec.matcher);
+  if (isScan && value !== null) return bad(`\`${spec.matcher}\` grades a whole response against a rule family and takes no value`);
+  if (isScan && subject.node.type !== 'ResponseSubject') return bad('a `has no … violations` matcher grades the whole response — pick the `response` subject');
+  if (spec.severityFloor !== undefined && !isScan) return bad('a severity floor belongs to `has no … violations`, which is the only matcher that grades findings');
+
+  const matcher: Matcher = { type: 'Matcher', name: spec.matcher, negated: false, value, span: SYNTHETIC, ...(spec.severityFloor === undefined ? {} : { severityFloor: spec.severityFloor }) };
   return { ok: true, node: { type: 'ExpectStmt', soft: spec.soft, quantifier: spec.quantifier, subject: subject.node, matcher, masks: [], span: SYNTHETIC } };
 }
 
@@ -349,6 +391,8 @@ function buildSubject(spec: SubjectSpec): BuildResult<Subject> {
       if (typeof path === 'string') return bad(path);
       return { ok: true, node: { type: 'BodySubject', path, of: null, span: SYNTHETIC } };
     }
+    case 'response':
+      return { ok: true, node: { type: 'ResponseSubject', span: SYNTHETIC } };
     case 'value': {
       const path = bodyPath(spec.ref);
       if (typeof path === 'string') return bad(path);

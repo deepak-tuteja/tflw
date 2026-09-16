@@ -14,6 +14,7 @@ import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
 import { ApiForm } from './ApiForm';
+import { ScanForm } from './ScanForm';
 import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
 import { exitExplained, reportIdOf } from './format';
 import { LiveBody, ReportBody, ReportHeader } from './ReportView';
@@ -188,6 +189,7 @@ export function App() {
           />
         ) : null}
         {project && door === 'api' ? <ApiForm project={project} onWritten={() => void readProjectView()} /> : null}
+        {project && door === 'scan' ? <ScanForm project={project} onWritten={() => void readProjectView()} /> : null}
         <RunList runs={runs} reports={reports} selected={selected} onSelect={setSelected} />
         {error ? (
           <p className="error" data-error>
