@@ -828,6 +828,154 @@ test('every node kind in the corpus is declared printable, context-bound, or ref
   console.log(`\n  node-kind partition — ${seen.size} kinds in the corpus, all declared; ${REFUSES_BY_CONSTRUCTION.size} refuse by construction\n`);
 });
 
+/**
+ * `M201` `S1` — **the partition gate's other direction, and the second node-kind claim in this
+ * file that reads the same in CI as it does on a developer machine.**
+ *
+ * The gate above asserts *corpus ⊆ declared*: every kind that occurs is accounted for. That
+ * catches a kind that appears with no printer. It cannot catch the opposite — a kind the printer
+ * declares that no corpus ever exercises — and `M200-05` is that defect twice over.
+ * `SpikeUsersWorkload` and `StepUsersWorkload` are declared `PRINTABLE`, have printers, have
+ * parser branches, and **occur in neither this repository nor the sibling**: nobody happened to
+ * write a `spike … users` in two working trees, so the coverage gate skipped them in silence, in
+ * both tiers, on every machine that has ever run it.
+ *
+ * So this gate asks the inverse — *declared ⊆ round-trippable corpus* — and it reads
+ * **`corpus(repoRoot)` only, whatever the tier**, deliberately not `corpusFiles()`. A gate whose
+ * answer improves because the developer happens to have the sibling checked out is the exact
+ * shape of `M200-05`; the point of this one is to be the number CI will see.
+ *
+ * The unit is a file that round-trips **whole**, not a node that round-trips. A kind reached only
+ * inside a file the printer refuses is not covered in any sense worth pinning, and reusing the
+ * whole-file property keeps one definition of "the printer can write this" rather than two.
+ *
+ * `OWED` is the debt, written down. It is asserted by EQUALITY rather than containment so it can
+ * rot in neither direction: a kind that gains a fixture without leaving the list reddens it, and
+ * so does a kind that loses one. That is `verify-test-counts`' `EXPECTED` rule — the list moves in
+ * the change that moves the corpus, with the reason on the row.
+ *
+ * `REFUSES_BY_CONSTRUCTION` is excluded from the claim and checked separately: the parser emits
+ * `MalformedStep` only where it has already raised an error, so it cannot occur in a file that
+ * round-trips and demanding one would be demanding a contradiction. What IS demanded is that it
+ * occur in this repository at all, so that declaring it is not free.
+ *
+ * **THE PRINTER'S SUBJECT IS THE TEST-FILE LANGUAGE, AND UNTIL NOW NOTHING SAID SO.** `ast.ts`
+ * declares 143 node kinds; these three sets declare 117. The 26 outside them are, every one of
+ * them, the **config-file language** — `ConfigFile`, `DefaultsBlock`, `EnvBlock`, `ApiServiceDecl`,
+ * `TimeoutDecl`, `RedactDecl` and their neighbours — which `tflw.config` holds and no `.tflw` file
+ * can contain. That boundary is a decision rather than an omission, and it is named here because
+ * "all declared" otherwise reads as a completeness claim over the AST when it is a completeness
+ * claim over a subset nobody had named.
+ */
+const OWED: ReadonlySet<string> = new Set<string>([
+  // `M201` `S1` — measured, not chosen: the 87 kinds this repository's own corpus does not reach.
+  // `S2` takes the values and API families, `S3` the browser, `S4` load, crawl and the header.
+  'AcceptDialogStmt', 'ApiHeader', 'ArrayLit', 'BinaryExpr',
+  'BodyBytesSubject', 'BodyCsvSubject', 'BodyPdfTextSubject', 'BodyTextSubject',
+  'BoolLit', 'CallExpr', 'CallStmt', 'CloseTabStmt',
+  'CrawlDecl', 'DateAtom', 'DateOffsetLit', 'DialogMessageSubject',
+  'DialogTypeSubject', 'DismissDialogStmt', 'DownloadBlock', 'DragStmt',
+  'DropFileStmt', 'DurationLit', 'DurationSubject', 'EnvRef',
+  'FileBody', 'FileDataTable', 'FillFormRow', 'FillFormStmt',
+  'FillStmt', 'FormBody', 'FormField', 'FormatExpr',
+  'HoldRpsWorkload', 'HoldUsersWorkload', 'HookDecl', 'HoverStmt',
+  'ImportDecl', 'InlineDataTable', 'LetStmt', 'NetworkRequestRef',
+  'NetworkRequestSubject', 'NullLit', 'OpenApiSeed', 'PageSubject',
+  'PerVuIterationsWorkload', 'PressStmt', 'RampRpsWorkload', 'RampUsersWorkload',
+  'RandomDateBetweenExpr', 'RandomDateInFutureExpr', 'RandomDateInPastExpr', 'RandomDecimalExpr',
+  'RandomLikeExpr', 'RandomNumberExpr', 'RandomOfExpr', 'RandomPasswordExpr',
+  'RandomStringExpr', 'RandomUuidExpr', 'RequestSubject', 'RetryAfterClause',
+  'ScrollStmt', 'SelectStmt', 'SpiderSeed', 'SpikeRpsWorkload',
+  'SpikeUsersWorkload', 'Stage', 'StepRpsWorkload', 'StepUsersWorkload',
+  'StubStmt', 'SwitchToNewTabBlock', 'SwitchToTabStmt', 'TextBody',
+  'TickStmt', 'TrafficSeed', 'TransformExpr', 'UniqueEmailExpr',
+  'UniqueLikeExpr', 'UniqueNumberExpr', 'UniquePrefixExpr', 'UniqueUuidExpr',
+  'UntickStmt', 'UploadBody', 'UseDecl', 'ValueSubject',
+  'WaitUntilApiStmt', 'WaitUntilUiStmt', 'WithinBlock',
+]);
+
+/** Every node kind occurring in an in-repo file that prints and re-parses to the same program. */
+function kindsCoveredInRepo(): { covered: Set<string>; read: string[]; roundTripped: number } {
+  const covered = new Set<string>();
+  const all = corpus(repoRoot);
+  let roundTripped = 0;
+  for (const file of all) {
+    const { program, diagnostics } = parseSource(readFileSync(file, 'utf8'));
+    if (diagnostics.some((d) => d.severity === 'error')) continue;
+    const declared =
+      program.imports.length + program.uses.length + program.actions.length +
+      program.hooks.length + program.tests.length + (program.crawls?.length ?? 0);
+    if (declared === 0) continue;
+    const printed = print(program, { indent: 0 });
+    if (!printed.ok) continue;
+    const back = parseSource(printed.text + '\n');
+    if (back.diagnostics.some((d) => d.severity === 'error')) continue;
+    try {
+      assert.deepEqual(stripSpans(back.program), stripSpans(program));
+    } catch {
+      continue;
+    }
+    roundTripped += 1;
+    const visit = (n: unknown): void => {
+      if (Array.isArray(n)) { for (const x of n) visit(x); return; }
+      if (!n || typeof n !== 'object') return;
+      const node = n as Node & Record<string, unknown>;
+      if (typeof node.type === 'string') covered.add(node.type);
+      for (const [k, v] of Object.entries(node)) { if (k !== 'span') visit(v); }
+    };
+    visit(program);
+  }
+  return { covered, read: all, roundTripped };
+}
+
+test('every node kind the printer declares is reached by THIS repository\'s own corpus', () => {
+  const { covered, read, roundTripped } = kindsCoveredInRepo();
+  // **Asserted on the list the helper ACTUALLY read, not on a second call to `corpus(repoRoot)`.**
+  // The first draft re-derived it here, which guards a different call from the one that computes
+  // the coverage — `M167`'s shape, and the family this repository has now recorded three times:
+  // asserting a function is correct is not asserting that anything calls it.
+  const strays = read.filter((f) => f.startsWith(siblingRoot));
+  assert.deepEqual(strays, [], `this gate read ${strays.length} sibling files — it is meant to be tier-independent`);
+
+  const declared = [...PRINTABLE, ...CONTEXT_BOUND].sort();
+  const missing = declared.filter((k) => !covered.has(k)).sort();
+
+  console.log(
+    `\n  in-repo kind coverage — ${declared.length - missing.length} of ${declared.length} declared kinds reached ` +
+    `by ${roundTripped} of ${read.length} files; ${missing.length} owed\n`,
+  );
+
+  // EQUALITY, not containment — see the docblock. A kind that gained a fixture and stayed on the
+  // list is as much a defect in this gate as a kind that lost one, because both mean the list has
+  // stopped describing the corpus.
+  assert.deepEqual(
+    missing,
+    [...OWED].sort(),
+    `\nthe owed list no longer describes the corpus:\n` +
+    `  newly covered, delete from OWED: ${[...OWED].filter((k) => covered.has(k)).sort().join(' ') || '(none)'}\n` +
+    `  newly missing, add to OWED with a reason: ${missing.filter((k) => !OWED.has(k)).join(' ') || '(none)'}\n`,
+  );
+
+  // Declaring a refusal must not be free: the kind has to be somewhere in this repository, even
+  // though — by construction — never in a file that round-trips.
+  const anywhere = new Set<string>();
+  for (const file of corpus(repoRoot)) {
+    const { program } = parseSource(readFileSync(file, 'utf8'));
+    const visit = (n: unknown): void => {
+      if (Array.isArray(n)) { for (const x of n) visit(x); return; }
+      if (!n || typeof n !== 'object') return;
+      const node = n as Node & Record<string, unknown>;
+      if (typeof node.type === 'string') anywhere.add(node.type);
+      for (const [k, v] of Object.entries(node)) { if (k !== 'span') visit(v); }
+    };
+    visit(program);
+  }
+  for (const kind of REFUSES_BY_CONSTRUCTION) {
+    assert.ok(anywhere.has(kind), `${kind} refuses by construction and occurs nowhere in this repository`);
+    assert.ok(!covered.has(kind), `${kind} refuses by construction yet reached a file that round-trips`);
+  }
+});
+
 test('the printer refuses what it cannot print, and names the node kind', () => {
   // **THIS TEST HAS NOW BEEN REPOINTED TWICE, AND THAT IS THE INTERESTING PART.** It read
   // `open "/x"` until `A3-2` gave `OpenStmt` a printer, exactly as `A1-3`'s refusal assertion had
