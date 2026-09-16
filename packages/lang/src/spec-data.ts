@@ -616,6 +616,7 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--env <name>`', command: 'check', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one — decides which env-scoped checks (service names, `insecure`) run' },
   { flag: '`--no-color`', command: 'check', effect: 'disables ANSI color in CLI output' },
   { flag: '`--load`', command: 'init', effect: 'also scaffolds a `load.tflw` — a workload-bearing `test` in the open (`rps`) model, runnable with plain `tflw run` (M29/D30)' },
+  { flag: '`--scan`', command: 'init', effect: 'also scaffolds a `scan.tflw` and a `tflw.config` carrying a **commented-out** `authorized target` — the scan refuses (`TF060`) until a person uncomments it and writes the reason, because that declaration is an affirmation only its author can make (M200/D1053, D21/D291); the config points at a real host rather than the demo service, whose scheme has no origin to authorize' },
   { flag: '`--browser <engine>`', command: 'install-browsers', effect: 'downloads chromium/firefox/webkit (default chromium) — runs the `playwright` CLI inside the optional peer dependency, resolved from the consuming project; refuses if that peer is absent rather than fetching one (M92b)' },
   { flag: '`--browser <engine>`', command: 'pick', effect: 'launches chromium/firefox/webkit (default chromium) instead of chromium' },
   { flag: '`--env <name>`', command: 'watch', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one' },

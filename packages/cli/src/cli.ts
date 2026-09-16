@@ -3665,16 +3665,23 @@ async function initCommand(argv: string[]): Promise<number> {
   // scaffolds the **open** (`ramp to N rps`) workload form, matching D17's "docs lead with it".
   // `initCommand` never inspected argv beyond this one `includes`, so `tflw init --lod` scaffolded
   // without `load.tflw` and exited 0 without mentioning the flag (B6-11's quiet variant).
-  for (const a of argv) if (a.startsWith('--') && a !== '--load') unknownFlag('init', a);
+  for (const a of argv) if (a.startsWith('--') && a !== '--load' && a !== '--scan') unknownFlag('init', a);
   const load = argv.includes('--load');
   const loadPath = join(cwd, 'load.tflw');
+  // `tflw init --scan` (`M200` `A2-4`, `D1053`) — the SCANS door's scaffold. A second flag beside
+  // `--load` and independent of it: the two write different files and a project may want both.
+  const scan = argv.includes('--scan');
+  const scanPath = join(cwd, 'scan.tflw');
 
   if (await exists(configPath)) {
     err(`\`tflw.config\` already exists in ${cwd} — not overwriting.`);
     return EXIT_USAGE;
   }
 
-  await writeFile(configPath, SCAFFOLD_CONFIG, 'utf8');
+  // `--scan` writes a DIFFERENT config, not the same one with a note appended. See
+  // `SCAFFOLD_SCAN_CONFIG`: a scan project cannot point `api` at the demo service, because the demo
+  // scheme has no origin to authorize.
+  await writeFile(configPath, scan ? SCAFFOLD_SCAN_CONFIG : SCAFFOLD_CONFIG, 'utf8');
   const created = ['tflw.config'];
   if (!(await exists(examplePath))) {
     await writeFile(examplePath, SCAFFOLD_TEST, 'utf8');
@@ -3683,6 +3690,10 @@ async function initCommand(argv: string[]): Promise<number> {
   if (load && !(await exists(loadPath))) {
     await writeFile(loadPath, SCAFFOLD_LOAD, 'utf8');
     created.push('load.tflw');
+  }
+  if (scan && !(await exists(scanPath))) {
+    await writeFile(scanPath, SCAFFOLD_SCAN, 'utf8');
+    created.push('scan.tflw');
   }
   // Secrets hygiene from day one (decision 82, restoring decision 36's original promise): a tool
   // whose flagship feature is "secrets never leak into reports" shouldn't leave `.env` committable
@@ -3782,6 +3793,73 @@ test "health check"
   expect status equals 200
 `;
 
+/**
+ * The `tflw.config` `tflw init --scan` writes (`M200` `A2-4`, `D1053`).
+ *
+ * **A whole config, not `SCAFFOLD_CONFIG` with a note appended, and the reason is the one thing
+ * `A2-4` measured.** The plain scaffold points `api` at `tflw://demo` so that `tflw run` is green
+ * before the author has wired anything up. A scan project cannot: a non-special scheme has an
+ * **opaque origin that serialises as the string `"null"`**, `TF060` compares origins, and so
+ * `authorized target "tflw://demo"` is a declaration that authorizes nothing and cannot be written
+ * correctly at all. Left pointing at the demo, this scaffold produces a `TF060` whose own repair
+ * line reads ``Add `authorized target "null" …` `` — filed as `M200-02` — so the tool would be
+ * giving two pieces of advice, one of them untypeable, about a line already sitting in this file.
+ *
+ * Naming `http://localhost:3001` instead makes all three agree: the `api` base, `TF060`'s repair
+ * line, and the commented declaration below are the same origin, written the same way.
+ *
+ * **The declaration is commented out, and that is the whole decision.** `authorized target` is
+ * `D21`'s declaration layer — an author affirming *in writing* that they are permitted to point a
+ * security scanner at a named host, with a `reason` printed in the run summary and embedded in the
+ * report. A scaffold that wrote a live one would make that affirmation on the author's behalf,
+ * which is the checkbox `D291` says `D21` exists instead of. So the line is written, inert, where
+ * they will find it, and `TF060` goes on refusing every scan assertion until a person uncomments
+ * it. The error is the signpost; it now points at a line already in the file.
+ *
+ * **The `reason` is a visible placeholder rather than an empty string, deliberately.** Nothing
+ * validates it — `checkAuthorizedTargets` never reads it, so `reason ""` passes `tflw check`
+ * (`M200-01`, filed not fixed) — so the scaffold cannot make a blank one fail. A placeholder that
+ * lands in the report and reads as unfinished is the honest second-best: it fails where a human
+ * looks rather than nowhere at all. Spelled as `TF060`'s own help line spells it, so the tool gives
+ * one piece of advice rather than two.
+ */
+const SCAFFOLD_SCAN_CONFIG = `# testFlow config — declaration-only. Pick the active env with --env, TFLW_ENV, or the
+# \`default\` marker below.
+
+env local default
+  # A scan needs a real host. Unlike the plain \`tflw init\` scaffold, this one does NOT point at
+  # tflw's built-in demo service: that address is \`tflw://demo\`, a scheme with no origin, and
+  # \`authorized target\` names origins — so there would be nothing here you could authorize.
+  # Point this at your own service:
+  api "http://localhost:3001"
+
+# A security scan needs your written permission to point it at a host. Uncomment this and say why
+# you may scan it — the reason is printed in the run summary and embedded in the report, so the
+# claim travels with the evidence. Until then \`tflw check\` refuses every
+# \`has no … violations\` assertion (TF060), which is the point: nobody but you can make this
+# affirmation.
+#
+#   authorized target "http://localhost:3001" reason "<why you may scan it>"
+`;
+
+// `tflw init --scan` (`M200` `A2-4`, `D1053`). One ordinary `test`, not a `crawl`, and the choice is
+// measured: the corpus holds 102 scan assertions inside ordinary tests against 11 `crawl`
+// declarations, 6 of which are `.checkonly` fixtures written to be rejected — so an assertion on a
+// response somebody asked for is what this construct overwhelmingly is, and a crawl is the
+// specialist. A scaffold leading with the specialist would teach the rarer half first.
+const SCAFFOLD_SCAN = `# A security scan. \`expect response has no … violations\` grades the LAST response against a
+# family of rules — \`security\`, \`authorization\` or \`input handling\` — and an optional severity
+# word is a FLOOR, so \`critical\` also counts nothing below it.
+#
+# This file does not check until \`tflw.config\` carries an \`authorized target\` covering the host
+# (TF060). That declaration is written, commented out, at the bottom of the config.
+
+test "the health endpoint gives nothing away"
+  api GET /health
+  expect status equals 200
+  expect response has no critical security violations
+`;
+
 // `tflw init --load` (M29, D30). The **open** (arrival-rate) workload form — D17's own reasoning
 // for leading with it: VUs loop in the closed form, so a slow system just makes VUs back off and
 // issue fewer requests (understating latency); the open form keeps arriving on schedule and lets
@@ -3874,8 +3952,9 @@ function printUsage(): void {
       '                                                      --format json is for editor integrations (VS Code)',
       '                                                      --allow-public-target <origin> the same affirmation `run` takes, so a suite that legitimately',
       '                                                      scans a public host can still get a clean check (repeatable)',
-      '  tflw init [--load]                                 scaffold tflw.config + example.tflw',
+      '  tflw init [--load] [--scan]                        scaffold tflw.config + example.tflw',
       '                                                      --load also scaffolds load.tflw (a workload-bearing `test`, M29/M50)',
+      '                                                      --scan also scaffolds scan.tflw + a commented `authorized target` (M200, D1053)',
       '  tflw docs [topic]                                  print a SPEC.md cheatsheet section; no topic lists them all',
       '  tflw spec [--json]                                 print this build\'s construct manifest — every step keyword, matcher, generator,',
       '                                                      locator, config word and diagnostic code it dispatches, plus a build stamp',
