@@ -51,6 +51,7 @@ import type {
   ObjectLit,
   PathSegment,
   PauseStmt,
+  Program,
   Stage,
   StringLit,
   Subject,
@@ -142,6 +143,10 @@ export const PRINTABLE = new Set<string>([
   // unreachable until the block itself prints, which is why this single kind takes BROWSER from
   // 32 round-tripping tests to 164 (`§4f`).
   'WithinBlock',
+  // `A4-1` — the root, and the one kind no door could ever have asked for: every door prints a
+  // *fragment*, so the node that holds fragments appeared on no worklist until the whole-file
+  // property needed it. It is worth 133 of the corpus's 260 clean files on its own (`§4h`).
+  'Program',
   // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
   // statements that read or announce a response.
   'DurationSubject',
@@ -235,6 +240,8 @@ export function print(node: Node, options: { readonly indent?: number } = {}): P
 
 function printNode(node: Node, level: number): string {
   switch (node.type) {
+    case 'Program':
+      return printProgram(node as Program, level);
     case 'TestDecl':
       return printTest(node as TestDecl, level);
     case 'CrawlDecl':
@@ -327,6 +334,50 @@ function printNode(node: Node, level: number): string {
 const pad = (level: number) => INDENT.repeat(level);
 
 // ---- declarations ----------------------------------------------------------
+
+/**
+ * A whole file (`A4-1`).
+ *
+ * IT PRINTS IN THE FILE'S OWN ORDER, NOT IN THE AST'S ARRAY ORDER, and the reason is a
+ * measurement. `Program` keeps `imports`/`uses`/`actions`/`hooks`/`tests`/`crawls` as six
+ * separate arrays, so a printer that walked them in turn would emit one canonical order and lose
+ * whatever interleaving the author wrote — a hook declared after the first test, a crawl among
+ * the tests. That would have made file order the **sixth** member of the normalisation family
+ * (`§6p`): a spelling the AST stopped recording.
+ *
+ * It does not have to be. Every node carries a span, and `build.ts` gives every node it makes the
+ * same one (`SYNTHETIC`, `ORIGIN..ORIGIN`). So a **stable** sort on `span.start` is two rules in
+ * one: a parsed program comes back in the order it was written, and a built program — whose spans
+ * are all equal — is left exactly as the arrays had it, which is the only order it has. No flag,
+ * no caller decision, and the two cases cannot drift apart.
+ *
+ * THE HAZARD IT LEAVES, named because nothing currently constructs it: a *mixed* program, built
+ * nodes spliced into a parsed one, would sort every built node to the very top — ahead of the
+ * imports — because `ORIGIN` precedes every real position. No path makes one today (`D1049`'s
+ * write route splices **text** through `insertIntoSource` and never assembles a `Program`), and
+ * the day one does, this is the line that has to learn about it.
+ */
+function printProgram(p: Program, level: number): string {
+  const decls: ReadonlyArray<TestDecl | CrawlDecl | Node> = [
+    ...p.imports, ...p.uses, ...p.actions, ...p.hooks, ...p.tests, ...(p.crawls ?? []),
+  ];
+  // By line alone, and deliberately with no column tiebreak: a declaration header must end its
+  // line (`parseHookDecl`/`parseTest` all call `endLine()`), so two top-level declarations cannot
+  // share one and a column term could never discriminate. It was written first and a mutation
+  // survived it — an unreachable branch is not a defensive one, it is a line no gate can ever
+  // hold to account.
+  const ordered = [...decls].sort((a, b) => a.span.start.line - b.span.start.line);
+
+  // One blank line between declarations. `format` preserves blank lines rather than imposing them
+  // (`format.ts:67`), so this is the printer's own choice and neither gate in `print.test.ts` can
+  // see it — a tree comparison reads two layouts as one program — which is why it has a test of
+  // its own, exactly as `printTest`'s tags-on-one-line does.
+  //
+  // `import` and `use` are one line each and the corpus groups them without blank lines between,
+  // but NOT YET: neither prints until `A4-2`, so a grouping rule written here would be a branch no
+  // input could reach. It arrives with them, with its own assertion.
+  return ordered.map((d) => printNode(d, level)).join('\n\n');
+}
 
 function printTest(t: TestDecl, level: number): string {
   const lines: string[] = [];

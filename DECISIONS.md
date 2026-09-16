@@ -5572,6 +5572,15 @@ enough for a maintainer to confirm it is real.*
 | **`M135b`** | tflw | the SARIF exporter (D403–D407, D410–D413), `report/findings.sarif` write condition (D404), `report/repros/`, `@types/sarif` + `ajv` + schema test (D414), docs-site + SPEC corrections | no | no |
 | **`M135c`** | tflw-tests | acceptance over the emitted document (D415) | no | no |
 
+### D419
+
+<sub>cited from SPEC.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
+
+**D419 — `not-asked` never fails an assertion, and is never silent either**
+
+The assertion still **passes**. `finalizeVerdict` remains the one derivation of `RunReport.ok`
+(`D386`), and nothing here is a second gate axis.
+
 ### D421
 
 <sub>cited from tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
@@ -13006,5 +13015,17 @@ the right question — *is this even required? this is the mutation testing we d
 is not: the sweep was retired on 2026-09-15 (`M194`/`M195`) in favour of exactly this kind of
 test, and the hand kill proves per plant what the census would prove per roster, in two minutes
 and one browser instead of an hour and hundreds. The verdict table records the hand kill.
+
+### M200
+
+<sub>cited from SPEC.md · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
+
+**`M200` — the page learns to write: four modes over one language**
+
+`M192` slice 1 shipped a page that *reads* — a project, its runs, four views chosen by what the
+artefact holds. This arc is the other half: the page writes `.tflw` files. It replaces
+`PLAN_M192_TFLW_UI.md` §7's slice list (slices 2–5, "API authoring / WebUI live browser /
+workload test plan / security triage"), which named four rounds by *kind of test* — a framing
+the grilling found wrong, for a reason recorded as `D1043` below.
 
 <!-- GENERATED:decisions:end -->

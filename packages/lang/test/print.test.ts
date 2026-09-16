@@ -28,11 +28,57 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSource, print, PRINTABLE, CONTEXT_BOUND, format } from '../src/index.js';
 import type { Node, Program, Step, Subject, TestDecl, Value } from '../src/index.js';
-import { SYNTHETIC } from '../src/build.js';
+import { SYNTHETIC, buildTest } from '../src/build.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..', '..');
 const siblingRoot = resolve(repoRoot, '..', 'testFlow-tests');
+
+/**
+ * **THIS GATE'S CORPUS IS THE OTHER REPOSITORY, AND UNTIL `A4-1` NOTHING SAID SO** (`M200-05`).
+ *
+ * `.tflw` files in *this* repository are almost all scratch copies or pulled run artefacts, which
+ * the walker above skips by name. What is left is **6 files that parse clean and declare
+ * anything**, against the sibling's 254 — so every number `D1048`'s ratchet pins (`ExpectStmt`
+ * 2987, `Locator` 2158, …) is a measurement of `testFlow-tests`, taken on a developer machine
+ * that happens to have both trees.
+ *
+ * CI has one tree. `D710` refuses a sibling checkout in this repository's CI and `D511` fixes the
+ * merge order regardless, so that is not going to change — which means the floors above would have
+ * met `ExpectStmt: 26` on the first push and gone red, and the `files.length > 100` guard would
+ * have failed before them. The branch has never been pushed, which is the only reason this was
+ * still ahead of us rather than behind.
+ *
+ * So the gate declares its corpus and runs in one of **two tiers**, which is `D874`'s shape
+ * (*every guard declares the corpus it reads*) and `D683`'s rule (*a gate whose corpus is narrower
+ * than its subject reports a clean number, never a smaller one* — so it must say which corpus it
+ * got). The correctness claims — re-parses to the same tree, `format` leaves it alone — run in
+ * both tiers on whatever files exist, because those need a corpus, not a *particular* corpus. Only
+ * the counting claims are tier-specific, and the in-repo tier has its own non-vacuous floors
+ * rather than being skipped: a skipped ratchet is the vacuity this repository keeps a ledger for.
+ *
+ * `TFLW_PRINT_CORPUS=repo` forces the in-repo tier on a machine that has both trees. That exists
+ * because the defect above was undetectable from here — CI's behaviour could not be reproduced on
+ * the box at all, and a gate whose other half you cannot run is a gate you are not maintaining.
+ */
+// Lazy, not a module-level `const`: `corpus` closes over `SKIP_DIR`, which is declared below, so
+// resolving the tier at module load put that binding in its temporal dead zone.
+let tierCache: 'both' | 'repo' | null = null;
+const tier = (): 'both' | 'repo' =>
+  (tierCache ??= process.env.TFLW_PRINT_CORPUS === 'repo' || corpus(siblingRoot).length === 0 ? 'repo' : 'both');
+const corpusFiles = (): string[] => {
+  const files = tier() === 'repo' ? corpus(repoRoot) : [...corpus(repoRoot), ...corpus(siblingRoot)];
+  // **A FLOOR IS BLIND IN EXACTLY ONE DIRECTION — that the gate read MORE than it claimed** — and
+  // that is the direction `M200-05` hid in: this gate has read the sibling since `A0-1` while its
+  // docblock said "the corpus", and every floor passed because more input clears a floor. So the
+  // tier's identity is asserted rather than its size. Without this, breaking tier detection toward
+  // the wider corpus is invisible, which a mutation demonstrated.
+  if (tier() === 'repo') {
+    const strays = files.filter((f) => f.startsWith(siblingRoot));
+    assert.deepEqual(strays, [], `the repo tier read ${strays.length} sibling files`);
+  }
+  return files;
+};
 
 /** Directories that hold copies rather than sources: pulled run artefacts and scratch. */
 const SKIP_DIR = /^(node_modules|dist|\.git|runs|coverage)$|^\.m.*-scratch$/;
@@ -143,8 +189,10 @@ function wrap(node: Node, text: string): string {
 }
 
 test('every printable node in the corpus re-parses to the node it was printed from', () => {
-  const files = [...corpus(repoRoot), ...corpus(siblingRoot)];
-  assert.ok(files.length > 100, `expected the corpus, found ${files.length} files`);
+  const files = corpusFiles();
+  // Tier-aware, because `> 100` is a claim about the sibling's tree and this gate may not have it.
+  const least = tier() === 'both' ? 100 : 4;
+  assert.ok(files.length > least, `expected the ${tier()} corpus, found ${files.length} files`);
 
   const tally = new Map<string, Tally>();
   const refusals = new Map<string, number>();
@@ -200,7 +248,7 @@ test('every printable node in the corpus re-parses to the node it was printed fr
 
   const rows = [...tally.entries()].sort((a, b) => b[1].checked - a[1].checked);
   const total = rows.reduce((n, [, t]) => n + t.checked, 0);
-  console.log(`\n  printer coverage — ${filesRead} files, ${total} nodes round-tripped\n`);
+  console.log(`\n  printer coverage [${tier()} corpus] — ${filesRead} files, ${total} nodes round-tripped\n`);
   for (const [kind, t] of rows) console.log(`    ${kind.padEnd(26)} ${String(t.checked).padStart(6)} checked  ${String(t.refused).padStart(6)} refused`);
   if (refusals.size > 0) {
     console.log('\n  refused, by reason:');
@@ -223,12 +271,25 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // coverage falling is either a printer that regressed or a corpus that lost fixtures, and both
   // are things somebody should have to state. Moving a row down is allowed the way the headcount
   // gate allows it — in the same change, with the reason on the row.
-  const FLOOR: ReadonlyArray<readonly [string, number]> = [
+  //
+  // TWO TIERS, one per corpus (`M200-05`, above). The `both` row is what every slice from `A3-1`
+  // on measured; the `repo` row is what CI can actually see, and it is pinned rather than skipped
+  // so that the tier CI runs still ratchets on something.
+  const FLOOR_BOTH: ReadonlyArray<readonly [string, number]> = [
     ['ExpectStmt', 2987], ['Locator', 2158], ['ApiStep', 1758], ['CaptureStmt', 751],
     ['ClickStmt', 728], ['TestDecl', 546], ['FillStmt', 417], ['LetStmt', 296],
     ['WithinBlock', 393], ['OpenStmt', 231], ['CallStmt', 168], ['LogStmt', 55], ['ThresholdDecl', 42],
     ['WaitUntilApiStmt', 25], ['CrawlDecl', 11], ['PauseStmt', 4],
   ];
+  // Measured, not guessed: 6 files, 71 nodes. Thin, and the thinness is the finding rather than
+  // the fix — `M200-05` carries the open half, which is that this repository has no printer corpus
+  // of its own and the honest repair is to give it one, not to keep borrowing the sibling's.
+  const FLOOR_REPO: ReadonlyArray<readonly [string, number]> = [
+    ['ExpectStmt', 26], ['ApiStep', 14], ['TestDecl', 11], ['Locator', 5], ['ThresholdDecl', 4],
+    ['CaptureStmt', 3], ['SharedIterationsWorkload', 2], ['PauseStmt', 2], ['OpenStmt', 2],
+    ['LogStmt', 1], ['ClickStmt', 1],
+  ];
+  const FLOOR = tier() === 'both' ? FLOOR_BOTH : FLOOR_REPO;
   const fell = FLOOR
     .map(([kind, floor]) => [kind, floor, tally.get(kind)?.checked ?? 0] as const)
     .filter(([, floor, got]) => got < floor)
@@ -236,6 +297,210 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   assert.deepEqual(fell, [], `\nprinter coverage fell — a kind stopped round-tripping, or the corpus lost fixtures:\n  ${fell.join('\n  ')}\n`);
   assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n\n')}\n`);
   assert.deepEqual(unstable, [], `\n${unstable.slice(0, 10).join('\n\n')}\n`);
+});
+
+/**
+ * `A4-1` — the whole-file round trip, which is `D1046`'s original wording asked in the only form
+ * that examines anything.
+ *
+ * `D1046` named `format(print(parse(src))) === format(src)`, a BYTE property. `§1` measured what
+ * that would have examined when the printer was one mode wide — zero of 652 files — and this gate
+ * was written per node instead. `A4` can finally run the whole-file version, and measuring it
+ * a second time (`§4h`) shows the byte wording was never the right one and never could have been:
+ * **`format` preserves comments and blank lines** (`format.ts:67` and the comment branch above
+ * it) **and the AST records neither**. 237 of the 260 clean files carry a comment and 243 carry a
+ * blank line, so a byte property could examine **15 files** — and its failures on the other 245
+ * would all be the same non-defect, a printer declining to invent prose it was never given.
+ *
+ * So the file property is the tree property, exactly as the node property is: print the whole
+ * program, parse it back, compare with spans stripped. That fails precisely when a field is
+ * dropped, which is the defect worth a gate. What the byte wording was reaching for is kept as
+ * the second claim below — the printer's output is a **format fixpoint** — which is the half of
+ * `format(print(…)) === format(…)` that says something about the printer rather than about the
+ * author's comments, and unlike the byte property it is checkable on every file.
+ */
+test('every clean file in the corpus round-trips through the printer whole', () => {
+  const files = corpusFiles();
+  assert.ok(files.length > (tier() === 'both' ? 100 : 4), `expected the ${tier()} corpus, found ${files.length} files`);
+
+  let eligible = 0;
+  let roundTripped = 0;
+  const refusedBy = new Map<string, number>();
+  const mismatches: string[] = [];
+  const unstable: string[] = [];
+
+  for (const file of files) {
+    const source = readFileSync(file, 'utf8');
+    const { program, diagnostics } = parseSource(source);
+    // A file the parser rejected holds recovery nodes, not authored ones — and this is also why
+    // `MalformedStep` can never reach this gate: the parser emits one only where it has already
+    // raised an error (`§4h`), so all 24 occurrences sit in files skipped on this line.
+    if (diagnostics.some((d) => d.severity === 'error')) continue;
+    const declared =
+      program.imports.length + program.uses.length + program.actions.length +
+      program.hooks.length + program.tests.length + (program.crawls?.length ?? 0);
+    // A file of nothing but comments parses to an empty program and would "round-trip" as the
+    // empty string. Counting that would inflate the ratchet with files the printer never touched.
+    if (declared === 0) continue;
+    eligible += 1;
+
+    const printed = print(program, { indent: 0 });
+    if (!printed.ok) {
+      const reason = printed.reason ?? 'unknown';
+      refusedBy.set(reason, (refusedBy.get(reason) ?? 0) + 1);
+      continue;
+    }
+    const text = printed.text + '\n';
+
+    const back = parseSource(text);
+    if (back.diagnostics.some((d) => d.severity === 'error')) {
+      mismatches.push(`${file}: printed source does not parse —\n  ${back.diagnostics.filter((d) => d.severity === 'error').map((d) => `${d.code} line ${d.span.start.line}: ${d.message}`).join('\n  ')}`);
+      continue;
+    }
+    try {
+      assert.deepEqual(stripSpans(back.program), stripSpans(program));
+      roundTripped += 1;
+    } catch {
+      mismatches.push(`${file}: printed whole, re-parsed to a different program`);
+      continue;
+    }
+
+    // The second claim: what the printer wrote is what `format` would already have written. Over
+    // a whole file this is stronger than the per-node version — it covers the blank lines between
+    // declarations and the indentation of every nested block at once, neither of which any single
+    // node's wrapper can exercise.
+    const formatted = format(text);
+    if (!formatted.ok || formatted.formatted !== text) {
+      unstable.push(`${file}: \`format\` rewrites the printer's own output`);
+    }
+  }
+
+  console.log(`\n  whole-file round trip [${tier()} corpus] — ${roundTripped} of ${eligible} files printed and re-parsed to the same program\n`);
+  if (refusedBy.size > 0) {
+    console.log('  refused, by reason — this census is `A4`\'s worklist:');
+    for (const [reason, n] of [...refusedBy.entries()].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(4)}  ${reason}`);
+    console.log('');
+  }
+
+  assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n')}\n`);
+  assert.deepEqual(unstable, [], `\n${unstable.slice(0, 10).join('\n')}\n`);
+
+  // The same ratchet `D1048` puts on node coverage, for the same reason and with the same rule:
+  // it may only rise, and moving it down happens in the change that caused it with the reason on
+  // the row. `A4-1` sets it where `§4h`'s greedy analysis predicted `Program` alone would land.
+  const FLOOR_FILES = tier() === 'both' ? 131 : 4;
+  assert.ok(
+    roundTripped >= FLOOR_FILES,
+    `whole-file coverage fell: ${roundTripped} files round-tripped, floor is ${FLOOR_FILES}`,
+  );
+});
+
+/**
+ * `A4-1` — the span sort, asserted directly, because the round trip above is structurally blind
+ * to it: the arrays rebuild identically whatever order the declarations were emitted in, so a
+ * printer that sorted every file into canonical order would pass every gate in this file.
+ *
+ * 3 of the 260 corpus files are written out of canonical order, and all three are the sibling's —
+ * so a gate that only *counted* would have been green on the box and in CI and red on a machine
+ * with both trees, which is the worst shape a gate can have (`§4h`). This asks the property of a
+ * fixture instead, where it holds on every machine.
+ */
+test('a whole file prints in the order it was written, not in the AST array order', () => {
+  // `test` and `crawl` are the two printable roots at `A4-1`, so the fixture is built from those:
+  // a crawl BETWEEN two tests, which is one of the three real corpus files this rule is for
+  // (`tflw-acceptance/security/spider.tflw`). `A4-2` gives `import`/`use`/`action`/`before` a
+  // printer, and this fixture grows to carry a hook after the first test at the same time.
+  const source = [
+    'test "first"',
+    '  api GET /a',
+    '  expect status equals 200',
+    '',
+    'crawl "between"',
+    '  seed openapi "/openapi.json"',
+    '',
+    'test "second"',
+    '  api GET /b',
+    '  expect status equals 200',
+    '',
+  ].join('\n');
+
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], 'the fixture must parse clean');
+  // The AST really does hold them in two arrays — without this the test could pass by accident on
+  // a `Program` that had kept one ordered list all along.
+  assert.equal(program.tests.length, 2);
+  assert.equal(program.crawls?.length, 1);
+
+  const printed = print(program, { indent: 0 });
+  assert.ok(printed.ok, printed.ok ? '' : printed.reason);
+
+  const order = printed.text
+    .split('\n')
+    .filter((l) => /^(test|crawl) /.test(l))
+    .map((l) => l.split(' ')[0]);
+  assert.deepEqual(order, ['test', 'crawl', 'test'],
+    `the file's own order was not preserved — array order would be test, test, crawl:\n${printed.text}`);
+});
+
+/**
+ * `A4-1` — the blank lines between declarations, asserted directly for the reason `A0-1` had to
+ * assert tags-on-one-line: **both gates in this file are blind to layout.** The round trip
+ * compares trees, and two layouts of the same program are the same tree; the `format` fixpoint
+ * accepts whatever the printer wrote, because `format` preserves blank lines rather than imposing
+ * them (`format.ts:67`). Two mutations proved it — running every declaration together, and forcing
+ * a blank line where the corpus groups one-liners — and both survived the whole suite.
+ *
+ * So the convention is a claim this file makes on its own.
+ */
+test('a printed file separates its declarations with exactly one blank line', () => {
+  const source = [
+    'test "first"',
+    '  api GET /a',
+    '  expect status equals 200',
+    '',
+    'test "second"',
+    '  api GET /b',
+    '  expect status equals 200',
+    '',
+  ].join('\n');
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], 'the fixture must parse clean');
+
+  const printed = print(program, { indent: 0 });
+  assert.ok(printed.ok, printed.ok ? '' : printed.reason);
+  const lines = printed.text.split('\n');
+
+  // Every declaration after the first has exactly one blank line in front of it. `A4-2` adds the
+  // other half — `import`/`use` grouped with none — when those kinds start printing.
+  assert.ok(lines.length > 0 && lines[0]!.startsWith('test '), `the file should open with its first declaration:\n${printed.text}`);
+  for (const [i, line] of lines.entries()) {
+    if (i === 0 || !line.startsWith('test ')) continue;
+    assert.equal(lines[i - 1], '', `\`${line}\` has no blank line before it:\n${printed.text}`);
+    assert.notEqual(lines[i - 2], '', `\`${line}\` has two blank lines before it:\n${printed.text}`);
+  }
+});
+
+/**
+ * `A4-1` — a program built rather than parsed carries `SYNTHETIC` spans, all equal, so the stable
+ * sort must be a no-op and the arrays' own order must survive. This is the other half of the rule
+ * and it cannot be read off the corpus, which contains no built program at all.
+ */
+test('a program whose spans are all synthetic prints in array order', () => {
+  const one = buildTest({ name: 'one', tags: [], workload: null, thresholds: [], body: [] });
+  const two = buildTest({ name: 'two', tags: [], workload: null, thresholds: [], body: [] });
+  assert.ok(one.ok && two.ok, 'the fixture must build');
+
+  const program: Program = {
+    type: 'Program', imports: [], uses: [], actions: [], hooks: [],
+    tests: [one.node, two.node], span: SYNTHETIC,
+  };
+  const printed = print(program, { indent: 0 });
+  assert.ok(printed.ok, printed.ok ? '' : printed.reason);
+  assert.deepEqual(
+    printed.text.split('\n').filter((l) => l.startsWith('test ')),
+    ['test "one"', 'test "two"'],
+    `array order was not preserved for a built program:\n${printed.text}`,
+  );
 });
 
 test('the printer refuses what it cannot print, and names the node kind', () => {
