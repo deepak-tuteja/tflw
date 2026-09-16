@@ -25,6 +25,8 @@
 // examined **zero of 652 files** during `A0` and reported success for doing it.
 import { INDENT } from './format.js';
 import type {
+  CrawlDecl,
+  CrawlSeed,
   ApiBody,
   ApiHeader,
   ApiRequestSpec,
@@ -108,6 +110,12 @@ export const PRINTABLE = new Set<string>([
   'WaitUntilApiStmt',
   'InlineDataTable',
   'FileDataTable',
+  // `A2-2` — the crawl. A SECOND printable root: everything above is a step or a declaration
+  // reached through `test`, and this is the first node that is neither.
+  'CrawlDecl',
+  'OpenApiSeed',
+  'TrafficSeed',
+  'SpiderSeed',
   // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
   // statements that read or announce a response.
   'DurationSubject',
@@ -203,6 +211,12 @@ function printNode(node: Node, level: number): string {
   switch (node.type) {
     case 'TestDecl':
       return printTest(node as TestDecl, level);
+    case 'CrawlDecl':
+      return printCrawl(node as CrawlDecl, level);
+    case 'OpenApiSeed':
+    case 'TrafficSeed':
+    case 'SpiderSeed':
+      return printSeed(node as CrawlSeed, level);
     case 'ApiStep':
       return printApiStep(node as ApiStep, level);
     case 'ExpectStmt':
@@ -298,6 +312,83 @@ function printTest(t: TestDecl, level: number): string {
   for (const step of t.body) lines.push(printNode(step, inner));
   for (const th of t.thresholds) lines.push(pad(inner) + printThreshold(th));
   return lines.join('\n');
+}
+
+/**
+ * `crawl "name" [as s1, s2]` and its body (`M137e`/`M137f`, `D435`–`D442`, `D450`).
+ *
+ * **THE BODY ORDER IS A SPELLING THE AST STOPPED RECORDING — fourth instance, fourth answer.**
+ * `parseCrawlBody` accepts `seed`, `exclude` and steps interleaved in any order and files them into
+ * three separate arrays, so `seed / exclude / expect` and `expect / seed / exclude` are one node.
+ * `Stage` REFUSED (its two spellings mean different programs), a JSON key is picked BARE, a `log`
+ * level is picked OMITTED — and this is picked in the **declared order of the fields**: seeds, then
+ * excludes, then body. Not arbitrarily: both real crawls in the corpus write exactly that order,
+ * and it is the order the construct reads in — where the surface comes from, what is taken out of
+ * it, then what is asserted about what is left.
+ *
+ * A crawl's steps are **not** restricted here. `parseCrawlBody`'s own comment says a crawl body
+ * holding an `api GET /orders` line is a semantic error about a fully-formed node, which the
+ * checker owns (`D96`/`D19`'s layering) — so a printer that refused one would be enforcing a rule
+ * at the wrong layer and would refuse to print back a file the parser accepts.
+ */
+function printCrawl(c: CrawlDecl, level: number): string {
+  const lines: string[] = [];
+  // One line for all the tags, `printTest`'s convention and for its measured reason.
+  if (c.tags.length > 0) lines.push(pad(level) + c.tags.map((tag) => '@' + tag).join(' '));
+
+  let header = pad(level) + 'crawl ' + printString(c.name);
+  // The same comma list `test` takes. Empty is legal and means the crawl sends no credential.
+  if (c.sessions.length > 0) header += ' as ' + c.sessions.join(', ');
+  lines.push(header);
+
+  const inner = level + 1;
+  for (const seed of c.seeds) lines.push(printSeed(seed, inner));
+  for (const glob of c.excludes) lines.push(pad(inner) + 'exclude ' + printString(glob));
+  for (const step of c.body) lines.push(printNode(step, inner));
+
+  // A crawl with no body at all is `TF068`/`EMPTY_BLOCK` — the parser refuses to read one back, so
+  // printing it would emit a header the language cannot take. `A1-2`'s rule: never write a line the
+  // parser will not accept.
+  if (c.seeds.length === 0 && c.excludes.length === 0 && c.body.length === 0) {
+    refuse('CrawlDecl', 'a `crawl` with an empty body does not parse — it needs at least one `seed` line');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * `seed openapi [<service>] "<source>"` | `seed traffic` | `seed spider [<service>] "<root>"`.
+ *
+ * The spider's two caps are **sub-clauses indented beneath the seed line** — `authorized target`'s
+ * idiom rather than a new one (`D450`) — and both are optional, defaulted by the runtime, so an
+ * absent block and a block declaring neither are the same node and print the same way.
+ */
+function printSeed(seed: CrawlSeed, level: number): string {
+  const p = pad(level);
+  switch (seed.type) {
+    case 'TrafficSeed':
+      // The one seed that takes no argument at all: the traffic is whatever the run captured.
+      return p + 'seed traffic';
+    case 'OpenApiSeed':
+      return `${p}seed openapi ${seedService(seed.service)}${printString(seed.source)}`;
+    case 'SpiderSeed': {
+      const lines = [`${p}seed spider ${seedService(seed.service)}${printString(seed.root)}`];
+      const inner = pad(level + 1);
+      // `raw`, not `num(value)`: both caps are `NumberLit`s and keep the text they were written
+      // as, so nothing here is synthesised — unlike the workload fields, which store bare
+      // milliseconds with no `raw` beside them and have to have a spelling chosen for them.
+      if (seed.maxPages) lines.push(`${inner}max pages ${seed.maxPages.raw}`);
+      if (seed.maxDepth) lines.push(`${inner}max depth ${seed.maxDepth.raw}`);
+      return lines.join('\n');
+    }
+  }
+}
+
+/** `seed openapi root "/openapi.json"` — an ident before the string names the service (`D1030`),
+ *  the same shape `api <service> GET /path` and `matches schema … from <service> "…"` use. */
+function seedService(service: string | undefined): string {
+  if (service === undefined) return '';
+  if (!isBareIdent(service)) refuse('CrawlDecl', `\`${service}\` is not a service name this language can write`);
+  return service + ' ';
 }
 
 function printWorkload(w: Workload, level: number): string {

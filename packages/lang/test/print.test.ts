@@ -81,13 +81,19 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
   if (node.type === 'TestDecl') {
     const program = parseSource(wrap(node, text)).program;
     return program.tests.length === 1 ? program.tests[0]! : null;
+  }
+  if (node.type === 'CrawlDecl') {
+    // `Program.crawls` is absent-when-empty by design (`ast.ts`), so "no crawls" and "one crawl"
+    // are different SHAPES, not just different lengths.
+    const crawls = parseSource(wrap(node, text)).program.crawls;
+    return crawls && crawls.length === 1 ? crawls[0]! : null;
   }
   const program = parseSource(wrap(node, text)).program;
   const host: TestDecl | undefined = program.tests[0];
@@ -114,8 +120,12 @@ interface Tally { checked: number; refused: number; }
 
 /** The source the gate re-parses a printed node from — also what the format-fixpoint claim below
  *  formats, so the two claims are made about the same bytes. */
+const ROOTS = new Set<string>(['TestDecl', 'CrawlDecl']);
+
+/** `A2-2`: a crawl is the second printable ROOT this gate has seen. Everything else is a step and
+ *  needs a host `test` around it; a root stands alone and must not be indented into one. */
 function wrap(node: Node, text: string): string {
-  return node.type === 'TestDecl' ? text + '\n' : `test "wrapper"\n${text}\n`;
+  return ROOTS.has(node.type) ? text + '\n' : `test "wrapper"\n${text}\n`;
 }
 
 test('every printable node in the corpus re-parses to the node it was printed from', () => {
@@ -138,7 +148,7 @@ test('every printable node in the corpus re-parses to the node it was printed fr
     for (const node of collect(program)) {
       const t = tally.get(node.type) ?? { checked: 0, refused: 0 };
       tally.set(node.type, t);
-      const printed = print(node, { indent: node.type === 'TestDecl' ? 0 : 1 });
+      const printed = print(node, { indent: ROOTS.has(node.type) ? 0 : 1 });
       if (!printed.ok) {
         t.refused += 1;
         const reason = printed.reason ?? 'unknown';
@@ -762,6 +772,77 @@ test('a `log` level is printed only when it is not the default', () => {
   // A level that is not the default has to survive, or the assertion above is just "drop it".
   assert.equal(print(assertionStep('log warn "x"'), { indent: 1 }).text, '  log warn "x"');
   assert.equal(print(assertionStep('log debug "x" to html'), { indent: 1 }).text, '  log debug "x" to html');
+});
+
+test('A2-2: a crawl, its three seeds, and the body order the AST stopped recording', () => {
+  const crawl = (src: string): Node => {
+    const { program, diagnostics } = parseSource(src);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], src);
+    const c = program.crawls?.[0];
+    assert.ok(c, src);
+    return c;
+  };
+
+  // The whole construct, in the order this printer picks.
+  const whole = [
+    '@crawl @vuln',
+    'crawl "the documented surface" as peer, shopper',
+    '  seed openapi root "/openapi.json"',
+    '  seed traffic',
+    '  seed spider adminConsole "/admin"',
+    '    max pages 60',
+    '    max depth 2',
+    '  exclude "/v1/contract-demo/*"',
+    '  check response has no critical authorization violations',
+    '',
+  ].join('\n');
+  assert.equal(print(crawl(whole)).text, whole.trimEnd());
+
+  // **The body order is a spelling the AST stopped recording — and this is the test that says so.**
+  // `parseCrawlBody` files seeds, excludes and steps into three arrays, so these two sources are
+  // ONE node and must print identically. Fourth instance of the normalisation family, and the
+  // fourth different answer: `Stage` refuses, a JSON key is picked bare, a `log` level is picked
+  // omitted, and this is picked in field order.
+  const declared = 'crawl "s"\n  seed traffic\n  exclude "/x"\n  expect status equals 200\n';
+  const shuffled = 'crawl "s"\n  expect status equals 200\n  exclude "/x"\n  seed traffic\n';
+  assert.deepEqual(stripSpans(crawl(declared)), stripSpans(crawl(shuffled)), 'the two spellings are one node');
+  assert.equal(print(crawl(shuffled)).text, print(crawl(declared)).text);
+  assert.equal(print(crawl(shuffled)).text, declared.trimEnd());
+
+  // `seed traffic` takes no argument; the other two take an optional service before the string.
+  assert.equal(print(crawl('crawl "s"\n  seed traffic\n')).text, 'crawl "s"\n  seed traffic');
+  assert.equal(print(crawl('crawl "s"\n  seed openapi "/o.json"\n')).text, 'crawl "s"\n  seed openapi "/o.json"');
+  assert.equal(print(crawl('crawl "s"\n  seed spider "/a"\n')).text, 'crawl "s"\n  seed spider "/a"');
+
+  // Each spider cap is independently optional, so all four combinations are different output and a
+  // fixture carrying only the both-present case cannot tell them apart.
+  assert.equal(print(crawl('crawl "s"\n  seed spider "/a"\n    max pages 5\n')).text, 'crawl "s"\n  seed spider "/a"\n    max pages 5');
+  assert.equal(print(crawl('crawl "s"\n  seed spider "/a"\n    max depth 3\n')).text, 'crawl "s"\n  seed spider "/a"\n    max depth 3');
+
+  // A crawl with no `as` and no tags is the commonest shape in the corpus (12 of 22 have no
+  // session, 16 of 22 no tag), so the absent case is the one a header bug would hide behind.
+  assert.equal(print(crawl('crawl "bare"\n  seed traffic\n')).text, 'crawl "bare"\n  seed traffic');
+});
+
+test('A2-2: a crawl the parser will not read back is refused, not written', () => {
+  // An empty body is `EMPTY_BLOCK` at the parser, so a printer that emitted the header alone would
+  // be writing a declaration the language cannot take back — `A1-2`'s rule. Unreachable from any
+  // source text (the parser never builds one), so it is asserted against the contract, the way
+  // `A1-4` settled `diagnose`'s unreachable guard.
+  const empty: Node = {
+    type: 'CrawlDecl', name: { type: 'StringLit', value: 's', parts: [], span: SYNTHETIC },
+    tags: [], sessions: [], seeds: [], excludes: [], body: [], span: SYNTHETIC,
+  } as unknown as Node;
+  const r = print(empty);
+  assert.equal(r.ok, false);
+  assert.match(r.reason ?? '', /empty body/);
+
+  // A service name that is not a bare identifier cannot be written back either.
+  const badService: Node = {
+    type: 'OpenApiSeed', service: 'not an ident',
+    source: { type: 'StringLit', value: '/o.json', parts: [], span: SYNTHETIC }, span: SYNTHETIC,
+  } as unknown as Node;
+  assert.match(print(badService).reason ?? '', /not a service name/);
 });
 
 test('A2-1: the three response scan families, every severity, and the negation that reads backwards', () => {
