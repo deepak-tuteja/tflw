@@ -868,22 +868,14 @@ test('every node kind in the corpus is declared printable, context-bound, or ref
  * claim over a subset nobody had named.
  */
 const OWED: ReadonlySet<string> = new Set<string>([
-  // `M201` `S2` — 87 -> **42**. `__fixtures__/printer-corpus/values.tflw` takes every literal,
-  // generator, date expression and transform; `api.tflw` takes the four non-inline body shapes,
-  // headers, the retry clause, both data tables and the four response subjects that are not a
-  // JSON path. Every spelling was lifted from a real site in the sibling at the node's own span.
-  // `S3` takes the browser, `S4` load, crawl and the file header.
-  'AcceptDialogStmt', 'CloseTabStmt', 'CrawlDecl', 'DialogMessageSubject',
-  'DialogTypeSubject', 'DismissDialogStmt', 'DownloadBlock', 'DragStmt',
-  'DropFileStmt', 'FillFormRow', 'FillFormStmt', 'FillStmt',
-  'HoldRpsWorkload', 'HoldUsersWorkload', 'HookDecl', 'HoverStmt',
-  'ImportDecl', 'NetworkRequestRef', 'NetworkRequestSubject', 'OpenApiSeed',
-  'PageSubject', 'PerVuIterationsWorkload', 'PressStmt', 'RampRpsWorkload',
-  'RampUsersWorkload', 'ScrollStmt', 'SelectStmt', 'SpiderSeed',
-  'SpikeRpsWorkload', 'SpikeUsersWorkload', 'Stage', 'StepRpsWorkload',
-  'StepUsersWorkload', 'StubStmt', 'SwitchToNewTabBlock', 'SwitchToTabStmt',
-  'TickStmt', 'TrafficSeed', 'UntickStmt', 'UseDecl',
-  'WaitUntilUiStmt', 'WithinBlock',
+  // `M201` `S3` — 42 -> **17**. `browser.tflw` takes the pointer and keyboard steps, the form
+  // family, dialogs, tabs, downloads, the network stub and both scoping blocks. What is left is
+  // `S4`: the ten workloads and their `Stage`, the crawl and its three seeds, and the file header.
+  'CrawlDecl', 'HoldRpsWorkload', 'HoldUsersWorkload', 'HookDecl',
+  'ImportDecl', 'OpenApiSeed', 'PerVuIterationsWorkload', 'RampRpsWorkload',
+  'RampUsersWorkload', 'SpiderSeed', 'SpikeRpsWorkload', 'SpikeUsersWorkload',
+  'Stage', 'StepRpsWorkload', 'StepUsersWorkload', 'TrafficSeed',
+  'UseDecl',
 ]);
 
 /** Every node kind occurring in an in-repo file that prints and re-parses to the same program. */
