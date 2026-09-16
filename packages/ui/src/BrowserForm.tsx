@@ -1,0 +1,357 @@
+// The BROWSER door's authoring pane (`M200` `A3-5`).
+//
+// **BROWSER IS THE LARGEST DOOR BY USAGE AND THE SMALLEST BY VOCABULARY**, and both halves are
+// measured (PLAN §4f). 244 of the corpus' 893 tests are browser tests, across 51 files — more than
+// any other door. And what they are made of is three statements and one wrapper: `click` 766,
+// `fill` 433, `open` 270, `within` 403, with an assertion whose subject is a locator 641 times.
+//
+// A LOCATOR IS TWO FIELDS, ON ALL 2,296 INSTANCES IN THE CORPUS — a `kind` and a `value`, with no
+// optional clause, modifier or second spelling anywhere. So every locator in this form is a
+// dropdown beside a text box, and there is nothing else to offer. Four of the six kinds are 99.9%
+// of real use (`button` 803, `css` 516, `text` 498, `field` 476); `list` and `xpath` are three
+// occurrences between them and are still listed, because the grammar does not rank them and a form
+// that did would be inventing a rule the language does not have.
+//
+// `within` DOES NOT NEST HERE, AND THAT IS THE FORM'S DECISION RATHER THAN THE GRAMMAR'S. The
+// grammar accepts a `within` inside a `within` — `A3-4` verified it against the parser and the
+// printer recurses — but all 403 blocks in the corpus are at depth 1, so the form offers **one**
+// optional scope. A second level is reachable by editing the file, which is where `D985` says the
+// truth lives anyway.
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  buildClick,
+  buildExpect,
+  buildFill,
+  buildOpen,
+  buildTest,
+  buildWithin,
+  insertIntoSource,
+  LOCATOR_KINDS,
+  type ExpectSpec,
+  type Insertion,
+  type LocatorSpec,
+  type MatcherName,
+  type Step,
+} from '@tflw/lang';
+import { getFile, putFile, type FileView } from './api';
+import { diagnose } from './diagnose';
+import type { ProjectView } from './contract';
+
+export interface BrowserFormProps {
+  readonly project: ProjectView;
+  readonly onWritten: (path: string) => void;
+}
+
+/** What a row of this form does. Ordered by how often the corpus does it — `click` 766, `fill`
+ *  433 — rather than alphabetically or by the order the AST happens to declare. */
+const ACTIONS = ['click', 'fill', 'expect'] as const;
+type Action = (typeof ACTIONS)[number];
+
+/**
+ * The state words a form can assert, all five of them.
+ *
+ * `A3-3` found `§4g`'s two-of-five line was drawn on frequency where the grammar draws none:
+ * `parser.ts` holds these in one closed `STATE_WORDS` family with one spelling. The form inherits
+ * that — offering `visible` and `hidden` alone would leave `is disabled` writable only by hand for
+ * no reason a reader could recover.
+ */
+const STATES: readonly MatcherName[] = ['visible', 'hidden', 'enabled', 'disabled', 'checked'];
+
+/** One authored row, before it is built. */
+interface Row {
+  readonly action: Action;
+  readonly locator: LocatorSpec;
+  /** `fill`'s value, or `expect`'s operand when the matcher is `equals`. */
+  readonly value: string;
+  /** `expect`'s matcher: one of the five states, or `equals` for a text assertion. */
+  readonly matcher: MatcherName;
+}
+
+const EMPTY_ROW: Row = { action: 'click', locator: { kind: 'button', value: '' }, value: '', matcher: 'visible' };
+
+export function BrowserForm({ project, onWritten }: BrowserFormProps) {
+  const paths = useMemo(() => project.files.map((f) => f.path), [project]);
+  const [path, setPath] = useState(paths[0] ?? '');
+  const [file, setFile] = useState<FileView | null>(null);
+  const [mode, setMode] = useState<'new' | 'existing'>('new');
+  const [testName, setTestName] = useState('');
+  const [name, setName] = useState('the checkout page works');
+  const [tags, setTags] = useState('web');
+  const [openPath, setOpenPath] = useState('/');
+  const [scoped, setScoped] = useState(false);
+  const [scope, setScope] = useState<LocatorSpec>({ kind: 'css', value: '' });
+  const [frame, setFrame] = useState(false);
+  const [rows, setRows] = useState<readonly Row[]>([EMPTY_ROW]);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [wrote, setWrote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!path) return;
+    setFile(null);
+    getFile(path)
+      .then(setFile)
+      .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
+  }, [path]);
+
+  const testsInFile = useMemo(() => project.files.find((f) => f.path === path)?.tests ?? [], [project, path]);
+
+  const patchRow = useCallback((i: number, patch: Partial<Row>) => {
+    setRows((current) => current.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  }, []);
+
+  /**
+   * The steps this form is currently describing, or the first refusal that stops it.
+   *
+   * Built through `@tflw/lang`'s builders rather than assembled here, so the rules a step has to
+   * satisfy live in one place and this form finds out about them the same way `tflw check` does.
+   */
+  const steps = useMemo((): { ok: true; nodes: Step[] } | { ok: false; reason: string } => {
+    const built: Step[] = [];
+    for (const row of rows) {
+      if (row.action === 'click') {
+        const r = buildClick({ locator: row.locator, kind: 'single' });
+        if (!r.ok) return r;
+        built.push(r.node);
+      } else if (row.action === 'fill') {
+        const r = buildFill({ locator: row.locator, value: row.value });
+        if (!r.ok) return r;
+        built.push(r.node);
+      } else {
+        const spec: ExpectSpec = {
+          soft: false,
+          quantifier: null,
+          subject: { kind: 'locator', locator: row.locator },
+          matcher: row.matcher,
+          operand: row.matcher === 'equals' ? row.value : null,
+        };
+        const r = buildExpect(spec);
+        if (!r.ok) return r;
+        built.push(r.node);
+      }
+    }
+    if (built.length === 0) return { ok: false, reason: 'add a step — a browser test that opens a page and does nothing asserts nothing' };
+
+    if (!scoped) return { ok: true, nodes: built };
+    const block = buildWithin({ locator: scope, frame, body: built });
+    return block.ok ? { ok: true, nodes: [block.node] } : block;
+  }, [rows, scoped, scope, frame]);
+
+  const pending = useMemo((): { ok: true; text: string } | { ok: false; reason: string } => {
+    if (!file) return { ok: false, reason: 'reading the file…' };
+    if (!steps.ok) return steps;
+
+    if (mode === 'existing') {
+      if (testName === '') return { ok: false, reason: 'pick the test to add these steps to' };
+      // NO `open` WHEN ADDING TO AN EXISTING TEST: that test already navigated, and a second
+      // `open` would reload the page out from under whatever it had set up. The corpus agrees —
+      // 270 opens across 244 browser tests, so a browser test opens roughly once.
+      const result = insertIntoSource(file.text, { kind: 'steps', testName, nodes: steps.nodes });
+      return result.ok ? { ok: true, text: result.text } : { ok: false, reason: result.reason };
+    }
+
+    // A new browser test opens a page first, for the reason a new SCANS test fetches first
+    // (`A2-3`): the steps are about a page, so a test that asserts against one without navigating
+    // is a file `tflw check` rejects.
+    const opened = buildOpen(openPath);
+    if (!opened.ok) return opened;
+    const test = buildTest({
+      name,
+      tags: tags.split(/[\s,]+/).filter(Boolean),
+      workload: null,
+      thresholds: [],
+      body: [opened.node, ...steps.nodes],
+    });
+    if (!test.ok) return { ok: false, reason: test.reason };
+    const insertion: Insertion = { kind: 'test', node: test.node };
+    const result = insertIntoSource(file.text, insertion);
+    return result.ok ? { ok: true, text: result.text } : { ok: false, reason: result.reason };
+  }, [file, mode, testName, steps, openPath, name, tags]);
+
+  /** `D1052` — what `tflw check` would say about these exact bytes. The env's authorization block
+   *  travels for the same reason it does in SCANS: it costs nothing here and a door that passed a
+   *  narrower view would be two accounts of one config. */
+  const diagnostics = useMemo(
+    () => (pending.ok ? diagnose(pending.text, { envAuthorizedTargets: project.authorization }) : []),
+    [pending, project.authorization],
+  );
+
+  const save = useCallback(async () => {
+    if (!file || !pending.ok) return;
+    setBusy(true);
+    setProblem(null);
+    const res = await putFile(path, pending.text, file.etag);
+    setBusy(false);
+    if (!res.ok) {
+      setProblem(res.status === 409 ? `${res.error} — reopen the file and apply this again` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
+      return;
+    }
+    setFile({ path, text: pending.text, etag: res.etag });
+    setWrote(path);
+    onWritten(path);
+  }, [file, pending, path, onWritten]);
+
+  const locatorFields = (value: LocatorSpec, onChange: (next: LocatorSpec) => void, key: string) => (
+    <span className="request-row">
+      <select value={value.kind} onChange={(e) => onChange({ ...value, kind: e.target.value as LocatorSpec['kind'] })} data-browser-kind={key}>
+        {LOCATOR_KINDS.map((k) => (
+          <option key={k} value={k}>{k}</option>
+        ))}
+      </select>
+      <input value={value.value} onChange={(e) => onChange({ ...value, value: e.target.value })} data-browser-value={key} />
+    </span>
+  );
+
+  return (
+    <section className="authoring" data-browser-form>
+      <header className="authoring-head">
+        <h2>write a browser test</h2>
+        <p className="muted">
+          A locator is a <em>kind</em> and a <em>value</em> — <code>button "Sign in"</code>,{' '}
+          <code>css "#cart"</code>. Every step here takes one.
+        </p>
+      </header>
+
+      <div className="authoring-grid">
+        <label>
+          file
+          <select value={path} onChange={(e) => setPath(e.target.value)} data-browser-file>
+            {paths.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          what
+          <select value={mode} onChange={(e) => setMode(e.target.value as 'new' | 'existing')} data-browser-mode>
+            <option value="new">a new test, opening a page</option>
+            <option value="existing">more steps for a test that already opened one</option>
+          </select>
+        </label>
+
+        {mode === 'existing' ? (
+          <label>
+            test
+            <select value={testName} onChange={(e) => setTestName(e.target.value)} data-browser-test>
+              <option value="">…</option>
+              {testsInFile.map((t) => (
+                <option key={t.name} value={t.name}>{t.name}</option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <>
+            <label>
+              name
+              <input value={name} onChange={(e) => setName(e.target.value)} data-browser-name />
+            </label>
+            <label>
+              tags
+              <input value={tags} onChange={(e) => setTags(e.target.value)} data-browser-tags />
+            </label>
+            <label>
+              open
+              <input value={openPath} onChange={(e) => setOpenPath(e.target.value)} data-browser-open />
+            </label>
+          </>
+        )}
+
+        <label className="tick">
+          <input type="checkbox" checked={scoped} onChange={(e) => setScoped(e.target.checked)} data-browser-scoped />
+          scope these steps to one element — <code>within</code>
+        </label>
+
+        {scoped ? (
+          <>
+            <label>
+              inside
+              {locatorFields(scope, setScope, 'scope')}
+            </label>
+            <label className="tick">
+              <input type="checkbox" checked={frame} onChange={(e) => setFrame(e.target.checked)} data-browser-frame />
+              it is an <code>iframe</code> — step into it rather than scoping within this document
+            </label>
+          </>
+        ) : null}
+      </div>
+
+      <div className="authoring-rows" data-browser-rows={rows.length}>
+        {rows.map((row, i) => (
+          <div className="authoring-row" key={i} data-browser-row={i}>
+            <select value={row.action} onChange={(e) => patchRow(i, { action: e.target.value as Action })} data-browser-action={i}>
+              {ACTIONS.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+            {locatorFields(row.locator, (next) => patchRow(i, { locator: next }), String(i))}
+            {row.action === 'expect' ? (
+              <select value={row.matcher} onChange={(e) => patchRow(i, { matcher: e.target.value as MatcherName })} data-browser-matcher={i}>
+                {STATES.map((m) => (
+                  <option key={m} value={m}>is {m}</option>
+                ))}
+                <option value="equals">equals</option>
+              </select>
+            ) : null}
+            {row.action === 'fill' || (row.action === 'expect' && row.matcher === 'equals') ? (
+              <input
+                value={row.value}
+                onChange={(e) => patchRow(i, { value: e.target.value })}
+                placeholder={row.action === 'fill' ? 'text, {captured} or env(NAME)' : 'expected text'}
+                data-browser-operand={i}
+              />
+            ) : null}
+            <button
+              className="ghost"
+              onClick={() => setRows((current) => current.filter((_, j) => j !== i))}
+              disabled={rows.length === 1}
+              data-browser-drop={i}
+            >
+              drop
+            </button>
+          </div>
+        ))}
+        <button className="ghost" onClick={() => setRows((current) => [...current, EMPTY_ROW])} data-browser-add>
+          add a step
+        </button>
+      </div>
+
+      {pending.ok ? (
+        <>
+          <pre className="preview" data-browser-preview>
+            {pending.text}
+          </pre>
+          {diagnostics.length > 0 ? (
+            <ul className="preview-diagnostics" data-browser-diagnostics={diagnostics.length}>
+              {diagnostics.map((d, i) => (
+                <li key={i} className={d.severity} data-diagnostic-code={d.code}>
+                  <code>{d.code}</code> line {d.span.start.line} — {d.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : (
+        <p className="warn" data-browser-problem>
+          {pending.reason}
+        </p>
+      )}
+
+      <div className="authoring-actions">
+        <button className="run" onClick={() => void save()} disabled={!pending.ok || busy} data-browser-save>
+          {busy ? 'writing…' : `write ${path}`}
+        </button>
+        {wrote ? (
+          <span className="muted" data-browser-wrote={wrote}>
+            written — <code>{wrote}</code> is what <code>tflw run</code> will read
+          </span>
+        ) : null}
+        {problem ? (
+          <span className="error" data-browser-error>
+            {problem}
+          </span>
+        ) : null}
+      </div>
+    </section>
+  );
+}

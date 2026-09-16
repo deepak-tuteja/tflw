@@ -10,7 +10,7 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApiStep, buildExpect, buildTest, buildThreshold, buildWorkload, format, insertIntoSource, parseSource, print, stringLit, type ApiStepSpec, type ExpectSpec, type Insertion, type StringLit } from '../src/index.js';
+import { buildApiStep, buildClick, buildExpect, buildFill, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type Insertion, type StringLit } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -416,4 +416,92 @@ test('the API builders refuse in the form’s own words', () => {
   // "give it a value" refusal about the matchers that need one.
   const bare = buildExpect({ soft: false, quantifier: null, subject: { kind: 'request' }, matcher: 'fails', operand: null });
   assert.equal(bare.ok, true, bare.ok ? '' : bare.reason);
+});
+
+test('A3-5: the browser builders produce a file the write route would accept', () => {
+  // The whole point of this file applied to BROWSER: every result must **parse with no error** and
+  // be a **`format` fixpoint**, because the write route refuses anything else (`D1049`). A test
+  // comparing strings could pass while the door could not write a file.
+  const ok = <T>(r: { ok: true; node: T } | { ok: false; reason: string }): T => {
+    assert.ok(r.ok, r.ok ? '' : r.reason);
+    return r.node;
+  };
+
+  const test1 = ok(buildTest({
+    name: 'the cart holds what was added',
+    tags: ['web'],
+    workload: null,
+    thresholds: [],
+    body: [
+      ok(buildOpen('/catalogue')),
+      ok(buildClick({ locator: { kind: 'button', value: 'Add to cart' }, kind: 'single' })),
+      ok(buildWithin({
+        locator: { kind: 'css', value: '#cart' },
+        frame: false,
+        body: [
+          ok(buildFill({ locator: { kind: 'field', value: 'Quantity' }, value: '"2"' })),
+          ok(buildExpect({ soft: false, quantifier: null, subject: { kind: 'locator', locator: { kind: 'text', value: 'Subtotal' } }, matcher: 'visible', operand: null })),
+        ],
+      })),
+    ],
+  }));
+  const printed = print(test1);
+  assert.equal(printed.ok, true, printed.reason);
+  acceptable(printed.text + '\n', 'a browser test');
+  assert.equal(
+    printed.text + '\n',
+    '@web\ntest "the cart holds what was added"\n  open "/catalogue"\n  click button "Add to cart"\n  within css "#cart"\n    fill field "Quantity" with "2"\n    expect text "Subtotal" is visible\n',
+  );
+
+  // **A fill takes a VALUE, so the three spellings the corpus uses all have to survive the
+  // builder** — a field that only accepted a string would be right for 422 of 437 corpus fills and
+  // unable to express the other fifteen.
+  for (const [written, expected] of [['"typed"', 'fill field "Email" with "typed"'], ['{captured}', 'fill field "Email" with {captured}'], ['env(LOGIN)', 'fill field "Email" with env(LOGIN)']] as const) {
+    const f = print(ok(buildFill({ locator: { kind: 'field', value: 'Email' }, value: written })));
+    assert.equal(f.ok, true, f.reason);
+    assert.equal(f.text, expected);
+  }
+
+  // `page` is reachable from a spec, which is what lets a BROWSER door write the a11y assertion
+  // `A2-3`'s SCANS door deliberately could not offer.
+  const a11y = print(ok(buildExpect({ soft: false, quantifier: null, subject: { kind: 'page' }, matcher: 'hasNoA11yViolations', operand: null, severityFloor: 'serious' })));
+  assert.equal(a11y.ok, true, a11y.reason);
+  assert.equal(a11y.text, 'expect page has no serious a11y violations');
+  // **`frame` HAS TO BE BUILT, NOT ONLY PRINTED.** `A3-4` covers the printer's `frame` word, and a
+  // mutation hardcoding `frame: false` HERE survived all of it — every case above builds an
+  // unframed block, so the flag reached the printer correct by luck rather than by test. It is 4
+  // of the corpus' 404 blocks, which is exactly the population a gate written from frequency
+  // forgets.
+  const framed = print(ok(buildWithin({
+    locator: { kind: 'css', value: "iframe[title='Payment']" },
+    frame: true,
+    body: [ok(buildFill({ locator: { kind: 'field', value: 'CVC' }, value: '"123"' }))],
+  })));
+  assert.equal(framed.ok, true, framed.reason);
+  assert.equal(framed.text, `within frame css "iframe[title='Payment']"\n  fill field "CVC" with "123"`);
+});
+
+test('A3-5: the browser builders refuse in the form’s own words', () => {
+  // Each of these is a field a form can point at, rather than a file the parser would reject —
+  // the same bar `A1`'s builders were held to.
+  const reason = (r: { ok: boolean; reason?: string }) => (r.ok ? '' : (r.reason ?? ''));
+
+  // The parser accepts `button ""` happily; a locator matching nothing is a test that fails at run
+  // time for a reason the file does not show, so the builder is where it gets said.
+  assert.match(reason(buildLocator({ kind: 'button', value: '   ' })), /needs something to match/);
+  assert.match(reason(buildClick({ locator: { kind: 'text', value: '' }, kind: 'single' })), /needs something to match/);
+
+  assert.match(reason(buildOpen('  ')), /needs a path/);
+  assert.match(reason(buildFill({ locator: { kind: 'field', value: 'Email' }, value: '' })), /needs a value/);
+
+  // **The empty `within` is refused in the BUILDER and in the PRINTER, deliberately in both.** The
+  // printer refuses because the bytes would not parse back (`A3-4`); this refuses because a form
+  // that let you build one would only find out at the write. Same rule, two surfaces, different
+  // callers.
+  assert.match(reason(buildWithin({ locator: { kind: 'css', value: '#x' }, frame: false, body: [] })), /needs at least one/);
+
+  // Every kind the grammar has is offered — the parser's own list, so a seventh reaches the form
+  // the day it reaches the language.
+  assert.deepEqual([...LOCATOR_KINDS], ['button', 'field', 'text', 'list', 'css', 'xpath']);
+
 });
