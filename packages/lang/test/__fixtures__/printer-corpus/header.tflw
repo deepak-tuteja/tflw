@@ -1,0 +1,32 @@
+# `M201` `S4` — the file header: imports, uses, and all four hook forms.
+#
+# **This file exists to be PRINTED, not to be run** — see `values.tflw` for the whole argument.
+# `A4-2` gave the header its printer and measured that **no door writes one**: every authoring
+# surface inserts into a file that already has a header, which is why the header was the last part
+# of the language to print and is the part with the thinnest in-repo corpus.
+#
+# The `use` path resolves to nothing, for the same reason the payload paths in `api.tflw` do — the
+# printer reads the string and writes it back, and a TypeScript helper carried here would be
+# carried for a claim nothing makes. The `import` is real, because a real one costs nothing.
+
+import "./values.tflw"
+use "./helpers/digest.ts"
+
+before file
+  api POST /v1/sessions body { email: "admin@example.test", password: "hunter2" }
+  expect status equals 200
+
+before
+  log "starting a test"
+
+after
+  log "finished a test"
+
+after file
+  api DELETE /v1/sessions
+  expect status equals 204
+
+@printer
+test "the header above is the subject; this test is only somewhere for it to sit"
+  api GET /items
+  expect status equals 200
