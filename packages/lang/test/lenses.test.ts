@@ -105,49 +105,90 @@ test('the classification tables cover their unions, checked against ast.ts itsel
   assert.deepEqual(Object.keys(SUBJECT_LENS).filter((k) => !members('Subject').includes(k)), [], 'SUBJECT_LENS names no subject that is not one');
 });
 
-test('every test in the corpus classifies, and 30% of them land in more than one lens', () => {
-  // The measured shape of this corpus, pinned so that a change to the rule has to argue with it.
+/**
+ * `M201-01` — **`M200-05`'s twin, found by the first push of this branch and not before.**
+ *
+ * This gate walked `repoRoot` **and** `siblingRoot` and asserted `total > 400`, which is a claim
+ * about `testFlow-tests`. CI has one tree by decision (`D710` refuses a sibling checkout; `D511`
+ * fixes the merge order), so on the first push it classified **42 tests** and went red — while the
+ * printer gate beside it, repaired in `M201`, passed.
+ *
+ * That is the part worth recording: **a finding named after one file gets repaired in that file.**
+ * `M200-05` was written up as *`print.test.ts` reads the sibling*, the repair was scoped to
+ * `print.test.ts`, and the identical defect sat two files away for the whole of `M200` and `M201`
+ * because nobody asked which *other* guards walk a corpus. The census that answers it is one
+ * `grep` for `testFlow-tests` under every package's test directory, and it was never run.
+ * (Writing that path with a glob is what broke this docblock on the first run: the two
+ * characters that end a comment sit in the middle of it.)
+ *
+ * Repaired in `M201`'s shape (`D1056`, `D1058`): the **corpus is this repository**, the sibling is
+ * **pressure**, the count is pinned by **equality** rather than a floor — a floor is blind in
+ * exactly the direction both defects ran — and the ratio `D1043` argues from is measured on the
+ * corpus, where it is **35.7%** and makes the argument without borrowing anything.
+ */
+test('every test in the corpus classifies, and a third of them land in more than one lens', () => {
   const SKIP = /^(node_modules|dist|\.git|runs|coverage)$|^\.m.*-scratch$/;
-  const files: string[] = [];
-  const walk = (dir: string): void => {
+  const walk = (dir: string, out: string[] = []): string[] => {
     let entries: string[];
-    try { entries = readdirSync(dir); } catch { return; }
+    try { entries = readdirSync(dir); } catch { return out; }
     for (const entry of entries) {
       if (SKIP.test(entry)) continue;
       const p = join(dir, entry);
       let st;
       try { st = statSync(p); } catch { continue; }
-      if (st.isDirectory()) walk(p);
-      else if (entry.endsWith('.tflw')) files.push(p);
+      if (st.isDirectory()) walk(p, out);
+      else if (entry.endsWith('.tflw')) out.push(p);
     }
+    return out;
   };
   const root = resolve(here, '..', '..', '..');
-  walk(root);
-  walk(resolve(root, '..', 'testFlow-tests'));
 
-  let total = 0;
-  let multi = 0;
-  const combos = new Map<string, number>();
-  for (const file of files) {
-    const { program, diagnostics } = parseSource(readFileSync(file, 'utf8'));
-    if (diagnostics.some((d) => d.severity === 'error')) continue;
-    for (const t of program.tests) {
-      const ls = lensesOfTest(t);
-      total += 1;
-      if (ls.length > 1) multi += 1;
-      combos.set(ls.join('+') || '(none)', (combos.get(ls.join('+') || '(none)') ?? 0) + 1);
+  const census = (files: string[]): { total: number; multi: number; combos: Map<string, number> } => {
+    let total = 0;
+    let multi = 0;
+    const combos = new Map<string, number>();
+    for (const file of files) {
+      const { program, diagnostics } = parseSource(readFileSync(file, 'utf8'));
+      if (diagnostics.some((d) => d.severity === 'error')) continue;
+      for (const t of program.tests) {
+        const ls = lensesOfTest(t);
+        total += 1;
+        if (ls.length > 1) multi += 1;
+        const key = ls.join('+') || '(none)';
+        combos.set(key, (combos.get(key) ?? 0) + 1);
+      }
     }
-  }
-  console.log(`\n  lens census — ${total} tests, ${multi} in more than one lens`);
-  for (const [k, n] of [...combos.entries()].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(5)}  ${k}`);
+    return { total, multi, combos };
+  };
+
+  const mine = census(walk(root));
+  const theirs = census(walk(resolve(root, '..', 'testFlow-tests')));
+
+  console.log(`\n  lens census — ${mine.total} tests in this repository, ${mine.multi} in more than one lens` +
+    (theirs.total > 0 ? `  (+ ${theirs.total} in the sibling, ${theirs.multi} multi-lens, pressure only)` : ''));
+  for (const [k, n] of [...mine.combos.entries()].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(5)}  ${k}`);
   console.log('');
 
-  assert.ok(total > 400, `expected the corpus, classified ${total} tests`);
-  assert.ok(multi / total > 0.2, `${((100 * multi) / total).toFixed(1)}% of tests are multi-lens — D1043's whole argument`);
-  // Every multi-lens test in this corpus includes `api`: there is no browser+load, no
-  // browser+scan and no three-lens test in it. Recorded as measured, not required — a project
-  // that wrote one would be legal, and this assertion is deliberately not the one that forbids it.
-  assert.equal([...combos.keys()].filter((k) => k.includes('+') && !k.startsWith('api')).length, 0);
+  // AN EQUALITY, over this repository's corpus (`D1058`). The old `total > 400` was a floor over
+  // two trees: it could not see the sibling arriving, which is how it passed here for the whole of
+  // `M200`, and it could not survive the sibling leaving, which is how it failed in CI.
+  const EXPECTED_TESTS = 42;
+  assert.equal(mine.total, EXPECTED_TESTS,
+    `the corpus classified ${mine.total} tests, expected ${EXPECTED_TESTS} — move the number in the change that moved the corpus`);
+
+  // `D1043`'s whole argument, measured where CI can see it: 15 of 42. The old threshold was 20%
+  // against a 30% measurement taken with both trees present; the corpus alone reads 35.7%.
+  assert.ok(mine.multi / mine.total > 0.2,
+    `${((100 * mine.multi) / mine.total).toFixed(1)}% of corpus tests are multi-lens — D1043's whole argument`);
+
+  // A CORRECTNESS claim, so it reads both: every multi-lens test includes `api` — there is no
+  // browser+load, no browser+scan and no three-lens test in either tree. Recorded as measured, not
+  // required; a project that wrote one would be legal, and this is deliberately not the assertion
+  // that forbids it.
+  const offAxis = [...mine.combos.keys(), ...theirs.combos.keys()]
+    .filter((k) => k.includes('+') && !k.startsWith('api'));
+  assert.deepEqual(offAxis, [], `an off-axis lens combination appeared: ${offAxis.join(', ')}`);
+
 });
 
 // ---------------------------------------------------------------------------
