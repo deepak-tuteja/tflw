@@ -82,11 +82,17 @@ export function Landing({ project, error, noProject, onOpen, onCreated }: Landin
               {creating === door.id
                 ? 'making it…'
                 : noProject
-                  ? // `tflw init` has one flag, so only LOAD scaffolds something of its own. Said
-                    // plainly rather than implied: BROWSER and SCANS have no scaffold yet (§7).
+                  ? // What this door's `tflw init` actually scaffolds, named rather than implied
+                    // (`D1051`, amended by `D1053`). **This said BROWSER and SCANS had no scaffold
+                    // until `A2-6`, four commits after `A2-4` gave SCANS one** — the argv, the
+                    // scaffold and their tests all landed and the one string an author reads did
+                    // not, because every gate asserted the behaviour and none asserted the label.
+                    // BROWSER genuinely has none, and still says so.
                     door.id === 'load'
                     ? 'create a project, with a load test to start from'
-                    : 'create a project'
+                    : door.id === 'scan'
+                      ? 'create a project, with a scan to start from — and an authorization to uncomment'
+                      : 'create a project'
                   : project === null
                     ? '—'
                     : counts[door.id] === 0
