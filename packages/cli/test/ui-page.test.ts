@@ -18,6 +18,7 @@ import type { Server } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer } from '../src/ui-server.js';
+import { checkProgram, parseSource } from '@tflw/lang';
 import { roundDurationMs, type LoadMetrics, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
 import { describeWorkload, formatThresholdActual, formatThresholdTarget, remediationFor } from '@tflw/reporter';
 import { findingsSummaryLine, sortFindings, WITHHELD_LABEL, SCAN_KIND_LABEL } from '@tflw/runtime';
@@ -1066,4 +1067,165 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
     await ui.close();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// `M200` `A1-4` — the API door writes work, not a policy about work. The LOAD form can only ever
+// add a workload line or a threshold, because `api` steps are this door's vocabulary — which is
+// the gap `A0-5`'s green-condition test had to write around. These two say it is closed.
+// ---------------------------------------------------------------------------
+
+test('the API form writes a request and its assertions in one edit, and the bytes on disk are the bytes it previewed', async () => {
+  await page.goto(`${baseUrl}#/api`);
+  await page.reload(); // field values are component state; a hash change does not reset them
+  await page.locator('[data-api-form]').waitFor();
+
+  const target = 'tests/orders.tflw';
+  await page.locator('[data-api-file]').selectOption(target);
+  await page.locator('[data-api-name]').fill('the page can place an order');
+  await page.locator('[data-api-tags]').fill('api authored');
+  await page.locator('[data-api-method]').selectOption('POST');
+  await page.locator('[data-api-path]').fill('/orders');
+  await page.locator('[data-api-label]').fill('place');
+
+  // A header whose value interpolates a variable NOTHING BINDS. This is `D1052`'s case and it is
+  // how it was found: the write route's two `422`s are parse and format (`D1049`), and
+  // `"Bearer {token}"` is both — so the first run of this test wrote the file happily and then
+  // `tflw check` said `TF030: unknown variable "token"`. The form now says so first.
+  await page.locator('[data-header-add]').click();
+  await page.locator('[data-header-name="0"]').fill('Authorization');
+  await page.locator('[data-header-value="0"]').fill('Bearer {token}');
+  await page.locator('[data-api-diagnostics]').waitFor();
+  const unbound = await page.locator('[data-diagnostic-code="TF030"]').textContent();
+  assert.ok(unbound?.includes('token'), unbound ?? 'the form should name the unbound variable');
+  // And it is a warning about the file, not a veto on the write: `D1052` shows, never blocks.
+  assert.equal(await page.locator('[data-api-save]').isDisabled(), false);
+
+  // Take the reference back out, and the panel goes with it — the control that keeps the
+  // assertion above about this header rather than about the panel always being there.
+  await page.locator('[data-header-value="0"]').fill('Bearer static-token');
+  await page.locator('[data-api-diagnostics]').waitFor({ state: 'detached' });
+
+  await page.locator('[data-api-body-kind]').selectOption('json');
+  await page.locator('[data-api-body]').fill('{ itemId: 1, qty: 2 }');
+
+  await page.locator('[data-expect-operand="0"]').fill('201');
+  await page.locator('[data-expect-add]').click();
+  await page.locator('[data-expect-subject="1"]').selectOption('body');
+  await page.locator('[data-expect-argument="1"]').fill('items[0].price');
+  await page.locator('[data-expect-matcher="1"]').selectOption('greaterThan');
+  await page.locator('[data-expect-operand="1"]').fill('0');
+  // A THIRD ROW, AND IT IS A `check` OVER A `header`. Both halves were found by the mutation run
+  // surviving: with every row an `expect` over `status` or `body`, the mutation collapsing
+  // `check` into `expect` and the one sending a literal where the header name goes both changed
+  // nothing this test could see. One row that is soft and names a header covers both.
+  await page.locator('[data-expect-add]').click();
+  await page.locator('[data-expect-kind="2"]').selectOption('check');
+  await page.locator('[data-expect-subject="2"]').selectOption('header');
+  await page.locator('[data-expect-argument="2"]').fill('content-type');
+  await page.locator('[data-expect-matcher="2"]').selectOption('contains');
+  await page.locator('[data-expect-operand="2"]').fill('"json"');
+
+  const preview = await page.locator('[data-api-preview]').textContent();
+  assert.ok(preview?.includes('@api @authored'), preview ?? '');
+  assert.ok(preview?.includes('api POST /orders body { itemId: 1, qty: 2 } as "place"'), preview ?? '');
+  assert.ok(preview?.includes('header "Authorization" is "Bearer static-token"'), preview ?? '');
+  assert.ok(preview?.includes('expect status equals 201'), preview ?? '');
+  assert.ok(preview?.includes('expect body.items[0].price is greater than 0'), preview ?? '');
+  assert.ok(preview?.includes('check header "content-type" contains "json"'), preview ?? '');
+
+  const before = await readFile(join(root, target), 'utf8');
+  await page.locator('[data-api-save]').click();
+  await page.locator('[data-api-wrote]').waitFor();
+
+  const after = await readFile(join(root, target), 'utf8');
+  assert.notEqual(after, before, 'the file changed');
+  assert.equal(after, preview, 'the bytes on disk are exactly what the page showed');
+
+  const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+  assert.ok(!/error/i.test(check), check);
+
+  // And the server's own projection puts it behind API, derived from the `api` step rather than
+  // from the `@api` tag beside it.
+  const view = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; lenses: string[] }[] }[] };
+  const written = view.files.find((f) => f.path === target)?.tests.find((t) => t.name === 'the page can place an order');
+  assert.ok(written, 'the server sees the test the page wrote');
+  assert.ok(written.lenses.includes('api'));
+});
+
+test('the API door adds work to a test the LOAD door started, above its workload’s thresholds', async () => {
+  // `A0-5`'s green condition had to reach past the form for exactly this, and said so. A `steps`
+  // insertion has to land below the `run … iterations` line and above any `threshold`, which is
+  // three regions of one test and the shape the lang gate measures directly.
+  const target = 'tests/load.tflw';
+  await page.goto(`${baseUrl}#/load`);
+  await page.reload();
+  await page.locator('[data-load-form]').waitFor();
+  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator('[data-load-name]').fill('the API door finishes this one');
+  await page.locator('[data-load-tags]').fill('load');
+  await page.locator('[data-load-shape]').selectOption('iterations');
+  await page.locator('[data-load-field="count"]').fill('20');
+  await page.locator('[data-load-field="vus"]').fill('2');
+  await page.locator('[data-threshold-metric="0"]').selectOption('errorRate');
+  await page.locator('[data-threshold-bound="0"]').fill('1');
+  await page.locator('[data-load-save]').click();
+  await page.locator('[data-load-wrote]').waitFor();
+
+  const started = await readFile(join(root, target), 'utf8');
+  assert.ok(started.includes('run 20 iterations across 2 users'), started);
+  assert.ok(!/the API door finishes this one[\s\S]*?\n  api /.test(started), 'the LOAD form wrote no work');
+
+  await page.goto(`${baseUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-api-form]').waitFor();
+  await page.locator('[data-api-file]').selectOption(target);
+  await page.locator('[data-api-mode]').selectOption('existing');
+  await page.locator('[data-api-test]').selectOption('the API door finishes this one');
+  await page.locator('[data-api-method]').selectOption('GET');
+  await page.locator('[data-api-path]').fill('/items');
+  await page.locator('[data-expect-operand="0"]').fill('200');
+
+  const preview = (await page.locator('[data-api-preview]').textContent()) ?? '';
+  await page.locator('[data-api-save]').click();
+  await page.locator('[data-api-wrote]').waitFor();
+
+  const finished = await readFile(join(root, target), 'utf8');
+  assert.equal(finished, preview, 'the bytes on disk are the bytes previewed');
+
+  // The three regions, in order: the workload line, then the work, then the threshold.
+  const test = finished.slice(finished.indexOf('test "the API door finishes this one"'));
+  const workloadAt = test.indexOf('run 20 iterations across 2 users');
+  const stepAt = test.indexOf('api GET /items');
+  const expectAt = test.indexOf('expect status equals 200');
+  const thresholdAt = test.indexOf('threshold error rate is less than 1%');
+  assert.ok(workloadAt >= 0 && stepAt >= 0 && expectAt >= 0 && thresholdAt >= 0, test);
+  assert.ok(workloadAt < stepAt, `the work goes below the workload line, not above it:\n${test}`);
+  assert.ok(stepAt < expectAt, `the assertion reads the request above it:\n${test}`);
+  assert.ok(expectAt < thresholdAt, `the threshold stays at the foot:\n${test}`);
+
+  const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
+  assert.ok(!/error/i.test(check), check);
+});
+
+test('a header that interpolates a variable the test already captured checks clean', () => {
+  // The positive half of `A1-4`'s `stringLit` fix, which the unbound case cannot make: the built
+  // node has to carry the reference AS a reference for the checker to resolve it against the
+  // `capture` above it. A text blob would have been invisible to `TF030` in both directions —
+  // never flagged when wrong, and never resolvable when right.
+  const source = [
+    'test "t"',
+    '  api GET /items',
+    '  capture body.items[0].id as firstId',
+    '  api GET /items/1',
+    '    header "X-Trace" is "item-{firstId}"',
+    '  expect status equals 200',
+    '',
+  ].join('\n');
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), []);
+  assert.deepEqual(checkProgram(program).filter((d) => d.severity === 'error'), []);
+  // …and the same text with the capture removed is the TF030 the form now shows.
+  const unbound = parseSource(source.replace('  capture body.items[0].id as firstId\n', ''));
+  assert.ok(checkProgram(unbound.program).some((d) => d.code === 'TF030'), 'the control must fail');
 });

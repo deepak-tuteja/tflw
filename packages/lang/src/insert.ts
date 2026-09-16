@@ -14,7 +14,7 @@
 // AND IT LIVES HERE BECAUSE BOTH SIDES NEED IT. `@tflw/lang` has no dependencies and no Node
 // builtins, so the page runs this in the browser and a test runs it in Node — the same function,
 // which is why `A0-4` can be gated without a browser at all.
-import type { Program, TestDecl, ThresholdDecl, Workload } from './ast.js';
+import type { Program, Step, TestDecl, ThresholdDecl, Workload } from './ast.js';
 import { format } from './format.js';
 import { print } from './print.js';
 import { lex } from './lexer.js';
@@ -35,7 +35,20 @@ export type Insertion =
   /** `ramp`/`hold`/`step`/`spike`/`run` — turning a functional test into a workload-bearing one. */
   | { readonly kind: 'workload'; readonly testName: string; readonly node: Workload }
   /** `threshold …` — `D1044`'s case, legal on a test whose workload line is not written yet. */
-  | { readonly kind: 'threshold'; readonly testName: string; readonly node: ThresholdDecl };
+  | { readonly kind: 'threshold'; readonly testName: string; readonly node: ThresholdDecl }
+  /**
+   * Steps appended to a test that already exists (`A1-4`).
+   *
+   * This is the gap `A0-5`'s green-condition test had to work around and said so where it did it:
+   * **a LOAD form cannot write a test that calls anything**, because `api` steps are the API
+   * door's vocabulary. A door adds the work it knows how to describe, to a test any door may have
+   * started — which is `D1044` from the writing side rather than the reading side.
+   *
+   * Several at once and not one at a time, because an `api` step and the `expect`s that read its
+   * response are one edit: inserting them separately would leave a file, between two writes, whose
+   * assertions name a response nothing fetched.
+   */
+  | { readonly kind: 'steps'; readonly testName: string; readonly nodes: readonly Step[] };
 
 export type InsertResult =
   | { readonly ok: true; readonly text: string }
@@ -69,10 +82,24 @@ export function insertIntoSource(source: string, insertion: Insertion): InsertRe
   const error = diagnostics.find((d) => d.severity === 'error');
   if (error) return { ok: false, reason: `the file does not parse: ${error.code} at line ${error.span.start.line}` };
 
-  const printed = print(insertion.node, { indent: insertion.kind === 'test' ? 0 : 1 });
-  if (!printed.ok) return { ok: false, reason: printed.reason ?? 'the node cannot be printed' };
+  // `steps` prints several fragments and joins them; every other kind prints one node.
+  let printedText: string;
+  if (insertion.kind === 'steps') {
+    if (insertion.nodes.length === 0) return { ok: false, reason: 'no steps to insert' };
+    const parts: string[] = [];
+    for (const node of insertion.nodes) {
+      const one = print(node, { indent: 1 });
+      if (!one.ok) return { ok: false, reason: one.reason ?? 'the node cannot be printed' };
+      parts.push(one.text);
+    }
+    printedText = parts.join('\n');
+  } else {
+    const printed = print(insertion.node, { indent: insertion.kind === 'test' ? 0 : 1 });
+    if (!printed.ok) return { ok: false, reason: printed.reason ?? 'the node cannot be printed' };
+    printedText = printed.text;
+  }
 
-  const spliced = insertion.kind === 'test' ? appendTest(text, printed.text) : insertInTest(text, program, insertion, printed.text);
+  const spliced = insertion.kind === 'test' ? appendTest(text, printedText) : insertInTest(text, program, insertion, printedText);
   if (typeof spliced !== 'string') return spliced;
 
   // The splice should already be formatted — the source was normalised above and the fragment is
@@ -124,6 +151,11 @@ function insertInTest(source: string, program: Program, insertion: Insertion & {
     return source.slice(0, at) + text + '\n' + source.slice(at);
   }
 
+  if (insertion.kind === 'steps') {
+    const at = afterLineContaining(source, stepAnchor(source, test));
+    return source.slice(0, at) + text + '\n' + source.slice(at);
+  }
+
   // A threshold goes at the foot of the test, under everything already there — including any
   // thresholds it joins, so a second lands beside the first rather than above it.
   const at = afterLineContaining(source, endOfTestText(source, test));
@@ -150,6 +182,35 @@ function afterLineContaining(source: string, offset: number): number {
  * So: start at the declaration's end and walk back over whitespace. That lands just past the last
  * non-blank character inside the test, comment or not, and never inside what follows.
  */
+/**
+ * Where a new step goes: after everything in the test that is already a step, and before
+ * everything that is not.
+ *
+ * A test's source is **three regions and not two** — the header, then the workload line, then the
+ * body, then the thresholds — and only the middle one is `body`. So neither end of the test is the
+ * right anchor and the first draft of this used both wrongly:
+ *
+ * - *The foot of the test* is where a `threshold` goes, and a step printed below one is a request
+ *   written underneath an assertion about the whole run.
+ * - *The header* is where the first draft fell back when `body` was empty — and a test with a
+ *   workload line and no steps is exactly the shape the LOAD form produces, so the API door's
+ *   first edit to a LOAD-authored test put its `api` step **above** the `run … iterations` line
+ *   that the workload case of this same function is careful to keep directly under the header.
+ *   Caught by the test for that case; it is why the empty-body branch names the workload rather
+ *   than treating "no steps" as "nothing before me".
+ */
+function stepAnchor(source: string, test: TestDecl): number {
+  if (test.body.length > 0) return backOverWhitespace(source, Math.max(...test.body.map((b) => b.span.end.offset)));
+  if (test.workload) return backOverWhitespace(source, test.workload.span.end.offset);
+  return test.name.span.end.offset;
+}
+
+function backOverWhitespace(source: string, offset: number): number {
+  let i = Math.min(offset, source.length);
+  while (i > 0 && /\s/.test(source[i - 1]!)) i -= 1;
+  return i;
+}
+
 function endOfTestText(source: string, test: TestDecl): number {
   let i = Math.min(test.span.end.offset, source.length);
   while (i > 0 && /\s/.test(source[i - 1]!)) i -= 1;

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { buildThreshold, buildTest, buildWorkload, insertIntoSource, type Insertion, type StageSpec, type ThresholdSpec, type WorkloadSpec } from '@tflw/lang';
 import { getFile, putFile, type FileView } from './api';
+import { diagnose } from './diagnose';
 import type { ProjectView } from './contract';
 
 export interface LoadFormProps {
@@ -152,6 +153,10 @@ export function LoadForm({ project, onWritten }: LoadFormProps) {
     const result = insertIntoSource(file.text, { kind: 'test', node: test.node });
     return result.ok ? { ok: true, text: result.text } : { ok: false, reason: result.reason };
   }, [file, mode, testName, testsInFile, alsoWorkload, name, tags, thresholds, workloadSpec]);
+
+  /** `D1052` — recomputed with the preview, from the same bytes, so what is shown and what is
+   *  judged cannot be two different files. */
+  const diagnostics = useMemo(() => (pending.ok ? diagnose(pending.text) : []), [pending]);
 
   const save = useCallback(async () => {
     if (!file || !pending.ok) return;
@@ -345,9 +350,23 @@ export function LoadForm({ project, onWritten }: LoadFormProps) {
       </div>
 
       {pending.ok ? (
-        <pre className="preview" data-load-preview>
-          {pending.text}
-        </pre>
+        <>
+          <pre className="preview" data-load-preview>
+            {pending.text}
+          </pre>
+          {/* `D1052` — what `tflw check` will say about these bytes. Shown, never blocking: the
+              write route refuses what cannot be read (`D1049`), and an unbound `{'{'}token{'}'}` reads
+              fine — it is just wrong, and the author should hear it here rather than in CI. */}
+          {diagnostics.length > 0 ? (
+            <ul className="preview-diagnostics" data-load-diagnostics={diagnostics.length}>
+              {diagnostics.map((d, i) => (
+                <li key={i} className={d.severity} data-diagnostic-code={d.code}>
+                  <code>{d.code}</code> line {d.span.start.line} — {d.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
       ) : (
         <p className="warn" data-load-problem>
           {pending.reason}
