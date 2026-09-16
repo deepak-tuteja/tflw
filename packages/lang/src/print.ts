@@ -38,6 +38,7 @@ import type {
   CaptureStmt,
   DataTable,
   ExpectStmt,
+  Locator,
   FormField,
   LetStmt,
   LogStmt,
@@ -116,6 +117,12 @@ export const PRINTABLE = new Set<string>([
   'OpenApiSeed',
   'TrafficSeed',
   'SpiderSeed',
+  // `A3-1` — the locator, and it is the keystone of the BROWSER round rather than a corner of it:
+  // 2,296 occurrences across 235 of the corpus's 244 browser tests, and it **completes none of
+  // them on its own** (`§4f`). That is the reason it is a slice — a kind that unblocks nothing
+  // measurable is exactly the kind a round defers behind something that looks more productive,
+  // and then everything else waits on it.
+  'Locator',
   // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
   // statements that read or announce a response.
   'DurationSubject',
@@ -235,6 +242,8 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printCallStmt(node as CallStmt);
     case 'LogStmt':
       return pad(level) + printLog(node as LogStmt);
+    case 'Locator':
+      return pad(level) + printLocator(node as Locator);
     case 'StatusSubject':
     case 'DurationSubject':
     case 'HeaderSubject':
@@ -1047,6 +1056,28 @@ function printGenerator(v: Value): string {
 /** Rebuilt from `parts`, not from `value`: the decoded value has lost the difference between a
  *  literal `{` and an interpolation hole, and re-quoting `value` would turn `{id}` back into a
  *  reference the author never wrote. */
+/**
+ * `button "Sign in"` / `field "Card number"` / `css "iframe[title='Payment']"` — `M200` `A3-1`.
+ *
+ * **The whole node is two fields, and that is a measurement rather than an impression**: `kind`
+ * and `value` are present on all 2,296 instances in the corpus, with no optional clause, no
+ * modifier and no third spelling anywhere. So the printer is the concatenation it looks like, and
+ * the BROWSER form is a dropdown beside a text box.
+ *
+ * `kind` is a closed union of six, and four of them — `button` 803, `css` 516, `text` 498,
+ * `field` 476 — are **99.9%** of the corpus. `list` (2) and `xpath` (1) are the entire remainder
+ * and are printed by the same line rather than special-cased, because the grammar does not
+ * distinguish them and a printer that did would be inventing a distinction to have an opinion
+ * about.
+ *
+ * The value goes through `printString`, which is not a detail: a locator's value is
+ * `{ref}`-interpolation-aware like any other `StringLit` (`ast.ts`), so `field "Card {n}"` has to
+ * survive the round trip with its interpolation intact rather than as escaped text.
+ */
+function printLocator(l: Locator): string {
+  return `${l.kind} ${printString(l.value)}`;
+}
+
 function printString(s: StringLit): string {
   let out = '"';
   for (const part of s.parts) {

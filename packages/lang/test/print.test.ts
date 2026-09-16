@@ -81,7 +81,7 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
@@ -98,6 +98,10 @@ function reparse(node: Node, text: string): Node | null {
   const program = parseSource(wrap(node, text)).program;
   const host: TestDecl | undefined = program.tests[0];
   if (!host) return null;
+  if (node.type === 'Locator') {
+    const stmt = host.body.length === 1 ? host.body[0]! : null;
+    return stmt && stmt.type === 'ClickStmt' ? (stmt as unknown as { locator: Node }).locator : null;
+  }
   if (WORKLOADS.includes(node.type as (typeof WORKLOADS)[number])) return host.workload;
   if (node.type === 'ThresholdDecl') return host.thresholds.length === 1 ? host.thresholds[0]! : null;
   return host.body.length === 1 ? host.body[0]! : null;
@@ -122,10 +126,20 @@ interface Tally { checked: number; refused: number; }
  *  formats, so the two claims are made about the same bytes. */
 const ROOTS = new Set<string>(['TestDecl', 'CrawlDecl']);
 
+/** Kinds that print as a fragment of a line rather than as a line — `A3-1`. */
+const INLINE = new Set<string>(['Locator']);
+
 /** `A2-2`: a crawl is the second printable ROOT this gate has seen. Everything else is a step and
  *  needs a host `test` around it; a root stands alone and must not be indented into one. */
 function wrap(node: Node, text: string): string {
-  return ROOTS.has(node.type) ? text + '\n' : `test "wrapper"\n${text}\n`;
+  if (ROOTS.has(node.type)) return text + '\n';
+  // `A3-1`: a THIRD shape. A root stands alone, a statement needs a host `test`, and a `Locator`
+  // needs a host STATEMENT as well — it has no standalone spelling in the grammar at all. `click`
+  // is the host because it takes a bare locator and nothing else, so the re-parsed `ClickStmt`
+  // carries the locator and no field the printer could have got right by accident; verified
+  // against all six kinds, `button`/`field`/`text`/`list`/`css`/`xpath`, before it was relied on.
+  if (node.type === 'Locator') return `test "wrapper"\n  click ${text}\n`;
+  return `test "wrapper"\n${text}\n`;
 }
 
 test('every printable node in the corpus re-parses to the node it was printed from', () => {
@@ -148,7 +162,9 @@ test('every printable node in the corpus re-parses to the node it was printed fr
     for (const node of collect(program)) {
       const t = tally.get(node.type) ?? { checked: 0, refused: 0 };
       tally.set(node.type, t);
-      const printed = print(node, { indent: ROOTS.has(node.type) ? 0 : 1 });
+      // `A3-1`: a locator is an INLINE fragment, not a line — its host `click ` already carries
+      // the indentation, so asking for level 1 would print `  click   button "Sign in"`.
+      const printed = print(node, { indent: ROOTS.has(node.type) || INLINE.has(node.type) ? 0 : 1 });
       if (!printed.ok) {
         t.refused += 1;
         const reason = printed.reason ?? 'unknown';
@@ -194,6 +210,29 @@ test('every printable node in the corpus re-parses to the node it was printed fr
 
   // A gate that examined nothing is a failed gate, not a passed one.
   assert.ok(total > 0, 'the printer round-tripped no nodes at all');
+
+  // **`D1048`'S RATCHET, WHICH `D1048` SAID EXISTED AND DID NOT** — *"the per-node gate's coverage
+  // count is pinned by a test, so it can only rise: a round that stops printing a kind it printed
+  // before goes red."* Until `A3-1` the only pin was `total > 0` above, so the claim was true of
+  // nothing: a kind could leave `ASKED`, or lose its printer, and this gate would report a smaller
+  // number and pass. Found by a mutation — removing `Locator` from `ASKED` survived the whole
+  // suite, because the narrow test below still passed while the 2,158-node claim silently stopped
+  // being made.
+  //
+  // A FLOOR, not an equality, because that is what a ratchet is. Coverage rising needs no edit;
+  // coverage falling is either a printer that regressed or a corpus that lost fixtures, and both
+  // are things somebody should have to state. Moving a row down is allowed the way the headcount
+  // gate allows it — in the same change, with the reason on the row.
+  const FLOOR: ReadonlyArray<readonly [string, number]> = [
+    ['ExpectStmt', 2408], ['Locator', 2158], ['ApiStep', 1758], ['CaptureStmt', 751],
+    ['TestDecl', 546], ['LetStmt', 296], ['CallStmt', 168], ['LogStmt', 55],
+    ['ThresholdDecl', 42], ['WaitUntilApiStmt', 25], ['CrawlDecl', 11], ['PauseStmt', 4],
+  ];
+  const fell = FLOOR
+    .map(([kind, floor]) => [kind, floor, tally.get(kind)?.checked ?? 0] as const)
+    .filter(([, floor, got]) => got < floor)
+    .map(([kind, floor, got]) => `${kind}: ${got} round-tripped, floor is ${floor}`);
+  assert.deepEqual(fell, [], `\nprinter coverage fell — a kind stopped round-tripping, or the corpus lost fixtures:\n  ${fell.join('\n  ')}\n`);
   assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n\n')}\n`);
   assert.deepEqual(unstable, [], `\n${unstable.slice(0, 10).join('\n\n')}\n`);
 });
@@ -924,6 +963,52 @@ test('A2-1: a scan matcher never takes an operand', () => {
   assert.match(r.reason ?? '', /never takes an operand/);
   // Names the phrase the author writes, not the internal matcher name.
   assert.match(r.reason ?? '', /has no security violations/);
+});
+
+test('A3-1: every locator kind prints, and the value keeps its interpolation', () => {
+  // The corpus gate above round-trips 2,158 locators and refuses none, which is the broad claim.
+  // This is the narrow one, and the two are not the same: the corpus proves the kinds it HAPPENS
+  // to contain, weighted the way authors happen to write — `button` 803, `css` 516, `text` 498,
+  // `field` 476 against `list` 2 and `xpath` 1. A vocabulary whose rarest member occurs once is a
+  // vocabulary one deleted fixture makes untested, so all six are named here.
+  for (const kind of ['button', 'field', 'text', 'list', 'css', 'xpath']) {
+    const stmt = step(`click ${kind} "Sign in"`);
+    const locator = (stmt as unknown as { locator: Node }).locator;
+    const r = print(locator);
+    assert.equal(r.ok, true, `${kind} refused: ${r.reason ?? ''}`);
+    assert.equal(r.text, `${kind} "Sign in"`);
+  }
+
+  // **A locator's value is interpolation-aware** (`ast.ts` says so of the `StringLit`), so a
+  // `{ref}` has to survive as a reference and not as escaped text. This is the claim the corpus
+  // cannot be trusted to make — it is a property of one spelling, not of a frequency.
+  const interpolated = (step('click field "Card {index}"') as unknown as { locator: Node }).locator;
+  const printed = print(interpolated);
+  assert.equal(printed.ok, true);
+  assert.equal(printed.text, 'field "Card {index}"');
+
+  // A quote inside a selector is the case `css` makes ordinary — 516 of them in the corpus, and
+  // `iframe[title='Payment']` is a real one. It must not come back escaped into a different
+  // selector.
+  const css = (step(`click css "iframe[title='Payment']"`) as unknown as { locator: Node }).locator;
+  assert.equal(print(css).text, `css "iframe[title='Payment']"`);
+
+  // **AND THE CASE THAT ACTUALLY SEPARATES `printString` FROM QUOTING THE COOKED VALUE**, which
+  // the three assertions above do not. A mutation replacing `printString(l.value)` with
+  // `"${l.value.value}"` survived all of them: `StringLit.value` for `Card {index}` is the eight
+  // characters `Card {index}`, so the naive form reproduces an interpolation exactly, and neither
+  // a single-quoted selector nor plain text needs escaping at all. An embedded DOUBLE quote is
+  // where the two diverge — `.value` holds it raw — so the naive form emits `css "a[href="/x"]"`,
+  // which is three tokens and not a string. A double-quoted attribute selector is ordinary CSS,
+  // so this is a spelling the corpus simply happens not to contain.
+  const quoted = (step('click css "a[href=\\"/x\\"]"') as unknown as { locator: Node }).locator;
+  const printedQuoted = print(quoted);
+  assert.equal(printedQuoted.ok, true, printedQuoted.reason);
+  assert.equal(printedQuoted.text, 'css "a[href=\\"/x\\"]"');
+  // And it survives the round trip, which is the claim that matters — a string that re-lexes to
+  // something else would be caught here and nowhere above.
+  const back = (step(printedQuoted.text.replace(/^/, 'click ')) as unknown as { locator: { value: { value: string } } }).locator;
+  assert.equal(back.value.value, 'a[href="/x"]');
 });
 
 test('the assertion half refuses what belongs to another door', () => {
