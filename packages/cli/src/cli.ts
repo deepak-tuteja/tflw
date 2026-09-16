@@ -2468,8 +2468,23 @@ async function uiCommand(argv: string[]): Promise<number> {
     err(parsed.usage);
     return EXIT_USAGE;
   }
-  if (!existsSync(join(parsed.root, 'tflw.config'))) {
-    err(`no \`tflw.config\` found in ${parsed.root}. \`tflw ui\` serves a project; run it where one is, or name the directory.`);
+  // `M205` Q8, closing `M205-01`. This refused a directory with no `tflw.config`, and in doing so
+  // made the whole "not a tflw project yet" surface `A0-5` built — the landing's create
+  // affordance, `POST /api/init`, `GET /api/project`'s `noProject` 404 — unreachable through the
+  // only door to it, while two test layers gated it green by constructing `UiServer` directly.
+  // `tflw ui`'s job is to serve the page for a directory. Whether that directory is a project yet
+  // is the page's question, and the page has an answer for it.
+  //
+  // What the old guard was actually worth is kept, and sharpened: a MISTYPED path. `tflw ui
+  // ./tsets` now refuses for the reason it is wrong — there is no such directory — rather than for
+  // a reason that is equally true of every project that does not exist yet. The two cases were
+  // conflated, and only one of them is a mistake.
+  if (!existsSync(parsed.root)) {
+    err(`no such directory: ${parsed.root}. \`tflw ui\` serves a directory — an empty one opens a blank project.`);
+    return EXIT_USAGE;
+  }
+  if (!statSync(parsed.root).isDirectory()) {
+    err(`${parsed.root} is a file, not a directory. \`tflw ui\` serves the directory a project lives in.`);
     return EXIT_USAGE;
   }
   // Only the loader flags travel to the child (`--import tsx` when this is the source entry);
