@@ -1,0 +1,64 @@
+# `M201` `S2` — the request families: bodies, headers, data tables, and the response subjects that
+# are not a plain JSON path.
+#
+# **This file exists to be PRINTED, not to be run** — see `values.tflw` for the whole argument.
+#
+# The payload paths below resolve to nothing and are deliberately left that way. The printer opens
+# no file: `body from`, `upload` and `with each from` carry a string the parser stores and the
+# printer writes back, so a real `./payloads/avatar.png` beside this file would be a binary blob
+# carried for a claim nothing makes — and a binary in a text corpus is the shape `M130-03` keeps a
+# NUL-byte gate for. If a `check`-phase gate is ever pointed at this directory, that is the moment
+# to add them, and the moment it will say so.
+
+@printer
+test "a request carries headers and a retry clause"
+  api GET /v1/orders
+    header "Authorization" is "Bearer token"
+    header "Accept" is "application/json"
+    retry honoring "Retry-After" up to 2
+  expect status equals 200
+
+@printer
+test "the four body shapes that are not inline JSON"
+  api POST /v1/orders body text "{\"sku\":\"W3\"}"
+  expect status equals 201
+  api POST /v1/orders form sku=W3, qty=2
+  expect status equals 201
+  api POST /v1/orders body from "./payloads/order.json"
+  expect status equals 201
+  api POST /v1/uploads upload "./payloads/avatar.png" as "avatar" type "image/png"
+  expect status equals 201
+
+@printer
+test "the response subjects that are not a JSON path"
+  api GET /v1/exports/latest
+  expect status equals 200
+  expect body text contains "sku"
+  expect body bytes matches file "./payloads/export.bin"
+  expect body csv has count 1
+  expect body pdf text contains "Invoice"
+  capture request as sent
+  log "sent {sent}"
+
+@printer
+test "a poll, and a value asserted on its own"
+  api POST /v1/orders body { sku: "W3" }
+  capture body.id as orderId
+  wait until api GET /v1/orders/{orderId}
+    expect {orderId} equals "ord_1"
+    expect status equals 200
+
+@printer
+with each
+  | name  | price |
+  | "Pen" | 1.5   |
+  | "Pad" | 2.5   |
+test "creates {name} at {price}"
+  api POST /v1/items body { name: "{name}", price: "{price}" }
+  expect status equals 201
+
+@printer
+with each from "./payloads/rows.csv"
+test "creates {sku} from a file-backed table"
+  api POST /v1/items body { sku: "{sku}" }
+  expect status equals 201

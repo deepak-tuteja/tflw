@@ -868,30 +868,22 @@ test('every node kind in the corpus is declared printable, context-bound, or ref
  * claim over a subset nobody had named.
  */
 const OWED: ReadonlySet<string> = new Set<string>([
-  // `M201` `S1` — measured, not chosen: the 87 kinds this repository's own corpus does not reach.
-  // `S2` takes the values and API families, `S3` the browser, `S4` load, crawl and the header.
-  'AcceptDialogStmt', 'ApiHeader', 'ArrayLit', 'BinaryExpr',
-  'BodyBytesSubject', 'BodyCsvSubject', 'BodyPdfTextSubject', 'BodyTextSubject',
-  'BoolLit', 'CallExpr', 'CallStmt', 'CloseTabStmt',
-  'CrawlDecl', 'DateAtom', 'DateOffsetLit', 'DialogMessageSubject',
+  // `M201` `S2` — 87 -> **42**. `__fixtures__/printer-corpus/values.tflw` takes every literal,
+  // generator, date expression and transform; `api.tflw` takes the four non-inline body shapes,
+  // headers, the retry clause, both data tables and the four response subjects that are not a
+  // JSON path. Every spelling was lifted from a real site in the sibling at the node's own span.
+  // `S3` takes the browser, `S4` load, crawl and the file header.
+  'AcceptDialogStmt', 'CloseTabStmt', 'CrawlDecl', 'DialogMessageSubject',
   'DialogTypeSubject', 'DismissDialogStmt', 'DownloadBlock', 'DragStmt',
-  'DropFileStmt', 'DurationLit', 'DurationSubject', 'EnvRef',
-  'FileBody', 'FileDataTable', 'FillFormRow', 'FillFormStmt',
-  'FillStmt', 'FormBody', 'FormField', 'FormatExpr',
+  'DropFileStmt', 'FillFormRow', 'FillFormStmt', 'FillStmt',
   'HoldRpsWorkload', 'HoldUsersWorkload', 'HookDecl', 'HoverStmt',
-  'ImportDecl', 'InlineDataTable', 'LetStmt', 'NetworkRequestRef',
-  'NetworkRequestSubject', 'NullLit', 'OpenApiSeed', 'PageSubject',
-  'PerVuIterationsWorkload', 'PressStmt', 'RampRpsWorkload', 'RampUsersWorkload',
-  'RandomDateBetweenExpr', 'RandomDateInFutureExpr', 'RandomDateInPastExpr', 'RandomDecimalExpr',
-  'RandomLikeExpr', 'RandomNumberExpr', 'RandomOfExpr', 'RandomPasswordExpr',
-  'RandomStringExpr', 'RandomUuidExpr', 'RequestSubject', 'RetryAfterClause',
-  'ScrollStmt', 'SelectStmt', 'SpiderSeed', 'SpikeRpsWorkload',
-  'SpikeUsersWorkload', 'Stage', 'StepRpsWorkload', 'StepUsersWorkload',
-  'StubStmt', 'SwitchToNewTabBlock', 'SwitchToTabStmt', 'TextBody',
-  'TickStmt', 'TrafficSeed', 'TransformExpr', 'UniqueEmailExpr',
-  'UniqueLikeExpr', 'UniqueNumberExpr', 'UniquePrefixExpr', 'UniqueUuidExpr',
-  'UntickStmt', 'UploadBody', 'UseDecl', 'ValueSubject',
-  'WaitUntilApiStmt', 'WaitUntilUiStmt', 'WithinBlock',
+  'ImportDecl', 'NetworkRequestRef', 'NetworkRequestSubject', 'OpenApiSeed',
+  'PageSubject', 'PerVuIterationsWorkload', 'PressStmt', 'RampRpsWorkload',
+  'RampUsersWorkload', 'ScrollStmt', 'SelectStmt', 'SpiderSeed',
+  'SpikeRpsWorkload', 'SpikeUsersWorkload', 'Stage', 'StepRpsWorkload',
+  'StepUsersWorkload', 'StubStmt', 'SwitchToNewTabBlock', 'SwitchToTabStmt',
+  'TickStmt', 'TrafficSeed', 'UntickStmt', 'UseDecl',
+  'WaitUntilUiStmt', 'WithinBlock',
 ]);
 
 /** Every node kind occurring in an in-repo file that prints and re-parses to the same program. */
