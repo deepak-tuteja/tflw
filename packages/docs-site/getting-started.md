@@ -44,7 +44,13 @@ In any project with an API you want to test:
 ```sh
 npx tflw init   # scaffolds tflw.config + example.tflw + .env.example + .gitignore
 npx tflw run    # runs it — green in seconds
+npx tflw ui     # and reads it back as a page, with a form per door
 ```
+
+Run them in that order the first time. `tflw ui` opens an empty directory too and offers to create
+the project for you, but the forms open **empty** — a default request would be a guess about your
+service, and a wrong guess is worse than a blank field — so a scaffolded `example.tflw` gives you
+something that already works to read and re-run beside them.
 
 `tflw init` scaffolds a health-check test against **tflw's own demo service** — a small HTTP server
 tflw starts for the run and stops after it, answering `GET /health` and nothing else. That's what

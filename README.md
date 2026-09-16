@@ -80,6 +80,7 @@ Either way, in any project with an API you want to test:
 ```sh
 npx tflw init   # scaffolds tflw.config + example.tflw + .env.example + .gitignore
 npx tflw run    # runs it — green in seconds
+npx tflw ui     # and reads it back as a page, with a form per door
 ```
 
 `tflw init` scaffolds a health-check test against **tflw's own demo service** — a small HTTP server
@@ -87,6 +88,12 @@ that tflw starts for the run and stops after it — so that second command reall
 directory, with nothing installed and nothing running. It answers `GET /health` and nothing else; a
 run against it is labelled as a demo run in the summary and in `report.html`, because it proves
 something about tflw and nothing about your system.
+
+`tflw ui` opens the same project as a page — the tests it found, the runs it has, and a form per
+door that writes a `.tflw` file. **Run `tflw init` before it the first time.** The page opens on an
+empty directory too and offers to create the project for you, but a scaffolded `example.tflw` is a
+working sample to read and re-run, and the forms open empty by design: a default request would be a
+guess about your service, and a wrong guess is worse than a blank field.
 
 Point `tflw.config`'s `api` line at your own service to test something real — one line, and it is
 the first thing the scaffolded config asks you to change:
