@@ -13,6 +13,7 @@ import { doorFromHash, hashForDoor } from './doors';
 import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
+import { ApiForm } from './ApiForm';
 import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
 import { exitExplained, reportIdOf } from './format';
 import { LiveBody, ReportBody, ReportHeader } from './ReportView';
@@ -175,7 +176,7 @@ export function App() {
       <main className="main">
         {project ? <DoorBar project={project} door={door} onDoor={setDoor} /> : null}
         {/* `D1042`: the door decides what the "new test" surface is, and nothing else. LOAD's is
-            `A0-4`'s form; the other three doors have theirs in `A1`–`A3`. */}
+            `A0-4`'s form and API's is `A1-4`'s; BROWSER and SCANS have theirs in `A2`–`A3`. */}
         {project && door === 'load' ? (
           <LoadForm
             project={project}
@@ -186,6 +187,7 @@ export function App() {
             }}
           />
         ) : null}
+        {project && door === 'api' ? <ApiForm project={project} onWritten={() => void readProjectView()} /> : null}
         <RunList runs={runs} reports={reports} selected={selected} onSelect={setSelected} />
         {error ? (
           <p className="error" data-error>

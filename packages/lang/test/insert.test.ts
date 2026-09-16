@@ -10,7 +10,7 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTest, buildThreshold, buildWorkload, format, insertIntoSource, parseSource, type Insertion } from '../src/index.js';
+import { buildApiStep, buildExpect, buildTest, buildThreshold, buildWorkload, format, insertIntoSource, parseSource, print, stringLit, type ApiStepSpec, type ExpectSpec, type Insertion } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -238,4 +238,179 @@ test('an insert into a file that was never formatted formats the whole file, and
     node: threshold({ metric: { kind: 'errorRate' }, op: 'lessThan', bound: 1, scope: null }),
   });
   assert.equal(out, 'test "t"\n  api GET /x\n  expect status equals 200\n  threshold error rate is less than 1%\n');
+});
+
+// ---- `A1-4` — the API form's half of the pipeline ---------------------------
+
+const apiStep = (spec: ApiStepSpec) => {
+  const r = buildApiStep(spec);
+  assert.equal(r.ok, true, r.ok ? '' : r.reason);
+  if (!r.ok) throw new Error(r.reason);
+  return r.node;
+};
+const expectStmt = (spec: ExpectSpec) => {
+  const r = buildExpect(spec);
+  assert.equal(r.ok, true, r.ok ? '' : r.reason);
+  if (!r.ok) throw new Error(r.reason);
+  return r.node;
+};
+
+test('a built string literal breaks into the same parts the parser would give it', () => {
+  // `A0-4` built one text blob and left a note saying interpolation was `A1`'s. The BYTES were
+  // already right — `print` rebuilds from `parts` and `escape` does not touch braces — so the two
+  // agreed by accident. The NODE did not: the thing the form previewed said "one run of text"
+  // where the file says text-plus-reference, and anything reading the built node (which variables
+  // does this step use? is that reference bound?) read a fiction.
+  const built = stringLit('Bearer {token}');
+  const { program } = parseSource('test "t"\n  api GET /x\n    header "A" is "Bearer {token}"\n');
+  const step = program.tests[0]!.body[0]!;
+  assert.equal(step.type, 'ApiStep');
+  const parsed = (step as { headers: { value: unknown }[] }).headers[0]!.value;
+  assert.deepEqual(built.parts, (parsed as { parts: unknown }).parts);
+  assert.equal(built.parts.length, 2, 'two parts: the literal text and the reference');
+});
+
+test('the API form builds a request and the assertions that read it', () => {
+  const step = apiStep({
+    service: null,
+    method: 'POST',
+    path: '/orders',
+    headers: [{ name: 'Authorization', value: 'Bearer {token}' }],
+    body: { kind: 'json', text: '{ itemId: 1, qty: 2 }' },
+    label: null,
+  });
+  assert.equal(print(step, { indent: 1 }).text, '  api POST /orders body { itemId: 1, qty: 2 }\n    header "Authorization" is "Bearer {token}"');
+
+  const rows: readonly [ExpectSpec, string][] = [
+    [{ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '201' }, '  expect status equals 201'],
+    [{ soft: false, quantifier: null, subject: { kind: 'body', path: 'items[0].price' }, matcher: 'greaterThan', operand: '0' }, '  expect body.items[0].price is greater than 0'],
+    [{ soft: true, quantifier: 'all', subject: { kind: 'body', path: 'items' }, matcher: 'hasCount', operand: '2' }, '  check all body.items has count 2'],
+    [{ soft: false, quantifier: null, subject: { kind: 'header', name: 'content-type' }, matcher: 'contains', operand: '"json"' }, '  expect header "content-type" contains "json"'],
+    [{ soft: false, quantifier: null, subject: { kind: 'duration' }, matcher: 'lessThan', operand: '500ms' }, '  expect duration is less than 500ms'],
+    [{ soft: false, quantifier: null, subject: { kind: 'request' }, matcher: 'connects', operand: null }, '  expect request connects'],
+    [{ soft: false, quantifier: null, subject: { kind: 'bodyText' }, matcher: 'contains', operand: '"ok"' }, '  expect body text contains "ok"'],
+    [{ soft: false, quantifier: null, subject: { kind: 'value', ref: 'orderId' }, matcher: 'greaterThan', operand: '0' }, '  expect {orderId} is greater than 0'],
+  ];
+  for (const [spec, expected] of rows) assert.equal(print(expectStmt(spec), { indent: 1 }).text, expected);
+
+  // The three other body shapes.
+  assert.equal(print(apiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'text', text: 'raw' }, label: null }), { indent: 1 }).text, '  api POST /x body text "raw"');
+  assert.equal(print(apiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'file', path: './p.json' }, label: null }), { indent: 1 }).text, '  api POST /x body from "./p.json"');
+  assert.equal(print(apiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'form', fields: [{ key: 'email', value: 'a@b' }] }, label: null }), { indent: 1 }).text, '  api POST /x form email="a@b"');
+  // A named service and a report label, which is the clause order `A1-2` corrected.
+  assert.equal(print(apiStep({ service: 'root', method: 'GET', path: '/health', headers: [], body: null, label: 'health' }), { indent: 1 }).text, '  api root GET /health as "health"');
+});
+
+test('steps land under the last step and above the thresholds', () => {
+  // A `threshold` is parsed into its own array and sits at the FOOT of a test, below the body, so
+  // "the last line" and "the last step" are different offsets on any test that has one. Appending
+  // to the last line would put the request below the assertion about the whole run.
+  const source = 'test "checkout"\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n';
+  const out = insert(source, {
+    kind: 'steps',
+    testName: 'checkout',
+    nodes: [
+      apiStep({ service: null, method: 'POST', path: '/orders', headers: [], body: { kind: 'json', text: '{ qty: 1 }' }, label: null }),
+      expectStmt({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '201' }),
+    ],
+  });
+  assert.equal(
+    out,
+    'test "checkout"\n  api GET /health\n  expect status equals 200\n  api POST /orders body { qty: 1 }\n  expect status equals 201\n  threshold error rate is less than 1%\n',
+  );
+  acceptable(out, 'a test that gained steps above its threshold');
+
+  // A TEST'S SOURCE IS THREE REGIONS, NOT TWO — header, workload line, body, thresholds — and only
+  // a fixture holding all of them at once can tell the three candidate anchors apart. This one
+  // does: a step must land below `run … iterations` and below the last `expect`, and above the
+  // `threshold`. The first draft of the anchor got this shape right and the shape BELOW it wrong.
+  const allThree = '@load\ntest "the catalog holds"\n  run 50 iterations across 2 users\n  api GET /catalog\n  threshold error rate is less than 1%\n';
+  const out3 = insert(allThree, { kind: 'steps', testName: 'the catalog holds', nodes: [expectStmt({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' })] });
+  assert.equal(out3, '@load\ntest "the catalog holds"\n  run 50 iterations across 2 users\n  api GET /catalog\n  expect status equals 200\n  threshold error rate is less than 1%\n');
+  acceptable(out3, 'a test with a workload, a body and a threshold');
+
+  // The control: with no threshold the two offsets coincide, so a test asserting only this shape
+  // would pass against code that appended to the last line.
+  const noThreshold = 'test "checkout"\n  api GET /health\n  expect status equals 200\n';
+  const out2 = insert(noThreshold, { kind: 'steps', testName: 'checkout', nodes: [expectStmt({ soft: false, quantifier: null, subject: { kind: 'duration' }, matcher: 'lessThan', operand: '1s' })] });
+  assert.equal(out2, 'test "checkout"\n  api GET /health\n  expect status equals 200\n  expect duration is less than 1s\n');
+  acceptable(out2, 'a test that gained a step at its foot');
+});
+
+test('a step and the assertions that read it are one edit, not several', () => {
+  // Inserting them separately would leave the file, between two writes, with assertions naming a
+  // response nothing fetched — and `D1049` means each of those writes is a real PUT.
+  const source = 'test "t"\n  api GET /health\n  expect status equals 200\n';
+  const nodes = [
+    apiStep({ service: null, method: 'GET', path: '/orders', headers: [], body: null, label: null }),
+    expectStmt({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' }),
+    expectStmt({ soft: false, quantifier: null, subject: { kind: 'body', path: '' }, matcher: 'hasCount', operand: '3' }),
+  ];
+  const out = insert(source, { kind: 'steps', testName: 't', nodes });
+  assert.equal(out, 'test "t"\n  api GET /health\n  expect status equals 200\n  api GET /orders\n  expect status equals 200\n  expect body has count 3\n');
+  acceptable(out, 'a request and its assertions in one edit');
+
+  const empty = insertIntoSource(source, { kind: 'steps', testName: 't', nodes: [] });
+  assert.equal(empty.ok, false);
+  if (!empty.ok) assert.match(empty.reason, /no steps to insert/);
+});
+
+test('the API door can add work to a test another door started, which closes `A0-5`’s gap', () => {
+  // `A0-5`'s green-condition test had to write an `api` step through the raw write route and say
+  // so where it did it, because a LOAD form cannot describe one. This is `D1044` from the writing
+  // side: a door adds the work it knows how to describe, to a test any door may have started.
+  const load = insert('', {
+    kind: 'test',
+    node: (() => {
+      const w = workload({ kind: 'iterations', perUser: false, count: 50, vus: 2 });
+      const t = buildTest({ name: 'the catalog holds', tags: ['load'], workload: w, thresholds: [], body: [] });
+      assert.equal(t.ok, true, t.ok ? '' : t.reason);
+      if (!t.ok) throw new Error(t.reason);
+      return t.node;
+    })(),
+  });
+  assert.equal(load, '@load\ntest "the catalog holds"\n  run 50 iterations across 2 users\n');
+
+  const withWork = insert(load, {
+    kind: 'steps',
+    testName: 'the catalog holds',
+    nodes: [
+      apiStep({ service: null, method: 'GET', path: '/catalog', headers: [], body: null, label: 'catalog' }),
+      expectStmt({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' }),
+    ],
+  });
+  assert.equal(withWork, '@load\ntest "the catalog holds"\n  run 50 iterations across 2 users\n  api GET /catalog as "catalog"\n  expect status equals 200\n');
+  acceptable(withWork, 'a LOAD-authored test that the API door gave work to');
+});
+
+test('the API builders refuse in the form’s own words', () => {
+  const rows: readonly [() => { ok: boolean; reason?: string }, RegExp][] = [
+    [() => buildApiStep({ service: null, method: 'GET', path: 'orders', headers: [], body: null, label: null }), /starts with `\/`/],
+    [() => buildApiStep({ service: null, method: 'GET', path: '/a b', headers: [], body: null, label: null }), /cannot contain a space/],
+    [() => buildApiStep({ service: 'my service', method: 'GET', path: '/x', headers: [], body: null, label: null }), /is not a service name/],
+    [() => buildApiStep({ service: null, method: 'GET', path: '/x', headers: [{ name: '  ', value: 'v' }], body: null, label: null }), /a header needs a name/],
+    [() => buildApiStep({ service: null, method: 'GET', path: '/x', headers: [], body: null, label: '  ' }), /cannot be blank/],
+    // The JSON body is the one field whose content is a program fragment, so it is PARSED rather
+    // than trusted — and the refusal is the parser's own sentence about the line the author typed.
+    [() => buildApiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'json', text: '{ oops' }, label: null }), /never closed/],
+    [() => buildApiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'json', text: '5' }, label: null }), /JSON object or array/],
+    [() => buildApiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'form', fields: [] }, label: null }), /at least one field/],
+    [() => buildApiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'form', fields: [{ key: 'a b', value: 'v' }] }, label: null }), /is not a form field name/],
+    [() => buildExpect({ soft: false, quantifier: 'any', subject: { kind: 'status' }, matcher: 'equals', operand: '200' }), /quantify a body path/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: 'items[x]' }, matcher: 'equals', operand: '1' }), /is not a path segment/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '' }), /compares against something/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'request' }, matcher: 'connects', operand: '200' }), /takes no value/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'header', name: '' }, matcher: 'equals', operand: '"x"' }), /needs a header name/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'value', ref: '' }, matcher: 'equals', operand: '1' }), /names a variable/],
+  ];
+  for (const [build, pattern] of rows) {
+    const r = build();
+    assert.equal(r.ok, false, `expected a refusal matching ${String(pattern)}`);
+    assert.match(r.reason ?? '', pattern);
+  }
+
+  // …and the matcher with no operand is accepted without one, which is the control that keeps the
+  // "give it a value" refusal about the matchers that need one.
+  const bare = buildExpect({ soft: false, quantifier: null, subject: { kind: 'request' }, matcher: 'fails', operand: null });
+  assert.equal(bare.ok, true, bare.ok ? '' : bare.reason);
 });
