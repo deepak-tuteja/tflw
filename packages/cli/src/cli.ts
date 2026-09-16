@@ -3717,7 +3717,11 @@ async function initCommand(argv: string[]): Promise<number> {
  * whether the file was created or changed at all. */
 async function ensureGitignore(cwd: string): Promise<boolean> {
   const gitignorePath = join(cwd, '.gitignore');
-  const required = ['.env', 'report/'];
+  // `scratch.tflw` is `D1047`'s exploration file — one path, overwritten by the page's Send
+  // button, and never something to commit. Added here so a project `init` makes is right from the
+  // start; an existing project gets a notice on the page instead of a silent edit to a file the
+  // author owns (`M200` `A1-5`).
+  const required = ['.env', 'report/', 'scratch.tflw'];
   let existing = '';
   try {
     existing = await readFile(gitignorePath, 'utf8');

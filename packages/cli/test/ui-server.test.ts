@@ -97,6 +97,40 @@ test('runArgv maps a request onto tflw run flags and nothing else', () => {
   assert.deepEqual(runArgv({ env: 'other', workers: 2, tags: ['a', 'b'], only: 'x', files: ['f.tflw', 'g/h.tflw'] }), [
     'run', '--format', 'ndjson', '--no-color', '--env', 'other', '--workers', '2', '--tag', 'a,b', '--only', 'x', 'f.tflw', 'g/h.tflw',
   ]);
+  // `A1-5`: `--evidence` is what makes `D1047`'s Send a response pane rather than a verdict —
+  // below `full` a step record carries no `request`/`response` at all (`D987`). It is raw text
+  // here and validated by `runCommand` against `EVIDENCE_LEVELS`, exactly as a terminal's own
+  // `--evidence` is, so the page still cannot ask for a level a terminal could not.
+  assert.deepEqual(runArgv({ evidence: 'full', only: 'scratch', files: ['scratch.tflw'] }), [
+    'run', '--format', 'ndjson', '--no-color', '--only', 'scratch', '--evidence', 'full', 'scratch.tflw',
+  ]);
+});
+
+test('the project view names the scratch file and says whether git will ignore it', async () => {
+  // `D1047`'s file is one path, overwritten — so the page can say, before writing it, whether it
+  // is about to appear in someone's `git status`. The check is an EXACT LINE, the same shape
+  // `tflw init`'s `ensureGitignore` writes with, which makes it right for every project `init`
+  // made and a false negative for a rule spelled another way.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-scratch-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    const without = await readProject(dir);
+    assert.equal(without.scratchPath, 'scratch.tflw');
+    assert.equal(without.scratchIgnored, false, 'no .gitignore at all');
+
+    await writeFile(join(dir, '.gitignore'), '.env\nreport/\n', 'utf8');
+    assert.equal((await readProject(dir)).scratchIgnored, false, 'a .gitignore without the line');
+
+    await writeFile(join(dir, '.gitignore'), '.env\nreport/\nscratch.tflw\n', 'utf8');
+    assert.equal((await readProject(dir)).scratchIgnored, true);
+
+    // A rule that WOULD ignore it but is spelled differently reads as false — stated here rather
+    // than left to be discovered, because it is the cost of not shelling out to `git`.
+    await writeFile(join(dir, '.gitignore'), '*.tflw\n', 'utf8');
+    assert.equal((await readProject(dir)).scratchIgnored, false, 'the documented false negative');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('safeJoin refuses a path that escapes its base, including the sibling-prefix trick', () => {
