@@ -81,7 +81,7 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', 'OpenStmt', 'ClickStmt', 'FillStmt', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
@@ -225,8 +225,9 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // gate allows it — in the same change, with the reason on the row.
   const FLOOR: ReadonlyArray<readonly [string, number]> = [
     ['ExpectStmt', 2408], ['Locator', 2158], ['ApiStep', 1758], ['CaptureStmt', 751],
-    ['TestDecl', 546], ['LetStmt', 296], ['CallStmt', 168], ['LogStmt', 55],
-    ['ThresholdDecl', 42], ['WaitUntilApiStmt', 25], ['CrawlDecl', 11], ['PauseStmt', 4],
+    ['ClickStmt', 728], ['TestDecl', 546], ['FillStmt', 417], ['LetStmt', 296],
+    ['OpenStmt', 231], ['CallStmt', 168], ['LogStmt', 55], ['ThresholdDecl', 42],
+    ['WaitUntilApiStmt', 25], ['CrawlDecl', 11], ['PauseStmt', 4],
   ];
   const fell = FLOOR
     .map(([kind, floor]) => [kind, floor, tally.get(kind)?.checked ?? 0] as const)
@@ -238,12 +239,23 @@ test('every printable node in the corpus re-parses to the node it was printed fr
 });
 
 test('the printer refuses what it cannot print, and names the node kind', () => {
-  const { program } = parseSource('test "t"\n  open "/x"\n  click button "Buy"\n');
+  // **THIS TEST HAS NOW BEEN REPOINTED TWICE, AND THAT IS THE INTERESTING PART.** It read
+  // `open "/x"` until `A3-2` gave `OpenStmt` a printer, exactly as `A1-3`'s refusal assertion had
+  // to move when `A2-1` made its subject print. A test whose subject is *whatever is not built
+  // yet* is a test that goes red on success, and each round has paid a small tax for it.
+  //
+  // `fill form` is the choice that costs least next: it is `A4`'s by `§4g`, a real construct the
+  // grammar accepts rather than a parse error, and the claim being made — the refusal names the
+  // NODE KIND, so the gate's census can be read as a worklist — is about the refusal's shape and
+  // not about which node carries it. When `A4` closes the printer this moves one last time, to
+  // `MalformedStep`, which must refuse forever (`§4f`) and is the only permanent anchor there is.
+  const { program } = parseSource('test "t"\n  fill form\n    | "Email" | "a@b.c" |\n');
   const step = program.tests[0]!.body[0]!;
+  assert.equal(step.type, 'FillFormStmt', 'the fixture must be the construct, not a parse error');
   const r = print(step);
   assert.equal(r.ok, false);
   assert.equal(r.text, '');
-  assert.match(r.reason ?? '', /OpenStmt/);
+  assert.match(r.reason ?? '', /FillFormStmt/);
 });
 
 test('printed source is what `format` would already have written', () => {
@@ -1009,6 +1021,51 @@ test('A3-1: every locator kind prints, and the value keeps its interpolation', (
   // something else would be caught here and nowhere above.
   const back = (step(printedQuoted.text.replace(/^/, 'click ')) as unknown as { locator: { value: { value: string } } }).locator;
   assert.equal(back.value.value, 'a[href="/x"]');
+});
+
+test('A3-2: the three browser statements, including the two click kinds the corpus barely has', () => {
+  // The corpus round-trips 728 clicks, 417 fills and 231 opens and refuses none — the broad claim.
+  // The narrow one is about distribution: `single` is **770 of 774**, against `double` 2 and
+  // `right` 2. `A3-1` recorded the same shape for `xpath` (1 occurrence) and the same argument
+  // applies — a variant this rare is one deleted fixture away from being untested, and its printer
+  // is a branch that would then be reached by nothing.
+  assert.equal(print(step('click button "Buy"')).text, 'click button "Buy"');
+  assert.equal(print(step('double click button "Buy"')).text, 'double click button "Buy"');
+  assert.equal(print(step('right click button "Buy"')).text, 'right click button "Buy"');
+
+  // The kind is a PREFIX, which the parser fixes in two functions (`parseClickStep` takes `click`;
+  // `parseDoubleOrRightClickStep` takes `double`/`right` and then expects `click`). Asserted as a
+  // round trip rather than as a string, because word order is the one thing a prefix can get wrong
+  // and a re-parse is what notices.
+  for (const src of ['double click text "Row"', 'right click css "#menu"']) {
+    const back = print(step(src));
+    assert.equal(back.ok, true, back.reason);
+    assert.deepEqual(stripSpans(step(back.text)), stripSpans(step(src)), src);
+  }
+
+  // `open` is one interpolation-aware string — 35 of 281 corpus opens carry a `{ref}`, because a
+  // path is usually the first place a captured id is used.
+  assert.equal(print(step('open "/orders"')).text, 'open "/orders"');
+  assert.equal(print(step('open "/orders/{orderId}"')).text, 'open "/orders/{orderId}"');
+
+  // **AND THE ESCAPING CASE, WHICH IS THE ONE THAT MAKES `printString` NECESSARY — second time in
+  // two slices that the interpolation argument turned out to be the wrong argument.** `A3-1`'s doc
+  // comment justified `printString` by interpolation and a mutation walked straight through it,
+  // because `StringLit.value` holds `/orders/{orderId}` as those exact characters; the naive form
+  // reproduces every `{ref}` perfectly. What it cannot reproduce is an escape, because `.value`
+  // holds a quote RAW. So the claim is made here, on both statements that carry a string.
+  assert.equal(print(step('open "/search?q=\\"blue\\""')).text, 'open "/search?q=\\"blue\\""');
+  assert.equal(print(step('fill field "Note" with "he said \\"hi\\""')).text, 'fill field "Note" with "he said \\"hi\\""');
+
+  // **A fill takes a VALUE, not a string**, which is why it routes through `A1-1`'s union rather
+  // than through `printString`: the corpus fills with `StringLit` 422 times, `EnvRef` 12 and
+  // `Interp` 3. A printer that quoted the value would round-trip 422 of 437 and turn the other
+  // fifteen into literal text — green against the common case and wrong where it matters.
+  assert.equal(print(step('fill field "Email" with "a@b.c"')).text, 'fill field "Email" with "a@b.c"');
+  assert.equal(print(step('fill field "Email" with {email}')).text, 'fill field "Email" with {email}');
+  const envFill = print(step('fill field "Email" with env(USER_A_EMAIL)'));
+  assert.equal(envFill.ok, true, envFill.reason);
+  assert.equal(envFill.text, 'fill field "Email" with env(USER_A_EMAIL)');
 });
 
 test('the assertion half refuses what belongs to another door', () => {

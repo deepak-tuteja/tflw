@@ -37,8 +37,11 @@ import type {
   CallStmt,
   CaptureStmt,
   DataTable,
+  ClickStmt,
   ExpectStmt,
+  FillStmt,
   Locator,
+  OpenStmt,
   FormField,
   LetStmt,
   LogStmt,
@@ -123,6 +126,12 @@ export const PRINTABLE = new Set<string>([
   // measurable is exactly the kind a round defers behind something that looks more productive,
   // and then everything else waits on it.
   'Locator',
+  // `A3-2` — the three statements every browser test is made of: 766 clicks, 433 fills, 270
+  // opens. Each is a locator (or a path) and nothing else, which is why they arrive together;
+  // what they buy on their own is still small, because `within` holds 150 tests shut (`§4f`).
+  'OpenStmt',
+  'ClickStmt',
+  'FillStmt',
   // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
   // statements that read or announce a response.
   'DurationSubject',
@@ -244,6 +253,12 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printLog(node as LogStmt);
     case 'Locator':
       return pad(level) + printLocator(node as Locator);
+    case 'OpenStmt':
+      return pad(level) + printOpen(node as OpenStmt);
+    case 'ClickStmt':
+      return pad(level) + printClick(node as ClickStmt);
+    case 'FillStmt':
+      return pad(level) + printFill(node as FillStmt);
     case 'StatusSubject':
     case 'DurationSubject':
     case 'HeaderSubject':
@@ -1056,6 +1071,51 @@ function printGenerator(v: Value): string {
 /** Rebuilt from `parts`, not from `value`: the decoded value has lost the difference between a
  *  literal `{` and an interpolation hole, and re-quoting `value` would turn `{id}` back into a
  *  reference the author never wrote. */
+/**
+ * `open "/orders/{orderId}"` — `M200` `A3-2`.
+ *
+ * One `StringLit` and no clause of any kind. It goes through `printString` rather than being
+ * quoted directly because **35 of the corpus's 281 opens carry an interpolation** — a path is
+ * usually the first place a captured id is used — and `ast.ts` is explicit that this is a normal
+ * interpolation-aware string rather than a bare api-style path token, precisely because `open`
+ * has no method or service prefix to gate a contextual `/` on.
+ */
+function printOpen(o: OpenStmt): string {
+  return `open ${printString(o.path)}`;
+}
+
+/**
+ * `click button "Buy"` / `double click …` / `right click …` — `M200` `A3-2`.
+ *
+ * **The kind is a prefix, not a suffix or a flag**, and the parser says so in two functions:
+ * `parseClickStep` consumes `click` while `parseDoubleOrRightClickStep` consumes `double`/`right`
+ * and then *expects* `click`. So the printed word order is fixed by the grammar and there is no
+ * spelling choice here to normalise away.
+ *
+ * `single` is **770 of 774** in the corpus against `double` 2 and `right` 2. That ratio is the
+ * reason all three are named in a test rather than left to the corpus: a variant occurring twice
+ * is one deleted fixture away from being untested, which is exactly what `A3-1` recorded about
+ * `xpath`.
+ */
+function printClick(c: ClickStmt): string {
+  const prefix = c.kind === 'single' ? '' : c.kind === 'double' ? 'double ' : 'right ';
+  return `${prefix}click ${printLocator(c.locator)}`;
+}
+
+/**
+ * `fill field "Email" with {email}` — `M200` `A3-2`.
+ *
+ * The value is a full `Value`, not a string, and that is load-bearing rather than incidental:
+ * measured over the corpus, a fill takes `StringLit` 422 times, `EnvRef` 12 and `Interp` 3. So it
+ * routes through `printValue` — `A1-1`'s slice, the one union five positions read — and a fill is
+ * the sixth position rather than a new grammar.
+ *
+ * `fill form` is a different node (`FillFormStmt`, an indented table) and is `A4`'s.
+ */
+function printFill(f: FillStmt): string {
+  return `fill ${printLocator(f.locator)} with ${printValue(f.value)}`;
+}
+
 /**
  * `button "Sign in"` / `field "Card number"` / `css "iframe[title='Payment']"` — `M200` `A3-1`.
  *
