@@ -1099,6 +1099,98 @@ test('the BROWSER form adds steps to a test that already opened a page, and writ
   await writeFile(join(root, target), before, 'utf8');
 });
 
+test('the BROWSER form picks a locator from a live session and fills the field with it', async () => {
+  // `D1055`. **Driven against a STUB `tflw pick`, deliberately, and the reason is this morning.**
+  // The real command opens a real, visible browser and waits for a human to click something — a
+  // page gate cannot produce that click, and spawning one headed browser per run on a shared box
+  // to assert a banner is a cost with no claim attached. This box was carrying fourteen orphaned
+  // `Xvfb` servers from killed runs when `A2-6` started; a gate that leaves browsers behind is the
+  // same defect in a test's clothing.
+  //
+  // What is left after the stub is every claim this slice actually makes: the session is spawned
+  // for the path the form is writing, the lines arrive, they are CLASSIFIED BY THE GRAMMAR, and
+  // clicking a suggestion fills the field it was opened for. The real command's own behaviour is
+  // covered where it lives, and `pickArgv`/`pickUrl` pin the boundary between them.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-pick-door-'));
+  const stub = join(dir, 'stub.mjs');
+  const fresh = await browser.newPage();
+  // **A THROWN HANDLER AND A FILTERED LINE LOOK IDENTICAL FROM THE OUTSIDE**, which is how the
+  // kind check nearly shipped unverified. Remove it and a banner — a `MalformedStep`, with no
+  // `.locator` — makes `locatorFromPickLine` throw inside the stream callback; the suggestion is
+  // not added, the count is still 2, the contents are still right, and every assertion below
+  // passes. Only the error itself distinguishes them, and nothing but the browser can see it.
+  const pageErrors: string[] = [];
+  fresh.on('pageerror', (e) => pageErrors.push(e.message));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(join(dir, 'web.tflw'), 'test "a page"\n  open "/"\n  expect text "Hi" is visible\n', 'utf8');
+    // Two banner lines and two locators — the banners matter, because a form filtering by matching
+    // their wording would turn one into a suggestion the day somebody rewords it.
+    await writeFile(
+      stub,
+      [
+        'process.stdout.write(`opening ${process.argv[3]} — press Ctrl+C to stop.\n`);',
+        'process.stdout.write(`ready — click any element to print its locator. Close the window or press Ctrl+C to stop.\n`);',
+        'process.stdout.write(`button "Sign in"\n`);',
+        'process.stdout.write(`css "#totals .amount"\n`);',
+        // **A LINE THAT PARSES WITH RECOVERY**, which is the case the two guards divide between
+        // them. The banners above become `MalformedStep`, so the `ClickStmt` check filters them;
+        // this one parses as a perfectly good `ClickStmt` with a diagnostic, its trailing text
+        // dropped — so without the diagnostics check it would arrive as `button "Sign in"` and the
+        // form would have silently truncated something its own tool emitted.
+        'process.stdout.write(`button "Cancel" and some trailing text\n`);',
+        // **BOUNDED, so that leaking it cannot hang anything.** The stub must outlive the assertions
+        // to prove the stream is live, and must not outlive the test — otherwise a mutation that
+        // drops the kill leaves a child holding piped stdio, the test file never exits, and the
+        // failure the assertions correctly produce is invisible behind a hang. `A3-6` paid 180
+        // seconds and a hand-killed run to learn that.
+        'const alive = setInterval(() => {}, 250);',
+        'setTimeout(() => { clearInterval(alive); process.exit(0); }, 3000);',
+        'process.on("SIGINT", () => process.exit(0));',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const ui = new UiServer({ root: dir, cliEntry: stub, execArgv: [], staticDir: join(scratch, 'ui') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      await fresh.goto(`${base}#/browser`);
+      await fresh.locator('[data-browser-form]').waitFor();
+      await fresh.locator('[data-browser-open]').fill('/checkout');
+
+      await fresh.locator('[data-browser-pick="0"]').click();
+      await fresh.locator('[data-browser-picking="0"]').waitFor();
+
+      // **EXACTLY TWO SUGGESTIONS, NOT FOUR.** The stub writes four lines and two of them are
+      // banners; the form asks the parser whether `click <line>` is a click step rather than
+      // excluding the banner text, so a reworded banner cannot become a locator and a locator
+      // whose text happens to read like prose cannot be dropped.
+      // Waited on the COUNT, not on the element: the empty state renders `data-browser-picked="0"`
+      // immediately, so waiting for the attribute to exist resolves before a single line has
+      // arrived and reads 0 every time.
+      await fresh.locator('[data-browser-picked="2"]').waitFor();
+      assert.equal(await fresh.locator('[data-browser-apply]').count(), 2, 'the two banner lines are not locators');
+
+      // Clicking a suggestion fills the field the session was opened for — and the KIND travels
+      // with it, which a form storing only the text would lose.
+      await fresh.locator('[data-browser-apply="0"]').click();
+      assert.equal(await fresh.locator('[data-browser-value="0"]').inputValue(), '#totals .amount');
+      assert.equal(await fresh.locator('[data-browser-kind="0"]').inputValue(), 'css');
+
+      // …and it reaches the file, which is the only claim that matters in the end.
+      const preview = (await fresh.locator('[data-browser-preview]').textContent()) ?? '';
+      assert.match(preview, /click css "#totals \.amount"/);
+
+      assert.deepEqual(pageErrors, [], 'classifying a line must not throw — a filtered banner and a crashed handler are otherwise indistinguishable');
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await fresh.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // `M200` `A2-3` — the SCANS door. Two tests, and the split is the door's whole character: the
 // fixture project DECLARES an `authorized target`, so it exercises the authorized path; a project

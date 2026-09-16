@@ -116,6 +116,15 @@ export interface ProjectView {
   readonly scratchPath: string;
   readonly scratchIgnored: boolean;
   /**
+   * The env's `web` base, or `null` when it declares none (`M200` `A3-6`).
+   *
+   * The BROWSER door reads it for two things: composing the URL `tflw pick` opens, and knowing
+   * whether picking is possible at all. A project with no `web` base cannot run a browser test
+   * either — `TF0..`'s *every browser step in this env would be refused before it navigates* — so
+   * saying it once on the door is better than saying it per step in a terminal.
+   */
+  readonly webBaseUrl: string | null;
+  /**
    * The active env's authorization facts, so the page's `tflw check` preview can run
    * `checkAuthorizedTargets` (`M200` `A2-3`).
    *
@@ -231,6 +240,36 @@ export function runArgv(req: RunRequest): string[] {
  * scaffold of its own and still gets the plain project — stated rather than papered over, because
  * a door that pretended otherwise would be a brochure.
  */
+/**
+ * The absolute URL `tflw pick` opens for a path the author typed — `M200` `A3-6` (`D1055`).
+ *
+ * **`tflw pick` reads no config and requires an absolute URL, by its own design.** Its doc comment
+ * says so: it *"has no notion of a `web` base URL"*, unlike `open "/path"` inside a `.tflw` file,
+ * which resolves against one. So the gap between what an author types in a browser form — a path,
+ * because that is what `open` takes — and what the command needs has to be closed by somebody, and
+ * closing it here is the same shape as `A2-3`'s `authorization` block: the server hands the page a
+ * fact composed from the config it already read, rather than the page assembling a second account
+ * of what the config says.
+ *
+ * `null` when the env declares no `web` base, which is not a failure to report but a question to
+ * answer: there is no page to pick from, and the door says so instead of spawning a browser at a
+ * URL it invented.
+ */
+export function pickUrl(webBaseUrl: string | null, path: string): string | null {
+  if (webBaseUrl === null) return null;
+  const trimmed = path.trim();
+  // Already absolute: the author pasted a whole URL, which `pick` takes verbatim. Anything else is
+  // a path and joins the base, with exactly one slash between them however either was written.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed;
+  return `${webBaseUrl.replace(/\/+$/, '')}/${trimmed.replace(/^\/+/, '')}`;
+}
+
+/** What `tflw pick` gets — one URL and nothing else, so the page cannot ask for a session a
+ *  terminal could not open. */
+export function pickArgv(url: string): string[] {
+  return ['pick', url];
+}
+
 export function initArgv(door: Lens): string[] {
   if (door === 'load') return ['init', '--load'];
   if (door === 'scan') return ['init', '--scan'];
@@ -271,7 +310,7 @@ export async function readProject(root: string): Promise<ProjectView> {
     apiBaseUrl: resolved.apiBaseUrl,
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
   };
-  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root), authorization };
+  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
 }
 
 /**
@@ -781,6 +820,70 @@ export class UiServer {
         return json(res, status, rest);
       }
       return json(res, 200, result);
+    }
+
+    // `GET /api/pick?path=…` — a `tflw pick` session, streamed (`M200` `A3-6`, `D1055`).
+    //
+    // **ONE ROUTE, AND THE STREAM *IS* THE SESSION.** The obvious shape was three — start, stream,
+    // stop — with a registry of live picks keyed by id. This is one, because binding the child's
+    // life to the connection makes two whole classes of bug unconstructible rather than handled:
+    // there is no id to leak, and **an orphan is impossible**, since a session that is never
+    // streamed is never started. That property is worth more here than anywhere else in this
+    // server: `tflw pick` opens a REAL, VISIBLE browser, and an orphaned one is a process somebody
+    // has to find and kill on a machine they may be sharing.
+    //
+    // The response is `text/event-stream` and the body is the child's stdout, a line at a time,
+    // unclassified. Which lines are locators is the page's question, and it has `@tflw/lang` to
+    // answer it with — `pick` prints two banner lines and then one bare locator per click, and a
+    // server that filtered by matching the banner text would be coupled to that wording.
+    if (path === '/api/pick' && method === 'GET') {
+      if (!existsSync(join(this.opts.root, 'tflw.config'))) return json(res, 404, { error: 'not a tflw project here', noProject: true });
+      let view: ProjectView;
+      try {
+        view = await readProject(this.opts.root);
+      } catch (e) {
+        return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+      const target = pickUrl(view.webBaseUrl, url.searchParams.get('path') ?? '');
+      if (target === null) {
+        return json(res, 409, { error: `env \`${view.authorization.envName}\` declares no \`web\` base, so there is no page to pick from — add \`web "http://localhost:3000"\` to tflw.config` });
+      }
+
+      const child = spawn(process.execPath, [...(this.opts.execArgv ?? []), this.opts.cliEntry, ...pickArgv(target)], {
+        cwd: this.opts.root,
+        env: { ...process.env, FORCE_COLOR: '0' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+
+      let buffered = '';
+      child.stdout!.setEncoding('utf8');
+      child.stdout!.on('data', (chunk: string) => {
+        buffered += chunk;
+        let nl = buffered.indexOf('\n');
+        while (nl !== -1) {
+          res.write(`data: ${JSON.stringify(buffered.slice(0, nl))}\n\n`);
+          buffered = buffered.slice(nl + 1);
+          nl = buffered.indexOf('\n');
+        }
+      });
+      // stderr is the command's own diagnosis — no browser installed, no display, a URL it will
+      // not take — and is the only thing the page can show when a session never starts. It goes
+      // through as a named event rather than mixed into the locator lines.
+      child.stderr!.setEncoding('utf8');
+      child.stderr!.on('data', (chunk: string) => res.write(`event: problem\ndata: ${JSON.stringify(chunk)}\n\n`));
+      child.on('close', (code) => {
+        res.write(`event: end\ndata: ${JSON.stringify({ exitCode: code })}\n\n`);
+        res.end();
+      });
+      // **`SIGINT`, not `SIGKILL`** — `pick` installs a handler that closes the browser session
+      // (`M105`), so the signal the page sends is the one a terminal sends, and the window goes
+      // with it. Killing the process outright would leave the browser it launched behind, which is
+      // the exact failure this route's shape exists to prevent.
+      req.on('close', () => {
+        if (child.exitCode === null) child.kill('SIGINT');
+      });
+      return;
     }
 
     // `DELETE /api/scratch` — drop `D1047`'s scratch buffer (`M200` `A2-6`, `D1054`).
