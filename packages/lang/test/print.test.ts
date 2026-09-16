@@ -81,7 +81,7 @@ const WORKLOADS = [
   'StepUsersWorkload', 'StepRpsWorkload', 'SpikeUsersWorkload', 'SpikeRpsWorkload',
   'SharedIterationsWorkload', 'PerVuIterationsWorkload',
 ] as const;
-const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', 'OpenStmt', 'ClickStmt', 'FillStmt', ...WORKLOADS]);
+const ASKED = new Set<string>(['TestDecl', 'CrawlDecl', 'ApiStep', 'ExpectStmt', 'PauseStmt', 'ThresholdDecl', 'LetStmt', 'WaitUntilApiStmt', 'CaptureStmt', 'CallStmt', 'LogStmt', 'Locator', 'OpenStmt', 'ClickStmt', 'FillStmt', 'WithinBlock', ...WORKLOADS]);
 
 /** Wrap printed text in the smallest source that can hold it, and say where to find it again. */
 function reparse(node: Node, text: string): Node | null {
@@ -226,7 +226,7 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   const FLOOR: ReadonlyArray<readonly [string, number]> = [
     ['ExpectStmt', 2987], ['Locator', 2158], ['ApiStep', 1758], ['CaptureStmt', 751],
     ['ClickStmt', 728], ['TestDecl', 546], ['FillStmt', 417], ['LetStmt', 296],
-    ['OpenStmt', 231], ['CallStmt', 168], ['LogStmt', 55], ['ThresholdDecl', 42],
+    ['WithinBlock', 393], ['OpenStmt', 231], ['CallStmt', 168], ['LogStmt', 55], ['ThresholdDecl', 42],
     ['WaitUntilApiStmt', 25], ['CrawlDecl', 11], ['PauseStmt', 4],
   ];
   const fell = FLOOR
@@ -1113,6 +1113,47 @@ test('A3-3: the five state words, the copula the tree does not keep, and the two
   // `{value}`. Nonsense to a reader, accepted by the grammar, and the printer must not assume a
   // subject it was never promised.
   assert.equal(print(assertionStep('expect status is visible')).text.trim(), 'expect status is visible');
+});
+
+test('A3-4: `within`, the frame word the corpus barely has, and the nesting it does not have at all', () => {
+  /** A block spans lines, so it needs its own parse rather than `step`'s single line. */
+  const block = (src: string): Step => {
+    const { program, diagnostics } = parseSource(`test "t"\n${src}\n`);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], src);
+    const node = program.tests[0]?.body[0];
+    assert.ok(node, src);
+    return node;
+  };
+  const roundTrip = (src: string) => {
+    const printed = print(block(src), { indent: 1 });
+    assert.equal(printed.ok, true, printed.reason);
+    assert.equal(printed.text, src, src);
+  };
+
+  roundTrip('  within css "#cart"\n    click button "Remove"');
+
+  // **`frame` is 4 of 404 — `A3-1`'s `xpath` again.** It is a word rather than a seventh
+  // `LocatorKind` because it is orthogonal: every locator kind is legal after it, and what it
+  // changes is which DOCUMENT the locator resolves in, not how it resolves.
+  roundTrip('  within frame css "iframe[title=\'Payment\']"\n    fill field "CVC" with "123"');
+
+  // **NESTING, WHICH THE CORPUS CANNOT SHOW.** All 403 blocks are at depth 1, and the grammar
+  // accepts a `within` inside a `within` — so a printer written to the measured depth would have
+  // been a printer written to a coincidence. The body goes through `printNode` at `level + 1` like
+  // any other block, and this is the assertion that the indentation compounds rather than resets.
+  roundTrip('  within css "#outer"\n    within css "#inner"\n      click button "Go"');
+
+  // A multi-statement body, since 8 of the corpus's blocks hold more than one and the printer
+  // emits them from a loop that a one-step fixture cannot distinguish from a single append.
+  roundTrip('  within css "#form"\n    fill field "Email" with "a@b.c"\n    click button "Save"\n    expect text "Saved" is visible');
+
+  // An empty body refuses, for `printCrawl`'s reason: the parser rejects it outright (*this
+  // `within` has no steps*), so a printer that emitted one would write a block nothing reads back.
+  // Constructed, because the parser will not produce one.
+  const empty: Node = { type: 'WithinBlock', locator: { type: 'Locator', kind: 'css', value: { type: 'StringLit', value: '#x', parts: [{ kind: 'text', value: '#x' }], span: SYNTHETIC }, span: SYNTHETIC }, frame: false, body: [], span: SYNTHETIC } as unknown as Node;
+  const r = print(empty);
+  assert.equal(r.ok, false);
+  assert.match(r.reason ?? '', /does not parse/);
 });
 
 test('the assertion half refuses what belongs to another door', () => {
