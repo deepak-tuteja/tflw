@@ -52,6 +52,11 @@ import type {
   PathSegment,
   PauseStmt,
   Program,
+  ActionDecl,
+  GiveStmt,
+  HookDecl,
+  ImportDecl,
+  UseDecl,
   Stage,
   StringLit,
   Subject,
@@ -147,6 +152,15 @@ export const PRINTABLE = new Set<string>([
   // *fragment*, so the node that holds fragments appeared on no worklist until the whole-file
   // property needed it. It is worth 133 of the corpus's 260 clean files on its own (`§4h`).
   'Program',
+  // `A4-2` — the file header, and the reason it is one slice: these are what a file has ABOVE its
+  // tests, and **no door writes any of them** (`§4h`). Every door inserts into a file that already
+  // has a header, which is why `§4g`'s forecast — measured from BROWSER's refusals — named none of
+  // them while they carry 100 of the whole-file gate's remaining 129 files.
+  'ImportDecl',
+  'UseDecl',
+  'HookDecl',
+  'ActionDecl',
+  'GiveStmt',
   // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
   // statements that read or announce a response.
   'DurationSubject',
@@ -242,6 +256,16 @@ function printNode(node: Node, level: number): string {
   switch (node.type) {
     case 'Program':
       return printProgram(node as Program, level);
+    case 'ImportDecl':
+      return pad(level) + 'import ' + printString((node as ImportDecl).path);
+    case 'UseDecl':
+      return pad(level) + 'use ' + printString((node as UseDecl).path);
+    case 'HookDecl':
+      return printHook(node as HookDecl, level);
+    case 'ActionDecl':
+      return printAction(node as ActionDecl, level);
+    case 'GiveStmt':
+      return pad(level) + 'give ' + printValue((node as GiveStmt).value);
     case 'TestDecl':
       return printTest(node as TestDecl, level);
     case 'CrawlDecl':
@@ -368,15 +392,73 @@ function printProgram(p: Program, level: number): string {
   // hold to account.
   const ordered = [...decls].sort((a, b) => a.span.start.line - b.span.start.line);
 
-  // One blank line between declarations. `format` preserves blank lines rather than imposing them
-  // (`format.ts:67`), so this is the printer's own choice and neither gate in `print.test.ts` can
-  // see it — a tree comparison reads two layouts as one program — which is why it has a test of
-  // its own, exactly as `printTest`'s tags-on-one-line does.
+  // One blank line between declarations, and consecutive ONE-LINE declarations grouped with none.
+  // `format` preserves blank lines rather than imposing them (`format.ts:67`), so this is the
+  // printer's own choice and neither gate in `print.test.ts` can see it — a tree comparison reads
+  // two layouts as one program — which is why it has a test of its own, exactly as `printTest`'s
+  // tags-on-one-line does.
   //
-  // `import` and `use` are one line each and the corpus groups them without blank lines between,
-  // but NOT YET: neither prints until `A4-2`, so a grouping rule written here would be a branch no
-  // input could reach. It arrives with them, with its own assertion.
-  return ordered.map((d) => printNode(d, level)).join('\n\n');
+  // The grouping arrives with `A4-2` rather than `A4-1`, because until `import`/`use` had printers
+  // the branch had no reachable input and its assertion could not have been written. Measured: of
+  // the corpus's consecutive one-line declarations, **8 pairs are adjacent and 2 are separated**,
+  // so grouping is the convention — and it is a convention rather than a fact, because the AST
+  // records no blank line either way and there is nothing to preserve.
+  const ONE_LINE = new Set<string>(['ImportDecl', 'UseDecl']);
+  const out: string[] = [];
+  let previous: string | null = null;
+  for (const d of ordered) {
+    if (previous !== null && !(ONE_LINE.has(d.type) && ONE_LINE.has(previous))) out.push('');
+    out.push(printNode(d, level));
+    previous = d.type;
+  }
+  return out.join('\n');
+}
+
+/**
+ * `before` / `before file` / `after` / `after file` (`A4-2`).
+ *
+ * **`each` has no keyword, and that is not a normalisation** — it is the scope you get by writing
+ * nothing. `HookDecl.scope` is `'file' | 'each'`, and `parseHookDecl` consumes an optional `file`
+ * and defaults to `each`, so `before each` is not a second spelling of anything: it is `TF010`,
+ * *unexpected `each` at end of declaration*. Measured directly, and the corpus agrees — 61
+ * `before`, 15 `before file`, 4 `after`, 2 `after file`, and `before each` zero times.
+ */
+function printHook(h: HookDecl, level: number): string {
+  // `TF015`/`EMPTY_BLOCK`, the rule `printCrawl` and `printWithin` already follow: never write a
+  // line the parser will not read back.
+  if (h.body.length === 0) {
+    refuse('HookDecl', `a \`${h.when}\` with no steps does not parse — the block needs at least one`);
+  }
+  const lines = [pad(level) + h.when + (h.scope === 'file' ? ' file' : '')];
+  for (const step of h.body) lines.push(printNode(step, level + 1));
+  return lines.join('\n');
+}
+
+/**
+ * `action create order(name)` (`A4-2`).
+ *
+ * The parameter list is **mandatory even when empty** — `parseActionDecl` calls
+ * `expect('lparen', …)` unconditionally, so `action foo` is `TF010` and `action foo()` is the
+ * spelling. That is also the commonest shape: 13 of the corpus's 22 actions take no parameters.
+ *
+ * The name is stored as `nameParts.join(' ')`, so a multi-word name — 16 of 22 — is a list of bare
+ * identifiers with single spaces and cannot round-trip through anything else. Each word and each
+ * parameter is checked the way `requestLine` checks a service name, because the AST holds a
+ * `string` and a printer that trusted it would emit source that does not parse.
+ */
+function printAction(a: ActionDecl, level: number): string {
+  if (a.body.length === 0) {
+    refuse('ActionDecl', 'an `action` with no steps does not parse — the block needs at least one');
+  }
+  for (const word of a.name.split(' ')) {
+    if (!isBareIdent(word)) refuse('ActionDecl', `\`${a.name}\` is not an action name this language can write`);
+  }
+  for (const param of a.params) {
+    if (!isBareIdent(param)) refuse('ActionDecl', `\`${param}\` is not a parameter name this language can write`);
+  }
+  const lines = [pad(level) + `action ${a.name}(${a.params.join(', ')})`];
+  for (const step of a.body) lines.push(printNode(step, level + 1));
+  return lines.join('\n');
 }
 
 function printTest(t: TestDecl, level: number): string {
