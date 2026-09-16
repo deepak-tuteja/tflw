@@ -1773,3 +1773,65 @@ test('the request line stands as tall as every other control, and says so agains
   }
   await page.reload(); // the injected sheet dies with the document, so the next test starts clean
 });
+
+test('the API form opens empty, and an untouched form cannot send anything at all', async () => {
+  // `M205` S4, closing `M205-02`. The form opened on `@api test "the orders endpoint answers"` /
+  // `api GET /orders`, and `tflw init` scaffolds a project whose `api` points at tflw's own demo
+  // service, which answers `GET /health` and nothing else. So the first gesture a new author made
+  // — press `send`, unchanged — returned 404 out of the box, with nothing broken: two halves of
+  // one product shipping defaults that disagreed, met on the first click.
+  //
+  // The repair is not a better guess. A default request is a guess about somebody's project, and
+  // an empty field cannot contradict one. What the guess was worth is kept as a PLACEHOLDER,
+  // which shows the shape of an answer and never becomes a test the author did not write.
+  await page.goto(`${baseUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-api-form]').waitFor();
+
+  for (const sel of ['[data-api-path]', '[data-api-name]', '[data-api-tags]', '[data-api-service]', '[data-api-label]']) {
+    assert.equal(await page.locator(sel).inputValue(), '', `${sel} opens with a value`);
+  }
+  // The example survives where it cannot be written by accident.
+  assert.equal(await page.locator('[data-api-path]').getAttribute('placeholder'), '/orders/{orderId}');
+  assert.equal(await page.locator('[data-api-name]').getAttribute('placeholder'), 'the orders endpoint answers');
+
+  // NOT emptied, and neither is a guess about the project: `GET` is the identity choice of a
+  // control that must hold something, and the assertion row is load-bearing — `B3-17` records that
+  // an `api` step with no assertions CAN NEVER FAIL, so a form opening with no assertion would make
+  // the shortest path through this page a test that passes for having claimed nothing.
+  assert.equal(await page.locator('[data-api-method]').inputValue(), 'GET');
+  assert.equal(await page.locator('[data-api-expects]').getAttribute('data-api-expects'), '1');
+  assert.equal(await page.locator('[data-expect-operand="0"]').inputValue(), '200');
+
+  // THE CLOSURE OF THE FINDING: there is no 404 to meet, because there is nothing to send. Both
+  // buttons are refused until the form is a request, which is what an empty default buys.
+  assert.equal(await page.locator('[data-api-send]').isDisabled(), true, 'an empty form can be sent');
+  assert.equal(await page.locator('[data-api-save]').isDisabled(), true, 'an empty form can be written');
+  assert.equal(await page.locator('[data-api-preview]').count(), 0, 'an empty form previews a file');
+
+  // And the first sentence the door says is a hint, not a warning. A blank field rendered as a
+  // warning teaches a new author that the tool is annoyed with them for not having typed anything,
+  // which is the opposite of what an empty form is for.
+  const problem = page.locator('[data-api-problem]');
+  assert.match((await problem.textContent()) ?? '', /like `\/orders`/);
+  assert.equal(await problem.getAttribute('class'), 'muted');
+
+  // One character of a real path and it is a warning again, because now there is something to be
+  // wrong about. Without this the class assertion above holds for a page that never warns at all.
+  await page.locator('[data-api-path]').fill('orders');
+  assert.match((await problem.textContent()) ?? '', /starts with `\/`/);
+  assert.equal(await problem.getAttribute('class'), 'warn');
+
+  // Q11's other half: every control on this form carries a hint. Counted rather than enumerated,
+  // because the claim is coverage — a control added later without one is what this catches, and
+  // naming them here would have to be kept in step with the form by hand.
+  const controls = await page.locator('.authoring label, .authoring [data-header-add], .authoring [data-expect-add]').count();
+  const hinted = await page.locator('.authoring label[title], .authoring [data-header-add][title], .authoring [data-expect-add][title]').count();
+  assert.equal(hinted, controls, `${controls - hinted} of ${controls} controls carry no hint`);
+
+  // Filled in, it is a request again — the form still works, which is the control for all of it.
+  await page.locator('[data-api-path]').fill('/items');
+  await page.locator('[data-api-name]').fill('the items endpoint answers');
+  await page.locator('[data-api-preview]').waitFor();
+  assert.equal(await page.locator('[data-api-send]').isDisabled(), false);
+});

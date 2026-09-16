@@ -100,12 +100,31 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
-  const [name, setName] = useState('the orders endpoint answers');
-  const [tags, setTags] = useState('api');
+  /**
+   * **The form opens empty** — `M205` Q9, closing `M205-02`.
+   *
+   * It used to open on `@api test "the orders endpoint answers"` / `api GET /orders`, and a
+   * project `tflw init` scaffolds points `api` at tflw's own demo service, which answers
+   * `GET /health` and nothing else. So the first gesture a new author made — press `send`,
+   * unchanged — returned **404**, out of the box, with nothing broken: two halves of one product
+   * shipping defaults that disagreed, met on the first click.
+   *
+   * A default request is a guess about somebody's project, and an empty field cannot contradict
+   * one. What the guess was worth is kept where it belongs: as a **placeholder**, which shows the
+   * shape of an answer and never becomes a test the author did not write.
+   *
+   * `method` and the one `expect status equals 200` row are deliberately NOT emptied, and neither
+   * is a guess about the project. `GET` is the identity choice of a control that must hold some
+   * value. The assertion is load-bearing: `B3-17` records that an `api` step with no assertions
+   * **can never fail**, so a form that opened with no assertion row would make the shortest path
+   * through this page a test that passes for having claimed nothing.
+   */
+  const [name, setName] = useState('');
+  const [tags, setTags] = useState('');
 
   const [service, setService] = useState('');
   const [method, setMethod] = useState<Method>('GET');
-  const [requestPath, setRequestPath] = useState('/orders');
+  const [requestPath, setRequestPath] = useState('');
   const [label, setLabel] = useState('');
   const [headers, setHeaders] = useState<readonly HeaderRow[]>([]);
   const [bodyKind, setBodyKind] = useState<BodyKind>('none');
@@ -347,7 +366,7 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
       </header>
 
       <div className="authoring-grid">
-        <label>
+        <label title="which .tflw file this is written into — every file the project discovered">
           file
           <select value={path} onChange={(e) => setPath(e.target.value)} data-api-file>
             {files.map((p) => (
@@ -356,7 +375,7 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
           </select>
         </label>
 
-        <label>
+        <label title="write a new test, or add this request to a test already in the file">
           what
           <select value={mode} onChange={(e) => setMode(e.target.value as 'new' | 'existing')} data-api-mode>
             <option value="new">a new test</option>
@@ -365,7 +384,7 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
         </label>
 
         {mode === 'existing' ? (
-          <label>
+          <label title="every test in the file, not only the ones behind this door — an api step is legal inside a test the LOAD door started">
             test
             <select value={testName} onChange={(e) => setTestName(e.target.value)} data-api-test>
               <option value="">— pick one —</option>
@@ -379,11 +398,11 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
           </label>
         ) : (
           <>
-            <label>
+            <label title="what this test is called — it is what a failure reports, and what `--only` selects">
               name
-              <input value={name} onChange={(e) => setName(e.target.value)} data-api-name />
+              <input value={name} onChange={(e) => setName(e.target.value)} data-api-name placeholder="the orders endpoint answers" />
             </label>
-            <label>
+            <label title="space-separated words for `--tag`. A door is derived from the constructs a test carries, never from a tag (`D1043`), so these are your own vocabulary and nothing here reads them">
               tags
               <input value={tags} onChange={(e) => setTags(e.target.value)} data-api-tags placeholder="api orders" />
             </label>
@@ -392,7 +411,7 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
       </div>
 
       <div className="request-line">
-        <label>
+        <label title="the HTTP method this request is sent with">
           method
           <select value={method} onChange={(e) => setMethod(e.target.value as Method)} data-api-method>
             {METHODS.map((m) => (
@@ -400,7 +419,7 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
             ))}
           </select>
         </label>
-        <label>
+        <label title="the part after the service's base URL. `{name}` interpolates a variable the test captured earlier">
           path
           <input value={requestPath} onChange={(e) => setRequestPath(e.target.value)} data-api-path placeholder="/orders/{orderId}" />
         </label>
@@ -424,13 +443,13 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
             </button>
           </div>
         ))}
-        <button onClick={() => setHeaders([...headers, { name: '', value: '' }])} data-header-add>
+        <button onClick={() => setHeaders([...headers, { name: '', value: '' }])} data-header-add title="a header on this request alone. The env's `api` defaults and a session's token are added on top of it at run time">
           + header
         </button>
       </div>
 
       <div className="body-form">
-        <label>
+        <label title="what this request sends. JSON is parsed here, not trusted — a body that is not JSON is refused before the write">
           body
           <select value={bodyKind} onChange={(e) => setBodyKind(e.target.value as BodyKind)} data-api-body-kind>
             <option value="none">none</option>
@@ -454,7 +473,7 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
                 </button>
               </div>
             ))}
-            <button onClick={() => setFormFields([...formFields, { name: '', value: '' }])} data-form-add>
+            <button onClick={() => setFormFields([...formFields, { name: '', value: '' }])} data-form-add title="one `name=value` pair of the form body this request sends">
               + field
             </button>
           </div>
@@ -503,7 +522,7 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
             </button>
           </div>
         ))}
-        <button onClick={() => setRows([...rows, EMPTY_ROW])} data-expect-add>
+        <button onClick={() => setRows([...rows, EMPTY_ROW])} data-expect-add title="what has to be true of the response. `expect` fails the test at once; `check` records the failure and carries on">
           + assertion
         </button>
       </div>
@@ -527,7 +546,11 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
           ) : null}
         </>
       ) : (
-        <p className="warn" data-api-problem>
+        /* `M205` Q11. This is the first sentence the door says on a form that now opens empty, so
+           it is a hint until there is something to be wrong about. A blank field rendered as a
+           warning teaches a new author that the tool is annoyed at them for not having typed
+           anything yet, which is the opposite of what an empty form is for. */
+        <p className={requestPath.trim() === '' ? 'muted' : 'warn'} data-api-problem>
           {pending.reason}
         </p>
       )}

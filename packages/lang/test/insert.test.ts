@@ -388,6 +388,13 @@ test('the API door can add work to a test another door started, which closes `A0
 
 test('the API builders refuse in the form’s own words', () => {
   const rows: readonly [() => { ok: boolean; reason?: string }, RegExp][] = [
+    // An EMPTY path is its own case, and the two messages must differ (`M205` Q9). The API form
+    // opens with this field blank now, so this sentence is the first thing the door says: it asks
+    // for a path and shows the shape of one. Telling a blank field it does not start with a slash
+    // is true, unhelpful, and reads as a refusal of something nobody has done yet. The two rows sit
+    // together because the claim is the DIFFERENCE: drop the empty branch and `''` falls through to
+    // the row below it, whose sentence this row's pattern does not match.
+    [() => buildApiStep({ service: null, method: 'GET', path: '', headers: [], body: null, label: null }), /like `\/orders`/],
     [() => buildApiStep({ service: null, method: 'GET', path: 'orders', headers: [], body: null, label: null }), /starts with `\/`/],
     [() => buildApiStep({ service: null, method: 'GET', path: '/a b', headers: [], body: null, label: null }), /cannot contain a space/],
     [() => buildApiStep({ service: 'my service', method: 'GET', path: '/x', headers: [], body: null, label: null }), /is not a service name/],

@@ -219,6 +219,13 @@ export type ApiBodySpec =
  * be read as clauses of the step.
  */
 function apiPath(raw: string): string | null {
+  // Absent is not wrong (`M205` Q9/Q11). The API form opens with this field EMPTY — a default
+  // request is a guess about somebody's project, and the one that shipped guessed `/orders`
+  // against a scaffold whose service answers `/health` and nothing else (`M205-02`). So this
+  // message is the first thing the door says, and it is a next step rather than a complaint.
+  // Telling a blank field it does not start with a slash is true, unhelpful, and reads as a
+  // refusal of something the author has not done yet.
+  if (raw.length === 0) return 'a request path, like `/orders` or `/orders/{orderId}` — it is joined to the service’s base URL';
   if (!raw.startsWith('/')) return 'a request path starts with `/` — it is joined to the service’s base URL';
   if (/\s/.test(raw)) return 'a request path cannot contain a space';
   return null;
