@@ -42,6 +42,7 @@ import type {
   FillStmt,
   Locator,
   OpenStmt,
+  WithinBlock,
   FormField,
   LetStmt,
   LogStmt,
@@ -137,6 +138,10 @@ export const PRINTABLE = new Set<string>([
   // would not (`§6o`).
   'LocatorSubject',
   'PageSubject',
+  // `A3-4` — the capstone. 403 blocks sit across 150 tests and every statement inside one is
+  // unreachable until the block itself prints, which is why this single kind takes BROWSER from
+  // 32 round-tripping tests to 164 (`§4f`).
+  'WithinBlock',
   // `A1-3` — the assertion. The response subjects, the value matchers, `any`/`all`, and the three
   // statements that read or announce a response.
   'DurationSubject',
@@ -264,6 +269,8 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printClick(node as ClickStmt);
     case 'FillStmt':
       return pad(level) + printFill(node as FillStmt);
+    case 'WithinBlock':
+      return printWithin(node as WithinBlock, level);
     case 'StatusSubject':
     case 'DurationSubject':
     case 'HeaderSubject':
@@ -1107,6 +1114,40 @@ function printGenerator(v: Value): string {
 /** Rebuilt from `parts`, not from `value`: the decoded value has lost the difference between a
  *  literal `{` and an interpolation hole, and re-quoting `value` would turn `{id}` back into a
  *  reference the author never wrote. */
+/**
+ * `within [frame] <locator>` and its indented body — `M200` `A3-4`.
+ *
+ * **The first browser BLOCK, and the round's capstone: one kind, 32 round-tripping tests to 164.**
+ * Nothing about the block is large; what it holds is. 403 of them sit across 150 tests, and every
+ * statement inside one is unreachable until the block prints — measured, the corpus's `within`
+ * bodies are `ClickStmt` 396, `ExpectStmt` 19 and `FillStmt` 14, all of which `A3-2` and `A3-3`
+ * already print, so this slice adds a wrapper and collects everything under it.
+ *
+ * **`frame` is 4 of 404 and is a word, not a locator kind.** `within frame css "iframe[…]"` steps
+ * into the frame that selector resolves to; `within css "…"` scopes to a subtree of the same
+ * document. A boolean rather than a seventh `LocatorKind` because it is orthogonal — every locator
+ * kind is legal after it — and at four occurrences it is `A3-1`'s `xpath` again: rare enough that
+ * the corpus alone cannot be trusted to cover it.
+ *
+ * **It recurses, and the corpus cannot show that.** Every one of the 403 is at depth 1, but the
+ * grammar accepts a `within` inside a `within` — verified against the parser rather than assumed —
+ * so the body goes through `printNode` at `level + 1` like any other block and there is no
+ * nesting case to get wrong. A printer written to the measured depth would have been a printer
+ * written to a coincidence.
+ *
+ * An empty body refuses, for `printCrawl`'s reason: the parser rejects it outright (*this `within`
+ * has no steps*), so a printer that emitted one would be writing a block nothing can read back.
+ */
+function printWithin(w: WithinBlock, level: number): string {
+  if (w.body.length === 0) {
+    refuse('WithinBlock', 'a `within` with no steps does not parse — the block needs at least one');
+  }
+  const frame = w.frame ? 'frame ' : '';
+  const lines = [`${pad(level)}within ${frame}${printLocator(w.locator)}`];
+  for (const step of w.body) lines.push(printNode(step, level + 1));
+  return lines.join('\n');
+}
+
 /**
  * `open "/orders/{orderId}"` — `M200` `A3-2`.
  *
