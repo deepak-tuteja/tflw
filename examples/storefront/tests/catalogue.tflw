@@ -1,0 +1,31 @@
+# Reading the shop — the two simplest things tflw does, and one that crosses between them.
+
+@catalogue @functional
+test "the catalogue lists what is on the shelf"
+  api GET /items
+  expect status equals 200
+  expect body.items has count 3
+
+@catalogue @functional
+test "one item reads back the way the catalogue listed it"
+  api GET /items/1
+  expect status equals 200
+  expect body.name contains "Filter coffee"
+  expect body.price equals 1400
+
+@catalogue @functional
+test "the shelf page shows the same three things a person can read"
+  open "/"
+  expect text "The Coffee Shelf" is visible
+  expect text "Espresso blend, 250g" is visible
+
+# One test, two doors. `D1043`: a test belongs to every lens whose constructs it carries, so this
+# one is in API *and* BROWSER — nothing labels it, the `api` step and the `open` do.
+@catalogue @checkout @functional
+test "an order placed over the API is the one the shop page can price"
+  api POST /orders body { itemId: 2, qty: 3 }
+  expect status equals 201
+  capture body.total as total
+  expect {total} equals 2550
+  open "/"
+  expect text "Espresso blend, 250g" is visible

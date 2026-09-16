@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSource, lensesOfTest, lensesOfCrawl, STEP_LENS, SUBJECT_LENS } from '../src/index.js';
+import { parseSource, lensesOfTest, lensesOfCrawl, checkProgram, STEP_LENS, SUBJECT_LENS } from '../src/index.js';
 import type { Step, Subject } from '../src/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -172,7 +172,9 @@ test('every test in the corpus classifies, and a third of them land in more than
   // AN EQUALITY, over this repository's corpus (`D1058`). The old `total > 400` was a floor over
   // two trees: it could not see the sibling arriving, which is how it passed here for the whole of
   // `M200`, and it could not survive the sibling leaving, which is how it failed in CI.
-  const EXPECTED_TESTS = 42;
+  // `M203` `S3` — the doors corpus (`__fixtures__/doors-corpus/`, 2 files, 8 tests + 1 crawl) joined this repository's corpus: 42 -> 50 (its 8 tests; the crawl is counted by `combos`, not by `total`).
+  // `M203` `S4` — the example project (`examples/storefront/tests/`, 4 files, 11 tests + 1 crawl) joined this repository's corpus: 50 -> 61 (its 11 tests; the crawl is counted by `combos`, not by `total`).
+  const EXPECTED_TESTS = 61;
   assert.equal(mine.total, EXPECTED_TESTS,
     `the corpus classified ${mine.total} tests, expected ${EXPECTED_TESTS} — move the number in the change that moved the corpus`);
 
@@ -349,4 +351,136 @@ test('a block’s inner evidence counts — the recursion, isolated from the blo
     if (got.join('+') !== expected.join('+')) wrong.push(`${form}: expected [${expected.join('+')}], got [${got.join('+') || 'nothing'}]`);
   }
   assert.deepEqual(wrong, []);
+});
+
+/**
+ * `M203` `S3`/`S2` — the doors corpus, and the two rules that bound it.
+ *
+ * **The corpus is `__fixtures__/doors-corpus/`, and it is this repository's own** (`D874`: every
+ * guard declares the corpus it reads; `D1056`: a corpus authored for a claim, not harvested). It
+ * is deliberately NOT the sibling's: `D710` refuses a sibling checkout in CI and `M200-05` /
+ * `M201-01` are both *this guard has been measuring the other repository*. A door gate reading
+ * `tflw-acceptance/security` would be that defect filed a third time.
+ *
+ * **Nine of fifteen, and the number was twelve until the checker was asked.** Four lenses admit 15
+ * non-empty combinations. Six cannot exist, for two unrelated reasons, and the gate below
+ * demonstrates each rather than asserting the combinations are merely absent — absence is what a
+ * corpus that forgot to include them also looks like.
+ */
+const DOORS_CORPUS = join(here, '__fixtures__', 'doors-corpus');
+
+/** The nine, in `LENSES` order within each row. An **equality** below, never a floor (`D1058`): a
+ *  floor is blind in exactly the direction that matters here, which is a combination going
+ *  missing. */
+const REACHABLE = [
+  'api', 'browser', 'load', 'scan',
+  'api+browser', 'api+load', 'api+scan',
+  'api+browser+scan', 'api+load+scan',
+] as const;
+
+test('the doors corpus carries every lens combination the language admits, and exactly those', () => {
+  const found = new Map<string, string[]>();
+  for (const entry of readdirSync(DOORS_CORPUS)) {
+    if (!entry.endsWith('.tflw')) continue;
+    const file = join(DOORS_CORPUS, entry);
+    const { program, diagnostics } = parseSource(readFileSync(file, 'utf8'));
+    assert.deepEqual(
+      diagnostics.filter((d) => d.severity === 'error').map((d) => `${d.code} ${d.message}`), [],
+      `${entry} must parse — it is the corpus this gate reads`);
+    // The checker runs too, because three of the six exclusions are ITS rule and a corpus that
+    // only parses could hold a combination no project can contain (`TF033`).
+    assert.deepEqual(
+      checkProgram(program).filter((d) => d.severity === 'error').map((d) => `${d.code} ${d.message}`), [],
+      `${entry} must check — a combination the checker refuses is not one a door can ever show`);
+    for (const t of program.tests) {
+      const k = lensesOfTest(t).join('+') || '(none)';
+      found.set(k, [...(found.get(k) ?? []), `${entry}:${t.span.start.line}`]);
+    }
+    for (const c of program.crawls ?? []) {
+      const k = lensesOfCrawl(c).join('+');
+      found.set(k, [...(found.get(k) ?? []), `${entry}:${c.span.start.line}`]);
+    }
+  }
+  assert.deepEqual([...found.keys()].sort(), [...REACHABLE].sort(),
+    'the corpus must hold each of the nine reachable combinations and nothing else');
+  // One each: a combination carried twice would let a deletion go unnoticed, which is the same
+  // blindness the equality above removes.
+  assert.deepEqual([...found].filter(([, where]) => where.length !== 1).map(([k, w]) => `${k}: ${w.join(', ')}`), [],
+    'exactly one declaration per combination');
+});
+
+test('the example project reaches every door — the artefact a reader opens, held to the same nine', () => {
+  // A SECOND corpus, declared (`D874`): `examples/storefront`, which unlike `doors-corpus` is
+  // **runnable** — `npm run example` starts its server and runs it green. That is the whole
+  // difference between the two, and the reason both exist: one proves the nine are expressible,
+  // the other proves they are livable. If an example drifts out of covering a door, the door it
+  // drops is the one a new reader never discovers.
+  const EXAMPLE = join(here, '..', '..', '..', 'examples', 'storefront', 'tests');
+  const found = new Set<string>();
+  for (const entry of readdirSync(EXAMPLE)) {
+    if (!entry.endsWith('.tflw')) continue;
+    const { program, diagnostics } = parseSource(readFileSync(join(EXAMPLE, entry), 'utf8'));
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), [], entry);
+    for (const t of program.tests) found.add(lensesOfTest(t).join('+') || '(none)');
+    for (const c of program.crawls ?? []) found.add(lensesOfCrawl(c).join('+'));
+  }
+  // A superset is fine here and is NOT fine in the corpus gate above. The difference is what each
+  // corpus is for: `doors-corpus` is the specimen sheet and an extra entry there would be a second
+  // copy of a claim; this is a shop, and a shop may have two catalogue tests.
+  assert.deepEqual([...REACHABLE].filter((k) => !found.has(k)), [],
+    'the example must still reach every door — a reader opens this one, not the fixtures');
+});
+
+test('`scan` without `api` is unreachable for a test — asked of every non-api subject there is', () => {
+  // A test reaches `scan` only through `MATCHER_LENS`'s three severity matchers, and a matcher
+  // contributes no subject of its own. So `scan` without `api` needs a severity matcher standing
+  // against a subject whose own lens is NOT api. `SUBJECT_LENS` names exactly which those are —
+  // read from the table rather than listed here, so a new non-api subject cannot slip past.
+  const nonApi = (Object.entries(SUBJECT_LENS) as Array<[Subject['type'], string | null]>)
+    .filter(([, lens]) => lens !== 'api').map(([kind]) => kind);
+  const SPELLING: Readonly<Partial<Record<Subject['type'], string>>> = {
+    NetworkRequestSubject: 'request to "/x"',
+    LocatorSubject: 'button "Buy"',
+    PageSubject: 'page',
+    DialogMessageSubject: 'dialog message',
+    DialogTypeSubject: 'dialog type',
+    ValueSubject: '{v}',
+  };
+  assert.deepEqual(nonApi.filter((k) => SPELLING[k] === undefined), [],
+    'every non-api subject needs a spelling here, or this gate stops being exhaustive');
+
+  const admitted: string[] = [];
+  for (const kind of nonApi) {
+    const src = `test "t"\n  let v = 1\n  expect ${SPELLING[kind]!} has no security violations\n`;
+    const { program, diagnostics } = parseSource(src);
+    const bad = [...diagnostics, ...(program.tests.length === 1 ? checkProgram(program) : [])]
+      .filter((d) => d.severity === 'error');
+    if (bad.length > 0) continue; // refused, which is the claim
+    const lenses = lensesOfTest(program.tests[0]!);
+    if (!lenses.includes('api')) admitted.push(`${kind} -> ${lenses.join('+') || 'nothing'}`);
+  }
+  assert.deepEqual(admitted, [],
+    'a severity matcher reached a non-api subject, so `scan` no longer implies `api` and the SCANS door has silently widened');
+});
+
+test('`browser` inside a workload is TF033 — the checker rule that removes three more combinations', () => {
+  // `browser+load`, `api+browser+load` and `api+browser+load+scan` all PARSE and all CLASSIFY:
+  // `lensesOfTest` returns `browser+load` quite happily. Only the checker knows they cannot exist,
+  // which is why this gate runs it. `M202` §7 measured the reachable set with `parseSource` alone
+  // and reported twelve; the language is the parser AND the checker.
+  const workload = '  ramp to 5 users over 2s\n  threshold p95 duration is less than 1000ms\n  threshold error rate is less than 1%\n';
+  const cases: ReadonlyArray<readonly [string, string]> = [
+    ['browser+load', `${workload}  open "/shop"\n`],
+    ['api+browser+load', `${workload}  api GET /x\n  open "/shop"\n`],
+    ['api+browser+load+scan', `${workload}  api GET /x\n  open "/shop"\n  expect response has no security violations\n`],
+  ];
+  const survived: string[] = [];
+  for (const [label, body] of cases) {
+    const { program, diagnostics } = parseSource(`test "t"\n${body}`);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error'), [], `${label} is expected to PARSE`);
+    assert.equal(lensesOfTest(program.tests[0]!).join('+'), label, `${label} is expected to CLASSIFY as itself`);
+    if (!checkProgram(program).some((d) => d.code === 'TF033' && d.severity === 'error')) survived.push(label);
+  }
+  assert.deepEqual(survived, [],
+    'a browser step inside a workload now checks clean, so three combinations became reachable and the corpus is short of them');
 });

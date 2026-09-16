@@ -1,0 +1,61 @@
+# The SCANS door's own declaration — and the one rule that decides how this file is laid out.
+#
+# A `crawl` is not a test with a scanner bolted on: its requests are ones nobody wrote, which is
+# why `authorized target` in `tflw.config` is mandatory before it will run (`TF060`), and why an
+# `api` step inside a crawl body is `TF070`. It is also the only thing in the language that reaches
+# SCANS without also reaching API — every other route to a severity matcher stands against a
+# response somebody asked for.
+#
+# **`seed traffic` reads the traffic of THIS FILE, which is why the tests below are here.** The
+# first draft of this example put the crawl in a file of its own and the run said so plainly:
+# *seed traffic → nothing: this run's own tests made no request the crawl could re-issue*. Traffic
+# is "accumulated across the whole file" and collected only when a crawl in that file declares the
+# seed (`D435`), and the crawl runs after every test in its file rather than where it is typed
+# (`D468`) — so what it discovers cannot depend on where the declaration sits. Put the crawl beside
+# the requests you want walked.
+#
+# `seed traffic` takes no argument, and there is no `max pages` here: `max pages`/`max depth` are
+# clauses of `seed spider`, which follows links and could otherwise walk forever. Traffic is a
+# finite list before the crawl starts.
+#
+# **Only the security family.** `has no authorization violations` needs `as <session>`: that oracle
+# is *differential* — it re-issues each request under every other declared principal and compares —
+# so with no principal there is nothing to compare against, and the checker refuses rather than
+# reporting a clean result it could not have earned. This example declares no sessions, so it makes
+# no authorization claim. The run says so too, in a line of its own: *authz coverage: 0 of N api
+# steps sit in a test that declares an owner*.
+#
+# **`api GET /` is in the list below for a reason the first run taught.** A crawl walks the traffic
+# *as a stranger* and withholds the mutating methods, so only the safe GETs are re-issued. With
+# `/items` and `/items/3` alone, not one of the seven security rules was applicable — none of those
+# responses sets a cookie, none is https, none carries a CORS header — and tflw failed the
+# assertion rather than passing it: *this assertion had no power to fail: no `serious`-or-worse
+# security rule applied to this response (7 rules — 0 applicable, 7 not applicable, 0 violations)*.
+# That is `M168`'s vacuity rule enforced at run time, and it is worth more than a green tick: the
+# crawl now walks `/`, which hands out a cart cookie, so `sec/cookie-not-httponly` **applies** and
+# then passes.
+#
+# **So this file's requests are the two PAGES, not the JSON.** All seven security rules need a
+# cookie, `https`, a CORS header, or a `text/html` document — read them off a failing run, they
+# print their own applicability. A plain JSON response on loopback presents **none** of that
+# surface, so a crawl seeded from JSON-only traffic is vacuous by construction, whatever the server
+# does. That is not a gap in tflw: the security family judges the HTTP surface a browser trusts,
+# and an API that serves `application/json` over `http://127.0.0.1` has none of it. Point a crawl
+# at pages.
+
+@catalogue @functional
+test "the surface the crawl will walk: the two pages a visitor sees"
+  api GET /
+  expect status equals 200
+  api GET /signin
+  expect status equals 200
+
+@identity @functional
+test "…and the sign-in it posts to, which the crawl will withhold"
+  api POST /login body { email: "sam@example.com", password: "hunter2" }
+  expect status equals 200
+
+@functional
+crawl "everything this file touched, walked again as a stranger"
+  seed traffic
+  expect response has no serious security violations

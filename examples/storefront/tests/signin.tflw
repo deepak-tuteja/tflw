@@ -1,0 +1,26 @@
+# Signing in, and what the scanner makes of it.
+#
+# Both routes hand back a session cookie carrying `HttpOnly` and `SameSite`, so these pass. Delete
+# `HttpOnly;` from `server.mjs` and the second assertion in each test goes red with a **critical**
+# `sec/cookie-not-httponly` — which is the point of having the severity matcher here rather than a
+# hand-written header assertion: nobody had to know in advance which weakness to look for.
+#
+# The page heading is `Sign in to The Coffee Shelf` and the button is `Sign in`. That is not
+# decoration: `expect text "Sign in"` matched **both** and tflw refused the test as an ambiguous
+# locator rather than picking one. The example keeps the distinct heading so the assertion names
+# one thing.
+
+@identity @functional
+test "signing in over the API hands back a session, and the session is judged"
+  api POST /login body { email: "sam@example.com", password: "hunter2" }
+  expect status equals 200
+  # The severity matcher is what puts this test behind the SCANS door — not the tag beside it.
+  # `serious` is a floor, so a critical finding counts too.
+  expect response has no serious security violations
+
+@identity @functional
+test "signing in on the page is judged the same way the API call is"
+  api POST /login body { email: "sam@example.com", password: "hunter2" }
+  open "/signin"
+  expect text "Sign in to The Coffee Shelf" is visible
+  expect response has no serious security violations

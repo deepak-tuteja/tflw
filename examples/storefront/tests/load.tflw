@@ -1,0 +1,42 @@
+# The same work, run at a rate. A workload line is the whole of what makes a test
+# workload-bearing (`D99`) — these are the functional tests above with a rate wrapped round them,
+# which is `D1043`'s point: LOAD is a kind of work, not a kind of test.
+#
+# Every workload-bearing test must carry a threshold (`TF033`) — a workload test's verdict comes
+# only from its thresholds, so one with none generates real load, reports real numbers and passes
+# unconditionally. A `duration` threshold must be paired with an unscoped `error rate` one, because
+# a duration threshold reads only the iterations that succeeded and cannot see failure on its own.
+
+@catalogue @workload
+test "the catalogue holds up when everyone arrives at once"
+  ramp to 4 users over 2s
+  threshold p95 duration is less than 250ms
+  threshold error rate is less than 1%
+  api GET /items
+  expect status equals 200
+
+@identity @workload
+test "signing in holds up, and is still judged while it does"
+  ramp to 3 users over 2s
+  threshold p95 duration is less than 400ms
+  threshold error rate is less than 1%
+  api POST /login body { email: "sam@example.com", password: "hunter2" }
+  expect response has no serious security violations
+
+# No request at all. This measures tflw's OWN generator: `unique` mints a value per iteration, and
+# a run whose bottleneck is the generator rather than the target reports numbers about itself.
+# It is the one shape that reaches the LOAD door alone — nothing here is api, browser or scan
+# evidence, because `let` and `log` are evidence of nothing (`STEP_LENS`).
+#
+# **A count, not a rate, and the first draft got this wrong.** `ramp to 20 users over 3s` against a
+# body that does no I/O ran 1,053,717 iterations in three seconds and tflw correctly declared
+# *itself* the bottleneck — which marks every threshold in the run `skipped` and the whole run
+# INCONCLUSIVE. A rate is the right shape for work that waits on something; for work that does not,
+# a fixed count finishes and can be judged.
+@references @workload
+test "minting order references keeps up with the checkout rate"
+  run 50 iterations across 2 users
+  threshold p95 duration is less than 50ms
+  threshold error rate is less than 1%
+  let ref = unique like "ORD-######"
+  log "minted {ref}"

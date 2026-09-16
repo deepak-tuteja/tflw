@@ -1,0 +1,83 @@
+# Every lens combination the language admits, one test each — `M203` `S3`.
+#
+# **This file exists to be CLASSIFIED, not to be run.** Its targets resolve to a port nothing
+# listens on; see `tflw.config` beside it. What it asserts is which door a test appears behind,
+# which `lensesOfTest` decides from the constructs a test carries and nothing else (`D1043`: a
+# mode is derived, never declared — the tags here are ordinary user tags and carry no weight).
+#
+# **Nine, not fifteen, and the number was 12 until the checker was asked.** Four lenses admit 15
+# non-empty combinations. Six cannot exist:
+#
+#   · `browser+scan`, `load+scan`, `browser+load+scan` — the LENS ALGEBRA forbids them. For a test,
+#     `scan` comes only from the three severity matchers, and every subject they take is
+#     api-bearing (`expect body has no security violations` classifies as `api+browser+scan`,
+#     because `BodySubject` is `api`), so **scan implies api**. For a crawl, `lensesOfCrawl`
+#     returns `['scan']` unconditionally and a crawl holds neither a workload nor a browser step.
+#   · `browser+load`, `api+browser+load`, `api+browser+load+scan` — the CHECKER forbids them.
+#     `TF033`: *browser steps aren't supported inside a workload-bearing `test`*. These three
+#     **parse and classify**; `lensesOfTest` will return `browser+load` for a file no project can
+#     contain. Only `tflw check` knows.
+#
+# That second bullet is why this header says what it says: `M202` §7 measured the reachable set by
+# probing `parseSource` and reported **12**. Asking the language means asking the parser *and* the
+# checker (`A4-5`, one level deeper), and the corpus below is what found it.
+#
+# Two further `TF033` rules the writing surfaced, both visible here: a workload-bearing test must
+# carry a threshold, and a `duration` threshold must be paired with an unscoped `error rate` one
+# (`M89c`) — a duration threshold reads only the iterations that succeeded, so it cannot observe
+# failure on its own.
+
+@doors
+test "api"
+  api GET /items
+  expect status equals 200
+
+@doors
+test "browser"
+  open "/shop"
+  expect text "Shop" is visible
+
+@doors
+test "load"
+  ramp to 5 users over 2s
+  threshold p95 duration is less than 1000ms
+  threshold error rate is less than 1%
+  # No api step, no browser step, no severity matcher: a workload wrapped around work the lens
+  # table scores as evidence of nothing (`log` is `null` in `STEP_LENS`). This is the only shape
+  # that reaches the LOAD door alone, and `perf/tflw/generator-saturation-demo.tflw` is the one
+  # test in either repository that has it for a real reason.
+  log "a workload and nothing else"
+
+@doors
+test "api+browser"
+  api GET /items
+  expect status equals 200
+  open "/shop"
+  expect text "Shop" is visible
+
+@doors
+test "api+load"
+  ramp to 5 users over 2s
+  threshold p95 duration is less than 1000ms
+  threshold error rate is less than 1%
+  api GET /items
+  expect status equals 200
+
+@doors
+test "api+scan"
+  api GET /items
+  expect response has no security violations
+
+@doors
+test "api+browser+scan"
+  api GET /items
+  open "/shop"
+  expect response has no security violations
+
+@doors
+test "api+load+scan"
+  ramp to 5 users over 2s
+  threshold p95 duration is less than 1000ms
+  threshold error rate is less than 1%
+  api GET /items
+  expect response has no security violations
