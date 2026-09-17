@@ -53,6 +53,15 @@ export function AuthPanel({ project, path, onEdit }: AuthPanelProps) {
   const anonymousTests = (file?.tests ?? []).filter((t) => t.sessions.length === 0);
   const unused = sessions.filter((s) => !used.has(s.name));
 
+  // `M206` `S4` — what a session actually reaches in this file. Summed over the file's tests from
+  // the counts the server derived with `stepLensCounts`, so the page and the server classify a
+  // step with the same code rather than with two accounts that can disagree (`D1043`'s habit).
+  const apiSteps = (file?.tests ?? []).reduce((n, t) => n + t.steps.api, 0);
+  const pageSteps = (file?.tests ?? []).reduce((n, t) => n + t.steps.browser, 0);
+  /** The tests where the old sentence was worst: both kinds in one body, identity established
+   *  twice, and a panel claiming one session covered it. */
+  const mixed = (file?.tests ?? []).filter((t) => t.steps.api > 0 && t.steps.browser > 0);
+
   return (
     <div className="authoring auth-panel" data-api-auth={file ? file.path : ''}>
       <header className="authoring-head">
@@ -62,6 +71,44 @@ export function AuthPanel({ project, path, onEdit }: AuthPanelProps) {
           <em>Config</em>. Switch env with <code>--env</code> or <code>TFLW_ENV</code> and this page answers for that one.
         </p>
       </header>
+
+      {/* `M206` `S4`, closing `M206-01`. THE FIRST THING THIS PANEL SAYS IS WHAT A SESSION DOES NOT
+          REACH, because the shipped version said *who this file runs as* and stopped — true of a
+          file's api steps and false of its page steps, most confidently on the 145 tests measured
+          behind both doors, which are exactly the files an author opens this tab for. */}
+      <section className="auth-block" data-auth-reach={`${apiSteps}/${pageSteps}`}>
+        <h3>what a session reaches here</h3>
+        <ul className="auth-list">
+          {/* *api work* rather than *api steps*, because the count is the doors' own classification
+              and an `expect status equals 200` does api work without being a request. Saying
+              "steps a session folds into" would be the overclaim this panel was built to remove. */}
+          <li data-auth-reach-api={apiSteps}>
+            <strong>{apiSteps}</strong> {apiSteps === 1 ? 'statement does' : 'statements do'} api work — a session's headers and cookie
+            jar fold into the requests among them
+          </li>
+          <li className={pageSteps > 0 ? 'warn' : ''} data-auth-reach-page={pageSteps}>
+            <strong>{pageSteps}</strong> {pageSteps === 1 ? 'statement does' : 'statements do'} page work —{' '}
+            {pageSteps === 0 ? 'none here' : 'identity on the page is established by the page'}
+          </li>
+        </ul>
+        {pageSteps === 0 ? null : (
+          <p className="muted" data-auth-no-bridge>
+            <strong>A session does not log the browser in.</strong> Its cached state is never applied to the test's fresh browser
+            context — a cookie jar and a browser context's storage state are two representations <code>D10</code> deliberately never
+            bridges (SPEC §3.3). Whatever this file runs <em>as</em> below is a fact about its api steps only.
+            {mixed.length === 0 ? null : (
+              <>
+                {' '}
+                <span data-auth-mixed={mixed.length}>
+                  {mixed.length} {mixed.length === 1 ? 'test' : 'tests'} here {mixed.length === 1 ? 'carries' : 'carry'} both kinds —{' '}
+                  <em>{mixed.map((t) => t.name).join(', ')}</em> — so {mixed.length === 1 ? 'it establishes' : 'they establish'} identity
+                  twice: an API login for the api steps, a form login for the page.
+                </span>
+              </>
+            )}
+          </p>
+        )}
+      </section>
 
       <section className="auth-block" data-auth-sessions={used.size}>
         <h3>sessions this file’s tests run as</h3>
