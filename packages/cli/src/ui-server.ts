@@ -41,7 +41,7 @@ import { join, resolve, relative, dirname, extname, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes } from 'node:crypto';
 import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
-import { resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
+import { parseBaseline, resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 
 export const UI_DEFAULT_PORT = 4141;
@@ -769,6 +769,101 @@ export async function writeConfigFile(
 }
 
 /**
+ * Which project document an address names — `tflw.config`, or the baseline a named block declares
+ * (`M208` `S2`, `Q2`/`D1060`).
+ *
+ * **The client names an env, never a path.** That is the whole safety argument for this route and
+ * it is the same one `resolveWritablePath` makes by refusing everything but a `.tflw`: a page that
+ * could hand this server a filename would be a general read-write-any-file capability wearing a
+ * baseline's clothes. Here the *config* says which file, the server reads the config, and the only
+ * thing that crosses the wire is a word that already appears in it. A path the page never chose is
+ * a path the page cannot abuse.
+ *
+ * `safeJoin` still runs, because the config is authored by a person and `baseline "../../secrets"`
+ * is a thing a person can type. The refusal is the project boundary, not the author's intent.
+ *
+ * `null` document (the address has no `@` segment) is `tflw.config` itself, which is what every
+ * address written before `M208` means.
+ */
+export async function resolveBaselineDoc(
+  root: string,
+  block: string,
+): Promise<{ readonly declaredIn: string; readonly path: string; readonly full: string } | FileWriteRefusal> {
+  let configText: string;
+  try {
+    configText = await readFile(join(root, CONFIG_PATH), 'utf8');
+  } catch {
+    return { status: 404, error: `no ${CONFIG_PATH} here — this directory is not a tflw project yet` };
+  }
+  const { config } = parseConfigSource(configText);
+  const entries =
+    block === 'defaults' ? (config.defaults?.entries ?? null) : (config.envs.find((e) => e.name === block)?.entries ?? null);
+  if (entries === null) {
+    return { status: 404, error: `${CONFIG_PATH} declares no ${block === 'defaults' ? '`defaults` block' : `env \`${block}\``}` };
+  }
+  // The LAST declaration, which is the one `resolveConfig` keeps — a block with two is `TF081` and
+  // the page should show what a run would read, not what the author wrote first.
+  const declared = [...entries].reverse().find((e) => e.type === 'BaselineDecl');
+  if (declared === undefined) {
+    return { status: 404, error: `${block === 'defaults' ? '`defaults`' : `env \`${block}\``} declares no \`baseline\`` };
+  }
+  const requested = declared.path.value;
+  const full = safeJoin(root, requested);
+  if (full === null) return { status: 400, error: `\`baseline "${requested}"\` resolves outside the project` };
+  return { declaredIn: block, path: requested, full };
+}
+
+/**
+ * Write a baseline document back — the editor half of `M208`, and `D1049` held at its own shape.
+ *
+ * **A third write capability, named for what it writes**, exactly as `writeConfigFile` was a
+ * second. `D1049`'s property is *one write call site for `.tflw`*, and it is untouched here: this
+ * route cannot name a `.tflw` file, cannot name any file at all, and reaches disk only through a
+ * path `tflw.config` itself declares.
+ *
+ * **What it refuses is `parseBaseline`'s own bar**, which is the strictest one in this repository
+ * for a documented reason: every failure mode of a baseline makes a build *greener*, so a document
+ * that parses to *accepted nothing* is indistinguishable from a codebase that fixed everything.
+ * The page is the author here and this is the claim the page cannot be trusted to make about
+ * itself — the same sentence `writeProjectFile` carries.
+ *
+ * **`ifMatch === null` means create**, unlike `writeConfigFile` and like `writeProjectFile`. The
+ * difference is real rather than an inconsistency: a project with no `tflw.config` is not a
+ * project, so a config always already exists — while a *declared* baseline that has never been
+ * written is the ordinary state of a project adopting triage, and `[accept]` on the first finding
+ * is precisely the gesture that should create it.
+ */
+export async function writeBaselineDoc(
+  root: string,
+  block: string,
+  text: string,
+  ifMatch: string | null,
+): Promise<{ readonly path: string; readonly etag: string } | FileWriteRefusal> {
+  const doc = await resolveBaselineDoc(root, block);
+  if ('status' in doc) return doc;
+  try {
+    parseBaseline(text, doc.path);
+  } catch (e) {
+    return { status: 422, error: e instanceof Error ? e.message : String(e) };
+  }
+  let current: string | null;
+  try {
+    current = await readFile(doc.full, 'utf8');
+  } catch {
+    current = null;
+  }
+  if (current === null) {
+    if (ifMatch !== null) return { status: 409, error: `${doc.path} is not there — send no If-Match to create it` };
+  } else {
+    if (ifMatch === null) return { status: 409, error: `${doc.path} already exists — send its If-Match to replace it` };
+    if (etagOf(current) !== ifMatch) return { status: 409, error: `${doc.path} changed on disk since it was read` };
+  }
+  await mkdir(dirname(doc.full), { recursive: true });
+  await atomicWrite(doc.full, text);
+  return { path: doc.path, etag: etagOf(text) };
+}
+
+/**
  * `[Discard]` removes the scratch file — `M200` `A2-6`, closing §7's oldest open fork (`D1054`).
  *
  * **`A1-5` emptied it, and the measurement says emptying is not dropping.** An emptied
@@ -1155,6 +1250,56 @@ export class UiServer {
       if (header === '*') return json(res, 400, { error: 'If-Match must name a version, not `*`' });
       const ifMatch = typeof header === 'string' ? header.replaceAll('"', '') : null;
       const result = await writeConfigFile(this.opts.root, request.text, ifMatch);
+      if ('status' in result) {
+        const { status, ...rest } = result;
+        return json(res, status, rest);
+      }
+      return json(res, 200, result);
+    }
+
+    // `GET /api/baseline?doc=<defaults|env-name>` — a project document that is not `tflw.config`
+    // (`M208` `S2`). The query names a **block of the config**, never a path; `resolveBaselineDoc`
+    // is what turns it into a file, and it does so by reading the config rather than by trusting
+    // the page.
+    //
+    // A declared document that is not on disk is `200` with `text: null`, not `404`. The
+    // declaration is the thing the address names and it is really there — what is absent is the
+    // file, which is the ordinary state of a project adopting triage and the state `[accept]`
+    // exists to end. A `404` would have made *no such env* and *not written yet* the same answer,
+    // and only one of them is a mistake.
+    if (path === '/api/baseline' && method === 'GET') {
+      const block = url.searchParams.get('doc') ?? '';
+      if (block === '') return json(res, 400, { error: 'which document? pass `doc=defaults` or `doc=<env>`' });
+      const doc = await resolveBaselineDoc(this.opts.root, block);
+      if ('status' in doc) {
+        const { status, ...rest } = doc;
+        return json(res, status, rest);
+      }
+      let text: string | null;
+      try {
+        text = await readFile(doc.full, 'utf8');
+      } catch {
+        text = null;
+      }
+      return json(res, 200, { path: doc.path, declaredIn: doc.declaredIn, text, etag: text === null ? null : etagOf(text) });
+    }
+
+    // `PUT /api/baseline?doc=…` — see `writeBaselineDoc`. `If-Match` absent means *create*, which
+    // is the difference from `PUT /api/config` and is the case `[accept]` on a first finding hits.
+    if (path === '/api/baseline' && method === 'PUT') {
+      const block = url.searchParams.get('doc') ?? '';
+      if (block === '') return json(res, 400, { error: 'which document? pass `doc=defaults` or `doc=<env>`' });
+      let request: { text?: unknown };
+      try {
+        request = JSON.parse(await readBody(req)) as { text?: unknown };
+      } catch {
+        return json(res, 400, { error: 'the write request is not JSON' });
+      }
+      if (typeof request.text !== 'string') return json(res, 400, { error: 'a baseline write needs `text`' });
+      const header = req.headers['if-match'];
+      if (header === '*') return json(res, 400, { error: 'If-Match must name a version, not `*`' });
+      const ifMatch = typeof header === 'string' ? header.replaceAll('"', '') : null;
+      const result = await writeBaselineDoc(this.opts.root, block, request.text, ifMatch);
       if ('status' in result) {
         const { status, ...rest } = result;
         return json(res, status, rest);

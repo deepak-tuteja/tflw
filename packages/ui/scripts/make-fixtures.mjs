@@ -43,8 +43,13 @@ for (const env of ['full', 'headers']) {
     await rm(join(project, 'report'), { recursive: true, force: true });
     // The `headers` env runs against the project's baseline, so that corpus holds a finding the
     // gate withheld (*known/accepted*) beside `full`'s, where the same finding gates (U5).
-    const baseline = env === 'headers' ? ['--baseline', 'security-baseline.json'] : [];
-    const { code, out } = await run(['run', '--env', env, '--format', 'ndjson', '--no-color', ...baseline]);
+    //
+    // **The flag is gone since `M208` `S1`** — `env headers` declares `baseline "./…json"` in
+    // `tflw.config`, so the fact lives in the file a reviewer opens rather than in this script's
+    // argv. That is the key's own argument applied to the first project that had the problem: the
+    // document was named in exactly one place, and it was a place nobody reading the project could
+    // see. `full` declares nothing and still gates, which is what keeps the contrast.
+    const { code, out } = await run(['run', '--env', env, '--format', 'ndjson', '--no-color']);
     if (!existsSync(join(project, 'report', 'results.json'))) throw new Error(`no results.json after env ${env} (exit ${code})\n${out}`);
     const dest = join(reports, env);
     await rm(dest, { recursive: true, force: true });

@@ -245,6 +245,20 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 }
 .config-text:focus { outline: 1px solid var(--accent); }
 
+/* The document switcher (M208 S2). Deliberately NOT a second `.tabstrip`: the strip above it is
+   the file's five stages and this is a choice *inside* one of them, so painting them alike would
+   read as two rows of tabs at the same level. Pills, indented under the strip, and hidden entirely
+   when a project declares no baseline — which is every project that has not adopted triage, and
+   is why the Config tab looks exactly as it did before this milestone for them. */
+.doc-switcher { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.docpick {
+  background: none; border: 1px solid var(--line); border-radius: 999px; color: var(--muted);
+  padding: 3px 10px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.docpick:hover { color: var(--fg); border-color: var(--muted); }
+.docpick.on { color: var(--fg); border-color: var(--accent); }
+.docpick .muted { font-size: 11px; }
+
 /* The authoring pane (M200 A0-4). The preview is the bytes the PUT carries — not a rendering of
    them — because the file is the only truth (D985) and a form that hid its own output would be
    asking the author to trust a projection over the thing itself. */

@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UiServer, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
 import { readdir } from 'node:fs/promises';
 
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
@@ -347,9 +347,21 @@ test('the server writes through exactly one call site — the green condition, n
   };
   assert.match(body('async function atomicWrite'), /\bwriteFile\(/, 'the one writeFile call is inside atomicWrite');
   const callers = (source.match(/\bawait atomicWrite\(/g) ?? []).length;
-  assert.equal(callers, 2, `exactly two capabilities write: the .tflw route and the config route, found ${callers}`);
+  // THREE SINCE `M208` `S2`, AND THE NUMBER IS THE POINT RATHER THAN THE PROPERTY. `D1049` says
+  // one write **call site**, and there is still exactly one `writeFile(` above. What this counts is
+  // capabilities, and each new one is a deliberate answer to *may the page write this kind of
+  // thing* — tests, then the config (`Q5`), now a declared baseline document. A baseline is the
+  // narrowest of the three: it cannot name a `.tflw`, it cannot name a path at all, and it reaches
+  // disk only through a path `tflw.config` itself declares.
+  assert.equal(callers, 3, `exactly three capabilities write: the .tflw route, the config route and the baseline route, found ${callers}`);
   assert.match(body('export async function writeProjectFile'), /\bawait atomicWrite\(/);
   assert.match(body('export async function writeConfigFile'), /\bawait atomicWrite\(/);
+  assert.match(body('export async function writeBaselineDoc'), /\bawait atomicWrite\(/);
+  // The narrowing, asserted rather than described: the baseline route takes a config **block**, so
+  // there is no parameter a page could point at a file of its choosing. `SCRATCH_PATH`'s own
+  // docblock makes the same argument for `dropScratch`.
+  assert.doesNotMatch(body('export async function writeBaselineDoc'), /resolveWritablePath/);
+  assert.match(body('export async function resolveBaselineDoc'), /safeJoin\(/, 'and the project boundary still runs, because a person can type `baseline "../.."`');
   assert.doesNotMatch(source, /appendFile|createWriteStream|openSync|writeSync|truncate\(/, 'no other write verb (D985)');
   assert.match(source, /\bcp\(/, 'the one copy it makes — a report directory kept aside — is here');
   // The refusal the config route did NOT dissolve. Asserted here rather than only in
@@ -583,6 +595,114 @@ test('GET and PUT /api/config: the config is readable, writable under its etag, 
     } finally {
       await ui.close();
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('GET and PUT /api/baseline: a document the config declares, addressed by its block', async () => {
+  // `M208` `S2` (`Q2`/`D1060`). The Config tab was already the one tab whose subject is not the
+  // addressed file — it renders `tflw.config` while the hash names the `.tflw` — and this is the
+  // second document it can show. The route's whole safety argument is that **the page names a
+  // config block, never a path**: the config says which file, the server reads the config, and the
+  // only thing crossing the wire is a word that already appears in it.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-baseline-route-'));
+  try {
+    const config = [
+      'defaults',
+      '  baseline "./security-baseline.json"',
+      '',
+      'env local default',
+      '  api "http://127.0.0.1:1"',
+      '  baseline "./sec/local.json"',
+      '',
+      'env prod',
+      '  api "http://127.0.0.1:2"',
+      '',
+    ].join('\n');
+    await writeFile(join(dir, 'tflw.config'), config, 'utf8');
+    await writeFile(join(dir, 't.tflw'), 'test "t"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+    const declared = JSON.stringify({ version: 1, accepted: [{ fingerprint: 'a3f19c2e5b04d871', rule: 'sec/csp-missing', endpoint: 'GET /' }] });
+    await writeFile(join(dir, 'security-baseline.json'), declared, 'utf8');
+
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    const put = (doc: string, text: string, headers: Record<string, string> = {}) =>
+      fetch(`${base}/api/baseline?doc=${doc}`, { method: 'PUT', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ text }) });
+    try {
+      // 1. The `defaults` block's document, read through the block that declares it.
+      const read = await fetch(`${base}/api/baseline?doc=defaults`);
+      assert.equal(read.status, 200);
+      const view = (await read.json()) as { path: string; declaredIn: string; text: string | null; etag: string | null };
+      assert.deepEqual(
+        { path: view.path, declaredIn: view.declaredIn, text: view.text, etag: view.etag },
+        { path: './security-baseline.json', declaredIn: 'defaults', text: declared, etag: etagOf(declared) },
+      );
+
+      // 2. A DECLARED DOCUMENT THAT IS NOT ON DISK IS `200` WITH `text: null`, NOT `404`. The
+      //    declaration is really there and the file is not, which is the ordinary state of a
+      //    project adopting triage. A `404` would make *no such env* and *not written yet* the
+      //    same answer, and only one of them is a mistake — so the control is step 3, which is
+      //    the other one.
+      const absent = await fetch(`${base}/api/baseline?doc=local`);
+      assert.equal(absent.status, 200);
+      const absentView = (await absent.json()) as { path: string; text: string | null; etag: string | null };
+      assert.deepEqual({ path: absentView.path, text: absentView.text, etag: absentView.etag }, { path: './sec/local.json', text: null, etag: null });
+
+      // 3. The two real `404`s: a block with no `baseline`, and a block that does not exist.
+      assert.equal((await fetch(`${base}/api/baseline?doc=prod`)).status, 404, 'env prod declares no baseline');
+      assert.equal((await fetch(`${base}/api/baseline?doc=nope`)).status, 404, 'there is no env nope');
+      assert.equal((await fetch(`${base}/api/baseline`)).status, 400, 'and no document at all is a usage error');
+
+      // 4. Writing it. `If-Match` absent means CREATE — the difference from `PUT /api/config`, and
+      //    the case `[accept]` on a first finding hits. The nested directory is made on the way.
+      const first = JSON.stringify({ version: 1, accepted: [] });
+      const created = await put('local', first);
+      assert.equal(created.status, 200);
+      assert.equal(await readFile(join(dir, 'sec', 'local.json'), 'utf8'), first, 'byte for byte, in a directory that did not exist');
+      const createdEtag = ((await created.json()) as { etag: string }).etag;
+
+      // 5. Four refusals, and the file is untouched by every one of them.
+      assert.equal((await put('local', first)).status, 409, 'no If-Match on a document that now exists');
+      assert.equal((await put('local', first, { 'if-match': '*' })).status, 400, '`*` is any version, which is the check itself');
+      assert.equal((await put('local', first, { 'if-match': 'deadbeefdeadbeef' })).status, 409, 'a stale etag');
+      const bad = await put('local', JSON.stringify({ version: 2, accepted: [] }), { 'if-match': createdEtag });
+      assert.equal(bad.status, 422, "a document this tflw does not understand is refused, not accepted as 'nothing'");
+      assert.match(((await bad.json()) as { error: string }).error, /version/);
+      assert.equal(await readFile(join(dir, 'sec', 'local.json'), 'utf8'), first, 'nothing refused touched the file');
+
+      // 6. AND THE REFUSAL THE WHOLE FEATURE RESTS ON. `parseBaseline` is the strictest bar in this
+      //    repository because every failure mode of a baseline makes a build GREENER — a document
+      //    that parses to *accepted nothing* is indistinguishable from a codebase that fixed
+      //    everything. The page is the author here, so this is the claim the page cannot be trusted
+      //    to make about itself.
+      assert.equal((await put('local', 'not json at all', { 'if-match': createdEtag })).status, 422);
+      assert.equal((await put('local', JSON.stringify({ version: 1, accepted: [{ rule: 'x' }] }), { 'if-match': createdEtag })).status, 422, 'an entry with no fingerprint matches nothing and would silently accept nothing');
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a `baseline` pointing outside the project is refused, and the page never names the path anyway', async () => {
+  // Two separate claims, and the second is why the first can be a thin check rather than a
+  // sanitiser. The page names a config **block**; only a person editing `tflw.config` can write a
+  // path at all, so the boundary here is the project boundary and not a defence against the page.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-baseline-escape-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'defaults\n  baseline "../../escape.json"\n\nenv local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    const escaped = await resolveBaselineDoc(dir, 'defaults');
+    assert.ok('status' in escaped, 'a path outside the root must not resolve');
+    assert.equal(escaped.status, 400);
+    const refused = await writeBaselineDoc(dir, 'defaults', JSON.stringify({ version: 1, accepted: [] }), null);
+    assert.ok('status' in refused && refused.status === 400, 'and the write refuses it before touching anything');
+    // Control: the same config with a path inside the root resolves, so the refusal above is about
+    // the escape and not about this fixture.
+    await writeFile(join(dir, 'tflw.config'), 'defaults\n  baseline "./inside.json"\n\nenv local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    const inside = await resolveBaselineDoc(dir, 'defaults');
+    assert.ok(!('status' in inside), `the control must resolve: ${JSON.stringify(inside)}`);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

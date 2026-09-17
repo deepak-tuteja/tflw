@@ -122,19 +122,54 @@ export const hashForDoor = (id: Lens | null): string => (id === null ? '#' : `#/
  * every one of them ends in `.tflw`. Encoding the slashes was the alternative and was refused: an
  * address a person cannot read is an address nobody will paste.
  */
-const afterTab = (hash: string): { file: string | null; line: number | null } => {
+/**
+ * `@defaults` / `@<env>` — the **document** segment (`M208` `S2`, `Q2`).
+ *
+ * The Config tab is the one tab whose subject is not the addressed file: it renders `tflw.config`
+ * while the hash names the `.tflw`. That is the rule's second clause working — Config is *a project
+ * fact that file resolves against* — but it left no pattern for *which* project document Config
+ * shows, and `M208` gives it a second one to show.
+ *
+ * **Named by env, not by filename.** A baseline is declared per env, the env is already a word in
+ * the config, and an env name survives a rename of the JSON. A filename would not survive it, and
+ * — worse — a filename may itself contain slashes, which is the exact problem the file slot below
+ * had to solve and should not solve twice.
+ *
+ * **It cannot collide with a `.tflw` path**, which is what makes it readable off a position the
+ * grammar cannot otherwise hold. `@` is not in the identifier class *and* the pattern forbids a
+ * dot, while every test file's last segment ends in `.tflw` — so `tests/@local/login.tflw` has
+ * `login.tflw` last and is a file, whole. Nor can it collide with `L<n>`, which is stripped first
+ * and begins with a letter.
+ */
+const DOC_SEGMENT = /^@([A-Za-z_][A-Za-z0-9_-]*)$/;
+
+const afterTab = (hash: string): { file: string | null; doc: string | null; line: number | null } => {
   const rest = hash.replace(/^#\/?/, '').split('/').slice(2).filter((s) => s !== '');
   const last = rest[rest.length - 1] ?? '';
   const m = /^L(\d+)$/.exec(last);
-  const parts = m ? rest.slice(0, -1) : rest;
-  return { file: parts.length === 0 ? null : parts.join('/'), line: m ? Number(m[1]) : null };
+  const withoutLine = m ? rest.slice(0, -1) : rest;
+  const docMatch = DOC_SEGMENT.exec(withoutLine[withoutLine.length - 1] ?? '');
+  const parts = docMatch ? withoutLine.slice(0, -1) : withoutLine;
+  return {
+    file: parts.length === 0 ? null : parts.join('/'),
+    doc: docMatch ? (docMatch[1] ?? null) : null,
+    line: m ? Number(m[1]) : null,
+  };
 };
 
-/** A door, a tab, a file and a line as one address (`D1045`; `M206` `Q4` added the file). The
- *  default tab writes the bare door hash **only when nothing follows it** — with a file present the
- *  tab has to be spelled, or the file would be read as the tab. */
-export const hashForTab = (door: Lens, tab: TabId, file?: string | null, focusLine?: number): string => {
-  const tail = `${file ? `/${file}` : ''}${focusLine === undefined ? '' : `/L${focusLine}`}`;
+/**
+ * A door, a tab, a file, a document and a line as one address (`D1045`; `M206` `Q4` added the file,
+ * `M208` `S2` the document). The default tab writes the bare door hash **only when nothing follows
+ * it** — with anything present the tab has to be spelled, or the next segment would be read as the
+ * tab.
+ *
+ * The document sits between the file and the line because that is the order the address is read in:
+ * *this file, in this project document, at this line*. A line is an offset into the document, not
+ * into the file, the moment a document is named — which is why `[accept]` can send you to
+ * `#/scan/config/shop.tflw/@local/L7` and mean line 7 of the baseline.
+ */
+export const hashForTab = (door: Lens, tab: TabId, file?: string | null, focusLine?: number, doc?: string | null): string => {
+  const tail = `${file ? `/${file}` : ''}${doc ? `/@${doc}` : ''}${focusLine === undefined ? '' : `/L${focusLine}`}`;
   return tail === '' && tab === DEFAULT_TAB ? `#/${door}` : `#/${door}/${tab}${tail}`;
 };
 
@@ -165,6 +200,22 @@ export const fileFromHash = (hash: string): string | null => afterTab(hash).file
  * whichever came first.
  */
 export const focusFromHash = (hash: string): number | null => afterTab(hash).line;
+
+/**
+ * The project **document** the Config tab is asked to show — `defaults`, an env name, or `null` for
+ * `tflw.config` itself (`M208` `S2`, `Q2`).
+ *
+ * `null` is what every address written before `M208` says, and it has to keep meaning what it meant:
+ * `#/api/config/shop.tflw/L11` is `tflw.config` at line 11, exactly as it was. So the default is the
+ * absence of the segment and not a spelled `@config`, which would have made every existing link
+ * ambiguous about which document it named.
+ *
+ * Not validated against the config here, for `fileFromHash`'s reason: an env that has been renamed
+ * is the same class as a tab nobody has heard of, and a module that answered `null` for an
+ * undeclared env would need the project to answer, which would make an address's meaning depend on
+ * what happens to be on disk.
+ */
+export const docFromHash = (hash: string): string | null => afterTab(hash).doc;
 
 /** Every test and crawl behind each door, derived. A test behind two doors is counted by both —
  *  that is `D1043` working, not a double count to be corrected. */
