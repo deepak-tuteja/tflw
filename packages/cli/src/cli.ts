@@ -3836,6 +3836,17 @@ test "health check"
  * they will find it, and `TF060` goes on refusing every scan assertion until a person uncomments
  * it. The error is the signpost; it now points at a line already in the file.
  *
+ * **IT LIVES INSIDE THE `env` BLOCK, AND UNTIL `M207` `S4` IT DID NOT (`M207-03`).** The line was
+ * written at column 0, after a blank line that had already closed `env local default` — and
+ * `authorized target` is only grammatical indented inside an `env` or `defaults` block. So the one
+ * act this whole scaffold instructs did not work, by either reading of *uncomment*: removing the
+ * `#   ` gave `TF022`, and removing only the `#` gave `TF020` **and** `TF022`. The ladder below is
+ * two steps by design and there was a silent third one — *and move it into the env block* — which
+ * blocked the other two, since the author could not reach `TF082` at all by doing what they were
+ * told. It is the family `M205-03` closed one door over, where the product told an author to make
+ * an edit its own page refused, recurring as an edit that does not parse. Found by `M207` `S4`'s
+ * gate, which walks this repair from the SCANS door's notice and could not complete it.
+ *
  * **The `reason` is deliberately EMPTY, and that only became the right answer once `M200-01` was
  * fixed.** While a blank reason checked green, the best a scaffold could do was a visible
  * placeholder — something that reached the report reading as unfinished, failing where a human
@@ -3854,13 +3865,13 @@ env local default
   # Point this at your own service:
   api "http://localhost:3001"
 
-# A security scan needs your written permission to point it at a host. Uncomment this and say why
-# you may scan it — the reason is printed in the run summary and embedded in the report, so the
-# claim travels with the evidence. Until then \`tflw check\` refuses every
-# \`has no … violations\` assertion (TF060), which is the point: nobody but you can make this
-# affirmation.
-#
-#   authorized target "http://localhost:3001" reason ""
+  # A security scan needs your written permission to point it at a host. Uncomment the line below
+  # and say why you may scan it — the reason is printed in the run summary and embedded in the
+  # report, so the claim travels with the evidence. Until then \`tflw check\` refuses every
+  # \`has no … violations\` assertion (TF060), which is the point: nobody but you can make this
+  # affirmation.
+  #
+  #authorized target "http://localhost:3001" reason ""
 `;
 
 // `tflw init --scan` (`M200` `A2-4`, `D1053`). One ordinary `test`, not a `crawl`, and the choice is

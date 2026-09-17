@@ -8,11 +8,24 @@
 // teach the rarer half first.
 //
 // IT SHOWS THE AUTHORIZATION STATE, WHICH NO OTHER DOOR HAS TO. `TF060` makes a scan assertion an
-// error unless the env's `api` base is covered by an `authorized target` in `tflw.config` — a file
-// this page deliberately cannot write (`D1049`, `D1053`). So this is the one form whose output can
-// be perfect and still not check, for a reason that lives somewhere the author has to go and edit
-// by hand. Saying so before the write, with the exact line to uncomment, is the whole difference
+// error unless the env's `api` base is covered by an `authorized target` in `tflw.config`. So this
+// is the one form whose output can be perfect and still not check, for a reason that lives in
+// another file — and saying so before the write, with the line to add, is the whole difference
 // between a signpost and a dead end.
+//
+// **THE REASON IS `D291`, AND IT WAS STATED AS TWO REASONS UNTIL `M207` `S4` (`M207-02`).** The old
+// sentence said the target lives in a file *"this page does not write (`D1049`) and must not
+// (`D291`)"*. `M205` `Q5` made the first half false the day before: `ConfigPanel` writes
+// `tflw.config` through `PUT /api/config`, a second route with its own validation, chosen so that
+// `D1049`'s one-write-call-site property for `.tflw` stayed untouched — *may this page edit the
+// configuration* was always a separate question from *may it write tests*, and it was answered yes.
+//
+// That is worse than a wholly stale comment, which is why it was filed rather than quietly fixed. A
+// reader who checks the claim finds the page **can** write `tflw.config` and may conclude the whole
+// refusal is obsolete — removing a safeguard whose basis never moved. And it had a live consequence
+// pointing the other way: `D291` says the affirmation must be the author's, and **typing it into the
+// Config tab is the author making it**, so the repair was reachable from this page while the prose
+// sent the reader somewhere else to do it by hand.
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { buildApiStep, buildExpect, buildTest, insertIntoSource, type ExpectSpec, type HttpMethod, type Insertion, type MatcherName } from '@tflw/lang';
@@ -191,9 +204,11 @@ export function ScanForm({ project, onWritten, filePath, onFile, tab, onTab, run
         </p>
       </header>
 
-      {/* The one notice no other door needs. `authorized target` lives in `tflw.config`, which this
-          page does not write (`D1049`) and must not (`D291`: it is an affirmation only its author
-          can make) — so the door names the file, the line and the reason instead.
+      {/* The one notice no other door needs. `authorized target` lives in `tflw.config`, and the
+          reason this form will not write one for you is `D291` alone: it is an affirmation only its
+          author can make. The page CAN write that file — Config does, through `PUT /api/config`
+          (`M205` `Q5`) — so the notice sends you to the tab where you make the affirmation yourself,
+          which is what `D291` asks for, rather than to a text editor outside the product.
 
           `M207` `Q1` DIVIDED THIS FROM AUTH RATHER THAN DEDUPLICATING IT. Both surfaces describe
           `authorized target` out of one `tflw.config`, one tab apart, and they are not the same
@@ -205,9 +220,13 @@ export function ScanForm({ project, onWritten, filePath, onFile, tab, onTab, run
       {!authorized ? (
         <p className="warn" data-scan-unauthorized>
           env <code>{project.authorization.envName}</code> declares no <code>authorized target</code>, so every assertion
-          this form writes will be <code>TF060</code> until you add one to <code>tflw.config</code>. That line is an
-          affirmation that you are permitted to scan this host, so nobody but you can write it —{' '}
-          <code>tflw init --scan</code> leaves it commented out for exactly that reason.{' '}
+          this form writes will be <code>TF060</code> until <code>tflw.config</code> declares one. That line is an affirmation that you are permitted
+          to scan this host, so nobody but you can write it (<code>D291</code>) — <code>tflw init --scan</code> leaves it
+          commented out for exactly that reason. Making it is what the <em>Config</em> tab is for; this form will not do it
+          on your behalf.{' '}
+          <button className="linkish" onClick={() => onTab('config')} data-scan-config-link>
+            add it in Config
+          </button>{' '}
           <button className="linkish" onClick={() => onTab('auth')} data-scan-auth-link>
             what is in force here
           </button>
