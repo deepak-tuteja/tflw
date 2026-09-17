@@ -3480,8 +3480,8 @@ const REGISTRY = [
     pkg: 'tflw',
     file: 'packages/ui/src/App.tsx',
     what: 'the note about the process behind a kept directory is computed and never rendered — the rule holds in a unit test while the page stays silent',
-    find: '            {exitNote && exitNote.id === report.id ? (',
-    replace: '            {exitNote && exitNote.id === report.id && false ? (',
+    find: '          {exitNote && exitNote.id === report.id ? (',
+    replace: '          {exitNote && exitNote.id === report.id && false ? (',
   },
   {
     id: 'the-live-verdict-is-green-on-any-exit',

@@ -10,16 +10,16 @@
 // test costs nothing and asserts the thing itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countByDoor, lenslessCount, doorFromHash, hashForDoor, tabFromHash, hashForTab, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
+import { countByDoor, lenslessCount, doorFromHash, hashForDoor, tabFromHash, hashForTab, focusFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
 import type { ProjectView } from '../src/contract';
 
-const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', envs: [], reportDir: './report', files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [] }, webBaseUrl: null });
+const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', envs: [], reportDir: './report', files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [], sessions: [] }, webBaseUrl: null });
 
 const file = (path: string, tests: Array<readonly string[]>, crawls: Array<readonly string[]> = []): ProjectView['files'][number] => ({
   path,
   diagnostics: 0,
-  tests: tests.map((lenses, i) => ({ name: `${path}-t${i}`, tags: [], line: i + 1, workload: lenses.includes('load'), lenses: lenses as never })),
-  crawls: crawls.map((lenses, i) => ({ name: `${path}-c${i}`, line: 100 + i, lenses: lenses as never })),
+  tests: tests.map((lenses, i) => ({ name: `${path}-t${i}`, tags: [], line: i + 1, workload: lenses.includes('load'), lenses: lenses as never, sessions: [] })),
+  crawls: crawls.map((lenses, i) => ({ name: `${path}-c${i}`, line: 100 + i, lenses: lenses as never, sessions: [] })),
 });
 
 test('a test behind two doors is counted by both — the arithmetic D1043 asks for', () => {
@@ -93,4 +93,31 @@ test('the tab is the hash’s second segment, and the default tab writes the bar
   // *Docs* and *Coverage* as the things a strip facing one file may not grow.
   assert.equal(tabFromHash('#/api/coverage'), DEFAULT_TAB);
   assert.equal(tabFromHash('#/api/source/extra'), 'source', 'a third segment is not a tab and does not unseat one');
+});
+
+test('the hash’s third segment is a line for Config to land on, and only that', () => {
+  // `M205` S5b. Auth shows a session and an authorized target as facts and sends you to Config to
+  // change one; *"lands in Config focused on that block"* is the promise, and putting the target
+  // in the address rather than in a callback is `D1045` a third time — the jump is linkable, the
+  // back button walks back out of it, and nothing new remembers where you were going.
+  assert.equal(hashForTab('api', 'config', 11), '#/api/config/L11');
+  assert.equal(focusFromHash('#/api/config/L11'), 11);
+
+  // A focus forces the long form even for the default tab, because the third segment has nowhere
+  // else to sit — and the bare form still wins when nobody asked for a line, which is what keeps
+  // `#/api` the commonest address.
+  assert.equal(hashForTab('api', DEFAULT_TAB, 3), `#/api/${DEFAULT_TAB}/L3`);
+  assert.equal(hashForTab('api', DEFAULT_TAB), '#/api');
+
+  // `L`-prefixed so a third segment cannot be read as a fourth tab, and so an address that names
+  // no line reads as one — every hash anybody had before `S5b` is of that shape.
+  for (const hash of ['#/api', '#/api/config', '#/api/config/session', '#/api/config/11', '#/api/config/L', '#/api/config/Lx', '#']) {
+    assert.equal(focusFromHash(hash), null, `\`${hash}\` names no line`);
+  }
+
+  // And the two rules do not interfere: a line does not unseat the tab, and a tab is still not a
+  // door. Pinned here because the three functions read the same string and a change to one
+  // regexp is a change to all three.
+  assert.equal(tabFromHash('#/api/config/L11'), 'config');
+  assert.equal(doorFromHash('#/api/config/L11'), 'api');
 });

@@ -40,8 +40,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, relative, dirname, extname, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes } from 'node:crypto';
-import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, LENSES, type Lens } from '@tflw/lang';
-import { resolveConfig, selectEnv } from '@tflw/runtime';
+import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, LENSES, type ConfigFile, type EnvBlock, type Lens } from '@tflw/lang';
+import { resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 
 export const UI_DEFAULT_PORT = 4141;
@@ -76,6 +76,22 @@ export interface ProjectTest {
    * file — evidence one indirection away, which a per-test pure function cannot follow.
    */
   readonly lenses: readonly Lens[];
+  /**
+   * The `as <session>` names this test runs under, in source order (`M205` S5b).
+   *
+   * **Empty is `anonymous`, and that is a fact rather than an absence.** `anonymous` is the one
+   * principal nobody declares — `checker.ts`'s `RESERVED_PRINCIPAL`, in every authorization probe
+   * set without being written down — so a test with no `as` clause is not *unauthenticated by
+   * omission*, it runs as a named identity the config cannot shadow. The Auth tab says so, which
+   * is the whole reason this field travels: without it the page can show which sessions a project
+   * *declares* and not which ones its tests actually *use*, and those two lists are different in
+   * every project that has ever deleted a test.
+   *
+   * Order is significant and kept: `as admin, userA` lets the later-listed session win a header
+   * conflict against the earlier one (SPEC §3.3), so a sorted or de-duplicated list here would be
+   * a different declaration from the one in the file.
+   */
+  readonly sessions: readonly string[];
 }
 
 /** A `crawl` declaration — the SCANS door's own, and a sibling to `test` rather than a kind of
@@ -84,6 +100,9 @@ export interface ProjectCrawl {
   readonly name: string;
   readonly line: number;
   readonly lenses: readonly Lens[];
+  /** As `ProjectTest.sessions` — a crawl takes `as` too, and the SCANS door is where the principal
+   *  a request is issued under matters most. */
+  readonly sessions: readonly string[];
 }
 
 export interface ProjectFile {
@@ -161,11 +180,26 @@ export interface ProjectView {
   readonly authorization: {
     readonly envName: string;
     /**
-     * `resolved.authorizedTargets` verbatim — **including the `probe` opt-ins**, which the first
-     * draft of this type left out. They travel on the wire whether the type names them or not, so
-     * omitting them would have been a type that under-describes its own JSON; and they are not
-     * noise here, because `probe mutating` is what lets `has no authorization violations` re-issue
-     * a write, and a SCANS form has a use for knowing it.
+     * `resolved.authorizedTargets` — **including the `probe` opt-ins**, which the first draft of
+     * this type left out. They travel on the wire whether the type names them or not, so omitting
+     * them would have been a type that under-describes its own JSON; and they are not noise here,
+     * because `probe mutating` is what lets `has no authorization violations` re-issue a write,
+     * and a SCANS form has a use for knowing it.
+     *
+     * **One entry per *declaration*, not per origin, and `S5b` had that wrong until it measured
+     * it.** The Auth tab was first written believing `resolveConfig` folds two declarations of one
+     * origin into a merged row — the opt-ins do accumulate by OR, which is what the AST's own
+     * docblock says. They accumulate **at the lookup**, and `resolve.ts` says why it declines to
+     * fold them here: *"every declaration still travels to the report with its own reason, which
+     * is the half of D291 that makes the claim auditable."* So a config declaring one host twice
+     * for two different reasons produces two rows, both true, and a page that showed one merged
+     * row would have thrown away the halves that are auditable.
+     *
+     * `line` and `block` are `S5b`'s addition and ride on the row rather than in a parallel list,
+     * which was the other thing that draft got wrong: two arrays in the same order is a coupling
+     * nothing checks, and this is the same row the reader is looking at. The element stays
+     * assignable to `EnvAuthorizedTargets`, so the page still hands this to `checkAuthorizedTargets`
+     * unchanged and there is still no translation step to drift.
      */
     readonly targets: readonly {
       readonly target: string;
@@ -174,9 +208,48 @@ export interface ProjectView {
       readonly probeOversized: boolean;
       readonly probeTraversal: boolean;
       readonly probeCiphers: boolean;
+      /** The line this declaration starts on in `tflw.config` — what Auth's `[edit]` jumps to. */
+      readonly line: number;
+      /** `defaults`, or the name of the env block it is written in. */
+      readonly block: string;
     }[];
     readonly apiBaseUrl: string | null;
     readonly services: readonly { readonly name: string; readonly url: string }[];
+    /**
+     * The sessions `tflw.config` declares, as the **active env** gets them (`M205` S5b, Q6).
+     *
+     * Read off `resolved.sessions` and `resolved.sessionsOutOfScope` rather than off
+     * `parsed.config.sessions`, for the reason `resolve.ts` states where it filters them: env
+     * scoping happens in exactly one place so that *no consumer can disagree with another about
+     * which sessions exist*. A page that re-applied `for env` here would be the fifth
+     * establishment path, and the first one that runs in a browser.
+     *
+     * `outOfScope` is how a declared-but-not-here session still appears: the Auth tab has to be
+     * able to say *`admin` is declared for `staging`, and you are on `local`*, which is the same
+     * sentence `TF028` says and the one an author needs when a test names a session that resolves
+     * to nothing.
+     */
+    readonly sessions: readonly {
+      readonly name: string;
+      /** `session <name> privileged` (`D307`/`D310`) — a claim that this principal is *meant* to
+       *  reach other principals' resources, so `has no authorization violations` leaves it out of
+       *  the probe set instead of reporting entitled access as a finding. */
+      readonly privileged: boolean;
+      /** `session <name> oauth2` — the client-credentials sugar. Mutually exclusive with a body,
+       *  so `steps` is 0 whenever this is true. */
+      readonly oauth2: boolean;
+      /** The header names its body sets — what running `as` this session adds to every request.
+       *  Names only: a session header's *value* is where a token lives, and this view is served
+       *  to a browser. */
+      readonly headers: readonly string[];
+      /** How many steps establish it. A login is a request, not a declaration, and a reader
+       *  deciding whether a session is cheap needs to know there are five of them. */
+      readonly steps: number;
+      /** Where the declaration starts in `tflw.config` — what Config's `[edit]` jumps to. */
+      readonly line: number;
+      /** `null` when the active env gets this session; otherwise the envs it *is* declared for. */
+      readonly outOfScope: readonly string[] | null;
+    }[];
   };
 }
 
@@ -208,6 +281,18 @@ export const SCRATCH_PATH = '.scratch.tflw';
  * directory read.
  */
 export const SCAFFOLDED = ['tflw.config', 'example.tflw', 'load.tflw', 'scan.tflw', '.env.example', 'package.json'] as const;
+
+/**
+ * The config file, named once (`M205` S5b).
+ *
+ * Four sites in this file spelled it out — the read in `readProject`, the two *is this a project*
+ * guards, and `SCAFFOLDED`'s first entry — and `S5b` adds two routes that write it. A fifth and
+ * sixth literal of a filename is how the scratch's own rename went half-applied (`S3`: the
+ * `.gitignore` entry and the write target were one fact spelled twice), so it is one constant
+ * before the write arrives rather than after. `SCAFFOLDED` keeps its literal: that list is the
+ * CLI's output, and a name drifting apart from it is a thing to notice rather than to hide.
+ */
+export const CONFIG_PATH = 'tflw.config';
 
 /** What `tflw run` is asked for. Every field maps to one CLI flag, and nothing else reaches the
  * argv: the page cannot run anything a terminal could not. */
@@ -312,7 +397,7 @@ export function initArgv(door: Lens): string[] {
 
 /** The project as the page sees it: config envs, the discovered files, the tests in each. */
 export async function readProject(root: string): Promise<ProjectView> {
-  const configText = await readFile(join(root, 'tflw.config'), 'utf8');
+  const configText = await readFile(join(root, CONFIG_PATH), 'utf8');
   const parsed = parseConfigSource(configText);
   const envs = parsed.config.envs.map((e) => ({ name: e.name, isDefault: e.isDefault }));
   // The default env's view of `exclude` and `report dir` — both are `defaults`-only keys, so any
@@ -331,18 +416,20 @@ export async function readProject(root: string): Promise<ProjectView> {
         line: t.span.start.line,
         workload: t.workload !== null,
         lenses: lensesOfTest(t),
+        sessions: t.sessions,
       })),
       // `crawls` is absent, not empty, on a program that declares none (`ast.ts:44` — it keeps
       // 31 parser goldens asserting what they were written to assert).
-      crawls: (program.crawls ?? []).map((c) => ({ name: c.name.value, line: c.span.start.line, lenses: lensesOfCrawl(c) })),
+      crawls: (program.crawls ?? []).map((c) => ({ name: c.name.value, line: c.span.start.line, lenses: lensesOfCrawl(c), sessions: c.sessions })),
       diagnostics: diagnostics.length,
     });
   }
   const authorization = {
     envName: resolved.envName,
-    targets: resolved.authorizedTargets,
+    targets: locateTargets(resolved.authorizedTargets, parsed.config, env),
     apiBaseUrl: resolved.apiBaseUrl,
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
+    sessions: sessionViews(parsed.config, resolved),
   };
   return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
 }
@@ -360,6 +447,66 @@ function scratchEtagOf(root: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Give each resolved `authorized target` the line it is written on — what Auth's `[edit]` needs.
+ *
+ * **It matches by position, and that is sound here for a reason worth stating.**
+ * `resolveConfig` pushes one row per `AuthorizedTargetDecl` as it walks `defaults` and then the
+ * active env, in that order, accumulating rather than folding — its own comment says so twice and
+ * says why (*"every declaration still travels to the report with its own reason"*). This walks the
+ * same two blocks in the same order and collects the same declarations, so row *i* of one is
+ * declaration *i* of the other. It cannot match by `target` instead: a config that declares one
+ * origin twice is exactly the case this exists to render, and both rows would claim both lines.
+ *
+ * The length check is not defensive padding — it is the one thing that would make the pairing
+ * wrong. If `resolveConfig` ever *did* fold rows, the counts would disagree and this returns the
+ * resolved rows unlocated rather than pointing an `[edit]` at somebody else's line. Auth renders
+ * a row with no line as a fact with no link, which is the truthful degradation.
+ */
+function locateTargets(
+  targets: ResolvedConfig['authorizedTargets'],
+  config: ConfigFile,
+  env: EnvBlock,
+): ProjectView['authorization']['targets'] {
+  const sites: { line: number; block: string }[] = [];
+  const collect = (entries: EnvBlock['entries'], block: string): void => {
+    for (const entry of entries) {
+      if (entry.type === 'AuthorizedTargetDecl') sites.push({ line: entry.span.start.line, block });
+    }
+  };
+  if (config.defaults) collect(config.defaults.entries, 'defaults');
+  collect(env.entries, env.name);
+  const paired = sites.length === targets.length;
+  return targets.map((t, i) => ({ ...t, line: paired ? sites[i]!.line : 0, block: paired ? sites[i]!.block : '' }));
+}
+
+/**
+ * The declared sessions, as the active env gets them — `ProjectView.authorization.sessions`.
+ *
+ * **It walks `config.sessions` and asks `resolved` about each, rather than walking `resolved`.**
+ * The two differ in exactly the case the Auth tab exists to show: a session declared `for env
+ * staging` is absent from `resolved.sessions` while you are on `local`, and a list built from
+ * `resolved` alone would render that as *this session does not exist* — which is the wrong
+ * sentence and sends the reader to fix the test rather than the env clause. Declaration order is
+ * the file's order for the same reason `sessions` on a test keeps source order: it is the order
+ * a reader will find them in when they follow the `[edit]` link.
+ */
+function sessionViews(config: ConfigFile, resolved: ResolvedConfig): ProjectView['authorization']['sessions'] {
+  return config.sessions.map((s) => ({
+    name: s.name,
+    privileged: s.privileged,
+    oauth2: s.oauth2 !== null,
+    // Names, never values. A session header is where a bearer token lives, and this object is
+    // serialised to a browser — `redact` protects a *report*, and there is no redactor on this
+    // route. The page has no use for the value either: Auth answers *what does running as this
+    // add to my request*, which a header name answers and a secret does not.
+    headers: s.body.flatMap((step) => (step.type === 'HeaderStmt' ? [step.name.value] : [])),
+    steps: s.body.length,
+    line: s.span.start.line,
+    outOfScope: resolved.sessions.has(s.name) ? null : (resolved.sessionsOutOfScope.get(s.name) ?? []),
+  }));
 }
 
 /**
@@ -512,16 +659,87 @@ export async function writeProjectFile(
     return { status: 409, error: 'the file changed on disk since it was read' };
   }
 
-  await mkdir(dirname(resolved), { recursive: true });
-  const temp = `${resolved}.tflw-ui-${randomBytes(6).toString('hex')}`;
+  await atomicWrite(resolved, text);
+  return { path: relative(root, resolved).split(sep).join('/'), etag: etagOf(text) };
+}
+
+/**
+ * Write `text` to `full`, atomically — a sibling temp file renamed over the target.
+ *
+ * `rename` within a directory is atomic on every filesystem tflw runs on, so a reader — `tflw run`
+ * in another terminal, most likely — sees either the old file or the new one and never a
+ * half-written one. Extracted when `S5b` added the config route, and extracted rather than copied
+ * **because atomicity is the property, not the file kind**: two capabilities write here now
+ * (`D1049`'s `.tflw` route and `M205` Q5's config route) and a second copy of this is a second
+ * chance to forget the `unlink` on the failure path.
+ *
+ * It is deliberately not a widening of `resolveWritablePath`, which is the thing Q5 refused: what
+ * may be written is still decided by each caller, separately, before it gets here.
+ */
+async function atomicWrite(full: string, text: string): Promise<void> {
+  await mkdir(dirname(full), { recursive: true });
+  const temp = `${full}.tflw-ui-${randomBytes(6).toString('hex')}`;
   try {
     await writeFile(temp, text, 'utf8');
-    await rename(temp, resolved);
+    await rename(temp, full);
   } catch (e) {
     await unlink(temp).catch(() => {});
     throw e;
   }
-  return { path: relative(root, resolved).split(sep).join('/'), etag: etagOf(text) };
+}
+
+/**
+ * Write `tflw.config` — `M205` Q5, closing `M205-03`.
+ *
+ * **A separate route rather than a wider `resolveWritablePath`, and the refusal it keeps intact is
+ * the point.** That function turns away everything but a `.tflw` file because *"`tflw.config` or a
+ * `.env` reached through it would be a different capability wearing this one's clothes"* — and
+ * that is still true. So the config is a second capability with its own name, its own validation
+ * and its own call site, which leaves `D1049`'s one-write-call-site property holding for `.tflw`
+ * and makes *may this page edit the project's configuration* a question something could answer
+ * later without also answering *may this page write tests*.
+ *
+ * **What it refuses.** The text must parse as the config dialect — `parseConfigSource` runs the
+ * lexer, the declaration-only parser and `validateConfig`, so a `422` here covers a stray brace
+ * and an `env` block with two `api` lines alike. That is the same bar `writeProjectFile` sets for
+ * a test, and it is set here for a sharper reason: a config that does not parse takes
+ * `GET /api/project` down with it, so a page allowed to write one could lock itself out of the
+ * project it is editing.
+ *
+ * **What it does NOT refuse is formatting**, and the difference from `writeProjectFile` is not an
+ * oversight. That route requires text `format` would already have produced, because the page there
+ * is a *form* whose bytes come out of the printer, and a server that silently reformatted would
+ * hand back an etag for a file the page has never seen. Here the page is a text editor and the
+ * author's own bytes are the subject; nothing reformats them, the file on disk is byte-for-byte
+ * what was sent, and so the etag returned is computed over exactly what the page holds. Refusing
+ * an unformatted config would mean refusing to save a file `tflw fmt` would happily fix.
+ *
+ * `ifMatch` is required rather than optional, which is the other difference: a test file may be
+ * *created* by a write, and `tflw.config` always already exists — a project with no config is not
+ * a project, and `GET /api/project` answers `404` before this route is reachable.
+ */
+export async function writeConfigFile(
+  root: string,
+  text: string,
+  ifMatch: string | null,
+): Promise<{ readonly path: string; readonly etag: string } | FileWriteRefusal> {
+  const full = join(root, CONFIG_PATH);
+  const { diagnostics } = parseConfigSource(text);
+  const error = diagnostics.find((d) => d.severity === 'error');
+  if (error) {
+    return { status: 422, error: error.message, code: error.code, line: error.span.start.line };
+  }
+  let current: string;
+  try {
+    current = await readFile(full, 'utf8');
+  } catch {
+    return { status: 404, error: `no ${CONFIG_PATH} here — this directory is not a tflw project yet` };
+  }
+  if (ifMatch === null) return { status: 409, error: `${CONFIG_PATH} already exists — send its If-Match to replace it` };
+  if (etagOf(current) !== ifMatch) return { status: 409, error: `${CONFIG_PATH} changed on disk since it was read` };
+
+  await atomicWrite(full, text);
+  return { path: CONFIG_PATH, etag: etagOf(text) };
 }
 
 /**
@@ -829,7 +1047,7 @@ export class UiServer {
       // landing has to tell them apart to know whether to offer to create one (`M200` `A0-5`).
       // Until now both arrived as a 400 carrying a raw `ENOENT` with an absolute path in it,
       // which is neither a usable signal nor a sentence to show anyone.
-      if (!existsSync(join(this.opts.root, 'tflw.config'))) {
+      if (!existsSync(join(this.opts.root, CONFIG_PATH))) {
         return json(res, 404, { error: 'no tflw.config here — this directory is not a tflw project yet', noProject: true, root: this.opts.root });
       }
       try {
@@ -879,6 +1097,45 @@ export class UiServer {
       return json(res, 200, result);
     }
 
+    // `GET /api/config` — `tflw.config`'s text and the version the next write is checked against
+    // (`M205` S5b). Its own route rather than a field on `ProjectView`, because the Config tab is
+    // the only reader and the project view is fetched on every refresh: a config is a file you
+    // open, not a fact the shell needs.
+    if (path === '/api/config' && method === 'GET') {
+      let text: string;
+      try {
+        text = await readFile(join(this.opts.root, CONFIG_PATH), 'utf8');
+      } catch {
+        return json(res, 404, { error: `no ${CONFIG_PATH} here — this directory is not a tflw project yet`, noProject: true });
+      }
+      return json(res, 200, { path: CONFIG_PATH, text, etag: etagOf(text) });
+    }
+
+    // `PUT /api/config` — Q5, closing `M205-03`. See `writeConfigFile` for why this is a second
+    // capability and not a wider `resolveWritablePath`.
+    if (path === '/api/config' && method === 'PUT') {
+      let request: { text?: unknown };
+      try {
+        request = JSON.parse(await readBody(req)) as { text?: unknown };
+      } catch {
+        return json(res, 400, { error: 'the write request is not JSON' });
+      }
+      if (typeof request.text !== 'string') return json(res, 400, { error: 'a config write needs `text`' });
+      // `If-Match: *` is refused here for the reason it is refused above: it means *any current
+      // representation*, which is exactly the check this header exists to make. There is no
+      // create case for a config, so an absent header is a `409` from `writeConfigFile` rather
+      // than the `null`-means-create the file route reads it as.
+      const header = req.headers['if-match'];
+      if (header === '*') return json(res, 400, { error: 'If-Match must name a version, not `*`' });
+      const ifMatch = typeof header === 'string' ? header.replaceAll('"', '') : null;
+      const result = await writeConfigFile(this.opts.root, request.text, ifMatch);
+      if ('status' in result) {
+        const { status, ...rest } = result;
+        return json(res, status, rest);
+      }
+      return json(res, 200, result);
+    }
+
     // `GET /api/pick?path=…` — a `tflw pick` session, streamed (`M200` `A3-6`, `D1055`).
     //
     // **ONE ROUTE, AND THE STREAM *IS* THE SESSION.** The obvious shape was three — start, stream,
@@ -894,7 +1151,7 @@ export class UiServer {
     // answer it with — `pick` prints two banner lines and then one bare locator per click, and a
     // server that filtered by matching the banner text would be coupled to that wording.
     if (path === '/api/pick' && method === 'GET') {
-      if (!existsSync(join(this.opts.root, 'tflw.config'))) return json(res, 404, { error: 'not a tflw project here', noProject: true });
+      if (!existsSync(join(this.opts.root, CONFIG_PATH))) return json(res, 404, { error: 'not a tflw project here', noProject: true });
       let view: ProjectView;
       try {
         view = await readProject(this.opts.root);

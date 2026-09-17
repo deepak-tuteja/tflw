@@ -49,10 +49,26 @@ const oracle: Record<string, RunReport> = {};
  * under the form and became **Source**, one of the file's three stages — so a test that wants the
  * bytes has to say where it is looking, exactly as a reader does.
  */
-const openTab = async (tab: 'compose' | 'source' | 'run'): Promise<void> => {
+const openTab = async (tab: 'compose' | 'source' | 'run' | 'auth' | 'config'): Promise<void> => {
   await page.locator(`[data-tab="${tab}"]`).click();
   await page.locator(`[data-tabstrip="${tab}"]`).waitFor();
 };
+
+/**
+ * What is selected inside the Config tab's textarea — how `S5b` checks that an `[edit]` link
+ * landed on the block it named.
+ *
+ * **It casts through `unknown` rather than naming `HTMLTextAreaElement`, and that is not
+ * squeamishness.** This package's `tsconfig.test.json` carries `types: ["node"]` and no DOM lib,
+ * so `HTMLTextAreaElement`, `document` and `HTMLElement` are not names here — and `tsx` strips
+ * types without checking them, so the first draft of this helper passed the whole suite and
+ * failed `tsc`. That is `S1`'s finding, arriving a second time in the same file.
+ */
+const selectedText = (p: Page, selector: string): Promise<string> =>
+  p.locator(selector).evaluate((el) => {
+    const area = el as unknown as { value: string; selectionStart: number; selectionEnd: number };
+    return area.value.slice(area.selectionStart, area.selectionEnd);
+  });
 
 /** `html.ts`'s `pretty`, restated: what the page shows for a JSON body. */
 const pretty = (text: string): string => {
@@ -1944,4 +1960,176 @@ test('the strip is an address, and Compose keeps what you typed while you are lo
   await page.locator('[data-tabstrip="compose"]').waitFor();
   assert.equal(new URL(page.url()).hash, '#/api');
   assert.equal(await page.locator('[data-api-path]').inputValue(), '/items', 'going back re-mounted the form');
+});
+
+test('the Auth tab says who this file runs as, and every editable thing lands in Config on its own line', async () => {
+  // `M205` S5b, Q6. Auth is the rule's second clause — *a project fact that file resolves against*
+  // — and it reads where Config writes. The three states it exists to tell apart are all here:
+  // a session that resolves, a session declared for another env (which resolves to nothing, and
+  // until this tab said nowhere on the page), and the reserved `anonymous` principal.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-auth-tab-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage();
+  const noise: string[] = [];
+  fresh.on('console', (m) => { if (m.type() === 'error') noise.push(m.text()); });
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      [
+        'defaults',                                                                    // 1
+        '  authorized target "http://127.0.0.1:4720" reason "the fixture on loopback"', // 2
+        '    probe mutating',                                                           // 3
+        '',                                                                             // 4
+        'env local default',                                                            // 5
+        '  api "http://127.0.0.1:4720"',                                                // 6
+        '',                                                                             // 7
+        'env staging',                                                                  // 8
+        '  api "https://staging.example.com"',                                          // 9
+        '',                                                                             // 10
+        'session admin privileged',                                                     // 11
+        '  api POST /login',                                                            // 12
+        '  header "Authorization" is "Bearer t"',                                       // 13
+        '',                                                                             // 14
+        'session ops for env staging',                                                  // 15
+        '  api POST /login',                                                            // 16
+      ].join('\n') + '\n',
+      'utf8',
+    );
+    await writeFile(
+      join(dir, 'orders.tflw'),
+      ['test "the ledger" as admin', '  api GET /orders', '  expect status equals 200', '', 'test "ops too" as ops', '  api GET /orders', '  expect status equals 200', '', 'test "the catalogue"', '  api GET /products', '  expect status equals 200', ''].join('\n'),
+      'utf8',
+    );
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    await fresh.goto(`${base}#/api/auth`);
+    await fresh.locator('[data-api-auth]').waitFor();
+
+    // 1. A session that resolves says what running `as` it ADDS to a request — which is the
+    //    question a reader has, and one neither Source nor Config answers without reading a body.
+    const admin = fresh.locator('[data-auth-session="admin"]');
+    assert.equal(await admin.getAttribute('data-auth-session-resolves'), 'true');
+    assert.match(await admin.locator('[data-auth-session-what]').innerText(), /adds `Authorization`/);
+    assert.match(await admin.innerText(), /privileged/, 'the claim that excludes it from the probe set is on the row');
+
+    // 2. **The state this tab exists for.** `ops` is declared `for env staging`, the active env is
+    //    `local`, so the test naming it runs as nobody — a `tflw check` diagnostic with no home on
+    //    the page until now. It is marked, and it says which env would have it.
+    const ops = fresh.locator('[data-auth-session="ops"]');
+    assert.equal(await ops.getAttribute('data-auth-session-resolves'), 'false');
+    assert.match(await ops.locator('[data-auth-session-what]').innerText(), /declared for `staging` and you are on `local`/);
+
+    // 3. `anonymous`, counted. It is the one principal nobody declares, so it is the one a reader
+    //    cannot find by looking at the config — which is why it is stated rather than implied by
+    //    an absent `as` clause.
+    assert.match(await fresh.locator('[data-auth-anonymous-tests]').innerText(), /1 of 3 tests in orders\.tflw run as anonymous: the catalogue/);
+
+    // 4. An authorized target, with its `probe` opt-in rendered as WHAT IT GRANTS — Q6's answer.
+    //    A checkbox cannot express this declaration and neither can the clause's own name.
+    const target = fresh.locator('[data-auth-target]');
+    assert.equal(await target.locator('[data-auth-probes]').getAttribute('data-auth-probes'), '1');
+    assert.match(await target.locator('[data-auth-probe="probeMutating"]').innerText(), /re-issue a POST\/PUT\/PATCH\/DELETE/);
+    assert.match(await target.locator('[data-auth-target-reason]').innerText(), /the fixture on loopback/, 'the reason is the declaration, not a comment on it');
+
+    // 5. **`[edit]` is a link, and it lands on the block.** One editor for one file, so nothing
+    //    here is a field — and the jump is the hash's third segment, so it is shareable and the
+    //    back button walks out of it.
+    await fresh.locator('[data-auth-edit="session:admin"]').click();
+    await fresh.locator('[data-api-config-text]').waitFor();
+    assert.equal(new URL(fresh.url()).hash, '#/api/config/L11');
+    assert.equal(
+      await selectedText(fresh, '[data-api-config-text]'),
+      'session admin privileged',
+      'the line it named, selected — a caret in a 16-line file is not visibly anywhere',
+    );
+    await fresh.goBack();
+    await fresh.locator('[data-api-auth]').waitFor();
+    await fresh.locator('[data-auth-edit="target:2"]').click();
+    await fresh.locator('[data-api-config-text]').waitFor();
+    assert.match(
+      await selectedText(fresh, '[data-api-config-text]'),
+      /^  authorized target "http:\/\/127\.0\.0\.1:4720"/,
+    );
+
+    assert.deepEqual(noise, [], 'the Auth tab logged nothing');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the Config tab makes the edit the product had been telling the author to make', async () => {
+  // **`M205-03`, closed.** `tflw init`'s scaffold says *swap this one line for your service* and
+  // the demo service's 404 hint says the same thing in a terminal — while `resolveWritablePath`
+  // refused `tflw.config` by design. Q5's answer is a second capability with its own route, so
+  // the refusal stands for the route that writes tests and the page can do what it was telling
+  // people to do.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-config-tab-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage();
+  try {
+    execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init'], { cwd: dir, stdio: 'pipe' });
+    const scaffold = await readFile(join(dir, 'tflw.config'), 'utf8');
+    assert.match(scaffold, /Swap this one line for your service|Swap this one line|api "tflw:\/\/demo"/, 'the scaffold still says what this test is about');
+
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    await fresh.goto(`${base}#/api/config`);
+    await fresh.locator('[data-api-config-text]').waitFor();
+    assert.equal(await fresh.locator('[data-api-config-text]').inputValue(), scaffold, 'the bytes on disk, not a re-print of them');
+    assert.equal(await fresh.locator('[data-api-config-save]').isDisabled(), true, 'nothing to save on arrival');
+
+    // 1. Text that does not parse is refused HERE, before the server sees it — and it is refused
+    //    by disabling the save rather than by a dialog, because `D1052` says the form shows what
+    //    `tflw check` will say. The server refuses it too; a button that always 422s is a button
+    //    that lies.
+    await fresh.locator('[data-api-config-text]').fill(scaffold + '\nenv\n');
+    assert.match(await fresh.locator('[data-api-config-diagnostics] li').first().innerText(), /TF010/);
+    assert.equal(await fresh.locator('[data-api-config-save]').isDisabled(), true);
+
+    // 2. An unsaved edit MARKS the tab and SURVIVES a trip to another one. The second half is
+    //    `S5a`'s finding applied rather than repeated: the strip unmounts panels, so state inside
+    //    one is lost, and a half-edited config thrown away by a glance at Auth would be exactly
+    //    the failure the Compose fields were saved from.
+    const edited = scaffold.replace('api "tflw://demo"', 'api "http://localhost:3001"');
+    await fresh.locator('[data-api-config-text]').fill(edited);
+    assert.equal(await fresh.locator('[data-tab-mark="config"]').count(), 1, 'the tab says it is holding something');
+    await fresh.locator('[data-tab="auth"]').click();
+    await fresh.locator('[data-api-auth]').waitFor();
+    await fresh.locator('[data-tab="config"]').click();
+    await fresh.locator('[data-api-config-text]').waitFor();
+    // Quiescence before the read, and it is load-bearing rather than tidy. The failure this
+    // assertion is for — the tab re-reading `tflw.config` every time it is opened — lands
+    // ASYNCHRONOUSLY, so an `inputValue()` taken the instant the textarea appears sees the edit
+    // still there and passes. Mutating the read's guard away proved it: the test reddened, but on
+    // a click thirty seconds later rather than here. That is `M205-08`'s shape again — reading a
+    // value where the thing being graded is a settled state — caught this time by making the
+    // mutation before shipping the gate.
+    await fresh.waitForLoadState('networkidle');
+    assert.equal(await fresh.locator('[data-api-config-text]').inputValue(), edited, 'a tab trip threw away an unsaved config');
+
+    // 3. The save, and the three things that make it real: the bytes on disk, the mark gone, and
+    //    — the one that matters — the TOOL now reads the new base. A page that wrote the file and
+    //    left `readProject` describing the old one would have closed half the finding.
+    await fresh.locator('[data-api-config-save]').click();
+    await fresh.locator('[data-api-config-saved]').waitFor();
+    assert.equal(await readFile(join(dir, 'tflw.config'), 'utf8'), edited, 'byte for byte, unreformatted');
+    assert.equal(await fresh.locator('[data-tab-mark="config"]').count(), 0);
+    const view = (await (await fetch(`${base}/api/project`)).json()) as { authorization: { apiBaseUrl: string | null } };
+    assert.equal(view.authorization.apiBaseUrl, 'http://localhost:3001', 'the project the page describes is the project that was edited');
+
+    // 4. And the capability it did NOT acquire: the route that writes tests still refuses this
+    //    file. `D1049`'s refusal is what Q5 declined to widen, and this is the assertion that
+    //    would notice if a later slice took the shortcut.
+    const sneaky = await fetch(`${base}/api/file`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: 'tflw.config', text: edited }),
+    });
+    assert.equal(sneaky.status, 400);
+    assert.match(((await sneaky.json()) as { error: string }).error, /only a \.tflw file can be written here/);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

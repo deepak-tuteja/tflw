@@ -211,6 +211,40 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .source-panel .preview { margin-top: 0; }
 .runpane > .response { margin-bottom: 16px; }
 
+/* Auth and Config (M205 S5b) — the strip's two project-fact tabs.
+
+   Auth is prose and lists rather than a grid, and that is the read/write split showing in the
+   stylesheet: a grid of labelled cells is what the authoring pane looks like because every cell
+   is a control, and nothing here is one. `.linkish` is a button that reads as a link for the same
+   reason `[edit]` is written in brackets — it navigates, it does not submit, and a reader should
+   be able to tell those apart before clicking. */
+.auth-block { margin: 0 0 18px; }
+.auth-block:last-child { margin-bottom: 0; }
+.auth-block h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.auth-block > p { margin: 0 0 8px; font-size: 13px; }
+.auth-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.auth-list > li { border-left: 2px solid var(--line); padding-left: 10px; font-size: 13px; }
+.auth-list > li.warn { border-left-color: var(--warn); }
+.auth-list > li > header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.auth-list > li > p { margin: 0 0 3px; }
+.auth-probes { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+.auth-probes li::before { content: '✓ '; color: var(--accent); }
+.auth-probes li.muted::before { content: ''; }
+.linkish { background: none; border: none; padding: 0; font: inherit; font-size: 12px; color: var(--accent); cursor: pointer; }
+.linkish:hover { text-decoration: underline; }
+
+/* The config editor. A monospace textarea and not a grid of fields, for the reason
+   `ConfigPanel.tsx` gives: a config is read far more often than written, and a form over it would
+   have to round-trip comments. `resize: vertical` because the one thing an author reliably wants
+   from it is more of it — and `min-height` rather than a fixed height, so a four-line scaffold and
+   a sixty-line enterprise config both open at a usable size. */
+.config-text {
+  display: block; width: 100%; box-sizing: border-box; min-height: 320px; resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
+}
+.config-text:focus { outline: 1px solid var(--accent); }
+
 /* The authoring pane (M200 A0-4). The preview is the bytes the PUT carries — not a rendering of
    them — because the file is the only truth (D985) and a form that hid its own output would be
    asking the author to trust a projection over the thing itself. */
