@@ -17,7 +17,7 @@
 // printer recurses — but all 403 blocks in the corpus are at depth 1, so the form offers **one**
 // optional scope. A second level is reachable by editing the file, which is where `D985` says the
 // truth lives anyway.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   buildClick,
   buildExpect,
@@ -35,6 +35,9 @@ import {
   type Step,
 } from '@tflw/lang';
 import { getFile, pickLocators, putFile, type FileView } from './api';
+import { TabStrip } from './TabStrip';
+import { SourcePanel } from './SourcePanel';
+import type { TabId } from './doors';
 import { diagnose } from './diagnose';
 import type { ProjectView } from './contract';
 
@@ -44,6 +47,19 @@ export interface BrowserFormProps {
   /** The file this form is about (`M206` `Q4`) — from the address, resolved by the shell. */
   readonly filePath: string;
   readonly onFile: (path: string) => void;
+  /** Which stage of this file's life is showing (`M205` §2, propagated by `M206` `S2b`). It lives
+   *  in the URL and nowhere else (`D1045`), so the shell owns it and hands it down. */
+  readonly tab: TabId;
+  readonly onTab: (tab: TabId, focusLine?: number) => void;
+  /** The project's runs, rendered by the shell — so Run can be a tab of this file's strip without
+   *  this form learning what a report directory is. */
+  readonly runPane: ReactNode;
+  /** Why Run has something to say while you are composing. */
+  readonly runMark?: string;
+  /** The strip's two project-fact tabs, built by the shell (`M206` `S2a`). */
+  readonly authPanel: ReactNode;
+  readonly configPanel: ReactNode;
+  readonly configMark?: string;
 }
 
 /** What a row of this form does. Ordered by how often the corpus does it — `click` 766, `fill`
@@ -95,7 +111,7 @@ export function locatorFromPickLine(line: string): LocatorSpec | null {
   return { kind: step.locator.kind, value: step.locator.value.value };
 }
 
-export function BrowserForm({ project, onWritten, filePath, onFile }: BrowserFormProps) {
+export function BrowserForm({ project, onWritten, filePath, onFile, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: BrowserFormProps) {
   const paths = useMemo(() => project.files.map((f) => f.path), [project]);
   const path = filePath;
   const [file, setFile] = useState<FileView | null>(null);
@@ -284,8 +300,31 @@ export function BrowserForm({ project, onWritten, filePath, onFile }: BrowserFor
     </span>
   );
 
+  /**
+   * What a tab you are not looking at has to say — the same three cases as API (`M205` S5), each a
+   * fact about what that tab's own subject is holding.
+   *
+   * **There is no `send` on this door**, so `Q5`'s other half never fires here: every run on
+   * BROWSER starts from the sidebar, which marks Run rather than taking you to it. The switching
+   * half of that rule is exercised on API, where a `send` is a request/response loop and the
+   * response is the point. Said here rather than left to look like an omission.
+   */
+  const marks: Partial<Record<TabId, string>> = {};
+  if (pending.ok && file && pending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';
+  if (runMark) marks.run = runMark;
+  if (configMark) marks.config = configMark;
+
   return (
-    <section className="authoring" data-browser-form>
+    <section className="doorpane" data-browser-form>
+      <TabStrip tab={tab} onTab={onTab} marked={marks} />
+
+      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} /> : null}
+      {tab === 'run' ? <div className="runpane" data-browser-run-tab>{runPane}</div> : null}
+      {tab === 'auth' ? authPanel : null}
+      {tab === 'config' ? configPanel : null}
+
+      {tab !== 'compose' ? null : (
+      <section className="authoring" data-browser-compose>
       <header className="authoring-head">
         <h2>write a browser test</h2>
         <p className="muted">
@@ -459,6 +498,8 @@ export function BrowserForm({ project, onWritten, filePath, onFile }: BrowserFor
           </span>
         ) : null}
       </div>
+      </section>
+      )}
     </section>
   );
 }
