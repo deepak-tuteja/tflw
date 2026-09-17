@@ -16,7 +16,7 @@ export { RUNTIME_RULES, type RuntimeRule, type Decidability } from './conformanc
 export { lex, type LexResult, type LineInfo } from './lexer.js';
 export { format, roundTrip, compareTexts, joinTokens, INDENT, type FormatResult } from './format.js';
 export { print, PRINTABLE, CONTEXT_BOUND, REFUSES_BY_CONSTRUCTION, type PrintResult } from './print.js';
-export { lensesOfTest, lensesOfCrawl, stepLensCounts, LENSES, STEP_LENS, SUBJECT_LENS, MATCHER_LENS, type Lens } from './lenses.js';
+export { lensesOfTest, lensesOfCrawl, stepLensCounts, LENSES, STEP_LENS, SUBJECT_LENS, MATCHER_LENS, type Lens, type StepLens } from './lenses.js';
 export { insertIntoSource, type Insertion, type InsertResult } from './insert.js';
 export { buildWorkload, buildThreshold, buildTest, buildApiStep, buildExpect, buildLocator, buildOpen, buildClick, buildFill, buildWithin, LOCATOR_KINDS, stringLit, SYNTHETIC, type BuildResult, type WorkloadSpec, type ThresholdSpec, type TestSpec, type StageSpec, type ApiStepSpec, type ApiBodySpec, type ExpectSpec, type SubjectSpec, type LocatorSpec, type ClickSpec, type FillSpec, type WithinSpec } from './build.js';
 export {

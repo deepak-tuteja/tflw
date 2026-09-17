@@ -40,7 +40,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, relative, dirname, extname, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes } from 'node:crypto';
-import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, LENSES, type ConfigFile, type EnvBlock, type Lens } from '@tflw/lang';
+import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
 import { resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 
@@ -107,8 +107,16 @@ export interface ProjectTest {
    * different thing to tell an author than *this test is a browser test*. Computed by
    * `stepLensCounts` in `@tflw/lang`, which shares its walk with `lensesOfTest` — a second
    * traversal is how the day a block type is added ends with one reader knowing and one not.
+   *
+   * **THREE LENSES, NOT FOUR** (`M207-01`, `M207` `S3`). `M206` `S4` typed this `Record<Lens,…>`
+   * and so shipped a `load` bucket that was structurally incapable of being non-zero: the LOAD lens
+   * is not carried by statements at all, it comes from `test.workload` and `test.thresholds`, which
+   * are properties of the test and not of its body. Nothing read it, so nothing was broken — but a
+   * LOAD panel built by copying `S4`'s pattern would have said *"0 statements do load work"* on a
+   * workload test. `StepLens` is the language's own name for the narrower set, so this declaration
+   * now cannot widen back without the three maps in `lenses.ts` widening first.
    */
-  readonly steps: Readonly<Record<Lens, number>>;
+  readonly steps: Readonly<Record<StepLens, number>>;
 }
 
 /** A `crawl` declaration — the SCANS door's own, and a sibling to `test` rather than a kind of

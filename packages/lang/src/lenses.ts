@@ -36,7 +36,25 @@ export const LENSES: readonly Lens[] = ['api', 'browser', 'load', 'scan'];
  * where its evidence actually is. `MalformedStep` is the parser's recovery node: it is the absence
  * of a construct, so it can be evidence of nothing by definition.
  */
-export const STEP_LENS: Readonly<Record<Step['type'], Lens | null>> = {
+/**
+ * The lenses a **statement** can carry, which is not every lens (`M207-01`, `M207` `S3`).
+ *
+ * `load` is absent, and its absence is the point rather than an omission. No step, subject or
+ * matcher maps to it — `STEP_LENS`, `SUBJECT_LENS` and `MATCHER_LENS` contain no entry that yields
+ * `load`, and they cannot, because the LOAD lens is not carried by statements at all: it comes from
+ * `test.workload !== null` or `test.thresholds.length > 0`, both of which are properties of the
+ * test and neither of which is in its body.
+ *
+ * So `stepLensCounts(...).load` was **structurally incapable of being non-zero**. It shipped on the
+ * wire in `M206` `S4` and nothing read it, so nothing was wrong — but a LOAD panel built by copying
+ * that slice's pattern would have said *"0 statements do load work"* on a workload test, which is
+ * the wrong-number class `S4` corrected mid-slice arriving one door later. A field that can only
+ * ever be wrong is removed rather than fixed, and it is removed **here**, in the type, so that a
+ * future reader cannot reintroduce it by writing `counts.load` and having it compile.
+ */
+export type StepLens = Exclude<Lens, 'load'>;
+
+export const STEP_LENS: Readonly<Record<Step['type'], StepLens | null>> = {
   // The request itself, and the two header-shaped declarations that only exist to modify one.
   ApiStep: 'api',
   WaitUntilApiStmt: 'api',
@@ -85,7 +103,7 @@ export const STEP_LENS: Readonly<Record<Step['type'], Lens | null>> = {
  * reads back a `let` or a `capture`, which either kind of test can produce, so it is evidence of
  * neither.
  */
-export const SUBJECT_LENS: Readonly<Record<Subject['type'], Lens | null>> = {
+export const SUBJECT_LENS: Readonly<Record<Subject['type'], StepLens | null>> = {
   StatusSubject: 'api',
   DurationSubject: 'api',
   HeaderSubject: 'api',
@@ -113,7 +131,7 @@ export const SUBJECT_LENS: Readonly<Record<Subject['type'], Lens | null>> = {
  * body cannot hold it, so it is a browser assertion and a11y is not a fifth door. Resolved by
  * measurement during the grilling and recorded in §1 rather than argued.
  */
-export const MATCHER_LENS: Partial<Readonly<Record<MatcherName, Lens>>> = {
+export const MATCHER_LENS: Partial<Readonly<Record<MatcherName, StepLens>>> = {
   hasNoSecurityViolations: 'scan',
   hasNoAuthzViolations: 'scan',
   hasNoInputHandlingViolations: 'scan',
@@ -192,11 +210,14 @@ function collectStep(step: Step, found: Set<Lens>): void {
  * `header` and `csrf` count as api deliberately: they exist only to modify a request, and for an
  * **auth** panel a `header` line is exactly where a credential gets written by hand.
  */
-export function stepLensCounts(test: TestDecl): Readonly<Record<Lens, number>> {
-  const counts: Record<Lens, number> = { api: 0, browser: 0, load: 0, scan: 0 };
+export function stepLensCounts(test: TestDecl): Readonly<Record<StepLens, number>> {
+  const counts: Record<StepLens, number> = { api: 0, browser: 0, scan: 0 };
   for (const step of test.body) {
     eachStep(step, (s) => {
-      const hit = new Set<Lens>();
+      // `StepLens`, not `Lens`: the three maps below cannot yield `load` and the set is not
+      // allowed to pretend they might. Written this way so the narrowing is a compile error at the
+      // point a fourth map is added, rather than a silently-zero bucket downstream.
+      const hit = new Set<StepLens>();
       const own = STEP_LENS[s.type];
       if (own) hit.add(own);
       if (s.type === 'ExpectStmt') {

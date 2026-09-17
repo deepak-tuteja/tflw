@@ -390,7 +390,7 @@ export function App() {
    * Config, and a project fact has no business being built four times. `Run` was already here for
    * the same reason.
    */
-  const authPanel = project ? <AuthPanel project={project} path={path} onEdit={(line) => setTab('config', line)} /> : null;
+  const authPanel = project ? <AuthPanel project={project} path={path} onEdit={(line) => setTab('config', line)} door={door} /> : null;
   const configPanel = (
     <ConfigPanel
       text={configText}

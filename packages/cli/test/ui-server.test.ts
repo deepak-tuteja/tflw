@@ -88,8 +88,13 @@ test('readProject: envs, discovered files with their tests, the excluded dir and
       // say what a session does NOT reach. **Two api, not one** — `api GET /health` is the request
       // and `expect status equals 200` reads a `StatusSubject`, and both are api work by the doors'
       // own classification, which this shares rather than narrowing.
+      // **THREE BUCKETS, NOT FOUR** (`M207-01`, repaired by `M207` `S3`). `S4` shipped a `load` key
+      // that no step could ever fill: the LOAD lens comes from `test.workload` and
+      // `test.thresholds`, which are properties of the test rather than of its body. This
+      // `deepEqual` is where its removal is observable — a `notDeepEqual` or a per-key check would
+      // have gone on passing with the dead bucket in place.
       assert.deepEqual(health.tests, [
-        { name: 'health', tags: ['smoke', 'api'], line: 1, workload: false, lenses: ['api'], sessions: [], steps: { api: 2, browser: 0, load: 0, scan: 0 } },
+        { name: 'health', tags: ['smoke', 'api'], line: 1, workload: false, lenses: ['api'], sessions: [], steps: { api: 2, browser: 0, scan: 0 } },
       ]);
       assert.deepEqual(health.crawls, []);
       assert.equal(health.diagnostics, 0);
