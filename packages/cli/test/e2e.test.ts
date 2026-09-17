@@ -122,7 +122,15 @@ test('`tflw init --scan` scaffolds a project that refuses its own scan, and says
     // point a scanner at a host, so a scaffold that wrote a live one would make the affirmation on
     // their behalf — the checkbox `D291` says `D21` exists instead of.
     const declaration = 'authorized target "http://localhost:3001" reason ""';
-    assert.ok(config.includes('#   ' + declaration), `the declaration must be written, and written commented out:\n${config}`);
+    // **INSIDE THE `env` BLOCK, AT THE INDENTATION A LIVE ONE NEEDS** — `M207-03`, fixed in `M207`
+    // `S4`. This assertion read `'#   ' + declaration` and so pinned the line at column 0, where
+    // `authorized target` is not grammatical at all; and step 2 below "uncommented" it with
+    // `.replace('#   ' + declaration, '  ' + declaration)`, which removes the `#` **and** re-indents
+    // it into the block in one substitution. So the ladder's own gate performed a step the scaffold
+    // never mentions, and by succeeding it kept the scaffold's one instruction broken and
+    // unreported. The prefix is now the two spaces the block needs plus the `#`, and uncommenting
+    // is exactly the removal of that `#`.
+    assert.ok(config.includes('  #' + declaration), `the declaration must be written, commented out, and inside the env block:\n${config}`);
 
     // **The scaffold is a two-step signpost, and each step names the next action.** Neither can be
     // satisfied by accident, which is the whole of `D1053`.
@@ -151,8 +159,14 @@ test('`tflw init --scan` scaffolds a project that refuses its own scan, and says
     // Step 2: uncommenting alone is not enough — the claim is still blank, which is `TF082`
     // (`M200-01`). Before that rule existed this step checked GREEN and shipped an empty claim in
     // the report, which is strictly worse than an absent one.
-    await writeFile(join(dir, 'tflw.config'), config.replace('#   ' + declaration, '  ' + declaration), 'utf8');
+    const uncommented = config.replace('  #' + declaration, '  ' + declaration);
+    assert.notEqual(uncommented, config, 'nothing was uncommented, so the two steps below prove nothing');
+    await writeFile(join(dir, 'tflw.config'), uncommented, 'utf8');
     const step2 = await check();
+    // **AND NOT `TF020`/`TF022` EITHER.** Asserted because `M207-03` is precisely a config that
+    // parsed while commented and stopped parsing when uncommented: `doesNotMatch(TF060)` is
+    // satisfied by any error at all, including the one that says this line cannot be here.
+    assert.doesNotMatch(step2, /error\[TF02[02]\]/, 'uncommenting the line makes the config ungrammatical — it is not where a declaration may live');
     assert.doesNotMatch(step2, /error\[TF060\]/, 'the declaration now covers the base');
     assert.match(step2, /error\[TF082\]/, 'an uncommented declaration with no reason must not pass');
 

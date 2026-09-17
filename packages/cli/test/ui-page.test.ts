@@ -1759,8 +1759,21 @@ test('a project with no `authorized target`: the SCANS form says so, shows the T
     // 6. And the notice is not a decoration: uncommenting the declaration — the one act the
     //    scaffold asks for — takes both it and the diagnostic away. Without this the assertions
     //    above hold for a banner that is always on.
+    //
+    //    **THIS LINE USED TO RE-INDENT THE DECLARATION WHILE UNCOMMENTING IT, AND THAT WAS THE
+    //    DEFECT COMPENSATING FOR ITSELF (`M207-03`).** It read
+    //    `.replace(/^#   (authorized target .*)$/m, '  $1…')` — dropping the `#` *and* moving the
+    //    line from column 0 to inside the `env` block, because at column 0 it is `TF022` and this
+    //    test would not have gone green. So the gate performed a repair the product never told an
+    //    author to perform, and by succeeding it kept the scaffold's one instruction broken and
+    //    invisible for as long as it stood. The scaffold now writes the line where a live one
+    //    belongs, and this does what the prose says: remove the `#`.
     const config = await readFile(join(dir, 'tflw.config'), 'utf8');
-    await writeFile(join(dir, 'tflw.config'), config.replace(/^#   (authorized target .*)$/m, '  $1reason-placeholder').replace('reason ""reason-placeholder', 'reason "the fixture server beside this test"'), 'utf8');
+    await writeFile(
+      join(dir, 'tflw.config'),
+      config.replace('#authorized target', 'authorized target').replace('reason ""', 'reason "the fixture server beside this test"'),
+      'utf8',
+    );
     await fresh.reload();
     await fresh.locator('[data-scan-form]').waitFor();
     assert.equal(await fresh.locator('[data-scan-unauthorized]').count(), 0, 'the notice must read the config, not be permanent');
@@ -2616,6 +2629,99 @@ test('no step carries the LOAD lens, so the wire no longer ships a bucket that c
       await ui.close();
     }
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the affirmation this form refuses to make is one the author can make on this page (M207-02)', async () => {
+  // `M207` `S4`, repairing `M207-02`. The notice gave two reasons — the target lives in a file
+  // *"this page does not write (`D1049`) and must not (`D291`)"* — and `M205` `Q5` had made the
+  // first half false the day before: `ConfigPanel` writes `tflw.config` through `PUT /api/config`,
+  // a second route with its own validation, so that `D1049`'s one-write-call-site property for
+  // `.tflw` stayed untouched.
+  //
+  // That is worse than a wholly stale comment. A reader who checks it finds the page CAN write the
+  // file and may conclude the whole refusal is obsolete, removing a safeguard whose basis never
+  // moved. And it pointed away from a repair that was already reachable: `D291` asks that the
+  // affirmation be the author's, and **typing it into Config is the author making it**.
+  //
+  // So this gate is the live consequence rather than a prose check — it walks the repair the notice
+  // now names, on a project that genuinely has none, and asserts the notice retracts itself. A test
+  // that only read the sentence would pass against a link that went nowhere.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-affirm-'));
+  const fresh = await browser.newPage();
+  try {
+    execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init', '--scan'], { cwd: dir, stdio: 'pipe' });
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      await fresh.goto(`${base}#/scan`);
+      await fresh.locator('[data-scan-unauthorized]').waitFor();
+
+      // 1. THE PROSE, both halves. `D291` is named as the standing reason, and the claim that the
+      //    page cannot write `tflw.config` is gone — asserted as an absence, because the repair of a
+      //    two-reason sentence that lost one reason is not complete while the false half survives.
+      const notice = (await fresh.locator('[data-scan-unauthorized]').textContent()) ?? '';
+      assert.match(notice, /D291/, 'the standing reason is not named');
+      assert.doesNotMatch(notice, /D1049/, 'the half `M205` `Q5` falsified is still stated');
+      assert.doesNotMatch(notice, /does not write|cannot write/i, 'the notice still claims this page cannot write tflw.config');
+      assert.match(notice, /Config/, 'the notice does not say where the affirmation is made');
+
+      // 2. THE LINK GOES THERE, and the address carries it (`D1045`).
+      await fresh.locator('[data-scan-config-link]').click();
+      await fresh.locator('[data-tabstrip="config"]').waitFor();
+      assert.equal(new URL(fresh.url()).hash, '#/scan/config', 'the link did not put the tab in the address');
+
+      // 3. **THE AFFIRMATION, MADE HERE.** `tflw init --scan` leaves the line commented out on
+      //    purpose, so uncommenting it in this textarea is precisely the act `D291` reserves to the
+      //    author — and it is the act the old prose sent the reader out of the product to perform.
+      const before = await fresh.locator('[data-api-config-text]').inputValue();
+      assert.match(before, /^\s+#authorized target .* reason ""$/m, 'the scaffold no longer leaves an inert declaration, so this test affirms nothing');
+
+      // **REMOVING THE `#` IS SUFFICIENT, AND UNTIL `M207` `S4` IT WAS NOT (`M207-03`).** The
+      // scaffold wrote this line at column 0, after a blank line that had already closed
+      // `env local default` — and `authorized target` is only grammatical indented inside an `env`
+      // or `defaults` block. So the one act the scaffold instructs produced `TF022` (and `TF020`
+      // too, if you kept the indentation), which this gate found by trying to walk the repair the
+      // SCANS notice now names. The declaration moved inside the block in the same slice.
+      const uncommented = before.replace('#authorized target', 'authorized target');
+      assert.notEqual(uncommented, before, 'the uncomment did nothing, so the steps below prove nothing');
+
+      // **AND IT IS TWO ACTS, NOT ONE, WHICH THE SCAFFOLD DESIGNED ON PURPOSE.** Uncommenting alone
+      // is `TF082` — the scaffold writes `reason ""` and a blank reason is refused — so `TF060`
+      // says *uncomment this* and `TF082` says *now say why*, and neither can be satisfied by
+      // accident. Asserted through the save button, which `ConfigPanel` disables while the text has
+      // errors: the affirmation is not complete until the claim has a reason, and the page will not
+      // let it be written half-made. This is also the control on the step above — a `#` removal
+      // that had left the line ungrammatical would disable save for the WRONG reason, so the
+      // diagnostic is read rather than only the button.
+      await fresh.locator('[data-api-config-text]').fill(uncommented);
+      await fresh.locator('[data-api-config-diagnostics]').waitFor();
+      assert.match((await fresh.locator('[data-api-config-diagnostics]').textContent()) ?? '', /TF082/, 'the blank reason is not what the page is objecting to');
+      assert.equal(await fresh.locator('[data-api-config-save]').isDisabled(), true, 'a blank reason saves, so TF082 is not being enforced on this page');
+
+      await fresh.locator('[data-api-config-text]').fill(uncommented.replace('reason ""', 'reason "a fixture host this test owns"'));
+      await fresh.locator('[data-api-config-save]').click();
+      await fresh.locator('[data-api-config-saved]').waitFor();
+
+      // 4. AND THE NOTICE RETRACTS ITSELF. This is the whole claim: the form said the write would be
+      //    `TF060`, named where to fix it, and the fix taken from this page makes the form stop
+      //    saying it. Read after a reload, so the assertion is about `tflw.config` on disk and not
+      //    about a value this page is still holding.
+      await fresh.goto(`${base}#/scan`);
+      await fresh.reload();
+      await fresh.locator('[data-scan-form]').waitFor();
+      assert.equal(await fresh.locator('[data-scan-unauthorized]').count(), 0, 'the notice survives the affirmation it asked for');
+
+      // …and the file says so too, with no page involved — the only reading that proves the page
+      // wrote a real `authorized target` rather than merely hiding its own warning.
+      const config = await readFile(join(dir, 'tflw.config'), 'utf8');
+      assert.match(config, /^\s*authorized target/m, 'tflw.config has no uncommented authorized target');
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await fresh.close();
     await rm(dir, { recursive: true, force: true });
   }
 });
