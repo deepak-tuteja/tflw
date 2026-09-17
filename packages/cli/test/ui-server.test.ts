@@ -84,7 +84,13 @@ test('readProject: envs, discovered files with their tests, the excluded dir and
       // made no request would put it behind nothing.
       // `sessions` is `M205` S5b's addition — the `as <session>` names, and **empty is a fact**:
       // this test runs as `anonymous`, the one principal nobody declares.
-      assert.deepEqual(health.tests, [{ name: 'health', tags: ['smoke', 'api'], line: 1, workload: false, lenses: ['api'], sessions: [] }]);
+      // `steps` is `M206` `S4`'s: how many statements do each kind of work, which is what lets Auth
+      // say what a session does NOT reach. **Two api, not one** — `api GET /health` is the request
+      // and `expect status equals 200` reads a `StatusSubject`, and both are api work by the doors'
+      // own classification, which this shares rather than narrowing.
+      assert.deepEqual(health.tests, [
+        { name: 'health', tags: ['smoke', 'api'], line: 1, workload: false, lenses: ['api'], sessions: [], steps: { api: 2, browser: 0, load: 0, scan: 0 } },
+      ]);
       assert.deepEqual(health.crawls, []);
       assert.equal(health.diagnostics, 0);
       assert.ok(p.files.find((f) => f.path === 'broken.tflw')!.diagnostics > 0, 'the broken file reports its diagnostics');

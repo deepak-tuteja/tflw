@@ -40,7 +40,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, relative, dirname, extname, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes } from 'node:crypto';
-import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, LENSES, type ConfigFile, type EnvBlock, type Lens } from '@tflw/lang';
+import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, LENSES, type ConfigFile, type EnvBlock, type Lens } from '@tflw/lang';
 import { resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 
@@ -92,6 +92,23 @@ export interface ProjectTest {
    * a different declaration from the one in the file.
    */
   readonly sessions: readonly string[];
+  /**
+   * How many steps of each kind this test's body carries (`M206` `S4`) — what the Auth tab needs to
+   * stop saying something false.
+   *
+   * `S5b`'s panel said *who this file runs as* with no qualification. SPEC §3.3 says **a session
+   * does not log the browser in**: its cached state is never applied to the test's fresh browser
+   * context, because a cookie jar and a browser context's storage state are two representations
+   * `D10` deliberately never bridges. So a session reaches a test's **api** steps and nothing else,
+   * and on the 145 tests measured behind both the API and BROWSER doors the old sentence was true
+   * of half a file and false of the other half (`M206-01`).
+   *
+   * Counts rather than a boolean, because *this test has 9 page steps and no api step* is a
+   * different thing to tell an author than *this test is a browser test*. Computed by
+   * `stepLensCounts` in `@tflw/lang`, which shares its walk with `lensesOfTest` — a second
+   * traversal is how the day a block type is added ends with one reader knowing and one not.
+   */
+  readonly steps: Readonly<Record<Lens, number>>;
 }
 
 /** A `crawl` declaration — the SCANS door's own, and a sibling to `test` rather than a kind of
@@ -417,6 +434,7 @@ export async function readProject(root: string): Promise<ProjectView> {
         workload: t.workload !== null,
         lenses: lensesOfTest(t),
         sessions: t.sessions,
+        steps: stepLensCounts(t),
       })),
       // `crawls` is absent, not empty, on a program that declares none (`ast.ts:44` — it keeps
       // 31 parser goldens asserting what they were written to assert).

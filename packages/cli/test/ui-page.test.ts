@@ -2138,6 +2138,86 @@ test('the strip is an address, and Compose keeps what you typed while you are lo
   assert.equal(await page.locator('[data-api-path]').inputValue(), '/items', 'going back re-mounted the form');
 });
 
+test('Auth says what a session does NOT reach, and a mixed test is where that matters', async () => {
+  // `M206` `S4`, closing `M206-01`. The shipped panel said *who this file runs as* and stopped.
+  // SPEC §3.3: **a session does not log the browser in** — its cached state is never applied to the
+  // test's fresh browser context, because a cookie jar and a browser context's storage state are
+  // two representations `D10` deliberately never bridges. So the sentence was true of a file's api
+  // steps and false of its page steps.
+  //
+  // **THIS TEST BRINGS ITS OWN PROJECT, AND THAT IS THE FINDING.** Not one test in
+  // `packages/ui/fixtures/project` carries both an api step and a page step — every file there is
+  // all-api or all-page — so the corpus behind the shipped gate could not produce the case where
+  // its panel was wrong. The assertion was not weak; the fixture had no instance of the class.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-auth-mixed-'));
+  const fresh = await browser.newPage();
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  api "http://127.0.0.1:1"\n  web "http://localhost:3000"\n', 'utf8');
+    // One test that logs in twice — an API call for its api steps and a form for its page — which
+    // is what SPEC §3.3 says a mixed test must do, and the shape the old sentence misdescribed.
+    await writeFile(
+      join(dir, 'mixed.tflw'),
+      [
+        'test "signing in, both ways"',
+        '  api POST /login body { email: "sam@example.com" }',
+        '  expect status equals 200',
+        '  open "/signin"',
+        '  fill field "Email" with "sam@example.com"',
+        '  click button "Sign in"',
+        '  expect text "Signed in" is visible',
+        '',
+        'test "just the api"',
+        '  api GET /items',
+        '  expect status equals 200',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    await writeFile(join(dir, 'apionly.tflw'), 'test "nothing but api"\n  api GET /items\n  expect status equals 200\n', 'utf8');
+
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const base = `http://127.0.0.1:${await ui.listen(0)}/`;
+    try {
+      await fresh.goto(`${base}#/browser/auth/mixed.tflw`);
+      await fresh.locator('[data-auth-reach-api]').waitFor();
+
+      // Both kinds counted, from the language's own `stepLensCounts` rather than a rule invented
+      // here. `header`/`csrf` count as api on purpose — for an auth panel a `header` line is where
+      // a credential is written by hand.
+      // Exact numbers, not `> 0`, and **summed over the FILE** because the panel is file-scoped:
+      // 4 api (two requests and the two `expect status` that read them, across both tests) against
+      // 4 page (open, fill, click and the `expect text … is visible`). An `expect` counts for the
+      // kind of work its subject does — `StatusSubject` is api, `LocatorSubject` is browser — which
+      // is the doors' own classification rather than a narrower one invented for this panel.
+      assert.equal(await fresh.locator('[data-auth-reach-api]').getAttribute('data-auth-reach-api'), '4', 'api work miscounted');
+      assert.equal(await fresh.locator('[data-auth-reach-page]').getAttribute('data-auth-reach-page'), '4', 'page work miscounted');
+
+      // The refusal itself — the sentence the panel exists to stop implying the opposite of.
+      const bridge = await fresh.locator('[data-auth-no-bridge]').textContent();
+      assert.match(bridge ?? '', /session does not log the browser in/i);
+
+      // And the case it matters most in, named rather than counted: the test that establishes
+      // identity twice.
+      assert.equal(await fresh.locator('[data-auth-mixed]').getAttribute('data-auth-mixed'), '1');
+      assert.match((await fresh.locator('[data-auth-mixed]').textContent()) ?? '', /signing in, both ways/);
+
+      // NEGATIVE CONTROL, and the test is worth little without it: on a file with no page steps the
+      // refusal is ABSENT. A warning shown unconditionally is decoration, and would pass every
+      // assertion above while telling an api-only author something irrelevant.
+      await fresh.goto(`${base}#/browser/auth/apionly.tflw`);
+      await fresh.locator('[data-auth-reach-api]').waitFor();
+      assert.equal(await fresh.locator('[data-auth-reach-page]').getAttribute('data-auth-reach-page'), '0');
+      assert.equal(await fresh.locator('[data-auth-no-bridge]').count(), 0, 'the refusal is shown on a file it does not apply to');
+      assert.equal(await fresh.locator('[data-auth-mixed]').count(), 0);
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await fresh.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('the Auth tab says who this file runs as, and every editable thing lands in Config on its own line', async () => {
   // `M205` S5b, Q6. Auth is the rule's second clause — *a project fact that file resolves against*
   // — and it reads where Config writes. The three states it exists to tell apart are all here:

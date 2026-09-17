@@ -140,23 +140,73 @@ export function lensesOfCrawl(_crawl: CrawlDecl): readonly Lens[] {
   return ['scan'];
 }
 
-function collectStep(step: Step, found: Set<Lens>): void {
-  const lens = STEP_LENS[step.type];
-  if (lens) found.add(lens);
-  if (step.type === 'ExpectStmt') {
-    const subject = SUBJECT_LENS[step.subject.type];
-    if (subject) found.add(subject);
-    const matcher = MATCHER_LENS[step.matcher.name];
-    if (matcher) found.add(matcher);
-    return;
-  }
-  // The two block steps carry their own bodies, and a `within` full of clicks is still browser
-  // evidence however it is nested.
+/**
+ * Every step in a body, the nested ones included — **one walk, however many readers**.
+ *
+ * `M206` `S4` lifted this out of `collectStep`, which had been the only thing that knew a `within`
+ * full of clicks is still browser evidence however deep it sits. The Auth tab needs to *count* what
+ * the doors only need to *detect*, and a second traversal beside this one is the drift class this
+ * repository files findings about: the day a block type is added, one of the two would learn about
+ * it. The block list lives here and nowhere else.
+ */
+function eachStep(step: Step, visit: (step: Step) => void): void {
+  visit(step);
   if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
-    for (const inner of step.body) collectStep(inner, found);
+    for (const inner of step.body) eachStep(inner, visit);
     return;
   }
   if (step.type === 'WaitUntilApiStmt') {
-    for (const inner of step.expects) collectStep(inner, found);
+    for (const inner of step.expects) eachStep(inner, visit);
   }
+}
+
+function collectStep(step: Step, found: Set<Lens>): void {
+  eachStep(step, (s) => {
+    const lens = STEP_LENS[s.type];
+    if (lens) found.add(lens);
+    if (s.type === 'ExpectStmt') {
+      const subject = SUBJECT_LENS[s.subject.type];
+      if (subject) found.add(subject);
+      const matcher = MATCHER_LENS[s.matcher.name];
+      if (matcher) found.add(matcher);
+    }
+  });
+}
+
+/**
+ * How many statements of a test's body do each kind of work — `M206` `S4`, and the Auth tab is its
+ * only reader.
+ *
+ * **It classifies a statement exactly as `lensesOfTest` does** — the step's own kind, plus an
+ * `expect`'s subject and matcher — because a second, subtly narrower classification beside that one
+ * is the drift this module exists to prevent. The first draft here counted a step's own kind alone,
+ * on the argument that *a session's headers fold into requests, not into assertions about them*.
+ * True, and it produced a number no reader would accept: `expect text "Signed in" is visible` is
+ * page work by any account, and an `ExpectStmt`'s own lens is `null`, so a login flow read as three
+ * page statements instead of four. The row labels carry that nuance instead — see `AuthPanel`.
+ *
+ * A statement is counted **once per lens it hits**, never twice for the same one, so
+ * `expect response has no serious security violations` adds one to `api` and one to `scan`: it is
+ * genuinely both, and that is the same answer the doors give about the test that contains it.
+ *
+ * `header` and `csrf` count as api deliberately: they exist only to modify a request, and for an
+ * **auth** panel a `header` line is exactly where a credential gets written by hand.
+ */
+export function stepLensCounts(test: TestDecl): Readonly<Record<Lens, number>> {
+  const counts: Record<Lens, number> = { api: 0, browser: 0, load: 0, scan: 0 };
+  for (const step of test.body) {
+    eachStep(step, (s) => {
+      const hit = new Set<Lens>();
+      const own = STEP_LENS[s.type];
+      if (own) hit.add(own);
+      if (s.type === 'ExpectStmt') {
+        const subject = SUBJECT_LENS[s.subject.type];
+        if (subject) hit.add(subject);
+        const matcher = MATCHER_LENS[s.matcher.name];
+        if (matcher) hit.add(matcher);
+      }
+      for (const l of hit) counts[l] += 1;
+    });
+  }
+  return counts;
 }

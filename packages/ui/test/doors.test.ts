@@ -18,7 +18,19 @@ const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', env
 const file = (path: string, tests: Array<readonly string[]>, crawls: Array<readonly string[]> = []): ProjectView['files'][number] => ({
   path,
   diagnostics: 0,
-  tests: tests.map((lenses, i) => ({ name: `${path}-t${i}`, tags: [], line: i + 1, workload: lenses.includes('load'), lenses: lenses as never, sessions: [] })),
+  // `steps` is derived from the lenses the case asked for rather than defaulted to zero: a fixture
+  // that quietly fills a field with a value no real project produces is how a construct hides from
+  // the gate that covers it (`M168-02`). These cases are about the door arithmetic and never read
+  // it, but a test carrying the `browser` lens and zero browser steps is not a project state.
+  tests: tests.map((lenses, i) => ({
+    name: `${path}-t${i}`,
+    tags: [],
+    line: i + 1,
+    workload: lenses.includes('load'),
+    lenses: lenses as never,
+    sessions: [],
+    steps: { api: lenses.includes('api') ? 1 : 0, browser: lenses.includes('browser') ? 1 : 0, load: 0, scan: lenses.includes('scan') ? 1 : 0 },
+  })),
   crawls: crawls.map((lenses, i) => ({ name: `${path}-c${i}`, line: 100 + i, lenses: lenses as never, sessions: [] })),
 });
 
