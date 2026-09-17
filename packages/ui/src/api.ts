@@ -56,6 +56,38 @@ export async function putFile(path: string, text: string, ifMatch: string | null
 }
 
 /**
+ * `tflw.config`'s text and the version the next write is checked against (`M205` S5b).
+ *
+ * A route of its own rather than a field on `ProjectView`: the Config tab is the only reader, the
+ * project view is re-read after every write, and a config is a file you open rather than a fact
+ * the shell needs on every refresh.
+ */
+export const getConfig = () => getJson<FileView>('/api/config');
+
+/**
+ * Write `tflw.config` back — Q5, closing `M205-03`.
+ *
+ * **`ifMatch` is not optional here**, and the type says so. `putFile` reads `null` as *this file
+ * should not exist yet*, which is how a new test file is created; a config that does not exist is
+ * not a project, so there is no create case and a page that had no etag to send has not read the
+ * file it is claiming to edit.
+ *
+ * Refusals come back whole rather than thrown, for `putFile`'s reason: `409` the file moved under
+ * us, `422` the text does not parse — and `422` here is the one the author will actually meet,
+ * because the config dialect is small and a typo in it is a parse error rather than a wrong test.
+ */
+export async function putConfig(text: string, ifMatch: string): Promise<{ ok: true; etag: string } | { ok: false; status: number; error: string; code?: string; line?: number }> {
+  const res = await fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'if-match': ifMatch },
+    body: JSON.stringify({ text }),
+  });
+  const body = (await res.json()) as { etag?: string; error?: string; code?: string; line?: number };
+  if (res.ok && body.etag) return { ok: true, etag: body.etag };
+  return { ok: false, status: res.status, error: body.error ?? `${res.status}`, code: body.code, line: body.line };
+}
+
+/**
  * Drop the scratch file — what `[Discard]` does (`D1054`).
  *
  * `ifMatch` is the version the page last read; a mismatch comes back as `409` so the page can say

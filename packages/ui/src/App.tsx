@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelRun, getProject, getReports, getResults, getRuns, getStderr, reportFileUrl, startRun, subscribe } from './api';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest } from './contract';
-import { doorFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
+import { doorFromHash, focusFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
@@ -35,6 +35,9 @@ export function App() {
   /** Which stage of the selected file is showing (`M205` §2). It is the hash's second segment, so
    *  a tab is linkable and the back button walks it — the same rule `D1045` makes for the door. */
   const [tab, setTabState] = useState<TabId>(() => tabFromHash(window.location.hash));
+  /** The hash's third segment — a line Config was asked to land on (`M205` S5b). `null` for every
+   *  address that does not name one, which is every address anybody had before `S5b`. */
+  const [focusLine, setFocusLine] = useState<number | null>(() => focusFromHash(window.location.hash));
   const [project, setProject] = useState<ProjectView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RunRecord[]>([]);
@@ -56,6 +59,7 @@ export function App() {
     const onHash = () => {
       setDoorState(doorFromHash(window.location.hash));
       setTabState(tabFromHash(window.location.hash));
+      setFocusLine(focusFromHash(window.location.hash));
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
@@ -67,11 +71,13 @@ export function App() {
     window.location.hash = hashForDoor(next);
     setDoorState(next);
     setTabState(tabFromHash(hashForDoor(next)));
+    setFocusLine(null);
   }, []);
   const setTab = useCallback(
-    (next: TabId) => {
-      if (door !== null) window.location.hash = hashForTab(door, next);
+    (next: TabId, focus?: number) => {
+      if (door !== null) window.location.hash = hashForTab(door, next, focus);
       setTabState(next);
+      setFocusLine(focus ?? null);
     },
     [door],
   );
@@ -276,6 +282,7 @@ export function App() {
             onWritten={() => void readProjectView()}
             tab={tab}
             onTab={setTab}
+            focusLine={focusLine}
             runPane={runPane}
             runMark={live && !live.end ? 'a run is going' : undefined}
           />

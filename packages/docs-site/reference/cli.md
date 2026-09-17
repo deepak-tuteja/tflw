@@ -266,6 +266,16 @@ previews the exact bytes it is about to write and `tflw check` judges them befor
 file on disk is the only truth, and `tflw.config` is not reachable through that route. The forms
 and what each door scaffolds are not documented here yet.
 
+**The project's configuration is edited in its own tab, through its own route.** The API door's
+*Config* tab is a plain editor over `tflw.config` — the bytes you type are the bytes written, and
+nothing reformats them — refusing only text that does not parse, and writing under the version the
+page read so a file changed by a terminal in the meantime is reported rather than overwritten. It
+is a separate capability from the one above and not a widening of it: the test-writing route still
+refuses this file. Beside it, *Auth* reads what that configuration means for the file you are
+looking at — which sessions its tests run as and what each adds to a request, the built-in
+`anonymous` principal, and every `authorized target` in force with its reason and what each
+`probe` opt-in grants.
+
 **What a browser test shows is what the report holds.** At `evidence full` the screenshots a run
 took are on the page and a failed test's Playwright trace opens in Playwright's own trace viewer,
 which `tflw ui` serves under `/trace/` from the project's `playwright-core` — nothing is spawned

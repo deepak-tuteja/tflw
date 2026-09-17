@@ -52,16 +52,27 @@ export const DOOR_BY_ID: Readonly<Record<Lens, Door>> = Object.fromEntries(DOORS
  * project-scoped whatever you choose, and a file-scoped strip needs no new state because the
  * selected file already exists.
  *
- * **The set is five and three of them are here.** Source, Compose and Run are the file's three
- * stages and land together because each is meaningless without the others; **Auth** and **Config**
- * are the rule's second clause — a project fact the file resolves against — and land with the
- * `PUT /api/config` route they need (`M205` Q5, `M205-03`). This list is what is built, not what
- * is decided, so a reader counting three here is reading the truth rather than a stale sentence.
+ * **The set is five, and all five are here** (`S5b`). Source, Compose and Run are the file's three
+ * stages; **Auth** and **Config** are the rule's second clause — *a project fact that file
+ * resolves against* — and they landed together with the `PUT /api/config` route they need
+ * (`M205` Q5, closing `M205-03`).
+ *
+ * **Auth reads and Config writes, and that split is the rule's second clause doing work rather
+ * than decorating it.** Both face `tflw.config`, so a naive reading makes them one tab; they are
+ * two because they answer different questions about it. Auth answers *what is in force for this
+ * file* — which sessions its tests run as, what each adds to a request, the targets a scan is
+ * permitted to reach — which is a view **scoped to the selected file** and mostly not present in
+ * the config's text at all. Config answers *what does this project declare*, which is the file.
+ * There is still exactly **one editor** (the user's own refinement during the grilling: two
+ * editors over one file is the drift class this codebase files most often), so everything
+ * editable in Auth is a link into Config rather than a field.
  */
 export const TABS = [
   { id: 'compose', label: 'Compose', blurb: 'the request and the assertions that read it' },
   { id: 'source', label: 'Source', blurb: 'the file itself — and, while you are composing, the bytes the write will produce' },
   { id: 'run', label: 'Run', blurb: 'what happened when this project last ran' },
+  { id: 'auth', label: 'Auth', blurb: 'who this file’s tests run as, and what they are permitted to reach' },
+  { id: 'config', label: 'Config', blurb: 'tflw.config — the project facts every file here resolves against' },
 ] as const;
 
 export type TabId = (typeof TABS)[number]['id'];
@@ -95,7 +106,28 @@ export const hashForDoor = (id: Lens | null): string => (id === null ? '#' : `#/
 /** A door and a tab as one address, so a jump between tabs is linkable and the back button works
  *  (`D1045` again — the choice lives in the URL and nowhere else). The default tab writes the bare
  *  door hash, so the commonest address stays the short one. */
-export const hashForTab = (door: Lens, tab: TabId): string => (tab === DEFAULT_TAB ? `#/${door}` : `#/${door}/${tab}`);
+export const hashForTab = (door: Lens, tab: TabId, focusLine?: number): string =>
+  focusLine === undefined ? (tab === DEFAULT_TAB ? `#/${door}` : `#/${door}/${tab}`) : `#/${door}/${tab}/L${focusLine}`;
+
+/**
+ * The line a tab is asked to focus, from the hash's **third** segment — `#/api/config/L12`.
+ *
+ * `S5b`'s `[edit]` links are what need it: Auth shows a session and an authorized target as facts
+ * and sends you to Config to change one, and *"lands in Config focused on that block"* is the
+ * whole promise. Putting the target in the address rather than in a callback is `D1045` a third
+ * time — the jump is linkable, the back button walks back out of it, and nothing new remembers
+ * where you were going.
+ *
+ * `L`-prefixed so it cannot be read as a fourth tab, and a line number rather than a block name
+ * because the declaration a reader wants is the one they are looking at: `tflw.config` may hold
+ * two `authorized target` lines that differ only in their reason, and a name would send you to
+ * whichever came first.
+ */
+export function focusFromHash(hash: string): number | null {
+  const seg = hash.replace(/^#\/?/, '').split('/')[2] ?? '';
+  const m = /^L(\d+)$/.exec(seg);
+  return m ? Number(m[1]) : null;
+}
 
 /** Every test and crawl behind each door, derived. A test behind two doors is counted by both —
  *  that is `D1043` working, not a double count to be corrected. */

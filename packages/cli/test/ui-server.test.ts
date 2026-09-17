@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UiServer, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
 import { readdir } from 'node:fs/promises';
 
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
@@ -82,7 +82,9 @@ test('readProject: envs, discovered files with their tests, the excluded dir and
       // `lenses` is `M200` `A0-3`'s derivation (`D1043`): `health` makes a request, so it is
       // behind API — and its `@api` tag is beside the point, since the same tag on a test that
       // made no request would put it behind nothing.
-      assert.deepEqual(health.tests, [{ name: 'health', tags: ['smoke', 'api'], line: 1, workload: false, lenses: ['api'] }]);
+      // `sessions` is `M205` S5b's addition — the `as <session>` names, and **empty is a fact**:
+      // this test runs as `anonymous`, the one principal nobody declares.
+      assert.deepEqual(health.tests, [{ name: 'health', tags: ['smoke', 'api'], line: 1, workload: false, lenses: ['api'], sessions: [] }]);
       assert.deepEqual(health.crawls, []);
       assert.equal(health.diagnostics, 0);
       assert.ok(p.files.find((f) => f.path === 'broken.tflw')!.diagnostics > 0, 'the broken file reports its diagnostics');
@@ -311,19 +313,39 @@ test('the trace viewer: served under /trace/ from the project\'s own playwright-
   }
 });
 
-test('the server writes through exactly one call site — the green condition, narrowed, not dropped', async () => {
-  // Slice 1's clause was "no write path at all", grepped on this source. `M200` `A0-2` makes the
-  // page an authoring surface, so the clause is replaced by its successor rather than deleted: a
+test('the server writes through exactly one call site — the green condition, narrowed twice, not dropped', async () => {
+  // Slice 1's clause was "no write path at all", grepped on this source. `M200` `A0-2` made the
+  // page an authoring surface, so the clause was replaced by its successor rather than deleted: a
   // guard widened until it admits the new thing is no guard, and this one is narrowed to the new
-  // thing's own shape. Exactly one `writeFile`, in `writeProjectFile`, and no other write verb.
+  // thing's own shape each time the shape changes.
+  //
+  // **`M205` S5b is the second narrowing, and it is the one this gate was waiting for.** Q5 adds a
+  // capability that writes `tflw.config` — a *second* thing the page may write — and the honest
+  // reading of `D1049` was never "one file kind" but "one place where bytes reach the disk, and a
+  // separate decision per capability about what may reach it". So: one `writeFile`, in
+  // `atomicWrite`; exactly two callers, each with its own validation; and — the clause S5b could
+  // most easily have broken — `resolveWritablePath` still refuses `tflw.config`, so the config
+  // capability was added beside the test-writing one and not smuggled through it.
   const source = await readFile(join(here, '..', 'src', 'ui-server.ts'), 'utf8');
   const writes = source.match(/\bwriteFile\(/g) ?? [];
   assert.equal(writes.length, 1, `ui-server.ts must write through exactly one call site, found ${writes.length}`);
-  const fn = source.slice(source.indexOf('export async function writeProjectFile'));
-  assert.ok(fn.length > 0, 'the one write lives in writeProjectFile');
-  assert.match(fn.slice(0, fn.indexOf('\n}\n')), /\bwriteFile\(/, 'the one writeFile call is inside writeProjectFile');
+  const body = (name: string): string => {
+    const at = source.indexOf(name);
+    assert.ok(at >= 0, `${name} is here`);
+    return source.slice(at, source.indexOf('\n}\n', at));
+  };
+  assert.match(body('async function atomicWrite'), /\bwriteFile\(/, 'the one writeFile call is inside atomicWrite');
+  const callers = (source.match(/\bawait atomicWrite\(/g) ?? []).length;
+  assert.equal(callers, 2, `exactly two capabilities write: the .tflw route and the config route, found ${callers}`);
+  assert.match(body('export async function writeProjectFile'), /\bawait atomicWrite\(/);
+  assert.match(body('export async function writeConfigFile'), /\bawait atomicWrite\(/);
   assert.doesNotMatch(source, /appendFile|createWriteStream|openSync|writeSync|truncate\(/, 'no other write verb (D985)');
   assert.match(source, /\bcp\(/, 'the one copy it makes — a report directory kept aside — is here');
+  // The refusal the config route did NOT dissolve. Asserted here rather than only in
+  // `writeProjectFile refuses …` below, because this is the clause about the *architecture*: the
+  // page can write a config, and it still cannot write one through the route that writes tests.
+  const refused = await writeProjectFile(await mkdtemp(join(tmpdir(), 'tflw-d1049-')), 'tflw.config', 'env local default\n  api "http://x"\n', null);
+  assert.ok('status' in refused && refused.status === 400, 'resolveWritablePath still refuses tflw.config');
 });
 
 test('GET /api/file serves a file’s text and its etag, and refuses what is not one', async () => {
@@ -488,14 +510,161 @@ test('readProject carries the env\'s authorization, composed the way `resolve.ts
     // The probe opt-ins come with it. They travel on the wire regardless, so the type names them
     // rather than under-describing its own JSON — and `probe mutating` is the one that decides
     // whether an authorization scan may re-issue a write, which a SCANS form has a use for.
+    // `line` and `block` are `M205` S5b's addition — where the declaration is written, so Auth's
+    // `[edit]` lands on it. The element stays assignable to `EnvAuthorizedTargets`, which is what
+    // lets the page keep handing this object to `checkAuthorizedTargets` untranslated.
     assert.deepEqual(view.authorization.targets, [
-      { target: 'https://staging.example.com', reason: 'agreed window', probeMutating: false, probeOversized: false, probeTraversal: false, probeCiphers: false },
+      { target: 'https://staging.example.com', reason: 'agreed window', probeMutating: false, probeOversized: false, probeTraversal: false, probeCiphers: false, line: 2, block: 'defaults' },
     ]);
     // The base is the active env's, not `defaults`' — the two blocks are composed, not concatenated.
     assert.equal(view.authorization.apiBaseUrl, 'https://staging.example.com/v1');
     // And the declared services come too: `D343` widened `TF060` to cover them, so a view that
     // dropped them would let the page show a clean preview for a scan against a different host.
     assert.deepEqual(view.authorization.services, [{ name: 'billing', url: 'https://billing.example.com' }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('GET and PUT /api/config: the config is readable, writable under its etag, and refuses the rest', async () => {
+  // `M205` Q5, closing `M205-03` — the finding that the product told the author, in two places, to
+  // make an edit its own page was forbidden from making.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-config-route-'));
+  try {
+    const original = ['env local default', '  api "tflw://demo"'].join('\n') + '\n';
+    await writeFile(join(dir, 'tflw.config'), original, 'utf8');
+    await writeFile(join(dir, 't.tflw'), 'test "t"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    const put = (text: string, headers: Record<string, string> = {}) =>
+      fetch(`${base}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ text }) });
+    try {
+      const read = await fetch(`${base}/api/config`);
+      assert.equal(read.status, 200);
+      const view = (await read.json()) as { path: string; text: string; etag: string };
+      assert.equal(view.path, 'tflw.config');
+      assert.equal(view.text, original, 'the bytes, not a re-print of them');
+      assert.equal(view.etag, etagOf(original));
+
+      // The edit the scaffold's own comment asks for, and the demo service's 404 hint after it.
+      const edited = original.replace('tflw://demo', 'http://localhost:3001');
+      const ok = await put(edited, { 'if-match': view.etag });
+      assert.equal(ok.status, 200);
+      const wrote = (await ok.json()) as { etag: string };
+      assert.equal(await readFile(join(dir, 'tflw.config'), 'utf8'), edited, 'byte for byte what was sent');
+      assert.equal(wrote.etag, etagOf(edited), 'the etag is over the bytes the page holds, so the next write needs no re-read');
+
+      // Four refusals, and the file is untouched by every one of them.
+      assert.equal((await put(edited)).status, 409, 'no If-Match: a config always exists, so there is no create case');
+      assert.equal((await put(edited, { 'if-match': '*' })).status, 400, '`*` is any version, which is the check itself');
+      assert.equal((await put(edited, { 'if-match': view.etag })).status, 409, 'the etag it was read at is now stale');
+      const bad = await put('env\n', { 'if-match': wrote.etag });
+      assert.equal(bad.status, 422);
+      const why = (await bad.json()) as { code?: string; line?: number };
+      assert.equal(why.code, 'TF010', 'the diagnostic travels, so the page can point at the line');
+      assert.equal(why.line, 1);
+      assert.equal(await readFile(join(dir, 'tflw.config'), 'utf8'), edited, 'nothing refused touched the file');
+
+      // And the refusal that matters most, because a config that does not parse takes
+      // `GET /api/project` down with it — a page allowed to write one could lock itself out of
+      // the project it is editing. The control: the project still reads.
+      assert.equal((await fetch(`${base}/api/project`)).status, 200);
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the config route accepts unformatted text and the .tflw route does not — the difference is the editor, not an oversight', async () => {
+  // `writeProjectFile` requires text `format` would already have produced, because the page there
+  // is a FORM whose bytes come out of the printer and a server that silently reformatted would
+  // hand back an etag for a file the page has never seen. The Config tab is a TEXT EDITOR over
+  // the author's own bytes; nothing reformats them, so the etag is already over what the page
+  // holds, and refusing an unformatted config would mean refusing to save a file `tflw fmt`
+  // would happily fix.
+  //
+  // Both halves are asserted, because the claim is a *difference*: without the control this
+  // passes on a server that checks formatting nowhere at all.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-config-fmt-'));
+  try {
+    const config = 'env local default\n  api "http://127.0.0.1:1"\n';
+    await writeFile(join(dir, 'tflw.config'), config, 'utf8');
+    const sloppy = 'env local default\n        api      "http://127.0.0.1:1"\n';
+    const saved = await writeConfigFile(dir, sloppy, etagOf(config));
+    assert.ok(!('status' in saved), `the config route takes it: ${JSON.stringify(saved)}`);
+    assert.equal(await readFile(join(dir, 'tflw.config'), 'utf8'), sloppy, 'unchanged — nothing reformatted it');
+
+    const refused = await writeProjectFile(dir, 't.tflw', 'test "t"\n        api GET /health\n', null);
+    assert.ok('status' in refused, 'the .tflw route refuses the same shape of input');
+    assert.equal(refused.status, 422);
+    assert.match(refused.error, /not formatted/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('readProject carries who runs as what: the sessions declared, the sessions used, and where each is written', async () => {
+  // `M205` S5b — what the Auth tab reads. Three claims the page cannot make for itself: which
+  // sessions the active env actually gets, which of them a file's tests name, and the line each
+  // declaration sits on so `[edit]` lands somewhere true.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-sessions-'));
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      [
+        'defaults',                                                                          // 1
+        '  authorized target "https://a.example.com" reason "one"',                           // 2
+        '',                                                                                   // 3
+        'env local default',                                                                  // 4
+        '  api "https://a.example.com"',                                                      // 5
+        '  authorized target "https://a.example.com" reason "the same host, a second reason"', // 6
+        '',                                                                                   // 7
+        'env staging',                                                                        // 8
+        '  api "https://s.example.com"',                                                       // 9
+        '',                                                                                    // 10
+        'session admin privileged',                                                            // 11
+        '  api POST /login',                                                                   // 12
+        '  header "Authorization" is "Bearer t"',                                              // 13
+        '',                                                                                    // 14
+        'session ops for env staging',                                                         // 15
+        '  api POST /login',                                                                   // 16
+      ].join('\n') + '\n',
+      'utf8',
+    );
+    await writeFile(
+      join(dir, 't.tflw'),
+      ['test "one" as admin', '  api GET /x', '  expect status equals 200', '', 'test "two"', '  api GET /y', '  expect status equals 200', ''].join('\n'),
+      'utf8',
+    );
+
+    const view = await readProject(dir);
+    const { sessions, targets } = view.authorization;
+
+    // Declared, in the active env, with what running `as` it adds to a request. Header NAMES and
+    // never values: a session header is where a bearer token lives and this object is serialised
+    // to a browser.
+    assert.deepEqual(sessions[0], { name: 'admin', privileged: true, oauth2: false, headers: ['Authorization'], steps: 2, line: 11, outOfScope: null });
+    // Declared for another env, which is the state the Auth tab exists to make visible: the test
+    // that names it runs anonymous and `tflw check` is the only other place that says so.
+    assert.deepEqual(sessions[1], { name: 'ops', privileged: false, oauth2: false, headers: [], steps: 1, line: 15, outOfScope: ['staging'] });
+
+    // `as` on the test itself, so the page can show which of the declared sessions this FILE uses
+    // — a list that differs from the declared one in every project that has ever deleted a test.
+    const tests = view.files.find((f) => f.path === 't.tflw')!.tests;
+    assert.deepEqual(tests.map((t) => [t.name, t.sessions]), [['one', ['admin']], ['two', []]]);
+
+    // One row per DECLARATION and not per origin — `resolve.ts` accumulates rather than folds, so
+    // "every declaration still travels to the report with its own reason". Two rows for one host,
+    // each with its own line, is what the config says and what Auth must render.
+    assert.deepEqual(
+      targets.map((t) => [t.target, t.reason, t.block, t.line]),
+      [
+        ['https://a.example.com', 'one', 'defaults', 2],
+        ['https://a.example.com', 'the same host, a second reason', 'local', 6],
+      ],
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
