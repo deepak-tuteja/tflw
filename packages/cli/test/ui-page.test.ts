@@ -49,6 +49,39 @@ const oracle: Record<string, RunReport> = {};
  * under the form and became **Source**, one of the file's three stages — so a test that wants the
  * bytes has to say where it is looking, exactly as a reader does.
  */
+/** Wait for the stub to report its pid. The file appears when the child starts, which is after
+ *  the page has already drawn the picking pane — so this is a wait and not an assertion. */
+const waitForPidFile = async (file: string, timeoutMs = 5000): Promise<number> => {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const pid = Number(await readFile(file, 'utf8'));
+      if (Number.isInteger(pid) && pid > 0) return pid;
+    } catch {
+      // not written yet
+    }
+    if (Date.now() > deadline) throw new Error(`the pick stub never reported a pid within ${timeoutMs}ms — it was not spawned`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+};
+
+/** Wait for a pid to leave the process table. `process.kill(pid, 0)` is a liveness probe: it
+ *  throws `ESRCH` once the process is gone and returns silently while it lives. Polled rather than
+ *  read once, because the page closes the stream and the child dies on the server's own schedule —
+ *  asserting immediately would be a race, which is `M205-08`'s shape. */
+const waitForExit = async (pid: number, timeoutMs = 5000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    if (Date.now() > deadline) throw new Error(`pid ${pid} is still alive ${timeoutMs}ms after the door changed — the pick session was orphaned`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+};
+
 const openTab = async (tab: 'compose' | 'source' | 'run' | 'auth' | 'config'): Promise<void> => {
   await page.locator(`[data-tab="${tab}"]`).click();
   await page.locator(`[data-tabstrip="${tab}"]`).waitFor();
@@ -1207,6 +1240,83 @@ test('the BROWSER form adds steps to a test that already opened a page, and writ
   assert.ok(header >= 0 && filled > header, `the step must sit under its test:\n${after}`);
 
   await writeFile(join(root, target), before, 'utf8');
+});
+
+test('a pick session outlives a tab switch and dies with the door — asserted on the process, not the DOM', async () => {
+  // `M206` `Q2`/`S3`. The claim has two halves and **neither is visible to the page**: an orphaned
+  // browser is invisible to every assertion the DOM can make about itself, which is exactly why the
+  // plan said this gate could not be a DOM gate.
+  //
+  // IT IS STILL DRIVEN AGAINST A STUB, and the reason is the one the sibling test already gives:
+  // spawning a real headed browser per run on a shared box is a cost with no claim attached, and a
+  // gate that leaves browsers behind is the same defect in a test's clothing. That decision costs
+  // nothing here, because **the claim was never about Chromium** — it is about the spawned child's
+  // lifetime being bound to the door and not to the tab. A stub is a process too, so it can answer
+  // the question the real browser would, for the price of a `setInterval`.
+  //
+  // The stub writes its own pid and then stays alive. `process.kill(pid, 0)` is the reading: it
+  // throws `ESRCH` once the process is gone and returns silently while it lives.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-pick-life-'));
+  const stub = join(dir, 'stub.mjs');
+  const pidFile = join(dir, 'pick.pid');
+  const fresh = await browser.newPage();
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(join(dir, 'web.tflw'), 'test "a page"\n  open "/"\n  expect text "Hi" is visible\n', 'utf8');
+    await writeFile(
+      stub,
+      [
+        `import { writeFileSync } from 'node:fs';`,
+        `writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
+        'process.stdout.write(`opening ${process.argv[3]} — press Ctrl+C to stop.\n`);',
+        'process.stdout.write(`button "Sign in"\n`);',
+        // Stay alive the way the real `pick` does — waiting for a human who never arrives.
+        'setInterval(() => {}, 1000);',
+      ].join('\n'),
+      'utf8',
+    );
+    const srv = new UiServer({ root: dir, cliEntry: stub, execArgv: [], staticDir: join(scratch, 'ui') });
+    const port = await srv.listen(0);
+    const url = `http://127.0.0.1:${port}/`;
+    try {
+      await fresh.goto(`${url}#/browser`);
+      await fresh.locator('[data-browser-form]').waitFor();
+      await fresh.locator('[data-browser-pick]').first().click();
+      await fresh.locator('[data-browser-picking]').waitFor();
+
+      // The child exists, and the strip says so — the mark is the only thing on the page that will
+      // still be true once Compose is gone, because the `.picking` pane lives inside it.
+      await fresh.locator('[data-tab-mark="compose"]').waitFor();
+      // Polled, not read once: the child spawns and writes on the server's schedule, and the
+      // `.picking` pane appears the moment the button is pressed — `setPicking` runs before the
+      // stream connects — so the pane is NOT evidence the process exists. Reading immediately
+      // failed with `ENOENT` on the first run here, which is `M205-08`'s race a second time and in
+      // this round's own gate.
+      const pid = await waitForPidFile(pidFile);
+      process.kill(pid, 0);
+
+      // HALF ONE — a tab switch must NOT kill it. Compose genuinely unmounts here, so this is the
+      // half that would break the moment the session's state slipped down into the panel.
+      await fresh.locator('[data-tab="source"]').click();
+      await fresh.locator('[data-tabstrip="source"]').waitFor();
+      assert.equal(await fresh.locator('[data-browser-compose]').count(), 0, 'Compose did not unmount, so surviving it proves nothing');
+      await new Promise((r) => setTimeout(r, 300));
+      process.kill(pid, 0); // throws ESRCH if the tab switch killed the browser
+      await fresh.locator('[data-tab-mark="compose"]').waitFor();
+
+      // HALF TWO — leaving the DOOR must kill it. This is the promise `BrowserForm`'s cleanup
+      // comment has always made (*leaving this door must not leave it running*) and that nothing
+      // has ever checked.
+      await fresh.locator('[data-door-tab="api"]').click();
+      await fresh.locator('[data-api-form]').waitFor();
+      await waitForExit(pid);
+    } finally {
+      await srv.close();
+    }
+  } finally {
+    await fresh.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('the BROWSER form picks a locator from a live session and fills the field with it', async () => {
