@@ -132,6 +132,10 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     // `execAuthzExpect` hands it to the probe policy, where it is the load-bearing half of
     // `TF065`. Fixtures point at `127.0.0.1`, which needs no affirmation.
     allowPublicTargets: [],
+    // `M208` `S1` — `null` for `authorizedTargets`' reason: the runtime never reads it. The gate a
+    // baseline feeds is built in `cli.ts` before any file runs, so a fixture config states the
+    // field to stay a complete `ResolvedConfig` and nothing here can observe it.
+    baselinePath: null,
     evidenceLevel: 'full',
     // `D781`/`M157d` — the shipped default, stated rather than inherited. `interpreter.ts`'s
     // predicate is written so an *absent* value still runs teardown, but a fixture config claiming

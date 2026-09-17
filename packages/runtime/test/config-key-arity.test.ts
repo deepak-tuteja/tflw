@@ -12,7 +12,7 @@
 // cases is a cache, and nothing in this repository invalidated it.
 //
 // **So nothing here is written down twice.** There is no expected-arity column. For each of the
-// seventeen members of `ConfigEntry`, this doubles the key in one block, resolves it, and resolves a
+// eighteen members of `ConfigEntry`, this doubles the key in one block, resolves it, and resolves a
 // second config carrying only the *later* of the two lines. If the two resolve identically the first
 // declaration was discarded — that is the measurement, not a claim about it — and the test then
 // asserts `validateConfig` reports `TF081` for exactly the keys where that happened. The checker's
@@ -45,6 +45,7 @@ const DOUBLINGS: Record<ConfigEntry['type'], Doubling> = {
   InsecureDecl: { block: 'env', first: 'insecure true', second: 'insecure false' },
   CertDecl: { block: 'env', first: 'cert "./first.pem"', second: 'cert "./second.pem"', support: ['key "./client.key"'] },
   KeyDecl: { block: 'env', first: 'key "./first.key"', second: 'key "./second.key"', support: ['cert "./client.pem"'] },
+  BaselineDecl: { block: 'env', first: 'baseline "./first.json"', second: 'baseline "./second.json"' },
   EvidenceDecl: { block: 'env', first: 'evidence full', second: 'evidence none' },
   TeardownDecl: { block: 'env', first: 'teardown always', second: 'teardown never' },
   ViewportDecl: { block: 'defaults', first: 'viewport 1280 720', second: 'viewport 800 600' },
@@ -106,17 +107,17 @@ for (const [kind, doubling] of Object.entries(DOUBLINGS) as [ConfigEntry['type']
   });
 }
 
-// The negative control the seventeen cannot give: every one of them asserts an *agreement* between
+// The negative control the eighteen cannot give: every one of them asserts an *agreement* between
 // two things, and a check that never fires agrees with a resolver that never discards. This pins
 // that both outcomes are actually reachable in the table above — without it, a `TF081` deleted
-// outright would leave four passing cases and thirteen red ones, but a `TF081` that fired on
+// outright would leave four passing cases and fourteen red ones, but a `TF081` that fired on
 // nothing at all in a table of four accumulating keys would be indistinguishable from correct.
 test('the table exercises both verdicts, so neither outcome is vacuous', () => {
   const verdicts = Object.values(DOUBLINGS).map((d) => {
     const doubled = configSource(d, [d.first, d.second]);
     return validateConfig(parse(doubled)).some((x) => x.code === Codes.CONFIG_DUPLICATE_KEY);
   });
-  assert.equal(verdicts.filter(Boolean).length, 13, 'expected thirteen single-valued keys');
+  assert.equal(verdicts.filter(Boolean).length, 14, 'expected fourteen single-valued keys');
   assert.equal(verdicts.filter((v) => !v).length, 4, 'expected four accumulating keys');
 });
 

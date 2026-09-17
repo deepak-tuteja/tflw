@@ -333,6 +333,7 @@ export const CONFIG_KEYWORDS: readonly ConfigKeywordEntry[] = [
   { id: 'redact', slot: 'key', summary: 'body paths, headers and query parameters whose values never reach a report or a log' },
   { id: 'viewport', slot: 'key', summary: 'the browser window size every browser test starts at' },
   { id: 'log', slot: 'key', summary: '`log level`/`log destination` — how much the run says, and where it says it' },
+  { id: 'baseline', slot: 'key', summary: '`baseline "<file>"` — the accepted-findings document a security run grades itself against; listed findings still render, marked known/accepted. `--baseline <file>` overrides it for one run' },
 
   { id: 'mutating', slot: 'probe', summary: 'permit probes that change server state — the authorization scans cannot judge a write without it' },
   { id: 'oversized', slot: 'probe', summary: 'permit oversized-input payloads, which can be expensive for the target to reject' },

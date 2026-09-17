@@ -1713,6 +1713,7 @@ export type ConfigEntry =
   | InsecureDecl
   | CertDecl
   | KeyDecl
+  | BaselineDecl
   | AllowHostsDecl
   | AuthorizedTargetDecl
   | EvidenceDecl
@@ -1797,6 +1798,30 @@ export interface CertDecl extends Node {
 /** `key "<path>"` — the private key paired with `cert` (SPEC §3.5, decision 3b). */
 export interface KeyDecl extends Node {
   readonly type: 'KeyDecl';
+  readonly path: StringLit;
+}
+
+/**
+ * `baseline "<path>"` — the accepted-findings document a security run grades itself against
+ * (`M208` `S1`, `D387`, `M206` `Q6`).
+ *
+ * **Why this is a config key and not only a flag.** `--baseline <file>` shipped alone in `M134b`,
+ * which left security triage with no home in the page at all: the strip's rule says a tab is a
+ * stage of one file's life *or a project fact that file resolves against*, and a document named
+ * only on a command line is neither. Declaring it here makes it the second thing — the same status
+ * `allow hosts` and `authorized target` already have — so the SCANS door can show it and
+ * `[accept]` can link into an editor for it, with the rule untouched.
+ *
+ * **Legal in `defaults` and in an `env` block**, and single-valued in each: one run grades against
+ * one document. A team that accepts different findings in staging than in production says so with
+ * a per-env line, which is exactly the override `defaults` + `env` exists for.
+ *
+ * `--baseline` still wins (`cli.ts`). A flag that could not override the config would make the
+ * committed document the only reachable one, and `--baseline-write`'s output is usually inspected
+ * before it is committed.
+ */
+export interface BaselineDecl extends Node {
+  readonly type: 'BaselineDecl';
   readonly path: StringLit;
 }
 

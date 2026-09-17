@@ -550,7 +550,7 @@ const ENV_ONLY = new Set(['WebDecl', 'ApiServiceDecl']);
  * spelling of each key in this file.
  *
  * The classification is graded against measured behaviour, not against this comment —
- * `config-duplicate-keys.test.ts` doubles every one of the seventeen kinds, resolves it, and asserts
+ * `config-duplicate-keys.test.ts` doubles every one of the eighteen kinds, resolves it, and asserts
  * which value survives.
  */
 type ConfigKeyIdentity = {
@@ -575,6 +575,7 @@ const CONFIG_KEY_IDENTITY: ConfigKeyIdentity = {
   InsecureDecl: keyName,
   CertDecl: keyName,
   KeyDecl: keyName,
+  BaselineDecl: keyName,
   EvidenceDecl: keyName,
   TeardownDecl: keyName,
   ViewportDecl: keyName,
@@ -3120,6 +3121,8 @@ function keyName(entry: ConfigEntry): string {
       return 'cert';
     case 'KeyDecl':
       return 'key';
+    case 'BaselineDecl':
+      return 'baseline';
     case 'AllowHostsDecl':
       return 'allow hosts';
     case 'AuthorizedTargetDecl':
@@ -3291,6 +3294,13 @@ const CONFIG_FILE_BEARING_NODES: readonly FileBearingNode[] = [
   ...FILE_BEARING_NODES.filter((e) => e.neededBy === 'run'),
   { node: 'CertDecl', field: 'path', syntax: 'cert', neededBy: 'run' },
   { node: 'KeyDecl', field: 'path', syntax: 'key', neededBy: 'run' },
+  // `M208` `S1`. `run`, not `check`, for `cert`'s reason one step further along: the document is
+  // read when the gate is built, at the top of `tflw run` (`cli.ts`), so `tflw check` is predicting
+  // here too — and `--baseline-write` is a legitimate way to create the file between the two
+  // commands. A warning is also the whole of this key's negative control: every failure mode of a
+  // baseline makes a build **greener**, so a path that is not there has to be said out loud rather
+  // than resolving to an empty accepted set.
+  { node: 'BaselineDecl', field: 'path', syntax: 'baseline', neededBy: 'run' },
 ];
 
 /**

@@ -6,7 +6,7 @@
 //
 // What is asserted here is the *rule*: where it fires, where it deliberately does not, and at which
 // line. Whether the exempt set is the right set is a different question and is not answered by
-// reading — `packages/runtime/test/config-key-arity.test.ts` doubles every one of the seventeen
+// reading — `packages/runtime/test/config-key-arity.test.ts` doubles every one of the eighteen
 // config keys, resolves it, and grades this checker's verdict against what the resolver actually
 // did with the second declaration (`D830`).
 //

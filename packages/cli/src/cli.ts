@@ -1831,7 +1831,25 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // matched nothing: every failure mode of a baseline file makes the build *greener*, and the one
   // thing this feature must never do is make a build greener than the evidence.
   const failOn = args.failOnRaw === undefined ? null : parseFailOn(args.failOnRaw);
-  const baselineDoc = args.baseline === undefined ? null : parseBaseline(await readFile(resolve(cwd, args.baseline), 'utf8'), args.baseline);
+  // `M208` `S1` — two ways in now, and the flag wins. The config key (`D387`, `M206` `Q6`) is the
+  // committed choice; `--baseline` is this run's, which is what makes a `--baseline-write` output
+  // inspectable before it is committed and what keeps a CI job able to grade against nothing.
+  //
+  // `resolve(cwd, …)` for both, and that is not a coincidence worth hiding: `cwd` *is* the config
+  // directory here (`configPath = join(cwd, 'tflw.config')` above), so the key resolves against the
+  // file that declares it exactly as `cert`/`key`/`exclude` do, and the flag resolves against the
+  // shell that typed it. One expression because the two directories are the same one.
+  //
+  // `where` names which of the two it was, because the error this can throw is the negative control
+  // the whole feature rests on: a missing or malformed baseline must be loud, and *"./sec.json is
+  // not valid JSON"* does not tell an author whether to fix their command line or their config.
+  const baselineFrom: { readonly path: string; readonly where: string } | null =
+    args.baseline !== undefined
+      ? { path: args.baseline, where: '--baseline' }
+      : resolved.baselinePath !== null
+        ? { path: resolved.baselinePath, where: `tflw.config \`baseline\` (env "${resolved.envName}")` }
+        : null;
+  const baselineDoc = baselineFrom === null ? null : parseBaseline(await readBaselineFile(resolve(cwd, baselineFrom.path), baselineFrom), baselineFrom.path);
   const scanGate: ScanGate | undefined =
     failOn === null && baselineDoc === null ? undefined : { failOn, accepted: new Map((baselineDoc?.accepted ?? []).map((e) => [e.fingerprint, e])) };
   // Validated here for the same reason and at the same moment: a bad `--probe-seeded` is a usage
@@ -3219,6 +3237,33 @@ function parseFailOn(raw: string): FindingSeverity {
 const FAIL_ON_VALUES = ['minor', 'moderate', 'serious', 'critical'] as const;
 
 /**
+ * `M208` `S1` — read a baseline document, naming where the path came from when it is not there.
+ *
+ * A bare `readFile` throws `ENOENT: no such file or directory, open '/abs/path/sec.json'`, which is
+ * the shape this feature can least afford. `--baseline` shipped with it and got away with it: a
+ * flag you just typed is a short trip back. A **config** key is different — the path is in a
+ * committed file, may have been written by somebody else, and `tflw check` only ever warned about
+ * it (`TF043`, a prediction, because `--baseline-write` is a legitimate way to create the file
+ * between the two commands). So the run is the last place that can say it, and it says which of the
+ * two doors the path came through.
+ *
+ * Everything past existence is `parseBaseline`'s job and is already loud there, for the reason
+ * stated on that function: every failure mode of a baseline makes a build *greener*.
+ */
+async function readBaselineFile(absolute: string, from: { readonly path: string; readonly where: string }): Promise<string> {
+  try {
+    return await readFile(absolute, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    throw new Error(
+      `${from.where} names "${from.path}", and there is no file there (looked in ${absolute}).\n` +
+        `  a baseline that is not read accepts nothing, so this is an error rather than an empty accepted set.\n` +
+        `  write one with \`tflw run <files> --baseline-write ${from.path}\` once you have read the findings.`,
+    );
+  }
+}
+
+/**
  * M134b (D388) — `--probe-seeded`'s value.
  *
  * `Number(raw)` alone would accept `1e3`, ` 12 `, `0x10` and `Infinity`, and reject none of them in a
@@ -3965,7 +4010,8 @@ function printUsage(): void {
       '                                                      --log-output <dest> where a bare `log "…"` goes: console|html|both|none',
       '                                                      --fail-on <severity> security findings below this severity are reported but do not fail the',
       '                                                      build (SPEC §9.12); it can only relax the matcher a test wrote, never tighten it',
-      '                                                      --baseline <file> accepted findings, matched by fingerprint; they still render, marked known/accepted',
+      '                                                      --baseline <file> accepted findings, matched by fingerprint; they still render, marked known/accepted;',
+      '                                                      overrides tflw.config\'s `baseline "<file>"` key for this run',
       '                                                      --baseline-write <file> writes this run\'s findings out as the accepted set (stale entries are',
       '                                                      reported, never removed — a --tag run legitimately produces a subset)',
       '                                                      --probe-seeded <n> n generated mutation payloads per already-granted class, on top of the fixed',

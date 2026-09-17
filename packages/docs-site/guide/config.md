@@ -218,4 +218,16 @@ neighbouring one.
 See [Security hygiene scanning](/guide/security-scanning) and
 [Authorization testing](/guide/authorization-testing).
 
+### `baseline` — the accepted findings this suite grades against
+
+```tflw-config fragment
+defaults
+  baseline "./security-baseline.json"
+```
+
+The [accepted-findings document](/guide/findings-and-baselines#baseline-declare-it-once-in-tflw-config),
+so a security run grades itself against the same file in CI, in a script and in your shell.
+Single-valued, legal in `defaults` and in an `env` block (an env's line replaces the default one),
+resolved against `tflw.config`'s own directory, and overridden by `--baseline <file>` for one run.
+
 Full reference: [SPEC.md §3](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#3-the-config-dialect--tflwconfig-p2731-).

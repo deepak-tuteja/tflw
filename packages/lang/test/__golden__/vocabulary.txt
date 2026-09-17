@@ -7,7 +7,7 @@
 #   V  a `<expr>.value === '…'` comparison
 #   S  a `case '…':` label in a switch on `<expr>.value`
 #
-# 249 words
+# 250 words
 
 A   DELETE
 A   GET
@@ -33,6 +33,7 @@ A   at
 A   authorization
 AS  authorized
 V   base64
+AS  baseline
 AK  before
 K   between
 KS  body
