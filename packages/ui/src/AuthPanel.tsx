@@ -13,8 +13,9 @@
 // and declared for another env resolves to nothing and the test runs anonymous — `TF028` says so
 // at `tflw check` time, and until this tab there was nowhere on the page to see it at all.
 
+import type { ReactNode } from 'react';
 import { RESERVED_PRINCIPAL } from '@tflw/lang';
-import type { ProjectView } from './contract';
+import type { Lens, ProjectView } from './contract';
 
 type Session = ProjectView['authorization']['sessions'][number];
 type Target = ProjectView['authorization']['targets'][number];
@@ -26,6 +27,17 @@ export interface AuthPanelProps {
   readonly path: string;
   /** Jump to Config, focused on a line — `hashForTab`'s third segment. */
   readonly onEdit: (line: number) => void;
+  /**
+   * Which door you came through (`M207` `S3`).
+   *
+   * The panel is one panel and the **facts are the same on all four** — one `tflw.config`, one
+   * file, one set of sessions. What varies is which caveat about those facts matters where, and
+   * each of the three below is a recorded property of the runtime rather than a per-door opinion:
+   * BROWSER's is `D10`, LOAD's is `M146a`, SCANS' is `D307`/`D310`. A door that had its own panel
+   * would be four accounts of one config; a panel with no door would have to state all three
+   * caveats to every reader, which is how the shipped version came to state BROWSER's to everyone.
+   */
+  readonly door: Lens;
 }
 
 /** The four `probe` opt-ins as **what they grant**, which is Q6's answer: a checkbox cannot
@@ -38,7 +50,7 @@ const PROBES: readonly [keyof Target, string][] = [
   ['probeCiphers', 'the TLS probe may open one handshake per candidate cipher suite here'],
 ];
 
-export function AuthPanel({ project, path, onEdit }: AuthPanelProps) {
+export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
   const { envName, sessions, targets } = project.authorization;
   const file = project.files.find((f) => f.path === path) ?? null;
 
@@ -62,6 +74,13 @@ export function AuthPanel({ project, path, onEdit }: AuthPanelProps) {
    *  twice, and a panel claiming one session covered it. */
   const mixed = (file?.tests ?? []).filter((t) => t.steps.api > 0 && t.steps.browser > 0);
 
+  // `M207` `Q4` — the two sets `probeSetFor` (`interpreter.ts:5111`) divides the env's sessions
+  // into. Derived here from the same wire field the SCANS door reads, so the page cannot disagree
+  // with the runtime about who gets probed; `anonymous` is appended because it is the one principal
+  // the set always contains and the config never declares.
+  const excluded = sessions.filter((s) => s.privileged).map((s) => s.name);
+  const probeSet = [...sessions.filter((s) => !s.privileged).map((s) => s.name), RESERVED_PRINCIPAL];
+
   return (
     <div className="authoring auth-panel" data-api-auth={file ? file.path : ''}>
       <header className="authoring-head">
@@ -72,12 +91,38 @@ export function AuthPanel({ project, path, onEdit }: AuthPanelProps) {
         </p>
       </header>
 
-      {/* `M206` `S4`, closing `M206-01`. THE FIRST THING THIS PANEL SAYS IS WHAT A SESSION DOES NOT
-          REACH, because the shipped version said *who this file runs as* and stopped — true of a
-          file's api steps and false of its page steps, most confidently on the 145 tests measured
-          behind both doors, which are exactly the files an author opens this tab for. */}
-      <section className="auth-block" data-auth-reach={`${apiSteps}/${pageSteps}`}>
-        <h3>what a session reaches here</h3>
+      {/* `M207` `Q2` — RETITLED AND REFRAMED ONE DAY AFTER `M206` `S4` SHIPPED IT, deliberately.
+
+          `S4` called this *what a session reaches here* and built it to answer a browser file that
+          DOES log in. Measured across the corpora, **94% of files name no session at all** — 20 of
+          the sibling's 319 tests, 9 of its 84 files, and zero in either the fixture or
+          `examples/storefront`. So on the commonest file in every project the old title presupposed
+          something that is not there, and the honest answer is that nothing here declares an
+          identity and every request runs as `anonymous`.
+
+          The anonymous case is therefore the HEADLINE and each door's caveat hangs off it, rather
+          than the caveat being the frame. Editing a one-day-old mutation-checked block was the
+          cheaper of the two options on the table: propagating a mis-framing to two more doors costs
+          more than correcting it once. */}
+      <section className="auth-block" data-auth-reach={`${apiSteps}/${pageSteps}`} data-auth-door={door}>
+        <h3>identity in force here</h3>
+
+        {used.size === 0 ? (
+          <p data-auth-identity="anonymous">
+            <strong>Nothing here declares an identity.</strong> No test in <code>{path || 'this file'}</code> carries an{' '}
+            <code>as</code> clause, so every request it sends runs as <code>{RESERVED_PRINCIPAL}</code> — the built-in principal,
+            not a missing one. A test opts into a credential by naming it: <code>test "…" as admin</code>.
+          </p>
+        ) : (
+          <p data-auth-identity="named">
+            <strong>
+              {used.size} {used.size === 1 ? 'session is' : 'sessions are'} named by this file
+            </strong>{' '}
+            — {[...used.keys()].map((n) => <code key={n}>{n}</code>).reduce<ReactNode[]>((acc, el, i) => (i === 0 ? [el] : [...acc, ', ', el]), [])}. Every test
+            that names none of them runs as <code>{RESERVED_PRINCIPAL}</code>.
+          </p>
+        )}
+
         <ul className="auth-list">
           {/* *api work* rather than *api steps*, because the count is the doors' own classification
               and an `expect status equals 200` does api work without being a request. Saying
@@ -91,7 +136,12 @@ export function AuthPanel({ project, path, onEdit }: AuthPanelProps) {
             {pageSteps === 0 ? 'none here' : 'identity on the page is established by the page'}
           </li>
         </ul>
-        {pageSteps === 0 ? null : (
+
+        {/* THE DOOR'S OWN CAVEAT. One per door, each a recorded property of the runtime, and each
+            the thing an author of THAT kind of work assumes wrongly. None of them is shown to a
+            reader who did not come through the door it belongs to — which is the whole correction
+            `Q2` makes, since the BROWSER one was being shown to all four. */}
+        {door === 'browser' && pageSteps > 0 ? (
           <p className="muted" data-auth-no-bridge>
             <strong>A session does not log the browser in.</strong> Its cached state is never applied to the test's fresh browser
             context — a cookie jar and a browser context's storage state are two representations <code>D10</code> deliberately never
@@ -107,24 +157,74 @@ export function AuthPanel({ project, path, onEdit }: AuthPanelProps) {
               </>
             )}
           </p>
-        )}
+        ) : null}
+
+        {/* `Q3`. Two facts, and the second is the analogue of BROWSER's refusal: true, deliberate,
+            recorded, and the opposite of what an author assumes. `runScenarioTask` establishes each
+            named session BEFORE VU scheduling begins, so `across 50 users as admin` is fifty VUs on
+            one login; and `M146a`/`B3-20` keeps a re-established session's own requests out of the
+            run's numbers — *"their latencies are missing from the run's numbers and their endpoints
+            have no bucket"* — which matters because `threshold p95 duration` is computed over
+            exactly the set that excludes them. */}
+        {door === 'load' && used.size > 0 ? (
+          <p className="muted" data-auth-load-caveat>
+            <strong>Many users, one identity.</strong> A named session is established once, before the VUs are scheduled, so{' '}
+            <code>across 50 users as admin</code> is fifty virtual users sharing a single login. Each iteration re-reads it fresh
+            from the shared cache (<code>D44</code>), so a mid-run refresh reaches every VU and racing VUs dedupe to at most one
+            real re-login (<code>M37</code>/<code>D45</code>).{' '}
+            <strong>A re-login's own requests are absent from this run's numbers.</strong> The decision to re-establish is in the
+            report and the requests it sent are not — their latencies are missing and their endpoints have no bucket
+            (<code>M146a</code>) — so a <code>threshold p95 duration</code> here is computed over a set that excludes them.
+          </p>
+        ) : null}
+
+        {/* `Q4`. This door INVERTS the block's premise: the identity in force is not one, it is all
+            of them. `probeSetFor` builds the set of every declared session plus the built-in
+            `anonymous`, and `has no authorization violations` replays each request as each of them.
+            And `privileged` sessions are excluded from that set by design (`D307`/`D310`) — so a
+            green result says nothing about what a privileged principal could reach, which is
+            literally what this block is for. Both sets are named. */}
+        {door === 'scan' ? (
+          <p className="muted" data-auth-scan-caveat data-auth-probe-set={probeSet.length} data-auth-probe-excluded={excluded.length}>
+            <strong>Here the identity in force is not one — it is all of them.</strong>{' '}
+            <code>has no authorization violations</code> replays each request as every principal in the probe set:{' '}
+            {probeSet.map((n) => <code key={n}>{n}</code>).reduce<ReactNode[]>((acc, el, i) => (i === 0 ? [el] : [...acc, ', ', el]), [])}.
+            {excluded.length === 0 ? (
+              <> No session here is <code>privileged</code>, so the probe set is every session this env declares.</>
+            ) : (
+              <>
+                {' '}
+                <strong>
+                  {excluded.length === 1 ? 'One session is' : `${excluded.length} sessions are`} excluded from it
+                </strong>
+                : {excluded.map((n) => <code key={n}>{n}</code>).reduce<ReactNode[]>((acc, el, i) => (i === 0 ? [el] : [...acc, ', ', el]), [])} —{' '}
+                <code>privileged</code> means this principal is <em>supposed</em> to reach other principals' resources, so reporting
+                the access it is entitled to would be a false finding (<code>D307</code>/<code>D310</code>). The consequence is the
+                one worth reading here: <strong>a green result says nothing about what those principals could reach.</strong>
+              </>
+            )}
+          </p>
+        ) : null}
       </section>
 
-      <section className="auth-block" data-auth-sessions={used.size}>
-        <h3>sessions this file’s tests run as</h3>
-        {used.size === 0 ? (
-          <p className="muted" data-auth-no-sessions>
-            None — every test here runs as <code>{RESERVED_PRINCIPAL}</code>. A test opts into a credential by naming it:{' '}
-            <code>test "…" as admin</code>.
-          </p>
-        ) : (
+      {/* THE ENUMERATION, AND IT DOES NOT RENDER WHEN THERE IS NOTHING TO ENUMERATE (`M207` `S3`).
+
+          Before the reframe this block carried the sentence *"None — every test here runs as
+          anonymous"*, which was the panel's only statement of that fact. `Q2` makes it the
+          headline, so keeping the empty state here would say it twice on 94% of files — the
+          duplicate-over-one-file class `Q1` refused between Compose and Auth, one block apart
+          instead of one tab. The heading goes with it rather than standing over nothing: a heading
+          with no rows under it is a claim that rows were expected. */}
+      {used.size === 0 ? null : (
+        <section className="auth-block" data-auth-sessions={used.size}>
+          <h3>sessions this file’s tests run as</h3>
           <ul className="auth-list">
             {[...used].map(([name, tests]) => (
               <SessionRow key={name} name={name} tests={tests} session={declared.get(name) ?? null} envName={envName} onEdit={onEdit} />
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      )}
 
       {/* `anonymous` is shown whether or not a test uses it, because it is the one principal that
           is never declared and therefore the one a reader cannot discover by looking at the

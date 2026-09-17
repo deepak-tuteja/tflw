@@ -2445,6 +2445,181 @@ test('Auth says what a session does NOT reach, and a mixed test is where that ma
   }
 });
 
+test('the Auth block leads with the anonymous case, and each door gets only its own caveat', async () => {
+  // `M207` `S3`, building `Q2`/`Q3`/`Q4`, and repairing `M207-01` on the way.
+  //
+  // `M206` `S4` titled this block *what a session reaches here* and built it against a browser file
+  // that DOES log in. Measured, **94% of files name no session at all** — 20 of the sibling's 319
+  // tests, 9 of its 84 files, zero in the fixture and zero in `examples/storefront` — so on the
+  // commonest file in every project the title presupposed something not there. The anonymous case
+  // is the headline now and each door's caveat hangs off it.
+  //
+  // **THE PROJECT IS THIS TEST'S OWN** (`Q5`). The shared fixture declares zero sessions, so it
+  // cannot produce `Q4`'s panel at all; the gate already builds eleven temporary projects, so
+  // bringing one is the dominant pattern here rather than an exception. Five sessions, two of them
+  // `privileged`, so the probe set AND the exclusion set are both non-empty and nameable — a
+  // fixture with one or the other empty would let a panel that showed only one of them pass.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-auth-frame-'));
+  const fresh = await browser.newPage();
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      [
+        'env local',
+        '  api "http://127.0.0.1:1"',
+        '  web "http://localhost:3000"',
+        '  authorized target "http://127.0.0.1:1" because "a fixture server this test owns"',
+        '',
+        'session admin privileged',
+        '  api POST /login body { who: "admin" }',
+        '  expect status equals 200',
+        '',
+        'session ops privileged',
+        '  api POST /login body { who: "ops" }',
+        '  expect status equals 200',
+        '',
+        'session shopper',
+        '  api POST /login body { who: "shopper" }',
+        '  expect status equals 200',
+        '',
+        'session peer',
+        '  api POST /login body { who: "peer" }',
+        '  expect status equals 200',
+        '',
+        'session guest',
+        '  api POST /login body { who: "guest" }',
+        '  expect status equals 200',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    // Two files, and the split is the whole test: one names a session, one names none. 94% of real
+    // files are the second kind, and the second kind is what the old title got wrong.
+    await writeFile(join(dir, 'named.tflw'), 'test "as somebody" as shopper\n  api GET /items\n  expect status equals 200\n', 'utf8');
+    await writeFile(join(dir, 'nobody.tflw'), 'test "as nobody"\n  api GET /items\n  expect status equals 200\n', 'utf8');
+
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}/`;
+
+      // 1. THE HEADLINE, on the commonest kind of file. The block leads with the anonymous case
+      //    rather than with a caveat about sessions the file does not have.
+      await fresh.goto(`${base}#/api/auth/nobody.tflw`);
+      await fresh.locator('[data-auth-identity]').waitFor();
+      assert.equal(await fresh.locator('[data-auth-identity]').getAttribute('data-auth-identity'), 'anonymous');
+      assert.match((await fresh.locator('[data-auth-identity]').textContent()) ?? '', /Nothing here declares an identity/);
+      assert.match((await fresh.locator('[data-auth-identity]').textContent()) ?? '', /anonymous/);
+
+      // …and it is said ONCE. Before the reframe the enumeration block carried the same sentence,
+      // which would now be a duplicate over one file on 94% of files — the class `Q1` refused
+      // between Compose and Auth, one block apart instead of one tab.
+      assert.equal(await fresh.locator('[data-auth-sessions]').count(), 0, 'the enumeration renders with nothing to enumerate');
+
+      // 2. The other kind of file names its sessions in the same headline slot.
+      await fresh.goto(`${base}#/api/auth/named.tflw`);
+      await fresh.locator('[data-auth-identity]').waitFor();
+      assert.equal(await fresh.locator('[data-auth-identity]').getAttribute('data-auth-identity'), 'named');
+      assert.match((await fresh.locator('[data-auth-identity]').textContent()) ?? '', /shopper/);
+      assert.equal(await fresh.locator('[data-auth-sessions]').getAttribute('data-auth-sessions'), '1');
+
+      // 3. `Q4` — SCANS inverts the premise: the identity in force is not one, it is all of them.
+      //    Both sets named, and the numbers are the ones `probeSetFor` would build: five declared
+      //    sessions, two privileged, so four probe as (three plus `anonymous`) and two are out.
+      await fresh.goto(`${base}#/scan/auth/named.tflw`);
+      await fresh.locator('[data-auth-scan-caveat]').waitFor();
+      const scanCaveat = fresh.locator('[data-auth-scan-caveat]');
+      assert.equal(await scanCaveat.getAttribute('data-auth-probe-set'), '4', 'the probe set is not three sessions plus anonymous');
+      assert.equal(await scanCaveat.getAttribute('data-auth-probe-excluded'), '2', 'the privileged exclusion is not both privileged sessions');
+      const scanText = (await scanCaveat.textContent()) ?? '';
+      for (const name of ['shopper', 'peer', 'guest', 'anonymous']) assert.match(scanText, new RegExp(name), `${name} is not named in the probe set`);
+      for (const name of ['admin', 'ops']) assert.match(scanText, new RegExp(name), `${name} is not named as excluded`);
+      assert.match(scanText, /says nothing about what those principals could reach/, 'the consequence of the exclusion is not stated');
+
+      // 4. `Q3` — LOAD's caveat, and the half that matters is the second: a re-login's own requests
+      //    are absent from the numbers a `threshold p95 duration` is computed over.
+      await fresh.goto(`${base}#/load/auth/named.tflw`);
+      await fresh.locator('[data-auth-load-caveat]').waitFor();
+      const loadText = (await fresh.locator('[data-auth-load-caveat]').textContent()) ?? '';
+      assert.match(loadText, /Many users, one identity/);
+      assert.match(loadText, /absent from this run's numbers/);
+      assert.match(loadText, /threshold p95 duration/);
+
+      // 5. **THE NEGATIVE CONTROL, AND IT IS THE POINT OF THE SLICE.** Each caveat appears on its
+      //    own door and NOWHERE ELSE. A panel that showed all three to every reader would satisfy
+      //    every assertion above — and is exactly what shipped in `S4`, which is how BROWSER's
+      //    refusal came to be stated on the SCANS door. Walked across all four.
+      for (const door of ['api', 'browser', 'load', 'scan'] as const) {
+        await fresh.goto(`${base}#/${door}/auth/named.tflw`);
+        await fresh.locator('[data-auth-identity]').waitFor();
+        assert.equal(await fresh.locator('[data-auth-load-caveat]').count(), door === 'load' ? 1 : 0, `LOAD's caveat on the ${door} door`);
+        assert.equal(await fresh.locator('[data-auth-scan-caveat]').count(), door === 'scan' ? 1 : 0, `SCANS' caveat on the ${door} door`);
+        // BROWSER's needs page work as well as the door, and `named.tflw` has none — so it is
+        // absent on all four here, which is `S4`'s own control still holding under the door gate.
+        assert.equal(await fresh.locator('[data-auth-no-bridge]').count(), 0, `the bridge refusal on the ${door} door with no page steps`);
+      }
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await fresh.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('no step carries the LOAD lens, so the wire no longer ships a bucket that cannot be non-zero', async () => {
+  // `M207-01`, repaired by `M207` `S3`. Found while measuring for this round: `stepLensCounts`
+  // returned a `load` key that was **structurally incapable of being non-zero**, because no step,
+  // subject or matcher maps to that lens — it comes from `test.workload !== null` or
+  // `test.thresholds.length > 0`, which are properties of the test and not of its body.
+  //
+  // Nothing read it, so nothing was broken. The cost was the next slice: a LOAD panel built by
+  // copying `M206` `S4`'s pattern would have said *"0 statements do load work"* on a workload test,
+  // which is the wrong-number class `S4` corrected mid-slice arriving one door later.
+  //
+  // It is checked here on the **wire** rather than in a unit test of `stepLensCounts`, because the
+  // field's whole existence was as something the page reads. The type change in `lenses.ts` is what
+  // makes it unwritable; this is what makes it observably gone.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-steps-load-'));
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  api "http://127.0.0.1:1"\n', 'utf8');
+    // A test that is behind the LOAD door by both routes at once — a workload line AND a threshold
+    // — plus api work and a scan matcher, so three buckets are non-zero and the fourth's absence
+    // cannot be confused with an empty test.
+    await writeFile(
+      join(dir, 'w.tflw'),
+      [
+        'test "under load"',
+        '  run 120 iterations across 4 users',
+        '  threshold p95 duration < 500ms',
+        '  api GET /items',
+        '  expect status equals 200',
+        '  expect response has no serious security violations',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      const project = (await (await fetch(`${base}/api/project`)).json()) as {
+        files: { path: string; tests: { name: string; lenses: string[]; steps: Record<string, number> }[] }[];
+      };
+      const test = project.files.find((f) => f.path === 'w.tflw')!.tests[0]!;
+
+      // The test IS behind LOAD — asserted first, because without it the absence below is the
+      // absence of a lens nothing here carries, which would be true of any file at all.
+      assert.ok(test.lenses.includes('load'), 'the fixture is not behind the LOAD door, so this proves nothing');
+
+      assert.deepEqual(Object.keys(test.steps).sort(), ['api', 'browser', 'scan'], 'the wire still ships a `load` step bucket');
+      assert.ok(test.steps.api! > 0 && test.steps.scan! > 0, 'the buckets that should count are empty, so the shape above is not evidence');
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('the Auth tab says who this file runs as, and every editable thing lands in Config on its own line', async () => {
   // `M205` S5b, Q6. Auth is the rule's second clause — *a project fact that file resolves against*
   // — and it reads where Config writes. The three states it exists to tell apart are all here:
