@@ -10,7 +10,7 @@
 // test costs nothing and asserts the thing itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countByDoor, lenslessCount, doorFromHash, fileFromHash, hashForDoor, tabFromHash, hashForTab, focusFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
+import { countByDoor, lenslessCount, doorFromHash, docFromHash, fileFromHash, hashForDoor, tabFromHash, hashForTab, focusFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
 import type { ProjectView } from '../src/contract';
 
 const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', envs: [], reportDir: './report', files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [], sessions: [] }, webBaseUrl: null });
@@ -177,4 +177,55 @@ test('the hash’s third segment is a line for Config to land on, and only that'
   // regexp is a change to all three.
   assert.equal(tabFromHash('#/api/config/L11'), 'config');
   assert.equal(doorFromHash('#/api/config/L11'), 'api');
+});
+
+test('a `@name` segment names which project document Config shows, and only that', () => {
+  // `M208` `S2` (`Q2`). Config is the one tab whose subject is not the addressed file — it renders
+  // `tflw.config` while the hash names the `.tflw` — and `M208` gives it a second document to show.
+  // The document is named by its **env**, because a baseline is declared per env, the env is
+  // already a word in the config, and an env name survives a rename of the JSON. A filename would
+  // not, and a filename may itself contain slashes, which is the problem the file slot already
+  // solved and must not solve twice.
+  const nested = 'tests/ui/storefront/login.tflw';
+  assert.equal(hashForTab('scan', 'config', nested, 7, 'local'), `#/scan/config/${nested}/@local/L7`);
+  assert.equal(fileFromHash(`#/scan/config/${nested}/@local/L7`), nested, 'the document must not eat the file');
+  assert.equal(docFromHash(`#/scan/config/${nested}/@local/L7`), 'local');
+  assert.equal(focusFromHash(`#/scan/config/${nested}/@local/L7`), 7, 'the document must not eat the line');
+
+  // `@defaults` is the `defaults` block's document and is spelled like any other, because
+  // `defaults` is a block of the config exactly as an env is.
+  assert.equal(docFromHash('#/scan/config/@defaults'), 'defaults');
+  assert.equal(fileFromHash('#/scan/config/@defaults'), null, 'a lone document segment is not a file');
+
+  // EVERY ADDRESS THAT EXISTED BEFORE THIS SLICE STILL MEANS WHAT IT MEANT — `S5b`'s and `Q4`'s
+  // gate run a third time. `null` is `tflw.config`, so the absence of the segment is the default
+  // rather than a spelled `@config`; spelling it would have made every existing link ambiguous
+  // about which document it named.
+  for (const hash of ['#', '#/api', '#/api/config', '#/api/config/L11', `#/api/config/${nested}`, `#/api/config/${nested}/L11`]) {
+    assert.equal(docFromHash(hash), null, `\`${hash}\` names no document`);
+  }
+  assert.equal(hashForTab('api', 'config', nested, 11), `#/api/config/${nested}/L11`, 'an omitted document writes no segment');
+  assert.equal(hashForTab('api', DEFAULT_TAB), '#/api', 'and the bare form still wins when nothing follows it');
+
+  // A `.tflw` PATH CONTAINING AN `@` IS STILL A PATH. The document pattern forbids a dot and every
+  // test file's last segment ends in `.tflw`, so the two can never be confused — and the near-miss
+  // is pinned, so a future loosening of the regexp is a red test rather than a file that silently
+  // becomes a document selector.
+  assert.equal(fileFromHash('#/api/source/tests/@local/login.tflw'), 'tests/@local/login.tflw');
+  assert.equal(docFromHash('#/api/source/tests/@local/login.tflw'), null);
+  assert.equal(fileFromHash('#/api/source/@local.tflw'), '@local.tflw', 'a file that merely starts with `@` is a file');
+  assert.equal(docFromHash('#/api/source/@local.tflw'), null);
+
+  // And the four rules do not interfere. Pinned together because all four read the same string.
+  assert.equal(doorFromHash(`#/scan/config/${nested}/@local/L7`), 'scan');
+  assert.equal(tabFromHash(`#/scan/config/${nested}/@local/L7`), 'config');
+
+  // Round trip over every tab, so a document is not a thing only Config can carry in the address.
+  // It is only *meaningful* there, which is a different claim and is the panel's to make.
+  for (const tab of TABS) {
+    const hash = hashForTab('scan', tab.id, 'a.tflw', undefined, 'prod');
+    assert.equal(docFromHash(hash), 'prod', `${tab.id} lost the document`);
+    assert.equal(tabFromHash(hash), tab.id, `${tab.id} did not survive a round trip with a document`);
+    assert.equal(fileFromHash(hash), 'a.tflw', `${tab.id} lost the file`);
+  }
 });

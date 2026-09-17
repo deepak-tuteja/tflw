@@ -88,6 +88,47 @@ export async function putConfig(text: string, ifMatch: string): Promise<{ ok: tr
 }
 
 /**
+ * A project document that is not `tflw.config` — the baseline a config block declares (`M208` `S2`).
+ *
+ * `text: null` is *declared but not written yet*, which is a real and ordinary state rather than a
+ * failure: a project adopting triage declares the document before anything has been accepted into
+ * it. `etag: null` travels with it, and `putBaseline` reads that absence as *create*.
+ */
+export interface DocumentView {
+  readonly path: string;
+  /** The config block that declares it — `defaults` or an env name. */
+  readonly declaredIn: string;
+  readonly text: string | null;
+  readonly etag: string | null;
+}
+
+/** The document `doc` names — `defaults` or an env name, never a path. See `resolveBaselineDoc`
+ *  for why the page may not name a file here. */
+export const getBaseline = (doc: string) => getJson<DocumentView>(`/api/baseline?doc=${encodeURIComponent(doc)}`);
+
+/**
+ * Write a baseline document back.
+ *
+ * **`ifMatch: null` means create**, unlike `putConfig` and like `putFile`. A config that does not
+ * exist is not a project; a *declared* baseline that has not been written is where every project
+ * adopting triage starts, and `[accept]` on the first finding is the gesture that ends it.
+ */
+export async function putBaseline(
+  doc: string,
+  text: string,
+  ifMatch: string | null,
+): Promise<{ ok: true; etag: string } | { ok: false; status: number; error: string }> {
+  const res = await fetch(`/api/baseline?doc=${encodeURIComponent(doc)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', ...(ifMatch === null ? {} : { 'if-match': ifMatch }) },
+    body: JSON.stringify({ text }),
+  });
+  const body = (await res.json()) as { etag?: string; error?: string };
+  if (res.ok && body.etag) return { ok: true, etag: body.etag };
+  return { ok: false, status: res.status, error: body.error ?? `${res.status}` };
+}
+
+/**
  * Drop the scratch file — what `[Discard]` does (`D1054`).
  *
  * `ifMatch` is the version the page last read; a mismatch comes back as `409` so the page can say

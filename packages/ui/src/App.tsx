@@ -6,16 +6,16 @@
 // than a fact about one, so there is no `.tflw-ui/` anything to remember it in, and a link to
 // `#/load` is a link to the LOAD door of whatever project this server is serving.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { cancelRun, getConfig, getProject, getReports, getResults, getRuns, getStderr, putConfig, reportFileUrl, startRun, subscribe } from './api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { cancelRun, getBaseline, getConfig, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, reportFileUrl, startRun, subscribe } from './api';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest } from './contract';
-import { DEFAULT_TAB, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
+import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
 import { ApiForm } from './ApiForm';
 import { AuthPanel } from './AuthPanel';
-import { ConfigPanel } from './ConfigPanel';
+import { ConfigPanel, documentsOf } from './ConfigPanel';
 import { ScanForm } from './ScanForm';
 import { BrowserForm } from './BrowserForm';
 import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
@@ -32,6 +32,25 @@ interface LiveRun {
   readonly stderr: string | null;
 }
 
+/**
+ * One project document as the shell holds it (`M208` `S2`) — `tflw.config` or a declared baseline.
+ *
+ * `disk` is the oracle for *is there anything to save*, and it is deliberately separate from `text`:
+ * a page that compared its own text against itself could never tell an edit from a read.
+ *
+ * `absentPath` is the declared path of a document that is **declared but not written yet**, which
+ * is the ordinary state of a project adopting triage rather than a failure — the declaration is
+ * really there, the file is not, and `[accept]` is the gesture that ends it.
+ */
+interface DocState {
+  readonly text: string | null;
+  readonly disk: string | null;
+  readonly etag: string | null;
+  readonly absentPath: string | null;
+}
+
+const EMPTY_DOC: DocState = { text: null, disk: null, etag: null, absentPath: null };
+
 export function App() {
   const [door, setDoorState] = useState<Lens | null>(() => doorFromHash(window.location.hash));
   /** Which stage of the selected file is showing (`M205` §2). It is the hash's second segment, so
@@ -44,6 +63,10 @@ export function App() {
   /** The line Config was asked to land on (`M205` S5b), read off the end of the hash. `null` for
    *  every address that does not name one, which is every address anybody had before `S5b`. */
   const [focusLine, setFocusLine] = useState<number | null>(() => focusFromHash(window.location.hash));
+  /** Which project **document** Config shows — `null` is `tflw.config` (`M208` `S2`, `Q2`). In the
+   *  hash for `D1045`'s reason a fourth time: `[accept]` has to be a link, so the document is part
+   *  of the address rather than a callback the findings list carries. */
+  const [doc, setDocState] = useState<string | null>(() => docFromHash(window.location.hash));
   const [project, setProject] = useState<ProjectView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RunRecord[]>([]);
@@ -67,6 +90,7 @@ export function App() {
       setTabState(tabFromHash(window.location.hash));
       setFileState(fileFromHash(window.location.hash));
       setFocusLine(focusFromHash(window.location.hash));
+      setDocState(docFromHash(window.location.hash));
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
@@ -81,31 +105,51 @@ export function App() {
       // is a stage of *this* file's life, and the stage you were at in one kind of work says
       // nothing about the stage you are at in another. Landing on BROWSER's Source because you
       // were reading API's is a guess; landing on Compose is the door's own promise (`D1042`).
+      // The **document** is dropped with the tab, and for the tab's own reason: it is a choice made
+      // inside Config, and a door change lands on Compose where there is no document to be showing.
       const next_hash = next === null ? hashForDoor(null) : hashForTab(next, DEFAULT_TAB, file);
       window.location.hash = next_hash;
       setDoorState(next);
       setTabState(DEFAULT_TAB);
       setFocusLine(null);
+      setDocState(null);
     },
     [file],
   );
   const setTab = useCallback(
-    (next: TabId, focus?: number) => {
-      if (door !== null) window.location.hash = hashForTab(door, next, file, focus);
+    (next: TabId, focus?: number, nextDoc?: string | null) => {
+      // `nextDoc` is `undefined` for every caller that does not care, and that is not the same as
+      // `null`: `[edit]` from Auth means *tflw.config, at this line* and must clear a baseline the
+      // reader was looking at, while an ordinary tab click should not silently switch documents
+      // under them. So an omitted argument keeps the current document and an explicit `null` names
+      // `tflw.config`.
+      const wanted = nextDoc === undefined ? doc : nextDoc;
+      if (door !== null) window.location.hash = hashForTab(door, next, file, focus, wanted);
       setTabState(next);
       setFocusLine(focus ?? null);
+      setDocState(wanted);
     },
-    [door, file],
+    [door, file, doc],
+  );
+  /** Choosing a different document inside Config. It drops the focus line for `setFile`'s reason:
+   *  a line number is an offset into the document that named it. */
+  const setDoc = useCallback(
+    (next: string | null) => {
+      if (door !== null) window.location.hash = hashForTab(door, tab, file, undefined, next);
+      setDocState(next);
+      setFocusLine(null);
+    },
+    [door, tab, file],
   );
   /** Choosing a different file. It drops the focus line, because a line number is an offset into
    *  the file that named it and means nothing in the next one. */
   const setFile = useCallback(
     (next: string) => {
-      if (door !== null) window.location.hash = hashForTab(door, tab, next);
+      if (door !== null) window.location.hash = hashForTab(door, tab, next, undefined, doc);
       setFileState(next);
       setFocusLine(null);
     },
-    [door, tab],
+    [door, tab, doc],
   );
 
   const refreshLists = useCallback(async () => {
@@ -142,13 +186,42 @@ export function App() {
    * would be four editors over one file, disagreeing about what is unsaved. That is the same
    * duplicate `S1` removed for the selected file, caught before it was written rather than after.
    */
-  const [configText, setConfigText] = useState<string | null>(null);
-  /** What is on disk as of the last read or write — the oracle for *is there anything to save*. */
-  const [configDisk, setConfigDisk] = useState<string | null>(null);
-  const [configEtag, setConfigEtag] = useState<string | null>(null);
+  /**
+   * **Keyed by document** since `M208` `S2`, and it is one map rather than a second set of
+   * variables beside the first. `tflw.config` and a baseline are the same kind of thing to this
+   * shell — a project document with text, a disk copy and an etag — and the moment that is written
+   * twice the two copies can disagree about what is unsaved, which is the duplicate `S1` removed
+   * for the selected file and `S2a` removed for the config itself.
+   *
+   * Keeping a per-document entry is what makes switching documents non-destructive: an author who
+   * types into a baseline, glances at `tflw.config` and comes back still has their edit. That is
+   * the same property the shell already guarantees across *tabs*, for the same reason — the strip
+   * unmounts panels, so nothing below this component may hold an edit.
+   */
+  const [docs, setDocs] = useState<Readonly<Record<string, DocState>>>({});
   const [configBusy, setConfigBusy] = useState(false);
   const [configProblem, setConfigProblem] = useState<string | null>(null);
   const [configSaved, setConfigSaved] = useState<string | null>(null);
+  /** `tflw.config` under its own key, so the map has no `null` in it — a `Record` key cannot be
+   *  `null`, and `@` cannot begin an env name, so nothing can collide with it. */
+  const docKey = doc ?? '@config';
+  const cur: DocState = docs[docKey] ?? EMPTY_DOC;
+  const configText = cur.text;
+  const configDisk = cur.disk;
+  const configEtag = cur.etag;
+  const patchDoc = useCallback((key: string, patch: Partial<DocState>) => {
+    setDocs((prev) => ({ ...prev, [key]: { ...(prev[key] ?? EMPTY_DOC), ...patch } }));
+  }, []);
+  /**
+   * The switcher's entries, derived from the config's **disk** copy — see `documentsOf`.
+   *
+   * **Up here with the other hooks, not down beside the panel it feeds**, and that placement is not
+   * tidiness: `App` returns the landing early when no door is open, so a `useMemo` written next to
+   * `configPanel` sits below that return and changes the hook count between the two renders. It was
+   * written there first and the page gate caught it at once — every door test timed out waiting for
+   * a file list that React never got to render.
+   */
+  const documents = useMemo(() => documentsOf(docs['@config']?.disk ?? null), [docs]);
 
   /**
    * Read `tflw.config` the first time Config is opened, and never otherwise.
@@ -159,30 +232,45 @@ export function App() {
    * read. Once is the honest answer: the etag is what detects a config changed underneath, and it
    * detects it at the moment it matters, as the `409` that guard exists for.
    */
-  const readConfig = useCallback(() => {
-    setConfigProblem(null);
-    setConfigSaved(null);
-    return getConfig()
-      .then((c) => {
-        setConfigText(c.text);
-        setConfigDisk(c.text);
-        setConfigEtag(c.etag);
-      })
-      .catch((e: unknown) => setConfigProblem(e instanceof Error ? e.message : String(e)));
-  }, []);
+  const readConfig = useCallback(
+    (which: string | null) => {
+      const key = which ?? '@config';
+      setConfigProblem(null);
+      setConfigSaved(null);
+      const read = which === null
+        ? getConfig().then((c) => ({ text: c.text as string | null, etag: c.etag as string | null, absentPath: null }))
+        : getBaseline(which).then((d) => ({ text: d.text, etag: d.etag, absentPath: d.text === null ? d.path : null }));
+      return read
+        .then(({ text, etag, absentPath }) => patchDoc(key, { text, disk: text, etag, absentPath }))
+        .catch((e: unknown) => setConfigProblem(e instanceof Error ? e.message : String(e)));
+    },
+    [patchDoc],
+  );
 
   useEffect(() => {
-    if (tab !== 'config' || configText !== null) return;
-    void readConfig();
-  }, [tab, configText, readConfig]);
+    if (tab !== 'config') return;
+    // `tflw.config` is read whenever Config is open, **even when the address names a baseline**.
+    // The switcher's list is a fact about the config — which blocks declare a `baseline`, and where
+    // — so a page that read only the addressed document could not draw the switcher that got it
+    // there. Landing directly on `#/scan/config/@headers` did exactly that, and the page gate
+    // caught it: one entry in the list, so the switcher rendered nothing at all and the document
+    // could be reached only by the address it was already at.
+    if (docs['@config'] === undefined) void readConfig(null);
+    if (docKey !== '@config' && docs[docKey] === undefined) void readConfig(doc);
+  }, [tab, docs, docKey, doc, readConfig]);
 
   const saveConfig = useCallback(async () => {
-    if (configText === null || configEtag === null) return;
+    // A baseline may be saved with **no etag**, because a declared document that has never been
+    // written is created by this save (`writeBaselineDoc`). `tflw.config` may not: a project with
+    // no config is not a project, so an absent etag there means the page has not read the file it
+    // is claiming to edit.
+    if (configText === null) return;
+    if (doc === null && configEtag === null) return;
     setConfigBusy(true);
     setConfigProblem(null);
     setConfigSaved(null);
     try {
-      const put = await putConfig(configText, configEtag);
+      const put = doc === null ? await putConfig(configText, configEtag!) : await putBaseline(doc, configText, configEtag);
       if (!put.ok) {
         // A `409` is the one refusal with no repair inside this page, so it gets a gesture rather
         // than a sentence: `re-read from disk` is offered beside it, and it is a button because
@@ -193,9 +281,8 @@ export function App() {
         setConfigProblem(put.error);
         return;
       }
-      setConfigEtag(put.etag);
-      setConfigDisk(configText);
-      setConfigSaved('saved — tflw.config is what you see here');
+      patchDoc(docKey, { etag: put.etag, disk: configText, absentPath: null });
+      setConfigSaved(`saved — ${doc === null ? 'tflw.config' : 'the baseline'} is what you see here`);
       // The project view carries the sessions and the authorized targets Auth reads, and both
       // just changed. `D985` again: the page is a projection of the files, so it re-reads rather
       // than patching what it thinks it wrote.
@@ -203,7 +290,7 @@ export function App() {
     } finally {
       setConfigBusy(false);
     }
-  }, [configText, configEtag, readProjectView]);
+  }, [configText, configEtag, doc, docKey, patchDoc, readProjectView]);
 
 
 
@@ -393,25 +480,40 @@ export function App() {
   const authPanel = project ? <AuthPanel project={project} path={path} onEdit={(line) => setTab('config', line)} door={door} /> : null;
   const configPanel = (
     <ConfigPanel
+      documents={documents}
+      doc={doc}
+      onDoc={setDoc}
+      absentPath={cur.absentPath}
       text={configText}
       disk={configDisk}
       onChange={(next) => {
-        setConfigText(next);
+        patchDoc(docKey, { text: next, ...(cur.disk === null && cur.absentPath !== null ? { disk: '' } : {}) });
         // The `saved` line is a claim about the bytes on disk, and one keystroke makes it false.
         // It goes the moment the text moves, rather than sitting under an edit it no longer
         // describes.
         setConfigSaved(null);
       }}
       onSave={() => void saveConfig()}
-      onReload={() => void readConfig()}
+      onReload={() => void readConfig(doc)}
       busy={configBusy}
       problem={configProblem}
       saved={configSaved}
       focusLine={focusLine}
     />
   );
-  /** Config has something to say while you are elsewhere only when it is holding an unsaved edit. */
-  const configMark = configText !== null && configDisk !== null && configText !== configDisk ? 'tflw.config has an edit nobody has saved' : undefined;
+  /**
+   * Config has something to say while you are elsewhere only when it is holding an unsaved edit —
+   * in **any** of its documents since `M208` `S2`, not only in `tflw.config`. A mark that watched
+   * one document would go quiet the moment an author switched away from the one they had edited,
+   * which is the same silence the mark exists to prevent.
+   */
+  const unsavedDocs = Object.entries(docs).filter(([, d]) => d.text !== null && d.disk !== null && d.text !== d.disk);
+  const configMark =
+    unsavedDocs.length === 0
+      ? undefined
+      : unsavedDocs.length === 1 && unsavedDocs[0]![0] === '@config'
+        ? 'tflw.config has an edit nobody has saved'
+        : `${unsavedDocs.length} project document${unsavedDocs.length === 1 ? '' : 's'} ${unsavedDocs.length === 1 ? 'has' : 'have'} an edit nobody has saved`;
 
   return (
     <div className="app">

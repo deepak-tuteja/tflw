@@ -24,6 +24,53 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { parseConfigSource } from '@tflw/lang';
 
+/**
+ * One entry in the Config tab's document switcher (`M208` `S2`).
+ *
+ * **The Config tab is the one tab whose subject is not the addressed file** — it renders
+ * `tflw.config` while the hash names the `.tflw`. That is the strip's rule's second clause working
+ * (*a project fact that file resolves against*), and until `M208` there was exactly one such fact,
+ * so there was no pattern for *which* project document Config shows. `baseline` is the second, and
+ * `@env` is that pattern: a document is named by the config block that declares it, because a
+ * baseline **is** declared per env and an env name survives a rename of the JSON.
+ */
+export interface ConfigDocument {
+  /** `null` is `tflw.config` itself — the address every link written before `M208` names. */
+  readonly doc: string | null;
+  /** What the switcher says. `tflw.config`, or the declared path. */
+  readonly label: string;
+  /** Where the declaration is, for the entries that have one — `defaults`, or `env <name>`. */
+  readonly declaredIn: string | null;
+}
+
+/**
+ * Every project document this config declares, `tflw.config` first.
+ *
+ * Read off the config's own **text**, not off a second server call, because the text is already
+ * here and a list fetched separately is a list that can disagree with the file it describes. It is
+ * read off the *disk* copy rather than the editor's: the switcher lists what the project declares,
+ * and a `baseline` line somebody has typed but not saved is not yet a declaration — the server
+ * would answer `404` for it, and a switcher entry that cannot be opened is worse than none.
+ *
+ * The **last** `baseline` in a block wins, which is what `resolveConfig` does with it; a block with
+ * two is `TF081` and the page shows what a run would read.
+ */
+export function documentsOf(configOnDisk: string | null): readonly ConfigDocument[] {
+  const out: ConfigDocument[] = [{ doc: null, label: 'tflw.config', declaredIn: null }];
+  if (configOnDisk === null) return out;
+  const { config } = parseConfigSource(configOnDisk);
+  const blocks: { name: string; label: string; entries: readonly { type: string }[] }[] = [
+    ...(config.defaults ? [{ name: 'defaults', label: 'defaults', entries: config.defaults.entries }] : []),
+    ...config.envs.map((e) => ({ name: e.name, label: `env ${e.name}`, entries: e.entries })),
+  ];
+  for (const block of blocks) {
+    const declared = [...block.entries].reverse().find((e) => e.type === 'BaselineDecl') as { path?: { value: string } } | undefined;
+    if (declared?.path === undefined) continue;
+    out.push({ doc: block.name, label: declared.path.value, declaredIn: block.label });
+  }
+  return out;
+}
+
 export interface ConfigPanelProps {
   /** `null` while the first read is in flight. */
   readonly text: string | null;
@@ -39,12 +86,26 @@ export interface ConfigPanelProps {
   readonly saved: string | null;
   /** The line an `[edit]` link asked for — the hash's third segment. */
   readonly focusLine: number | null;
+  /** Every document this project declares, `tflw.config` first (`M208` `S2`). */
+  readonly documents: readonly ConfigDocument[];
+  /** Which one the address names — `null` is `tflw.config`. */
+  readonly doc: string | null;
+  readonly onDoc: (doc: string | null) => void;
+  /** The declared path of a `doc` that is not on disk yet, or `null` when there is nothing to say.
+   *  A declared-but-unwritten baseline is the ordinary state of a project adopting triage, not a
+   *  failure — see `getBaseline`. */
+  readonly absentPath: string | null;
 }
 
-export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, problem, saved, focusLine }: ConfigPanelProps) {
+export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, problem, saved, focusLine, documents, doc, onDoc, absentPath }: ConfigPanelProps) {
   const area = useRef<HTMLTextAreaElement | null>(null);
 
-  const diagnostics = useMemo(() => (text === null ? [] : parseConfigSource(text).diagnostics), [text]);
+  // The config dialect's diagnostics belong to the config dialect. A baseline document is JSON in
+  // `D387`'s shape, and running the config parser over it would report a wall of `TF001`s about a
+  // file that is not wrong — so the editor shows nothing here for a baseline and lets the server's
+  // own `parseBaseline` be the bar, which is the strictest one in the project and the only one that
+  // knows what a baseline is. `D1052` still holds for the config: shown, not blocking.
+  const diagnostics = useMemo(() => (text === null || doc !== null ? [] : parseConfigSource(text).diagnostics), [text, doc]);
   const errors = diagnostics.filter((d) => d.severity === 'error');
   const unsaved = text !== null && disk !== null && text !== disk;
 
@@ -72,21 +133,82 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
     el.scrollTop = Math.max(0, lineHeight * index - el.clientHeight / 2);
   }, [focusLine, text]);
 
+  const current = documents.find((d) => d.doc === doc) ?? documents[0];
+  const switcher =
+    documents.length < 2 ? null : (
+      <nav className="doc-switcher" data-config-documents={documents.length} aria-label="project documents">
+        {documents.map((d) => (
+          <button
+            key={d.doc ?? '@config'}
+            className={d.doc === doc ? 'docpick on' : 'docpick'}
+            onClick={() => onDoc(d.doc)}
+            data-config-doc={d.doc ?? 'config'}
+            aria-current={d.doc === doc ? 'true' : undefined}
+            title={d.declaredIn === null ? 'the project facts every file here resolves against' : `declared by \`baseline\` in ${d.declaredIn}`}
+          >
+            {d.label}
+            {d.declaredIn === null ? null : <span className="muted"> · {d.declaredIn}</span>}
+          </button>
+        ))}
+      </nav>
+    );
+
+  // A declared document that has never been written is not an error and does not look like one:
+  // the declaration is really there, the file is not, and the repair is to accept a finding into
+  // it. Shown as an editable empty document rather than as a refusal, so the author can also just
+  // write one.
+  if (text === null && absentPath !== null) {
+    return (
+      <div className="authoring config-panel" data-api-config="absent">
+        {switcher}
+        <header className="authoring-head">
+          <h2>{absentPath}</h2>
+          <p className="muted">
+            Declared by <code>baseline</code> in {current?.declaredIn ?? 'this config'}, and not written yet — which is where every
+            project adopting triage starts. <code>[accept]</code> on a finding writes the first entry; so does saving here.
+          </p>
+        </header>
+        <textarea
+          ref={area}
+          className="config-text"
+          value={''}
+          onChange={(e) => onChange(e.target.value)}
+          spellCheck={false}
+          rows={20}
+          data-api-config-text
+          placeholder={'{\n  "version": 1,\n  "accepted": []\n}'}
+          title="the accepted-findings document — version 1, and an `accepted` array of fingerprints"
+        />
+      </div>
+    );
+  }
+
   if (text === null) {
     return (
       <div className="authoring config-panel" data-api-config="loading">
-        <p className="muted">reading tflw.config…</p>
+        <p className="muted">reading {current?.label ?? 'tflw.config'}…</p>
       </div>
     );
   }
 
   return (
-    <div className="authoring config-panel" data-api-config={unsaved ? 'unsaved' : 'saved'}>
+    <div className="authoring config-panel" data-api-config={unsaved ? 'unsaved' : 'saved'} data-config-showing={doc ?? 'config'}>
+      {switcher}
       <header className="authoring-head">
-        <h2>tflw.config</h2>
+        <h2>{current?.label ?? 'tflw.config'}</h2>
         <p className="muted">
-          The project facts every file here resolves against — the base URLs, the envs, the sessions, the authorized targets. This is
-          the same file <code>tflw run</code> reads, written the same way; nothing on this page reformats it.
+          {doc === null ? (
+            <>
+              The project facts every file here resolves against — the base URLs, the envs, the sessions, the authorized targets. This
+              is the same file <code>tflw run</code> reads, written the same way; nothing on this page reformats it.
+            </>
+          ) : (
+            <>
+              The findings this project has accepted, declared by <code>baseline</code> in {current?.declaredIn ?? 'this config'}. A
+              listed finding still appears in every report, badged <em>known/accepted</em> — it is deferred, not suppressed. Delete a
+              line to un-accept it.
+            </>
+          )}
         </p>
       </header>
 
@@ -98,7 +220,11 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
         spellCheck={false}
         rows={20}
         data-api-config-text
-        title="tflw.config — the declaration-only dialect; `tflw check` reads it the same way this page does"
+        title={
+          doc === null
+            ? 'tflw.config — the declaration-only dialect; `tflw check` reads it the same way this page does'
+            : 'the accepted-findings document — the match is on `fingerprint` alone, and `rule`/`endpoint` are there for you'
+        }
       />
 
       {/* `D1052` — shown, not blocking. An error also stops the save, because the server refuses
@@ -116,7 +242,12 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
       ) : null}
 
       <div className="authoring-actions">
-        <button onClick={onSave} disabled={busy || !unsaved || errors.length > 0} data-api-config-save title="write tflw.config back, under the version this page read">
+        <button
+          onClick={onSave}
+          disabled={busy || !unsaved || errors.length > 0}
+          data-api-config-save
+          title={`write ${current?.label ?? 'tflw.config'} back, under the version this page read`}
+        >
           save
         </button>
         <span className="muted" data-api-config-state>

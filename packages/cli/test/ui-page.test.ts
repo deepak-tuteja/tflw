@@ -1365,6 +1365,76 @@ test('an unsaved tflw.config edit survives a door change, because a project fact
   await page.locator('[data-api-config-text]').fill(original);
 });
 
+test('Config shows the documents this project declares, addressed by `@env`', async () => {
+  // `M208` `S2` (`Q2`). The Config tab was already the one tab whose subject is not the addressed
+  // file — it renders `tflw.config` while the hash names the `.tflw` — and that is the strip's rule's
+  // second clause working, not an exception to it. What there was no pattern for is *which* project
+  // document Config shows, because until `M208` there was only ever one. `@env` is that pattern.
+  //
+  // The fixture declares `baseline "./security-baseline.json"` on `env headers` and on no other
+  // block, which is deliberate and measured: `full` and `headers` exist to hold the SAME finding
+  // once gating and once known/accepted, so a `defaults` line would baseline it in both and delete
+  // the contrast a dozen assertions above read as their oracle.
+  await page.goto(`${baseUrl}#/scan/config`);
+  await page.reload();
+  await page.locator('[data-api-config-text]').waitFor();
+
+  // Two entries: `tflw.config` and the one declared baseline. Not three — `defaults` and `env full`
+  // declare none, and a switcher that listed every block would be listing documents that do not
+  // exist.
+  const picks = page.locator('[data-config-doc]');
+  assert.deepEqual(await picks.evaluateAll((els) => els.map((e) => e.getAttribute('data-config-doc'))), ['config', 'headers']);
+  assert.equal(await page.locator('[data-api-config]').getAttribute('data-config-showing'), 'config', 'it opens on tflw.config, which is every pre-M208 address');
+  assert.match(await page.locator('[data-api-config-text]').inputValue(), /authorized target/, 'and that is really the config');
+
+  // Clicking the baseline changes the document AND the address, because `D1045` says the choice
+  // lives in the URL and nowhere else — so this is linkable and the back button walks out of it.
+  await picks.nth(1).click();
+  await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
+  assert.equal(new URL(page.url()).hash, '#/scan/config/@headers');
+  const doc = JSON.parse(await page.locator('[data-api-config-text]').inputValue()) as { version: number; accepted: { fingerprint: string }[] };
+  assert.equal(doc.version, 1);
+  assert.deepEqual(doc.accepted.map((a) => a.fingerprint), ['d1a3ef65f88fb550'], 'the document the headers corpus is actually graded against');
+
+  // The address is the state, so a reload lands back on the same document with nothing remembered
+  // anywhere. That is the claim `D1045` makes and the one a click alone cannot prove.
+  await page.reload();
+  await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
+  assert.match(await page.locator('[data-api-config-text]').inputValue(), /d1a3ef65f88fb550/);
+
+  // Back out, and `tflw.config` is what Config shows again — the default being the ABSENCE of the
+  // segment is what keeps every link written before `M208` meaning what it meant.
+  await page.goBack();
+  await page.locator('[data-api-config][data-config-showing="config"]').waitFor();
+  assert.match(await page.locator('[data-api-config-text]').inputValue(), /authorized target/);
+});
+
+test('an unsaved edit in one document survives a trip to another, and the mark says so', async () => {
+  // The per-document state, which is the half of `S2` that is not the address. `S5a` found that the
+  // strip unmounts panels, so an edit held below this shell is an edit a glance throws away; `S2a`
+  // moved it up one level for the config. A second document makes the same mistake available one
+  // level in — an author who types into a baseline, looks at `tflw.config` and comes back must
+  // still have their edit, and the mark must keep saying so while they are away.
+  await page.goto(`${baseUrl}#/scan/config/@headers`);
+  await page.reload();
+  await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
+  const original = await page.locator('[data-api-config-text]').inputValue();
+  await page.locator('[data-api-config-text]').fill(original.replace('"accepted"', '"accepted" '));
+  await page.locator('[data-tab-mark="config"]').waitFor();
+
+  // Away to the other document, and back.
+  await page.locator('[data-config-doc="config"]').click();
+  await page.locator('[data-api-config][data-config-showing="config"]').waitFor();
+  assert.equal(await page.locator('[data-tab-mark="config"]').count(), 1, 'the mark went quiet while the edited document was not the one on screen');
+  await page.locator('[data-config-doc="headers"]').click();
+  await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
+  assert.match(await page.locator('[data-api-config-text]').inputValue(), /"accepted" /, 'a document change threw away an unsaved edit');
+
+  // Put it back, so this test leaves the project as it found it.
+  await page.locator('[data-api-config-text]').fill(original);
+  await page.locator('[data-tab-mark="config"]').waitFor({ state: 'detached' });
+});
+
 test('the BROWSER form writes a whole test — open, a scoped block, and an assertion', async () => {
   await page.goto(`${baseUrl}#/browser`);
   await page.reload();
