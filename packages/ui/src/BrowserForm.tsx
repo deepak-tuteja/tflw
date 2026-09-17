@@ -313,6 +313,14 @@ export function BrowserForm({ project, onWritten, filePath, onFile, tab, onTab, 
   if (pending.ok && file && pending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';
   if (runMark) marks.run = runMark;
   if (configMark) marks.config = configMark;
+  // `M206` `S3` — the one mark on this door that names a **live process** rather than unsaved
+  // bytes. A pick session outlives a tab switch by construction (its state is `useState` here, and
+  // the strip unmounts only the panels), so an author can leave Compose with a real browser open
+  // and nothing on the page saying so. The mark is what closes that: the `.picking` pane lives
+  // inside Compose and goes with it, and a browser you have forgotten is the one you will not
+  // close. It still fits the rule's wording — *a fact about what that tab's own subject is
+  // holding* — because the session belongs to a Compose field and fills it.
+  if (picking !== null) marks.compose = `a browser is open at ${project.webBaseUrl ?? 'this env’s web base'} — it closes when you leave this door`;
 
   return (
     <section className="doorpane" data-browser-form>
