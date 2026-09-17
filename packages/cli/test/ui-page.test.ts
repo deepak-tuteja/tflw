@@ -1116,6 +1116,120 @@ test('the BROWSER door has the same five tabs, and its run pane is only reachabl
   assert.equal(await page.locator('[data-browser-name]').inputValue(), 'typed before leaving');
 });
 
+test('the LOAD door has the same five tabs, and its run pane is only reachable through Run', async () => {
+  // `M207` `S1`. The third door to take the strip, and the one the measurement said needed it
+  // most: LOAD was **the only door over one screen** (1003 px · 1.11 against 900 px flat on the
+  // other three), because its form is twice BROWSER's and the run list sat under all of it.
+  //
+  // The address already parsed before this slice — `#/load/auth/tests/load.tflw` resolved through
+  // `doorFromHash`, `tabFromHash` and `fileFromHash` and the hash stuck — and the page rendered no
+  // strip at all. So this door had addressable tabs no gesture could reach, which is what the
+  // first loop below is actually pinning.
+  await page.goto(`${baseUrl}#/load`);
+  await page.reload();
+  await page.locator('[data-load-form]').waitFor();
+  assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip LOAD link stopped opening the door');
+
+  for (const tab of ['source', 'run', 'auth', 'config'] as const) {
+    await openTab(tab);
+    assert.equal(new URL(page.url()).hash, `#/load/${tab}`, `${tab} is not an address on this door`);
+    assert.equal(await page.locator('[data-doorbar]').getAttribute('data-doorbar'), 'load', 'a tab unseated the door');
+  }
+  await openTab('compose');
+  assert.equal(new URL(page.url()).hash, '#/load', 'the default tab stopped writing the bare door hash');
+
+  // THE RUN PANE MOVED, asserted as an ABSENCE on Compose and a PRESENCE on Run — `S2b`'s finding
+  // carried forward, because either half alone passes against a pane that was simply deleted.
+  assert.equal(await page.locator('.main > .runs').count(), 0, 'the run pane is still inline under the LOAD form');
+  await openTab('run');
+  await page.locator('[data-load-run-tab]').waitFor();
+  assert.ok((await page.locator('[data-load-run-tab] .runs').count()) > 0, 'Run does not hold the run pane it was given');
+
+  // THE STATE CLAIM, across a real unmount — the fields are `useState` in `LoadForm`, above the
+  // panels, so Compose genuinely goes away and the values still come back. Two fields rather than
+  // one, and a number beside a string, because this form's state is the widest of the four doors:
+  // six workload shapes and a threshold table.
+  await openTab('compose');
+  await page.locator('[data-load-name]').fill('typed before leaving');
+  await page.locator('[data-load-field="vus"]').fill('7');
+  await openTab('source');
+  assert.equal(await page.locator('[data-load-compose]').count(), 0, 'Compose did not unmount, so surviving it proves nothing');
+  await openTab('compose');
+  assert.equal(await page.locator('[data-load-name]').inputValue(), 'typed before leaving');
+  assert.equal(await page.locator('[data-load-field="vus"]').inputValue(), '7');
+
+});
+
+test('LOAD now measures what a door with a strip measures — tab for tab, against the two that have one', async () => {
+  // `M207` §1's facts table, re-read as a gate rather than quoted — and the claim is **parity with
+  // the doors that already adopted the strip**, not a constant. At 1440x900 LOAD was the only door
+  // over one screen (1003 px · 1.11 against 900 px flat), because its form is twice BROWSER's and
+  // the run list sat under all of it unconditionally.
+  //
+  // **THE PLAN'S GATE LINE SAID "`main` ONE SCREEN ON EACH" AND THAT IS FALSE, ON EVERY DOOR,
+  // SINCE THE STRIP EXISTED.** Measured here across all three: Compose, Source, Auth and Config are
+  // 900 px flat, and **Run is 3451 px on API, on BROWSER and on LOAD alike** — API's shipped in
+  // `M205` and BROWSER's in `M206`, so this is neither new nor LOAD's. A report is charts, a
+  // histogram, an endpoint table and a step list; it is long because of what it is, and you are on
+  // the Run tab because you asked to read one. That is chosen scrolling, which is the thing the
+  // strip converted the old unconditional stacking INTO.
+  //
+  // So the assertion is that LOAD's five numbers equal the other two doors' five numbers. It is
+  // stronger than the constant it replaces — it cannot go stale when a fixture report grows, and it
+  // reddens the moment this door stops matching the pattern it was built to join — and it is the
+  // only form of the claim that is true.
+  //
+  // **IT READS `scrollHeight`, AND THE FIRST DRAFT READ `boundingBox()` AND WAS VACUOUS.** `.main`
+  // is `overflow: auto` inside a `height: 100%` grid, so its BOX is the scroll port and is the
+  // viewport height on every page this app can render — that reading would have been 900 against
+  // §1's own 4,118-screen case. It was caught by the mutation and not by reading the stylesheet:
+  // restoring LOAD's inline run pane left the box version green while the strip test beside it went
+  // red.
+  const sized = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    const read = async (door: 'api' | 'browser' | 'load'): Promise<Record<string, number>> => {
+      await sized.goto(`${baseUrl}#/${door}`);
+      await sized.reload();
+      await sized.locator('[data-doorbar]').waitFor();
+      const out: Record<string, number> = {};
+      for (const tab of ['compose', 'source', 'run', 'auth', 'config'] as const) {
+        await sized.locator(`[data-tab="${tab}"]`).click();
+        await sized.locator(`[data-tabstrip="${tab}"]`).waitFor();
+        out[tab] = await sized.locator('.main').evaluate((el) => el.scrollHeight);
+      }
+      return out;
+    };
+
+    const api = await read('api');
+    const browserDoor = await read('browser');
+    const load = await read('load');
+    assert.deepEqual(load, api, 'LOAD does not measure what API measures, tab for tab');
+    assert.deepEqual(load, browserDoor, 'LOAD does not measure what BROWSER measures, tab for tab');
+
+    // And the shape of those numbers, stated rather than left implicit — otherwise three doors
+    // that had all regressed identically would satisfy the parity above.
+    for (const tab of ['compose', 'source', 'auth', 'config'] as const) {
+      assert.equal(load[tab], 900, `LOAD's ${tab} is ${load[tab]} px, not the one screen every door's ${tab} is`);
+    }
+    assert.ok(load.run! > 900, 'Run fits in a screen, so this fixture has no report and the parity above is between three empty panes');
+
+    // The control this gate needs to mean anything: the instrument can read an overflow at all.
+    // Without it `=== 900` is one CSS change away from being the same vacuous assertion the
+    // bounding-box reading was, and nothing would say so.
+    const overflowed = await sized.locator('.main').evaluate((el) => {
+      const probe = document.createElement('div');
+      probe.style.height = '4000px';
+      el.appendChild(probe);
+      const measured = el.scrollHeight;
+      probe.remove();
+      return measured;
+    });
+    assert.ok(overflowed > 900, `the instrument cannot see an overflow — it read ${overflowed} px against 4000 px of injected content`);
+  } finally {
+    await sized.close();
+  }
+});
+
 test('an unsaved tflw.config edit survives a door change, because a project fact is not one door’s', async () => {
   // `M206` `S2a`'s consequence, observable only now that a second door has a strip — which is why
   // it is gated here rather than claimed in the slice that caused it.
@@ -1616,10 +1730,20 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
     assert.equal(put.status, 200, await put.text());
 
     // 5. Run it from the page and read the charts of the test the page wrote.
+    //
+    // **THE RUN IS STARTED FROM THE SIDEBAR AND READ FROM THE Run TAB**, and those are two
+    // gestures since `M207` `S1` gave this door a strip. `M206` `Q5` is why they are two: there is
+    // no `send` on LOAD, so a run marks Run rather than switching to it — and a workload run is
+    // the long one, so being moved off a form you are still filling in would cost most here. The
+    // mark is waited on first, because it is the page's own claim that there is something to go
+    // and look at.
     await fresh.reload();
     await fresh.locator('[data-files]').waitFor();
     await fresh.locator('[data-file-check="load.tflw"]').check();
     await fresh.locator('[data-run]').click();
+    await fresh.locator('[data-tab-mark="run"]').waitFor({ timeout: 60_000 });
+    await fresh.locator('[data-tab="run"]').click();
+    await fresh.locator('[data-tabstrip="run"]').waitFor();
     await fresh.locator('[data-report]').waitFor({ timeout: 60_000 });
     const chart = fresh.locator('[data-report] canvas').first();
     await chart.waitFor();

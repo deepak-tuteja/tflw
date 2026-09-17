@@ -11,9 +11,12 @@
 // (`D985`), so a form that hid its own output would be asking the author to trust a projection
 // over the thing itself. The preview is the exact bytes the PUT will carry.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { buildThreshold, buildTest, buildWorkload, insertIntoSource, type Insertion, type StageSpec, type ThresholdSpec, type WorkloadSpec } from '@tflw/lang';
 import { getFile, putFile, type FileView } from './api';
+import { TabStrip } from './TabStrip';
+import { SourcePanel } from './SourcePanel';
+import type { TabId } from './doors';
 import { diagnose } from './diagnose';
 import type { ProjectView } from './contract';
 
@@ -21,6 +24,28 @@ export interface LoadFormProps {
   readonly project: ProjectView;
   /** Called after a successful write, so the shell can re-read the project it just changed. */
   readonly onWritten: (path: string) => void;
+  /** The file this form is about (`M206` `Q4`) — from the address, resolved by the shell. */
+  readonly filePath: string;
+  readonly onFile: (path: string) => void;
+  /** Which stage of this file's life is showing (`M205` §2, propagated by `M206` `S2b` and by
+   *  `M207` `S1` to this door). It lives in the URL and nowhere else (`D1045`), so the shell owns
+   *  it and hands it down. */
+  readonly tab: TabId;
+  readonly onTab: (tab: TabId, focusLine?: number) => void;
+  /** The project's runs, rendered by the shell — so Run can be a tab of this file's strip without
+   *  this form learning what a report directory is.
+   *
+   *  **THIS DOOR NEEDED NOTHING FOR IT TO BE RIGHT.** `ReportView` dispatches on
+   *  `entry.kind === 'workload'` and renders charts, a histogram and an endpoint table — it is
+   *  polymorphic by test kind, never by door — so a workload run's evidence was already correct
+   *  here before the tab existed to show it in. */
+  readonly runPane: ReactNode;
+  /** Why Run has something to say while you are composing. */
+  readonly runMark?: string;
+  /** The strip's two project-fact tabs, built by the shell (`M206` `S2a`). */
+  readonly authPanel: ReactNode;
+  readonly configPanel: ReactNode;
+  readonly configMark?: string;
 }
 
 type Shape = 'iterations' | 'iterations-per-user' | 'ramp' | 'hold' | 'step' | 'spike';
@@ -47,9 +72,9 @@ const EMPTY_THRESHOLD: ThresholdRow = { metric: 'duration', percentile: 95, op: 
 /** Seconds in the form, milliseconds in the language — one conversion, stated once. */
 const secondsToMs = (s: number): number => Math.round(s * 1000);
 
-export function LoadForm({ project, onWritten }: LoadFormProps) {
+export function LoadForm({ project, onWritten, filePath, onFile, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: LoadFormProps) {
   const loadFiles = useMemo(() => project.files.map((f) => f.path), [project]);
-  const [path, setPath] = useState(loadFiles[0] ?? '');
+  const path = filePath;
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
@@ -180,8 +205,32 @@ export function LoadForm({ project, onWritten }: LoadFormProps) {
     </label>
   );
 
+  /**
+   * What a tab you are not looking at has to say — the same three cases as API (`M205` S5) and
+   * BROWSER (`M206` `S2b`), each a fact about what that tab's own subject is holding.
+   *
+   * **There is no `send` on this door either**, so `M206` `Q5`'s switching half never fires here:
+   * a load run is started from the sidebar and marks Run rather than taking you to it. That is the
+   * right behaviour for this door for a reason the other two do not have — a workload run is the
+   * long one, so being moved off the form you are still filling in would cost more here than
+   * anywhere else.
+   */
+  const marks: Partial<Record<TabId, string>> = {};
+  if (pending.ok && file && pending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';
+  if (runMark) marks.run = runMark;
+  if (configMark) marks.config = configMark;
+
   return (
-    <section className="authoring" data-load-form>
+    <section className="doorpane" data-load-form>
+      <TabStrip tab={tab} onTab={onTab} marked={marks} />
+
+      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} /> : null}
+      {tab === 'run' ? <div className="runpane" data-load-run-tab>{runPane}</div> : null}
+      {tab === 'auth' ? authPanel : null}
+      {tab === 'config' ? configPanel : null}
+
+      {tab !== 'compose' ? null : (
+      <section className="authoring" data-load-compose>
       <header className="authoring-head">
         <h2>write a load test</h2>
         <p className="muted">
@@ -193,7 +242,7 @@ export function LoadForm({ project, onWritten }: LoadFormProps) {
       <div className="authoring-grid">
         <label>
           file
-          <select value={path} onChange={(e) => setPath(e.target.value)} data-load-file>
+          <select value={path} onChange={(e) => onFile(e.target.value)} data-load-file>
             {loadFiles.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
@@ -388,6 +437,8 @@ export function LoadForm({ project, onWritten }: LoadFormProps) {
           </span>
         ) : null}
       </div>
+      </section>
+      )}
     </section>
   );
 }
