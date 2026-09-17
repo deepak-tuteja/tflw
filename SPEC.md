@@ -914,6 +914,38 @@ connections to one host, which is why it is a grant rather than a default. Layer
 remains un-triggered — §9.12's probes are strictly sequential, and so is the cipher enumeration
 (one handshake awaited at a time, guarded by a test), so nothing has yet permitted two in flight.
 
+### 3.11 Accepted findings — `baseline` (M208, D387/D1060) ✅
+
+```
+defaults
+  baseline "./security-baseline.json"
+
+env prod default
+  api "https://example.com"
+  baseline "./security-baseline.prod.json"    # replaces the defaults one for this env
+```
+
+The accepted-findings document `--baseline <file>` has read since M134b (§9.12), declared once
+instead of typed on every invocation.
+
+- **Single-valued, legal in `defaults` and in an `env` block.** One run grades against one document;
+  a second line in the same block is `TF081`. An env's line replaces the `defaults` one, which is
+  the one merge rule the two tiers already define — two documents merged into one accepted set would
+  need a rule nobody wrote.
+- **Resolved against `tflw.config`'s own directory**, like `cert`/`key` (§3.6) and `exclude` (§3.9)
+  — not against the cwd. `--baseline`, being a command-line path, resolves against the shell's.
+- **`--baseline` overrides it for one run.** The key is the committed choice; the flag is this run's,
+  which is what keeps a fresh `--baseline-write` output inspectable before it is committed and keeps
+  a CI job able to grade against a document the config does not name.
+- **A declared path that names no file is a run-time error, and `TF043` at check time.** The
+  severity split is §4.3's, for the reason stated there: `tflw check` is *predicting* that the run
+  will open the file, and `--baseline-write` between the two commands is a legitimate way to create
+  it. The run is the last place that can say so — and it must, because every failure mode of a
+  baseline makes a build *greener*, so resolving a missing file to an empty accepted set would look
+  exactly like a codebase that fixed everything.
+- **It stays a document, not a key's value.** Nothing here changes §9.12's fingerprints, the
+  known/accepted badge, or the rule that stale entries are reported and never pruned.
+
 ## 4. Tests & structure ✅
 
 ### 4.1 `test`

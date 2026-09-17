@@ -73,6 +73,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
   let insecure = false;
   let certPath: string | null = null;
   let keyPath: string | null = null;
+  let baselinePath: string | null = null;
   let allowHosts: string[] | null = null;
   const authorizedTargets: AuthorizedTarget[] = [];
   let evidenceLevel: EvidenceLevel = 'full';
@@ -121,6 +122,13 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
           break;
         case 'KeyDecl':
           keyPath = entry.path.value;
+          break;
+        case 'BaselineDecl':
+          // Override, not accumulate (`M208` `S1`): one run grades against one document. A team
+          // that accepts different findings per env says so with a per-env line, which is the
+          // override `defaults` + `env` exists for — and two merged documents would make the
+          // accepted set depend on a merge rule nobody wrote down.
+          baselinePath = entry.path.value;
           break;
         case 'AllowHostsDecl':
           // Accumulates (like `header`), not override — a baseline in `defaults` plus more per env.
@@ -222,6 +230,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
     mtls,
     allowHosts,
     authorizedTargets,
+    baselinePath,
     // M131a/D340 — **always empty here, deliberately.** The public-target affirmation is a fact
     // about the command line, and this function's entire input is `tflw.config`. There is no
     // `case 'AllowPublicTargetDecl'` above and there must never be one: D21 §3.2(3) is the layer

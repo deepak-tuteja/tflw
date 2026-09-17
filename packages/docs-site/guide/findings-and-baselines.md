@@ -80,7 +80,45 @@ auto-pruning would quietly delete acceptances the next full run still needs.
 
 A malformed baseline file is an error, not a warning. Every way this file can fail makes your build
 *greener*, and a file that parsed to "accepted nothing" looks exactly like a codebase that fixed
-everything.
+everything. A path that names no file is the same error for the same reason — including when the
+path came from your config, below.
+
+## `baseline` — declare it once in `tflw.config`
+
+Typing `--baseline security-baseline.json` on every run is the same fact repeated in every CI job,
+every script and every developer's shell history. Declare it instead:
+
+```tflw-config
+defaults
+  baseline "./security-baseline.json"
+
+env staging
+  api "https://staging.example.com"
+
+env prod default
+  api "https://example.com"
+  baseline "./security-baseline.prod.json"
+```
+
+The path resolves against **`tflw.config`'s own directory**, like `cert`, `key` and `exclude` — not
+against wherever you happened to run `tflw` from.
+
+The key is single-valued: a second `baseline` line in the same block is `TF081`, because one run
+grades against one document. An `env` block's line replaces the one in `defaults`, which is what the
+`prod` block above is doing — accept different findings against production than against staging, and
+say so in a file a reviewer reads.
+
+**`--baseline` still wins.** The config key is the committed choice; the flag is this run's, which
+is what lets you inspect a fresh `--baseline-write` output before committing it:
+
+```sh
+tflw run --baseline-write /tmp/new.json      # the config's baseline is ignored for this run
+tflw run --baseline /tmp/new.json            # grade against the candidate, not the committed one
+```
+
+`tflw check` warns (`TF043`) when the declared file is not there, rather than failing: a
+`--baseline-write` between `check` and `run` is a legitimate way to create it. The run itself is
+where it becomes an error.
 
 ## `--fail-on` — a severity floor for the whole run
 

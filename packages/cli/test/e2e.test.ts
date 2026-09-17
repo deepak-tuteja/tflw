@@ -5189,6 +5189,49 @@ test('the built dist/cli.cjs applies --fail-on, writes a baseline, and reads it 
     assert.match((badFailOn as { stderr?: string }).stderr ?? '', /not a severity/);
     const badSeeded = await execFileAsync('node', [cliEntry, 'run', '--probe-seeded', '9999'], { cwd: dir }).catch((e: { stderr?: string }) => e);
     assert.match((badSeeded as { stderr?: string }).stderr ?? '', /exceeds the 64-per-class bound/);
+
+    // -----------------------------------------------------------------------------------------
+    // `M208` `S1` (`D1060`) — the same document, declared instead of typed.
+    //
+    // It rides on this test rather than starting a new one because the thing being gated is a
+    // *precedence*, and a precedence needs two reachable outcomes that differ. Steps 1-3 above have
+    // already established both: `accepted.json` makes this run green and nothing makes it red. So a
+    // second document that accepts nothing is the only fixture the next three steps need, and every
+    // verdict below is read against a control this test already took.
+    // -----------------------------------------------------------------------------------------
+    const configWith = (baselineLine: string) =>
+      `defaults\n  authorized target "${baseUrl}" reason "self-hosted end-to-end fixture"\nenv local default\n  api "${baseUrl}"\n${baselineLine}`;
+    await writeFile(join(dir, 'empty.json'), JSON.stringify({ version: 1, accepted: [] }), 'utf8');
+
+    // 7. The config key alone resolves the document — same green as step 3, with no flag typed.
+    await writeFile(join(dir, 'tflw.config'), configWith('  baseline "./accepted.json"\n'), 'utf8');
+    const { stdout: declared } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    assert.match(declared, /1\/1 passed/);
+    assert.match(await readFile(join(dir, 'report', 'report.html'), 'utf8'), /known\/accepted/);
+
+    // 8. `--baseline` wins. The config still names `accepted.json`, so a red build here can only
+    //    mean the flag's `empty.json` was the document the gate was built from — the flag is not
+    //    merely *also* read, it *replaces*. Without `empty.json` accepting nothing this step would
+    //    be indistinguishable from step 7.
+    const overridden = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--baseline', 'empty.json'], { cwd: dir }).catch(
+      (e: { code?: number }) => e,
+    );
+    assert.equal((overridden as { code?: number }).code, 1, '--baseline must override the config key, not merge with it');
+
+    // 9. A declared path naming no file is a run error, and the message says which of the two doors
+    //    the path came through. This is the negative control the whole key rests on: every failure
+    //    mode of a baseline makes a build GREENER, so the one outcome that must never happen is
+    //    this resolving to an empty accepted set and printing `1/1 passed`.
+    await writeFile(join(dir, 'tflw.config'), configWith('  baseline "./nowhere.json"\n'), 'utf8');
+    const missing = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir }).catch((e: { code?: number; stderr?: string; stdout?: string }) => e);
+    // `2`, not `1`: this is `EXIT_USAGE` — could not run — which is the same code a bad `--fail-on`
+    // takes above and is the honest one. The suite never started, so `1` would claim a verdict on
+    // tests nothing executed.
+    assert.equal((missing as { code?: number }).code, 2, 'a declared baseline that is not there must not run green');
+    const said = `${(missing as { stderr?: string }).stderr ?? ''}${(missing as { stdout?: string }).stdout ?? ''}`;
+    assert.match(said, /tflw\.config `baseline` \(env "local"\)/, 'the error must name the config, not just the path');
+    assert.doesNotMatch(said, /ENOENT/, 'a bare errno is what this message exists to replace');
+    assert.doesNotMatch(said, /1\/1 passed/);
   } finally {
     await rm(dir, { recursive: true, force: true });
     server.closeAllConnections();

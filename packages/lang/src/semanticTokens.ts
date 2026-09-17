@@ -144,6 +144,7 @@ const KEYWORDS = new Set([
  * milestone whose charter is the config dialect. */
 const CONFIG_KEYWORDS = new Set([
   'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'teardown', 'redact', 'viewport',
+  'baseline',
   'oauth2', 'token', 'client', 'id', 'secret', 'scope',
   'destination', 'level', 'query',
   // `M147b` (`A2-14`/`D623`/`D628`) — the enumerated values of `evidence`, `log destination` and

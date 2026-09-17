@@ -17,6 +17,7 @@ import type {
   ApiRequestSpec,
   ApiServiceDecl,
   ArrayLit,
+  BaselineDecl,
   BinaryExpr,
   BodyBytesSubject,
   BodyCsvSubject,
@@ -566,7 +567,7 @@ function negatedStateWord(word: string): string | undefined {
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 /** Exported since `M137a` (D444) so config completion offers *this* list rather than a fourth copy
  * of it. `B5-09` is what a fourth copy becomes, and this milestone is repairing the third instance. */
-export const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'authorized', 'evidence', 'teardown', 'redact', 'viewport', 'log'] as const;
+export const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'authorized', 'evidence', 'teardown', 'redact', 'viewport', 'log', 'baseline'] as const;
 /** Which block a config key belongs in — the parser's view of the rule the checker enforces as
  * `TF025` (checker.ts `DEFAULTS_ONLY`/`ENV_ONLY`, keyed there on AST node type rather than on the
  * word). The parser needs it only to keep a *suggestion* from naming a key the checker will then
@@ -1988,6 +1989,8 @@ class Parser {
         return this.wrap(this.parseRedactDecl());
       case 'viewport':
         return this.wrap(this.parseViewportDecl());
+      case 'baseline':
+        return this.wrap(this.parseBaselineDecl());
       default: {
         // Suggest with the block in mind (M84, C11/`A2-07b`). The nearest key by edit distance is
         // still the right guess at what was *meant* — but half a dozen of the fourteen are legal in
@@ -2262,6 +2265,19 @@ class Parser {
     if (!path) return null;
     this.endLine();
     return { type: 'KeyDecl', path, span: this.spanFrom(start) };
+  }
+
+  /** `baseline "<path>"` (`M208` `S1`, `D387`) — `parseCertDecl`'s shape verbatim, which is the
+   *  whole of the argument for it: the key takes one path and nothing else, and a second grammar
+   *  for a one-path key is a second place the `TF043` walk, the duplicate rule and the formatter
+   *  can each learn about a path separately. */
+  private parseBaselineDecl(): BaselineDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `baseline`
+    const path = this.expectString('an accepted-findings file path, e.g. `baseline "./security-baseline.json"`');
+    if (!path) return null;
+    this.endLine();
+    return { type: 'BaselineDecl', path, span: this.spanFrom(start) };
   }
 
   private parseAllowHostsDecl(): AllowHostsDecl | null {

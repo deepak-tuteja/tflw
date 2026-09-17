@@ -89,6 +89,38 @@ test('an interpolated config path is skipped, not reported', async () => {
   assert.deepEqual(await check(config, dir), []);
 });
 
+test('`baseline` names a file the same way, and is a warning for the same reason', async () => {
+  // `M208` `S1` (`D1060`). The key joined `CONFIG_FILE_BEARING_NODES` rather than growing its own
+  // check, so it inherits the two properties this file asserts about `cert`/`key`: the path is found
+  // at all, and it resolves against the config's directory.
+  //
+  // **Warning, not error**, and the argument is `cert`'s one step further along: the document is
+  // read when the scan gate is built, at the top of `tflw run` — so the checker is *predicting*, and
+  // `tflw run --baseline-write ./security-baseline.json` between the two commands is the documented
+  // way to create the file. An error here would make the adoption sequence the feature ships with
+  // unrunnable, which is `A4-05` in the milestone whose thesis forbids it.
+  //
+  // The run's own refusal is the half with teeth and is not reachable from here: it lives in
+  // `packages/cli/test/e2e.test.ts`, where a declared path naming no file exits `2` rather than
+  // printing `1/1 passed`.
+  const root = await mkdtemp(join(tmpdir(), 'tflw-m208-'));
+  const nested = join(root, 'nested');
+  await mkdir(nested);
+  const config = 'defaults\n  baseline "./security-baseline.json"\n\nenv local default\n  api "http://x"\n';
+  const missing = await check(config, nested);
+  assert.deepEqual(missing.map((d) => d.code), [Codes.MISSING_FILE]);
+  assert.deepEqual([...new Set(missing.map((d) => d.severity))], ['warning']);
+  assert.match(missing[0]!.message, /security-baseline\.json/);
+  // Present, it is clean — the control, without which the row above could be a check that reports
+  // this key unconditionally.
+  await writeFile(join(nested, 'security-baseline.json'), '{"version":1,"accepted":[]}');
+  assert.deepEqual(await check(config, nested), []);
+  // And the config directory is what it resolved against: the same config one level up, where the
+  // file is not, still reports. Written out because these are the same directory in every casual
+  // fixture, which is this file's own opening argument.
+  assert.equal((await check(config, root)).length, 1, 'the same config one directory up must NOT find that file');
+});
+
 test('a config naming no files at all reports nothing', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m116-'));
   assert.deepEqual(await check('env local default\n  api "http://x"\n', dir), []);

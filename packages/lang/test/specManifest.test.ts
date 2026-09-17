@@ -242,10 +242,11 @@ test('every CLI flag the construct manifest names is a real flag in CLI_FLAGS', 
 });
 
 // The check above is only as good as its haystack: if the manifest ever stopped naming flags at
-// all it would pass vacuously and say nothing. Seven is the count today: `M157e` added `--teardown`
+// all it would pass vacuously and say nothing. Eight is the count today: `M157e` added `--teardown`
 // on its own new row and `--evidence` on the row beside it, applying `M156`'s `D780` rule — a
 // config key's summary says which command overrides it — to the one that had the shape already and
-// did not say so.
+// did not say so, and `M208` `S1` added `--baseline` on the `baseline` row under that same rule,
+// which is the third key whose flag is a genuine override rather than a synonym (`D1060`).
 test('…and the manifest does name flags, so the check above is not vacuous', () => {
   const named = new Set<string>();
   for (const c of specConstructs()) {
@@ -255,7 +256,7 @@ test('…and the manifest does name flags, so the check above is not vacuous', (
   }
   assert.deepEqual(
     [...named].sort(),
-    ['--env', '--evidence', '--now', '--seed', '--tag', '--teardown', '--workers'],
+    ['--baseline', '--env', '--evidence', '--now', '--seed', '--tag', '--teardown', '--workers'],
     'the manifest names exactly these flags — update this list deliberately, never to make a failure go away',
   );
 });

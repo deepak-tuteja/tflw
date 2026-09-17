@@ -5250,7 +5250,7 @@ that produced it. A second gate axis would mean two sources of truth for the sam
 
 ### D387
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **D387 — `--baseline` reads, `--baseline-write` produces, and stale entries are named**
 
@@ -9128,6 +9128,23 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
   answer flips after N ms (`/after/:ms`), one that always fails (`/always-500`), one that records
   the CSRF header by verb. apiV2 is the *target*; the arrival server is the *instrument*, and an
   instrument route can be as artificial as the plant needs (`D745`'s split).
+
+### D1060
+
+<sub>cited from SPEC.md · lifted from `PLAN_M208_SECURITY_TRIAGE.md`</sub>
+
+**`D1060` — `baseline "<file>"` joins the config dialect, and that is what gives triage a home.**
+In `defaults` and per env, single-valued in each, resolved against `tflw.config`'s own directory,
+with the `--baseline` flag overriding it. The baseline then *is* what the strip's rule's second
+clause already describes — *a project fact that file resolves against* — so security triage gets a
+tab **with the rule untouched**, which is the outcome `M206` `Q6` refused to buy by amending the
+rule instead. Two properties are load-bearing and neither is free. **Single-valued**: one run grades
+against one document, so an env's line *replaces* the `defaults` one rather than merging with it —
+merging two accepted sets would need a rule nobody has written, and the failure mode of getting it
+wrong is a build that is greener than the evidence. **`--baseline` wins**: the key is the committed
+choice and the flag is this run's, which is what keeps a fresh `--baseline-write` output inspectable
+before it is committed. A config key that a flag could not override would make the committed
+document the only reachable one.
 
 ### M0
 
@@ -13027,5 +13044,16 @@ artefact holds. This arc is the other half: the page writes `.tflw` files. It re
 `PLAN_M192_TFLW_UI.md` §7's slice list (slices 2–5, "API authoring / WebUI live browser /
 workload test plan / security triage"), which named four rounds by *kind of test* — a framing
 the grilling found wrong, for a reason recorded as `D1043` below.
+
+### M208
+
+<sub>cited from SPEC.md · lifted from `PLAN_M208_SECURITY_TRIAGE.md`</sub>
+
+**`M208` — security triage gets a home, and the baseline becomes a project fact**
+
+`M205` named **security triage write-back** as the case most likely to break the strip's rule.
+`M206` `Q6` confirmed the break is real and repaired it *in the language rather than in the rule*,
+then deferred the work. `M207` built the strips and deferred it again, deliberately, because this
+is a language change and a new write path rather than a UI round.
 
 <!-- GENERATED:decisions:end -->

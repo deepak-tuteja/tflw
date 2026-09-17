@@ -137,6 +137,15 @@ export interface ResolvedConfig {
    * Empty means "nothing was affirmed", which is the same thing absent would mean, so unlike
    * `allowHosts` there is no `null` case to distinguish. */
   readonly allowPublicTargets: readonly string[];
+  /** `baseline "<file>"` — the accepted-findings document (`D387`) this env's security findings are
+   * graded against (`M208` `S1`, `M206` `Q6`). Relative to the config file's own directory, like
+   * `mtls` and `exclude`; `null` when the key is absent.
+   *
+   * **Override semantics, and read by the CLI rather than by the interpreter.** The gate is built
+   * once per invocation, before any file runs (`cli.ts`), because every failure mode of a baseline
+   * makes a build greener and a malformed one must be an error the run reports rather than a
+   * suppression that silently matched nothing. `--baseline` overrides this for one run. */
+  readonly baselinePath: string | null;
   /** `evidence full|headers only|none` in a config, `full|headers-only|none` in this type and on
    * `--evidence` (`M147b`/`D628`: tflw identifiers have no hyphen, a shell argument has no space) —
    * how much of the request/response trace lands in the
