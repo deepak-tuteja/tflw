@@ -41,10 +41,8 @@ import type { ProjectView } from './contract';
 export interface BrowserFormProps {
   readonly project: ProjectView;
   readonly onWritten: (path: string) => void;
-  /** The file this form is about (`M206` `Q4`) — from the address, not from state held here. See
-   *  `ApiForm`'s note: the fallback for an address naming a file that no longer exists is the
-   *  caller's, because `fileFromHash` reports what the address says and never asks the project. */
-  readonly filePath: string | null;
+  /** The file this form is about (`M206` `Q4`) — from the address, resolved by the shell. */
+  readonly filePath: string;
   readonly onFile: (path: string) => void;
 }
 
@@ -99,7 +97,7 @@ export function locatorFromPickLine(line: string): LocatorSpec | null {
 
 export function BrowserForm({ project, onWritten, filePath, onFile }: BrowserFormProps) {
   const paths = useMemo(() => project.files.map((f) => f.path), [project]);
-  const path = filePath !== null && paths.includes(filePath) ? filePath : (paths[0] ?? '');
+  const path = filePath;
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');

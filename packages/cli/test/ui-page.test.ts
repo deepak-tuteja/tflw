@@ -1486,7 +1486,7 @@ test('the API form writes a request and its assertions in one edit, and the byte
   await page.locator('[data-header-name="0"]').fill('Authorization');
   await page.locator('[data-header-value="0"]').fill('Bearer {token}');
   await openTab('source');
-  await page.locator('[data-api-diagnostics]').waitFor();
+  await page.locator('[data-diagnostics]').waitFor();
   const unbound = await page.locator('[data-diagnostic-code="TF030"]').textContent();
   assert.ok(unbound?.includes('token'), unbound ?? 'the form should name the unbound variable');
   // And it is a warning about the file, not a veto on the write: `D1052` shows, never blocks.
@@ -1497,7 +1497,7 @@ test('the API form writes a request and its assertions in one edit, and the byte
   // assertion above about this header rather than about the panel always being there.
   await page.locator('[data-header-value="0"]').fill('Bearer static-token');
   await openTab('source');
-  await page.locator('[data-api-diagnostics]').waitFor({ state: 'detached' });
+  await page.locator('[data-diagnostics]').waitFor({ state: 'detached' });
   await openTab('compose');
 
   await page.locator('[data-api-body-kind]').selectOption('json');
@@ -1524,8 +1524,8 @@ test('the API form writes a request and its assertions in one edit, and the byte
   // Source says WHICH of the two things it is showing. The claim below is about bytes that are
   // not on disk yet, so a panel quietly showing the saved file would satisfy every `includes`
   // under it and mean the opposite.
-  assert.equal(await page.locator('[data-api-source]').getAttribute('data-api-source'), 'pending');
-  const preview = await page.locator('[data-api-preview]').textContent();
+  assert.equal(await page.locator('[data-source]').getAttribute('data-source'), 'pending');
+  const preview = await page.locator('[data-preview]').textContent();
   assert.ok(preview?.includes('@api @authored'), preview ?? '');
   assert.ok(preview?.includes('api POST /orders body { itemId: 1, qty: 2 } as "place"'), preview ?? '');
   assert.ok(preview?.includes('header "Authorization" is "Bearer static-token"'), preview ?? '');
@@ -1588,7 +1588,7 @@ test('the API door adds work to a test the LOAD door started, above its workload
   await page.locator('[data-expect-operand="0"]').fill('200');
 
   await openTab('source');
-  const preview = (await page.locator('[data-api-preview]').textContent()) ?? '';
+  const preview = (await page.locator('[data-preview]').textContent()) ?? '';
   await openTab('compose');
   await page.locator('[data-api-save]').click();
   await page.locator('[data-api-wrote]').waitFor();
@@ -1869,7 +1869,7 @@ test('the API form opens empty, and an untouched form cannot send anything at al
   // something to say (`M205` §2).
   assert.equal(await page.locator('[data-tab-mark="source"]').count(), 0, 'the strip marks Source over an empty form');
   await openTab('source');
-  assert.equal(await page.locator('[data-api-source]').getAttribute('data-api-source'), 'written');
+  assert.equal(await page.locator('[data-source]').getAttribute('data-source'), 'written');
   await openTab('compose');
 
   // And the first sentence the door says is a hint, not a warning. A blank field rendered as a
@@ -1899,8 +1899,8 @@ test('the API form opens empty, and an untouched form cannot send anything at al
   // And now Source has something to say, so the strip says so without taking you off the form.
   await page.locator('[data-tab-mark="source"]').waitFor();
   await openTab('source');
-  assert.equal(await page.locator('[data-api-source]').getAttribute('data-api-source'), 'pending');
-  assert.match((await page.locator('[data-api-preview]').textContent()) ?? '', /api GET \/items/);
+  assert.equal(await page.locator('[data-source]').getAttribute('data-source'), 'pending');
+  assert.match((await page.locator('[data-preview]').textContent()) ?? '', /api GET \/items/);
 });
 
 test('the strip is an address, and Compose keeps what you typed while you are looking somewhere else', async () => {

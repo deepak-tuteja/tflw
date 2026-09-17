@@ -7,13 +7,15 @@
 // `#/load` is a link to the LOAD door of whatever project this server is serving.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { cancelRun, getProject, getReports, getResults, getRuns, getStderr, reportFileUrl, startRun, subscribe } from './api';
+import { cancelRun, getConfig, getProject, getReports, getResults, getRuns, getStderr, putConfig, reportFileUrl, startRun, subscribe } from './api';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest } from './contract';
 import { DEFAULT_TAB, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
 import { ApiForm } from './ApiForm';
+import { AuthPanel } from './AuthPanel';
+import { ConfigPanel } from './ConfigPanel';
 import { ScanForm } from './ScanForm';
 import { BrowserForm } from './BrowserForm';
 import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
@@ -123,6 +125,87 @@ export function App() {
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
+
+  /**
+   * The Config tab's editor state — **held in the shell**, which is `S5a`'s finding applied a
+   * second time and one level higher (`M206` `S2a`).
+   *
+   * The strip swaps panels by unmounting them, so state inside a panel is lost on a tab trip. The
+   * Compose fields survive that only because they are `useState` in *this* component, which the
+   * strip never unmounts — a fact `S5a` discovered by mutating `hidden` to unmounted and watching
+   * a green gate stay green. A half-edited `tflw.config` thrown away by a glance at Auth would be
+   * exactly the failure the Compose fields were saved from, and the fix is the same fix: the state
+   * lives above the panel.
+   *
+   * `S5a` put it in `ApiForm`, which was the right height while one door had a strip. It is wrong
+   * the moment a second door gets one: `tflw.config` is a **project** fact, so a copy per door
+   * would be four editors over one file, disagreeing about what is unsaved. That is the same
+   * duplicate `S1` removed for the selected file, caught before it was written rather than after.
+   */
+  const [configText, setConfigText] = useState<string | null>(null);
+  /** What is on disk as of the last read or write — the oracle for *is there anything to save*. */
+  const [configDisk, setConfigDisk] = useState<string | null>(null);
+  const [configEtag, setConfigEtag] = useState<string | null>(null);
+  const [configBusy, setConfigBusy] = useState(false);
+  const [configProblem, setConfigProblem] = useState<string | null>(null);
+  const [configSaved, setConfigSaved] = useState<string | null>(null);
+
+  /**
+   * Read `tflw.config` the first time Config is opened, and never otherwise.
+   *
+   * Lazily, because the project view is re-read after every write and a config carried on it would
+   * be re-fetched on every one of those for a tab most authors will never open — and eagerly here
+   * would also mean choosing what to do when the page's unsaved text disagrees with a fresher
+   * read. Once is the honest answer: the etag is what detects a config changed underneath, and it
+   * detects it at the moment it matters, as the `409` that guard exists for.
+   */
+  const readConfig = useCallback(() => {
+    setConfigProblem(null);
+    setConfigSaved(null);
+    return getConfig()
+      .then((c) => {
+        setConfigText(c.text);
+        setConfigDisk(c.text);
+        setConfigEtag(c.etag);
+      })
+      .catch((e: unknown) => setConfigProblem(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  useEffect(() => {
+    if (tab !== 'config' || configText !== null) return;
+    void readConfig();
+  }, [tab, configText, readConfig]);
+
+  const saveConfig = useCallback(async () => {
+    if (configText === null || configEtag === null) return;
+    setConfigBusy(true);
+    setConfigProblem(null);
+    setConfigSaved(null);
+    try {
+      const put = await putConfig(configText, configEtag);
+      if (!put.ok) {
+        // A `409` is the one refusal with no repair inside this page, so it gets a gesture rather
+        // than a sentence: `re-read from disk` is offered beside it, and it is a button because
+        // taking it throws away what you typed. The first draft said *reopen this tab to read it
+        // again*, which was false — the read fires once, when the text is still `null`, so
+        // leaving and coming back returns the same stale bytes and the same 409. Found by reading
+        // the advice against the effect that would have to honour it.
+        setConfigProblem(put.error);
+        return;
+      }
+      setConfigEtag(put.etag);
+      setConfigDisk(configText);
+      setConfigSaved('saved — tflw.config is what you see here');
+      // The project view carries the sessions and the authorized targets Auth reads, and both
+      // just changed. `D985` again: the page is a projection of the files, so it re-reads rather
+      // than patching what it thinks it wrote.
+      void readProjectView();
+    } finally {
+      setConfigBusy(false);
+    }
+  }, [configText, configEtag, readProjectView]);
+
+
 
   useEffect(() => {
     void readProjectView();
@@ -283,6 +366,49 @@ export function App() {
     </>
   );
 
+  /**
+   * The file the strip is about, resolved once (`M206` `S1`, `S2a`).
+   *
+   * `fileFromHash` reports what the address says and never asks the project whether it is true, so
+   * somebody has to fall back when a hash names a file that has been renamed or deleted. That was
+   * each form's job in `S1` — the same expression in two places, which is the shape `S1` was
+   * removing — and it is the shell's now, because the shell is what hands the file to the panels.
+   */
+  const filePaths = project?.files.map((f) => f.path) ?? [];
+  const path = file !== null && filePaths.includes(file) ? file : (filePaths[0] ?? '');
+
+  /**
+   * The strip's two **project-fact** tabs, built here and handed to whichever door is open.
+   *
+   * This is the rule's own split showing up in the code (`M205` §2): a tab is *a stage of one
+   * file's life* — Compose and Source, which each door owns because Compose is the only thing that
+   * varies by the kind of work — or *a project fact that file resolves against*, which is Auth and
+   * Config, and a project fact has no business being built four times. `Run` was already here for
+   * the same reason.
+   */
+  const authPanel = project ? <AuthPanel project={project} path={path} onEdit={(line) => setTab('config', line)} /> : null;
+  const configPanel = (
+    <ConfigPanel
+      text={configText}
+      disk={configDisk}
+      onChange={(next) => {
+        setConfigText(next);
+        // The `saved` line is a claim about the bytes on disk, and one keystroke makes it false.
+        // It goes the moment the text moves, rather than sitting under an edit it no longer
+        // describes.
+        setConfigSaved(null);
+      }}
+      onSave={() => void saveConfig()}
+      onReload={() => void readConfig()}
+      busy={configBusy}
+      problem={configProblem}
+      saved={configSaved}
+      focusLine={focusLine}
+    />
+  );
+  /** Config has something to say while you are elsewhere only when it is holding an unsaved edit. */
+  const configMark = configText !== null && configDisk !== null && configText !== configDisk ? 'tflw.config has an edit nobody has saved' : undefined;
+
   return (
     <div className="app">
       {project ? <Sidebar project={project} door={door} running={running} onRun={onRun} onCancel={onCancel} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
@@ -306,15 +432,18 @@ export function App() {
             onWritten={() => void readProjectView()}
             tab={tab}
             onTab={setTab}
-            filePath={file}
+            path={path}
             onFile={setFile}
             focusLine={focusLine}
+            authPanel={authPanel}
+            configPanel={configPanel}
+            configMark={configMark}
             runPane={runPane}
             runMark={live && !live.end ? 'a run is going' : undefined}
           />
         ) : null}
         {project && door === 'scan' ? <ScanForm project={project} onWritten={() => void readProjectView()} /> : null}
-        {project && door === 'browser' ? <BrowserForm project={project} onWritten={() => void readProjectView()} filePath={file} onFile={setFile} /> : null}
+        {project && door === 'browser' ? <BrowserForm project={project} onWritten={() => void readProjectView()} filePath={path} onFile={setFile} /> : null}
         {door === 'api' ? null : runPane}
       </main>
     </div>

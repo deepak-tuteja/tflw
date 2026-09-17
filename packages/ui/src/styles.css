@@ -207,7 +207,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .tabstrip-tab:hover { color: var(--fg); }
 .tabstrip-tab.on { color: var(--fg); border-bottom-color: var(--accent); }
 .tabstrip-mark { color: var(--accent); margin-left: 6px; font-size: 14px; line-height: 1; }
-.source-panel [data-api-source-state] { margin: 0 0 8px; font-size: 12px; }
+.source-panel [data-source-state] { margin: 0 0 8px; font-size: 12px; }
 .source-panel .preview { margin-top: 0; }
 .runpane > .response { margin-bottom: 16px; }
 

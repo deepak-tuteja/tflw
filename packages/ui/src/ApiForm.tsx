@@ -28,11 +28,10 @@ import {
   type ExpectSpec,
   type SubjectSpec,
 } from '@tflw/lang';
-import { getFile, putFile, dropScratch, startRun, subscribe, getResults, getConfig, putConfig, type FileView } from './api';
+import { getFile, putFile, dropScratch, startRun, subscribe, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
 import { TabStrip } from './TabStrip';
-import { AuthPanel } from './AuthPanel';
-import { ConfigPanel } from './ConfigPanel';
+import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
 
@@ -43,11 +42,15 @@ export interface ApiFormProps {
    *  (`D1045`), so the shell owns it and hands it down — this form does not remember a tab. */
   readonly tab: TabId;
   readonly onTab: (tab: TabId, focusLine?: number) => void;
-  /** The file every tab here is about (`M206` `Q4`). It lives in the address for `D1045`'s reason,
-   *  so the shell owns it — this form used to keep its own, which is why a door change reset it.
-   *  `null` is an address that names no file, and the form falls back to the project's first. */
-  readonly filePath: string | null;
+  /** The file every tab here is about (`M206` `Q4`), already resolved against the project by the
+   *  shell (`S2a`) — this form used to keep its own, which is why a door change reset it. */
+  readonly path: string;
   readonly onFile: (path: string) => void;
+  /** The strip's two project-fact tabs, built by the shell (`M206` `S2a`). A project fact is not
+   *  this door's to own: a copy per door would be four editors over one `tflw.config`. */
+  readonly authPanel: ReactNode;
+  readonly configPanel: ReactNode;
+  readonly configMark?: string;
   /** The line an `[edit]` link asked Config to land on — read off the end of the hash (`M205` S5b).
    *  It arrives from the shell rather than from a callback because it lives in the URL: a jump
    *  between tabs is a link, and the back button walks back out of it. */
@@ -117,18 +120,8 @@ interface HeaderRow {
   readonly value: string;
 }
 
-export function ApiForm({ project, onWritten, tab, onTab, filePath, onFile, focusLine, runPane, runMark }: ApiFormProps) {
+export function ApiForm({ project, onWritten, tab, onTab, path, onFile, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ApiFormProps) {
   const files = useMemo(() => project.files.map((f) => f.path), [project]);
-  /**
-   * The file this form is about, from the address (`M206` `Q4`).
-   *
-   * **The fallback is here rather than in `fileFromHash`**, which reports what the address says and
-   * does not ask the project whether it is true. An address naming a file that has since been
-   * renamed or deleted is the same class as one naming a tab nobody has heard of, and the answer is
-   * the same: fall back rather than fail. Doing it in the module instead would make an address's
-   * meaning depend on what happens to be on disk.
-   */
-  const path = filePath !== null && files.includes(filePath) ? filePath : (files[0] ?? '');
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
@@ -167,80 +160,6 @@ export function ApiForm({ project, onWritten, tab, onTab, filePath, onFile, focu
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [wrote, setWrote] = useState<string | null>(null);
-
-  /**
-   * The Config tab's editor state — **held here, not in `ConfigPanel`**, and that placement is
-   * `S5a`'s finding applied rather than repeated.
-   *
-   * The strip swaps panels by unmounting them, so state inside a panel is lost on a tab trip. The
-   * Compose fields survive that only because they are `useState` in *this* component, which the
-   * strip never unmounts — a fact `S5a` discovered by mutating `hidden` to unmounted and watching
-   * a green gate stay green. A half-edited `tflw.config` thrown away by a glance at Auth would be
-   * exactly the failure the Compose fields were saved from, and the fix is the same fix: the state
-   * lives above the panel.
-   */
-  const [configText, setConfigText] = useState<string | null>(null);
-  /** What is on disk as of the last read or write — the oracle for *is there anything to save*. */
-  const [configDisk, setConfigDisk] = useState<string | null>(null);
-  const [configEtag, setConfigEtag] = useState<string | null>(null);
-  const [configBusy, setConfigBusy] = useState(false);
-  const [configProblem, setConfigProblem] = useState<string | null>(null);
-  const [configSaved, setConfigSaved] = useState<string | null>(null);
-
-  /**
-   * Read `tflw.config` the first time Config is opened, and never otherwise.
-   *
-   * Lazily, because the project view is re-read after every write and a config carried on it would
-   * be re-fetched on every one of those for a tab most authors will never open — and eagerly here
-   * would also mean choosing what to do when the page's unsaved text disagrees with a fresher
-   * read. Once is the honest answer: the etag is what detects a config changed underneath, and it
-   * detects it at the moment it matters, as the `409` that guard exists for.
-   */
-  const readConfig = useCallback(() => {
-    setConfigProblem(null);
-    setConfigSaved(null);
-    return getConfig()
-      .then((c) => {
-        setConfigText(c.text);
-        setConfigDisk(c.text);
-        setConfigEtag(c.etag);
-      })
-      .catch((e: unknown) => setConfigProblem(e instanceof Error ? e.message : String(e)));
-  }, []);
-
-  useEffect(() => {
-    if (tab !== 'config' || configText !== null) return;
-    void readConfig();
-  }, [tab, configText, readConfig]);
-
-  const saveConfig = useCallback(async () => {
-    if (configText === null || configEtag === null) return;
-    setConfigBusy(true);
-    setConfigProblem(null);
-    setConfigSaved(null);
-    try {
-      const put = await putConfig(configText, configEtag);
-      if (!put.ok) {
-        // A `409` is the one refusal with no repair inside this page, so it gets a gesture rather
-        // than a sentence: `re-read from disk` is offered beside it, and it is a button because
-        // taking it throws away what you typed. The first draft said *reopen this tab to read it
-        // again*, which was false — the read fires once, when the text is still `null`, so
-        // leaving and coming back returns the same stale bytes and the same 409. Found by reading
-        // the advice against the effect that would have to honour it.
-        setConfigProblem(put.error);
-        return;
-      }
-      setConfigEtag(put.etag);
-      setConfigDisk(configText);
-      setConfigSaved('saved — tflw.config is what you see here');
-      // The project view carries the sessions and the authorized targets Auth reads, and both
-      // just changed. `D985` again: the page is a projection of the files, so it re-reads rather
-      // than patching what it thinks it wrote.
-      onWritten('tflw.config');
-    } finally {
-      setConfigBusy(false);
-    }
-  }, [configText, configEtag, onWritten]);
 
   useEffect(() => {
     if (!path) return;
@@ -483,7 +402,7 @@ export function ApiForm({ project, onWritten, tab, onTab, filePath, onFile, focu
   const marks: Partial<Record<TabId, string>> = {};
   if (pending.ok && file && pending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';
   if (runMark) marks.run = runMark;
-  if (configText !== null && configDisk !== null && configText !== configDisk) marks.config = 'tflw.config has an edit nobody has saved';
+  if (configMark) marks.config = configMark;
 
   return (
     <section className="doorpane" data-api-form>
@@ -499,26 +418,8 @@ export function ApiForm({ project, onWritten, tab, onTab, filePath, onFile, focu
       {/* The rule's second clause (`M205` §2): a project fact the file resolves against. Auth
           reads it scoped to this file and sends every edit to Config, which is the file's one
           editor — `onTab('config', line)` writes the hash, so the jump is a link. */}
-      {tab === 'auth' ? <AuthPanel project={project} path={path} onEdit={(line) => onTab('config', line)} /> : null}
-      {tab === 'config' ? (
-        <ConfigPanel
-          text={configText}
-          disk={configDisk}
-          onChange={(t) => {
-            setConfigText(t);
-            // The `saved` line is a claim about the bytes on disk, and one keystroke makes it
-            // false. It goes the moment the text moves, rather than sitting under an edit it no
-            // longer describes.
-            setConfigSaved(null);
-          }}
-          onSave={() => void saveConfig()}
-          onReload={() => void readConfig()}
-          busy={configBusy}
-          problem={configProblem}
-          saved={configSaved}
-          focusLine={focusLine}
-        />
-      ) : null}
+      {tab === 'auth' ? authPanel : null}
+      {tab === 'config' ? configPanel : null}
 
       {/* **What you typed survives a trip to another tab**, and it is not this line that provides
           it: every field is `useState` in THIS component, and the strip swaps a panel rather than
@@ -761,42 +662,6 @@ export function ApiForm({ project, onWritten, tab, onTab, filePath, onFile, focu
  * the two it is showing, because "this is the file" and "this is what the file is about to be"
  * are claims a reader must be able to tell apart.
  */
-function SourcePanel({ file, pending, diagnostics }: {
-  readonly file: FileView | null;
-  readonly pending: { ok: true; text: string } | { ok: false; reason: string };
-  readonly diagnostics: ReturnType<typeof diagnose>;
-}) {
-  const pendingText = pending.ok ? pending.text : null;
-  const unwritten = pendingText !== null && file !== null && pendingText !== file.text;
-  const shown = unwritten ? pendingText : (file?.text ?? '');
-  return (
-    <div className="authoring source-panel" data-api-source={unwritten ? 'pending' : 'written'}>
-      <p className="muted" data-api-source-state>
-        {file === null
-          ? 'no file open'
-          : unwritten
-            ? <>what <code>{file.path}</code> becomes when you press <em>write</em> — not what is on disk yet</>
-            : <>{file.path} — as it is on disk</>}
-      </p>
-      <pre className="preview" data-api-preview>
-        {shown}
-      </pre>
-      {/* `D1052` — what `tflw check` will say about these bytes. Shown, never blocking: the write
-          route refuses what cannot be read (`D1049`), and an unbound `{'{'}token{'}'}` reads fine — it is
-          just wrong, and the author should hear it here rather than in CI. */}
-      {unwritten && diagnostics.length > 0 ? (
-        <ul className="preview-diagnostics" data-api-diagnostics={diagnostics.length}>
-          {diagnostics.map((d, i) => (
-            <li key={i} className={d.severity} data-diagnostic-code={d.code}>
-              <code>{d.code}</code> line {d.span.start.line} — {d.message}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
 /** What `send` came back with. It lives in **Run** rather than under the form (`M205` Q4): a send
  *  is a run, and the tab set is the file's stages rather than a list of panels. */
 function ResponsePane({ sent, onDiscard }: {
