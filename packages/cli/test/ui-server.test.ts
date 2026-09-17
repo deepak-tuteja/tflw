@@ -11,7 +11,9 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UiServer, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { parseConfigSource } from '@tflw/lang';
+import { resolveConfig, selectEnv } from '@tflw/runtime';
+import { UiServer, blockForEnv, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
 import { readdir } from 'node:fs/promises';
 
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
@@ -693,7 +695,7 @@ test('a `baseline` pointing outside the project is refused, and the page never n
   const dir = await mkdtemp(join(tmpdir(), 'tflw-baseline-escape-'));
   try {
     await writeFile(join(dir, 'tflw.config'), 'defaults\n  baseline "../../escape.json"\n\nenv local default\n  api "http://127.0.0.1:1"\n', 'utf8');
-    const escaped = await resolveBaselineDoc(dir, 'defaults');
+    const escaped = await resolveBaselineDoc(dir, { block: 'defaults' });
     assert.ok('status' in escaped, 'a path outside the root must not resolve');
     assert.equal(escaped.status, 400);
     const refused = await writeBaselineDoc(dir, 'defaults', JSON.stringify({ version: 1, accepted: [] }), null);
@@ -701,8 +703,49 @@ test('a `baseline` pointing outside the project is refused, and the page never n
     // Control: the same config with a path inside the root resolves, so the refusal above is about
     // the escape and not about this fixture.
     await writeFile(join(dir, 'tflw.config'), 'defaults\n  baseline "./inside.json"\n\nenv local default\n  api "http://127.0.0.1:1"\n', 'utf8');
-    const inside = await resolveBaselineDoc(dir, 'defaults');
+    const inside = await resolveBaselineDoc(dir, { block: 'defaults' });
     assert.ok(!('status' in inside), `the control must resolve: ${JSON.stringify(inside)}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`blockForEnv` agrees with `resolveConfig` about which baseline an env is graded against', async () => {
+  // `M208` `S3`. `[accept]` has to link to a **block**, because that is what an address can name —
+  // and `resolveConfig` answers with a **path**, because that is what a run uses. Only the AST has
+  // the first, so the fallback rule is written a second time, which is the shape `M169d5` is filed
+  // under: two implementations of one rule, where a parity check agreed with itself while 43 wrong
+  // sites published.
+  //
+  // So it is graded against `resolveConfig` itself rather than against a table of expected answers.
+  // Nothing here says what the rule *is*; it says the two agree, over configs chosen to separate
+  // them — and a change on either side turns this red from either direction.
+  const cases: { readonly why: string; readonly config: string; readonly env: string }[] = [
+    { why: 'the env declares its own', config: 'defaults\n  baseline "./d.json"\n\nenv a default\n  api "http://127.0.0.1:1"\n  baseline "./a.json"\n', env: 'a' },
+    { why: 'the env declares none, so defaults wins', config: 'defaults\n  baseline "./d.json"\n\nenv a default\n  api "http://127.0.0.1:1"\n', env: 'a' },
+    { why: 'neither declares one', config: 'env a default\n  api "http://127.0.0.1:1"\n', env: 'a' },
+    { why: 'only the env declares one', config: 'env a default\n  api "http://127.0.0.1:1"\n  baseline "./a.json"\n', env: 'a' },
+    { why: 'a second line in one block: the last wins, as TF081 says it does', config: 'env a default\n  api "http://127.0.0.1:1"\n  baseline "./first.json"\n  baseline "./second.json"\n', env: 'a' },
+    { why: 'another env declares one and this one does not', config: 'env a default\n  api "http://127.0.0.1:1"\n\nenv b\n  api "http://127.0.0.1:2"\n  baseline "./b.json"\n', env: 'a' },
+  ];
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-blockforenv-'));
+  try {
+    let resolvedSome = false;
+    let resolvedNone = false;
+    for (const c of cases) {
+      const { config } = parseConfigSource(c.config);
+      const viaResolve = resolveConfig(config, selectEnv(config, {}), {}).baselinePath;
+      await writeFile(join(dir, 'tflw.config'), c.config, 'utf8');
+      const block = blockForEnv(config, c.env);
+      const viaBlock = block === null ? null : await resolveBaselineDoc(dir, { block });
+      const path = viaBlock === null ? null : 'status' in viaBlock ? `refused: ${viaBlock.error}` : viaBlock.path;
+      assert.equal(path, viaResolve, `${c.why}: the address's document and the run's document disagree`);
+      if (viaResolve === null) resolvedNone = true;
+      else resolvedSome = true;
+    }
+    // Non-vacuity: the table reaches both outcomes, so an agreement that is always `null === null`
+    // would not pass for correct.
+    assert.ok(resolvedSome && resolvedNone, 'the table must exercise both a resolved baseline and none');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

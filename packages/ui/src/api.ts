@@ -107,6 +107,17 @@ export interface DocumentView {
 export const getBaseline = (doc: string) => getJson<DocumentView>(`/api/baseline?doc=${encodeURIComponent(doc)}`);
 
 /**
+ * The document a run under `env` grades against — `M208` `S3`, and a different question from the
+ * one above.
+ *
+ * It is not always the env's own block: a config declaring `baseline` only in `defaults` grades
+ * every env against that one. The answer's `declaredIn` is the block, which is what an address can
+ * name — so `[accept]` builds `#/<door>/config/@<declaredIn>/L<n>` from the server's answer rather
+ * than deriving the fallback a second time in the page.
+ */
+export const getBaselineForEnv = (env: string) => getJson<DocumentView>(`/api/baseline?env=${encodeURIComponent(env)}`);
+
+/**
  * Write a baseline document back.
  *
  * **`ifMatch: null` means create**, unlike `putConfig` and like `putFile`. A config that does not

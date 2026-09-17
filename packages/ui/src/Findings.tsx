@@ -27,7 +27,34 @@ export const FOLD_DECLINES_ABOVE = 3;
 /** A finding's identity for the comparison: the fingerprint when it has one, else its site. */
 const keyOf = (f: ScanFinding): string => f.fingerprint ?? `${f.rule} ${f.endpoint} ${f.location ?? ''}`;
 
-export function Findings({ report, compare }: { report: RunReport; compare?: { readonly id: string; readonly data: RunReport } | null }) {
+/**
+ * What `[accept]` does — `M208` `S3` (`Q1`).
+ *
+ * **A link into the editor, never a writer.** `M206` `Q6` refused a bare `[accept]` button because
+ * it contradicts `M205`'s one-editor finding: everything editable in Auth links into Config rather
+ * than being a field, and a baseline edited from a button would have no editor at all. But that
+ * refusal left the feature with no page affordance, which collides with `D387`'s own adoptability
+ * argument — a page that shows you a 16-character fingerprint and asks you to copy it is precisely
+ * the hand-transcription `--baseline-write` exists to prevent.
+ *
+ * So it does what `[edit]` already does: it stages the entry into the editor's buffer and
+ * **navigates there, unsaved**. The affirmation stays the author's (`D291`), there is still exactly
+ * one editor, and nothing reaches disk until somebody presses save.
+ *
+ * `null` means this page cannot accept anything — no run env, or no `baseline` in force for it —
+ * and the list says which rather than offering a button that fails.
+ */
+export type AcceptFinding = (finding: ScanFinding) => void;
+
+export function Findings({
+  report,
+  compare,
+  onAccept,
+}: {
+  report: RunReport;
+  compare?: { readonly id: string; readonly data: RunReport } | null;
+  onAccept?: AcceptFinding | null;
+}) {
   const findings = report.findings ?? [];
   const coverage = report.scanCoverage ?? [];
   const targets = report.authorizedTargets ?? [];
@@ -97,7 +124,7 @@ export function Findings({ report, compare }: { report: RunReport; compare?: { r
           </summary>
           <ol className="finding-list">
             {list.map((f, i) => (
-              <Finding key={`${keyOf(f)}-${i}`} f={f} other={otherByKey ? (otherByKey.get(keyOf(f)) ?? null) : undefined} otherId={compare?.id ?? null} />
+              <Finding key={`${keyOf(f)}-${i}`} f={f} other={otherByKey ? (otherByKey.get(keyOf(f)) ?? null) : undefined} otherId={compare?.id ?? null} onAccept={onAccept ?? null} />
             ))}
           </ol>
         </details>
@@ -165,7 +192,7 @@ function comparedState(f: ScanFinding, other: ScanFinding | null): { readonly st
 }
 
 /** `other` is `undefined` with no comparison open, `null` when the compared run lacks the finding. */
-function Finding({ f, other, otherId }: { f: ScanFinding; other: ScanFinding | null | undefined; otherId: string | null }) {
+function Finding({ f, other, otherId, onAccept }: { f: ScanFinding; other: ScanFinding | null | undefined; otherId: string | null; onAccept: AcceptFinding | null }) {
   const entry = remediationFor(f.rule);
   const where = [f.endpoint, f.location, f.invariant].filter(Boolean).join(' · ');
   const compared = other === undefined ? null : comparedState(f, other);
@@ -206,8 +233,19 @@ function Finding({ f, other, otherId }: { f: ScanFinding; other: ScanFinding | n
           {f.fingerprint}
         </code>
       ) : (
-        <span className="finding-fp muted">— not baselinable</span>
+        // A finding with no fingerprint can never be accepted, and the page says why rather than
+        // offering a button that would match nothing — a baseline entry with no fingerprint accepts
+        // *nothing*, which is the one way this feature can make a build greener than the evidence.
+        // `D369`: a seeded payload has no fingerprint by construction, because it is generated.
+        <span className="finding-fp muted" data-not-baselinable>
+          — not baselinable{f.seeded ? ', because it is a generated payload rather than a site' : ''}
+        </span>
       )}
+      {f.fingerprint && onAccept && !f.withheld ? (
+        <button className="linkish" onClick={() => onAccept(f)} data-accept-finding={f.fingerprint} title="stage this fingerprint into the baseline and open it — nothing is written until you save">
+          [accept]
+        </button>
+      ) : null}
       {entry ? <Fix entry={entry} /> : null}
     </li>
   );
