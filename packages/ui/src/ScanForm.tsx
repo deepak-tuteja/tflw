@@ -14,15 +14,34 @@
 // by hand. Saying so before the write, with the exact line to uncomment, is the whole difference
 // between a signpost and a dead end.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { buildApiStep, buildExpect, buildTest, insertIntoSource, type ExpectSpec, type HttpMethod, type Insertion, type MatcherName } from '@tflw/lang';
 import { getFile, putFile, type FileView } from './api';
+import { TabStrip } from './TabStrip';
+import { SourcePanel } from './SourcePanel';
+import type { TabId } from './doors';
 import { diagnose } from './diagnose';
 import type { ProjectView } from './contract';
 
 export interface ScanFormProps {
   readonly project: ProjectView;
   readonly onWritten: (path: string) => void;
+  /** The file this form is about (`M206` `Q4`) — from the address, resolved by the shell. */
+  readonly filePath: string;
+  readonly onFile: (path: string) => void;
+  /** Which stage of this file's life is showing (`M205` §2). It lives in the URL and nowhere else
+   *  (`D1045`), so the shell owns it and hands it down. */
+  readonly tab: TabId;
+  readonly onTab: (tab: TabId, focusLine?: number) => void;
+  /** The project's runs, rendered by the shell. With this door the **last** inline placement goes
+   *  away: after `S2` no door renders the run pane under its form. */
+  readonly runPane: ReactNode;
+  /** Why Run has something to say while you are composing. */
+  readonly runMark?: string;
+  /** The strip's two project-fact tabs, built by the shell (`M206` `S2a`). */
+  readonly authPanel: ReactNode;
+  readonly configPanel: ReactNode;
+  readonly configMark?: string;
 }
 
 /** The three families this door can write. `a11y` is absent because its only subject is `page`,
@@ -39,9 +58,9 @@ const FAMILIES: ReadonlyArray<readonly [MatcherName, string, string]> = [
 const FLOORS = ['', 'minor', 'moderate', 'serious', 'critical'] as const;
 type Floor = (typeof FLOORS)[number];
 
-export function ScanForm({ project, onWritten }: ScanFormProps) {
+export function ScanForm({ project, onWritten, filePath, onFile, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: ScanFormProps) {
   const paths = useMemo(() => project.files.map((f) => f.path), [project]);
-  const [path, setPath] = useState(paths[0] ?? '');
+  const path = filePath;
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('existing');
   const [testName, setTestName] = useState('');
@@ -146,8 +165,24 @@ export function ScanForm({ project, onWritten }: ScanFormProps) {
     onWritten(path);
   }, [file, pending, path, onWritten]);
 
+  /** What a tab you are not looking at has to say — `M205` S5's three cases, unchanged by being
+   *  the fourth door to say them. */
+  const marks: Partial<Record<TabId, string>> = {};
+  if (pending.ok && file && pending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';
+  if (runMark) marks.run = runMark;
+  if (configMark) marks.config = configMark;
+
   return (
-    <section className="authoring" data-scan-form>
+    <section className="doorpane" data-scan-form>
+      <TabStrip tab={tab} onTab={onTab} marked={marks} />
+
+      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} /> : null}
+      {tab === 'run' ? <div className="runpane" data-scan-run-tab>{runPane}</div> : null}
+      {tab === 'auth' ? authPanel : null}
+      {tab === 'config' ? configPanel : null}
+
+      {tab !== 'compose' ? null : (
+      <section className="authoring" data-scan-compose>
       <header className="authoring-head">
         <h2>write a security assertion</h2>
         <p className="muted">
@@ -158,20 +193,31 @@ export function ScanForm({ project, onWritten }: ScanFormProps) {
 
       {/* The one notice no other door needs. `authorized target` lives in `tflw.config`, which this
           page does not write (`D1049`) and must not (`D291`: it is an affirmation only its author
-          can make) — so the door names the file, the line and the reason instead. */}
+          can make) — so the door names the file, the line and the reason instead.
+
+          `M207` `Q1` DIVIDED THIS FROM AUTH RATHER THAN DEDUPLICATING IT. Both surfaces describe
+          `authorized target` out of one `tflw.config`, one tab apart, and they are not the same
+          claim: **Auth answers *what is in force*, this answers *what your next write will hit***,
+          which is a prediction about an assertion that does not exist yet. So the notice keeps only
+          the forward-looking sentence and LINKS to Auth; Auth stays the only place that enumerates
+          targets. Neither lists them twice, which is the duplicate-over-one-file class `M205`
+          refused for the config editor and `S2a` caught in `M206` before it was written. */}
       {!authorized ? (
         <p className="warn" data-scan-unauthorized>
           env <code>{project.authorization.envName}</code> declares no <code>authorized target</code>, so every assertion
           this form writes will be <code>TF060</code> until you add one to <code>tflw.config</code>. That line is an
           affirmation that you are permitted to scan this host, so nobody but you can write it —{' '}
-          <code>tflw init --scan</code> leaves it commented out for exactly that reason.
+          <code>tflw init --scan</code> leaves it commented out for exactly that reason.{' '}
+          <button className="linkish" onClick={() => onTab('auth')} data-scan-auth-link>
+            what is in force here
+          </button>
         </p>
       ) : null}
 
       <div className="authoring-grid">
         <label>
           file
-          <select value={path} onChange={(e) => setPath(e.target.value)} data-scan-file>
+          <select value={path} onChange={(e) => onFile(e.target.value)} data-scan-file>
             {paths.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
@@ -288,6 +334,8 @@ export function ScanForm({ project, onWritten }: ScanFormProps) {
           </span>
         ) : null}
       </div>
+      </section>
+      )}
     </section>
   );
 }

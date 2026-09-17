@@ -303,13 +303,17 @@ export function App() {
   }
 
   /**
-   * The runs, as one node placed in one of two ways (`M205` S5).
+   * The runs, as one node — and since `M207` `S2` there is exactly **one** place it is put.
    *
-   * The API door puts it **inside the strip's Run tab**; the other three keep it under their form,
-   * where it has been since `M192`. That is the round's scope showing in the code rather than only
-   * in a plan: the strip is adopted for one door and propagates once BROWSER, LOAD and SCANS have
-   * been grilled against its rule. Built once either way, so the two placements cannot become two
-   * renderings.
+   * `M205` S5 built this with two placements: API's strip held it in a Run tab and the other three
+   * doors stacked it under their form, where it had been since `M192`. That was the round's scope
+   * showing in the code rather than only in a plan, and it was always meant to end — `M206` `S2b`
+   * took BROWSER, `M207` `S1` took LOAD and this slice takes SCANS. **Every door now reaches its
+   * runs through Run and no door renders them inline**, so the conditional that chose between the
+   * two placements is gone rather than narrowed to a door that no longer needs it.
+   *
+   * It is still built once and handed down, which is what kept two placements from becoming two
+   * renderings for the three rounds they coexisted.
    */
   const runPane = (
     <>
@@ -451,7 +455,21 @@ export function App() {
             runMark={live && !live.end ? 'a run is going' : undefined}
           />
         ) : null}
-        {project && door === 'scan' ? <ScanForm project={project} onWritten={() => void readProjectView()} /> : null}
+        {project && door === 'scan' ? (
+          <ScanForm
+            project={project}
+            onWritten={() => void readProjectView()}
+            filePath={path}
+            onFile={setFile}
+            tab={tab}
+            onTab={setTab}
+            runPane={runPane}
+            runMark={live && !live.end ? 'a run is going' : undefined}
+            authPanel={authPanel}
+            configPanel={configPanel}
+            configMark={configMark}
+          />
+        ) : null}
         {project && door === 'browser' ? (
           <BrowserForm
             project={project}
@@ -467,10 +485,6 @@ export function App() {
             configMark={configMark}
           />
         ) : null}
-        {/* The last door that still renders the run pane inline, underneath the form. `M205` `S5a`
-            moved API's into its Run tab, `M206` `S2b` moved BROWSER's and `M207` `S1` moved LOAD's;
-            SCANS is the one left, and `S2` takes it. */}
-        {door === 'scan' ? runPane : null}
       </main>
     </div>
   );

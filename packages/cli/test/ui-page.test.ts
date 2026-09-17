@@ -1230,6 +1230,109 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
   }
 });
 
+test('SCANS adopts the strip, and with it no door renders its runs inline any more', async () => {
+  // `M207` `S2`, the last door. The tab set is universal (`M206` `Q1`), so the first loop is the
+  // same five at the same addresses for the fourth time — and the claim worth making here is the
+  // one that only becomes true at this slice: `App.tsx`'s conditional between the two placements
+  // is **gone** rather than narrowed. `M205` `S5a` gave API a Run tab and left the other three
+  // stacking the run list under their form; `S2b` took BROWSER, `S1` took LOAD, and this takes the
+  // last one.
+  await page.goto(`${baseUrl}#/scan`);
+  await page.reload();
+  await page.locator('[data-scan-form]').waitFor();
+  assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip SCANS link stopped opening the door');
+
+  for (const tab of ['source', 'run', 'auth', 'config'] as const) {
+    await openTab(tab);
+    assert.equal(new URL(page.url()).hash, `#/scan/${tab}`, `${tab} is not an address on this door`);
+    assert.equal(await page.locator('[data-doorbar]').getAttribute('data-doorbar'), 'scan', 'a tab unseated the door');
+  }
+  await openTab('compose');
+  assert.equal(new URL(page.url()).hash, '#/scan', 'the default tab stopped writing the bare door hash');
+
+  assert.equal(await page.locator('.main > .runs').count(), 0, 'the run pane is still inline under the SCANS form');
+  await openTab('run');
+  await page.locator('[data-scan-run-tab]').waitFor();
+  assert.ok((await page.locator('[data-scan-run-tab] .runs').count()) > 0, 'Run does not hold the run pane it was given');
+
+  // **THE UNIVERSAL CLAIM, WHICH NO EARLIER SLICE COULD MAKE.** Every door, not this one: after
+  // `S2` the inline placement does not exist for any value of `door`, so it is checked by walking
+  // all four rather than by trusting that three previous gates still hold. A conditional narrowed
+  // to a door that no longer needs it would pass every per-door test above and fail this.
+  for (const door of ['api', 'browser', 'load', 'scan'] as const) {
+    await page.goto(`${baseUrl}#/${door}`);
+    await page.reload();
+    await page.locator('[data-doorbar]').waitFor();
+    assert.equal(await page.locator('.main > .runs').count(), 0, `${door} still renders its runs inline`);
+  }
+
+  // The state claim, across a real unmount, as on the other two doors — and this door needs a
+  // wider one than they did. `data-scan-name` does not exist until the mode is `new`, because
+  // SCANS opens on `existing`: its measured common act is grading a response a test already
+  // fetched (102 matchers across 51 files against 11 crawls in 4). So the field is reachable only
+  // through a piece of state that must ALSO survive, and the assertion covers both — a mode that
+  // reset would take the field with it and a name-only check would time out rather than fail
+  // clearly.
+  await page.goto(`${baseUrl}#/scan`);
+  await page.reload();
+  await page.locator('[data-scan-form]').waitFor();
+  assert.equal(await page.locator('[data-scan-mode]').inputValue(), 'existing', 'SCANS stopped opening on the act its census says is the common one');
+  await page.locator('[data-scan-mode]').selectOption('new');
+  await page.locator('[data-scan-name]').fill('typed before leaving');
+  await page.locator('[data-scan-family]').selectOption('hasNoAuthzViolations');
+  await openTab('source');
+  assert.equal(await page.locator('[data-scan-compose]').count(), 0, 'Compose did not unmount, so surviving it proves nothing');
+  await openTab('compose');
+  assert.equal(await page.locator('[data-scan-mode]').inputValue(), 'new', 'the mode reset, so the field below it was never the thing at risk');
+  assert.equal(await page.locator('[data-scan-name]').inputValue(), 'typed before leaving');
+  assert.equal(await page.locator('[data-scan-family]').inputValue(), 'hasNoAuthzViolations');
+});
+
+test('SCANS’ Compose predicts and Auth enumerates — one tflw.config, two claims, neither listed twice', async () => {
+  // `M207` `Q1`. Both surfaces describe `authorized target` out of one file, one tab apart, and the
+  // temptation was to deduplicate them. They are not the same claim: **Auth answers *what is in
+  // force*, Compose answers *what your next write will hit*** — a prediction about an assertion
+  // that does not exist yet, which Auth cannot make because Auth is not where you are writing.
+  //
+  // So Compose keeps the forward-looking sentence and gains a LINK, and Auth stays the only place
+  // that enumerates. The gate is therefore two-sided: the link works, and Compose does **not**
+  // list a target. A gate that only clicked the link would pass against a Compose that had grown
+  // its own copy of the list beside it.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-unauth-'));
+  const fresh = await browser.newPage();
+  try {
+    execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init', '--scan'], { cwd: dir, stdio: 'pipe' });
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      await fresh.goto(`${base}#/scan`);
+      await fresh.locator('[data-scan-unauthorized]').waitFor();
+
+      // `tflw init --scan` leaves the line commented out on purpose (`D291`), so this project is
+      // the unauthorized state — which is the only state the notice renders in today, and the
+      // reason `S5` exists at all.
+      const notice = (await fresh.locator('[data-scan-unauthorized]').textContent()) ?? '';
+      assert.match(notice, /TF060/, 'the notice stopped naming what the write will get');
+
+      // COMPOSE DOES NOT ENUMERATE. Asserted against the element Auth uses to list them, so this
+      // cannot pass by the list merely being spelled differently.
+      assert.equal(await fresh.locator('[data-scan-compose] [data-auth-targets]').count(), 0, 'Compose grew its own copy of the target list');
+
+      // The link goes to Auth — the address, not just the panel, because the tab living in the URL
+      // and nowhere else is `D1045` and is what makes this shareable rather than a callback.
+      await fresh.locator('[data-scan-auth-link]').click();
+      await fresh.locator('[data-tabstrip="auth"]').waitFor();
+      assert.equal(new URL(fresh.url()).hash, '#/scan/auth', 'the link did not put the tab in the address');
+      await fresh.locator('[data-auth-targets]').waitFor();
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await fresh.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('an unsaved tflw.config edit survives a door change, because a project fact is not one door’s', async () => {
   // `M206` `S2a`'s consequence, observable only now that a second door has a strip — which is why
   // it is gated here rather than claimed in the slice that caused it.
