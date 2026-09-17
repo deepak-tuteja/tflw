@@ -10,7 +10,7 @@
 // test costs nothing and asserts the thing itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countByDoor, lenslessCount, doorFromHash, hashForDoor, tabFromHash, hashForTab, focusFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
+import { countByDoor, lenslessCount, doorFromHash, fileFromHash, hashForDoor, tabFromHash, hashForTab, focusFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
 import type { ProjectView } from '../src/contract';
 
 const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', envs: [], reportDir: './report', files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [], sessions: [] }, webBaseUrl: null });
@@ -95,18 +95,63 @@ test('the tab is the hash’s second segment, and the default tab writes the bar
   assert.equal(tabFromHash('#/api/source/extra'), 'source', 'a third segment is not a tab and does not unseat one');
 });
 
+test('the file rides in the address, and a path with slashes still parses', () => {
+  // `M206` `Q4`. Until this the file lived in each form's own `useState(files[0] ?? '')`, so a door
+  // change silently reset it — worst on the 145 tests the census found behind more than one door,
+  // which are exactly the ones you walk between doors to look at.
+  assert.equal(hashForTab('browser', 'compose', 'shop.tflw'), '#/browser/compose/shop.tflw');
+  assert.equal(fileFromHash('#/browser/compose/shop.tflw'), 'shop.tflw');
+
+  // **A FILE PATH HAS SLASHES, SO "THE FILE IS SEGMENT THREE" IS NOT A RULE THIS GRAMMAR CAN HOLD.**
+  // `tests/ui/storefront/login.tflw` is four segments on its own. The line is read off the END and
+  // the file is everything between the tab and it, which is the only reading that survives a real
+  // corpus path — more than half the sibling's files are nested at least two deep.
+  const nested = 'tests/ui/storefront/login.tflw';
+  assert.equal(hashForTab('browser', 'source', nested), `#/browser/source/${nested}`);
+  assert.equal(fileFromHash(`#/browser/source/${nested}`), nested);
+  assert.equal(focusFromHash(`#/browser/source/${nested}`), null, 'a nested path names no line');
+
+  // A file and a line together, which is what an `[edit]` link writes once Auth is file-scoped.
+  assert.equal(hashForTab('api', 'config', nested, 11), `#/api/config/${nested}/L11`);
+  assert.equal(fileFromHash(`#/api/config/${nested}/L11`), nested);
+  assert.equal(focusFromHash(`#/api/config/${nested}/L11`), 11);
+
+  // With a file present the tab must be spelled even when it is the default — otherwise the file
+  // would be read as the tab. The bare form still wins when nothing follows it.
+  assert.equal(hashForTab('api', DEFAULT_TAB, 'shop.tflw'), `#/api/${DEFAULT_TAB}/shop.tflw`);
+  assert.equal(tabFromHash(`#/api/${DEFAULT_TAB}/shop.tflw`), DEFAULT_TAB);
+  assert.equal(hashForTab('api', DEFAULT_TAB), '#/api');
+
+  // EVERY ADDRESS THAT EXISTED BEFORE THIS SLICE STILL MEANS WHAT IT MEANT. That is `S5a`'s own
+  // gate run wider, and it is the whole cost `Q4` accepted: `#/api/config/L11` names a line and NO
+  // file, because a bare `L11` is the line and there is nothing left over to be a file.
+  assert.equal(focusFromHash('#/api/config/L11'), 11);
+  assert.equal(fileFromHash('#/api/config/L11'), null, 'a lone line segment is not a file');
+  for (const hash of ['#', '#/api', '#/api/source', '#/browser', '#/scan/compose']) {
+    assert.equal(fileFromHash(hash), null, `\`${hash}\` names no file`);
+  }
+  assert.equal(doorFromHash(`#/browser/source/${nested}`), 'browser', 'a file cannot unseat the door');
+  assert.equal(tabFromHash(`#/browser/source/${nested}`), 'source', 'a file cannot unseat the tab');
+
+  // No `.tflw` path can collide with the line pattern, because every one of them ends in `.tflw`.
+  // The near-misses are pinned so a future loosening of the regexp is a red test rather than a
+  // file that silently becomes a line number.
+  assert.equal(fileFromHash('#/api/source/L11.tflw'), 'L11.tflw');
+  assert.equal(focusFromHash('#/api/source/L11.tflw'), null);
+});
+
 test('the hash’s third segment is a line for Config to land on, and only that', () => {
   // `M205` S5b. Auth shows a session and an authorized target as facts and sends you to Config to
   // change one; *"lands in Config focused on that block"* is the promise, and putting the target
   // in the address rather than in a callback is `D1045` a third time — the jump is linkable, the
   // back button walks back out of it, and nothing new remembers where you were going.
-  assert.equal(hashForTab('api', 'config', 11), '#/api/config/L11');
+  assert.equal(hashForTab('api', 'config', null, 11), '#/api/config/L11');
   assert.equal(focusFromHash('#/api/config/L11'), 11);
 
   // A focus forces the long form even for the default tab, because the third segment has nowhere
   // else to sit — and the bare form still wins when nobody asked for a line, which is what keeps
   // `#/api` the commonest address.
-  assert.equal(hashForTab('api', DEFAULT_TAB, 3), `#/api/${DEFAULT_TAB}/L3`);
+  assert.equal(hashForTab('api', DEFAULT_TAB, null, 3), `#/api/${DEFAULT_TAB}/L3`);
   assert.equal(hashForTab('api', DEFAULT_TAB), '#/api');
 
   // `L`-prefixed so a third segment cannot be read as a fourth tab, and so an address that names

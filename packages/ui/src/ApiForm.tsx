@@ -43,7 +43,12 @@ export interface ApiFormProps {
    *  (`D1045`), so the shell owns it and hands it down — this form does not remember a tab. */
   readonly tab: TabId;
   readonly onTab: (tab: TabId, focusLine?: number) => void;
-  /** The line an `[edit]` link asked Config to land on — the hash's third segment (`M205` S5b).
+  /** The file every tab here is about (`M206` `Q4`). It lives in the address for `D1045`'s reason,
+   *  so the shell owns it — this form used to keep its own, which is why a door change reset it.
+   *  `null` is an address that names no file, and the form falls back to the project's first. */
+  readonly filePath: string | null;
+  readonly onFile: (path: string) => void;
+  /** The line an `[edit]` link asked Config to land on — read off the end of the hash (`M205` S5b).
    *  It arrives from the shell rather than from a callback because it lives in the URL: a jump
    *  between tabs is a link, and the back button walks back out of it. */
   readonly focusLine: number | null;
@@ -112,9 +117,18 @@ interface HeaderRow {
   readonly value: string;
 }
 
-export function ApiForm({ project, onWritten, tab, onTab, focusLine, runPane, runMark }: ApiFormProps) {
+export function ApiForm({ project, onWritten, tab, onTab, filePath, onFile, focusLine, runPane, runMark }: ApiFormProps) {
   const files = useMemo(() => project.files.map((f) => f.path), [project]);
-  const [path, setPath] = useState(files[0] ?? '');
+  /**
+   * The file this form is about, from the address (`M206` `Q4`).
+   *
+   * **The fallback is here rather than in `fileFromHash`**, which reports what the address says and
+   * does not ask the project whether it is true. An address naming a file that has since been
+   * renamed or deleted is the same class as one naming a tab nobody has heard of, and the answer is
+   * the same: fall back rather than fail. Doing it in the module instead would make an address's
+   * meaning depend on what happens to be on disk.
+   */
+  const path = filePath !== null && files.includes(filePath) ? filePath : (files[0] ?? '');
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
@@ -526,7 +540,7 @@ export function ApiForm({ project, onWritten, tab, onTab, focusLine, runPane, ru
       <div className="authoring-grid">
         <label title="which .tflw file this is written into — every file the project discovered">
           file
-          <select value={path} onChange={(e) => setPath(e.target.value)} data-api-file>
+          <select value={path} onChange={(e) => onFile(e.target.value)} data-api-file>
             {files.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
