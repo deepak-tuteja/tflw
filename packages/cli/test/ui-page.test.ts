@@ -2726,6 +2726,81 @@ test('the affirmation this form refuses to make is one the author can make on th
   }
 });
 
+test('the reason for authorized targets lives on the door that owns it, in both states, and not in Auth', async () => {
+  // `M207` `S5`. Auth's `authorized targets in force` block opened with a paragraph explaining WHY
+  // the language demands the declaration — *"A scan issues requests nobody wrote…"*. Every sentence
+  // was true; the problem is that a **project-scoped block explained itself in one door's terms on
+  // all four**, prose written when Auth existed only on the API door and generalised by propagation
+  // rather than by decision. `Q1` had already settled the principle for the other half of this same
+  // subject, so this applies it one block further: Auth states the facts, SCANS' Compose states the
+  // reason.
+  //
+  // **THE MEASUREMENT CHANGED THE SLICE'S DESIGN BEFORE IT WAS WRITTEN, AND THE VACUITY CONTROL IS
+  // WHAT CARRIES THAT.** `ScanForm`'s notice renders only when the env declares NO target, and all
+  // three projects on this machine declare one — `testFlow-tests` 2, `fixtures/project` 1,
+  // `examples/storefront` 1. Moving the justification into that branch as it stood would have put
+  // the explanation somewhere that renders in none of them: deleted from the healthy case, with
+  // every gate green, because no corpus reaches the branch that would have shown the loss. So the
+  // reason is asserted reachable **with targets declared and with none**, and the first of those is
+  // the case today's corpora actually exercise.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-why-'));
+  const fresh = await browser.newPage();
+  try {
+    execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init', '--scan'], { cwd: dir, stdio: 'pipe' });
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      const reason = /A scan issues requests nobody wrote/;
+
+      // 1. STATE ONE — nothing authorized. This is the state `tflw init --scan` leaves, and the
+      //    only state the old notice rendered in.
+      await fresh.goto(`${base}#/scan`);
+      await fresh.locator('[data-scan-why]').waitFor();
+      assert.equal(await fresh.locator('[data-scan-why]').getAttribute('data-scan-why-targets'), '0');
+      assert.match((await fresh.locator('[data-scan-why]').textContent()) ?? '', reason, 'the reason is not on the door with nothing authorized');
+
+      // 2. Authorize one, from this page, the way `S4` established.
+      const config = await readFile(join(dir, 'tflw.config'), 'utf8');
+      await writeFile(
+        join(dir, 'tflw.config'),
+        config.replace('#authorized target', 'authorized target').replace('reason ""', 'reason "a fixture host this test owns"'),
+        'utf8',
+      );
+
+      // 3. STATE TWO — something authorized, which is **every project measured for this round** and
+      //    the state the old prose would have lost the explanation in. The reason is still here, and
+      //    the affirmative half names the count.
+      await fresh.goto(`${base}#/scan`);
+      await fresh.reload();
+      await fresh.locator('[data-scan-why]').waitFor();
+      assert.equal(await fresh.locator('[data-scan-unauthorized]').count(), 0, 'the fixture is not in the authorized state, so this half proves nothing');
+      assert.equal(await fresh.locator('[data-scan-why]').getAttribute('data-scan-why-targets'), '1');
+      const why = (await fresh.locator('[data-scan-why]').textContent()) ?? '';
+      assert.match(why, reason, 'the reason vanished in exactly the state every measured project is in');
+      assert.match(why, /1 authorized target is in force/, 'the affirmative half does not say what is in force');
+
+      // 4. **AND IT IS A MOVE, NOT A COPY.** The justification is asserted ABSENT from Auth on all
+      //    four doors — without this the slice could have left the paragraph where it was and added
+      //    a second one, which every assertion above would accept. All four, because the whole
+      //    complaint was a project-scoped block reading in one door's terms on every door.
+      for (const door of ['api', 'browser', 'load', 'scan'] as const) {
+        await fresh.goto(`${base}#/${door}/auth`);
+        await fresh.reload();
+        await fresh.locator('[data-auth-targets]').waitFor();
+        assert.doesNotMatch((await fresh.locator('[data-auth-targets]').textContent()) ?? '', reason, `the justification is still in Auth on the ${door} door`);
+        // …and the facts stayed. Otherwise "absent" is satisfied by a block that lost everything.
+        assert.equal(await fresh.locator('[data-auth-targets]').getAttribute('data-auth-targets'), '1');
+        assert.match((await fresh.locator('[data-auth-target-reason]').textContent()) ?? '', /a fixture host this test owns/, `the target's own reason is gone from Auth on the ${door} door`);
+      }
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await fresh.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('the Auth tab says who this file runs as, and every editable thing lands in Config on its own line', async () => {
   // `M205` S5b, Q6. Auth is the rule's second clause — *a project fact that file resolves against*
   // — and it reads where Config writes. The three states it exists to tell apart are all here:

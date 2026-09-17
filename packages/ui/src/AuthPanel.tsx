@@ -250,13 +250,20 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
         </p>
       </section>
 
+      {/* `M207` `S5` — THE FACTS ARE HERE AND THE JUSTIFICATION IS ON THE DOOR THAT OWNS IT.
+
+          This block opened with a paragraph explaining *why* the language demands an
+          `authorized target`, beginning *"A scan issues requests nobody wrote…"*. Every sentence of
+          it was true. The problem was that a **project-scoped block explained itself in one door's
+          terms on all four** — prose written when Auth existed only on the API door (`M205` `S5b`)
+          and generalised by propagation rather than by decision. It is `M207-02`'s family one level
+          out, and `Q1` had already settled the principle for the other half of this same subject:
+          Auth states what is in force, SCANS' Compose states the reason.
+
+          So the rows stay — target, block, reason, granted probes, `[edit]` — under a heading, and
+          the argument for the mechanism lives where somebody is about to use it. */}
       <section className="auth-block" data-auth-targets={targets.length}>
         <h3>authorized targets in force</h3>
-        <p className="muted">
-          A scan issues requests nobody wrote, so the language makes you name what it may be pointed at, with a reason, in the file a
-          reviewer reads (<code>TF060</code>). The reason is not optional and not a courtesy — it is printed in the run summary and
-          embedded in every report.
-        </p>
         {targets.length === 0 ? (
           <p className="muted" data-auth-no-targets>
             None. Every security assertion and every <code>crawl</code> in this project is refused before it sends anything.
