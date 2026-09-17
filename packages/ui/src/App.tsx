@@ -424,6 +424,15 @@ export function App() {
               // re-read rather than patched — the server is what says what the file now holds.
               void readProjectView();
             }}
+            filePath={path}
+            onFile={setFile}
+            tab={tab}
+            onTab={setTab}
+            runPane={runPane}
+            runMark={live && !live.end ? 'a run is going' : undefined}
+            authPanel={authPanel}
+            configPanel={configPanel}
+            configMark={configMark}
           />
         ) : null}
         {project && door === 'api' ? (
@@ -458,10 +467,10 @@ export function App() {
             configMark={configMark}
           />
         ) : null}
-        {/* The doors that still render the run pane inline, underneath the form. `M205` `S5a`
-            moved API's into its Run tab and `M206` `S2b` moved BROWSER's; LOAD and SCANS are
-            grilled but not built this round (§5), so they keep the old shape until they are. */}
-        {door === 'api' || door === 'browser' ? null : runPane}
+        {/* The last door that still renders the run pane inline, underneath the form. `M205` `S5a`
+            moved API's into its Run tab, `M206` `S2b` moved BROWSER's and `M207` `S1` moved LOAD's;
+            SCANS is the one left, and `S2` takes it. */}
+        {door === 'scan' ? runPane : null}
       </main>
     </div>
   );
