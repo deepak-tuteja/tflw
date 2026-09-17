@@ -1,9 +1,9 @@
 {
   "comment": "GitHub's own heading anchors for SPEC.md, fetched from the ref below. Never hand-edit: the point of this file is that nothing in this repository computed it. Refresh with `node scripts/refresh-spec-anchors.mjs --ref <ref>`.",
   "repo": "deepak-tuteja/tflw",
-  "ref": "m152c-anchors",
-  "sha": "dd332c45cb638207983c91c1dcc0c7ef07f794e1",
-  "source": "https://github.com/deepak-tuteja/tflw/blob/dd332c45cb638207983c91c1dcc0c7ef07f794e1/SPEC.md",
+  "ref": "m208-security-triage",
+  "sha": "26abbb0bceed224c40b55b6bacd5780bb9b3b326",
+  "source": "https://github.com/deepak-tuteja/tflw/blob/26abbb0bceed224c40b55b6bacd5780bb9b3b326/SPEC.md",
   "headings": [
     [
       "testFlow — SPEC",
@@ -68,6 +68,10 @@
     [
       "3.10.1 Public targets — `--allow-public-target` (M131a, D21/D340) ✅",
       "3101-public-targets----allow-public-target-m131a-d21d340-"
+    ],
+    [
+      "3.11 Accepted findings — `baseline` (M208, D387/D1060) ✅",
+      "311-accepted-findings--baseline-m208-d387d1060-"
     ],
     [
       "4. Tests & structure ✅",
