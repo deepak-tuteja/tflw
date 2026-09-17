@@ -1045,6 +1045,72 @@ test('ticking the workload box turns a functional test into a load test, and the
 // because the second deliberately writes NO `open` — a browser test navigates once.
 // ---------------------------------------------------------------------------
 
+test('the BROWSER door has the same five tabs, and its run pane is only reachable through Run', async () => {
+  // `M206` `S2b`. The strip propagates unchanged — the tab set is universal (`Q1`), so this is the
+  // same five, at the same addresses, on a door whose Compose is a different form entirely.
+  await page.goto(`${baseUrl}#/browser`);
+  await page.reload();
+  await page.locator('[data-browser-form]').waitFor();
+  assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip BROWSER link stopped opening the door');
+
+  for (const tab of ['source', 'run', 'auth', 'config'] as const) {
+    await openTab(tab);
+    assert.equal(new URL(page.url()).hash, `#/browser/${tab}`, `${tab} is not an address on this door`);
+    assert.equal(await page.locator('[data-doorbar]').getAttribute('data-doorbar'), 'browser', 'a tab unseated the door');
+  }
+  await openTab('compose');
+  assert.equal(new URL(page.url()).hash, '#/browser', 'the default tab stopped writing the bare door hash');
+
+  // THE RUN PANE MOVED. Until this slice `App` rendered it inline under every door but API
+  // (`{door === 'api' ? null : runPane}`), so BROWSER showed the form and the whole run list
+  // stacked beneath it. It now lives in Run and nowhere else — asserted as an ABSENCE on Compose
+  // and a PRESENCE on Run, because either half alone passes against a pane that was simply
+  // deleted.
+  assert.equal(await page.locator('.main > .runs').count(), 0, 'the run pane is still inline under the BROWSER form');
+  await openTab('run');
+  await page.locator('[data-browser-run-tab]').waitFor();
+  assert.ok((await page.locator('[data-browser-run-tab] .runs').count()) > 0, 'Run does not hold the run pane it was given');
+
+  // THE STATE CLAIM, and here it is strictly stronger than the API one. That test says it cannot
+  // distinguish a hidden panel from an unmounted one; this door's Compose genuinely unmounts, so
+  // the assertion is that the values return ACROSS AN UNMOUNT — which is only true because the
+  // fields are `useState` in `BrowserForm`, above the panels.
+  await openTab('compose');
+  await page.locator('[data-browser-name]').fill('typed before leaving');
+  await openTab('source');
+  assert.equal(await page.locator('[data-browser-compose]').count(), 0, 'Compose did not unmount, so surviving it proves nothing');
+  await openTab('compose');
+  assert.equal(await page.locator('[data-browser-name]').inputValue(), 'typed before leaving');
+});
+
+test('an unsaved tflw.config edit survives a door change, because a project fact is not one door’s', async () => {
+  // `M206` `S2a`'s consequence, observable only now that a second door has a strip — which is why
+  // it is gated here rather than claimed in the slice that caused it.
+  //
+  // `S5a` held the config editor's state in `ApiForm`. That was the right height while one door
+  // had a strip and wrong the moment a second did: a copy per door is four editors over one
+  // project file, disagreeing about what is unsaved. The state is the shell's now, so walking away
+  // to a different KIND OF WORK no longer throws away an edit you have not saved — the same
+  // argument the tab case already won.
+  await page.goto(`${baseUrl}#/browser/config`);
+  await page.reload();
+  await page.locator('[data-api-config-text]').waitFor();
+  const original = await page.locator('[data-api-config-text]').inputValue();
+  await page.locator('[data-api-config-text]').fill(`${original}\n# an edit nobody saved\n`);
+  await page.locator('[data-tab-mark="config"]').waitFor();
+
+  // Leave by the DOOR, not by the tab — the whole point of this gate.
+  await page.locator('[data-door-tab="api"]').click();
+  await page.locator('[data-api-form]').waitFor();
+  await page.locator('[data-door-tab="browser"]').click();
+  await page.locator('[data-browser-form]').waitFor();
+  await openTab('config');
+  assert.match(await page.locator('[data-api-config-text]').inputValue(), /an edit nobody saved/, 'a door change threw away an unsaved config edit');
+
+  // Put it back, so this test leaves the project as it found it for whatever runs next.
+  await page.locator('[data-api-config-text]').fill(original);
+});
+
 test('the BROWSER form writes a whole test — open, a scoped block, and an assertion', async () => {
   await page.goto(`${baseUrl}#/browser`);
   await page.reload();

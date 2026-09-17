@@ -443,8 +443,25 @@ export function App() {
           />
         ) : null}
         {project && door === 'scan' ? <ScanForm project={project} onWritten={() => void readProjectView()} /> : null}
-        {project && door === 'browser' ? <BrowserForm project={project} onWritten={() => void readProjectView()} filePath={path} onFile={setFile} /> : null}
-        {door === 'api' ? null : runPane}
+        {project && door === 'browser' ? (
+          <BrowserForm
+            project={project}
+            onWritten={() => void readProjectView()}
+            filePath={path}
+            onFile={setFile}
+            tab={tab}
+            onTab={setTab}
+            runPane={runPane}
+            runMark={live && !live.end ? 'a run is going' : undefined}
+            authPanel={authPanel}
+            configPanel={configPanel}
+            configMark={configMark}
+          />
+        ) : null}
+        {/* The doors that still render the run pane inline, underneath the form. `M205` `S5a`
+            moved API's into its Run tab and `M206` `S2b` moved BROWSER's; LOAD and SCANS are
+            grilled but not built this round (§5), so they keep the old shape until they are. */}
+        {door === 'api' || door === 'browser' ? null : runPane}
       </main>
     </div>
   );
