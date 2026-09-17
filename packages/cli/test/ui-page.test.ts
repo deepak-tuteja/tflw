@@ -1435,6 +1435,80 @@ test('an unsaved edit in one document survives a trip to another, and the mark s
   await page.locator('[data-tab-mark="config"]').waitFor({ state: 'detached' });
 });
 
+test('[accept] stages a finding into the baseline and opens it — and writes nothing until you save', async () => {
+  // `M208` `S3` (`Q1`). `M206` `Q6` refused a bare `[accept]` **button** on `M205`'s one-editor
+  // finding, and that refusal left the feature with no page affordance at all — which collides with
+  // `D387`'s own adoptability argument, since a page that shows you a 16-character fingerprint and
+  // asks you to copy it is exactly the hand-transcription `--baseline-write` exists to prevent.
+  //
+  // So `[accept]` is `[edit]`'s shape: it stages the entry into the editor and navigates there,
+  // unsaved. **The negative control is the whole row** — an author who accepts and then walks away
+  // must have changed nothing on disk, because the affirmation is theirs to make (`D291`).
+  const docPath = join(root, 'security-baseline.json');
+  const onDisk = await readFile(docPath, 'utf8');
+  const before = JSON.parse(onDisk) as { accepted: { fingerprint: string }[] };
+  assert.deepEqual(before.accepted.map((a) => a.fingerprint), ['d1a3ef65f88fb550'], 'the fixture starts with one accepted finding');
+
+  await openReport('headers');
+  // Offered on the finding that is gating, and NOT on the one the baseline already withholds —
+  // accepting what is already accepted is a button with nothing behind it.
+  assert.equal(await page.locator('[data-accept-finding="f9ea851f1285230b"]').count(), 1);
+  assert.equal(await page.locator('[data-accept-finding="d1a3ef65f88fb550"]').count(), 0, 'already known/accepted');
+
+  await page.locator('[data-accept-finding="f9ea851f1285230b"]').click();
+
+  // It lands in the right document, at the entry — not near it. The document is `@headers` because
+  // that is the block declaring the baseline this run graded against; the server resolved that, so
+  // the page is not deriving the `defaults` fallback a second time.
+  await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
+  assert.match(new URL(page.url()).hash, /^#\/api\/config\/@headers\/L\d+$/);
+  const staged = await page.locator('[data-api-config-text]').inputValue();
+  assert.deepEqual(
+    (JSON.parse(staged) as { accepted: { fingerprint: string }[] }).accepted.map((a) => a.fingerprint),
+    ['d1a3ef65f88fb550', 'f9ea851f1285230b'],
+    'the existing entry survives and the new one is last',
+  );
+  assert.match(await selectedText(page, '[data-api-config-text]'), /f9ea851f1285230b/, 'the address must land on the entry it staged');
+
+  // THE NEGATIVE CONTROL. Nothing on disk, before or after walking away — and the staged edit is
+  // still there when you come back, because an unsaved edit is the shell's state (`S2`).
+  assert.equal(await readFile(docPath, 'utf8'), onDisk, '[accept] wrote to disk');
+  await openTab('run');
+  await openTab('config');
+  assert.equal(await readFile(docPath, 'utf8'), onDisk, 'a trip through another tab wrote to disk');
+  assert.match(await page.locator('[data-api-config-text]').inputValue(), /f9ea851f1285230b/, 'the staged entry was thrown away');
+
+  // And saving is what writes it — the other half of the control, without which the two rows above
+  // would pass on a page that can never write anything.
+  await page.locator('[data-api-config-save]').click();
+  await page.locator('[data-api-config-saved]').waitFor();
+  assert.deepEqual(
+    (JSON.parse(await readFile(docPath, 'utf8')) as { accepted: { fingerprint: string }[] }).accepted.map((a) => a.fingerprint),
+    ['d1a3ef65f88fb550', 'f9ea851f1285230b'],
+  );
+
+  // Put the project back as it was found, through the page, so the etag this page holds stays true.
+  await page.locator('[data-api-config-text]').fill(onDisk);
+  await page.locator('[data-api-config-save]').click();
+  await page.locator('[data-api-config-saved]').waitFor();
+  assert.equal(await readFile(docPath, 'utf8'), onDisk);
+});
+
+test('[accept] under an env with no baseline says what to declare, rather than failing quietly', async () => {
+  // `env full` declares none and neither does `defaults`, so a `full` run grades against nothing.
+  // The button is still offered and the click is still useful: it lands on Config with the
+  // server's own sentence about what is missing. A page that hid the affordance would leave the
+  // commonest state — a project that has not adopted triage — with no route into adopting it.
+  await openReport('full');
+  await page.locator('[data-accept-finding="d1a3ef65f88fb550"]').click();
+  await page.locator('[data-api-config-problem]').waitFor();
+  const said = (await page.locator('[data-api-config-problem]').textContent()) ?? '';
+  assert.match(said, /no `baseline` is declared for env `full`/);
+  assert.match(said, /declare one in tflw\.config/);
+  // And it landed on `tflw.config` itself, which is where that declaration goes.
+  assert.equal(await page.locator('[data-api-config]').getAttribute('data-config-showing'), 'config');
+});
+
 test('the BROWSER form writes a whole test — open, a scoped block, and an assertion', async () => {
   await page.goto(`${baseUrl}#/browser`);
   await page.reload();

@@ -787,7 +787,7 @@ export async function writeConfigFile(
  */
 export async function resolveBaselineDoc(
   root: string,
-  block: string,
+  asked: { readonly block: string } | { readonly env: string },
 ): Promise<{ readonly declaredIn: string; readonly path: string; readonly full: string } | FileWriteRefusal> {
   let configText: string;
   try {
@@ -796,6 +796,19 @@ export async function resolveBaselineDoc(
     return { status: 404, error: `no ${CONFIG_PATH} here — this directory is not a tflw project yet` };
   }
   const { config } = parseConfigSource(configText);
+  if ('env' in asked) {
+    const found = blockForEnv(config, asked.env);
+    if (found === null) {
+      return {
+        status: 404,
+        error: config.envs.some((e) => e.name === asked.env)
+          ? `no \`baseline\` is declared for env \`${asked.env}\` — declare one in ${CONFIG_PATH} to accept findings into it`
+          : `${CONFIG_PATH} declares no env \`${asked.env}\``,
+      };
+    }
+    return resolveBaselineDoc(root, { block: found });
+  }
+  const { block } = asked;
   const entries =
     block === 'defaults' ? (config.defaults?.entries ?? null) : (config.envs.find((e) => e.name === block)?.entries ?? null);
   if (entries === null) {
@@ -811,6 +824,32 @@ export async function resolveBaselineDoc(
   const full = safeJoin(root, requested);
   if (full === null) return { status: 400, error: `\`baseline "${requested}"\` resolves outside the project` };
   return { declaredIn: block, path: requested, full };
+}
+
+/**
+ * Which **block** holds the baseline a run under this env grades against — `M208` `S3`.
+ *
+ * This is the address `[accept]` has to link to, and it is not always the env's own: a config that
+ * declares `baseline` in `defaults` and not in `env prod` grades a `prod` run against the
+ * `defaults` document, so `@defaults` is the document and `@prod` names nothing.
+ *
+ * **It is the same rule `resolveConfig` applies, written once more — so it is graded against
+ * `resolveConfig` rather than against this comment.** Two implementations of one rule is the shape
+ * `M169d5` is filed under, where a parity check agreed with itself while 43 wrong sites published;
+ * `ui-server.test.ts` resolves every fixture both ways and compares the paths, so a change to
+ * either side turns it red from either direction. The reason this cannot simply *call*
+ * `resolveConfig` is that `resolveConfig` answers with a **path** and an address needs a **block**:
+ * the path is the fact a run uses and the block is the fact a URL can name, and only the AST has
+ * the second.
+ *
+ * `null` means no baseline is in force for that env at all, which is a real answer and not a
+ * failure — it is every project that has not adopted triage.
+ */
+export function blockForEnv(config: ConfigFile, env: string): string | null {
+  const has = (entries: readonly { type: string }[] | undefined): boolean => (entries ?? []).some((e) => e.type === 'BaselineDecl');
+  if (has(config.envs.find((e) => e.name === env)?.entries)) return env;
+  if (has(config.defaults?.entries)) return 'defaults';
+  return null;
 }
 
 /**
@@ -839,7 +878,7 @@ export async function writeBaselineDoc(
   text: string,
   ifMatch: string | null,
 ): Promise<{ readonly path: string; readonly etag: string } | FileWriteRefusal> {
-  const doc = await resolveBaselineDoc(root, block);
+  const doc = await resolveBaselineDoc(root, { block });
   if ('status' in doc) return doc;
   try {
     parseBaseline(text, doc.path);
@@ -1268,9 +1307,18 @@ export class UiServer {
     // exists to end. A `404` would have made *no such env* and *not written yet* the same answer,
     // and only one of them is a mistake.
     if (path === '/api/baseline' && method === 'GET') {
-      const block = url.searchParams.get('doc') ?? '';
-      if (block === '') return json(res, 400, { error: 'which document? pass `doc=defaults` or `doc=<env>`' });
-      const doc = await resolveBaselineDoc(this.opts.root, block);
+      // Two ways to ask, and they are different questions. `doc=` names a **block** and is what the
+      // address carries; `env=` asks *which document would a run under this env grade against*,
+      // which is what `[accept]` needs and is not always the env's own block — a config declaring
+      // `baseline` only in `defaults` grades every env against that one (`blockForEnv`). The answer
+      // carries `declaredIn`, so the page can build the `@block` address from it rather than
+      // deriving the fallback a second time.
+      const block = url.searchParams.get('doc');
+      const env = url.searchParams.get('env');
+      if ((block ?? '') === '' && (env ?? '') === '') {
+        return json(res, 400, { error: 'which document? pass `doc=defaults`, `doc=<env>`, or `env=<env>`' });
+      }
+      const doc = await resolveBaselineDoc(this.opts.root, block ? { block } : { env: env! });
       if ('status' in doc) {
         const { status, ...rest } = doc;
         return json(res, status, rest);
@@ -1287,6 +1335,9 @@ export class UiServer {
     // `PUT /api/baseline?doc=…` — see `writeBaselineDoc`. `If-Match` absent means *create*, which
     // is the difference from `PUT /api/config` and is the case `[accept]` on a first finding hits.
     if (path === '/api/baseline' && method === 'PUT') {
+      // A **write** names a block and only a block: `env=` is a question about resolution and the
+      // page has already had it answered by the `GET` above. A write that re-resolved could land in
+      // a different document from the one the editor is showing.
       const block = url.searchParams.get('doc') ?? '';
       if (block === '') return json(res, 400, { error: 'which document? pass `doc=defaults` or `doc=<env>`' });
       let request: { text?: unknown };

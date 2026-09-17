@@ -7,8 +7,10 @@
 // `#/load` is a link to the LOAD door of whatever project this server is serving.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { cancelRun, getBaseline, getConfig, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, reportFileUrl, startRun, subscribe } from './api';
-import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest } from './contract';
+import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, reportFileUrl, startRun, subscribe } from './api';
+import type { DocumentView } from './api';
+import { EMPTY_BASELINE, stageFingerprint } from './baseline';
+import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
 import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
@@ -292,6 +294,65 @@ export function App() {
     }
   }, [configText, configEtag, doc, docKey, patchDoc, readProjectView]);
 
+  /**
+   * `[accept]` — stage a finding's fingerprint into the baseline and open it, unsaved (`M208` `S3`,
+   * `Q1`).
+   *
+   * **Three properties, and each one is a refusal of an easier shape.**
+   *
+   * *It does not write.* `M206` `Q6` refused a bare `[accept]` button on `M205`'s one-editor
+   * finding, and `Q1` answered the gap it left with the shape Auth's `[edit]` already uses: show
+   * the fact, link into the editor. The affirmation stays the author's (`D291`), and an author who
+   * changes their mind navigates away and nothing happened.
+   *
+   * *It asks the server which document.* A `prod` run may grade against `defaults`' baseline, and
+   * deriving that fallback here would be the second implementation of a rule the runtime already
+   * has — `M169d5`'s shape, where a parity check agreed with itself. The server answers with the
+   * **block**, which is the half a URL can name.
+   *
+   * *It edits the document's own text, not a model of it.* The panel is a text editor over the
+   * author's bytes (`D985` again), so the entry is spliced into the JSON the page is holding and
+   * the address points at the line it landed on. A structured edit would have to re-serialise, and
+   * the first thing it would destroy is whatever ordering or comment-shaped formatting the author
+   * chose.
+   */
+  const acceptFinding = useCallback(
+    async (finding: ScanFinding) => {
+      if (door === null || report === null || finding.fingerprint === undefined) return;
+      setConfigProblem(null);
+      setConfigSaved(null);
+      let view: DocumentView;
+      try {
+        view = await getBaselineForEnv(report.data.env);
+      } catch (e: unknown) {
+        // The ordinary case here is *no `baseline` is declared for this env*, and the server's
+        // message says exactly that and what to do. Shown on the Config tab rather than swallowed,
+        // because a button that does nothing visible is worse than one that is not there.
+        setConfigProblem(e instanceof Error ? e.message : String(e));
+        setTab('config', undefined, null);
+        return;
+      }
+      const key = view.declaredIn;
+      const held = docs[key];
+      // What the editor already holds wins over what is on disk: an author who staged one
+      // fingerprint and then accepted a second must end with both, not with the first one lost.
+      const base = held?.text ?? view.text ?? EMPTY_BASELINE;
+      const staged = stageFingerprint(base, finding);
+      patchDoc(key, {
+        text: staged.text,
+        // `''` and not `null` when the document is not on disk yet, so *is there anything to save*
+        // is `true` for the entry just staged. `null` there means **not read**, which would leave
+        // the save button disabled on the one document the whole feature exists to create — the
+        // same distinction the panel's own absent branch makes on its first keystroke.
+        disk: held?.disk ?? view.text ?? '',
+        etag: held?.etag ?? view.etag,
+        absentPath: null,
+      });
+      setTab('config', staged.line, key);
+    },
+    [door, report, docs, patchDoc, setTab],
+  );
+
 
 
   useEffect(() => {
@@ -449,7 +510,7 @@ export function App() {
                 </a>
               ))}
           </p>
-          <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} />
+          <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} onAccept={door === null ? null : (f) => void acceptFinding(f)} />
           <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null }} />
         </article>
       ) : null}
