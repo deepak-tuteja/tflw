@@ -1216,8 +1216,12 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
     // The control this gate needs to mean anything: the instrument can read an overflow at all.
     // Without it `=== 900` is one CSS change away from being the same vacuous assertion the
     // bounding-box reading was, and nothing would say so.
+    // The probe is made through `el.ownerDocument` rather than the `document` global: this file is
+    // typechecked under `types: ["node"]` with no DOM lib, so the global does not exist for `tsc`
+    // even though it exists in the browser this callback is serialised into. `el` is typed by
+    // Playwright, so reaching the document through it costs nothing and compiles.
     const overflowed = await sized.locator('.main').evaluate((el) => {
-      const probe = document.createElement('div');
+      const probe = el.ownerDocument.createElement('div');
       probe.style.height = '4000px';
       el.appendChild(probe);
       const measured = el.scrollHeight;
