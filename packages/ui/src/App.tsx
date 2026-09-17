@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelRun, getProject, getReports, getResults, getRuns, getStderr, reportFileUrl, startRun, subscribe } from './api';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest } from './contract';
-import { doorFromHash, hashForDoor } from './doors';
+import { doorFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
@@ -32,6 +32,9 @@ interface LiveRun {
 
 export function App() {
   const [door, setDoorState] = useState<Lens | null>(() => doorFromHash(window.location.hash));
+  /** Which stage of the selected file is showing (`M205` §2). It is the hash's second segment, so
+   *  a tab is linkable and the back button walks it — the same rule `D1045` makes for the door. */
+  const [tab, setTabState] = useState<TabId>(() => tabFromHash(window.location.hash));
   const [project, setProject] = useState<ProjectView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RunRecord[]>([]);
@@ -50,14 +53,28 @@ export function App() {
   // The hash is the source of truth for the door, so the back button works and a pasted link
   // opens where it says. `setDoor` writes the hash; the listener is what actually moves the page.
   useEffect(() => {
-    const onHash = () => setDoorState(doorFromHash(window.location.hash));
+    const onHash = () => {
+      setDoorState(doorFromHash(window.location.hash));
+      setTabState(tabFromHash(window.location.hash));
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
   const setDoor = useCallback((next: Lens | null) => {
+    // A door change resets the tab, because the tab is a stage of a file and the door decides
+    // which file you land on. Carrying `source` across a door change would land you reading a
+    // file you did not choose.
     window.location.hash = hashForDoor(next);
     setDoorState(next);
+    setTabState(tabFromHash(hashForDoor(next)));
   }, []);
+  const setTab = useCallback(
+    (next: TabId) => {
+      if (door !== null) window.location.hash = hashForTab(door, next);
+      setTabState(next);
+    },
+    [door],
+  );
 
   const refreshLists = useCallback(async () => {
     const [r, p] = await Promise.all([getRuns(), getReports()]);
@@ -172,6 +189,70 @@ export function App() {
     return <Landing project={project} error={error} noProject={noProject} onOpen={setDoor} onCreated={() => void readProjectView()} />;
   }
 
+  /**
+   * The runs, as one node placed in one of two ways (`M205` S5).
+   *
+   * The API door puts it **inside the strip's Run tab**; the other three keep it under their form,
+   * where it has been since `M192`. That is the round's scope showing in the code rather than only
+   * in a plan: the strip is adopted for one door and propagates once BROWSER, LOAD and SCANS have
+   * been grilled against its rule. Built once either way, so the two placements cannot become two
+   * renderings.
+   */
+  const runPane = (
+    <>
+      <RunList runs={runs} reports={reports} selected={selected} onSelect={setSelected} />
+      {error ? (
+        <p className="error" data-error>
+          {error}
+        </p>
+      ) : null}
+      {selected?.kind === 'run' && live && live.id === selected.id ? <LivePane live={live} /> : null}
+      {selected?.kind === 'report' && report && report.id === selected.id ? (
+        <article className="report" data-report={report.id}>
+          <ReportHeader report={report.data} />
+          {exitNote && exitNote.id === report.id ? (
+            <div className="warn run-exit" data-run-exit={exitNote.run.exitCode ?? ''} data-run-status={exitNote.run.status}>
+              ⚠ the run behind this directory {exitNote.run.status === 'cancelled' ? 'was cancelled from this page' : 'ended'} with{' '}
+              {exitNote.run.exitCode !== null ? `exit ${exitNote.run.exitCode}` : `signal ${exitNote.run.signal}`} — the report is what it had written by then, and its verdict does not say so.
+              {exitNote.stderr ? (
+                <pre className="stderr" data-run-stderr>
+                  {exitNote.stderr}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
+          <p className="muted files-line">
+            {reports.length > 1 ? (
+              <label className="compare">
+                compare with{' '}
+                <select value={compareId ?? ''} onChange={(e) => setCompareId(e.target.value === '' ? null : e.target.value)} data-compare>
+                  <option value="">— nothing —</option>
+                  {reports
+                    .filter((r) => r.id !== report.id)
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.id}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : null}
+            {reports
+              .find((r) => r.id === report.id)
+              ?.files.map((f) => (
+                <a key={f} href={reportFileUrl(report.id, f)} target="_blank" rel="noreferrer" data-report-file={f}>
+                  {f}
+                </a>
+              ))}
+          </p>
+          <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} />
+          <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null }} />
+        </article>
+      ) : null}
+      {selected === null && !error ? <p className="muted empty">select a run</p> : null}
+    </>
+  );
+
   return (
     <div className="app">
       {project ? <Sidebar project={project} door={door} running={running} onRun={onRun} onCancel={onCancel} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
@@ -189,59 +270,19 @@ export function App() {
             }}
           />
         ) : null}
-        {project && door === 'api' ? <ApiForm project={project} onWritten={() => void readProjectView()} /> : null}
+        {project && door === 'api' ? (
+          <ApiForm
+            project={project}
+            onWritten={() => void readProjectView()}
+            tab={tab}
+            onTab={setTab}
+            runPane={runPane}
+            runMark={live && !live.end ? 'a run is going' : undefined}
+          />
+        ) : null}
         {project && door === 'scan' ? <ScanForm project={project} onWritten={() => void readProjectView()} /> : null}
         {project && door === 'browser' ? <BrowserForm project={project} onWritten={() => void readProjectView()} /> : null}
-        <RunList runs={runs} reports={reports} selected={selected} onSelect={setSelected} />
-        {error ? (
-          <p className="error" data-error>
-            {error}
-          </p>
-        ) : null}
-        {selected?.kind === 'run' && live && live.id === selected.id ? <LivePane live={live} /> : null}
-        {selected?.kind === 'report' && report && report.id === selected.id ? (
-          <article className="report" data-report={report.id}>
-            <ReportHeader report={report.data} />
-            {exitNote && exitNote.id === report.id ? (
-              <div className="warn run-exit" data-run-exit={exitNote.run.exitCode ?? ''} data-run-status={exitNote.run.status}>
-                ⚠ the run behind this directory {exitNote.run.status === 'cancelled' ? 'was cancelled from this page' : 'ended'} with{' '}
-                {exitNote.run.exitCode !== null ? `exit ${exitNote.run.exitCode}` : `signal ${exitNote.run.signal}`} — the report is what it had written by then, and its verdict does not say so.
-                {exitNote.stderr ? (
-                  <pre className="stderr" data-run-stderr>
-                    {exitNote.stderr}
-                  </pre>
-                ) : null}
-              </div>
-            ) : null}
-            <p className="muted files-line">
-              {reports.length > 1 ? (
-                <label className="compare">
-                  compare with{' '}
-                  <select value={compareId ?? ''} onChange={(e) => setCompareId(e.target.value === '' ? null : e.target.value)} data-compare>
-                    <option value="">— nothing —</option>
-                    {reports
-                      .filter((r) => r.id !== report.id)
-                      .map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.id}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              ) : null}
-              {reports
-                .find((r) => r.id === report.id)
-                ?.files.map((f) => (
-                  <a key={f} href={reportFileUrl(report.id, f)} target="_blank" rel="noreferrer" data-report-file={f}>
-                    {f}
-                  </a>
-                ))}
-            </p>
-            <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} />
-            <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null }} />
-          </article>
-        ) : null}
-        {selected === null && !error ? <p className="muted empty">select a run</p> : null}
+        {door === 'api' ? null : runPane}
       </main>
     </div>
   );

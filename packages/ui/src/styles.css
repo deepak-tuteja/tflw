@@ -194,6 +194,23 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .badge.also { background: none; border: 1px solid var(--line); color: var(--muted); font-size: 10px; letter-spacing: 0.04em; }
 .elsewhere { font-size: 12px; font-style: italic; }
 
+/* The strip over one file (`M205` §2). It sits UNDER the doorbar and is deliberately quieter than
+   it: the doorbar answers *what am I here to do* and this answers *what am I doing with this file*,
+   so a reader who glances at the page should see the louder question first. The mark is a dot and
+   not a count — a tab has one thing to say about this file's state, and a number would invite the
+   explorer's job (`3 other files failed`) into a strip that faces one file. */
+.tabstrip { display: flex; align-items: center; gap: 2px; margin: 0 0 12px; border-bottom: 1px solid var(--line); }
+.tabstrip-tab {
+  background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted);
+  padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; margin-bottom: -1px;
+}
+.tabstrip-tab:hover { color: var(--fg); }
+.tabstrip-tab.on { color: var(--fg); border-bottom-color: var(--accent); }
+.tabstrip-mark { color: var(--accent); margin-left: 6px; font-size: 14px; line-height: 1; }
+.source-panel [data-api-source-state] { margin: 0 0 8px; font-size: 12px; }
+.source-panel .preview { margin-top: 0; }
+.runpane > .response { margin-bottom: 16px; }
+
 /* The authoring pane (M200 A0-4). The preview is the bytes the PUT carries — not a rendering of
    them — because the file is the only truth (D985) and a form that hid its own output would be
    asking the author to trust a projection over the thing itself. */

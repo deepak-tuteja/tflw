@@ -10,7 +10,7 @@
 // test costs nothing and asserts the thing itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countByDoor, lenslessCount, doorFromHash, hashForDoor, DOORS } from '../src/doors';
+import { countByDoor, lenslessCount, doorFromHash, hashForDoor, tabFromHash, hashForTab, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
 import type { ProjectView } from '../src/contract';
 
 const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', envs: [], reportDir: './report', files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [] }, webBaseUrl: null });
@@ -51,13 +51,46 @@ test('a test behind no door is counted as such, so the landing can admit it exis
   assert.equal(lenslessCount(project([file('x.tflw', [[], ['api'], []])])), 2);
 });
 
-test('the hash names the door, and anything else is the landing', () => {
+test('the hash names the door, the second segment names a tab, and anything else is the landing', () => {
   for (const door of DOORS) {
     assert.equal(doorFromHash(hashForDoor(door.id)), door.id);
     assert.equal(doorFromHash(`#${door.id}`), door.id, 'the slash is optional');
   }
   assert.equal(hashForDoor(null), '#');
-  for (const hash of ['', '#', '#/', '#/nope', '#/API', '#/scan/extra']) {
+  for (const hash of ['', '#', '#/', '#/nope', '#/API']) {
     assert.equal(doorFromHash(hash), null, `\`${hash}\` is the landing`);
   }
+
+  // **`#/scan/extra` USED TO BE THE LANDING AND IS NOW THE SCANS DOOR**, and this line is the
+  // change `M205` S5 made rather than an oversight it left. A second segment is a tab
+  // (`M205` §2), so the door is the first segment and a trailing word it does not recognise is
+  // tolerated the same way `#/nope` is — by falling back, not by refusing.
+  //
+  // The cost of getting this wrong is why it is pinned from both sides below: `#/api` meant
+  // something before the strip existed and every link anyone has pasted is of that shape, so the
+  // bare door hash must keep resolving, and a tab must not be able to steal the door.
+  assert.equal(doorFromHash('#/scan/extra'), 'scan', 'a second segment is a tab, not a wrong door');
+  assert.equal(doorFromHash('#/api/source'), 'api');
+  assert.equal(doorFromHash('#/nope/source'), null, 'a tab cannot rescue a door that is not one');
+});
+
+test('the tab is the hash’s second segment, and the default tab writes the bare door hash', () => {
+  // `D1045` extended to the strip: the choice lives in the URL and nowhere else, so these two
+  // functions are the whole of what the page remembers about which tab you are on.
+  for (const tab of TABS) {
+    assert.equal(tabFromHash(hashForTab('api', tab.id)), tab.id, `${tab.id} did not survive a round trip`);
+  }
+
+  // The bare door hash is Compose, which is what lets `#/api` keep meaning what it meant before
+  // the strip — and `hashForTab` writes that short form rather than `#/api/compose`, so the
+  // commonest address stays the one that was already in circulation.
+  assert.equal(hashForTab('api', DEFAULT_TAB), '#/api');
+  assert.equal(tabFromHash('#/api'), DEFAULT_TAB);
+  assert.equal(tabFromHash('#'), DEFAULT_TAB);
+
+  // An unrecognised tab is Compose rather than an error, the same tolerance `doorFromHash` has —
+  // and the case that matters is a tab the rule REFUSES, because `M205` §2 names *History*,
+  // *Docs* and *Coverage* as the things a strip facing one file may not grow.
+  assert.equal(tabFromHash('#/api/coverage'), DEFAULT_TAB);
+  assert.equal(tabFromHash('#/api/source/extra'), 'source', 'a third segment is not a tab and does not unseat one');
 });
