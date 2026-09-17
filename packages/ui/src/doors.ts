@@ -103,14 +103,55 @@ export function tabFromHash(hash: string): TabId {
 
 export const hashForDoor = (id: Lens | null): string => (id === null ? '#' : `#/${id}`);
 
-/** A door and a tab as one address, so a jump between tabs is linkable and the back button works
- *  (`D1045` again — the choice lives in the URL and nowhere else). The default tab writes the bare
- *  door hash, so the commonest address stays the short one. */
-export const hashForTab = (door: Lens, tab: TabId, focusLine?: number): string =>
-  focusLine === undefined ? (tab === DEFAULT_TAB ? `#/${door}` : `#/${door}/${tab}`) : `#/${door}/${tab}/L${focusLine}`;
+/**
+ * The address after the tab: the **file**, then optionally the line — `#/api/config/shop.tflw/L11`.
+ *
+ * `M206` `Q4`. Until this, a door change silently reset which file you were on: each form held its
+ * own `useState(files[0] ?? '')`, so walking BROWSER → API → BROWSER returned you to the first file
+ * in the project rather than the one you were reading. That is worst on the **145** tests the census
+ * found behind more than one door, which are exactly the ones you walk between doors to look at.
+ *
+ * A file is a choice, so `D1045` covers it for the reason it already covers the door and the tab —
+ * and it makes *this file's Auth tab* a link, which is what `S5b`'s `[edit]` buttons already promise
+ * inside one door.
+ *
+ * **THE LINE IS READ OFF THE END, NOT OFF A FIXED INDEX, BECAUSE A FILE PATH HAS SLASHES.**
+ * `tests/ui/storefront/login.tflw` is four segments, so "the file is segment three" is not a rule
+ * this grammar can hold. The last segment is the line when it is `L` followed by digits, and
+ * everything between the tab and it is the file. No `.tflw` path can collide with that pattern —
+ * every one of them ends in `.tflw`. Encoding the slashes was the alternative and was refused: an
+ * address a person cannot read is an address nobody will paste.
+ */
+const afterTab = (hash: string): { file: string | null; line: number | null } => {
+  const rest = hash.replace(/^#\/?/, '').split('/').slice(2).filter((s) => s !== '');
+  const last = rest[rest.length - 1] ?? '';
+  const m = /^L(\d+)$/.exec(last);
+  const parts = m ? rest.slice(0, -1) : rest;
+  return { file: parts.length === 0 ? null : parts.join('/'), line: m ? Number(m[1]) : null };
+};
+
+/** A door, a tab, a file and a line as one address (`D1045`; `M206` `Q4` added the file). The
+ *  default tab writes the bare door hash **only when nothing follows it** — with a file present the
+ *  tab has to be spelled, or the file would be read as the tab. */
+export const hashForTab = (door: Lens, tab: TabId, file?: string | null, focusLine?: number): string => {
+  const tail = `${file ? `/${file}` : ''}${focusLine === undefined ? '' : `/L${focusLine}`}`;
+  return tail === '' && tab === DEFAULT_TAB ? `#/${door}` : `#/${door}/${tab}${tail}`;
+};
 
 /**
- * The line a tab is asked to focus, from the hash's **third** segment — `#/api/config/L12`.
+ * The file a door is pointed at, or `null` for an address that names none — which is every address
+ * anybody had before `M206`.
+ *
+ * It is deliberately **not** validated against the project here. A hash naming a file that has been
+ * renamed or deleted is the same class as a hash naming a tab nobody has heard of, and `doors.ts`
+ * answers that class the same way everywhere: report what the address says and let the caller fall
+ * back. A module that returned `null` for an unknown file would need the project to answer, and
+ * then the address's meaning would depend on what happens to be on disk.
+ */
+export const fileFromHash = (hash: string): string | null => afterTab(hash).file;
+
+/**
+ * The line a tab is asked to focus — `#/api/config/L12`, or `#/api/config/shop.tflw/L12`.
  *
  * `S5b`'s `[edit]` links are what need it: Auth shows a session and an authorized target as facts
  * and sends you to Config to change one, and *"lands in Config focused on that block"* is the
@@ -118,16 +159,12 @@ export const hashForTab = (door: Lens, tab: TabId, focusLine?: number): string =
  * time — the jump is linkable, the back button walks back out of it, and nothing new remembers
  * where you were going.
  *
- * `L`-prefixed so it cannot be read as a fourth tab, and a line number rather than a block name
+ * `L`-prefixed so it cannot be read as a tab or a file, and a line number rather than a block name
  * because the declaration a reader wants is the one they are looking at: `tflw.config` may hold
  * two `authorized target` lines that differ only in their reason, and a name would send you to
  * whichever came first.
  */
-export function focusFromHash(hash: string): number | null {
-  const seg = hash.replace(/^#\/?/, '').split('/')[2] ?? '';
-  const m = /^L(\d+)$/.exec(seg);
-  return m ? Number(m[1]) : null;
-}
+export const focusFromHash = (hash: string): number | null => afterTab(hash).line;
 
 /** Every test and crawl behind each door, derived. A test behind two doors is counted by both —
  *  that is `D1043` working, not a double count to be corrected. */

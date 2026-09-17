@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelRun, getProject, getReports, getResults, getRuns, getStderr, reportFileUrl, startRun, subscribe } from './api';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest } from './contract';
-import { doorFromHash, focusFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
+import { DEFAULT_TAB, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
@@ -35,8 +35,12 @@ export function App() {
   /** Which stage of the selected file is showing (`M205` §2). It is the hash's second segment, so
    *  a tab is linkable and the back button walks it — the same rule `D1045` makes for the door. */
   const [tab, setTabState] = useState<TabId>(() => tabFromHash(window.location.hash));
-  /** The hash's third segment — a line Config was asked to land on (`M205` S5b). `null` for every
-   *  address that does not name one, which is every address anybody had before `S5b`. */
+  /** The file every tab is about (`M206` `Q4`). It lives in the hash for `D1045`'s reason and is
+   *  held here rather than in each form, which is where it used to live **twice** — `ApiForm` and
+   *  `BrowserForm` each kept their own `useState(files[0] ?? '')`, so a door change reset it. */
+  const [file, setFileState] = useState<string | null>(() => fileFromHash(window.location.hash));
+  /** The line Config was asked to land on (`M205` S5b), read off the end of the hash. `null` for
+   *  every address that does not name one, which is every address anybody had before `S5b`. */
   const [focusLine, setFocusLine] = useState<number | null>(() => focusFromHash(window.location.hash));
   const [project, setProject] = useState<ProjectView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,27 +63,47 @@ export function App() {
     const onHash = () => {
       setDoorState(doorFromHash(window.location.hash));
       setTabState(tabFromHash(window.location.hash));
+      setFileState(fileFromHash(window.location.hash));
       setFocusLine(focusFromHash(window.location.hash));
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  const setDoor = useCallback((next: Lens | null) => {
-    // A door change resets the tab, because the tab is a stage of a file and the door decides
-    // which file you land on. Carrying `source` across a door change would land you reading a
-    // file you did not choose.
-    window.location.hash = hashForDoor(next);
-    setDoorState(next);
-    setTabState(tabFromHash(hashForDoor(next)));
-    setFocusLine(null);
-  }, []);
+  const setDoor = useCallback(
+    (next: Lens | null) => {
+      // A door change **keeps the file and resets the tab** (`M206` `Q4`).
+      //
+      // The reset is unchanged; its reason is not. This used to read "the door decides which file
+      // you land on", which stopped being true the moment the file moved into the address — the
+      // address decides, and the door is a view of it. What survives is the narrower claim: a tab
+      // is a stage of *this* file's life, and the stage you were at in one kind of work says
+      // nothing about the stage you are at in another. Landing on BROWSER's Source because you
+      // were reading API's is a guess; landing on Compose is the door's own promise (`D1042`).
+      const next_hash = next === null ? hashForDoor(null) : hashForTab(next, DEFAULT_TAB, file);
+      window.location.hash = next_hash;
+      setDoorState(next);
+      setTabState(DEFAULT_TAB);
+      setFocusLine(null);
+    },
+    [file],
+  );
   const setTab = useCallback(
     (next: TabId, focus?: number) => {
-      if (door !== null) window.location.hash = hashForTab(door, next, focus);
+      if (door !== null) window.location.hash = hashForTab(door, next, file, focus);
       setTabState(next);
       setFocusLine(focus ?? null);
     },
-    [door],
+    [door, file],
+  );
+  /** Choosing a different file. It drops the focus line, because a line number is an offset into
+   *  the file that named it and means nothing in the next one. */
+  const setFile = useCallback(
+    (next: string) => {
+      if (door !== null) window.location.hash = hashForTab(door, tab, next);
+      setFileState(next);
+      setFocusLine(null);
+    },
+    [door, tab],
   );
 
   const refreshLists = useCallback(async () => {
@@ -282,13 +306,15 @@ export function App() {
             onWritten={() => void readProjectView()}
             tab={tab}
             onTab={setTab}
+            filePath={file}
+            onFile={setFile}
             focusLine={focusLine}
             runPane={runPane}
             runMark={live && !live.end ? 'a run is going' : undefined}
           />
         ) : null}
         {project && door === 'scan' ? <ScanForm project={project} onWritten={() => void readProjectView()} /> : null}
-        {project && door === 'browser' ? <BrowserForm project={project} onWritten={() => void readProjectView()} /> : null}
+        {project && door === 'browser' ? <BrowserForm project={project} onWritten={() => void readProjectView()} filePath={file} onFile={setFile} /> : null}
         {door === 'api' ? null : runPane}
       </main>
     </div>

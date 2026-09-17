@@ -41,6 +41,11 @@ import type { ProjectView } from './contract';
 export interface BrowserFormProps {
   readonly project: ProjectView;
   readonly onWritten: (path: string) => void;
+  /** The file this form is about (`M206` `Q4`) — from the address, not from state held here. See
+   *  `ApiForm`'s note: the fallback for an address naming a file that no longer exists is the
+   *  caller's, because `fileFromHash` reports what the address says and never asks the project. */
+  readonly filePath: string | null;
+  readonly onFile: (path: string) => void;
 }
 
 /** What a row of this form does. Ordered by how often the corpus does it — `click` 766, `fill`
@@ -92,9 +97,9 @@ export function locatorFromPickLine(line: string): LocatorSpec | null {
   return { kind: step.locator.kind, value: step.locator.value.value };
 }
 
-export function BrowserForm({ project, onWritten }: BrowserFormProps) {
+export function BrowserForm({ project, onWritten, filePath, onFile }: BrowserFormProps) {
   const paths = useMemo(() => project.files.map((f) => f.path), [project]);
-  const [path, setPath] = useState(paths[0] ?? '');
+  const path = filePath !== null && paths.includes(filePath) ? filePath : (paths[0] ?? '');
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
@@ -294,7 +299,7 @@ export function BrowserForm({ project, onWritten }: BrowserFormProps) {
       <div className="authoring-grid">
         <label>
           file
-          <select value={path} onChange={(e) => setPath(e.target.value)} data-browser-file>
+          <select value={path} onChange={(e) => onFile(e.target.value)} data-browser-file>
             {paths.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
