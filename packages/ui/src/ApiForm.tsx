@@ -17,7 +17,7 @@
 // because `D1049` makes each write a real PUT — and a file that, between two of them, asserts
 // against a response nothing fetched is a file somebody's CI can catch mid-edit.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   buildApiStep,
   buildExpect,
@@ -30,11 +30,23 @@ import {
 } from '@tflw/lang';
 import { getFile, putFile, dropScratch, startRun, subscribe, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
+import { TabStrip } from './TabStrip';
+import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
 
 export interface ApiFormProps {
   readonly project: ProjectView;
   readonly onWritten: (path: string) => void;
+  /** Which stage of this file's life is showing (`M205` §2). It lives in the URL and nowhere else
+   *  (`D1045`), so the shell owns it and hands it down — this form does not remember a tab. */
+  readonly tab: TabId;
+  readonly onTab: (tab: TabId) => void;
+  /** The project's runs, rendered by the shell. Passed in rather than imported so that `Run` can
+   *  be a tab of this file's strip without this form learning what a report directory is. */
+  readonly runPane: ReactNode;
+  /** Why Run has something to say while you are composing — the shell knows about live runs and
+   *  this form does not. */
+  readonly runMark?: string;
 }
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
@@ -94,7 +106,7 @@ interface HeaderRow {
   readonly value: string;
 }
 
-export function ApiForm({ project, onWritten }: ApiFormProps) {
+export function ApiForm({ project, onWritten, tab, onTab, runPane, runMark }: ApiFormProps) {
   const files = useMemo(() => project.files.map((f) => f.path), [project]);
   const [path, setPath] = useState(files[0] ?? '');
   const [file, setFile] = useState<FileView | null>(null);
@@ -302,11 +314,15 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
         return;
       }
       setSent({ request: step.request, response: step.response, ok: step.ok, detail: step.detail });
+      // `M205` Q4: `send` is a request/response loop and the response IS the point, so the page
+      // goes where the response is. `run all` deliberately does not — it is background work, and
+      // it marks the tab instead of taking you off the form you are in the middle of.
+      onTab('run');
     } catch (e) {
       setProblem(e instanceof Error ? e.message : String(e));
     }
     setSending(false);
-  }, [scratchText, project.scratchPath, scratchEtag]);
+  }, [scratchText, project.scratchPath, scratchEtag, onTab]);
 
   /**
    * `[Discard]` — the scratch file is removed and *then* the pane goes.
@@ -355,8 +371,33 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
 
   const patchRow = (i: number, patch: Partial<ExpectRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
+  /** What a tab you are not looking at has to say (`M205` S5). Two cases only, and both are facts
+   *  about THIS file: Compose is holding bytes the file does not have yet, and a run is going. */
+  const marks: Partial<Record<TabId, string>> = {};
+  if (pending.ok && file && pending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';
+  if (runMark) marks.run = runMark;
+
   return (
-    <section className="authoring" data-api-form>
+    <section className="doorpane" data-api-form>
+      <TabStrip tab={tab} onTab={onTab} marked={marks} />
+
+      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} /> : null}
+      {tab === 'run' ? (
+        <div className="runpane" data-api-run-tab>
+          {sent ? <ResponsePane sent={sent} onDiscard={() => void discard()} /> : null}
+          {runPane}
+        </div>
+      ) : null}
+
+      {/* **What you typed survives a trip to another tab**, and it is not this line that provides
+          it: every field is `useState` in THIS component, and the strip swaps a panel rather than
+          unmounting the form, so the values come back whether the panel is unmounted or merely
+          hidden. The first draft used `hidden` and said in a comment that it was load-bearing —
+          the mutation to an unmounted panel left the gate green, which is how that got caught.
+          Unmounted is the better of two equal choices: no hidden `[data-api-send]` sitting in the
+          DOM for a selector on another tab to find. */}
+      {tab !== 'compose' ? null : (
+        <div className="authoring">
       <header className="authoring-head">
         <h2>write an API test</h2>
         <p className="muted">
@@ -527,25 +568,13 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
         </button>
       </div>
 
-      {pending.ok ? (
-        <>
-          <pre className="preview" data-api-preview>
-            {pending.text}
-          </pre>
-          {/* `D1052` — what `tflw check` will say about these bytes. Shown, never blocking: the
-              write route refuses what cannot be read (`D1049`), and an unbound `{'{'}token{'}'}` reads
-              fine — it is just wrong, and the author should hear it here rather than in CI. */}
-          {diagnostics.length > 0 ? (
-            <ul className="preview-diagnostics" data-api-diagnostics={diagnostics.length}>
-              {diagnostics.map((d, i) => (
-                <li key={i} className={d.severity} data-diagnostic-code={d.code}>
-                  <code>{d.code}</code> line {d.span.start.line} — {d.message}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </>
-      ) : (
+      {/* `D985` — the bytes this form is about to write are shown, never hidden behind a
+          projection of them. They moved to **Source** (`M205` §2): the tab set is the file's
+          stages, and "what this file is about to be" is the same subject as "what this file is",
+          so two panes showing one file's text was the duplication the strip exists to remove.
+          Compose keeps the SENTENCE — what is wrong, or what to type next — because that is about
+          the form rather than about the file. */}
+      {pending.ok ? null : (
         /* `M205` Q11. This is the first sentence the door says on a form that now opens empty, so
            it is a hint until there is something to be wrong about. A blank field rendered as a
            warning teaches a new author that the tool is annoyed at them for not having typed
@@ -586,36 +615,91 @@ export function ApiForm({ project, onWritten }: ApiFormProps) {
         </p>
       ) : null}
 
-      {sent ? (
-        <div className="response" data-api-response={sent.response?.status ?? ''} data-api-response-ok={String(sent.ok)}>
-          <header className="response-head">
-            <span className={`verdict ${sent.ok ? 'ok' : 'fail'}`}>{sent.response ? `${sent.response.status} ${sent.response.statusText}` : 'no response'}</span>
-            {sent.request ? (
-              <code data-api-response-url>
-                {sent.request.method} {sent.request.url}
-              </code>
-            ) : null}
-            <button onClick={() => void discard()} data-api-discard>
-              discard
-            </button>
-          </header>
-          {sent.detail ? <p className="muted" data-api-response-detail>{sent.detail}</p> : null}
-          {sent.response ? (
-            <>
-              <ul className="response-headers" data-api-response-headers={Object.keys(sent.response.headers).length}>
-                {Object.entries(sent.response.headers).map(([k, v]) => (
-                  <li key={k}>
-                    <code>{k}</code>: {v}
-                  </li>
-                ))}
-              </ul>
-              <pre className="preview" data-api-response-body>
-                {sent.response.bodyText}
-              </pre>
-            </>
-          ) : null}
         </div>
-      ) : null}
+      )}
     </section>
+  );
+}
+
+/**
+ * **Source** — the file, and while you are composing, the bytes the write will produce.
+ *
+ * `D985` says the `.tflw` file is the only truth and that a form shows the source it is about to
+ * write. Before the strip those were two panes: an always-on preview of the pending bytes inside
+ * the form, and no view of the file at all. One subject, so one tab — and the panel says which of
+ * the two it is showing, because "this is the file" and "this is what the file is about to be"
+ * are claims a reader must be able to tell apart.
+ */
+function SourcePanel({ file, pending, diagnostics }: {
+  readonly file: FileView | null;
+  readonly pending: { ok: true; text: string } | { ok: false; reason: string };
+  readonly diagnostics: ReturnType<typeof diagnose>;
+}) {
+  const pendingText = pending.ok ? pending.text : null;
+  const unwritten = pendingText !== null && file !== null && pendingText !== file.text;
+  const shown = unwritten ? pendingText : (file?.text ?? '');
+  return (
+    <div className="authoring source-panel" data-api-source={unwritten ? 'pending' : 'written'}>
+      <p className="muted" data-api-source-state>
+        {file === null
+          ? 'no file open'
+          : unwritten
+            ? <>what <code>{file.path}</code> becomes when you press <em>write</em> — not what is on disk yet</>
+            : <>{file.path} — as it is on disk</>}
+      </p>
+      <pre className="preview" data-api-preview>
+        {shown}
+      </pre>
+      {/* `D1052` — what `tflw check` will say about these bytes. Shown, never blocking: the write
+          route refuses what cannot be read (`D1049`), and an unbound `{'{'}token{'}'}` reads fine — it is
+          just wrong, and the author should hear it here rather than in CI. */}
+      {unwritten && diagnostics.length > 0 ? (
+        <ul className="preview-diagnostics" data-api-diagnostics={diagnostics.length}>
+          {diagnostics.map((d, i) => (
+            <li key={i} className={d.severity} data-diagnostic-code={d.code}>
+              <code>{d.code}</code> line {d.span.start.line} — {d.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** What `send` came back with. It lives in **Run** rather than under the form (`M205` Q4): a send
+ *  is a run, and the tab set is the file's stages rather than a list of panels. */
+function ResponsePane({ sent, onDiscard }: {
+  readonly sent: { request: StepResult['request']; response: StepResult['response']; ok: boolean; detail?: string };
+  readonly onDiscard: () => void;
+}) {
+  return (
+    <div className="response" data-api-response={sent.response?.status ?? ''} data-api-response-ok={String(sent.ok)}>
+      <header className="response-head">
+        <span className={`verdict ${sent.ok ? 'ok' : 'fail'}`}>{sent.response ? `${sent.response.status} ${sent.response.statusText}` : 'no response'}</span>
+        {sent.request ? (
+          <code data-api-response-url>
+            {sent.request.method} {sent.request.url}
+          </code>
+        ) : null}
+        <button onClick={onDiscard} data-api-discard>
+          discard
+        </button>
+      </header>
+      {sent.detail ? <p className="muted" data-api-response-detail>{sent.detail}</p> : null}
+      {sent.response ? (
+        <>
+          <ul className="response-headers" data-api-response-headers={Object.keys(sent.response.headers).length}>
+            {Object.entries(sent.response.headers).map(([k, v]) => (
+              <li key={k}>
+                <code>{k}</code>: {v}
+              </li>
+            ))}
+          </ul>
+          <pre className="preview" data-api-response-body>
+            {sent.response.bodyText}
+          </pre>
+        </>
+      ) : null}
+    </div>
   );
 }

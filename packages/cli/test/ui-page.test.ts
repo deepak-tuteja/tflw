@@ -41,6 +41,19 @@ let browser: Browser;
 let page: Page;
 const oracle: Record<string, RunReport> = {};
 
+/**
+ * Move the API door's strip to a tab (`M205` §2) and wait for it to be the one showing.
+ *
+ * Every read of the preview below goes through this now, and that is the strip doing its job in
+ * the tests as well as on the page: *what this file is about to be* stopped being a panel stapled
+ * under the form and became **Source**, one of the file's three stages — so a test that wants the
+ * bytes has to say where it is looking, exactly as a reader does.
+ */
+const openTab = async (tab: 'compose' | 'source' | 'run'): Promise<void> => {
+  await page.locator(`[data-tab="${tab}"]`).click();
+  await page.locator(`[data-tabstrip="${tab}"]`).waitFor();
+};
+
 /** `html.ts`'s `pretty`, restated: what the page shows for a JSON body. */
 const pretty = (text: string): string => {
   try {
@@ -100,14 +113,21 @@ after(async () => {
  * wants the shell has to say which door it came through — and API is the one the fixture project
  * is mostly behind (8 of its 13 entries). The report and run panes are not door-specific: a
  * report holds whatever ran, and the door narrows only the project pane (`D1044`).
+ *
+ * **`M205` S5 moved where they are drawn, not who they belong to.** The API door's strip puts the
+ * runs in its **Run** tab; the other three doors keep them under their form until the strip is
+ * grilled against BROWSER, LOAD and SCANS. So a test whose subject is a report enters at
+ * `#/api/run` — which is a stronger address than the old one, because it asserts that the report
+ * renders inside the tab as well as that it renders.
  */
 const API_DOOR = '#/api';
+const API_RUN = '#/api/run';
 
 /** The functional entries of a report — the workload kind carries metrics, not steps (U4). */
 const functional = (report: RunReport): TestResult[] => report.tests.filter((t): t is TestResult => t.kind === 'functional');
 
 async function openReport(id: string): Promise<void> {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${baseUrl}${API_RUN}`);
   await page.locator(`[data-report-row="${id}"]`).click();
   await page.locator(`[data-report="${id}"]`).waitFor();
 }
@@ -163,7 +183,7 @@ test('the sidebar is the project behind this door: every file, test, line and ta
 });
 
 test('the run list is the report directories, each row carrying its own results.json counts', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${baseUrl}${API_RUN}`);
   for (const id of ['full', 'headers']) {
     const row = page.locator(`[data-report-row="${id}"]`);
     await row.waitFor();
@@ -629,7 +649,7 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
-    await page.goto(`${baseUrl}${API_DOOR}`);
+    await page.goto(`${baseUrl}${API_RUN}`);
     await page.locator('[data-tag="catalog"]').click();
     await page.locator('[data-run]').click();
     await page.locator('[data-live]').waitFor();
@@ -680,7 +700,7 @@ test('a run cancelled from the page: its kept directory says so above the report
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
-    await page.goto(`${baseUrl}${API_DOOR}`);
+    await page.goto(`${baseUrl}${API_RUN}`);
     const before = new Set(await page.locator('[data-report-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-report-row'))));
     await page.locator('[data-tag="load"]').click();
     await page.locator('[data-run]').click();
@@ -714,7 +734,7 @@ test('a run cancelled from the page: its kept directory says so above the report
 });
 
 test('a run that could not start: the live pane keeps its exit and stderr, drawn as the failure it is, and nothing is kept', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${baseUrl}${API_RUN}`);
   // `--workers 0` — `tflw run` refuses it (usage, exit 2) before any report is written.
   const before = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string }[];
   await page.locator('[data-workers]').fill('0');
@@ -734,8 +754,16 @@ test('a run that could not start: the live pane keeps its exit and stderr, drawn
   assert.match((await pane.locator('[data-stderr]').textContent())!, /positive integer/);
   // And the run keeps a row of its own: no directory to stand for it, so it would otherwise
   // vanish from the list the moment anything else is selected.
-  const row = page.locator(`[data-run-row="${run.id}"]`);
-  assert.equal(await row.getAttribute('data-status'), 'done');
+  //
+  // **Waited for, not read.** This test asks `/api/runs` directly and then asserts what the page
+  // says, and those two learn the run ended by different routes: the server knows when the child
+  // exits, the page hears `event: end` on its stream and only then re-reads the list. So the test
+  // can be a round trip ahead of the page, and reading the attribute instantly is a race that
+  // passes almost always — 5 of 5 runs of this test alone, and one failure in a full-file run
+  // (`running !== done`, 2026-09-17). The claim is unchanged; it now waits for the page to have
+  // heard, which is the thing it meant to assert all along.
+  const row = page.locator(`[data-run-row="${run.id}"][data-status="done"]`);
+  await row.waitFor();
   assert.equal(await row.getAttribute('data-exit'), String(run.exitCode));
   assert.match((await row.textContent())!, new RegExp(`exit ${run.exitCode} · no report`));
   await openReport('full');
@@ -1441,16 +1469,20 @@ test('the API form writes a request and its assertions in one edit, and the byte
   await page.locator('[data-header-add]').click();
   await page.locator('[data-header-name="0"]').fill('Authorization');
   await page.locator('[data-header-value="0"]').fill('Bearer {token}');
+  await openTab('source');
   await page.locator('[data-api-diagnostics]').waitFor();
   const unbound = await page.locator('[data-diagnostic-code="TF030"]').textContent();
   assert.ok(unbound?.includes('token'), unbound ?? 'the form should name the unbound variable');
   // And it is a warning about the file, not a veto on the write: `D1052` shows, never blocks.
+  await openTab('compose');
   assert.equal(await page.locator('[data-api-save]').isDisabled(), false);
 
   // Take the reference back out, and the panel goes with it — the control that keeps the
   // assertion above about this header rather than about the panel always being there.
   await page.locator('[data-header-value="0"]').fill('Bearer static-token');
+  await openTab('source');
   await page.locator('[data-api-diagnostics]').waitFor({ state: 'detached' });
+  await openTab('compose');
 
   await page.locator('[data-api-body-kind]').selectOption('json');
   await page.locator('[data-api-body]').fill('{ itemId: 1, qty: 2 }');
@@ -1472,6 +1504,11 @@ test('the API form writes a request and its assertions in one edit, and the byte
   await page.locator('[data-expect-matcher="2"]').selectOption('contains');
   await page.locator('[data-expect-operand="2"]').fill('"json"');
 
+  await openTab('source');
+  // Source says WHICH of the two things it is showing. The claim below is about bytes that are
+  // not on disk yet, so a panel quietly showing the saved file would satisfy every `includes`
+  // under it and mean the opposite.
+  assert.equal(await page.locator('[data-api-source]').getAttribute('data-api-source'), 'pending');
   const preview = await page.locator('[data-api-preview]').textContent();
   assert.ok(preview?.includes('@api @authored'), preview ?? '');
   assert.ok(preview?.includes('api POST /orders body { itemId: 1, qty: 2 } as "place"'), preview ?? '');
@@ -1479,6 +1516,8 @@ test('the API form writes a request and its assertions in one edit, and the byte
   assert.ok(preview?.includes('expect status equals 201'), preview ?? '');
   assert.ok(preview?.includes('expect body.items[0].price is greater than 0'), preview ?? '');
   assert.ok(preview?.includes('check header "content-type" contains "json"'), preview ?? '');
+
+  await openTab('compose');
 
   const before = await readFile(join(root, target), 'utf8');
   await page.locator('[data-api-save]').click();
@@ -1532,7 +1571,9 @@ test('the API door adds work to a test the LOAD door started, above its workload
   await page.locator('[data-api-path]').fill('/items');
   await page.locator('[data-expect-operand="0"]').fill('200');
 
+  await openTab('source');
   const preview = (await page.locator('[data-api-preview]').textContent()) ?? '';
+  await openTab('compose');
   await page.locator('[data-api-save]').click();
   await page.locator('[data-api-wrote]').waitFor();
 
@@ -1807,7 +1848,13 @@ test('the API form opens empty, and an untouched form cannot send anything at al
   // buttons are refused until the form is a request, which is what an empty default buys.
   assert.equal(await page.locator('[data-api-send]').isDisabled(), true, 'an empty form can be sent');
   assert.equal(await page.locator('[data-api-save]').isDisabled(), true, 'an empty form can be written');
-  assert.equal(await page.locator('[data-api-preview]').count(), 0, 'an empty form previews a file');
+  // Source shows the file AS IT IS, because an empty form is not about to write anything — and the
+  // strip carries no mark, because a tab is marked only when the one you are not looking at has
+  // something to say (`M205` §2).
+  assert.equal(await page.locator('[data-tab-mark="source"]').count(), 0, 'the strip marks Source over an empty form');
+  await openTab('source');
+  assert.equal(await page.locator('[data-api-source]').getAttribute('data-api-source'), 'written');
+  await openTab('compose');
 
   // And the first sentence the door says is a hint, not a warning. A blank field rendered as a
   // warning teaches a new author that the tool is annoyed with them for not having typed anything,
@@ -1832,6 +1879,69 @@ test('the API form opens empty, and an untouched form cannot send anything at al
   // Filled in, it is a request again — the form still works, which is the control for all of it.
   await page.locator('[data-api-path]').fill('/items');
   await page.locator('[data-api-name]').fill('the items endpoint answers');
-  await page.locator('[data-api-preview]').waitFor();
   assert.equal(await page.locator('[data-api-send]').isDisabled(), false);
+  // And now Source has something to say, so the strip says so without taking you off the form.
+  await page.locator('[data-tab-mark="source"]').waitFor();
+  await openTab('source');
+  assert.equal(await page.locator('[data-api-source]').getAttribute('data-api-source'), 'pending');
+  assert.match((await page.locator('[data-api-preview]').textContent()) ?? '', /api GET \/items/);
+});
+
+test('the strip is an address, and Compose keeps what you typed while you are looking somewhere else', async () => {
+  // `M205` S5. The tab is the hash's second segment, which buys three things at once: a link to a
+  // tab is a link, the back button walks tabs, and `D1045`'s rule — the choice lives in the URL
+  // and nowhere else — extends to the strip without a second mechanism.
+  //
+  // The first claim is the one with a cost if it is wrong. `#/api` meant something before the
+  // strip existed and has to keep meaning it, because every link anyone has ever pasted is of
+  // that shape and `doorFromHash` now has to ignore a segment that was not there.
+  await page.goto(`${baseUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-api-form]').waitFor();
+  assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip link stopped opening the door');
+
+  // A pasted tab link lands on that tab, with the door still resolved around it.
+  await page.goto(`${baseUrl}#/api/source`);
+  await page.reload();
+  await page.locator('[data-tabstrip="source"]').waitFor();
+  assert.equal(await page.locator('[data-doorbar]').getAttribute('data-doorbar'), 'api');
+
+  // A tab nobody has heard of is `compose`, not an error — the same tolerance `doorFromHash` has
+  // for a hand-typed door, for the same reason.
+  await page.goto(`${baseUrl}#/api/coverage`);
+  await page.reload();
+  await page.locator('[data-tabstrip="compose"]').waitFor();
+
+  // Clicking writes the hash, and the DEFAULT tab writes the bare door hash rather than `#/api/
+  // compose` — the commonest address stays the short one, which is also what keeps the first
+  // assertion in this test true a year from now.
+  await page.goto(`${baseUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-api-form]').waitFor();
+  await page.locator('[data-api-path]').fill('/items');
+  await page.locator('[data-api-name]').fill('typed before leaving');
+  await openTab('run');
+  assert.equal(new URL(page.url()).hash, '#/api/run');
+  await openTab('compose');
+  assert.equal(new URL(page.url()).hash, '#/api');
+
+  // THE STATE CLAIM: a strip whose tabs threw away a half-written request would be worse than the
+  // single long pane it replaced, because the author would learn not to look at Source — the one
+  // tab that exists to be looked at.
+  //
+  // **What this grades, and what it cannot see.** It reddens if the field state is ever moved down
+  // into the Compose panel, which is the way this property gets lost. It does NOT distinguish a
+  // hidden panel from an unmounted one: the fields are `useState` in `ApiForm`, which the strip
+  // never unmounts, so the values return either way. The first draft of this slice used `hidden`
+  // and a comment calling it load-bearing; mutating it to an unmounted panel left this assertion
+  // green, which is what said otherwise.
+  assert.equal(await page.locator('[data-api-path]').inputValue(), '/items');
+  assert.equal(await page.locator('[data-api-name]').inputValue(), 'typed before leaving');
+
+  // And the back button walks the tabs, because they are addresses and not a mode.
+  await openTab('source');
+  await page.goBack();
+  await page.locator('[data-tabstrip="compose"]').waitFor();
+  assert.equal(new URL(page.url()).hash, '#/api');
+  assert.equal(await page.locator('[data-api-path]').inputValue(), '/items', 'going back re-mounted the form');
 });
