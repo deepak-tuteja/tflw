@@ -217,6 +217,38 @@ export function ScanForm({ project, onWritten, filePath, onFile, tab, onTab, run
           the forward-looking sentence and LINKS to Auth; Auth stays the only place that enumerates
           targets. Neither lists them twice, which is the duplicate-over-one-file class `M205`
           refused for the config editor and `S2a` caught in `M206` before it was written. */}
+      {/* `M207` `S5` — THE REASON, AND IT IS SAID IN BOTH STATES BECAUSE OF WHAT THE MEASUREMENT
+          SAID. The notice below renders only when the env declares **no** target, and all three
+          projects on this machine declare one — `testFlow-tests` 2, `packages/ui/fixtures/project`
+          1, `examples/storefront` 1. So moving Auth's justification into this branch as it stood
+          would have put the explanation somewhere that renders in **none** of them, deleting it
+          from the healthy case while every gate stayed green, because no corpus reaches the branch
+          that would have shown the loss.
+
+          Hence two states and one reason. The warning below is the unauthorized one; this is the
+          authorized one, and it is the commoner by every corpus measured. */}
+      <p className="muted" data-scan-why data-scan-why-targets={project.authorization.targets.length}>
+        A scan issues requests nobody wrote, so the language makes you name what it may be pointed at, with a reason, in the file a
+        reviewer reads (<code>TF060</code>). The reason is not optional and not a courtesy — it is printed in the run summary and
+        embedded in every report.{' '}
+        {authorized ? (
+          <>
+            <strong>
+              {project.authorization.targets.length} authorized {project.authorization.targets.length === 1 ? 'target is' : 'targets are'} in
+              force
+            </strong>{' '}
+            in env <code>{project.authorization.envName}</code>, and every assertion this form writes is gated by them.{' '}
+          </>
+        ) : null}
+        {/* `Q1`'s link, and it is outside the branch above on purpose: Auth answers *what is in
+            force*, and **none** is an answer to that question. A link that appeared only once
+            something was authorized would be missing in exactly the state a reader most needs to go
+            and look. */}
+        <button className="linkish" onClick={() => onTab('auth')} data-scan-auth-link>
+          what is in force here
+        </button>
+      </p>
+
       {!authorized ? (
         <p className="warn" data-scan-unauthorized>
           env <code>{project.authorization.envName}</code> declares no <code>authorized target</code>, so every assertion
@@ -226,9 +258,6 @@ export function ScanForm({ project, onWritten, filePath, onFile, tab, onTab, run
           on your behalf.{' '}
           <button className="linkish" onClick={() => onTab('config')} data-scan-config-link>
             add it in Config
-          </button>{' '}
-          <button className="linkish" onClick={() => onTab('auth')} data-scan-auth-link>
-            what is in force here
           </button>
         </p>
       ) : null}
