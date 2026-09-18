@@ -247,7 +247,7 @@ export interface StepPath {
  */
 export type Replacement =
   | { readonly kind: 'step'; readonly path: StepPath; readonly node: Step }
-  | { readonly kind: 'note'; readonly path: StepPath; readonly lines: readonly string[] }
+  | { readonly kind: 'note'; readonly owner: NoteOwner; readonly lines: readonly string[] }
   /**
    * A declaration's **header** — its tags, its `with each` table and its own line (`M210` `S5a`).
    *
@@ -264,6 +264,28 @@ export type Replacement =
    *  removes. A file with none gets its first one above the first line of code, which is where the
    *  grammar wants it and below the file's own header comment, which is where a reader wants it. */
   | { readonly kind: 'file'; readonly what: 'import' | 'use'; readonly index: number; readonly node: ImportDecl | UseDecl | null };
+
+/**
+ * What a note is a note **on** (`D1077`, widened by `M210` `S5`).
+ *
+ * A comment is not in the tree, so every note is addressed by its owner — and there are three
+ * kinds of owner because there are three places a block can sit: above a statement (1247 in the
+ * two corpora), above a declaration (17), and at the top of the file, owning the file itself
+ * (1625 lines across 119 of 139 files). The first two are positions in the tree; the third is the
+ * one block `readNotes` gives to nobody else, because it starts on line 1.
+ *
+ * **`on` IS AN EXPLICIT DISCRIMINANT AND IT HAD TO BE.** The first draft distinguished the three
+ * by field name alone — `{ step }`, `{ decl }`, `{ file }` — and a `StepPath` is `{ decl, step }`,
+ * so passing one **satisfies the declaration member structurally** and TypeScript accepted it at
+ * every call site. Four of them did exactly that, and every note an author wrote on a statement
+ * landed on the declaration above it instead, with the whole thing typechecking. A union whose
+ * members are told apart by which fields they have is not a discriminated union when one member's
+ * fields are a subset of another's.
+ */
+export type NoteOwner =
+  | { readonly on: 'step'; readonly path: StepPath }
+  | { readonly on: 'declaration'; readonly decl: number }
+  | { readonly on: 'file' };
 
 /**
  * Replace one step in place and format the result.
@@ -292,13 +314,12 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
   if (replacement.kind === 'header') return replaceHeader(text, declarations, replacement.decl, replacement.node);
   if (replacement.kind === 'threshold') return replaceThreshold(text, declarations, replacement);
   if (replacement.kind === 'file') return replaceFileDecl(text, program, replacement);
+  if (replacement.kind === 'note') return replaceNote(text, declarations, replacement.owner, replacement.lines);
 
   const decl = declarations[replacement.path.decl];
   if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.path.decl}` };
   const target = decl.body[replacement.path.step];
   if (!target) return { ok: false, reason: `that declaration has no step ${replacement.path.step}` };
-
-  if (replacement.kind === 'note') return replaceNote(text, decl, target, replacement.lines);
 
   // The block level of the line being replaced — one per enclosing indent. A step directly in a
   // test body is level 1; `print` is told that and needs to know nothing else about the file.
@@ -328,54 +349,75 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
 }
 
 /**
- * Replace the comment block above a statement — `M210` `S4a`, and the one edit in this module that
- * is made of lines rather than of a node.
+ * Replace the comment block above whatever it is a note on — `M210` `S4a`, widened by `S5`.
  *
  * THE OWNERSHIP RULE IS `readNotes`' AND IT IS READ BACKWARDS HERE. A note owns the next line of
  * code, blanks crossed — measured: 291 of the corpus's 419 blocks sit directly on their code and
- * **127 have a blank line under them**, the file headers among them. So finding the note of a
- * statement means walking up from it over blank lines and then taking the contiguous run of
- * comment lines above those. Walking up only over comments would miss 127 blocks; not stopping at
- * the declaration's own line would let a statement claim the note on the `test` above it.
+ * **127 have a blank line under them**, the file headers among them. So finding the note of
+ * something means walking up from it over blank lines and then taking the contiguous run of
+ * comment lines above those. Walking up only over comments would miss 127 blocks; not stopping
+ * where the owner's own scope ends would let a statement claim the note on the `test` above it.
  *
- * It does not reformat: comment text is the author's, and `format` does not touch it either. What
- * this controls is the `#` and the indent, which are the two things that make a line a comment of
- * this block rather than of the file.
+ * **THE FLOOR IS WHAT TELLS THE THREE OWNERS APART.** A statement may not walk past its
+ * declaration's first line; a declaration may not walk onto **line 1**, because a block starting
+ * there is the file's own header and `readNotes` gives it to nobody else; and the file's note *is*
+ * that block. Without the line-1 floor, editing the note on the first declaration of a file that
+ * opens with a header comment would rewrite the header — 119 of 139 files in the corpus.
+ *
+ * It does not reformat the text of a note: comment text is the author's, and `format` does not
+ * touch it either. What this controls is the `#` and the indent, which are the two things that
+ * make a line a comment of this block rather than of the file.
  */
-function replaceNote(text: string, decl: { readonly span: Span }, target: Step, lines: readonly string[]): InsertResult {
+function replaceNote(text: string, declarations: readonly (TestDecl | HookDecl)[], owner: NoteOwner, lines: readonly string[]): InsertResult {
+  const located = ((): { at: number; floor: number; column: number; top?: boolean } | string => {
+    if (owner.on === 'file') {
+      // **The file's note is the block that STARTS ON LINE 1** — `readNotes`' rule, not a walk up
+      // from anything. The first draft walked back from the first line of code and landed on the
+      // note belonging to the first declaration, which is the very confusion the line-1 rule
+      // exists to settle: with a header, a blank and a note on the test, walking up from the test
+      // finds the test's note and walking down from the top finds the file's.
+      return { at: 1, floor: 0, column: 1, top: true };
+    }
+    if (owner.on === 'declaration') {
+      const decl = declarations[owner.decl];
+      if (!decl) return `this file has no declaration ${owner.decl}`;
+      return { at: decl.span.start.line, floor: 1, column: decl.span.start.column };
+    }
+    const decl = declarations[owner.path.decl];
+    if (!decl) return `this file has no declaration ${owner.path.decl}`;
+    const target = decl.body[owner.path.step];
+    if (!target) return `that declaration has no step ${owner.path.step}`;
+    const { lines: records } = lex(text);
+    const declLine = records.find((r) => r.offset >= decl.span.start.offset)?.line ?? 1;
+    return { at: target.span.start.line, floor: declLine, column: target.span.start.column };
+  })();
+  if (typeof located === 'string') return { ok: false, reason: located };
+
   const { lines: records } = lex(text);
-  const column = target.span.start.column;
-  const indent = ' '.repeat(column - 1);
-  const targetLine = target.span.start.line;
-  const declLine = records.find((r) => r.offset >= decl.span.start.offset)?.line ?? 1;
-
-  // Walk up: blank lines first, then the block itself. `record.line` is 1-based, so index by it.
   const byLine = new Map(records.map((r) => [r.line, r]));
-  let first = targetLine;
-  let above = targetLine - 1;
-  while (above > declLine && byLine.get(above)?.kind === 'blank') above -= 1;
-  while (above > declLine && byLine.get(above)?.kind === 'comment') {
-    first = above;
-    above -= 1;
+  const indent = ' '.repeat(located.column - 1);
+  let first = located.at;
+  let end = located.at;
+  if (located.top === true) {
+    // Downwards, not up: the block is however many comment lines the file opens with, and a file
+    // that opens with code has none, so the new one is written above everything.
+    while (byLine.get(end)?.kind === 'comment') end += 1;
+  } else {
+    let above = located.at - 1;
+    while (above > located.floor && byLine.get(above)?.kind === 'blank') above -= 1;
+    while (above > located.floor && byLine.get(above)?.kind === 'comment') {
+      first = above;
+      above -= 1;
+    }
   }
-  // …and if the walk crossed blank lines to reach a block, the block still owns this statement, so
-  // the replacement covers from the block down to the statement's own line, blanks included. A note
-  // and its statement with air between them is one thing to a reader and has to be one thing here.
-  const source = text.split('\n');
-  const before = source.slice(0, first - 1);
-  const after = source.slice(targetLine - 1);
-  // `#`, one space, the text — and `trimEnd` so a blank line of a note is `#` and not `# `. It is
-  // `trimEnd` rather than a branch because `format` strips trailing whitespace anyway: the two
-  // spellings are one file, and writing it as a condition only looks like it decides something.
+  // …and if the walk crossed blank lines to reach a block, the block still owns this line, so the
+  // replacement covers from the block down to the owner, blanks included. A note and the thing it
+  // explains with air between them is one thing to a reader and has to be one thing here.
   const written = lines.map((line) => `${indent}# ${line}`.trimEnd());
-  const spliced = [...before, ...written, ...after].join('\n');
-
-  const out = format(spliced);
-  if (!out.ok) return { ok: false, reason: `the edit does not lex: ${out.reason ?? 'unknown'}` };
-  const check = parseSource(out.formatted);
-  const broke = check.diagnostics.find((d) => d.severity === 'error');
-  if (broke) return { ok: false, reason: `the edit does not parse: ${broke.code} at line ${broke.span.start.line}` };
-  return { ok: true, text: out.formatted };
+  // The file's own note keeps the blank line under it that 118 of the corpus's 118 headers have —
+  // and that `readNotes` needs to tell a header from a note on the first declaration.
+  const trailing = located.top === true && written.length > 0 && end === located.at ? [''] : [];
+  return spliceLines(text, first, end, [...written, ...trailing]);
 }
 
 /** Splice whole lines and put the result through the same gate every edit here goes through: it

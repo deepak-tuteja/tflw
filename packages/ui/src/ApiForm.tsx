@@ -24,15 +24,21 @@ import {
   buildCall,
   buildCapture,
   buildExpect,
+  buildDataTable,
   buildGive,
   buildLet,
   buildLog,
   buildPause,
+  buildThreshold,
   type CaptureStmt,
   type ExpectStmt,
+  type NoteOwner,
+  type HookDecl,
   type Step,
-  type StepPath,
+  type TestDecl,
   type WaitUntilApiStmt,
+  stringLit,
+  SYNTHETIC,
   buildTest,
   insertIntoSource,
   type ApiBodySpec,
@@ -43,8 +49,22 @@ import {
 import { putFile, dropScratch, startRun, subscribe, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
 import { TabStrip } from './TabStrip';
-import { ComposePane, editOf, expectSpecOf, specOf, stepKey, subjectSpecOf, type RequestEdit, type StatementEdit } from './ComposePane';
-import { addressed, fileOutline, type OutlineRequest, type OutlineStatement } from './outline';
+import {
+  ComposePane,
+  editOf,
+  expectSpecOf,
+  headerEditOf,
+  specOf,
+  stepKey,
+  subjectSpecOf,
+  tableSpecOf,
+  thresholdSpecOf,
+  type HeaderEdit,
+  type RequestEdit,
+  type StatementEdit,
+  type ThresholdEdit,
+} from './ComposePane';
+import { addressed, fileOutline, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
@@ -312,7 +332,7 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
    * removes the note, which is what a cleared textarea sends.
    */
   const applyNote = useCallback(
-    (path: StepPath, lines: readonly string[]) => {
+    (owner: NoteOwner, lines: readonly string[]) => {
       if (!file) return;
       /**
        * **A note with nothing in it is not a note.** Clearing the textarea is the only way to
@@ -324,7 +344,106 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
        * file with a bare `#`. One rule is both better and smaller.
        */
       const blank = lines.every((line) => line.trim() === '');
-      const out = replaceInSource(draft ?? file.text, { kind: 'note', path, lines: blank ? [] : lines });
+      const out = replaceInSource(draft ?? file.text, { kind: 'note', owner, lines: blank ? [] : lines });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * The band's own facts (`M210` `S5`, `D1074`).
+   *
+   * A declaration's header is not a step, so it is not addressed by the index pair: it is the run
+   * of lines from the declaration's first line to its own keyword line, and `replaceInSource`
+   * replaces exactly those. **The body is never reprinted** — the printer emits no comments, so a
+   * tag edit that went through the whole declaration would delete every note inside it.
+   *
+   * `buildTest` is handed the node's **own** workload, thresholds and body, and **none of the three
+   * can reach the file through this path** — `printTest` emits a workload and the thresholds
+   * *inside* the body, and the header replacement takes only the lines above it. They are passed so
+   * the node is not a lie about the test it claims to be, which is what keeps this correct if the
+   * header ever grows a line that reads one. Two mutations say so by staying green: dropping either
+   * changes no byte anywhere, by construction rather than for want of a gate.
+   */
+  const [header, setHeader] = useState<{ key: string; values: HeaderEdit } | null>(null);
+  const applyHeader = useCallback(
+    (decl: OutlineHook | OutlineTest, next: HeaderEdit) => {
+      if (!file) return;
+      setHeader({ key: `decl:${decl.index}`, values: next });
+      const built = ((): { ok: true; node: TestDecl | HookDecl } | { ok: false; reason: string } => {
+        if (decl.kind === 'hook') return { ok: true, node: { ...decl.node, when: next.when, scope: next.scope } };
+        const spec = tableSpecOf(next);
+        const table = spec === null ? null : buildDataTable(spec);
+        if (table !== null && !table.ok) return table;
+        const retry = Number(next.retry.trim() === '' ? '0' : next.retry);
+        if (!Number.isInteger(retry)) return { ok: false, reason: 'a retry count is a whole number of extra attempts' };
+        return buildTest({
+          name: next.name,
+          // Space-separated, because that is how the file writes them: 450 of the corpus's 682 tag
+          // lines carry more than one tag and none carries one per line.
+          tags: next.tags.split(/\s+/).map((t) => t.replace(/^@/, '')).filter((t) => t !== ''),
+          sessions: next.sessions.split(',').map((x) => x.trim()).filter((x) => x !== ''),
+          retry,
+          table: table === null ? null : table.node,
+          concurrency: next.parallel ? 'parallel' : 'sequential',
+          workload: decl.node.workload,
+          thresholds: decl.node.thresholds,
+          body: decl.node.body,
+        });
+      })();
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'header', decl: decl.index, node: built.node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /** One threshold of a test, by its own index — `null` removes it, and an index past the end
+   *  appends. The bound a form holds is the number beside the `%`, not the fraction the AST
+   *  stores; `buildThreshold` owns that conversion so this never has to know it. */
+  const [threshold, setThreshold] = useState<{ key: string; values: ThresholdEdit } | null>(null);
+  const applyThreshold = useCallback(
+    (decl: OutlineTest, index: number, next: ThresholdEdit | null) => {
+      if (!file) return;
+      setThreshold(next === null ? null : { key: `th:${decl.index}:${index}`, values: next });
+      const built = next === null ? null : buildThreshold(thresholdSpecOf(next));
+      if (built !== null && !built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'threshold', decl: decl.index, index, node: built === null ? null : built.node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /** One `import` or `use` line. A blank field is that line removed — the same rule a note
+   *  follows, and the reason there is no second gesture for taking one away. */
+  const applyFileDecl = useCallback(
+    (what: 'import' | 'use', index: number, path: string | null) => {
+      if (!file) return;
+      const node = path === null ? null : what === 'import'
+        ? { type: 'ImportDecl' as const, path: stringLit(path), span: SYNTHETIC }
+        : { type: 'UseDecl' as const, path: stringLit(path), span: SYNTHETIC };
+      const out = replaceInSource(draft ?? file.text, { kind: 'file', what, index, node });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -668,6 +787,8 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
     // values come from the file again. A held edit would keep re-deriving nothing and would mask
     // the next external change to that statement.
     setExpectEdit(null);
+    setHeader(null);
+    setThreshold(null);
     setNoting(null);
     setWrote(path);
     onWritten(path);
@@ -740,12 +861,23 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
           onLegacyOpen={setLegacyOpen}
           edit={values}
           onEdit={applyEdit}
-          editing={{ row: expectEdit, onRow: applyExpectEdit, onNote: applyNote, noting, onNoting: setNoting }}
+          editing={{
+            row: expectEdit,
+            onRow: applyExpectEdit,
+            onNote: applyNote,
+            noting,
+            onNoting: setNoting,
+            header,
+            onHeader: applyHeader,
+            threshold,
+            onThreshold: applyThreshold,
+            onFileDecl: applyFileDecl,
+          }}
           dirty={draft !== null}
           busy={busy}
           problem={editProblem}
           onWrite={() => void writeDraft()}
-          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setNoting(null); setEditProblem(null); }}
+          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setNoting(null); setEditProblem(null); }}
           door="api"
           legacy={
             <div className="authoring">

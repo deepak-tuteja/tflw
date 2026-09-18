@@ -3981,16 +3981,18 @@ test('a line naming a declaration opens THAT declaration, not the request neares
   await page.goto(`${baseUrl}#/api/compose/${f.path}/L${target.span.start.line}`);
   await page.locator('[data-band-line]').waitFor();
   assert.equal(await page.locator('[data-band-line]').getAttribute('data-band-line'), String(target.span.start.line));
-  assert.equal(await page.locator('[data-band-name]').textContent(), target.name.value);
+  // The band's name is a **field** since `S5`, so this asks the control rather than the text —
+  // the same move `S1`'s own gate makes about the request's path.
+  assert.equal(await page.locator('[data-band-name]').inputValue(), target.name.value);
 });
 
 test('what the reader has not lit yet is disabled — and it is the control that is asked, not a class', async () => {
-  // **`D1082` narrowed by `S2`, which is the decision working rather than the decision lapsing.**
-  // `S1`'s claim was that nothing on this pane types. `S2` lights the request's own fields, so the
-  // claim becomes what is still read-only: the **test band** (`S5`'s to light), and the three
-  // clauses on the card that `ApiStepSpec` cannot express and that an edit therefore carries rather
-  // than rebuilds. A pane that is half live has to be able to say which half, and it says it in the
-  // controls themselves.
+  // **`D1082` narrowed a third time, which is the decision working rather than the decision
+  // lapsing.** `S1`'s claim was that nothing on this pane types; `S2` lit the request's fields,
+  // `S3`/`S4` the statements, `S5` the band. What is left read-only is a list that can be named:
+  // the three clauses on the card that `ApiStepSpec` cannot express and that an edit carries rather
+  // than rebuilds, and the **workload**, which is the LOAD door's to shape (`D1042`) and says so
+  // with a link. A pane that is half live has to be able to say which half, in the controls.
   const view = await fullProject();
   for (const f of view.files) {
     await page.goto(`${baseUrl}#/api/compose/${f.path}`);
@@ -4004,8 +4006,7 @@ test('what the reader has not lit yet is disabled — and it is the control that
       // `S3`). An `expect` is neutral vocabulary, so a browser test seen from this door is one long
       // preamble of them — inside `.test-band`, live, and correctly so. What `D1082` still claims is
       // the band's OWN facts: the tags, the table, the workload, the thresholds.
-      const reader = [...doc.querySelectorAll('.test-band input, .test-band select, .test-band textarea, .request-card [data-field-value="timeout"], .request-card [data-field-value="redirects"], .request-card [data-field-value="retry after"]')]
-        .filter((e) => e.closest('li.stmt') === null);
+      const reader = [...doc.querySelectorAll('[data-band-workload] input, [data-band-workload] select, .request-card [data-field-value="timeout"], .request-card [data-field-value="redirects"], .request-card [data-field-value="retry after"]')];
       // **No named helper inside this callback.** `tsx` transforms this file with esbuild's
       // `keepNames`, which wraps every function declaration in a `__name(...)` call — a helper that
       // exists in the test process and not in the page, so a `const off = (e) => …` here dies as
@@ -4016,7 +4017,13 @@ test('what the reader has not lit yet is disabled — and it is the control that
         readerEnabled: reader.filter((e) => (e as unknown as { disabled?: boolean }).disabled !== true).length,
       };
     });
-    assert.equal(state.readerEnabled, 0, `${f.path}: the band and the three carried clauses cannot be typed into (\`D1082\`)`);
+    assert.equal(state.readerEnabled, 0, `${f.path}: the workload row and the three carried clauses cannot be typed into (\`D1082\`)`);
+    // …and the band's own facts ARE live, which is the half that would go missing silently.
+    const bands = await page.locator('[data-band-kind]').count();
+    if (bands > 0) {
+      const editable = await page.locator('[data-band-name], [data-band-when]').first().isEditable();
+      assert.equal(editable, true, `${f.path}: its declaration's header takes a keystroke`);
+    }
     // **And the request's own fields ARE live**, on every file that holds a request — which is the
     // other half of the same claim, and the half that would quietly go missing if `S2` regressed.
     // Asserting only what is disabled would stay green on a pane where nothing works at all.
@@ -4105,13 +4112,20 @@ test('a note is collapsed to its first line with a count, opens to the rest, and
     const header = fresh.locator('[data-note="the file"]');
     assert.equal(await header.getAttribute('data-note-lines'), '3');
     assert.equal(await header.locator('summary').textContent(), '# the file, line one +2', 'collapsed to the first line with a count');
-    // **Lines two onward.** A `<details>` keeps showing its summary while open, so a body holding
-    // the whole block printed line one twice — which the served page said and no model check could.
-    assert.equal(await header.locator('.note-body').textContent(), '# and its second line\n# and a third');
+    // **The read-only body is lines two onward** — a `<details>` keeps showing its summary while
+    // open, so a body holding the whole block printed line one twice, which the served page said
+    // and no model check could. The file's header is editable since `S5`, so what it opens onto is
+    // the **whole** block without its `#`s, which is the other claim and the one that belongs to a
+    // control: what you are editing is the note, not the note minus its first line.
+    assert.equal(await header.locator('[data-note-edit]').inputValue(), 'the file, line one\nand its second line\nand a third');
+    const readOnly = fresh.locator('[data-note="the file\'s last word"], [data-note="test it answers"]').first();
+    void readOnly;
 
-    // A declaration's note is still the read-only form — `S5`'s to light — so it is one paragraph
-    // and says its line once.
-    assert.equal(await fresh.locator('[data-note="test it answers"]').textContent(), '# about this test');
+    // A declaration's note is editable since `S5`, so it is a `<details>` like the request's below
+    // — one line in the summary, the whole block in the control, without its `#`.
+    const decl = fresh.locator('[data-note="test it answers"]');
+    assert.equal(await decl.locator('summary').textContent(), '# about this test ');
+    assert.equal(await decl.locator('[data-note-edit]').inputValue(), 'about this test');
     // **The request's note is editable since `S4`, and an editable note is a `<details>` even when
     // it is one line long**: the collapsed form has to open onto something, and the thing it opens
     // onto is the WHOLE block, first line included, because that is what is being edited. So the
@@ -4149,10 +4163,15 @@ test('the file row carries what the file brings in, comma-separated, and says `n
     await fresh.goto(`${base}/#/api/compose/uses.tflw`);
     await fresh.locator('[data-file-facts]').waitFor();
     assert.equal(await fresh.locator('[data-file-imports]').getAttribute('data-file-imports'), '2');
-    // The first draft mapped straight to `<code>` and the three paths in the sibling's own
-    // `storefront.tflw` rendered as one unbroken string. A list with no separator is not a list.
-    assert.equal((await fresh.locator('[data-file-imports]').textContent())!.trim(), 'imports ./shared/a.tflw, ./shared/b.tflw');
-    assert.equal((await fresh.locator('[data-file-uses]').textContent())!.trim(), 'uses none');
+    // **One field per line since `S5`**, and the count is still the claim: the paths are what the
+    // file brings in, one row each, in the order the file writes them. The comma-separated
+    // rendering `S1` gated is what a door with no `onFileDecl` still draws, and what `actions`
+    // draws here — they are named and their bodies are not on this pane at all.
+    assert.deepEqual(
+      await fresh.locator('[data-file-path]').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-file-path')}=${(e as unknown as { value: string }).value}`)),
+      ['import:0=./shared/a.tflw', 'import:1=./shared/b.tflw'],
+    );
+    assert.equal(await fresh.locator('[data-file-uses]').getAttribute('data-file-uses'), '0');
     assert.equal((await fresh.locator('[data-file-actions]').textContent())!.trim(), 'actions none');
   } finally {
     await fresh.close();
@@ -4833,5 +4852,228 @@ test('`M210` `S4`: a polling request is editable, and its own block survives the
     assert.match(onDisk, /^ {4}expect body\.status equals "done"$/m, 'and so did the expects only the block can hold');
     const { diagnostics } = parseSource(onDisk);
     assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
+// `M210` `S5` — the band's own facts, and the file row (`D1074`).
+//
+// Everything here is a **declaration** fact rather than a step, so none of it can be addressed by
+// the index pair `S2` built: a header is the run of lines above a body, a threshold is a line at
+// the end of one, an `import` is a line at the top of the file. Measured over the two corpora,
+// which is what decides what gets a control: 683 of 858 tests carry tags, 67 name sessions, 9 carry
+// a retry, 2 are parallel, 12 carry a table, 39 carry thresholds — and 50 carry a workload, which
+// is the one this door does not edit.
+
+const BAND = [
+  '# the file header, which must survive every edit below',
+  '',
+  'import "./shared/helpers.tflw"',
+  '',
+  'before',
+  '  api POST /reset',
+  '',
+  '@crud @orders',
+  'test "it places an order" as admin retry 2',
+  '  # why this pause is here',
+  '  pause 500ms',
+  '  api POST /orders body { email: "a@b.c" }',
+  '  expect status equals 201',
+  '  threshold p95 duration is less than 500ms',
+  '',
+  '@perf',
+  'test "it holds up"',
+  '  run 10 iterations across 2 users',
+  '  api GET /orders',
+  '  expect status equals 200',
+  '',
+].join('\n');
+
+test('`M210` `S5`: the band holds the declaration\'s own facts, and the workload is a link rather than a control', async () => {
+  await withEditFixture(BAND, async (p, base) => {
+    // **`/L9`, because this file opens with a hook** and the band shows the declaration the
+    // address names — which is `addressed`'s own rule (`D1080`) and worth naming here, since a
+    // gate that opened on the default would be reading the hook and asserting about a test.
+    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.locator('[data-band-name]').waitFor();
+    assert.equal(await p.locator('[data-band-name]').inputValue(), 'it places an order');
+    assert.equal(await p.locator('[data-band-tags-edit]').inputValue(), 'crud orders', 'one field for all of them, because the file writes one line for all of them');
+    assert.equal(await p.locator('[data-band-sessions-edit]').inputValue(), 'admin');
+    assert.equal(await p.locator('[data-band-retry-edit]').inputValue(), '2');
+    assert.equal(await p.locator('[data-band-parallel]').getAttribute('data-band-parallel'), 'no');
+    assert.equal(await p.locator('[data-band-table-kind]').inputValue(), 'none');
+    assert.equal(await p.locator('[data-threshold-metric="0"]').inputValue(), 'duration');
+    assert.equal(await p.locator('[data-threshold-percentile="0"]').inputValue(), '95');
+    assert.equal(await p.locator('[data-threshold-bound="0"]').inputValue(), '500');
+
+    // **The workload is drawn and linked, not edited** (`D1042`). A workload is a shape of work
+    // with stages in it and LOAD's form is built around that shape — the same argument `D1078`
+    // makes one level down for a step belonging to another door. The cost is two clicks, and the
+    // link is what says so.
+    await p.goto(`${base}/#/api/compose/edit.tflw/L17`);
+    await p.locator('[data-band-workload-door]').waitFor();
+    assert.equal(await p.locator('[data-band-workload]').getAttribute('data-band-workload'), 'SharedIterationsWorkload');
+    assert.equal(await p.locator('[data-band-workload-door]').getAttribute('href'), '#/load');
+    assert.equal(await p.locator('[data-band-workload] input, [data-band-workload] select').count(), 0, 'and nothing in that row types');
+  });
+});
+
+test('`M210` `S5`: a header edit rewrites the header and not one byte of the body', async () => {
+  // The hazard this member exists to avoid: printing a `TestDecl` prints the test *and everything
+  // in it*, and the printer emits no comments — so a tag edit that went through the whole
+  // declaration would delete every note inside it.
+  await withEditFixture(BAND, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.locator('[data-band-name]').waitFor();
+    await p.locator('[data-band-tags-edit]').fill('crud orders slow');
+    await p.locator('[data-band-name]').fill('it places a bulk order');
+    await p.locator('[data-band-sessions-edit]').fill('admin, shopper');
+    await p.locator('[data-band-retry-edit]').fill('3');
+    await p.locator('[data-band-parallel]').click();
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+
+    const onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^@crud @orders @slow$/m, 'the tags are one line, which is what 450 of the corpus\'s 682 tag lines are');
+    assert.match(onDisk, /^test "it places a bulk order" as admin, shopper retry 3 parallel$/m);
+    assert.match(onDisk, /^ {2}# why this pause is here\n {2}pause 500ms$/m, 'the note inside the body is still there');
+    assert.match(onDisk, /^ {2}api POST \/orders body \{ email: "a@b\.c" \}$/m);
+    assert.match(onDisk, /^ {2}threshold p95 duration is less than 500ms$/m);
+    assert.match(onDisk, /^before\n {2}api POST \/reset$/m, 'and the hook above it did not move');
+    const { diagnostics } = parseSource(onDisk);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
+test('`M210` `S5`: `with each` is written from cells, read from a file, and taken away again', async () => {
+  await withEditFixture(BAND, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.locator('[data-band-name]').waitFor();
+    await p.locator('[data-band-table-kind]').selectOption('inline');
+    await p.locator('[data-table-column="0"]').fill('email');
+    await p.locator('[data-table-cell="0:0"]').fill('"a@b.c"');
+    await p.locator('[data-table-row-add]').click();
+    await p.locator('[data-table-cell="1:0"]').fill('unique email');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    let onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    // The cells are the whole value grammar, same as a `let` — so a generator in a cell is a
+    // generator and not the string `"unique email"`.
+    // The columns are padded to the widest cell by `printTable`, which is the printer's business
+    // and not this gate's — so the cells are asserted and the padding is not.
+    assert.match(onDisk, /^with each\n {2}\| email\s+\|\n {2}\| "a@b\.c"\s+\|\n {2}\| unique email\s*\|\ntest "it places an order"/m);
+
+    await p.locator('[data-band-table-kind]').selectOption('file');
+    await p.locator('[data-band-table-path]').fill('../data/orders.json');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^with each from "\.\.\/data\/orders\.json"\ntest "it places an order"/m);
+
+    await p.locator('[data-band-table-kind]').selectOption('none');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.doesNotMatch(onDisk, /with each/);
+    assert.match(onDisk, /^@crud @orders\ntest "it places an order" as admin retry 2$/m, 'and the rest of the header is where it was');
+  });
+});
+
+test('`M210` `S5`: a threshold is added, edited and removed, at the end of the body where the printer puts them', async () => {
+  await withEditFixture(BAND, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.locator('[data-band-name]').waitFor();
+    await p.locator('[data-threshold-bound="0"]').fill('250');
+    await p.locator('[data-threshold-scope="0"]').fill('checkout');
+    await p.locator('[data-threshold-add]').click();
+    await p.locator('[data-threshold-metric="1"]').selectOption('errorRate');
+    await p.locator('[data-threshold-bound="1"]').fill('2');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+
+    let onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^ {2}threshold p95 duration for "checkout" is less than 250ms$/m);
+    // **The bound a form holds is the number beside the `%`**, not the fraction the AST stores —
+    // `buildThreshold` owns that conversion so no form has to know that `2%` is `0.02` inside.
+    assert.match(onDisk, /^ {2}threshold error rate is less than 2%$/m);
+
+    await p.locator('[data-threshold-remove="0"]').click();
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.doesNotMatch(onDisk, /p95/);
+    assert.match(onDisk, /^ {2}threshold error rate is less than 2%$/m, 'and the one beside it stayed');
+    const { diagnostics } = parseSource(onDisk);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
+test('`M210` `S5`: the file row writes what the file brings in, and the file\'s own note is a note like any other', async () => {
+  await withEditFixture(BAND, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.locator('[data-band-name]').waitFor();
+    assert.equal(await p.locator('[data-file-path="import:0"]').inputValue(), './shared/helpers.tflw');
+    await p.locator('[data-file-path="import:0"]').fill('./shared/orders.tflw');
+    await p.locator('[data-file-path-add="use"]').click();
+    await p.locator('[data-file-path="use:0"]').fill('./helpers/wait.ts');
+
+    // The file's own header is a note with an owner of its own (`D1077`) — the block that starts on
+    // line 1, which `readNotes` gives to nobody else.
+    await p.locator('[data-note="the file"] summary').click();
+    await p.locator('[data-note-edit="the file"]').fill('what this file is for, in the author\'s words');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+
+    let onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^# what this file is for, in the author's words$/m);
+    assert.doesNotMatch(onDisk, /the file header, which must survive/);
+    assert.match(onDisk, /^import "\.\/shared\/orders\.tflw"$/m);
+    assert.match(onDisk, /^use "\.\/helpers\/wait\.ts"$/m);
+    assert.match(onDisk, /^ {2}# why this pause is here$/m, 'and the note inside the test is not the file\'s');
+
+    // A path cleared to nothing is that line removed — the same rule a note follows, which is why
+    // there is no second gesture for taking one away.
+    await p.locator('[data-file-path="import:0"]').fill('');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.doesNotMatch(onDisk, /^import /m);
+    assert.match(onDisk, /^use "\.\/helpers\/wait\.ts"$/m, 'and the `use` beside it stayed');
+
+    // …and the same for the header itself: cleared away, then written again from nothing. **A file
+    // with no header is the case that tells the file's note from the first declaration's** — the
+    // block that owns a file starts on line 1, and one written anywhere else belongs to whatever is
+    // under it. Without this the whole `+ note` path on the file row goes unexercised, which a
+    // mutation said by surviving.
+    // **A written buffer re-renders the note closed**, so the disclosure is opened by its own
+    // property rather than by a second click — clicking a `<details>` that is already open shuts
+    // it, and which state it is in after a write is not something a gate should have to predict.
+    await p.locator('[data-note="the file"]').evaluate((el) => { (el as unknown as { open: boolean }).open = true; });
+    await p.locator('[data-note-edit="the file"]').fill('');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    assert.doesNotMatch(await readFile(join(dir, 'edit.tflw'), 'utf8'), /^#/m, 'the file opens with code now');
+
+    await p.locator('[data-note-add="file"]').click();
+    await p.locator('[data-note-edit="the file"]').fill('written from nothing, at the top');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^# written from nothing, at the top\n\nuse "\.\/helpers\/wait\.ts"/, 'above the first line of code, and nowhere else');
+  });
+});
+
+test('`M210` `S5`: a hook\'s header is its two words, and `each` is the one you get by writing nothing', async () => {
+  await withEditFixture(BAND, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw/L5`);
+    await p.locator('[data-band-kind="hook"]').waitFor();
+    assert.equal(await p.locator('[data-band-when]').inputValue(), 'before');
+    assert.equal(await p.locator('[data-band-scope]').inputValue(), 'each');
+    await p.locator('[data-band-scope]').selectOption('file');
+    await p.locator('[data-band-when]').selectOption('after');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^after file\n {2}api POST \/reset$/m);
+    assert.match(onDisk, /^@crud @orders$/m, 'and the test below it did not move');
   });
 });

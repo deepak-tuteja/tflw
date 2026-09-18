@@ -120,6 +120,10 @@ export interface OutlineBody {
 
 export interface OutlineHook {
   readonly kind: 'hook';
+  /** Where this declaration is, as `replaceInSource` names one (`M210` `S5`) — the same index the
+   *  statements under it are addressed by, and the address of its header and its note. */
+  readonly index: number;
+  readonly node: HookDecl;
   readonly when: HookDecl['when'];
   readonly scope: HookDecl['scope'];
   readonly line: number;
@@ -130,6 +134,9 @@ export interface OutlineHook {
 
 export interface OutlineTest {
   readonly kind: 'test';
+  /** See `OutlineHook.index`. */
+  readonly index: number;
+  readonly node: TestDecl;
   readonly name: string;
   readonly line: number;
   readonly tags: readonly string[];
@@ -348,6 +355,8 @@ export function fileOutline(path: string, source: string): FileOutline {
     d.type === 'HookDecl'
       ? {
           kind: 'hook',
+          index: decl,
+          node: d,
           when: d.when,
           scope: d.scope,
           line: d.span.start.line,
@@ -357,6 +366,8 @@ export function fileOutline(path: string, source: string): FileOutline {
         }
       : {
           kind: 'test',
+          index: decl,
+          node: d as TestDecl,
           name: (d as TestDecl).name.value,
           line: d.span.start.line,
           tags: (d as TestDecl).tags,
