@@ -15,6 +15,7 @@
 // builtins, so the page runs this in the browser and a test runs it in Node — the same function,
 // which is why `A0-4` can be gated without a browser at all.
 import type { Program, Step, TestDecl, ThresholdDecl, Workload } from './ast.js';
+import type { Span } from './token.js';
 import { format, INDENT } from './format.js';
 import { print } from './print.js';
 import { lex } from './lexer.js';
@@ -236,8 +237,17 @@ export interface StepPath {
   readonly step: number;
 }
 
-/** What to put where — the replacing half of this module (`M210` `S2`). */
-export type Replacement = { readonly kind: 'step'; readonly path: StepPath; readonly node: Step };
+/**
+ * What to put where — the replacing half of this module (`M210` `S2`, widened by `S4a`).
+ *
+ * `note` is the one member that is **not** a node, and it could not be: a comment is not in the
+ * tree at all. `D1077` makes a note *a note on what it explains*, which gives it an owner — the
+ * statement below it — and therefore an address, which is the same index pair the step uses. The
+ * lines are written without their `#`; an empty list removes the note.
+ */
+export type Replacement =
+  | { readonly kind: 'step'; readonly path: StepPath; readonly node: Step }
+  | { readonly kind: 'note'; readonly path: StepPath; readonly lines: readonly string[] };
 
 /**
  * Replace one step in place and format the result.
@@ -265,6 +275,8 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
   const target = decl.body[replacement.path.step];
   if (!target) return { ok: false, reason: `that declaration has no step ${replacement.path.step}` };
 
+  if (replacement.kind === 'note') return replaceNote(text, decl, target, replacement.lines);
+
   // The block level of the line being replaced — one per enclosing indent. A step directly in a
   // test body is level 1; `print` is told that and needs to know nothing else about the file.
   const lineStart = target.span.start.offset - (target.span.start.column - 1);
@@ -284,6 +296,57 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
   while (end > lineStart && /\s/.test(text[end - 1] ?? '')) end -= 1;
 
   const spliced = text.slice(0, lineStart) + printed.text + text.slice(end);
+  const out = format(spliced);
+  if (!out.ok) return { ok: false, reason: `the edit does not lex: ${out.reason ?? 'unknown'}` };
+  const check = parseSource(out.formatted);
+  const broke = check.diagnostics.find((d) => d.severity === 'error');
+  if (broke) return { ok: false, reason: `the edit does not parse: ${broke.code} at line ${broke.span.start.line}` };
+  return { ok: true, text: out.formatted };
+}
+
+/**
+ * Replace the comment block above a statement — `M210` `S4a`, and the one edit in this module that
+ * is made of lines rather than of a node.
+ *
+ * THE OWNERSHIP RULE IS `readNotes`' AND IT IS READ BACKWARDS HERE. A note owns the next line of
+ * code, blanks crossed — measured: 291 of the corpus's 419 blocks sit directly on their code and
+ * **127 have a blank line under them**, the file headers among them. So finding the note of a
+ * statement means walking up from it over blank lines and then taking the contiguous run of
+ * comment lines above those. Walking up only over comments would miss 127 blocks; not stopping at
+ * the declaration's own line would let a statement claim the note on the `test` above it.
+ *
+ * It does not reformat: comment text is the author's, and `format` does not touch it either. What
+ * this controls is the `#` and the indent, which are the two things that make a line a comment of
+ * this block rather than of the file.
+ */
+function replaceNote(text: string, decl: { readonly span: Span }, target: Step, lines: readonly string[]): InsertResult {
+  const { lines: records } = lex(text);
+  const column = target.span.start.column;
+  const indent = ' '.repeat(column - 1);
+  const targetLine = target.span.start.line;
+  const declLine = records.find((r) => r.offset >= decl.span.start.offset)?.line ?? 1;
+
+  // Walk up: blank lines first, then the block itself. `record.line` is 1-based, so index by it.
+  const byLine = new Map(records.map((r) => [r.line, r]));
+  let first = targetLine;
+  let above = targetLine - 1;
+  while (above > declLine && byLine.get(above)?.kind === 'blank') above -= 1;
+  while (above > declLine && byLine.get(above)?.kind === 'comment') {
+    first = above;
+    above -= 1;
+  }
+  // …and if the walk crossed blank lines to reach a block, the block still owns this statement, so
+  // the replacement covers from the block down to the statement's own line, blanks included. A note
+  // and its statement with air between them is one thing to a reader and has to be one thing here.
+  const source = text.split('\n');
+  const before = source.slice(0, first - 1);
+  const after = source.slice(targetLine - 1);
+  // `#`, one space, the text — and `trimEnd` so a blank line of a note is `#` and not `# `. It is
+  // `trimEnd` rather than a branch because `format` strips trailing whitespace anyway: the two
+  // spellings are one file, and writing it as a condition only looks like it decides something.
+  const written = lines.map((line) => `${indent}# ${line}`.trimEnd());
+  const spliced = [...before, ...written, ...after].join('\n');
+
   const out = format(spliced);
   if (!out.ok) return { ok: false, reason: `the edit does not lex: ${out.reason ?? 'unknown'}` };
   const check = parseSource(out.formatted);
