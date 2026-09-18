@@ -12,7 +12,7 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { ApiBody, ApiHeader, ApiStep, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CsrfStmt, ExpectStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, OpenStmt, PathSegment, PauseStmt, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, WithinBlock, Workload } from './ast.js';
+import type { ApiBody, ApiHeader, ApiStep, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CsrfStmt, DataTable, ExpectStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, OpenStmt, PathSegment, PauseStmt, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, WithinBlock, Workload } from './ast.js';
 import { quantifiable } from './ast.js';
 import { parse as parseTokens, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
@@ -145,14 +145,32 @@ export interface TestSpec {
    * because the other two families read the response the test already fetched.
    */
   readonly sessions?: readonly string[];
+  /**
+   * THE THREE THAT WERE DEFAULTS UNTIL SOMETHING READ A TEST BACK (`M210` `S5a`).
+   *
+   * `retry`, `table` and `concurrency` were hardcoded here — `retry 0`, no table, `sequential` —
+   * for the same reason `negated` was in `buildExpect`: a form that only ever *appends* a new test
+   * never carries them, because nobody writes a new test retried, tabled or parallel. Reading one
+   * back is the other direction, and the corpus says what that costs: **9 tests carry a retry, 12
+   * carry a `with each` table and 2 are parallel**, and a rebuild without these fields drops each
+   * one silently — a file that still parses and runs a different number of times.
+   *
+   * Absent still means the default, so every caller written before this means what it meant.
+   */
+  readonly retry?: number;
+  readonly table?: DataTable | null;
+  readonly concurrency?: TestDecl['concurrency'];
 }
 
-/** A whole `test`, with the fields a form does not offer left at the parser's own defaults —
- *  `retry 0`, `sequential`, no table. `sessions` stopped being one of those in `A2-3`. */
+/** A whole `test`. `sessions` stopped being a hardcoded default in `A2-3`, and `retry`, `table` and
+ *  `concurrency` in `M210` `S5a` — see `TestSpec`. */
 export function buildTest(spec: TestSpec): BuildResult<TestDecl> {
   if (spec.name.trim().length === 0) return bad('a test needs a name');
   for (const tag of spec.tags) {
     if (!/^[A-Za-z][\w-]*$/.test(tag)) return bad(`\`@${tag}\` is not a tag — a tag starts with a letter and holds letters, digits, \`_\` or \`-\``);
+  }
+  if (spec.retry !== undefined && (!Number.isInteger(spec.retry) || spec.retry < 0)) {
+    return bad('a retry count is a whole number of extra attempts — 0 is no retry at all');
   }
   for (const session of spec.sessions ?? []) {
     // Same rule the parser reads a session name by (`expect('ident')`), stated here so the refusal
@@ -166,11 +184,11 @@ export function buildTest(spec: TestSpec): BuildResult<TestDecl> {
       name: stringLit(spec.name),
       tags: spec.tags,
       sessions: spec.sessions ?? [],
-      retry: 0,
-      table: null,
+      retry: spec.retry ?? 0,
+      table: spec.table ?? null,
       workload: spec.workload,
       thresholds: spec.thresholds,
-      concurrency: 'sequential',
+      concurrency: spec.concurrency ?? 'sequential',
       body: spec.body,
       span: SYNTHETIC,
     },
