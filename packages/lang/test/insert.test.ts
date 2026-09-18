@@ -10,7 +10,7 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApiStep, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildGive, buildLet, buildLog, buildPause, SYNTHETIC, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit } from '../src/index.js';
+import { buildApiStep, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildDataTable, buildGive, buildLet, buildLog, buildPause, SYNTHETIC, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit, type TestDecl } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -622,7 +622,7 @@ test('S4a: a note is replaced where it is, and a note with air under it is still
     '',
   ].join('\n');
 
-  const rewritten = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 0 }, lines: ['one line now'] });
+  const rewritten = replaceInSource(file, { kind: 'note', owner: { on: 'step', path: { decl: 0, step: 0 } }, lines: ['one line now'] });
   assert.equal(rewritten.ok, true, rewritten.ok ? '' : rewritten.reason);
   assert.equal(
     rewritten.text,
@@ -631,7 +631,7 @@ test('S4a: a note is replaced where it is, and a note with air under it is still
 
   // The one with a blank line between it and its statement: the block and the air are what the
   // note is, so replacing it replaces both, and the statement does not move away from its note.
-  const across = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 2 }, lines: ['still owned by the request below'] });
+  const across = replaceInSource(file, { kind: 'note', owner: { on: 'step', path: { decl: 0, step: 2 } }, lines: ['still owned by the request below'] });
   assert.equal(across.ok, true, across.ok ? '' : across.reason);
   assert.match(across.text ?? '', /^ {2}# still owned by the request below\n {2}api GET \/orders\/1$/m);
   // …and the block it replaced is **gone**. Without this line the whole blank-crossing walk can be
@@ -641,10 +641,10 @@ test('S4a: a note is replaced where it is, and a note with air under it is still
   assert.match(across.text ?? '', /^ {2}# the note on the first request$/m, 'and the other note is untouched');
 
   // A note on a statement that has none is an insertion; an empty list is a removal.
-  const added = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 1 }, lines: ['why 200 and not 201'] });
+  const added = replaceInSource(file, { kind: 'note', owner: { on: 'step', path: { decl: 0, step: 1 } }, lines: ['why 200 and not 201'] });
   assert.equal(added.ok, true, added.ok ? '' : added.reason);
   assert.match(added.text ?? '', /^ {2}# why 200 and not 201\n {2}expect status equals 200$/m);
-  const removed = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 0 }, lines: [] });
+  const removed = replaceInSource(file, { kind: 'note', owner: { on: 'step', path: { decl: 0, step: 0 } }, lines: [] });
   assert.equal(removed.ok, true, removed.ok ? '' : removed.reason);
   assert.doesNotMatch(removed.text ?? '', /the note on the first request/);
   assert.match(removed.text ?? '', /^test "t"\n {2}api GET \/orders$/m);
@@ -653,7 +653,7 @@ test('S4a: a note is replaced where it is, and a note with air under it is still
   // A blank line inside a note is a blank comment line, not a hole in the file: `# ` with nothing
   // after it is still a comment, and a bare newline there would end the block and hand the second
   // half to the statement below.
-  const spaced = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 0 }, lines: ['first', '', 'third'] });
+  const spaced = replaceInSource(file, { kind: 'note', owner: { on: 'step', path: { decl: 0, step: 0 } }, lines: ['first', '', 'third'] });
   assert.equal(spaced.ok, true, spaced.ok ? '' : spaced.reason);
   assert.match(spaced.text ?? '', /^ {2}# first\n {2}#\n {2}# third\n {2}api GET \/orders$/m);
 });
@@ -772,6 +772,86 @@ test('S5a: a threshold and an import are edited, added and removed where they be
   assert.equal(dropped.ok, true, dropped.ok ? '' : dropped.reason);
   assert.doesNotMatch(dropped.text ?? '', /helpers\.tflw/);
   assert.match(dropped.text ?? '', /^import "\.\/shared\/more\.tflw"$/m);
+});
+
+test('S5: a note on a declaration and a note on the file are the same edit with different floors', () => {
+  // Three owners, one mechanism (`D1077`). The interesting one is the **floor**: a block starting
+  // on line 1 is the file's own header and `readNotes` gives it to nobody else, so a declaration's
+  // walk must stop above line 1 — without that, editing the note on the first declaration of a
+  // file that opens with a header rewrites the header, which is 119 of the corpus's 139 files.
+  const file = [
+    '# the file header',
+    '# and its second line',
+    '',
+    '# a note on the test',
+    'test "it answers"',
+    '  api GET /thing',
+    '  expect status equals 200',
+    '',
+  ].join('\n');
+
+  const onDecl = replaceInSource(file, { kind: 'note', owner: { on: 'declaration', decl: 0 }, lines: ['what this test is for'] });
+  assert.equal(onDecl.ok, true, onDecl.ok ? '' : onDecl.reason);
+  assert.match(onDecl.text ?? '', /^# what this test is for\ntest "it answers"$/m);
+  assert.match(onDecl.text ?? '', /^# the file header\n# and its second line$/m, 'the file header is not the declaration\'s note');
+
+  const onFile = replaceInSource(file, { kind: 'note', owner: { on: 'file' }, lines: ['what this file is for'] });
+  assert.equal(onFile.ok, true, onFile.ok ? '' : onFile.reason);
+  assert.match(onFile.text ?? '', /^# what this file is for\n\n# a note on the test\ntest "it answers"$/m, 'the header is replaced and the blank line under it stays');
+  assert.doesNotMatch(onFile.text ?? '', /the file header/);
+
+  // A file with no header gets one, and the declaration below keeps its own note.
+  const bare = ['test "it answers"', '  api GET /thing', ''].join('\n');
+  const written = replaceInSource(bare, { kind: 'note', owner: { on: 'file' }, lines: ['what this file is for'] });
+  assert.equal(written.ok, true, written.ok ? '' : written.reason);
+  assert.equal(written.text, '# what this file is for\n\ntest "it answers"\n  api GET /thing\n');
+
+  // …and a declaration with no note gets one without taking the file's.
+  const both = replaceInSource(written.text!, { kind: 'note', owner: { on: 'declaration', decl: 0 }, lines: ['and what this test is for'] });
+  assert.equal(both.ok, true, both.ok ? '' : both.reason);
+  assert.equal(both.text, '# what this file is for\n\n# and what this test is for\ntest "it answers"\n  api GET /thing\n');
+});
+
+test('S5: a `with each` table is built from cells, and its values are values', () => {
+  // Nine inline tables in the two corpora, the largest 3x3. The cells are the whole value grammar,
+  // same as a `let` — so a column of ids is `1, 2, 3` and not `"1", "2", "3"`.
+  const table = buildDataTable({ kind: 'inline', columns: ['name', 'qty'], rows: [['"Pen"', '2'], ['{mugName}', 'random number 1 to 5']] });
+  assert.ok(table.ok, table.ok ? '' : table.reason);
+  const built = buildTest({ name: 'it orders', tags: [], workload: null, thresholds: [], table: table.node, body: [], sessions: [] });
+  assert.ok(built.ok, built.ok ? '' : built.reason);
+  const withBody: TestDecl = { ...built.node, body: parseSource('test "x"\n  api GET /orders\n').program.tests[0]!.body };
+  const printed = print(withBody);
+  assert.equal(printed.ok, true, printed.reason);
+  assert.equal(
+    printed.text,
+    [
+      'with each',
+      '  | name      | qty                  |',
+      '  | "Pen"     | 2                    |',
+      '  | {mugName} | random number 1 to 5 |',
+      'test "it orders"',
+      '  api GET /orders',
+    ].join('\n'),
+  );
+
+  const fromFile = buildDataTable({ kind: 'file', path: './rows.json' });
+  assert.ok(fromFile.ok, fromFile.ok ? '' : fromFile.reason);
+  const fileLine = print(fromFile.node);
+  assert.equal(fileLine.ok, true, fileLine.reason);
+  assert.equal(fileLine.text, 'with each from "./rows.json"');
+
+  const refusals: readonly (readonly [() => ReturnType<typeof buildDataTable>, RegExp])[] = [
+    [() => buildDataTable({ kind: 'inline', columns: [], rows: [] }), /at least one column/],
+    [() => buildDataTable({ kind: 'inline', columns: ['a'], rows: [] }), /at least one row/],
+    [() => buildDataTable({ kind: 'inline', columns: ['a', 'b'], rows: [['1']] }), /row 1 has 1 cell\(s\) and the header has 2/],
+    [() => buildDataTable({ kind: 'inline', columns: ['a'], rows: [['{ oops']] }), /row 1, a:/],
+    [() => buildDataTable({ kind: 'file', path: '  ' }), /needs a path/],
+  ];
+  for (const [build, pattern] of refusals) {
+    const r = build();
+    assert.equal(r.ok, false, `expected a refusal matching ${String(pattern)}`);
+    assert.match(r.reason ?? '', pattern);
+  }
 });
 
 test('A3-5: the browser builders produce a file the write route would accept', () => {

@@ -43,11 +43,19 @@ import {
   type LocatorKind,
   type LogDestination,
   type LogLevel,
+  type DataTableSpec,
+  type HookDecl,
   type MatcherName,
+  type NoteOwner,
   type PathSegment,
   type StepPath,
   type Step,
   type Subject,
+  type TestDecl,
+  type ThresholdDecl,
+  type ThresholdMetric,
+  type ThresholdOp,
+  type ThresholdSpec,
   SYNTHETIC,
 } from '@tflw/lang';
 import { DOOR_BY_ID } from './doors';
@@ -211,9 +219,9 @@ function StatementRow({ statement, door, editing }: {
       data-stmt-editable={editable ? 'yes' : 'no'}
     >
       {writingNote ? (
-        <NoteOpen note={statement.note} what={`line ${statement.line}`} onChange={(lines) => onNote?.(statement.stepPath!, lines)} />
+        <NoteOpen note={statement.note} what={`line ${statement.line}`} onChange={(lines) => onNote?.({ on: 'step', path: statement.stepPath! }, lines)} />
       ) : statement.note ? (
-        <NoteBlock note={statement.note} what={`line ${statement.line}`} onNote={editable && onNote !== null ? (lines) => onNote(statement.stepPath!, lines) : undefined} />
+        <NoteBlock note={statement.note} what={`line ${statement.line}`} onNote={editable && onNote !== null ? (lines) => onNote({ on: 'step', path: statement.stepPath! }, lines) : undefined} />
       ) : null}
       {editable && values !== null ? (
         values.kind === 'expect' ? (
@@ -254,9 +262,20 @@ export interface RowEditing {
   /** The row being typed into, by its own index pair, and its live values. */
   readonly row: { readonly key: string; readonly values: StatementEdit } | null;
   readonly onRow: ((statement: OutlineStatement, next: StatementEdit) => void) | null;
-  /** Where a change to a note goes (`D1077`) — addressed by the index pair of whatever the note
-   *  explains. A note whose every line is blank is a note removed, at both ends of the gesture. */
-  readonly onNote: ((path: StepPath, lines: readonly string[]) => void) | null;
+  /**
+   * Where a change to a note goes (`D1077`) — addressed by **what it is a note on**, which since
+   * `S5` is one of three things: a statement, a declaration, or the file. A note whose every line
+   * is blank is a note removed, at both ends of the gesture.
+   */
+  readonly onNote: ((owner: NoteOwner, lines: readonly string[]) => void) | null;
+  /** The declaration header being typed into, and where a change goes (`M210` `S5`). */
+  readonly header: { readonly key: string; readonly values: HeaderEdit } | null;
+  readonly onHeader: ((decl: OutlineHook | OutlineTest, next: HeaderEdit) => void) | null;
+  /** One threshold of a test, by its own index. `null` as the value removes it. */
+  readonly threshold: { readonly key: string; readonly values: ThresholdEdit } | null;
+  readonly onThreshold: ((decl: OutlineTest, index: number, next: ThresholdEdit | null) => void) | null;
+  /** One `import` or `use` line of the file. `null` as the path removes it. */
+  readonly onFileDecl: ((what: 'import' | 'use', index: number, path: string | null) => void) | null;
   /**
    * The row whose **new** note is open, by the same key.
    *
@@ -640,6 +659,90 @@ export function expectSpecOf(edit: ExpectEdit, original: ExpectStmt | null): Exp
   };
 }
 
+/**
+ * WHAT THE BAND HOLDS (`M210` `S5`, `D1074`) — a declaration's own facts, as a form holds them.
+ *
+ * Measured over the two corpora, which is what decides which of these is a control and which is a
+ * sentence: **683 of 858 tests carry tags** (at most 5), 67 name sessions, **9 carry a retry**, 2
+ * are parallel, 12 carry a `with each` table (9 inline, the largest 3 rows by 3 columns) and 39
+ * carry thresholds (at most 3). 50 carry a workload — and that one is a **link**, not a control:
+ * see `TestBand`.
+ *
+ * The strings are what the file writes, not what the AST holds: tags are space-separated because
+ * `printTest` writes them on one line (450 of 682 tag lines carry more than one), and sessions are
+ * comma-separated because `as admin, shopper` is how the grammar spells a list.
+ */
+export interface HeaderEdit {
+  readonly name: string;
+  readonly tags: string;
+  readonly sessions: string;
+  readonly retry: string;
+  readonly parallel: boolean;
+  /** A hook's whole header is these two words — `each` has no keyword, so `before` alone is the
+   *  per-test one and `before file` the once-per-file one. */
+  readonly when: HookDecl['when'];
+  readonly scope: HookDecl['scope'];
+  readonly tableKind: 'none' | 'inline' | 'file';
+  readonly tablePath: string;
+  readonly columns: readonly string[];
+  readonly rows: readonly (readonly string[])[];
+}
+
+export function headerEditOf(decl: OutlineHook | OutlineTest): HeaderEdit {
+  const test = decl.kind === 'test' ? decl : null;
+  const table = test?.table ?? null;
+  return {
+    name: test?.name ?? '',
+    tags: (test?.tags ?? []).join(' '),
+    sessions: (test?.sessions ?? []).join(', '),
+    retry: String(test?.retry ?? 0),
+    parallel: test?.node.concurrency === 'parallel',
+    when: decl.kind === 'hook' ? decl.when : 'before',
+    scope: decl.kind === 'hook' ? decl.scope : 'each',
+    tableKind: table === null ? 'none' : table.type === 'InlineDataTable' ? 'inline' : 'file',
+    tablePath: table !== null && table.type === 'FileDataTable' ? table.path.value : '',
+    columns: table !== null && table.type === 'InlineDataTable' ? table.columns : ['name'],
+    rows: table !== null && table.type === 'InlineDataTable' ? table.rows.map((row) => row.map((cell) => printValue(cell))) : [['""']],
+  };
+}
+
+/** The table half of a header edit, or `null` for a test that runs once. */
+export function tableSpecOf(edit: HeaderEdit): DataTableSpec | null {
+  if (edit.tableKind === 'none') return null;
+  if (edit.tableKind === 'file') return { kind: 'file', path: edit.tablePath };
+  return { kind: 'inline', columns: edit.columns, rows: edit.rows };
+}
+
+/** What a threshold row holds. A `duration` metric carries a percentile; an `errorRate` does not,
+ *  and its bound is the percentage the author types beside the `%` rather than the fraction the
+ *  AST stores — `buildThreshold` owns that conversion so no form has to know it. */
+export interface ThresholdEdit {
+  readonly metric: ThresholdMetric['kind'];
+  readonly percentile: string;
+  readonly op: ThresholdOp;
+  readonly bound: string;
+  readonly scope: string;
+}
+
+export function thresholdEditOf(node: ThresholdDecl): ThresholdEdit {
+  return {
+    metric: node.metric.kind,
+    percentile: node.metric.kind === 'duration' ? String(node.metric.percentile) : '95',
+    op: node.op,
+    bound: node.metric.kind === 'duration' ? String(node.value) : String(Math.round(node.value * 1000) / 10),
+    scope: node.scope?.value ?? '',
+  };
+}
+
+export function thresholdSpecOf(edit: ThresholdEdit): ThresholdSpec {
+  return {
+    metric: edit.metric === 'duration' ? { kind: 'duration', percentile: Number(edit.percentile) } : { kind: 'errorRate' },
+    op: edit.op,
+    bound: Number(edit.bound),
+    scope: edit.scope.trim() === '' ? null : edit.scope.trim(),
+  };
+}
+
 /** The subject controls, shared by the two statements that take one — an assertion and a `capture`
  *  (`M210` `S4`). One control set, because the grammar has one subject position. */
 function SubjectFields({ subject, argument, locatorKind, carried, onChange }: {
@@ -998,9 +1101,9 @@ function RequestCard({ request: r, door, edit, onEdit, editing }: {
   return (
     <section className="request-card" data-request-line={r.line} data-request-kind={r.kind} data-request-editable={onEdit === null ? 'no' : 'yes'}>
       {writingNote ? (
-        <NoteOpen note={r.note} what={`request ${r.line}`} onChange={(lines) => editing.onNote?.(r.stepPath, lines)} />
+        <NoteOpen note={r.note} what={`request ${r.line}`} onChange={(lines) => editing.onNote?.({ on: 'step', path: r.stepPath }, lines)} />
       ) : r.note ? (
-        <NoteBlock note={r.note} what={`request ${r.line}`} onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!(r.stepPath, lines)} />
+        <NoteBlock note={r.note} what={`request ${r.line}`} onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!({ on: 'step', path: r.stepPath }, lines)} />
       ) : null}
       <header className="request-head">
         {change === null ? (
@@ -1212,41 +1315,158 @@ function TestBand({ decl, outline, door, editing }: {
   readonly editing: RowEditing;
 }) {
   const test: OutlineTest | null = decl.kind === 'test' ? decl : null;
+  const key = `decl:${decl.index}`;
+  const live = editing.onHeader !== null;
+  const v = editing.header !== null && editing.header.key === key ? editing.header.values : headerEditOf(decl);
+  const change = (patch: Partial<HeaderEdit>): void => editing.onHeader?.(decl, { ...v, ...patch });
+  const writingNote = editing.noting === key;
+  const what = decl.kind === 'test' ? `test ${decl.name}` : decl.label;
   return (
     <div className="test-band" data-band-kind={decl.kind} data-band-line={decl.line}>
-      {decl.note ? <NoteBlock note={decl.note} what={decl.kind === 'test' ? `test ${decl.name}` : decl.label} /> : null}
+      {writingNote ? (
+        <NoteOpen note={decl.note} what={what} onChange={(lines) => editing.onNote?.({ on: 'declaration', decl: decl.index }, lines)} />
+      ) : decl.note ? (
+        <NoteBlock note={decl.note} what={what} onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!({ on: 'declaration', decl: decl.index }, lines)} />
+      ) : null}
       <header className="band-head">
-        <span className="band-what">{decl.kind === 'test' ? 'test' : decl.label}</span>
-        {test ? <strong data-band-name={test.name}>{test.name}</strong> : <span className="muted">runs around every test in this file</span>}
+        {decl.kind === 'hook' ? (
+          live ? (
+            <>
+              <select value={v.when} onChange={(e) => change({ when: e.target.value as HookDecl['when'] })} data-band-when aria-label="before or after">
+                <option value="before">before</option>
+                <option value="after">after</option>
+              </select>
+              {/* `each` has no keyword — it is the scope you get by writing nothing — so this is a
+                  choice between two words and not between a word and its absence. */}
+              <select value={v.scope} onChange={(e) => change({ scope: e.target.value as HookDecl['scope'] })} data-band-scope aria-label="scope">
+                <option value="each">every test</option>
+                <option value="file">once for the file</option>
+              </select>
+            </>
+          ) : (
+            <span className="band-what">{decl.label}</span>
+          )
+        ) : (
+          <>
+            <span className="band-what">test</span>
+            {live ? (
+              <input className="band-name" value={v.name} onChange={(e) => change({ name: e.target.value })} data-band-name={v.name} aria-label="test name" />
+            ) : (
+              <strong data-band-name={test!.name}>{test!.name}</strong>
+            )}
+          </>
+        )}
         <span className="ln muted">line {decl.line}</span>
+        {editing.onNote !== null && decl.note === null && !writingNote ? (
+          <button className="add-note" onClick={() => editing.onNoting?.(key)} data-note-add={decl.line} title="a comment above this declaration">
+            + note
+          </button>
+        ) : null}
       </header>
       {test ? (
         <ul className="band-facts" data-band-facts>
           <li data-band-tags={test.tags.length}>
             tags{' '}
-            {test.tags.length === 0 ? <span className="muted">none</span> : test.tags.map((t) => <span key={t} className="tag">@{t}</span>)}
+            {live ? (
+              /* One field for all of them, because the file writes one line for all of them: 450
+                 of the corpus's 682 tag lines carry more than one tag and none carries one per
+                 line. A chip editor would be a second spelling of a list this language already
+                 spells with spaces. */
+              <input value={v.tags} onChange={(e) => change({ tags: e.target.value })} data-band-tags-edit aria-label="tags" placeholder="crud slow" />
+            ) : test.tags.length === 0 ? (
+              <span className="muted">none</span>
+            ) : (
+              test.tags.map((t) => <span key={t} className="tag">@{t}</span>)
+            )}
           </li>
           <li data-band-sessions={test.sessions.length}>
-            as {test.sessions.length === 0 ? <span className="muted">anonymous</span> : test.sessions.join(', ')}
+            as{' '}
+            {live ? (
+              <input value={v.sessions} onChange={(e) => change({ sessions: e.target.value })} data-band-sessions-edit aria-label="sessions" placeholder="(anonymous)" />
+            ) : test.sessions.length === 0 ? (
+              <span className="muted">anonymous</span>
+            ) : (
+              test.sessions.join(', ')
+            )}
           </li>
           <li data-band-retry={test.retry}>
-            retry {test.retry === 0 ? <span className="muted">0 — the default, not a retry in use</span> : test.retry}
+            retry{' '}
+            {live ? (
+              <input className="narrow" value={v.retry} onChange={(e) => change({ retry: e.target.value })} data-band-retry-edit aria-label="retry" />
+            ) : test.retry === 0 ? (
+              <span className="muted">0 — the default, not a retry in use</span>
+            ) : (
+              test.retry
+            )}
+            {live ? (
+              <label className="not" title="`parallel` — this test's cases may run at the same time">
+                <input type="checkbox" checked={v.parallel} onChange={(e) => change({ parallel: e.target.checked })} data-band-parallel={v.parallel ? 'yes' : 'no'} />
+                parallel
+              </label>
+            ) : null}
           </li>
           <li data-band-table={test.table === null ? 'none' : test.table.type}>
             with each{' '}
-            {test.table === null ? (
+            {live ? (
+              <select value={v.tableKind} onChange={(e) => change({ tableKind: e.target.value as HeaderEdit['tableKind'] })} data-band-table-kind aria-label="data table">
+                <option value="none">none — one case</option>
+                <option value="inline">rows written here</option>
+                <option value="file">rows from a file</option>
+              </select>
+            ) : test.table === null ? (
               <span className="muted">none — one case</span>
             ) : test.table.type === 'InlineDataTable' ? (
               `${test.table.rows.length} row${test.table.rows.length === 1 ? '' : 's'}, ${test.table.columns.length} column${test.table.columns.length === 1 ? '' : 's'}`
             ) : (
               test.table.path.value
             )}
+            {live && v.tableKind === 'file' ? (
+              <input value={v.tablePath} onChange={(e) => change({ tablePath: e.target.value })} data-band-table-path aria-label="table path" placeholder="../data/products.json" />
+            ) : null}
           </li>
+          {live && v.tableKind === 'inline' ? <TableEditor edit={v} onChange={change} /> : null}
           <li data-band-workload={test.workload === null ? 'none' : test.workload.type}>
-            workload {test.workload === null ? <span className="muted">none — a functional test</span> : test.workload.type.replace(/Workload$/, '')}
+            workload{' '}
+            {test.workload === null ? (
+              <span className="muted">none — a functional test</span>
+            ) : (
+              <>
+                {test.workload.type.replace(/Workload$/, '')}{' '}
+                {/* **The one band fact this door does not edit, and it is a decision rather than a
+                    gap** (`D1042`). A workload is a shape of work with stages in it, and the door
+                    whose form is built around that shape is LOAD — the same argument `D1078` makes
+                    one level down for a step belonging to another door, made here for a
+                    declaration's. The cost is stated where it lands: changing one is two clicks
+                    away, through a link that says so. */}
+                <a className="badge also" href="#/load" data-band-workload-door title="a workload is the LOAD door's to shape — open it there">
+                  LOAD
+                </a>
+              </>
+            )}
           </li>
           <li data-band-thresholds={test.thresholds.length}>
-            thresholds {test.thresholds.length === 0 ? <span className="muted">none</span> : test.thresholds.length}
+            thresholds {test.thresholds.length === 0 && !live ? <span className="muted">none</span> : null}
+            {live ? (
+              <div className="thresholds" data-band-thresholds-edit={test.thresholds.length}>
+                {test.thresholds.map((th, i) => (
+                  <ThresholdRow
+                    key={i}
+                    index={i}
+                    edit={editing.threshold !== null && editing.threshold.key === `th:${decl.index}:${i}` ? editing.threshold.values : thresholdEditOf(th)}
+                    onEdit={(next) => editing.onThreshold?.(test, i, next)}
+                  />
+                ))}
+                <button
+                  onClick={() => editing.onThreshold?.(test, test.thresholds.length, { metric: 'duration', percentile: '95', op: 'lessThan', bound: '500', scope: '' })}
+                  data-threshold-add
+                  title="a bound the whole run is graded against, after it finishes"
+                >
+                  + threshold
+                </button>
+              </div>
+            ) : (
+              test.thresholds.length
+            )}
           </li>
         </ul>
       ) : null}
@@ -1262,7 +1482,74 @@ function TestBand({ decl, outline, door, editing }: {
         </div>
       ) : null}
 
-      <FileRow outline={outline} />
+      <FileRow outline={outline} editing={editing} />
+    </div>
+  );
+}
+
+/** The `with each` rows, as a grid. Nine inline tables in the two corpora, the largest 3 by 3 —
+ *  which is why this is a grid of plain fields and not a spreadsheet. */
+function TableEditor({ edit, onChange }: {
+  readonly edit: HeaderEdit;
+  readonly onChange: (patch: Partial<HeaderEdit>) => void;
+}) {
+  const setColumn = (i: number, name: string): void => onChange({ columns: edit.columns.map((c, j) => (j === i ? name : c)) });
+  const setCell = (r: number, c: number, value: string): void =>
+    onChange({ rows: edit.rows.map((row, j) => (j === r ? row.map((cell, k) => (k === c ? value : cell)) : row)) });
+  return (
+    <li className="table-editor" data-band-table-rows={edit.rows.length} data-band-table-columns={edit.columns.length}>
+      <div className="row">
+        {edit.columns.map((c, i) => (
+          <input key={i} value={c} onChange={(e) => setColumn(i, e.target.value)} data-table-column={i} aria-label={`column ${i + 1}`} placeholder="name" />
+        ))}
+        <button onClick={() => onChange({ columns: [...edit.columns, ''], rows: edit.rows.map((row) => [...row, '""']) })} data-table-column-add>
+          + column
+        </button>
+      </div>
+      {edit.rows.map((row, r) => (
+        <div className="row" key={r}>
+          {row.map((cell, c) => (
+            <input key={c} value={cell} onChange={(e) => setCell(r, c, e.target.value)} data-table-cell={`${r}:${c}`} aria-label={`row ${r + 1}, column ${c + 1}`} />
+          ))}
+          <button onClick={() => onChange({ rows: edit.rows.filter((_, j) => j !== r) })} data-table-row-remove={r} disabled={edit.rows.length === 1}>
+            remove
+          </button>
+        </div>
+      ))}
+      <button onClick={() => onChange({ rows: [...edit.rows, edit.columns.map(() => '""')] })} data-table-row-add>
+        + row
+      </button>
+    </li>
+  );
+}
+
+/** One `threshold` line, as controls. */
+function ThresholdRow({ index, edit, onEdit }: {
+  readonly index: number;
+  readonly edit: ThresholdEdit;
+  readonly onEdit: (next: ThresholdEdit | null) => void;
+}) {
+  return (
+    <div className="row" data-threshold={index}>
+      <select value={edit.metric} onChange={(e) => onEdit({ ...edit, metric: e.target.value as ThresholdEdit['metric'] })} data-threshold-metric={index} aria-label="metric">
+        <option value="duration">duration</option>
+        <option value="errorRate">error rate</option>
+      </select>
+      {edit.metric === 'duration' ? (
+        <input className="narrow" value={edit.percentile} onChange={(e) => onEdit({ ...edit, percentile: e.target.value })} data-threshold-percentile={index} aria-label="percentile" />
+      ) : null}
+      {edit.metric === 'duration' ? (
+        <input value={edit.scope} onChange={(e) => onEdit({ ...edit, scope: e.target.value })} data-threshold-scope={index} aria-label="scope" placeholder="(the whole test)" />
+      ) : null}
+      <select value={edit.op} onChange={(e) => onEdit({ ...edit, op: e.target.value as ThresholdOp })} data-threshold-op={index} aria-label="comparison">
+        <option value="lessThan">is less than</option>
+        <option value="greaterThan">is greater than</option>
+      </select>
+      <input className="narrow" value={edit.bound} onChange={(e) => onEdit({ ...edit, bound: e.target.value })} data-threshold-bound={index} aria-label="bound" />
+      <span className="muted">{edit.metric === 'duration' ? 'ms' : '%'}</span>
+      <button onClick={() => onEdit(null)} data-threshold-remove={index}>
+        remove
+      </button>
     </div>
   );
 }
@@ -1282,23 +1569,54 @@ function Joined({ items }: { readonly items: readonly string[] }) {
 }
 
 /** The one pinned file row (`D1074`): what this file brings in, and what it declares for itself. */
-function FileRow({ outline }: { readonly outline: FileOutline }) {
+function FileRow({ outline, editing }: { readonly outline: FileOutline; readonly editing: RowEditing }) {
   const { imports, uses, actions, header, tail } = outline.file;
   const empty = imports.length === 0 && uses.length === 0 && actions.length === 0 && header === null;
+  const live = editing.onFileDecl !== null;
+  const writingNote = editing.noting === 'file';
   return (
     <div className="file-facts" data-file-facts={empty ? 'none' : 'some'}>
-      {header ? <NoteBlock note={header} what="the file" /> : null}
+      {writingNote ? (
+        <NoteOpen note={header} what="the file" onChange={(lines) => editing.onNote?.({ on: 'file' }, lines)} />
+      ) : header ? (
+        <NoteBlock note={header} what="the file" onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!({ on: 'file' }, lines)} />
+      ) : null}
+      {editing.onNote !== null && header === null && !writingNote ? (
+        <button className="add-note" onClick={() => editing.onNoting?.('file')} data-note-add="file" title="a comment at the top of the file, saying what it is for">
+          + note
+        </button>
+      ) : null}
       <ul>
         {/* Comma-separated. The first draft mapped straight to `<code>` and three import paths
             rendered as one unbroken string on the page — a list with no separator is not a list. */}
         <li data-file-imports={imports.length}>
-          imports {imports.length === 0 ? <span className="muted">none</span> : <Joined items={imports.map((i) => i.path.value)} />}
+          imports{' '}
+          {live ? (
+            <PathRows what="import" paths={imports.map((i) => i.path.value)} onChange={editing.onFileDecl!} />
+          ) : imports.length === 0 ? (
+            <span className="muted">none</span>
+          ) : (
+            <Joined items={imports.map((i) => i.path.value)} />
+          )}
         </li>
         <li data-file-uses={uses.length}>
-          uses {uses.length === 0 ? <span className="muted">none</span> : <Joined items={uses.map((u) => u.path.value)} />}
+          uses{' '}
+          {live ? (
+            <PathRows what="use" paths={uses.map((u) => u.path.value)} onChange={editing.onFileDecl!} />
+          ) : uses.length === 0 ? (
+            <span className="muted">none</span>
+          ) : (
+            <Joined items={uses.map((u) => u.path.value)} />
+          )}
         </li>
+        {/* **The actions are named and not drawn, and that is this round's own §0 defect one
+            declaration kind over.** `fileOutline` walks hooks and tests; an `action` has a body —
+            requests, captures, and all 8 of the corpus's `give` statements — and none of it is on
+            this pane. Named here rather than quietly absent, because a reader who sees the name is
+            at least told the thing exists. */}
         <li data-file-actions={actions.length}>
           actions {actions.length === 0 ? <span className="muted">none</span> : <Joined items={actions.map((a) => a.name)} />}
+          {actions.length > 0 ? <span className="muted"> — named here; what they do is not drawn yet</span> : null}
         </li>
       </ul>
       {/* One file in the sibling's 139 ends on a note owning nothing — an idea the language cannot
@@ -1306,6 +1624,31 @@ function FileRow({ outline }: { readonly outline: FileOutline }) {
           a reader must not lose to a projection. */}
       {tail ? <NoteBlock note={tail} what="the file's last word" /> : null}
     </div>
+  );
+}
+
+/** The `import`/`use` lines, one field each. A blank field is that line removed, which is the same
+ *  rule a note follows: there is no separate gesture for taking something away. */
+function PathRows({ what, paths, onChange }: {
+  readonly what: 'import' | 'use';
+  readonly paths: readonly string[];
+  readonly onChange: (what: 'import' | 'use', index: number, path: string | null) => void;
+}) {
+  return (
+    <span className="path-rows" data-path-rows={what}>
+      {paths.map((path, i) => (
+        <input
+          key={i}
+          value={path}
+          onChange={(e) => onChange(what, i, e.target.value.trim() === '' ? null : e.target.value)}
+          data-file-path={`${what}:${i}`}
+          aria-label={`${what} ${i + 1}`}
+        />
+      ))}
+      <button onClick={() => onChange(what, paths.length, what === 'import' ? './shared/helpers.tflw' : './helpers.ts')} data-file-path-add={what}>
+        + {what}
+      </button>
+    </span>
   );
 }
 
@@ -1391,7 +1734,7 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
           comes and goes with a fetch is a pane you cannot hold a gesture across. */}
       {outline === null ? null : (
         <>
-          {at ? <TestBand decl={at.decl} outline={outline} door={door} editing={editing} /> : <FileRow outline={outline} />}
+          {at ? <TestBand decl={at.decl} outline={outline} door={door} editing={editing} /> : <FileRow outline={outline} editing={editing} />}
 
           {at?.request ? (
             <RequestCard request={at.request} door={door} edit={edit} onEdit={onEdit} editing={editing} />
