@@ -13,6 +13,7 @@
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
 import type { ApiBody, ApiHeader, ApiStep, ClickKind, ClickStmt, ExpectStmt, FillStmt, FindingSeverity, HttpMethod, Locator, LocatorKind, Matcher, MatcherName, OpenStmt, PathSegment, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, WithinBlock, Workload } from './ast.js';
+import { quantifiable } from './ast.js';
 import { parse as parseTokens, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
 
@@ -320,6 +321,34 @@ export interface ExpectSpec {
    * than a silent drop, because a form that ignored it would show a severity the file does not have.
    */
   readonly severityFloor?: FindingSeverity;
+  /**
+   * `not equals` — the one field whose absence **inverts an assertion** (`M210` `S3a`).
+   *
+   * It was not here at all until `M210` came to edit an expect that already exists, and until then
+   * that was harmless: `A1-3`'s form only ever *appended* a new assertion, and nobody writes a new
+   * one negated. Reading one back is the other direction. **82 of the sibling's expects and 10 of
+   * this repository's are negated**, so a card that rebuilt a statement from a spec with no room
+   * for this would turn `expect status not equals 500` into `expect status equals 500` — a file
+   * that still parses, still runs, and asserts the opposite of what its author wrote.
+   *
+   * Absent means `false`, which is what every caller before `M210` meant by saying nothing.
+   */
+  readonly negated?: boolean;
+  /**
+   * `matches schema "Order" from [<service>] "openapi.json"` — the operand this matcher spells as a
+   * trailing clause instead of as a value (`M210` `S3a`).
+   *
+   * Three matchers do that, and until now the builder could construct none of them: each fell
+   * through to the *"compares against something — give it a value"* refusal, which is a true
+   * sentence about a matcher that takes its operand somewhere else. 25 assertions across the two
+   * corpora, all of them API-door work in the case of `matches schema` and `matches file`.
+   */
+  readonly schema?: { readonly name: string; readonly source: string; readonly service?: string };
+  /** `matches file "<path>"` — see `schema` above. */
+  readonly filePath?: string;
+  /** `matches snapshot "<name>"` — see `schema` above. Its `mask` clauses are **not** here: a mask
+   *  is a locator list, and a caller that holds one holds the nodes already. */
+  readonly snapshotName?: string;
 }
 
 export type SubjectSpec =
@@ -364,6 +393,13 @@ const OPERANDLESS: ReadonlySet<MatcherName> = new Set<MatcherName>([
   // `STATE_WORDS` family, and 0 of the corpus' 622 carries a value.
   'hasNoA11yViolations',
   'visible', 'hidden', 'enabled', 'disabled', 'checked',
+  // `M210` `S3a` — four more, and none of them is a new capability: each is a matcher the corpus
+  // writes and this builder refused. `was made` takes nothing at all (**13 occurrences, 0 with a
+  // value**); the other three take their operand as a trailing clause, which `CLAUSE_OF` below is
+  // where that is said. The name of this set is what it has always meant — *may omit the value* —
+  // and the three clause matchers are refused **below** if a value is given anyway.
+  'wasMade',
+  'matchesSchema', 'matchesFile', 'matchesSnapshot',
 ]);
 
 /** The five state words, as one closed family — `parser.ts`'s `STATE_WORDS` (`A3-3`). */
@@ -385,14 +421,33 @@ const SCAN_SUBJECT: ReadonlyMap<MatcherName, Subject['type']> = new Map<MatcherN
   ['hasNoA11yViolations', 'PageSubject'],
 ]);
 
+/**
+ * The three matchers whose operand is a **trailing clause** rather than a value (`M210` `S3a`).
+ *
+ * `printMatcher` refuses each of them without its clause — `\`matches schema\` needs a schema name
+ * and a source` — so a builder that could not supply one could never produce a node the printer
+ * would take. That is why these three were unreachable from every form until now rather than
+ * merely awkward, and it is the shape to watch for: a field that is optional on the *type* and
+ * required by the *spelling*.
+ */
+const CLAUSE_OF: ReadonlyMap<MatcherName, 'schema' | 'filePath' | 'snapshotName'> = new Map<MatcherName, 'schema' | 'filePath' | 'snapshotName'>([
+  ['matchesSchema', 'schema'],
+  ['matchesFile', 'filePath'],
+  ['matchesSnapshot', 'snapshotName'],
+]);
+
 export function buildExpect(spec: ExpectSpec): BuildResult<ExpectStmt> {
   const subject = buildSubject(spec.subject);
   if (!subject.ok) return subject;
 
-  if (spec.quantifier !== null && subject.node.type !== 'BodySubject') {
-    // `quantifiable()` in `ast.ts` is the rule; the form can only reach one of its three members,
-    // so this names the one it can.
-    return bad('`any` and `all` quantify a body path — pick the `body` subject or drop the quantifier');
+  if (spec.quantifier !== null && !quantifiable(subject.node)) {
+    // **`quantifiable()` in `ast.ts` IS the rule, and this used to only name one of its three
+    // members** (`M210` `S3a`). That was true of what a form could *reach* and false of the
+    // language, and the corpus says so: **3 of the 85 quantified assertions quantify a `body csv`
+    // path**, which this refused. A caller that substitutes a subject the spec cannot spell — the
+    // way `M210`'s card carries a `body csv` subject across an edit — would have met a refusal
+    // about a file that parses. The predicate the language publishes is the one to ask.
+    return bad('`any` and `all` quantify a list — pick a `body` path, a `body csv` path or a `{value}`, or drop the quantifier');
   }
 
   let value: Value | null = null;
@@ -427,7 +482,35 @@ export function buildExpect(spec: ExpectSpec): BuildResult<ExpectStmt> {
   // builder that invented a locator-only rule would refuse two files that exist.
   if (value !== null && STATE_MATCHERS.has(spec.matcher)) return bad(`\`${spec.matcher}\` is a state, so it is true or false on its own and takes no value`);
 
-  const matcher: Matcher = { type: 'Matcher', name: spec.matcher, negated: false, value, span: SYNTHETIC, ...(spec.severityFloor === undefined ? {} : { severityFloor: spec.severityFloor }) };
+  // The trailing-clause family (`M210` `S3a`), checked the way the severity floor above is: a
+  // clause offered to a matcher that does not take one is a refusal rather than a silent drop,
+  // because a form that ignored it would show a schema name the file does not have.
+  const clause = CLAUSE_OF.get(spec.matcher);
+  const given = { schema: spec.schema, filePath: spec.filePath, snapshotName: spec.snapshotName };
+  for (const [key, held] of Object.entries(given)) {
+    if (held === undefined || key === clause) continue;
+    return bad(`\`${key === 'schema' ? 'matches schema' : key === 'filePath' ? 'matches file' : 'matches snapshot'}\`'s clause belongs to that matcher, not to \`${spec.matcher}\``);
+  }
+  if (clause !== undefined && value !== null) return bad(`\`${spec.matcher}\` takes its operand as the clause after it, not as a value`);
+  let extra: Partial<Matcher> = {};
+  if (clause === 'schema') {
+    if (spec.schema === undefined || spec.schema.name.trim() === '' || spec.schema.source.trim() === '') {
+      return bad('`matches schema` names a schema and the document it lives in — give it both');
+    }
+    extra = {
+      schemaName: stringLit(spec.schema.name),
+      schemaSource: stringLit(spec.schema.source),
+      ...(spec.schema.service === undefined || spec.schema.service.trim() === '' ? {} : { schemaService: spec.schema.service.trim() }),
+    };
+  } else if (clause === 'filePath') {
+    if (spec.filePath === undefined || spec.filePath.trim() === '') return bad('`matches file` compares against a file — give it a path');
+    extra = { filePath: stringLit(spec.filePath) };
+  } else if (clause === 'snapshotName') {
+    if (spec.snapshotName === undefined || spec.snapshotName.trim() === '') return bad('`matches snapshot` names the baseline it compares against — give it a name');
+    extra = { snapshotName: stringLit(spec.snapshotName) };
+  }
+
+  const matcher: Matcher = { type: 'Matcher', name: spec.matcher, negated: spec.negated === true, value, span: SYNTHETIC, ...extra, ...(spec.severityFloor === undefined ? {} : { severityFloor: spec.severityFloor }) };
   return { ok: true, node: { type: 'ExpectStmt', soft: spec.soft, quantifier: spec.quantifier, subject: subject.node, matcher, masks: [], span: SYNTHETIC } };
 }
 

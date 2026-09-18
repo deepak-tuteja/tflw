@@ -470,11 +470,55 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printHeader(node as ApiHeader);
     case 'Matcher':
       return pad(level) + printMatcher(node as Matcher);
+    // **THE WHOLE VALUE GRAMMAR, NOT THE FIVE LITERALS** (`M210` `S3a`).
+    //
+    // `PRINTABLE` above lists thirty-one value kinds and says, in its own docblock, that
+    // membership means *printable on its own*. This switch honoured five of them and sent the
+    // other twenty-six to `default`, where they refused — so `print(objectLit)` answered `no
+    // printer for ObjectLit` about a kind the exported set declares printable, and the module's
+    // own `printObject` had been there the whole time.
+    //
+    // The gate could not see it, and the reason is worth keeping: `A1-1`'s value gate prints a
+    // `let` line and then asserts each kind *occurs* somewhere under it. That is the right test
+    // for the spelling and it says nothing at all about reachability, because every one of those
+    // nodes is reached **through its parent**. `M201`'s lesson one round on — a property that
+    // changes no verdict cannot be defended by a verdict — with the property here being the set's
+    // own claim about itself.
+    //
+    // Found from the other end, by `M210` needing a matcher's operand as text for a form field:
+    // **77 operands in the two corpora refuse** — 35 `ObjectLit`, 32 `Interp`, 7 `EnvRef`, 2
+    // `TransformExpr`, 1 `DateOffsetLit` — every one of which the printer can already write.
     case 'StringLit':
     case 'NumberLit':
     case 'DurationLit':
     case 'BoolLit':
     case 'NullLit':
+    case 'VarRef':
+    case 'Interp':
+    case 'EnvRef':
+    case 'ObjectLit':
+    case 'ArrayLit':
+    case 'BinaryExpr':
+    case 'DateAtom':
+    case 'DateOffsetLit':
+    case 'FormatExpr':
+    case 'TransformExpr':
+    case 'CallExpr':
+    case 'UniquePrefixExpr':
+    case 'UniqueEmailExpr':
+    case 'UniqueNumberExpr':
+    case 'UniqueLikeExpr':
+    case 'UniqueUuidExpr':
+    case 'RandomNumberExpr':
+    case 'RandomDecimalExpr':
+    case 'RandomDateInPastExpr':
+    case 'RandomDateInFutureExpr':
+    case 'RandomDateBetweenExpr':
+    case 'RandomOfExpr':
+    case 'RandomStringExpr':
+    case 'RandomLikeExpr':
+    case 'RandomUuidExpr':
+    case 'RandomPasswordExpr':
       return pad(level) + printValue(node as Value);
     case 'MalformedStep':
       // `A4-5`. **Declared, not defaulted.** A `MalformedStep` is the parser's recovery node for a
