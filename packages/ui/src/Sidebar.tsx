@@ -1,28 +1,49 @@
-// The project pane (`M192` U2, narrowed to a door by `M200` `A0-3`, freed of the run controls by
-// `M209` `S1`). What is shown is what `GET /api/project` read from the files — names, tags, lines.
+// The project pane — a **file tree** since `M209` `S3`, after three rounds of being a list of tests
+// with the files as headings (`M192` U2, narrowed to a door by `M200` `A0-3`, freed of the run
+// controls by `M209` `S1`).
 //
 // IT LISTS THE PROJECT AND DOES NOT ASSEMBLE A COMMAND. `env`, `workers` and the run button moved
-// to `RunStrip` (`M205` Q12), because a pane doing both jobs is a pane that cannot become a file
-// tree. What is left here is the narrowing itself — which files, which tags — and the narrowing is
-// a fact about the *project* that the strip reads back as a label.
+// to `RunStrip` (`M205` Q12). What is left here is the narrowing itself — which files, which tags —
+// and the narrowing is a fact about the *project* that the strip reads back as a label.
 //
-// THE DOOR NARROWS THE LIST, NOT THE TEST. A test is listed here when its own constructs put it
-// behind the door you came through (`D1043`), and a test behind three doors is listed under all
-// three. What it *shows* when opened is decided by its constructs and never by the door
-// (`D1044`), so nothing below hides a line of a file.
+// A ROW IS A FILE (`D1061`). The sibling's 84 files at ~22 px are two screens with nothing
+// engineered; the 389 rows and 20,726 px this pane used to measure were entirely the test rows
+// spliced under each file, and per-test running never existed — `data-file-check` has been on
+// files since `M192` U2, so moving those rows to Source's index (`S2`, `D1067`) cost display and
+// not capability.
 //
-// AND IT STILL SHOWS WHAT IT IS NOT LISTING. A file whose tests are all behind other doors is
-// named with a count rather than dropped, because a project pane that silently omits two thirds
-// of a project is how someone concludes the tool lost their tests.
+// EVERY `.tflw` FILE IS HERE, TESTS OR NOT (`D1062`). Six files in the sibling declare nothing —
+// they are the fragments every other file resolves against — and until this slice they were in no
+// list, so they could not be opened, read or edited anywhere on the page. A list of *tests* may
+// omit them. A *file tree* that omits them is lying about the project.
+//
+// THE DOOR IS A COUNT, NOT A FILTER (`D1063`). Rows are files now, so there is nothing left for a
+// door to narrow: the shape is byte-identical behind all four. What changes is the number on the
+// row and whether the row is dimmed — and dimming rather than hiding means a file never vanishes
+// under you, and *nothing here does load testing* stays a readable fact about a project rather
+// than an empty pane.
+//
+// THREE COUNTS, NOT TWO (`D1068`). `n` is *this many behind this door*, `0` is *has tests, none of
+// them here* and is dimmed, and `—` is *declares nothing by nature* and is not. Without the third,
+// `D1062` and `D1063` together would have greyed out the six most-depended-on files in the project
+// on every screen forever. A file that is **broken** keeps its `data-diagnostics` badge and is not
+// mistaken for a fragment.
+//
+// EXPANSION IS INFERRED AND IS NOT IN THE ADDRESS (`D1066`). The tree opens whole — 84 rows is the
+// measurement above, not a problem to be folded away — and what a reader collapses is theirs for
+// the session. The one thing that is forced is the open file's own path: an address naming a file
+// inside a folder somebody collapsed must still show it, or the link is broken.
 
-import { useMemo } from 'react';
-import type { Lens, ProjectView } from './contract';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import type { Lens, ProjectFile, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
 
 export interface SidebarProps {
   readonly project: ProjectView;
-  /** The door the reader came through — which tests this pane lists. */
+  /** The door the reader came through — which counts this pane shows. It narrows nothing. */
   readonly door: Lens;
+  /** The file the tabs are facing, from the address. Its folders are open whatever else is not. */
+  readonly openFile: string | null;
   /** The narrowing, owned by the shell so the strip can label the run it is about to start. */
   readonly files: ReadonlySet<string>;
   readonly onFiles: (files: ReadonlySet<string>) => void;
@@ -35,27 +56,78 @@ export interface SidebarProps {
  * fixture has five, so the fold's threshold is exercised only by the dogfood (§10). */
 export const FOLD_TAGS_ABOVE = 24;
 
-export function Sidebar({ project, door, files, onFiles, tags, onTags }: SidebarProps) {
-  /** The project as this door sees it: each file with only the tests and crawls behind the door,
-   *  plus how many of its tests are behind some other one. */
-  const inDoor = useMemo(
-    () =>
-      project.files
-        .map((f) => ({
-          file: f,
-          tests: f.tests.filter((t) => t.lenses.includes(door)),
-          crawls: f.crawls.filter((c) => c.lenses.includes(door)),
-          elsewhere: f.tests.filter((t) => !t.lenses.includes(door)).length,
-        }))
-        .filter((e) => e.tests.length > 0 || e.crawls.length > 0 || e.elsewhere > 0),
-    [project, door],
-  );
+/** One node of the tree. A directory has children and no file; a file has a file and no children. */
+interface TreeNode {
+  readonly name: string;
+  readonly path: string;
+  readonly children: TreeNode[];
+  file?: ProjectFile;
+}
+
+/**
+ * The paths as a tree. Sorted directories first, then files, each alphabetically — the order a
+ * file manager uses, and the one that keeps a folder's contents together on the screen.
+ *
+ * `path` on a directory node is its own path, because that is what a collapse is remembered by and
+ * what `D1069` will pass to a run: a folder means its files, expanded by the page, since `tflw run`
+ * refuses a directory by decision (`cli.ts:281`).
+ */
+export function buildTree(files: readonly ProjectFile[]): TreeNode[] {
+  const root: TreeNode = { name: '', path: '', children: [] };
+  for (const f of files) {
+    const parts = f.path.split('/');
+    let at = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const path = parts.slice(0, i + 1).join('/');
+      let next = at.children.find((c) => c.path === path && c.file === undefined);
+      if (!next) {
+        next = { name: parts[i]!, path, children: [] };
+        at.children.push(next);
+      }
+      at = next;
+    }
+    at.children.push({ name: parts[parts.length - 1]!, path: f.path, children: [], file: f });
+  }
+  const sort = (n: TreeNode): void => {
+    n.children.sort((a, b) => {
+      const dirA = a.file === undefined ? 0 : 1;
+      const dirB = b.file === undefined ? 0 : 1;
+      return dirA !== dirB ? dirA - dirB : a.name.localeCompare(b.name);
+    });
+    for (const c of n.children) sort(c);
+  };
+  sort(root);
+  return root.children;
+}
+
+/** Every file under a node, in tree order — what a folder *means* (`D1069`). */
+export function filesUnder(node: TreeNode): string[] {
+  return node.file ? [node.path] : node.children.flatMap(filesUnder);
+}
+
+export function Sidebar({ project, door, openFile, files, onFiles, tags, onTags }: SidebarProps) {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+
+  const tree = useMemo(() => buildTree(project.files), [project.files]);
+
+  /** The address wins over a collapse: opening a file inside a folder somebody closed opens it. */
+  useEffect(() => {
+    if (openFile === null) return;
+    const parts = openFile.split('/').slice(0, -1);
+    const ancestors = parts.map((_, i) => parts.slice(0, i + 1).join('/'));
+    setCollapsed((prev) => {
+      if (!ancestors.some((a) => prev.has(a))) return prev;
+      const next = new Set(prev);
+      for (const a of ancestors) next.delete(a);
+      return next;
+    });
+  }, [openFile]);
 
   const allTags = useMemo(() => {
     const seen = new Set<string>();
-    for (const e of inDoor) for (const t of e.tests) for (const tag of t.tags) seen.add(tag);
+    for (const f of project.files) for (const t of f.tests) if (t.lenses.includes(door)) for (const tag of t.tags) seen.add(tag);
     return [...seen].sort();
-  }, [inDoor]);
+  }, [project.files, door]);
 
   const toggle = <T,>(set: ReadonlySet<T>, v: T): Set<T> => {
     const next = new Set(set);
@@ -64,8 +136,53 @@ export function Sidebar({ project, door, files, onFiles, tags, onTags }: Sidebar
     return next;
   };
 
-  const testCount = inDoor.reduce((n, e) => n + e.tests.length + e.crawls.length, 0);
+  const testCount = project.files.reduce((n, f) => n + f.tests.filter((t) => t.lenses.includes(door)).length + f.crawls.filter((c) => c.lenses.includes(door)).length, 0);
   const otherCount = project.files.reduce((n, f) => n + f.tests.length, 0) - project.files.reduce((n, f) => n + f.tests.filter((t) => t.lenses.includes(door)).length, 0);
+
+  const renderNode = (node: TreeNode): ReactElement => {
+    if (node.file) {
+      const f = node.file;
+      const total = f.tests.length + f.crawls.length;
+      const behind = f.tests.filter((t) => t.lenses.includes(door)).length + f.crawls.filter((c) => c.lenses.includes(door)).length;
+      // `D1068`'s three states. `—` is not a zero: it says *declares nothing by nature*, which is
+      // a different fact from *has tests, none of them behind this door* and must not be dimmed.
+      const state = total === 0 ? 'fragment' : behind === 0 ? 'none' : 'some';
+      return (
+        <li key={f.path} data-file={f.path}>
+          <label className={`file-row${state === 'none' ? ' muted' : ''}`} title={f.path}>
+            <input type="checkbox" checked={files.has(f.path)} onChange={() => onFiles(toggle(files, f.path))} data-file-check={f.path} />
+            <code>{node.name}</code>
+            <span
+              className={`count${state === 'none' ? ' muted' : ''}`}
+              data-door-count={behind}
+              data-door-count-state={state}
+              title={state === 'fragment' ? 'declares no test — a fragment other files resolve against' : `${behind} behind ${DOOR_BY_ID[door].label}`}
+            >
+              {state === 'fragment' ? '—' : behind}
+            </span>
+            {f.diagnostics > 0 ? (
+              <span className="badge fail" data-diagnostics={f.diagnostics}>
+                {f.diagnostics} diagnostic{f.diagnostics === 1 ? '' : 's'}
+              </span>
+            ) : null}
+          </label>
+        </li>
+      );
+    }
+    const open = !collapsed.has(node.path);
+    const under = filesUnder(node);
+    return (
+      <li key={node.path} data-dir={node.path} data-dir-files={under.length}>
+        <button className="dir-row" onClick={() => setCollapsed(toggle(collapsed, node.path))} data-dir-toggle={node.path} aria-expanded={open} title={node.path}>
+          <span className="twisty" aria-hidden="true">
+            {open ? '▾' : '▸'}
+          </span>
+          {node.name}
+        </button>
+        {open ? <ul className="tree">{node.children.map(renderNode)}</ul> : null}
+      </li>
+    );
+  };
 
   return (
     <aside className="sidebar">
@@ -95,54 +212,8 @@ export function Sidebar({ project, door, files, onFiles, tags, onTags }: Sidebar
         </details>
       ) : null}
 
-      <ul className="files" data-files>
-        {inDoor.map(({ file: f, tests, crawls, elsewhere }) => (
-          <li key={f.path} data-file={f.path}>
-            <label className="file-row">
-              <input type="checkbox" checked={files.has(f.path)} onChange={() => onFiles(toggle(files, f.path))} data-file-check={f.path} />
-              <code>{f.path}</code>
-              {f.diagnostics > 0 ? (
-                <span className="badge fail" data-diagnostics={f.diagnostics}>
-                  {f.diagnostics} diagnostic{f.diagnostics === 1 ? '' : 's'}
-                </span>
-              ) : null}
-            </label>
-            <ul className="tests-in-file">
-              {crawls.map((c) => (
-                <li key={`crawl-${c.line}`} data-project-crawl={c.name} data-line={c.line}>
-                  <span className="muted ln">{c.line}</span> {c.name}
-                  <span className="badge">crawl</span>
-                </li>
-              ))}
-              {tests.map((t) => (
-                <li key={`${t.line}-${t.name}`} data-project-test={t.name} data-line={t.line} data-test-lenses={t.lenses.join(' ')}>
-                  <span className="muted ln">{t.line}</span> {t.name}
-                  {t.workload ? <span className="badge">workload</span> : null}
-                  {/* Every OTHER door this test is behind, named on the test itself — `D1043`'s
-                      "a test carrying several appears in several", made visible where it matters
-                      rather than asserted in a plan. */}
-                  {t.lenses
-                    .filter((l) => l !== door)
-                    .map((l) => (
-                      <span key={l} className="badge also" data-also={l}>
-                        {DOOR_BY_ID[l].label}
-                      </span>
-                    ))}
-                  {t.tags.map((tag) => (
-                    <span key={tag} className="tag">
-                      @{tag}
-                    </span>
-                  ))}
-                </li>
-              ))}
-              {elsewhere > 0 ? (
-                <li className="muted elsewhere" data-file-elsewhere={elsewhere}>
-                  {elsewhere} more behind {elsewhere === 1 ? 'another door' : 'other doors'}
-                </li>
-              ) : null}
-            </ul>
-          </li>
-        ))}
+      <ul className="files tree" data-files={project.files.length}>
+        {tree.map(renderNode)}
       </ul>
     </aside>
   );

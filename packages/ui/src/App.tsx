@@ -608,7 +608,7 @@ export function App() {
 
   return (
     <div className="app">
-      {project ? <Sidebar project={project} door={door} files={runFiles} onFiles={setRunFiles} tags={runTags} onTags={setRunTags} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+      {project ? <Sidebar project={project} door={door} openFile={file} files={runFiles} onFiles={setRunFiles} tags={runTags} onTags={setRunTags} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
       <main className="main">
         {project ? <DoorBar project={project} door={door} onDoor={setDoor} /> : null}
         {/* Above the tabs and below the doorbar (`M205` Q12): one strip per page, so every control
