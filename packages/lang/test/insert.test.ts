@@ -10,7 +10,7 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApiStep, buildClick, buildExpect, buildFill, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit } from '../src/index.js';
+import { buildApiStep, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildGive, buildLet, buildLog, buildPause, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -527,6 +527,135 @@ test('S3a: the expect builder writes the assertions the corpus writes', () => {
       '  expect body bytes matches file "fixtures/logo.png"\n',
     'the S3a vocabulary',
   );
+});
+
+test('S4a: the script statements build, and the naming rule stays in one place', () => {
+  // The eight statements a test is made of between its requests — **793 `capture`, 321 `let`, 184
+  // `call`, 71 `log`, 8 `give`, 4 `pause`** across the two corpora, which is more statements than
+  // there are requests, and **not one builder existed for any of them**. `header` and `csrf` have
+  // **0 occurrences in either corpus**: they are here on the language's word (`STEP_LENS` calls
+  // both the api door's) rather than on the corpus's, so this test is the only place they are
+  // written at all.
+  const ok = <T>(r: { ok: true; node: T } | { ok: false; reason: string }): T => {
+    assert.ok(r.ok, r.ok ? '' : r.reason);
+    return r.node;
+  };
+  const line = (node: Parameters<typeof print>[0]): string => {
+    const printed = print(node, { indent: 1 });
+    assert.equal(printed.ok, true, printed.reason);
+    return printed.text.trim();
+  };
+
+  assert.equal(line(ok(buildCapture({ subject: { kind: 'body', path: 'id' }, name: 'orderId' }))), 'capture body.id as orderId');
+  assert.equal(line(ok(buildCapture({ subject: { kind: 'header', name: 'x-request-id' }, name: 'traceId' }))), 'capture header "x-request-id" as traceId');
+  assert.equal(line(ok(buildLet({ name: 'email', value: 'unique email' }))), 'let email = unique email');
+  assert.equal(line(ok(buildLet({ name: 'token', value: 'base64 encode({secret})' }))), 'let token = base64 encode({secret})');
+  assert.equal(line(ok(buildLog({ level: 'info', message: 'created {orderId}', destination: null }))), 'log "created {orderId}"');
+  assert.equal(line(ok(buildLog({ level: 'warn', message: 'slow', destination: 'html' }))), 'log warn "slow" to html');
+  // A call statement is spelled as the call itself — `login(...)`, no keyword — which is what all
+  // 184 in the corpus write and what `printCallStmt` emits.
+  assert.equal(line(ok(buildCall({ name: 'create order', args: ['"Widget"', '2'] }))), 'create order("Widget", 2)');
+  assert.equal(line(ok(buildCall({ name: 'reset', args: [] }))), 'reset()');
+  assert.equal(line(ok(buildGive('{orderId}'))), 'give {orderId}');
+  assert.equal(line(ok(buildPause({ min: '500ms', max: '' }))), 'pause 500ms');
+  assert.equal(line(ok(buildPause({ min: '1s', max: '3s' }))), 'pause 1s to 3s');
+  // **`header` and `csrf` are not built here and cannot be.** `M210`'s plan lists both under this
+  // slice; the parser dispatches them only inside a `session` block of a `tflw.config` — `csrf`
+  // written in a test body is deliberately an unknown step — and `print` has no printer for either,
+  // which is consistent rather than a gap: no `.tflw` can hold one. Their editor belongs to Auth,
+  // not to Compose. The two lines below are what says so, and they fail if that ever changes.
+  const inABody = parseSource('test "t"\n  csrf body.csrfToken as header "X-CSRF-Token"\n');
+  assert.ok(inABody.diagnostics.some((d) => d.severity === 'error'), '`csrf` in a test body is not a step');
+
+  // Each refusal is about something that is **this builder's** to know. The spelling of a name is
+  // not: `print` refuses `let a b = 1` with a sentence naming the word, and a second copy of that
+  // rule here would be the drift this repository files findings against. So the refusal an author
+  // sees for a bad name comes from the printer — checked here, so that "left to the printer" is a
+  // property of the pair rather than a comment.
+  const refusals: readonly (readonly [() => { ok: boolean; reason?: string }, RegExp])[] = [
+    [() => buildLet({ name: 'a', value: '{ oops' }), /never closed/],
+    [() => buildCapture({ subject: { kind: 'value', ref: 'x' }, name: 'y' }), /already a value/],
+    [() => buildPause({ min: '3', max: '' }), /is not a length of time/],
+    [() => buildPause({ min: '3s', max: '1s' }), /counts up/],
+    [() => buildCall({ name: 'f', args: ['"a"', '{ oops'] }), /argument 2/],
+  ];
+  for (const [build, pattern] of refusals) {
+    const r = build();
+    assert.equal(r.ok, false, `expected a refusal matching ${String(pattern)}`);
+    assert.match(r.reason ?? '', pattern);
+  }
+  const named = print(ok(buildLet({ name: 'a b', value: '1' })));
+  assert.equal(named.ok, false, 'a name this language cannot write is the printer\'s refusal, not a second rule here');
+  assert.match(named.reason ?? '', /is not a variable name this language can write/);
+
+  // Every one of them in one file the write route would take.
+  acceptable(
+    'test "t"\n' +
+      '  let email = unique email\n' +
+
+      '  api POST /orders body { email: {email} }\n' +
+      '  capture body.id as orderId\n' +
+
+      '  create order("Widget", 2)\n' +
+      '  log warn "slow" to html\n' +
+      '  pause 1s to 3s\n',
+    'the S4a vocabulary',
+  );
+});
+
+test('S4a: a note is replaced where it is, and a note with air under it is still that statement\'s', () => {
+  // A comment is not in the tree, so this is the one edit in `insert.ts` made of lines. `D1077`
+  // gives a note an owner — the next line of code — and that owner gives it an address: the same
+  // index pair a step has. The walk is `readNotes`' rule backwards, **blanks crossed**, which is
+  // not an edge case: 127 of the corpus's 419 blocks have a blank line under them.
+  const file = [
+    'test "t"',
+    '  # the note on the first request',
+    '  # and its second line',
+    '  api GET /orders',
+    '  expect status equals 200',
+    '',
+    '  # a note with air under it',
+    '',
+    '  api GET /orders/1',
+    '  expect status equals 200',
+    '',
+  ].join('\n');
+
+  const rewritten = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 0 }, lines: ['one line now'] });
+  assert.equal(rewritten.ok, true, rewritten.ok ? '' : rewritten.reason);
+  assert.equal(
+    rewritten.text,
+    ['test "t"', '  # one line now', '  api GET /orders', '  expect status equals 200', '', '  # a note with air under it', '', '  api GET /orders/1', '  expect status equals 200', ''].join('\n'),
+  );
+
+  // The one with a blank line between it and its statement: the block and the air are what the
+  // note is, so replacing it replaces both, and the statement does not move away from its note.
+  const across = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 2 }, lines: ['still owned by the request below'] });
+  assert.equal(across.ok, true, across.ok ? '' : across.reason);
+  assert.match(across.text ?? '', /^ {2}# still owned by the request below\n {2}api GET \/orders\/1$/m);
+  // …and the block it replaced is **gone**. Without this line the whole blank-crossing walk can be
+  // deleted and this test stays green: the new note lands directly above the statement either way,
+  // and the old one simply survives above it as a second note nobody asked for. Found by mutation.
+  assert.doesNotMatch(across.text ?? '', /a note with air under it/, 'the block that owned it was replaced, not joined');
+  assert.match(across.text ?? '', /^ {2}# the note on the first request$/m, 'and the other note is untouched');
+
+  // A note on a statement that has none is an insertion; an empty list is a removal.
+  const added = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 1 }, lines: ['why 200 and not 201'] });
+  assert.equal(added.ok, true, added.ok ? '' : added.reason);
+  assert.match(added.text ?? '', /^ {2}# why 200 and not 201\n {2}expect status equals 200$/m);
+  const removed = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 0 }, lines: [] });
+  assert.equal(removed.ok, true, removed.ok ? '' : removed.reason);
+  assert.doesNotMatch(removed.text ?? '', /the note on the first request/);
+  assert.match(removed.text ?? '', /^test "t"\n {2}api GET \/orders$/m);
+  assert.match(removed.text ?? '', /a note with air under it/, 'and only that note went');
+
+  // A blank line inside a note is a blank comment line, not a hole in the file: `# ` with nothing
+  // after it is still a comment, and a bare newline there would end the block and hand the second
+  // half to the statement below.
+  const spaced = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 0 }, lines: ['first', '', 'third'] });
+  assert.equal(spaced.ok, true, spaced.ok ? '' : spaced.reason);
+  assert.match(spaced.text ?? '', /^ {2}# first\n {2}#\n {2}# third\n {2}api GET \/orders$/m);
 });
 
 test('A3-5: the browser builders produce a file the write route would accept', () => {

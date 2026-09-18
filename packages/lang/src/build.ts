@@ -12,7 +12,7 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { ApiBody, ApiHeader, ApiStep, ClickKind, ClickStmt, ExpectStmt, FillStmt, FindingSeverity, HttpMethod, Locator, LocatorKind, Matcher, MatcherName, OpenStmt, PathSegment, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, WithinBlock, Workload } from './ast.js';
+import type { ApiBody, ApiHeader, ApiStep, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CsrfStmt, ExpectStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, OpenStmt, PathSegment, PauseStmt, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, WithinBlock, Workload } from './ast.js';
 import { quantifiable } from './ast.js';
 import { parse as parseTokens, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
@@ -512,6 +512,116 @@ export function buildExpect(spec: ExpectSpec): BuildResult<ExpectStmt> {
 
   const matcher: Matcher = { type: 'Matcher', name: spec.matcher, negated: spec.negated === true, value, span: SYNTHETIC, ...extra, ...(spec.severityFloor === undefined ? {} : { severityFloor: spec.severityFloor }) };
   return { ok: true, node: { type: 'ExpectStmt', soft: spec.soft, quantifier: spec.quantifier, subject: subject.node, matcher, masks: [], span: SYNTHETIC } };
+}
+
+/**
+ * THE SCRIPT STATEMENTS (`M210` `S4a`) — the six a test body has that are not a request and not an
+ * assertion, and that no builder existed for at all.
+ *
+ * They are what a test does *between* its requests, and the corpus is mostly made of them: **793
+ * `capture`, 321 `let`, 184 `call`, 71 `log`, 8 `give`, 4 `pause`** across the two corpora — more
+ * statements than there are requests.
+ *
+ * **`header` AND `csrf` ARE NOT HERE, AND THE REASON IS A FACT ABOUT THE GRAMMAR RATHER THAN A
+ * SCOPE DECISION.** `M210`'s plan lists both under this slice and they have **0 occurrences in
+ * either corpus's `.tflw` files** — because the parser dispatches them only inside a `session`
+ * block of a `tflw.config`, and says so where it does: `header "X" is "Y"` means something
+ * different for a credential than for a request, and `csrf from …` "means nothing at all outside a
+ * session". A builder for a node no test body can hold would be a branch nothing can reach, which
+ * is the shape this repository refuses. `STEP_LENS` calling both the api door's is right about the
+ * *lens* and misleading read as a list of what a body may contain.
+ *
+ * **THE NAMING RULE IS NOT RE-STATED HERE, DELIBERATELY.** `let`, `capture` and a call's name must
+ * be words this language can write back, and `print` already refuses each with a sentence naming
+ * the offending word. A second copy of that rule in this file is the drift this repository files
+ * findings against — so these builders validate what is *theirs* (a value that will not parse, a
+ * duration that is not one, a subject that does not fit) and leave the spelling to the printer,
+ * whose refusal reaches the same field either way.
+ */
+export interface CaptureSpec {
+  readonly subject: SubjectSpec;
+  /** The variable this binds. */
+  readonly name: string;
+}
+
+export function buildCapture(spec: CaptureSpec): BuildResult<CaptureStmt> {
+  const subject = buildSubject(spec.subject);
+  if (!subject.ok) return subject;
+  // `D130` — a capture reads a response, so a `{variable}` is not a thing it can read. The printer
+  // says so too; saying it here means the form can show it before the write rather than after.
+  if (subject.node.type === 'ValueSubject') return bad('`capture` reads a value out of a response — a `{variable}` is already a value');
+  return { ok: true, node: { type: 'CaptureStmt', subject: subject.node, name: spec.name, span: SYNTHETIC } };
+}
+
+export interface LetSpec {
+  readonly name: string;
+  /** As typed, and parsed as a value — which is the whole value grammar: **23 different kinds**
+   *  across the corpus's 321 `let`s, more generators and transforms than literals. A structured
+   *  editor for that is a second parser; a text field beside the language's own is not. */
+  readonly value: string;
+}
+
+export function buildLet(spec: LetSpec): BuildResult<LetStmt> {
+  const value = parseValueText(spec.value);
+  if (!value.ok) return bad(value.reason);
+  return { ok: true, node: { type: 'LetStmt', name: spec.name, value: value.node, span: SYNTHETIC } };
+}
+
+export interface LogSpec {
+  readonly level: LogLevel;
+  readonly message: string;
+  readonly destination: LogDestination | null;
+}
+
+export function buildLog(spec: LogSpec): BuildResult<LogStmt> {
+  return { ok: true, node: { type: 'LogStmt', level: spec.level, message: stringLit(spec.message), destination: spec.destination, span: SYNTHETIC } };
+}
+
+export interface CallSpec {
+  readonly name: string;
+  /** Each argument as typed — 160 of the corpus's 184 calls take two, 16 take none. */
+  readonly args: readonly string[];
+}
+
+export function buildCall(spec: CallSpec): BuildResult<CallStmt> {
+  const args: Value[] = [];
+  for (const [i, arg] of spec.args.entries()) {
+    const parsed = parseValueText(arg);
+    if (!parsed.ok) return bad(`argument ${i + 1}: ${parsed.reason}`);
+    args.push(parsed.node);
+  }
+  const call: CallExpr = { type: 'CallExpr', name: spec.name, args, span: SYNTHETIC };
+  return { ok: true, node: { type: 'CallStmt', call, span: SYNTHETIC } };
+}
+
+export function buildGive(value: string): BuildResult<GiveStmt> {
+  const parsed = parseValueText(value);
+  if (!parsed.ok) return bad(parsed.reason);
+  return { ok: true, node: { type: 'GiveStmt', value: parsed.node, span: SYNTHETIC } };
+}
+
+export interface PauseSpec {
+  /** A duration as the language writes one (`500ms`, `2s`) — read by the value parser rather than
+   *  by a number field and a unit, so `pause 1m` is one thing to type and one thing to store. */
+  readonly min: string;
+  /** The upper bound of `pause A to B`, or blank for a fixed pause — which all 4 in the corpus are. */
+  readonly max: string;
+}
+
+export function buildPause(spec: PauseSpec): BuildResult<PauseStmt> {
+  const ms = (text: string): number | string => {
+    const parsed = parseValueText(text);
+    if (!parsed.ok) return parsed.reason;
+    if (parsed.node.type !== 'DurationLit') return `\`${text.trim()}\` is not a length of time — write it as \`500ms\`, \`2s\` or \`1m\``;
+    return parsed.node.ms;
+  };
+  const min = ms(spec.min);
+  if (typeof min === 'string') return bad(min);
+  if (spec.max.trim() === '') return { ok: true, node: { type: 'PauseStmt', minMs: min, maxMs: null, span: SYNTHETIC } };
+  const max = ms(spec.max);
+  if (typeof max === 'string') return bad(max);
+  if (max < min) return bad('a pause counts up — its second length cannot be shorter than its first');
+  return { ok: true, node: { type: 'PauseStmt', minMs: min, maxMs: max, span: SYNTHETIC } };
 }
 
 /** Every locator kind the grammar has, for a form's dropdown — the parser's own list, re-exported
