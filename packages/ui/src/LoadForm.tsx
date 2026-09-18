@@ -11,9 +11,9 @@
 // (`D985`), so a form that hid its own output would be asking the author to trust a projection
 // over the thing itself. The preview is the exact bytes the PUT will carry.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { buildThreshold, buildTest, buildWorkload, insertIntoSource, type Insertion, type StageSpec, type ThresholdSpec, type WorkloadSpec } from '@tflw/lang';
-import { getFile, putFile, type FileView } from './api';
+import { putFile, type FileView } from './api';
 import { TabStrip } from './TabStrip';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
@@ -21,6 +21,20 @@ import { diagnose } from './diagnose';
 import type { ProjectView } from './contract';
 
 export interface LoadFormProps {
+  /**
+   * The file every tab here is about, **read by the shell** (`M210` `S1`).
+   *
+   * All four doors used to run this identical read — `getFile(path)` into a `useState`, refreshed
+   * on a path change — which is the four-way duplicate `M206` `S1` removed for the *path* and left
+   * in place for the *bytes*. `D1081` is what forced it: the explorer draws the open file's
+   * outline, so the shell needs the text too, and a fifth copy of the same read was the one
+   * outcome worth refusing outright.
+   */
+  readonly file: FileView | null;
+  /** Why there is no file, when there is no file — a read failure has to be sayable somewhere. */
+  readonly fileProblem: string | null;
+  /** A write lands here: the shell's copy moves forward so every reader of it agrees at once. */
+  readonly onFileWritten: (file: FileView) => void;
   readonly project: ProjectView;
   /** Called after a successful write, so the shell can re-read the project it just changed. */
   readonly onWritten: (path: string) => void;
@@ -71,9 +85,8 @@ const EMPTY_THRESHOLD: ThresholdRow = { metric: 'duration', percentile: 95, op: 
 /** Seconds in the form, milliseconds in the language — one conversion, stated once. */
 const secondsToMs = (s: number): number => Math.round(s * 1000);
 
-export function LoadForm({ project, onWritten, filePath, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: LoadFormProps) {
+export function LoadForm({ project, onWritten, filePath, file, fileProblem, onFileWritten, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: LoadFormProps) {
   const path = filePath;
-  const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
   // Off by default, deliberately: a threshold adds a judgement to a test, a workload line changes
@@ -92,16 +105,12 @@ export function LoadForm({ project, onWritten, filePath, tab, onTab, runPane, ru
   const [unit, setUnit] = useState<'users' | 'rps'>('users');
   const [thresholds, setThresholds] = useState<readonly ThresholdRow[]>([EMPTY_THRESHOLD]);
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [ownProblem, setProblem] = useState<string | null>(null);
+  /** A read failure is the shell's to discover and this pane's to say — there is no third place a
+   *  reader looks, and a form that stayed silent about it would show an empty file as an empty
+   *  form, which is the `M210` §0 defect wearing a different hat. */
+  const problem = ownProblem ?? fileProblem;
   const [wrote, setWrote] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!path) return;
-    setFile(null);
-    getFile(path)
-      .then(setFile)
-      .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
-  }, [path]);
 
   /** The tests in the chosen file, for the "add to an existing test" mode. Every test, not only
    *  the ones already behind LOAD: `D1044` is exactly the case where an API test gains a
@@ -191,7 +200,7 @@ export function LoadForm({ project, onWritten, filePath, tab, onTab, runPane, ru
       setProblem(res.status === 409 ? `${res.error} — reopen the file and apply this again` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
       return;
     }
-    setFile({ path, text: pending.text, etag: res.etag });
+    onFileWritten({ path, text: pending.text, etag: res.etag });
     setWrote(path);
     onWritten(path);
   }, [file, pending, path, onWritten]);

@@ -7,8 +7,8 @@
 // `#/load` is a link to the LOAD door of whatever project this server is serving.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, reportFileUrl, startRun, subscribe } from './api';
-import type { DocumentView } from './api';
+import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getFile, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, reportFileUrl, startRun, subscribe } from './api';
+import type { DocumentView, FileView } from './api';
 import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
 import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
@@ -28,6 +28,7 @@ import { RunList, type Selection } from './RunList';
 import { RunStrip } from './RunStrip';
 import { matchingFiles, parseQuery } from './search';
 import { Sidebar } from './Sidebar';
+import { fileOutline } from './outline';
 
 interface LiveRun {
   readonly id: string;
@@ -227,6 +228,20 @@ export function App() {
   }, []);
 
   const [noProject, setNoProject] = useState(false);
+
+  /**
+   * The open file's bytes, read **once for the page** (`M210` `S1`).
+   *
+   * All four doors ran this identical read into their own `useState` — the same four-way duplicate
+   * `M206` `S1` removed for the *path* and left behind for the *text*. `D1081` is what made it
+   * untenable rather than merely untidy: the explorer draws the open file's outline, so the shell
+   * needs the bytes too, and adding a fifth copy of one `GET` is the outcome worth refusing.
+   *
+   * It is the shell's for `S5a`'s reason as well — the strip unmounts panels, so a read living
+   * inside one is re-issued on every tab trip, and the file is the same file across all five.
+   */
+  const [openFileView, setOpenFileView] = useState<FileView | null>(null);
+  const [fileProblem, setFileProblem] = useState<string | null>(null);
 
   const readProjectView = useCallback(() => {
     return getProject()
@@ -527,6 +542,45 @@ export function App() {
     return req;
   }, [env, workers, query, selection, project]);
 
+  /**
+   * The file the strip is about, resolved once (`M206` `S1`, `S2a`).
+   *
+   * `fileFromHash` reports what the address says and never asks the project whether it is true, so
+   * somebody has to fall back when a hash names a file that has been renamed or deleted. That was
+   * each form's job in `S1` — the same expression in two places, which is the shape `S1` was
+   * removing — and it is the shell's now, because the shell is what hands the file to the panels.
+   *
+   * **It sits above the landing's early return since `M210` `S1`**, and that placement is the
+   * hook rule rather than a preference: the read below is an effect, and an effect written under a
+   * conditional `return` changes the hook count between two renders. `configPanel`'s own `useMemo`
+   * was written below one and every door test timed out at once (`M208` `S2`); this is the same
+   * trap with a longer fuse, because the landing renders first on a cold page.
+   */
+  const filePaths = project?.files.map((f) => f.path) ?? [];
+  const path = file !== null && filePaths.includes(file) ? file : (filePaths[0] ?? '');
+
+  /** One read per open file, for the whole page — see `openFileView`. A path of `''` is *no
+   *  project yet*, which is a wait rather than a failure and asks for nothing. */
+  useEffect(() => {
+    if (!path) return;
+    let live = true;
+    setOpenFileView(null);
+    setFileProblem(null);
+    getFile(path)
+      .then((f) => { if (live) setOpenFileView(f); })
+      .catch((e: unknown) => { if (live) setFileProblem(e instanceof Error ? e.message : String(e)); });
+    return () => { live = false; };
+  }, [path]);
+
+  /**
+   * The open file, read (`D1081`). **One parse for the page**, beside the one read.
+   *
+   * The explorer and the API door's Compose pane are both readers of it; deriving it twice would be
+   * two answers to *what does this file hold*, which is the duplicate class this shell has removed
+   * three times already (the path in `M206` `S1`, the config in `S2a`, the bytes above).
+   */
+  const outline = useMemo(() => (openFileView === null ? null : fileOutline(openFileView.path, openFileView.text)), [openFileView]);
+
   if (door === null || noProject) {
     // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back
     // to the landing, which is where a project can be made (`A0-5`).
@@ -601,16 +655,6 @@ export function App() {
     </>
   );
 
-  /**
-   * The file the strip is about, resolved once (`M206` `S1`, `S2a`).
-   *
-   * `fileFromHash` reports what the address says and never asks the project whether it is true, so
-   * somebody has to fall back when a hash names a file that has been renamed or deleted. That was
-   * each form's job in `S1` — the same expression in two places, which is the shape `S1` was
-   * removing — and it is the shell's now, because the shell is what hands the file to the panels.
-   */
-  const filePaths = project?.files.map((f) => f.path) ?? [];
-  const path = file !== null && filePaths.includes(file) ? file : (filePaths[0] ?? '');
 
   /**
    * The strip's two **project-fact** tabs, built here and handed to whichever door is open.
@@ -661,7 +705,7 @@ export function App() {
 
   return (
     <div className="app">
-      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} focusLine={focusLine} onLine={(line) => setTab('compose', line)} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
       <main className="main">
         {project ? <DoorBar project={project} door={door} onDoor={setDoor} /> : null}
         {/* Above the tabs and below the doorbar (`M205` Q12): one strip per page, so every control
@@ -693,6 +737,9 @@ export function App() {
               void readProjectView();
             }}
             filePath={path}
+            file={openFileView}
+            fileProblem={fileProblem}
+            onFileWritten={setOpenFileView}
             tab={tab}
             onTab={setTab}
             runPane={runPane}
@@ -709,6 +756,10 @@ export function App() {
             tab={tab}
             onTab={setTab}
             path={path}
+            file={openFileView}
+            outline={outline}
+            fileProblem={fileProblem}
+            onFileWritten={setOpenFileView}
             focusLine={focusLine}
             authPanel={authPanel}
             configPanel={configPanel}
@@ -722,6 +773,9 @@ export function App() {
             project={project}
             onWritten={() => void readProjectView()}
             filePath={path}
+            file={openFileView}
+            fileProblem={fileProblem}
+            onFileWritten={setOpenFileView}
             tab={tab}
             onTab={setTab}
             runPane={runPane}
@@ -736,6 +790,9 @@ export function App() {
             project={project}
             onWritten={() => void readProjectView()}
             filePath={path}
+            file={openFileView}
+            fileProblem={fileProblem}
+            onFileWritten={setOpenFileView}
             tab={tab}
             onTab={setTab}
             runPane={runPane}

@@ -34,7 +34,7 @@ import {
   parseSource,
   type Step,
 } from '@tflw/lang';
-import { getFile, pickLocators, putFile, type FileView } from './api';
+import { pickLocators, putFile, type FileView } from './api';
 import { TabStrip } from './TabStrip';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
@@ -42,6 +42,20 @@ import { diagnose } from './diagnose';
 import type { ProjectView } from './contract';
 
 export interface BrowserFormProps {
+  /**
+   * The file every tab here is about, **read by the shell** (`M210` `S1`).
+   *
+   * All four doors used to run this identical read — `getFile(path)` into a `useState`, refreshed
+   * on a path change — which is the four-way duplicate `M206` `S1` removed for the *path* and left
+   * in place for the *bytes*. `D1081` is what forced it: the explorer draws the open file's
+   * outline, so the shell needs the text too, and a fifth copy of the same read was the one
+   * outcome worth refusing outright.
+   */
+  readonly file: FileView | null;
+  /** Why there is no file, when there is no file — a read failure has to be sayable somewhere. */
+  readonly fileProblem: string | null;
+  /** A write lands here: the shell's copy moves forward so every reader of it agrees at once. */
+  readonly onFileWritten: (file: FileView) => void;
   readonly project: ProjectView;
   readonly onWritten: (path: string) => void;
   /** The file this form is about (`M206` `Q4`) — from the address, resolved by the shell. */
@@ -110,9 +124,8 @@ export function locatorFromPickLine(line: string): LocatorSpec | null {
   return { kind: step.locator.kind, value: step.locator.value.value };
 }
 
-export function BrowserForm({ project, onWritten, filePath, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: BrowserFormProps) {
+export function BrowserForm({ project, onWritten, filePath, file, fileProblem, onFileWritten, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: BrowserFormProps) {
   const path = filePath;
-  const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
   const [name, setName] = useState('the checkout page works');
@@ -123,20 +136,16 @@ export function BrowserForm({ project, onWritten, filePath, tab, onTab, runPane,
   const [frame, setFrame] = useState(false);
   const [rows, setRows] = useState<readonly Row[]>([EMPTY_ROW]);
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [ownProblem, setProblem] = useState<string | null>(null);
+  /** A read failure is the shell's to discover and this pane's to say — there is no third place a
+   *  reader looks, and a form that stayed silent about it would show an empty file as an empty
+   *  form, which is the `M210` §0 defect wearing a different hat. */
+  const problem = ownProblem ?? fileProblem;
   const [wrote, setWrote] = useState<string | null>(null);
   /** Which field a running pick session will fill — a row index as a string, or `'scope'`. */
   const [picking, setPicking] = useState<string | null>(null);
   const [picked, setPicked] = useState<readonly LocatorSpec[]>([]);
   const [stopPick, setStopPick] = useState<{ stop: () => void } | null>(null);
-
-  useEffect(() => {
-    if (!path) return;
-    setFile(null);
-    getFile(path)
-      .then(setFile)
-      .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
-  }, [path]);
 
   const testsInFile = useMemo(() => project.files.find((f) => f.path === path)?.tests ?? [], [project, path]);
 
@@ -270,7 +279,7 @@ export function BrowserForm({ project, onWritten, filePath, tab, onTab, runPane,
       setProblem(res.status === 409 ? `${res.error} — reopen the file and apply this again` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
       return;
     }
-    setFile({ path, text: pending.text, etag: res.etag });
+    onFileWritten({ path, text: pending.text, etag: res.etag });
     setWrote(path);
     onWritten(path);
   }, [file, pending, path, onWritten]);

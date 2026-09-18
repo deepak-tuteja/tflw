@@ -27,9 +27,9 @@
 // Config tab is the author making it**, so the repair was reachable from this page while the prose
 // sent the reader somewhere else to do it by hand.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { buildApiStep, buildExpect, buildTest, insertIntoSource, type ExpectSpec, type HttpMethod, type Insertion, type MatcherName } from '@tflw/lang';
-import { getFile, putFile, type FileView } from './api';
+import { putFile, type FileView } from './api';
 import { TabStrip } from './TabStrip';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
@@ -37,6 +37,20 @@ import { diagnose } from './diagnose';
 import type { ProjectView } from './contract';
 
 export interface ScanFormProps {
+  /**
+   * The file every tab here is about, **read by the shell** (`M210` `S1`).
+   *
+   * All four doors used to run this identical read — `getFile(path)` into a `useState`, refreshed
+   * on a path change — which is the four-way duplicate `M206` `S1` removed for the *path* and left
+   * in place for the *bytes*. `D1081` is what forced it: the explorer draws the open file's
+   * outline, so the shell needs the text too, and a fifth copy of the same read was the one
+   * outcome worth refusing outright.
+   */
+  readonly file: FileView | null;
+  /** Why there is no file, when there is no file — a read failure has to be sayable somewhere. */
+  readonly fileProblem: string | null;
+  /** A write lands here: the shell's copy moves forward so every reader of it agrees at once. */
+  readonly onFileWritten: (file: FileView) => void;
   readonly project: ProjectView;
   readonly onWritten: (path: string) => void;
   /** The file this form is about (`M206` `Q4`) — from the address, resolved by the shell. */
@@ -70,9 +84,8 @@ const FAMILIES: ReadonlyArray<readonly [MatcherName, string, string]> = [
 const FLOORS = ['', 'minor', 'moderate', 'serious', 'critical'] as const;
 type Floor = (typeof FLOORS)[number];
 
-export function ScanForm({ project, onWritten, filePath, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: ScanFormProps) {
+export function ScanForm({ project, onWritten, filePath, file, fileProblem, onFileWritten, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: ScanFormProps) {
   const path = filePath;
-  const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('existing');
   const [testName, setTestName] = useState('');
   const [family, setFamily] = useState<MatcherName>('hasNoSecurityViolations');
@@ -87,16 +100,12 @@ export function ScanForm({ project, onWritten, filePath, tab, onTab, runPane, ru
   const [reqPath, setReqPath] = useState('/health');
   const [session, setSession] = useState('');
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [ownProblem, setProblem] = useState<string | null>(null);
+  /** A read failure is the shell's to discover and this pane's to say — there is no third place a
+   *  reader looks, and a form that stayed silent about it would show an empty file as an empty
+   *  form, which is the `M210` §0 defect wearing a different hat. */
+  const problem = ownProblem ?? fileProblem;
   const [wrote, setWrote] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!path) return;
-    setFile(null);
-    getFile(path)
-      .then(setFile)
-      .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
-  }, [path]);
 
   const testsInFile = useMemo(() => project.files.find((f) => f.path === path)?.tests ?? [], [project, path]);
 
@@ -171,7 +180,7 @@ export function ScanForm({ project, onWritten, filePath, tab, onTab, runPane, ru
       setProblem(res.status === 409 ? `${res.error} — reopen the file and apply this again` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
       return;
     }
-    setFile({ path, text: pending.text, etag: res.etag });
+    onFileWritten({ path, text: pending.text, etag: res.etag });
     setWrote(path);
     onWritten(path);
   }, [file, pending, path, onWritten]);
