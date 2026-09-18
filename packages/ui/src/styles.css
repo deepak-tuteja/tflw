@@ -345,6 +345,14 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    The control keeps its natural height and takes its width from the column's cross-axis stretch.
    A new column-direction container under `.authoring` needs a line like this one. */
 .request-line label > input, .request-line label > select { flex: none; }
+/* **`M210` `S1` is the "new column-direction container" the line above predicted, and the first
+   draft walked straight into it.** The reader's field row was called `.request-line` to begin with,
+   inherited this fix by accident, and lost it the moment it was renamed to `.request-fields` — five
+   controls at 130 px against their siblings' 26, on a page that had been correct one edit earlier.
+   The comment above described the hazard, named the fix, and had been applied in one place and not
+   the next, which is invisible to every test that asserts what code does rather than what a comment
+   promised. Gated now, off the rendered box, in `ui-page.test.ts`. */
+.request-fields .field > input, .request-fields .field > select { flex: none; }
 .headers-form, .body-form, .expects-form, .fields { display: grid; gap: 6px; margin-top: 10px; }
 .headers-form .row, .expects-form .row, .fields .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .body-form { align-items: start; }
@@ -381,3 +389,61 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .authoring-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .authoring-actions .run { background: var(--accent); color: #08121c; border: none; border-radius: 4px; padding: 5px 12px; font: inherit; font-weight: 600; cursor: pointer; }
 .authoring-actions .run:disabled { background: var(--line); color: var(--muted); cursor: default; }
+
+/* `M210` `S1` — Compose reads (`D1072`). The outline in the explorer, and the request card.
+ *
+ * THE METHOD IS A COLOUR AND NOT A WORD ONLY. `GET` and `DELETE` are the two a reader has to tell
+ * apart at a glance in a rail of thirteen, and they are the two whose consequences differ most.
+ * Hue carries the quantity that matters; the word is still there for anybody who cannot see it. */
+.outline .outline-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; width: 100%; background: none; border: 0; border-radius: 3px; color: inherit; font: inherit; text-align: left; }
+.outline .outline-row:hover { background: rgba(108, 182, 255, 0.07); }
+.outline .outline-row.on { background: rgba(108, 182, 255, 0.14); box-shadow: inset 2px 0 0 var(--accent); }
+/* Depth 7 is ~186 px of label room, measured. A request path fits; a test name does not, and the
+ * one that does not is ellipsised rather than wrapped — `M205` measured 378 of 389 wrapped rows at
+ * 647 px tall, which is the failure this pane spent a round escaping. */
+.outline .outline-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.outline .ln { font-family: var(--mono); font-size: 11px; }
+.method { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+.m-get { color: #6cb6ff; }
+.m-post { color: #7ee787; }
+.m-put, .m-patch { color: #e3b341; }
+.m-delete { color: #ff7b72; }
+.m-head, .m-options { color: var(--muted); }
+
+.compose-pane .authoring-head code { font-size: 15px; }
+.test-band { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; background: var(--panel); }
+.band-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.band-what { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.band-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; }
+.band-facts > li { color: var(--fg); }
+.band-preamble, .file-facts { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.file-facts ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--muted); }
+
+.request-card { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: var(--panel); }
+.request-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.request-path { font-size: 15px; }
+.request-card h4 { margin: 12px 0 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+/* The browser's own `ul` padding is a 40 px indent nobody asked for — visible on the headers list,
+ * which then hung a third of the way across the card away from the heading above it. */
+.request-card ul, .band-facts, .file-facts ul { list-style: none; margin: 0; padding: 0; }
+.headers-form .row { display: flex; gap: 12px; align-items: baseline; }
+.request-fields { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.request-fields .field { flex: 1 1 140px; }
+.field { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12px; }
+.field input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
+/* A disabled control is what `D1082` means on screen: this slice shows everything and types
+ * nothing, so the pane has to LOOK unwritable rather than merely refuse a keystroke. */
+.field input:disabled { color: var(--fg); opacity: 0.75; cursor: default; }
+.stmts { list-style: none; margin: 0; padding: 0; }
+.stmt-line { display: flex; align-items: baseline; gap: 8px; }
+.stmt-text { white-space: pre-wrap; }
+/* A step from another door, in position (`D1078`). Dimmed and rule-marked, never absent: the 12
+ * tests that carry two doors' work are the corpus's LARGEST, and drawing them with holes through
+ * the middle would remove exactly the ordering a reader came for. */
+.stmt.locked { opacity: 0.6; border-left: 2px solid var(--line); padding-left: 6px; }
+.note { margin: 2px 0; font-size: 12px; }
+.note summary { cursor: pointer; }
+.note .count { font-family: var(--mono); font-size: 11px; }
+.note-body { margin: 4px 0 0; white-space: pre-wrap; font-size: 12px; }
+.legacy { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 10px; }
+.legacy > summary { cursor: pointer; font-size: 13px; }

@@ -43,6 +43,22 @@
 // runs whole files, because no flag matches a name. The page says which of the two it is doing —
 // that sentence is `D1064`'s accepted cost, and `search.ts` is where the rule lives.
 //
+// THE OPEN FILE'S ROW OPENS ONTO ITS OUTLINE (`M210` `S1`, `D1081`). Under one file — the one the
+// tabs are facing — the tree goes on: its hooks and tests, and under each of those its requests.
+// The outline lives here rather than in a column of its own because the Compose pane is 1080 px
+// and its expectation row already uses 1046 of them, and because clicking a request then IS the
+// gesture that clicks a file. Its cost was forecast in the plan's §1 and then **measured on the
+// built page**, which is the version worth keeping: on `tests/mixed/storefront.tflw` at 1440×900,
+// a request label has at most 184 px and **2 of 36 are ellipsised**, while **16 of 17 declaration
+// labels are** — the forecast said request rows fit and test rows truncate, and both halves hold.
+// That is `M205`'s already-measured wrapping problem (378 of 389 rows at 647 px tall) arriving in a
+// new place rather than a new one, and it is ellipsised rather than wrapped for the same reason:
+// the full name is on the row's `title` and in the band above the card, so nothing is lost but
+// width. Nothing overflows the pane horizontally at any depth.
+//
+// ONLY THE OPEN FILE EXPANDS, and that is what keeps it affordable: an outline under all 84 rows is
+// the 26-screen sidebar this pane spent three rounds escaping.
+//
 // EXPANSION IS INFERRED AND IS NOT IN THE ADDRESS (`D1066`). The tree opens whole — 84 rows is the
 // measurement above, not a problem to be folded away — and what a reader collapses is theirs for
 // the session. The one thing that is forced is the open file's own path: an address naming a file
@@ -52,6 +68,7 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import type { Lens, ProjectFile, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
 import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
+import type { FileOutline, OutlineHook, OutlineTest } from './outline';
 
 export interface SidebarProps {
   readonly project: ProjectView;
@@ -71,6 +88,14 @@ export interface SidebarProps {
   /** What the search box holds — in the address, like the selection (`D1066`). */
   readonly query: string;
   readonly onQuery: (query: string) => void;
+  /** The open file, read (`D1081`). `null` while the shell is reading it, or when the address
+   *  names no file — the row then draws as it always has. */
+  readonly outline: FileOutline | null;
+  /** Which request the address is pointing at (`D1080`) — a line, not an identity. */
+  readonly focusLine: number | null;
+  /** Clicking a request writes `L<line>` and nothing else: it does not change the file, because
+   *  the request is *in* the file the tabs already face. */
+  readonly onLine: (line: number) => void;
 }
 
 /** Above this many tags the cloud opens folded: `M192` U7 found the dogfood's 90 tags pushing all
@@ -127,7 +152,7 @@ export function filesUnder(node: TreeNode): string[] {
   return node.file ? [node.path] : node.children.flatMap(filesUnder);
 }
 
-export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery }: SidebarProps) {
+export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, focusLine, onLine }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   /** Where a `shift` range starts. A gesture detail and not a fact about the project, so it is
    *  neither in the address nor anywhere durable — `D1066` addresses what changes a run. */
@@ -201,6 +226,58 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
     setAnchor(paths[0] ?? null);
   };
 
+  /**
+   * The open file's own tree (`D1081`) — its hooks and tests, and under each the requests.
+   *
+   * It is the SAME LIST `SourcePanel`'s index draws (`D1067`) and a different question: the index
+   * answers *what does this file declare*, in the file's own order, for a reader of the text. This
+   * answers *what can Compose put on screen*, which is one level lower, because `D1073`'s unit is a
+   * request. Neither is derived from the other and both are derived from the file, so there is no
+   * copy here to go stale — this one is parsed in the browser from the bytes the shell read.
+   *
+   * A declaration with no request still gets a row. A browser test seen from here is exactly that,
+   * and a tree that listed only the declarations with requests in them would be the door filtering
+   * the project, which `D1063` settled one round ago: the door is a count, never a filter.
+   */
+  const renderOutline = (o: FileOutline): ReactElement => (
+    <ul className="tree outline" data-outline={o.declarations.length}>
+      {o.declarations.map((decl: OutlineHook | OutlineTest) => (
+        <li key={`${decl.kind}-${decl.line}`} data-outline-decl={decl.kind} data-outline-line={decl.line}>
+          <button
+            type="button"
+            className={`outline-row${decl.body.requests.some((r) => r.line === focusLine) || decl.line === focusLine ? ' on' : ''}`}
+            onClick={() => onLine(decl.line)}
+            title={decl.kind === 'test' ? decl.name : decl.label}
+            data-outline-goto={decl.line}
+          >
+            <span className="ln muted">{decl.line}</span>
+            {decl.kind === 'test' ? <span className="outline-name">{decl.name}</span> : <em className="outline-name">{decl.label}</em>}
+          </button>
+          {decl.body.requests.length === 0 ? null : (
+            <ul className="tree">
+              {decl.body.requests.map((r) => (
+                <li key={r.line} data-outline-request={r.line}>
+                  <button
+                    type="button"
+                    className={`outline-row request${focusLine === r.line ? ' on' : ''}`}
+                    onClick={() => onLine(r.line)}
+                    title={`${r.method} ${r.path}`}
+                    data-outline-goto={r.line}
+                    data-outline-method={r.method}
+                    aria-pressed={focusLine === r.line}
+                  >
+                    <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span>
+                    <code className="outline-name">{r.path}</code>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+
   const renderNode = (node: TreeNode): ReactElement => {
     if (node.file) {
       const f = node.file;
@@ -244,6 +321,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
               </span>
             ) : null}
           </button>
+          {openFile === f.path && outline !== null ? renderOutline(outline) : null}
         </li>
       );
     }

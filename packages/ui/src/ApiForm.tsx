@@ -17,7 +17,7 @@
 // because `D1049` makes each write a real PUT — and a file that, between two of them, asserts
 // against a response nothing fetched is a file somebody's CI can catch mid-edit.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   buildApiStep,
   buildExpect,
@@ -28,16 +28,44 @@ import {
   type ExpectSpec,
   type SubjectSpec,
 } from '@tflw/lang';
-import { getFile, putFile, dropScratch, startRun, subscribe, getResults, type FileView } from './api';
+import { putFile, dropScratch, startRun, subscribe, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
 import { TabStrip } from './TabStrip';
+import { ComposePane } from './ComposePane';
+import { addressed } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
+import type { FileOutline } from './outline';
 
 export interface ApiFormProps {
   readonly project: ProjectView;
   readonly onWritten: (path: string) => void;
+  /**
+   * The file every tab here is about, **read by the shell** (`M210` `S1`).
+   *
+   * All four doors used to run this identical read — `getFile(path)` into a `useState`, refreshed
+   * on a path change — which is the four-way duplicate `M206` `S1` removed for the *path* and left
+   * in place for the *bytes*. `D1081` is what forced it: the explorer draws the open file's
+   * outline, so the shell needs the text too, and a fifth copy of the same read was the one
+   * outcome worth refusing outright.
+   */
+  readonly file: FileView | null;
+  /**
+   * That file, read (`M210` `S1`, `D1072`) — derived by the shell, for the explorer and this pane
+   * at once.
+   *
+   * Parsed **in this browser** with the same `@tflw/lang` `tflw check` runs: the package has no
+   * dependencies and no Node builtins, which is why there is no second implementation here to
+   * drift from the one CI grades against. `/api/project` carries a per-test index and deliberately
+   * not this — an outline is a fact about the bytes the page is holding, and `S6`'s pending buffer
+   * will hold bytes the server has not seen.
+   */
+  readonly outline: FileOutline | null;
+  /** Why there is no file, when there is no file — a read failure has to be sayable somewhere. */
+  readonly fileProblem: string | null;
+  /** A write lands here: the shell's copy moves forward so every reader of it agrees at once. */
+  readonly onFileWritten: (file: FileView) => void;
   /** Which stage of this file's life is showing (`M205` §2). It lives in the URL and nowhere else
    *  (`D1045`), so the shell owns it and hands it down — this form does not remember a tab. */
   readonly tab: TabId;
@@ -119,8 +147,7 @@ interface HeaderRow {
   readonly value: string;
 }
 
-export function ApiForm({ project, onWritten, tab, onTab, path, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ApiFormProps) {
-  const [file, setFile] = useState<FileView | null>(null);
+export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, fileProblem, onFileWritten, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ApiFormProps) {
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
   /**
@@ -156,16 +183,19 @@ export function ApiForm({ project, onWritten, tab, onTab, path, focusLine, runPa
   const [rows, setRows] = useState<readonly ExpectRow[]>([EMPTY_ROW]);
 
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [wrote, setWrote] = useState<string | null>(null);
+  /** What `L<line>` names — one resolution, so the band and the card cannot disagree about which
+   *  test they are showing (`D1080`). */
+  const at = useMemo(() => (outline === null ? null : addressed(outline, focusLine)), [outline, focusLine]);
 
-  useEffect(() => {
-    if (!path) return;
-    setFile(null);
-    getFile(path)
-      .then(setFile)
-      .catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
-  }, [path]);
+  const [ownProblem, setProblem] = useState<string | null>(null);
+  /** A read failure is the shell's to discover and this pane's to say — there is no third place a
+   *  reader looks, and a form that stayed silent about it would show an empty file as an empty
+   *  form, which is the `M210` §0 defect wearing a different hat. */
+  const problem = ownProblem ?? fileProblem;
+  const [wrote, setWrote] = useState<string | null>(null);
+  /** Whether Compose's legacy authoring form is disclosed. **Here, not in the pane** — see
+   *  `ComposePaneProps.legacyOpen`: the strip unmounts the panel, and this outlives it. */
+  const [legacyOpen, setLegacyOpen] = useState(false);
 
   /** Every test in the file, not only the ones behind this door — `D1044` again: an API step is
    *  legal in a test a LOAD form started, and that is the case this form exists to reach. */
@@ -375,7 +405,7 @@ export function ApiForm({ project, onWritten, tab, onTab, path, focusLine, runPa
       setProblem(res.status === 409 ? `${res.error} — reopen the file and apply this again` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
       return;
     }
-    setFile({ path, text: pending.text, etag: res.etag });
+    onFileWritten({ path, text: pending.text, etag: res.etag });
     setWrote(path);
     onWritten(path);
   }, [file, pending, path, onWritten]);
@@ -428,221 +458,231 @@ export function ApiForm({ project, onWritten, tab, onTab, path, focusLine, runPa
           Unmounted is the better of two equal choices: no hidden `[data-api-send]` sitting in the
           DOM for a selector on another tab to find. */}
       {tab !== 'compose' ? null : (
-        <div className="authoring">
-      <header className="authoring-head">
-        <h2>write an API test</h2>
-        <p className="muted">
-          A request and the assertions that read it, in one edit — through the same printer and formatter{' '}
-          <code>tflw fmt</code> uses, into the file <code>tflw run</code> reads.
-        </p>
-      </header>
+        <ComposePane
+          path={path}
+          outline={outline}
+          at={at}
+          legacyOpen={legacyOpen}
+          onLegacyOpen={setLegacyOpen}
+          door="api"
+          legacy={
+            <div className="authoring">
+          <header className="authoring-head">
+            <h2>write an API test</h2>
+            <p className="muted">
+              A request and the assertions that read it, in one edit — through the same printer and formatter{' '}
+              <code>tflw fmt</code> uses, into the file <code>tflw run</code> reads.
+            </p>
+          </header>
 
-      <div className="authoring-grid">
-        {/* **The `file` control is gone (`M205` Q7, deleted by `M209` `S4`).** The explorer names
-            the file: clicking a row in the tree opens it and the address carries it, so a second
-            control stating the same fact is the duplication Q7 was written to end. The file this
-            form writes into is `path`, from the hash, and the pane says which one it is. */}
+          <div className="authoring-grid">
+            {/* **The `file` control is gone (`M205` Q7, deleted by `M209` `S4`).** The explorer names
+                the file: clicking a row in the tree opens it and the address carries it, so a second
+                control stating the same fact is the duplication Q7 was written to end. The file this
+                form writes into is `path`, from the hash, and the pane says which one it is. */}
 
-        <label title="write a new test, or add this request to a test already in the file">
-          what
-          <select value={mode} onChange={(e) => setMode(e.target.value as 'new' | 'existing')} data-api-mode>
-            <option value="new">a new test</option>
-            <option value="existing">add to a test already here</option>
-          </select>
-        </label>
-
-        {mode === 'existing' ? (
-          <label title="every test in the file, not only the ones behind this door — an api step is legal inside a test the LOAD door started">
-            test
-            <select value={testName} onChange={(e) => setTestName(e.target.value)} data-api-test>
-              <option value="">— pick one —</option>
-              {testsInFile.map((t) => (
-                <option key={`${t.line}-${t.name}`} value={t.name}>
-                  {t.name}
-                  {t.workload ? ' (a workload test)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <>
-            <label title="what this test is called — it is what a failure reports, and what `--only` selects">
-              name
-              <input value={name} onChange={(e) => setName(e.target.value)} data-api-name placeholder="the orders endpoint answers" />
+            <label title="write a new test, or add this request to a test already in the file">
+              what
+              <select value={mode} onChange={(e) => setMode(e.target.value as 'new' | 'existing')} data-api-mode>
+                <option value="new">a new test</option>
+                <option value="existing">add to a test already here</option>
+              </select>
             </label>
-            <label title="space-separated words for `--tag`. A door is derived from the constructs a test carries, never from a tag (`D1043`), so these are your own vocabulary and nothing here reads them">
-              tags
-              <input value={tags} onChange={(e) => setTags(e.target.value)} data-api-tags placeholder="api orders" />
-            </label>
-          </>
-        )}
-      </div>
 
-      <div className="request-line">
-        <label title="the HTTP method this request is sent with">
-          method
-          <select value={method} onChange={(e) => setMethod(e.target.value as Method)} data-api-method>
-            {METHODS.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-        </label>
-        <label title="the part after the service's base URL. `{name}` interpolates a variable the test captured earlier">
-          path
-          <input value={requestPath} onChange={(e) => setRequestPath(e.target.value)} data-api-path placeholder="/orders/{orderId}" />
-        </label>
-        <label title="the name in tflw.config of a second api service — blank means the default one">
-          service
-          <input value={service} onChange={(e) => setService(e.target.value)} data-api-service placeholder="(default)" />
-        </label>
-        <label title="the label this request reports under, for thresholds scoped to it">
-          label
-          <input value={label} onChange={(e) => setLabel(e.target.value)} data-api-label placeholder="(automatic)" />
-        </label>
-      </div>
-
-      <div className="headers-form" data-api-headers={headers.length}>
-        {headers.map((h, i) => (
-          <div className="row" key={i}>
-            <input value={h.name} onChange={(e) => setHeaders(headers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} data-header-name={i} placeholder="Authorization" />
-            <input value={h.value} onChange={(e) => setHeaders(headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} data-header-value={i} placeholder="Bearer {token}" />
-            <button onClick={() => setHeaders(headers.filter((_, j) => j !== i))} data-header-remove={i}>
-              remove
-            </button>
+            {mode === 'existing' ? (
+              <label title="every test in the file, not only the ones behind this door — an api step is legal inside a test the LOAD door started">
+                test
+                <select value={testName} onChange={(e) => setTestName(e.target.value)} data-api-test>
+                  <option value="">— pick one —</option>
+                  {testsInFile.map((t) => (
+                    <option key={`${t.line}-${t.name}`} value={t.name}>
+                      {t.name}
+                      {t.workload ? ' (a workload test)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <>
+                <label title="what this test is called — it is what a failure reports, and what `--only` selects">
+                  name
+                  <input value={name} onChange={(e) => setName(e.target.value)} data-api-name placeholder="the orders endpoint answers" />
+                </label>
+                <label title="space-separated words for `--tag`. A door is derived from the constructs a test carries, never from a tag (`D1043`), so these are your own vocabulary and nothing here reads them">
+                  tags
+                  <input value={tags} onChange={(e) => setTags(e.target.value)} data-api-tags placeholder="api orders" />
+                </label>
+              </>
+            )}
           </div>
-        ))}
-        <button onClick={() => setHeaders([...headers, { name: '', value: '' }])} data-header-add title="a header on this request alone. The env's `api` defaults and a session's token are added on top of it at run time">
-          + header
-        </button>
-      </div>
 
-      <div className="body-form">
-        <label title="what this request sends. JSON is parsed here, not trusted — a body that is not JSON is refused before the write">
-          body
-          <select value={bodyKind} onChange={(e) => setBodyKind(e.target.value as BodyKind)} data-api-body-kind>
-            <option value="none">none</option>
-            <option value="json">JSON</option>
-            <option value="text">raw text</option>
-            <option value="file">from a file</option>
-            <option value="form">form fields</option>
-          </select>
-        </label>
-        {bodyKind === 'json' || bodyKind === 'text' || bodyKind === 'file' ? (
-          <textarea value={bodyText} onChange={(e) => setBodyText(e.target.value)} data-api-body rows={3} />
-        ) : null}
-        {bodyKind === 'form' ? (
-          <div className="fields" data-api-form-fields={formFields.length}>
-            {formFields.map((f, i) => (
+          <div className="request-line">
+            <label title="the HTTP method this request is sent with">
+              method
+              <select value={method} onChange={(e) => setMethod(e.target.value as Method)} data-api-method>
+                {METHODS.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+            <label title="the part after the service's base URL. `{name}` interpolates a variable the test captured earlier">
+              path
+              <input value={requestPath} onChange={(e) => setRequestPath(e.target.value)} data-api-path placeholder="/orders/{orderId}" />
+            </label>
+            <label title="the name in tflw.config of a second api service — blank means the default one">
+              service
+              <input value={service} onChange={(e) => setService(e.target.value)} data-api-service placeholder="(default)" />
+            </label>
+            <label title="the label this request reports under, for thresholds scoped to it">
+              label
+              <input value={label} onChange={(e) => setLabel(e.target.value)} data-api-label placeholder="(automatic)" />
+            </label>
+          </div>
+
+          <div className="headers-form" data-api-headers={headers.length}>
+            {headers.map((h, i) => (
               <div className="row" key={i}>
-                <input value={f.name} onChange={(e) => setFormFields(formFields.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} data-form-key={i} />
-                <input value={f.value} onChange={(e) => setFormFields(formFields.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} data-form-value={i} />
-                <button onClick={() => setFormFields(formFields.filter((_, j) => j !== i))} data-form-remove={i} disabled={formFields.length === 1}>
+                <input value={h.name} onChange={(e) => setHeaders(headers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} data-header-name={i} placeholder="Authorization" />
+                <input value={h.value} onChange={(e) => setHeaders(headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} data-header-value={i} placeholder="Bearer {token}" />
+                <button onClick={() => setHeaders(headers.filter((_, j) => j !== i))} data-header-remove={i}>
                   remove
                 </button>
               </div>
             ))}
-            <button onClick={() => setFormFields([...formFields, { name: '', value: '' }])} data-form-add title="one `name=value` pair of the form body this request sends">
-              + field
+            <button onClick={() => setHeaders([...headers, { name: '', value: '' }])} data-header-add title="a header on this request alone. The env's `api` defaults and a session's token are added on top of it at run time">
+              + header
             </button>
           </div>
-        ) : null}
-      </div>
 
-      <div className="expects-form" data-api-expects={rows.length}>
-        {rows.map((row, i) => (
-          <div className="row" key={i}>
-            <select value={row.soft ? 'check' : 'expect'} onChange={(e) => patchRow(i, { soft: e.target.value === 'check' })} data-expect-kind={i}>
-              <option value="expect">expect</option>
-              <option value="check">check</option>
-            </select>
-            <select value={row.quantifier} onChange={(e) => patchRow(i, { quantifier: e.target.value as ExpectRow['quantifier'] })} data-expect-quantifier={i}>
-              <option value="">—</option>
-              <option value="any">any</option>
-              <option value="all">all</option>
-            </select>
-            <select value={row.subject} onChange={(e) => patchRow(i, { subject: e.target.value as SubjectKind })} data-expect-subject={i}>
-              {SUBJECTS.map(([id, labelText]) => (
-                <option key={id} value={id}>{labelText}</option>
-              ))}
-            </select>
-            {row.subject === 'body' || row.subject === 'header' || row.subject === 'value' ? (
-              <input
-                value={row.argument}
-                onChange={(e) => patchRow(i, { argument: e.target.value })}
-                data-expect-argument={i}
-                placeholder={row.subject === 'header' ? 'content-type' : row.subject === 'value' ? 'orderId' : 'items[0].price'}
-              />
+          <div className="body-form">
+            <label title="what this request sends. JSON is parsed here, not trusted — a body that is not JSON is refused before the write">
+              body
+              <select value={bodyKind} onChange={(e) => setBodyKind(e.target.value as BodyKind)} data-api-body-kind>
+                <option value="none">none</option>
+                <option value="json">JSON</option>
+                <option value="text">raw text</option>
+                <option value="file">from a file</option>
+                <option value="form">form fields</option>
+              </select>
+            </label>
+            {bodyKind === 'json' || bodyKind === 'text' || bodyKind === 'file' ? (
+              <textarea value={bodyText} onChange={(e) => setBodyText(e.target.value)} data-api-body rows={3} />
             ) : null}
-            <select value={row.matcher} onChange={(e) => patchRow(i, { matcher: e.target.value as MatcherKind })} data-expect-matcher={i}>
-              {MATCHERS.map(([id, labelText]) => (
-                <option key={id} value={id}>{labelText}</option>
-              ))}
-            </select>
-            <input
-              value={row.operand}
-              onChange={(e) => patchRow(i, { operand: e.target.value })}
-              data-expect-operand={i}
-              disabled={OPERANDLESS.has(row.matcher)}
-              placeholder={OPERANDLESS.has(row.matcher) ? '(none)' : '200'}
-            />
-            <button onClick={() => setRows(rows.filter((_, j) => j !== i))} data-expect-remove={i} disabled={rows.length === 1}>
-              remove
+            {bodyKind === 'form' ? (
+              <div className="fields" data-api-form-fields={formFields.length}>
+                {formFields.map((f, i) => (
+                  <div className="row" key={i}>
+                    <input value={f.name} onChange={(e) => setFormFields(formFields.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} data-form-key={i} />
+                    <input value={f.value} onChange={(e) => setFormFields(formFields.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} data-form-value={i} />
+                    <button onClick={() => setFormFields(formFields.filter((_, j) => j !== i))} data-form-remove={i} disabled={formFields.length === 1}>
+                      remove
+                    </button>
+                  </div>
+                ))}
+                <button onClick={() => setFormFields([...formFields, { name: '', value: '' }])} data-form-add title="one `name=value` pair of the form body this request sends">
+                  + field
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="expects-form" data-api-expects={rows.length}>
+            {rows.map((row, i) => (
+              <div className="row" key={i}>
+                <select value={row.soft ? 'check' : 'expect'} onChange={(e) => patchRow(i, { soft: e.target.value === 'check' })} data-expect-kind={i}>
+                  <option value="expect">expect</option>
+                  <option value="check">check</option>
+                </select>
+                <select value={row.quantifier} onChange={(e) => patchRow(i, { quantifier: e.target.value as ExpectRow['quantifier'] })} data-expect-quantifier={i}>
+                  <option value="">—</option>
+                  <option value="any">any</option>
+                  <option value="all">all</option>
+                </select>
+                <select value={row.subject} onChange={(e) => patchRow(i, { subject: e.target.value as SubjectKind })} data-expect-subject={i}>
+                  {SUBJECTS.map(([id, labelText]) => (
+                    <option key={id} value={id}>{labelText}</option>
+                  ))}
+                </select>
+                {row.subject === 'body' || row.subject === 'header' || row.subject === 'value' ? (
+                  <input
+                    value={row.argument}
+                    onChange={(e) => patchRow(i, { argument: e.target.value })}
+                    data-expect-argument={i}
+                    placeholder={row.subject === 'header' ? 'content-type' : row.subject === 'value' ? 'orderId' : 'items[0].price'}
+                  />
+                ) : null}
+                <select value={row.matcher} onChange={(e) => patchRow(i, { matcher: e.target.value as MatcherKind })} data-expect-matcher={i}>
+                  {MATCHERS.map(([id, labelText]) => (
+                    <option key={id} value={id}>{labelText}</option>
+                  ))}
+                </select>
+                <input
+                  value={row.operand}
+                  onChange={(e) => patchRow(i, { operand: e.target.value })}
+                  data-expect-operand={i}
+                  disabled={OPERANDLESS.has(row.matcher)}
+                  placeholder={OPERANDLESS.has(row.matcher) ? '(none)' : '200'}
+                />
+                <button onClick={() => setRows(rows.filter((_, j) => j !== i))} data-expect-remove={i} disabled={rows.length === 1}>
+                  remove
+                </button>
+              </div>
+            ))}
+            <button onClick={() => setRows([...rows, EMPTY_ROW])} data-expect-add title="what has to be true of the response. `expect` fails the test at once; `check` records the failure and carries on">
+              + assertion
             </button>
           </div>
-        ))}
-        <button onClick={() => setRows([...rows, EMPTY_ROW])} data-expect-add title="what has to be true of the response. `expect` fails the test at once; `check` records the failure and carries on">
-          + assertion
-        </button>
-      </div>
 
-      {/* `D985` — the bytes this form is about to write are shown, never hidden behind a
-          projection of them. They moved to **Source** (`M205` §2): the tab set is the file's
-          stages, and "what this file is about to be" is the same subject as "what this file is",
-          so two panes showing one file's text was the duplication the strip exists to remove.
-          Compose keeps the SENTENCE — what is wrong, or what to type next — because that is about
-          the form rather than about the file. */}
-      {pending.ok ? null : (
-        /* `M205` Q11. This is the first sentence the door says on a form that now opens empty, so
-           it is a hint until there is something to be wrong about. A blank field rendered as a
-           warning teaches a new author that the tool is annoyed at them for not having typed
-           anything yet, which is the opposite of what an empty form is for. */
-        <p className={requestPath.trim() === '' ? 'muted' : 'warn'} data-api-problem>
-          {pending.reason}
-        </p>
-      )}
+          {/* `D985` — the bytes this form is about to write are shown, never hidden behind a
+              projection of them. They moved to **Source** (`M205` §2): the tab set is the file's
+              stages, and "what this file is about to be" is the same subject as "what this file is",
+              so two panes showing one file's text was the duplication the strip exists to remove.
+              Compose keeps the SENTENCE — what is wrong, or what to type next — because that is about
+              the form rather than about the file. */}
+          {pending.ok ? null : (
+            /* `M205` Q11. This is the first sentence the door says on a form that now opens empty, so
+               it is a hint until there is something to be wrong about. A blank field rendered as a
+               warning teaches a new author that the tool is annoyed at them for not having typed
+               anything yet, which is the opposite of what an empty form is for. */
+            <p className={requestPath.trim() === '' ? 'muted' : 'warn'} data-api-problem>
+              {pending.reason}
+            </p>
+          )}
 
-      <div className="authoring-actions">
-        {/* `D1047` — Send writes `scratch.tflw` and runs it for real, so what comes back is a
-            report and not a second execution path. */}
-        <button onClick={() => void send()} disabled={!scratchText.ok || sending || busy} data-api-send>
-          {sending ? 'sending…' : 'send'}
-        </button>
-        <button className="run" onClick={() => void save()} disabled={!pending.ok || busy} data-api-save>
-          {busy ? 'writing…' : `write ${path}`}
-        </button>
-        {wrote ? (
-          <span className="muted" data-api-wrote={wrote}>
-            written — <code>{wrote}</code> is what <code>tflw run</code> will read
-          </span>
-        ) : null}
-        {problem ? (
-          <span className="error" data-api-error>
-            {problem}
-          </span>
-        ) : null}
-      </div>
+          <div className="authoring-actions">
+            {/* `D1047` — Send writes `scratch.tflw` and runs it for real, so what comes back is a
+                report and not a second execution path. */}
+            <button onClick={() => void send()} disabled={!scratchText.ok || sending || busy} data-api-send>
+              {sending ? 'sending…' : 'send'}
+            </button>
+            <button className="run" onClick={() => void save()} disabled={!pending.ok || busy} data-api-save>
+              {busy ? 'writing…' : `write ${path}`}
+            </button>
+            {wrote ? (
+              <span className="muted" data-api-wrote={wrote}>
+                written — <code>{wrote}</code> is what <code>tflw run</code> will read
+              </span>
+            ) : null}
+            {problem ? (
+              <span className="error" data-api-error>
+                {problem}
+              </span>
+            ) : null}
+          </div>
 
-      {/* An exploration is not a suite, so the file it uses is one path, overwritten, and not
-          something to commit. A project `tflw init` made ignores it; an older one is told rather
-          than edited behind the author's back (`A1-5`). */}
-      {!project.scratchIgnored ? (
-        <p className="muted" data-api-scratch-unignored={project.scratchPath}>
-          send writes <code>{project.scratchPath}</code>, and this project's <code>.gitignore</code> does not list it —
-          add that line, or expect it in <code>git status</code>.
-        </p>
-      ) : null}
+          {/* An exploration is not a suite, so the file it uses is one path, overwritten, and not
+              something to commit. A project `tflw init` made ignores it; an older one is told rather
+              than edited behind the author's back (`A1-5`). */}
+          {!project.scratchIgnored ? (
+            <p className="muted" data-api-scratch-unignored={project.scratchPath}>
+              send writes <code>{project.scratchPath}</code>, and this project's <code>.gitignore</code> does not list it —
+              add that line, or expect it in <code>git status</code>.
+            </p>
+          ) : null}
 
-        </div>
+            </div>
+          }
+        />
       )}
     </section>
   );
