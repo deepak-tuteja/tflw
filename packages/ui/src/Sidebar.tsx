@@ -37,6 +37,12 @@
 // expands and its `cmd`-click selects its files (`D1069`): `tflw run` refuses a directory by
 // decision (`cli.ts:281`), so a folder can only ever *mean* the files under it.
 //
+// SEARCH IS ONE BOX AND TWO KINDS OF QUERY (`M209` `S5`, `D1064`). The 84 tag chips this pane used
+// to carry are folded into it (`M205` Q12). A `@tag` query narrows the tree **and** the run,
+// because `--tag` is the language's own narrowing; a plain-text query narrows the tree only and
+// runs whole files, because no flag matches a name. The page says which of the two it is doing —
+// that sentence is `D1064`'s accepted cost, and `search.ts` is where the rule lives.
+//
 // EXPANSION IS INFERRED AND IS NOT IN THE ADDRESS (`D1066`). The tree opens whole — 84 rows is the
 // measurement above, not a problem to be folded away — and what a reader collapses is theirs for
 // the session. The one thing that is forced is the open file's own path: an address naming a file
@@ -45,6 +51,7 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import type { Lens, ProjectFile, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
+import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
 
 export interface SidebarProps {
   readonly project: ProjectView;
@@ -61,8 +68,9 @@ export interface SidebarProps {
    * emptied the selection on every plain click.
    */
   readonly onPick: (selection: readonly string[], open: string | null) => void;
-  readonly tags: ReadonlySet<string>;
-  readonly onTags: (tags: ReadonlySet<string>) => void;
+  /** What the search box holds — in the address, like the selection (`D1066`). */
+  readonly query: string;
+  readonly onQuery: (query: string) => void;
 }
 
 /** Above this many tags the cloud opens folded: `M192` U7 found the dogfood's 90 tags pushing all
@@ -119,7 +127,7 @@ export function filesUnder(node: TreeNode): string[] {
   return node.file ? [node.path] : node.children.flatMap(filesUnder);
 }
 
-export function Sidebar({ project, door, openFile, selection, onPick, tags, onTags }: SidebarProps) {
+export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   /** Where a `shift` range starts. A gesture detail and not a fact about the project, so it is
    *  neither in the address nor anywhere durable — `D1066` addresses what changes a run. */
@@ -140,11 +148,9 @@ export function Sidebar({ project, door, openFile, selection, onPick, tags, onTa
     });
   }, [openFile]);
 
-  const allTags = useMemo(() => {
-    const seen = new Set<string>();
-    for (const f of project.files) for (const t of f.tests) if (t.lenses.includes(door)) for (const tag of t.tags) seen.add(tag);
-    return [...seen].sort();
-  }, [project.files, door]);
+  const parsed = useMemo(() => parseQuery(query, project), [query, project]);
+  const matched = useMemo(() => matchingFiles(project, parsed), [project, parsed]);
+  const allTags = useMemo(() => projectTags(project), [project]);
 
   const toggle = <T,>(set: ReadonlySet<T>, v: T): Set<T> => {
     const next = new Set(set);
@@ -203,15 +209,19 @@ export function Sidebar({ project, door, openFile, selection, onPick, tags, onTa
       // `D1068`'s three states. `—` is not a zero: it says *declares nothing by nature*, which is
       // a different fact from *has tests, none of them behind this door* and must not be dimmed.
       const state = total === 0 ? 'fragment' : behind === 0 ? 'none' : 'some';
+      // Dimmed rather than hidden, for `D1063`'s reason a second time: a file that vanishes as you
+      // type is a file you cannot be sure is still there.
+      const unmatched = matched !== null && !matched.has(f.path);
       return (
         <li key={f.path} data-file={f.path}>
           <button
             type="button"
-            className={`file-row${state === 'none' ? ' muted' : ''}${chosen.has(f.path) ? ' on' : ''}${openFile === f.path ? ' open' : ''}`}
+            className={`file-row${state === 'none' || unmatched ? ' muted' : ''}${chosen.has(f.path) ? ' on' : ''}${openFile === f.path ? ' open' : ''}`}
             title={f.path}
             onClick={(e) => pick(e, [f.path], f.path)}
             data-file-row={f.path}
             data-selected={chosen.has(f.path) ? 'yes' : 'no'}
+            data-match={matched === null ? 'all' : unmatched ? 'no' : 'yes'}
             data-open={openFile === f.path ? 'yes' : 'no'}
             aria-pressed={chosen.has(f.path)}
           >
@@ -266,21 +276,33 @@ export function Sidebar({ project, door, openFile, selection, onPick, tags, onTa
         </div>
       </div>
 
-      {allTags.length > 0 ? (
-        <details className="tags-fold" open={allTags.length <= FOLD_TAGS_ABOVE} data-tags-fold={allTags.length}>
-          <summary className="muted">
-            {allTags.length} tag{allTags.length === 1 ? '' : 's'}
-            {tags.size > 0 ? ` · ${tags.size} picked` : ''}
-          </summary>
-          <div className="tags" data-tags>
-            {allTags.map((t) => (
-              <button key={t} className={`chip${tags.has(t) ? ' on' : ''}`} onClick={() => onTags(toggle(tags, t))} data-tag={t} aria-pressed={tags.has(t)}>
-                @{t}
-              </button>
-            ))}
-          </div>
-        </details>
-      ) : null}
+      {/* `D1064`: one box, two kinds of query, and the page says which. The hint is not decoration —
+          a reader has to know whether what they typed narrowed the RUN or only the picture. */}
+      <div className="search">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="a name, or @tag"
+          aria-label="search this project"
+          list="tflw-tags"
+          data-search
+        />
+        <datalist id="tflw-tags">
+          {allTags.map((t) => (
+            <option key={t} value={`@${t}`} />
+          ))}
+        </datalist>
+        <p className="muted hint" data-search-hint data-search-kind={parsed.kind}>
+          {parsed.kind === 'none'
+            ? `${allTags.length} tag${allTags.length === 1 ? '' : 's'} in this project — type @ to narrow the run by one`
+            : parsed.kind === 'tag'
+              ? parsed.tags.length === 0
+                ? `no tag starts with ${parsed.typed} — nothing to run`
+                : `${matched!.size} file${matched!.size === 1 ? '' : 's'} · runs --tag ${parsed.tags.join(',')}: ${taggedTestCount(project, parsed)} test${taggedTestCount(project, parsed) === 1 ? '' : 's'}`
+              : `${matched!.size} file${matched!.size === 1 ? '' : 's'} match — a name has no flag, so this runs whole files`}
+        </p>
+      </div>
 
       <ul className="files tree" data-files={project.files.length}>
         {tree.map(renderNode)}

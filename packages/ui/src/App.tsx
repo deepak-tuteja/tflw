@@ -11,7 +11,7 @@ import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getProject, getRe
 import type { DocumentView } from './api';
 import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
-import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, selectionFromHash, selectionTail, tabFromHash, type TabId } from './doors';
+import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
@@ -26,6 +26,7 @@ import { LiveBody, ReportBody, ReportHeader } from './ReportView';
 import { Findings } from './Findings';
 import { RunList, type Selection } from './RunList';
 import { RunStrip } from './RunStrip';
+import { matchingFiles, parseQuery } from './search';
 import { Sidebar } from './Sidebar';
 
 interface LiveRun {
@@ -93,7 +94,9 @@ export function App() {
    * equal to itself.
    */
   const [selection, setSelectionState] = useState<readonly string[]>(() => selectionFromHash(window.location.hash));
-  const [runTags, setRunTags] = useState<ReadonlySet<string>>(new Set());
+  /** What the search box holds (`M209` `S5`, `D1064`). In the address for `D1066`'s reason: it is
+   *  the other thing that changes what a run does. */
+  const [query, setQueryState] = useState<string>(() => queryFromHash(window.location.hash));
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RunRecord[]>([]);
   const [reports, setReports] = useState<readonly ReportDir[]>([]);
@@ -118,6 +121,7 @@ export function App() {
       setFocusLine(focusFromHash(window.location.hash));
       setDocState(docFromHash(window.location.hash));
       setSelectionState(selectionFromHash(window.location.hash));
+      setQueryState(queryFromHash(window.location.hash));
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
@@ -134,14 +138,14 @@ export function App() {
       // were reading API's is a guess; landing on Compose is the door's own promise (`D1042`).
       // The **document** is dropped with the tab, and for the tab's own reason: it is a choice made
       // inside Config, and a door change lands on Compose where there is no document to be showing.
-      const next_hash = next === null ? hashForDoor(null) : hashForTab(next, DEFAULT_TAB, file) + selectionTail(selection);
+      const next_hash = next === null ? hashForDoor(null) : hashForTab(next, DEFAULT_TAB, file) + paneTail(selection, query);
       window.location.hash = next_hash;
       setDoorState(next);
       setTabState(DEFAULT_TAB);
       setFocusLine(null);
       setDocState(null);
     },
-    [file, selection],
+    [file, selection, query],
   );
   const setTab = useCallback(
     (next: TabId, focus?: number, nextDoc?: string | null) => {
@@ -151,32 +155,32 @@ export function App() {
       // under them. So an omitted argument keeps the current document and an explicit `null` names
       // `tflw.config`.
       const wanted = nextDoc === undefined ? doc : nextDoc;
-      if (door !== null) window.location.hash = hashForTab(door, next, file, focus, wanted) + selectionTail(selection);
+      if (door !== null) window.location.hash = hashForTab(door, next, file, focus, wanted) + paneTail(selection, query);
       setTabState(next);
       setFocusLine(focus ?? null);
       setDocState(wanted);
     },
-    [door, file, doc, selection],
+    [door, file, doc, selection, query],
   );
   /** Choosing a different document inside Config. It drops the focus line for `setFile`'s reason:
    *  a line number is an offset into the document that named it. */
   const setDoc = useCallback(
     (next: string | null) => {
-      if (door !== null) window.location.hash = hashForTab(door, tab, file, undefined, next) + selectionTail(selection);
+      if (door !== null) window.location.hash = hashForTab(door, tab, file, undefined, next) + paneTail(selection, query);
       setDocState(next);
       setFocusLine(null);
     },
-    [door, tab, file, selection],
+    [door, tab, file, selection, query],
   );
   /** Choosing a different file. It drops the focus line, because a line number is an offset into
    *  the file that named it and means nothing in the next one. */
   const setFile = useCallback(
     (next: string) => {
-      if (door !== null) window.location.hash = hashForTab(door, tab, next, undefined, doc) + selectionTail(selection);
+      if (door !== null) window.location.hash = hashForTab(door, tab, next, undefined, doc) + paneTail(selection, query);
       setFileState(next);
       setFocusLine(null);
     },
-    [door, tab, doc, selection],
+    [door, tab, doc, selection, query],
   );
 
   /**
@@ -195,14 +199,24 @@ export function App() {
     (nextSelection: readonly string[], open: string | null) => {
       const nextFile = open ?? file;
       const line = open === null ? (focusLine ?? undefined) : undefined;
-      if (door !== null) window.location.hash = hashForTab(door, tab, nextFile, line, doc) + selectionTail(nextSelection);
+      if (door !== null) window.location.hash = hashForTab(door, tab, nextFile, line, doc) + paneTail(nextSelection, query);
       setSelectionState(nextSelection);
       if (open !== null) {
         setFileState(open);
         setFocusLine(null);
       }
     },
-    [door, tab, file, focusLine, doc],
+    [door, tab, file, focusLine, doc, query],
+  );
+
+  /** Typing in the search box. It changes the address's tail and nothing else — the door, the tab
+   *  and the file it names stay where they are, because a search is a narrowing and not a move. */
+  const setQuery = useCallback(
+    (next: string) => {
+      if (door !== null) window.location.hash = hashForTab(door, tab, file, focusLine ?? undefined, doc) + paneTail(selection, next);
+      setQueryState(next);
+    },
+    [door, tab, file, focusLine, doc, selection],
   );
 
   const refreshLists = useCallback(async () => {
@@ -502,13 +516,16 @@ export function App() {
     const req: { -readonly [K in keyof RunRequest]: RunRequest[K] } = {};
     if (env) req.env = env;
     if (/^\d+$/.test(workers)) req.workers = Number(workers);
-    if (runTags.size > 0) req.tags = [...runTags].sort();
-    if (selection.length > 0 && project) {
-      const chosen = new Set(selection);
-      req.files = project.files.map((f) => f.path).filter((p) => chosen.has(p));
-    }
+    // `D1064` — the two kinds of query narrow a run by different mechanisms, and only one of them
+    // is exact. `--tag` is the language's own narrowing, so a tag query runs *the tests carrying
+    // the tag*; a name has no flag, so a text query can only run the files it lit up, whole. On the
+    // sibling that gap is 59 tests against 97 — which is why this is a fork and not a filter.
+    const parsed = project ? parseQuery(query, project) : { kind: 'none' as const };
+    if (parsed.kind === 'tag' && parsed.tags.length > 0) req.tags = [...parsed.tags];
+    const chosen = selection.length > 0 ? new Set(selection) : parsed.kind === 'text' && project ? matchingFiles(project, parsed)! : null;
+    if (chosen !== null && chosen.size > 0 && project) req.files = project.files.map((f) => f.path).filter((p) => chosen.has(p));
     return req;
-  }, [env, workers, runTags, selection, project]);
+  }, [env, workers, query, selection, project]);
 
   if (door === null || noProject) {
     // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back
@@ -644,7 +661,7 @@ export function App() {
 
   return (
     <div className="app">
-      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} tags={runTags} onTags={setRunTags} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
       <main className="main">
         {project ? <DoorBar project={project} door={door} onDoor={setDoor} /> : null}
         {/* Above the tabs and below the doorbar (`M205` Q12): one strip per page, so every control
@@ -658,7 +675,7 @@ export function App() {
             workers={workers}
             onWorkers={setWorkers}
             selection={selection}
-            tags={runTags}
+            query={query}
             running={running}
             onRun={onRun}
             onCancel={onCancel}

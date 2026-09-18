@@ -231,16 +231,16 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
   const elsewhere = project.files.reduce((n, f) => n + f.tests.length, 0) - behindApi;
   assert.equal(counts, `${project.files.length} files · ${behindApi} behind API · ${elsewhere} behind another door`);
   assert.ok(elsewhere > 0, 'the fixture must hold a test behind some other door, or the clause above is never rendered');
-  // U7: the tag cloud folds above `FOLD_TAGS_ABOVE` (the dogfood's 90 hid every file); the
-  // fixture's few stay open, and the fold names the count either way. Behind a door, the cloud is
-  // the tags of the tests this door lists — a tag on nothing visible is a filter that empties the
-  // pane when pressed.
-  const allTags = new Set(project.files.flatMap((f) => f.tests.filter((t) => t.lenses.includes('api')).flatMap((t) => t.tags)));
-  const fold = page.locator('[data-tags-fold]');
-  assert.equal(await fold.getAttribute('data-tags-fold'), String(allTags.size));
-  assert.ok(allTags.size <= 24, 'the fixture is under the fold (`FOLD_TAGS_ABOVE` in Sidebar.tsx, restated — the cli typecheck has no jsx)');
-  assert.equal(await fold.evaluate((el) => (el as { open: boolean }).open), true);
-  assert.equal(await fold.locator('[data-tag]').count(), allTags.size);
+  // `M209` `S5` folded the tag cloud into the search box (`M205` Q12) — U7's fold existed because
+  // the sibling's 84 chips pushed every file below the first screen, and a control that has to be
+  // folded to be usable is the wrong control. The tags are the box's completions now, and the
+  // project's own — not this door's, because search is over the project and the door is a count.
+  const allTags = new Set(project.files.flatMap((f) => f.tests.flatMap((t) => t.tags)));
+  assert.equal(await page.locator('[data-tags-fold]').count(), 0, 'the cloud is gone');
+  assert.equal(await page.locator('[data-search]').count(), 1);
+  assert.equal(await page.locator('#tflw-tags option').count(), allTags.size, 'every tag in the project is a completion');
+  assert.equal(await page.locator('[data-search-hint]').getAttribute('data-search-kind'), 'none');
+  assert.match((await page.locator('[data-search-hint]').textContent())!, new RegExp(`^${allTags.size} tags? in this project`));
   // U7: the tab has the docs site's mark, and the page's own load logs no 404 for it.
   const icon = await fetch(`${baseUrl}/favicon.svg`);
   assert.equal(icon.status, 200);
@@ -715,7 +715,8 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
   const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
     await page.goto(`${baseUrl}${API_RUN}`);
-    await page.locator('[data-tag="catalog"]').click();
+    // `S5`: narrowing by tag is typed now, and it passes `--tag` exactly as the chip did.
+    await page.locator('[data-search]').fill('@catalog');
     await page.locator('[data-run]').click();
     await page.locator('[data-live]').waitFor();
     // The page selects the kept report when the server says the run ended.
@@ -767,7 +768,7 @@ test('a run cancelled from the page: its kept directory says so above the report
   try {
     await page.goto(`${baseUrl}${API_RUN}`);
     const before = new Set(await page.locator('[data-report-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-report-row'))));
-    await page.locator('[data-tag="load"]').click();
+    await page.locator('[data-search]').fill('@load');
     await page.locator('[data-run]').click();
     // Cancel once the workload is under way — before that `tflw run` has no graceful abort and
     // dies with no report (`cli.ts`: the handler is installed only for a run with a workload).
@@ -1165,7 +1166,7 @@ test('the run strip carries env, workers and the button on all five tabs of all 
 test("the narrowing is the explorer's gesture and the strip reads it back — one request across two panes", async () => {
   // **Reloaded, not merely navigated to.** `goto` to a URL that differs only in its fragment is a
   // fragment navigation and not a load, so the page keeps whatever React state the previous test
-  // left behind — which here is a tag chip another test selected and never cleared. The first
+  // left behind — which here was a tag chip another test selected and never cleared. The first
   // draft of this test read `/^run all/`, which matches `run all · @load` perfectly well, and so
   // it passed on the wrong page. The assertion is an equality now for the same reason.
   await page.goto(`${baseUrl}${API_DOOR}`);
@@ -1176,13 +1177,148 @@ test("the narrowing is the explorer's gesture and the strip reads it back — on
   const first = (await page.locator('[data-file-row]').first().getAttribute('data-file-row'))!;
   await page.locator(`[data-file-row="${first}"]`).click();
   assert.equal(await run.textContent(), 'run selection · 1 file', 'a file picked in the explorer reaches the button in the strip');
-  const tag = (await page.locator('[data-tag]').first().getAttribute('data-tag'))!;
-  await page.locator(`[data-tag="${tag}"]`).click();
-  assert.equal(await run.textContent(), `run selection · 1 file · @${tag}`, 'and so does a tag');
   // The strip survives the tab it was not mounted under: the request is the shell's, not a form's.
   await openTab('config');
-  assert.equal(await page.locator('[data-runstrip] [data-run]').textContent(), `run selection · 1 file · @${tag}`);
-  await page.locator(`[data-tag="${tag}"]`).click();
+  assert.equal(await page.locator('[data-runstrip] [data-run]').textContent(), 'run selection · 1 file');
+  assert.equal(await page.locator('[data-runstrip] [data-run]').getAttribute('data-run-narrowing'), 'selection');
+});
+
+// ---------------------------------------------------------------------------
+// `M209` `S5` — search. `D1064` (two kinds of query, and the page says which), `D1065` (names and
+// tags now; endpoints deferred with a condition), `D1066`'s query half.
+// ---------------------------------------------------------------------------
+
+test('a tag query runs the tests carrying the tag, not the tests in the files carrying it', async () => {
+  // **`D1064`'s whole case, graded against the run's own report.** On the sibling `@crud` is 59
+  // tests in 16 files and those files hold 97, so a tree filtered to files and run whole would run
+  // 38 tests nobody asked for. The fixture has the same shape in miniature, and the gate refuses to
+  // run if it does not — a tag whose tests are ALL the tests in their files proves nothing here.
+  const view = await fullProject();
+  const tagged = (tag: string) => view.files.flatMap((f) => f.tests).filter((t) => t.tags.includes(tag));
+  const inFilesOf = (tag: string) => view.files.filter((f) => f.tests.some((t) => t.tags.includes(tag))).flatMap((f) => f.tests);
+  const tag = [...new Set(view.files.flatMap((f) => f.tests.flatMap((t) => t.tags)))].find((t) => tagged(t).length < inFilesOf(t).length);
+  assert.ok(tag, 'the fixture holds a tag carried by fewer tests than the files carrying it hold');
+  const expected = tagged(tag).map((t) => t.name).sort();
+  assert.ok(expected.length < inFilesOf(tag).length, `${expected.length} tests against ${inFilesOf(tag).length} in the same files`);
+
+  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
+  const target = await fixtureServer.startFixtureServer(fixturePort);
+  try {
+    await page.goto(`${baseUrl}${API_RUN}`);
+    await page.reload();
+    await page.locator('[data-search]').fill(`@${tag}`);
+    assert.equal(await page.locator('[data-run]').getAttribute('data-run-narrowing'), 'tag');
+    assert.equal(await page.locator('[data-run]').textContent(), `run @${tag}`);
+    const before = new Set(((await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string }[]).map((r) => r.id));
+    await page.locator('[data-run]').click();
+    // The run is identified through `/api/runs` rather than by whatever `[data-report]` happens to
+    // be selected: this file runs the project several times, so *the report that is not one of the
+    // two fixtures* stopped being a unique description some tests ago.
+    // Waited for at the server, not at the page: when a run ends the page swaps the live pane for
+    // the report it kept, so every DOM landmark this could watch is one the page is in the middle
+    // of replacing.
+    let mine: { id: string; status: string; kept: string | null } | undefined;
+    for (let i = 0; i < 120 && mine?.status !== 'done'; i++) {
+      const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string; status: string; kept: string | null }[];
+      mine = runs.find((r) => !before.has(r.id));
+      if (mine?.status !== 'done') await new Promise((r) => setTimeout(r, 500));
+    }
+    assert.equal(mine?.status, 'done', 'the run finished');
+    assert.ok(mine.kept, 'the run kept a directory');
+    const written = JSON.parse(await readFile(join(root, mine.kept, 'results.json'), 'utf8')) as RunReport;
+    assert.deepEqual(written.tests.map((t) => t.name).sort(), expected, 'the run is the tag, not the files');
+  } finally {
+    target.close();
+    await page.locator('[data-search]').fill('');
+  }
+});
+
+test('the box says which of the two things a query is doing', async () => {
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
+  await page.locator('[data-files]').waitFor();
+  const view = await fullProject();
+  const hint = page.locator('[data-search-hint]');
+  const run = page.locator('[data-run]');
+
+  // Nothing typed: the project's tags, offered.
+  assert.equal(await hint.getAttribute('data-search-kind'), 'none');
+  assert.equal(await page.locator('[data-file-row][data-match="all"]').count(), view.files.length, 'a query that narrows nothing is not a query that matches nothing');
+
+  // A TAG query — narrows the tree and the run, and says what flag it will pass.
+  const tag = [...new Set(view.files.flatMap((f) => f.tests.flatMap((t) => t.tags)))].sort()[0]!;
+  const filesWithTag = view.files.filter((f) => f.tests.some((t) => t.tags.includes(tag)));
+  const testsWithTag = view.files.flatMap((f) => f.tests).filter((t) => t.tags.includes(tag));
+  await page.locator('[data-search]').fill(`@${tag}`);
+  assert.equal(await hint.getAttribute('data-search-kind'), 'tag');
+  assert.equal(await hint.textContent(), `${filesWithTag.length} file${filesWithTag.length === 1 ? '' : 's'} · runs --tag ${tag}: ${testsWithTag.length} test${testsWithTag.length === 1 ? '' : 's'}`);
+  assert.equal(await page.locator('[data-file-row][data-match="yes"]').count(), filesWithTag.length);
+  // Dimmed, not hidden (`D1063` a second time): every file is still on the screen.
+  assert.equal(await page.locator('[data-file-row]').count(), view.files.length);
+
+  // A TEXT query — narrows the tree only, and says so, because no flag matches a name.
+  const named = view.files.find((f) => f.tests.length > 0)!.tests[0]!.name;
+  const word = named.split(' ').find((w) => w.length > 5)!;
+  const matching = view.files.filter((f) => f.path.toLowerCase().includes(word.toLowerCase()) || f.tests.some((t) => t.name.toLowerCase().includes(word.toLowerCase())) || f.crawls.some((c) => c.name.toLowerCase().includes(word.toLowerCase())));
+  await page.locator('[data-search]').fill(word);
+  assert.equal(await hint.getAttribute('data-search-kind'), 'text');
+  assert.equal(await hint.textContent(), `${matching.length} file${matching.length === 1 ? '' : 's'} match — a name has no flag, so this runs whole files`);
+  assert.equal(await run.getAttribute('data-run-narrowing'), 'text');
+  assert.equal(await run.textContent(), `run ${matching.length} matching file${matching.length === 1 ? '' : 's'}`);
+
+  // A tag nobody carries: said out loud, and there is nothing to press. A search box that quietly
+  // ran the whole suite is the failure this refuses.
+  await page.locator('[data-search]').fill('@zzzznosuchtag');
+  assert.equal(await hint.textContent(), 'no tag starts with @zzzznosuchtag — nothing to run');
+  assert.equal(await run.textContent(), 'nothing matches @zzzznosuchtag');
+  assert.equal(await run.isDisabled(), true);
+  await page.locator('[data-search]').fill('');
+});
+
+test('a tag query matches by prefix and expands to the project’s own tags — `--tag a,b` is OR', async () => {
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
+  await page.locator('[data-files]').waitFor();
+  const view = await fullProject();
+  const tags = [...new Set(view.files.flatMap((f) => f.tests.flatMap((t) => t.tags)))].sort();
+  // A prefix two of the fixture's tags share, found rather than assumed.
+  const prefix = tags.map((t) => t.slice(0, 1)).find((p) => tags.filter((t) => t.startsWith(p)).length > 1);
+  assert.ok(prefix, 'the fixture has two tags sharing a first letter');
+  const expanded = tags.filter((t) => t.startsWith(prefix));
+  await page.locator('[data-search]').fill(`@${prefix}`);
+  // Every tag it passes exists in the project, which is what keeps the request legal: `--tag nope`
+  // is an error in the CLI, so expanding against the project's own tags is not a convenience.
+  assert.equal(await page.locator('[data-run]').textContent(), `run ${expanded.map((t) => `@${t}`).join(' ')}`);
+  assert.match((await page.locator('[data-search-hint]').textContent())!, new RegExp(`runs --tag ${expanded.join(',')}:`));
+  await page.locator('[data-search]').fill('');
+});
+
+test('the query is in the address, and a reload reproduces it and the button', async () => {
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
+  await page.locator('[data-files]').waitFor();
+  const view = await fullProject();
+  const tag = [...new Set(view.files.flatMap((f) => f.tests.flatMap((t) => t.tags)))].sort()[0]!;
+  await page.locator('[data-search]').fill(`@${tag}`);
+  const link = page.url();
+  assert.match(new URL(link).hash, new RegExp(`[?&]q=%40${tag}`));
+
+  const fresh = await browser.newPage();
+  try {
+    await fresh.goto(link);
+    await fresh.locator('[data-files]').waitFor();
+    assert.equal(await fresh.locator('[data-search]').inputValue(), `@${tag}`);
+    assert.equal(await fresh.locator('[data-run]').textContent(), `run @${tag}`);
+  } finally {
+    await fresh.close();
+  }
+
+  // The selection and the query ride together, and neither moves the file the tabs face.
+  const first = (await page.locator('[data-file-row]').first().getAttribute('data-file-row'))!;
+  await page.locator(`[data-file-row="${first}"]`).click();
+  assert.match(new URL(page.url()).hash, /\?files=[^&]+&q=/);
+  assert.equal(await page.locator('[data-run]').getAttribute('data-run-narrowing'), 'selection', 'an explicit selection outranks a query');
+  await page.locator('[data-search]').fill('');
 });
 
 // ---------------------------------------------------------------------------
