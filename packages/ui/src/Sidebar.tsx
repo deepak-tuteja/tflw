@@ -211,12 +211,16 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
       const state = total === 0 ? 'fragment' : behind === 0 ? 'none' : 'some';
       // Dimmed rather than hidden, for `D1063`'s reason a second time: a file that vanishes as you
       // type is a file you cannot be sure is still there.
+      //
+      // **Its own class, not `muted`.** *Nothing here is behind this door* and *this is not what
+      // you searched for* are two different facts, and a row can be absent from both questions at
+      // once — which is a row that should read as dim twice rather than once.
       const unmatched = matched !== null && !matched.has(f.path);
       return (
         <li key={f.path} data-file={f.path}>
           <button
             type="button"
-            className={`file-row${state === 'none' || unmatched ? ' muted' : ''}${chosen.has(f.path) ? ' on' : ''}${openFile === f.path ? ' open' : ''}`}
+            className={`file-row${state === 'none' ? ' muted' : ''}${unmatched ? ' unmatched' : ''}${chosen.has(f.path) ? ' on' : ''}${openFile === f.path ? ' open' : ''}`}
             title={f.path}
             onClick={(e) => pick(e, [f.path], f.path)}
             data-file-row={f.path}

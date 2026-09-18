@@ -56,6 +56,16 @@ button.cancel { background: var(--warn); }
 /* Selected and open are two different facts and are drawn as two: what will RUN is the tint, what
    the tabs are FACING is the rule down the left. A reader extending a selection with cmd-click has
    to be able to see that the subject did not move (`M205` Q13a). */
+/* **`.file-row` sets `color: inherit` because it is a `<button>`, and that beat the global
+   `.muted` rule it was relying on** — same specificity, later in the file. So `M209` `S3`'s door
+   dimming and `S5`'s search dimming both rendered as nothing at all while both were classed
+   correctly, and the gates read the class (`M209-02`). They read the computed colour now, and the
+   two dims are two rules rather than one shared word:
+     `.muted`    — this file has tests and none of them is behind this door (`D1063`)
+     `.unmatched` — this file is not what you just searched for (`D1064`)
+   A row can be both, and then it is dim twice, which is correct: it is absent from two questions. */
+.file-row.muted, .file-row.muted > code { color: var(--muted); }
+.file-row.unmatched { opacity: 0.38; }
 .file-row.on { background: rgba(108, 182, 255, 0.14); }
 .file-row.open { box-shadow: inset 2px 0 0 var(--accent); }
 .file-row:hover { background: rgba(108, 182, 255, 0.07); }
@@ -228,7 +238,8 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    it: the doorbar answers *what am I here to do* and this answers *what am I doing with this file*,
    so a reader who glances at the page should see the louder question first. The mark is a dot and
    not a count — a tab has one thing to say about this file's state, and a number would invite the
-   explorer's job (`3 other files failed`) into a strip that faces one file. */
+   explorer's job (`3 other files failed`) into a strip that faces one file. The explorer is
+   `Sidebar.tsx` since `M209` `S4`; until then this rule's reason named nothing. */
 .tabstrip { display: flex; align-items: center; gap: 2px; margin: 0 0 12px; border-bottom: 1px solid var(--line); }
 .tabstrip-tab {
   background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted);

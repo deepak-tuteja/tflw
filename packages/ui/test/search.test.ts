@@ -14,7 +14,7 @@ const file = (path: string, tests: Array<{ name: string; tags: string[] }>): Pro
   path,
   diagnostics: 0,
   crawls: [],
-  tests: tests.map((t, i) => ({ name: t.name, tags: t.tags, line: i + 1, workload: false, lenses: ['api'] as const, sessions: [] })),
+  tests: tests.map((t, i) => ({ name: t.name, tags: t.tags, line: i + 1, workload: false, lenses: ['api'] as const, sessions: [], steps: { api: 1, browser: 0, load: 0, scan: 0 } })),
 });
 
 const project = (files: ProjectView['files']): ProjectView => ({
@@ -57,14 +57,16 @@ test('a tag query runs the TESTS carrying the tag, not the tests in the files ca
 });
 
 test('a tag query matches by prefix and expands only to tags the project has', () => {
-  assert.deepEqual(parseQuery('@r', p).kind === 'tag' ? parseQuery('@r', p).tags : null, ['read']);
+  const r = parseQuery('@r', p);
+  assert.deepEqual(r.kind === 'tag' ? r.tags : null, ['read']);
   // `--tag nope` is an error in the CLI, so a prefix nobody carries expands to nothing at all
   // rather than to the text somebody typed.
   const none = parseQuery('@zzz', p);
   assert.deepEqual(none.kind === 'tag' ? none.tags : null, []);
   assert.equal(matchingFiles(p, none)!.size, 0);
   // A bare `@` is every tag, which is what the completion list offers.
-  assert.deepEqual(parseQuery('@', p).kind === 'tag' ? parseQuery('@', p).tags : null, projectTags(p));
+  const every = parseQuery('@', p);
+  assert.deepEqual(every.kind === 'tag' ? every.tags : null, projectTags(p));
 });
 
 test('a text query matches a path or a test name, case-insensitively, and never a tag', () => {
