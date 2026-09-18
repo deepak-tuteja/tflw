@@ -29,7 +29,7 @@
 // here to drift from it. That matters most for the rows this door cannot edit: a locked row shows
 // what the step *is*, in the spelling `tflw fmt` would write.
 
-import { lex, parseSource, print, STEP_LENS, type Lens, type Step, type StepLens } from '@tflw/lang';
+import { lex, parseSource, print, STEP_LENS, type Lens, type Step, type StepLens, type StepPath } from '@tflw/lang';
 import type {
   ActionDecl,
   ApiBody,
@@ -80,6 +80,10 @@ export interface OutlineStatement {
    *  by the reader because the completeness gate compares against the *body's* steps, and a
    *  nested one counted there would make the two sides disagree by construction. */
   readonly nested: boolean;
+  /** Where this statement is, as `replaceInSource` names it (`M210` `S2`) — an index pair, stable
+   *  under formatting where a line is not. `null` for a nested row: a `wait until api`'s expects
+   *  are inside its block, not in the body's own list, so the pair cannot address them. */
+  readonly stepPath: StepPath | null;
   readonly node: Step;
 }
 
@@ -97,6 +101,9 @@ export interface OutlineRequest {
   readonly label: string | null;
   readonly body: ApiBody | null;
   readonly note: Note | null;
+  /** Where this request is, as `replaceInSource` names it (`M210` `S2`). An edit says *this one*
+   *  with a pair of indices, because a line moves under `format` and this does not. */
+  readonly stepPath: StepPath;
   /** The statements between this request and the next one — its expects, captures and logs. */
   readonly attached: readonly OutlineStatement[];
   readonly node: ApiStep | WaitUntilApiStmt;
@@ -256,9 +263,10 @@ function isRequest(step: Step): step is ApiStep | WaitUntilApiStmt {
   return step.type === 'ApiStep' || step.type === 'WaitUntilApiStmt';
 }
 
-function statement(step: Step, notes: FileNotes, nested = false): OutlineStatement {
+function statement(step: Step, notes: FileNotes, stepPath: StepPath | null, nested = false): OutlineStatement {
   return {
     nested,
+    stepPath,
     kind: step.type,
     line: step.span.start.line,
     lens: STEP_LENS[step.type],
@@ -268,7 +276,7 @@ function statement(step: Step, notes: FileNotes, nested = false): OutlineStateme
   };
 }
 
-function request(step: ApiStep | WaitUntilApiStmt, notes: FileNotes): {
+function request(step: ApiStep | WaitUntilApiStmt, notes: FileNotes, stepPath: StepPath): {
   request: Omit<OutlineRequest, 'attached'>;
   /** `wait until api`'s expects belong to it and to nothing else — they are inside its block. */
   own: OutlineStatement[];
@@ -277,6 +285,7 @@ function request(step: ApiStep | WaitUntilApiStmt, notes: FileNotes): {
   return {
     request: {
       line: step.span.start.line,
+      stepPath,
       kind: step.type,
       spec,
       method: spec.method,
@@ -287,7 +296,7 @@ function request(step: ApiStep | WaitUntilApiStmt, notes: FileNotes): {
       note: notes.byOwner.get(step.span.start.line) ?? null,
       node: step,
     },
-    own: step.type === 'WaitUntilApiStmt' ? step.expects.map((e) => statement(e, notes, true)) : [],
+    own: step.type === 'WaitUntilApiStmt' ? step.expects.map((e) => statement(e, notes, null, true)) : [],
   };
 }
 
@@ -299,16 +308,16 @@ function request(step: ApiStep | WaitUntilApiStmt, notes: FileNotes): {
  * [its expects, captures, logs] → request → …` — and it is why this is a fold rather than three
  * filters.
  */
-export function groupBody(steps: readonly Step[], notes: FileNotes): OutlineBody {
+export function groupBody(steps: readonly Step[], notes: FileNotes, decl = 0): OutlineBody {
   const preamble: OutlineStatement[] = [];
   const requests: { head: Omit<OutlineRequest, 'attached'>; attached: OutlineStatement[] }[] = [];
-  for (const step of steps) {
+  for (const [index, step] of steps.entries()) {
     if (isRequest(step)) {
-      const { request: head, own } = request(step, notes);
+      const { request: head, own } = request(step, notes, { decl, step: index });
       requests.push({ head, attached: own });
       continue;
     }
-    const row = statement(step, notes);
+    const row = statement(step, notes, { decl, step: index });
     if (requests.length === 0) preamble.push(row);
     else requests[requests.length - 1]!.attached.push(row);
   }
@@ -327,32 +336,43 @@ export function groupBody(steps: readonly Step[], notes: FileNotes): OutlineBody
 export function fileOutline(path: string, source: string): FileOutline {
   const { program, diagnostics } = parseSource(source);
   const notes = readNotes(source);
-  const hooks: OutlineHook[] = program.hooks.map((h) => ({
-    kind: 'hook',
-    when: h.when,
-    scope: h.scope,
-    line: h.span.start.line,
-    label: `${h.when} ${h.scope}`,
-    note: notes.byOwner.get(h.span.start.line) ?? null,
-    body: groupBody(h.body, notes),
-  }));
-  const tests: OutlineTest[] = program.tests.map((t: TestDecl) => ({
-    kind: 'test',
-    name: t.name.value,
-    line: t.span.start.line,
-    tags: t.tags,
-    sessions: t.sessions,
-    retry: t.retry,
-    table: t.table,
-    workload: t.workload,
-    thresholds: t.thresholds,
-    note: notes.byOwner.get(t.span.start.line) ?? null,
-    body: groupBody(t.body, notes),
-  }));
+  /**
+   * **Sorted first, then indexed**, and the order is `replaceInSource`'s own: hooks and tests
+   * together, in the order the file declares them. It has to be the same ordering in both places,
+   * because the index this produces is the index that function will look the statement up by — and
+   * two orderings that agree on every file anybody has written so far is exactly the arrangement
+   * that breaks on the first file where a hook comes after a test.
+   */
+  const declared = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+  const declarations = declared.map((d, decl): OutlineHook | OutlineTest =>
+    d.type === 'HookDecl'
+      ? {
+          kind: 'hook',
+          when: d.when,
+          scope: d.scope,
+          line: d.span.start.line,
+          label: `${d.when} ${d.scope}`,
+          note: notes.byOwner.get(d.span.start.line) ?? null,
+          body: groupBody(d.body, notes, decl),
+        }
+      : {
+          kind: 'test',
+          name: (d as TestDecl).name.value,
+          line: d.span.start.line,
+          tags: (d as TestDecl).tags,
+          sessions: (d as TestDecl).sessions,
+          retry: (d as TestDecl).retry,
+          table: (d as TestDecl).table,
+          workload: (d as TestDecl).workload,
+          thresholds: (d as TestDecl).thresholds,
+          note: notes.byOwner.get(d.span.start.line) ?? null,
+          body: groupBody((d as TestDecl).body, notes, decl),
+        },
+  );
   return {
     path,
     file: { imports: program.imports, uses: program.uses, actions: program.actions, header: notes.header, tail: notes.tail },
-    declarations: [...hooks, ...tests].sort((a, b) => a.line - b.line),
+    declarations,
     diagnostics,
   };
 }

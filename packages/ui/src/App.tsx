@@ -156,12 +156,28 @@ export function App() {
       // under them. So an omitted argument keeps the current document and an explicit `null` names
       // `tflw.config`.
       const wanted = nextDoc === undefined ? doc : nextDoc;
-      if (door !== null) window.location.hash = hashForTab(door, next, file, focus, wanted) + paneTail(selection, query);
+      /**
+       * **An omitted focus keeps the line, on the tabs the line belongs to** (`M210` `S2`).
+       *
+       * `D1080` puts the selected request in the address as `L<n>`, and a plain tab click passes no
+       * focus — so a glance at Source and back silently dropped it and the card fell to the file's
+       * first request. Measured on the served page while driving an edit.
+       *
+       * It is carried only onto Compose and Source, and that qualifier is `setDoc`'s own rule one
+       * tab along: **a line number is an offset into the document that named it.** Those two tabs
+       * are stages of the `.tflw` file, so the line still means something there; Config's subject is
+       * `tflw.config`, and carrying a test's line into it would scroll a different document to a
+       * number that is about this one. An explicit focus — which is what `[edit]` passes — always
+       * wins, so the jump that needed this qualifier in the first place is unaffected.
+       */
+      const fileStage = next === 'compose' || next === 'source';
+      const carried = focus ?? (fileStage ? (focusLine ?? undefined) : undefined);
+      if (door !== null) window.location.hash = hashForTab(door, next, file, carried, wanted) + paneTail(selection, query);
       setTabState(next);
-      setFocusLine(focus ?? null);
+      setFocusLine(carried ?? null);
       setDocState(wanted);
     },
-    [door, file, doc, selection, query],
+    [door, file, doc, selection, query, focusLine],
   );
   /** Choosing a different document inside Config. It drops the focus line for `setFile`'s reason:
    *  a line number is an offset into the document that named it. */
@@ -242,6 +258,19 @@ export function App() {
    */
   const [openFileView, setOpenFileView] = useState<FileView | null>(null);
   const [fileProblem, setFileProblem] = useState<string | null>(null);
+  /**
+   * The pending buffer — `M210` `S2` (`D1079`).
+   *
+   * `null` is *nothing unsaved*; a string is what the file becomes when you press write. It lives
+   * **here**, beside the bytes it is a version of, for the same reason the read does: the explorer
+   * draws this file's outline and Source shows this file's text, so a buffer held inside the door's
+   * pane would leave both of them describing the copy on disk while the author edits another one.
+   *
+   * It is text and not a list of edits, because `D1049` makes a write one `PUT` of the whole file
+   * and `replaceInSource` returns a finished file: keeping the finished text is keeping exactly
+   * what the write will carry, so there is no second representation to disagree with it.
+   */
+  const [draft, setDraft] = useState<string | null>(null);
 
   const readProjectView = useCallback(() => {
     return getProject()
@@ -569,6 +598,9 @@ export function App() {
     getFile(path)
       .then((f) => { if (live) setOpenFileView(f); })
       .catch((e: unknown) => { if (live) setFileProblem(e instanceof Error ? e.message : String(e)); });
+    // A buffer belongs to the file it was typed into. Opening another one drops it rather than
+    // carrying it across, which would be an edit to a file nobody made.
+    setDraft(null);
     return () => { live = false; };
   }, [path]);
 
@@ -579,7 +611,8 @@ export function App() {
    * two answers to *what does this file hold*, which is the duplicate class this shell has removed
    * three times already (the path in `M206` `S1`, the config in `S2a`, the bytes above).
    */
-  const outline = useMemo(() => (openFileView === null ? null : fileOutline(openFileView.path, openFileView.text)), [openFileView]);
+  const fileText = draft ?? openFileView?.text ?? null;
+  const outline = useMemo(() => (fileText === null || openFileView === null ? null : fileOutline(openFileView.path, fileText)), [openFileView, fileText]);
 
   if (door === null || noProject) {
     // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back
@@ -758,6 +791,8 @@ export function App() {
             path={path}
             file={openFileView}
             outline={outline}
+            draft={draft}
+            onDraft={setDraft}
             fileProblem={fileProblem}
             onFileWritten={setOpenFileView}
             focusLine={focusLine}

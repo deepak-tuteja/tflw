@@ -3942,7 +3942,9 @@ test('the card is the request the address names, and the band is the declaration
   for (const r of wanted) {
     await page.goto(`${baseUrl}#/api/compose/${withRequests.path}/L${r.line}`);
     await page.locator(`[data-request-line="${r.line}"]`).waitFor();
-    assert.equal(await page.locator('[data-request-method]').textContent(), r.method);
+    // The attribute, not the text: since `S2` the method is a `<select>`, and a select's
+    // `textContent` is every option it offers concatenated.
+    assert.equal(await page.locator('[data-request-method]').getAttribute('data-request-method'), r.method);
     assert.equal(await page.locator('[data-request-path]').getAttribute('data-request-path'), r.path);
     assert.equal(await page.locator('[data-band-line]').getAttribute('data-band-line'), String(r.decl), `L${r.line} shows the declaration that owns that request`);
   }
@@ -3982,7 +3984,13 @@ test('a line naming a declaration opens THAT declaration, not the request neares
   assert.equal(await page.locator('[data-band-name]').textContent(), target.name.value);
 });
 
-test('every control the reader draws is disabled — and it is the control that is asked, not a class', async () => {
+test('what the reader has not lit yet is disabled — and it is the control that is asked, not a class', async () => {
+  // **`D1082` narrowed by `S2`, which is the decision working rather than the decision lapsing.**
+  // `S1`'s claim was that nothing on this pane types. `S2` lights the request's own fields, so the
+  // claim becomes what is still read-only: the **test band** (`S5`'s to light), and the three
+  // clauses on the card that `ApiStepSpec` cannot express and that an edit therefore carries rather
+  // than rebuilds. A pane that is half live has to be able to say which half, and it says it in the
+  // controls themselves.
   const view = await fullProject();
   for (const f of view.files) {
     await page.goto(`${baseUrl}#/api/compose/${f.path}`);
@@ -3992,8 +4000,7 @@ test('every control the reader draws is disabled — and it is the control that 
     // types for us. The parity gate below already had to do this; it is the file's convention.
     const state = await page.locator('[data-compose]').evaluate((root) => {
       const doc = root.ownerDocument;
-      const reader = [...doc.querySelectorAll('.request-card input, .request-card select, .request-card textarea, .test-band input, .test-band select, .test-band textarea')];
-      const all = [...doc.querySelectorAll('.compose-pane input, .compose-pane select, .compose-pane textarea')];
+      const reader = [...doc.querySelectorAll('.test-band input, .test-band select, .test-band textarea, .request-card [data-field-value="timeout"], .request-card [data-field-value="redirects"], .request-card [data-field-value="retry after"]')];
       // **No named helper inside this callback.** `tsx` transforms this file with esbuild's
       // `keepNames`, which wraps every function declaration in a `__name(...)` call — a helper that
       // exists in the test process and not in the page, so a `const off = (e) => …` here dies as
@@ -4002,15 +4009,17 @@ test('every control the reader draws is disabled — and it is the control that 
       return {
         reader: reader.length,
         readerEnabled: reader.filter((e) => (e as unknown as { disabled?: boolean }).disabled !== true).length,
-        enabledOutsideLegacy: all.filter((e) => (e as unknown as { disabled?: boolean }).disabled !== true && e.closest('.legacy') === null).length,
       };
     });
-    assert.equal(state.readerEnabled, 0, `${f.path}: nothing in the reader can be typed into (\`D1082\`)`);
-    // **The legacy form is the one carve-out, and it is named rather than tolerated.** `D1082` says
-    // read-only first; deleting the API door's only write path for four slices is not what that
-    // asked for, so `M200` `A1-4`'s form is kept behind a disclosure until `S2`–`S5` dissolve it.
-    // Everything outside that disclosure is the reader, and the reader types nothing.
-    assert.equal(state.enabledOutsideLegacy, 0, `${f.path}: the only enabled controls are the legacy form's`);
+    assert.equal(state.readerEnabled, 0, `${f.path}: the band and the three carried clauses cannot be typed into (\`D1082\`)`);
+    // **And the request's own fields ARE live**, on every file that holds a request — which is the
+    // other half of the same claim, and the half that would quietly go missing if `S2` regressed.
+    // Asserting only what is disabled would stay green on a pane where nothing works at all.
+    const editable = await page.locator('[data-request-editable]').count();
+    if (editable > 0) {
+      assert.equal(await page.locator('[data-request-editable]').getAttribute('data-request-editable'), 'yes', `${f.path}: its request is editable`);
+      assert.equal(await page.locator('[data-request-path]').isEditable(), true, `${f.path}: and its path takes a keystroke`);
+    }
   }
 });
 
@@ -4208,4 +4217,213 @@ test("the explorer's outline opens under the open file's row and under no other"
   assert.ok(shape.declLeft! > shape.fileLeft, `a declaration is indented past its file (${shape.fileLeft} → ${shape.declLeft})`);
   assert.ok(shape.reqLeft! > shape.declLeft!, `a request past its declaration (${shape.declLeft} → ${shape.reqLeft})`);
   assert.ok(shape.reqRight! <= shape.sidebarRight, `and the deepest row stays inside the pane (${shape.reqRight} ≤ ${shape.sidebarRight})`);
+});
+
+// ---------------------------------------------------------------------------
+// `M210` `S2` — the request edits (`D1079`). One buffer, one write.
+//
+// `S1` made Compose a reader. This makes the request it is reading editable, and the shape is the
+// one `D1079` names: field values produce **bytes**, the bytes are the shell's, and the write is one
+// real `PUT` of the whole file under the etag it was read at (`D1049`, unchanged). So the card, the
+// explorer's outline and Source are three views of one buffer, and the write carries exactly what
+// all three are showing — which is what these gates check, rather than checking a field's value.
+
+/** A project of its own, because the shared fixture has **no** request carrying the three clauses
+ *  `ApiStepSpec` cannot express, and those are the whole of the second gate below. */
+const withEditFixture = async (body: string, run: (page: Page, base: string, dir: string) => Promise<void>): Promise<void> => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m210-edit-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await writeFile(join(dir, 'edit.tflw'), body);
+    const port = await ui.listen(0);
+    await run(fresh, `http://127.0.0.1:${port}`, dir);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+/** The file the edit gates work on: a header the file already has, a comment, a second request,
+ *  and — on the first request — every clause the edit vocabulary cannot express. */
+const EDITABLE = [
+  '# the file, and this line must survive every edit below',
+  '',
+  '@crud',
+  'test "it places an order"',
+  '  # a note on the request',
+  '  api POST /orders body { itemId: 1 } timeout 9s without redirects as "place"',
+  '    header "Authorization" is "Bearer {token}"',
+  '  expect status equals 201',
+  '  capture body.id as orderId',
+  '  api GET /orders/{orderId}',
+  '  expect status equals 200',
+  '',
+].join('\n');
+
+test('`M210` `S2`: a field edit becomes bytes, and every other byte of the file survives', async () => {
+  await withEditFixture(EDITABLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    await p.locator('[data-request-path]').fill('/orders/bulk');
+    await p.locator('[data-compose-dirty]').waitFor();
+
+    // The bytes, read through Source — the same buffer, which is the claim.
+    await p.locator('[data-tab="source"]').click();
+    await p.locator('[data-source="pending"]').waitFor();
+    const text = (await p.locator('[data-preview]').textContent())!;
+    assert.match(text, /^ {2}api POST \/orders\/bulk /m, 'the edit is in the bytes');
+    assert.match(text, /^# the file, and this line must survive every edit below$/m);
+    assert.match(text, /^@crud$/m);
+    assert.match(text, /^ {2}# a note on the request$/m, 'the comment above the edited statement stays');
+    assert.match(text, /^ {2}expect status equals 201$/m);
+    assert.match(text, /^ {2}capture body\.id as orderId$/m);
+    assert.match(text, /^ {2}api GET \/orders\/\{orderId\}$/m, 'and the request after it is untouched');
+  });
+});
+
+test('`M210` `S2`: the three clauses the edit vocabulary cannot express survive an edit', async () => {
+  // **`ApiStepSpec` has no room for `timeout`, `without redirects` or the per-request
+  // `retry honoring "Retry-After"`.** A node rebuilt from the spec alone comes back without them,
+  // and the file loses them silently — source that still parses, still runs, still passes, and
+  // tests something the author did not ask for. They are copied across the edit explicitly; this
+  // is the gate that says so, and it is the reason this fixture exists.
+  await withEditFixture(EDITABLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    assert.equal(await p.locator('[data-field-value="timeout"]').inputValue(), '9000ms');
+    assert.equal(await p.locator('[data-field-value="redirects"]').inputValue(), 'not followed');
+    await p.locator('[data-request-path]').fill('/orders/bulk');
+    await p.locator('[data-compose-dirty]').waitFor();
+    await p.locator('[data-tab="source"]').click();
+    const text = (await p.locator('[data-preview]').textContent())!;
+    assert.match(text, /timeout 9s/, 'the timeout survived');
+    assert.match(text, /without redirects/, 'the redirect clause survived');
+    assert.match(text, /as "place"/, 'and so did the label, which the spec DOES carry');
+  });
+});
+
+test('`M210` `S2`: the write is one PUT of the buffer, and the buffer goes when it lands', async () => {
+  await withEditFixture(EDITABLE, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    await p.locator('[data-request-path]').fill('/orders/bulk');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    // The oracle is the file on disk, never the page's own claim to have written it.
+    const onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^ {2}api POST \/orders\/bulk /m, 'the edit is on disk');
+    assert.match(onDisk, /timeout 9s/, 'with the clauses the spec cannot express');
+    assert.match(onDisk, /^# the file, and this line must survive every edit below$/m);
+    // And what is on disk is what `tflw check` would accept — the write route's own two refusals.
+    const { diagnostics } = parseSource(onDisk);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
+test('`M210` `S2`: discard puts the file back and leaves nothing on disk', async () => {
+  await withEditFixture(EDITABLE, async (p, base, dir) => {
+    const before = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    await p.locator('[data-request-path]').fill('/orders/bulk');
+    await p.locator('[data-compose-discard]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    assert.equal(await p.locator('[data-request-path]').inputValue(), '/orders', 'the card is back on the file');
+    assert.equal(await readFile(join(dir, 'edit.tflw'), 'utf8'), before, 'and nothing was written');
+  });
+});
+
+test('`M210` `S2`: an edit that is not yet a request says so and leaves the buffer where it was', async () => {
+  await withEditFixture(EDITABLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    await p.locator('[data-request-path]').fill('/orders/bulk');
+    await p.locator('[data-compose-dirty]').waitFor();
+    // A header with no value is a legal thing to be halfway through typing and not a legal request.
+    await p.locator('[data-header-edit-add]').click();
+    await p.locator('[data-compose-problem]').waitFor();
+    assert.ok((await p.locator('[data-compose-problem]').textContent())!.length > 0, 'the pane says why');
+    await p.locator('[data-tab="source"]').click();
+    const held = (await p.locator('[data-preview]').textContent())!;
+    assert.match(held, /^ {2}api POST \/orders\/bulk /m, 'and the buffer still holds the last edit that WAS a request');
+    // Finish typing it and the buffer moves again.
+    await p.locator('[data-tab="compose"]').click();
+    await p.locator('[data-header-edit-name="1"]').fill('X-Trace');
+    await p.locator('[data-header-edit-value="1"]').fill('abc');
+    await p.locator('[data-compose-problem]').waitFor({ state: 'detached' });
+    await p.locator('[data-tab="source"]').click();
+    assert.match((await p.locator('[data-preview]').textContent())!, /header "X-Trace" is "abc"/);
+  });
+});
+
+test('`M210` `S2`: the address keeps the request across a tab trip, and Config does not inherit its line', async () => {
+  // `D1080` puts the request in the address, and a plain tab click passes no focus — so a glance at
+  // Source and back dropped it and the card fell to the file's first request. The line is carried
+  // onto the file's own stages and **not** onto Config, which is `setDoc`'s rule one tab along: a
+  // line number is an offset into the document that named it.
+  await withEditFixture(EDITABLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    const second = Number(await p.locator('[data-outline-request]').last().getAttribute('data-outline-request'));
+    await p.goto(`${base}/#/api/compose/edit.tflw/L${second}`);
+    await p.locator(`[data-request-line="${second}"]`).waitFor();
+    await p.locator('[data-tab="source"]').click();
+    assert.match(new URL(p.url()).hash, new RegExp(`/L${second}$`), 'Source keeps the line');
+    await p.locator('[data-tab="compose"]').click();
+    assert.equal(await p.locator('[data-request-line]').getAttribute('data-request-line'), String(second), 'and coming back shows the same request');
+    await p.locator('[data-tab="config"]').click();
+    assert.doesNotMatch(new URL(p.url()).hash, /\/L\d+$/, "Config's subject is another document, so the line does not travel");
+  });
+});
+
+test('`M210` `S2`: an edit that moves the request keeps the address on it', async () => {
+  // Adding a header adds a line, so every request below moves. The request's identity across an
+  // edit is its index pair, not its line — so the new line is read back by that pair and written
+  // to the hash. Without it, editing the first of two requests moves the selection to the second.
+  await withEditFixture(EDITABLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    const rows = () => p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
+    const secondBefore = (await rows())[1]!;
+    await p.goto(`${base}/#/api/compose/edit.tflw/L${secondBefore}`);
+    await p.locator(`[data-request-line="${secondBefore}"]`).waitFor();
+    await p.locator('[data-header-edit-add]').click();
+    await p.locator('[data-header-edit-name="0"]').fill('X-Trace');
+    await p.locator('[data-header-edit-value="0"]').fill('abc');
+    await p.locator('[data-compose-dirty]').waitFor();
+    const path = await p.locator('[data-request-path]').inputValue();
+    assert.equal(path, '/orders/{orderId}', 'the card is still on the request that was edited');
+    const line = Number(await p.locator('[data-request-line]').getAttribute('data-request-line'));
+    assert.match(new URL(p.url()).hash, new RegExp(`/L${line}$`), 'and the address names its current line');
+  });
+});
+
+test('`M210` `S2`: an upload body survives an edit to the request around it', async () => {
+  // **The sharpest instance of the carry hazard, and the one that deletes data rather than losing a
+  // clause.** `ApiBodySpec` has no upload, so `buildApiStep` answers `body: null` for one — and the
+  // first draft folded `upload` into `none`, which meant editing the *path* of a request with a
+  // `multipart/form-data` payload **removed the payload**. The file still parsed, still ran, and
+  // sent nothing. Twelve requests in the sibling carry one.
+  const file = [
+    '@files',
+    'test "it uploads"',
+    '  api POST /files upload "./f.png" as "file" type "image/png"',
+    '  expect status equals 201',
+    '',
+  ].join('\n');
+  await withEditFixture(file, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    assert.equal(await p.locator('[data-body-edit-kind]').inputValue(), 'upload', 'the card says what this request sends');
+    await p.locator('[data-request-path]').fill('/files/bulk');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /api POST \/files\/bulk upload "\.\/f\.png" as "file" type "image\/png"/, 'the path changed and the whole upload clause is still there');
+    const { diagnostics } = parseSource(onDisk);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
 });

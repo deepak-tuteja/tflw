@@ -20,6 +20,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   buildApiStep,
+  replaceInSource,
   buildExpect,
   buildTest,
   insertIntoSource,
@@ -31,8 +32,8 @@ import {
 import { putFile, dropScratch, startRun, subscribe, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
 import { TabStrip } from './TabStrip';
-import { ComposePane } from './ComposePane';
-import { addressed } from './outline';
+import { ComposePane, editOf, specOf, type RequestEdit } from './ComposePane';
+import { addressed, fileOutline, type OutlineRequest } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
@@ -62,6 +63,10 @@ export interface ApiFormProps {
    * will hold bytes the server has not seen.
    */
   readonly outline: FileOutline | null;
+  /** The pending buffer, and where a change to it goes (`M210` `S2`, `D1079`). `null` is *nothing
+   *  unsaved*. Held by the shell so the explorer's outline and Source read the same bytes. */
+  readonly draft: string | null;
+  readonly onDraft: (text: string | null) => void;
   /** Why there is no file, when there is no file — a read failure has to be sayable somewhere. */
   readonly fileProblem: string | null;
   /** A write lands here: the shell's copy moves forward so every reader of it agrees at once. */
@@ -147,7 +152,7 @@ interface HeaderRow {
   readonly value: string;
 }
 
-export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, fileProblem, onFileWritten, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ApiFormProps) {
+export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ApiFormProps) {
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
   /**
@@ -187,11 +192,88 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, f
    *  test they are showing (`D1080`). */
   const at = useMemo(() => (outline === null ? null : addressed(outline, focusLine)), [outline, focusLine]);
 
+  /**
+   * The selected request's field values — `M210` `S2`.
+   *
+   * **Here rather than in the pane**, because the strip unmounts panels (`M205` `S5a`, a rule this
+   * round has now met three times). Keyed by the request's own index pair so that moving to another
+   * request does not carry the last one's half-typed path with it, and re-derived from the file
+   * whenever the selection changes.
+   */
+  const [edit, setEdit] = useState<{ key: string; values: RequestEdit } | null>(null);
+  const selectedKey = at?.request ? `${at.request.stepPath.decl}:${at.request.stepPath.step}` : null;
+  const values: RequestEdit | null = at?.request ? (edit?.key === selectedKey ? edit.values : editOf(at.request)) : null;
+
+  /**
+   * A field change, all the way to bytes (`D1079`).
+   *
+   * The values are held, the **text** is what they produce, and the text is the shell's — so one
+   * keystroke moves the card, the explorer's outline and Source together, and the write carries
+   * exactly what all three are showing. A change the builder refuses keeps the buffer where it is
+   * and says why: the author can go on typing through an intermediate state that is not yet a
+   * request, which every path is for its first character.
+   *
+   * **The three fields `ApiStepSpec` cannot express are carried across, not rebuilt.** `timeoutMs`,
+   * `followRedirects` and `retryAfter` live on the node and not in the spec, so a node built from
+   * the spec alone comes back without them — source that still parses, still runs, still passes,
+   * and tests something the author did not ask for. They are copied here, from the request the
+   * outline is showing, and `ui-page.test.ts` asserts they survive an edit.
+   */
+  const applyEdit = useCallback(
+    (next: RequestEdit) => {
+      if (!at?.request || !file) return;
+      setEdit({ key: `${at.request.stepPath.decl}:${at.request.stepPath.step}`, values: next });
+      const built = buildApiStep(specOf(next));
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const original: OutlineRequest = at.request;
+      const node = original.kind === 'ApiStep'
+        ? {
+            ...built.node,
+            timeoutMs: original.spec.timeoutMs,
+            followRedirects: original.spec.followRedirects,
+            retryAfter: original.spec.retryAfter,
+            // An `upload` body is carried whole for the same reason: `ApiBodySpec` cannot express
+            // one, so the builder returns `body: null` for it, and taking that answer would delete
+            // a `multipart/form-data` payload from a request whose path somebody edited.
+            body: next.bodyKind === 'upload' ? original.spec.body : built.node.body,
+          }
+        : null;
+      if (node === null) {
+        setEditProblem('a `wait until api` request is not editable here yet — its expects are inside its own block');
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: original.stepPath, node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      onDraft(out.text);
+      /**
+       * **Keep the address on the request it was on** (`D1080`).
+       *
+       * The address is a line and an edit can change how many lines a request occupies — adding a
+       * header moves everything below it down. The request's *identity* across that edit is its
+       * index pair, which is what `replaceInSource` was handed, so the new line is read back out of
+       * the edited text by that pair and written to the hash. Without this, adding a header to the
+       * first of three requests silently moves the selection to the one below.
+       */
+      const after = fileOutline(path, out.text);
+      const moved = after.declarations[original.stepPath.decl]?.body.requests.find((x) => x.stepPath.step === original.stepPath.step);
+      if (moved && moved.line !== original.line) onTab('compose', moved.line);
+    },
+    [at, file, draft, onDraft, path, onTab],
+  );
+  const [editProblem, setEditProblem] = useState<string | null>(null);
+
   const [ownProblem, setProblem] = useState<string | null>(null);
   /** A read failure is the shell's to discover and this pane's to say — there is no third place a
    *  reader looks, and a form that stayed silent about it would show an empty file as an empty
    *  form, which is the `M210` §0 defect wearing a different hat. */
-  const problem = ownProblem ?? fileProblem;
+  const problem = ownProblem ?? editProblem ?? fileProblem;
   const [wrote, setWrote] = useState<string | null>(null);
   /** Whether Compose's legacy authoring form is disclosed. **Here, not in the pane** — see
    *  `ComposePaneProps.legacyOpen`: the strip unmounts the panel, and this outlives it. */
@@ -393,7 +475,7 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, f
 
   /** `D1052` — recomputed with the preview, from the same bytes, so what is shown and what is
    *  judged cannot be two different files. */
-  const diagnostics = useMemo(() => (pending.ok ? diagnose(pending.text) : []), [pending]);
+  const diagnostics = useMemo(() => (draft !== null ? diagnose(draft) : pending.ok ? diagnose(pending.text) : []), [draft, pending]);
 
   const save = useCallback(async () => {
     if (!file || !pending.ok) return;
@@ -409,6 +491,28 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, f
     setWrote(path);
     onWritten(path);
   }, [file, pending, path, onWritten]);
+
+  /**
+   * Write the buffer — `D1049` unchanged: one real `PUT` of the whole file under the etag it was
+   * read at. The bytes are exactly what Source is showing and what the card is drawing, because
+   * there is one buffer and all three read it.
+   */
+  const writeDraft = useCallback(async () => {
+    if (!file || draft === null) return;
+    setBusy(true);
+    setProblem(null);
+    const res = await putFile(path, draft, file.etag);
+    setBusy(false);
+    if (!res.ok) {
+      setProblem(res.status === 409 ? `${res.error} — the file changed under this page; reopen it and apply this again` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
+      return;
+    }
+    onFileWritten({ path, text: draft, etag: res.etag });
+    onDraft(null);
+    setEdit(null);
+    setWrote(path);
+    onWritten(path);
+  }, [file, draft, path, onFileWritten, onDraft, onWritten]);
 
   const patchRow = (i: number, patch: Partial<ExpectRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
@@ -428,8 +532,19 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, f
    * here's subject. `M209` `S4` built the explorer, so that sentence names a file now
    * (`Sidebar.tsx`) rather than a component this comment had been delegating to for three rounds.
    */
+  /**
+   * What Source shows — the **buffer** when Compose is holding one (`D1079`), and the legacy form's
+   * projection otherwise.
+   *
+   * The two cannot both be the answer, and the buffer wins because it is the one the write button
+   * will carry. Source's own header already says which of the two states it is in — *what this file
+   * becomes when you press write* against *as it is on disk* — so nothing here has to explain it
+   * twice.
+   */
+  const sourcePending: { ok: true; text: string } | { ok: false; reason: string } = draft !== null ? { ok: true, text: draft } : pending;
+
   const marks: Partial<Record<TabId, string>> = {};
-  if (pending.ok && file && pending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';
+  if (sourcePending.ok && file && sourcePending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';
   if (runMark) marks.run = runMark;
   if (configMark) marks.config = configMark;
 
@@ -437,7 +552,7 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, f
     <section className="doorpane" data-api-form>
       <TabStrip tab={tab} onTab={onTab} marked={marks} />
 
-      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} project={project} door="api" /> : null}
+      {tab === 'source' ? <SourcePanel file={file} pending={sourcePending} diagnostics={diagnostics} project={project} door="api" /> : null}
       {tab === 'run' ? (
         <div className="runpane" data-api-run-tab>
           {sent ? <ResponsePane sent={sent} onDiscard={() => void discard()} /> : null}
@@ -464,6 +579,13 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, f
           at={at}
           legacyOpen={legacyOpen}
           onLegacyOpen={setLegacyOpen}
+          edit={values}
+          onEdit={at?.request?.kind === 'ApiStep' ? applyEdit : null}
+          dirty={draft !== null}
+          busy={busy}
+          problem={editProblem}
+          onWrite={() => void writeDraft()}
+          onDiscard={() => { onDraft(null); setEdit(null); setEditProblem(null); }}
           door="api"
           legacy={
             <div className="authoring">
