@@ -25,6 +25,7 @@ import { exitExplained, reportIdOf } from './format';
 import { LiveBody, ReportBody, ReportHeader } from './ReportView';
 import { Findings } from './Findings';
 import { RunList, type Selection } from './RunList';
+import { RunStrip } from './RunStrip';
 import { Sidebar } from './Sidebar';
 
 interface LiveRun {
@@ -70,6 +71,23 @@ export function App() {
    *  of the address rather than a callback the findings list carries. */
   const [doc, setDocState] = useState<string | null>(() => docFromHash(window.location.hash));
   const [project, setProject] = useState<ProjectView | null>(null);
+  /**
+   * The run request, held by the shell since `M209` `S1`.
+   *
+   * It used to live inside `Sidebar`, which is why the sidebar could not become a file tree: the
+   * pane that lists a project was also the pane that assembled a command. The four pieces are what
+   * `tflw run` takes and nothing more — env, workers, `--tag`, files — and they are held together
+   * because `request()` reads all four in one place. The **narrowing** is still edited in the
+   * sidebar and the **run** is started from the strip; both read this.
+   *
+   * `env` is `null` until somebody picks one, not `''`: the project is not read yet at mount, so a
+   * state initialised from `project.envs` would freeze the empty default the first render saw.
+   * `null` means *whatever the config calls default*, which is the answer that keeps up.
+   */
+  const [envPick, setEnvPick] = useState<string | null>(null);
+  const [workers, setWorkers] = useState('');
+  const [runFiles, setRunFiles] = useState<ReadonlySet<string>>(new Set());
+  const [runTags, setRunTags] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RunRecord[]>([]);
   const [reports, setReports] = useState<readonly ReportDir[]>([]);
@@ -444,6 +462,18 @@ export function App() {
     if (r) void cancelRun(r.id).then(refreshLists);
   }, [runs, refreshLists]);
 
+  const defaultEnv = project?.envs.find((e) => e.isDefault)?.name ?? project?.envs[0]?.name ?? '';
+  const env = envPick ?? defaultEnv;
+  /** The request exactly as `tflw run` takes it — a field is present only when it narrows. */
+  const request = useCallback((): RunRequest => {
+    const req: { -readonly [K in keyof RunRequest]: RunRequest[K] } = {};
+    if (env) req.env = env;
+    if (/^\d+$/.test(workers)) req.workers = Number(workers);
+    if (runTags.size > 0) req.tags = [...runTags].sort();
+    if (runFiles.size > 0 && project) req.files = project.files.map((f) => f.path).filter((p) => runFiles.has(p));
+    return req;
+  }, [env, workers, runTags, runFiles, project]);
+
   if (door === null || noProject) {
     // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back
     // to the landing, which is where a project can be made (`A0-5`).
@@ -578,9 +608,27 @@ export function App() {
 
   return (
     <div className="app">
-      {project ? <Sidebar project={project} door={door} running={running} onRun={onRun} onCancel={onCancel} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+      {project ? <Sidebar project={project} door={door} files={runFiles} onFiles={setRunFiles} tags={runTags} onTags={setRunTags} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
       <main className="main">
         {project ? <DoorBar project={project} door={door} onDoor={setDoor} /> : null}
+        {/* Above the tabs and below the doorbar (`M205` Q12): one strip per page, so every control
+            it carries is reachable from all five tabs and all four doors rather than from whichever
+            pane happened to own it. */}
+        {project ? (
+          <RunStrip
+            project={project}
+            env={env}
+            onEnv={setEnvPick}
+            workers={workers}
+            onWorkers={setWorkers}
+            files={runFiles}
+            tags={runTags}
+            running={running}
+            onRun={onRun}
+            onCancel={onCancel}
+            request={request}
+          />
+        ) : null}
         {/* `D1042`: the door decides what the "new test" surface is, and nothing else. LOAD's is
             `A0-4`'s form and API's is `A1-4`'s; BROWSER and SCANS have theirs in `A2`–`A3`. */}
         {project && door === 'load' ? (

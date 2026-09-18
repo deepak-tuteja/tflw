@@ -823,6 +823,65 @@ test('a run that could not start: the live pane keeps its exit and stderr, drawn
 });
 
 // ---------------------------------------------------------------------------
+// `M209` `S1` — the run strip: `env`, `workers` and the button that starts a run moved out of the
+// sidebar and above the tabs (`M205` Q12, cut into a slice at last by `M209` §0).
+//
+// The claim is not *the controls exist* — they existed before, in the one pane that could not
+// afford them. It is that they are reachable from **every** tab and **every** door, and that the
+// sidebar no longer assembles a command, which is what frees it to become a file tree.
+// ---------------------------------------------------------------------------
+
+test('the run strip carries env, workers and the button on all five tabs of all four doors, and the sidebar carries none of them', async () => {
+  const doors = ['api', 'browser', 'load', 'scan'];
+  const tabs = ['compose', 'source', 'run', 'auth', 'config'];
+  for (const door of doors) {
+    for (const tab of tabs) {
+      const where = `#/${door}/${tab}`;
+      await page.goto(`${baseUrl}${where}`);
+      await page.locator(`[data-tabstrip="${tab}"]`).waitFor();
+      const strip = page.locator('[data-runstrip]');
+      await strip.waitFor();
+      for (const control of ['[data-env-select]', '[data-workers]', '[data-run]']) {
+        assert.equal(await strip.locator(control).count(), 1, `${control} is on ${where}`);
+      }
+      // ABOVE the tabs, which is the half of Q12 that a presence check cannot see. Read off
+      // rectangles rather than off the DOM order: `PLAN_M23`'s carry is that a layout claim is
+      // only a layout claim when something with a position answers it.
+      const stripBox = (await strip.boundingBox())!;
+      const tabsBox = (await page.locator(`[data-tabstrip="${tab}"]`).boundingBox())!;
+      assert.ok(stripBox.y + stripBox.height <= tabsBox.y, `the strip sits above the tabs on ${where} (${stripBox.y} + ${stripBox.height} vs ${tabsBox.y})`);
+      // And the sidebar has dropped the second job entirely.
+      assert.equal(await page.locator('aside.sidebar [data-env-select], aside.sidebar [data-workers], aside.sidebar [data-run], aside.sidebar [data-cancel]').count(), 0, `the sidebar assembles no command on ${where}`);
+    }
+  }
+});
+
+test('the narrowing is still the sidebar\'s gesture and the strip reads it back — one request across two panes', async () => {
+  // **Reloaded, not merely navigated to.** `goto` to a URL that differs only in its fragment is a
+  // fragment navigation and not a load, so the page keeps whatever React state the previous test
+  // left behind — which here is a tag chip another test selected and never cleared. The first
+  // draft of this test read `/^run all/`, which matches `run all · @load` perfectly well, and so
+  // it passed on the wrong page. The assertion is an equality now for the same reason.
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
+  await page.locator('[data-files]').waitFor();
+  const run = page.locator('[data-runstrip] [data-run]');
+  assert.equal(await run.textContent(), 'run all', 'nothing narrowed');
+  const first = (await page.locator('[data-file-check]').first().getAttribute('data-file-check'))!;
+  await page.locator(`[data-file-check="${first}"]`).check();
+  assert.equal(await run.textContent(), 'run 1 file', 'a file checked in the sidebar reaches the button in the strip');
+  const tag = (await page.locator('[data-tag]').first().getAttribute('data-tag'))!;
+  await page.locator(`[data-tag="${tag}"]`).click();
+  assert.equal(await run.textContent(), `run 1 file · @${tag}`, 'and so does a tag');
+  // The strip survives the tab it was not mounted under: the request is the shell's, not a form's.
+  await openTab('config');
+  assert.equal(await page.locator('[data-runstrip] [data-run]').textContent(), `run 1 file · @${tag}`);
+  await page.locator(`[data-file-check="${first}"]`).uncheck();
+  await page.locator(`[data-tag="${tag}"]`).click();
+  assert.equal(await page.locator('[data-runstrip] [data-run]').textContent(), 'run all');
+});
+
+// ---------------------------------------------------------------------------
 // `M200` `A0-3` — the shell: four doors, a lens derived from constructs, a switcher.
 // Graded against `GET /api/project`, which carries the derivation the server computed with
 // `@tflw/lang`'s own function — never against a number written in this file.
