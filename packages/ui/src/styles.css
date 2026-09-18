@@ -26,9 +26,14 @@ code, pre { font-family: var(--mono); }
 .empty { padding: 24px 0; }
 
 .project .root { font-weight: 600; font-size: 15px; }
-.controls { display: grid; gap: 8px; margin: 12px 0; }
-.controls label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); }
-.controls select, .controls input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; width: 160px; font: inherit; }
+/* The run strip (`M205` Q12, built by `M209` `S1`). It sits between the doorbar and the tabs, and
+   it is a ROW because it is one sentence: run this env, this wide, over this much. In the sidebar
+   these were a stacked grid 160 px wide, which is what a column does to a command. */
+.runstrip { display: flex; align-items: center; gap: 16px; margin: 0 0 12px; }
+.controls { display: flex; align-items: center; gap: 16px; }
+.controls label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.controls select, .controls input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; width: 140px; font: inherit; }
+.runstrip button.run, .runstrip button.cancel { text-align: center; }
 button { font: inherit; cursor: pointer; }
 button.run, button.cancel { border: 0; border-radius: 4px; padding: 7px 10px; color: #0b0d11; background: var(--accent); font-weight: 600; text-align: left; }
 button.cancel { background: var(--warn); }
