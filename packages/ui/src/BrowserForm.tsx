@@ -326,7 +326,7 @@ export function BrowserForm({ project, onWritten, filePath, onFile, tab, onTab, 
     <section className="doorpane" data-browser-form>
       <TabStrip tab={tab} onTab={onTab} marked={marks} />
 
-      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} /> : null}
+      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} project={project} door="browser" /> : null}
       {tab === 'run' ? <div className="runpane" data-browser-run-tab>{runPane}</div> : null}
       {tab === 'auth' ? authPanel : null}
       {tab === 'config' ? configPanel : null}

@@ -224,7 +224,7 @@ export function LoadForm({ project, onWritten, filePath, onFile, tab, onTab, run
     <section className="doorpane" data-load-form>
       <TabStrip tab={tab} onTab={onTab} marked={marks} />
 
-      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} /> : null}
+      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} project={project} door="load" /> : null}
       {tab === 'run' ? <div className="runpane" data-load-run-tab>{runPane}</div> : null}
       {tab === 'auth' ? authPanel : null}
       {tab === 'config' ? configPanel : null}

@@ -823,6 +823,138 @@ test('a run that could not start: the live pane keeps its exit and stderr, drawn
 });
 
 // ---------------------------------------------------------------------------
+// `M209` `S2` — Source gains a test index (`D1067`).
+//
+// The sidebar's test rows carry three facts the file's own bytes do not: the `crawl` and
+// `workload` badges, and *this test is behind another door too*. `S3` takes those rows out of the
+// sidebar to make it a file tree, so the index is built FIRST and graded against the rows it will
+// replace — the comparison below is sidebar-against-index on the live page, not index-against a
+// number written here.
+// ---------------------------------------------------------------------------
+
+interface DeclRow { name: string | null; line: string | null; lenses: string | null; badges: string[]; tags: string[] }
+
+/** The projection whole — `projectView()` below carries only what its own section needs, and the
+ *  index is graded on lines, tags and the workload flag as well as on names. */
+interface FullProject {
+  files: { path: string; tests: { name: string; line: number; tags: string[]; workload: boolean; lenses: string[] }[]; crawls: { name: string; line: number; lenses: string[] }[] }[];
+}
+const fullProject = async (): Promise<FullProject> => (await (await fetch(`${baseUrl}/api/project`)).json()) as FullProject;
+
+const readDecls = (p: Page, selector: string): Promise<DeclRow[]> =>
+  p.locator(selector).evaluateAll((els) =>
+    els.map((e) => ({
+      name: e.getAttribute('data-project-test') ?? e.getAttribute('data-project-crawl') ?? e.getAttribute('data-source-test'),
+      line: e.getAttribute('data-line'),
+      lenses: e.getAttribute('data-test-lenses'),
+      badges: [...e.querySelectorAll('.badge')].map((b) => b.textContent!.trim()).sort(),
+      tags: [...e.querySelectorAll('.tag')].map((b) => b.textContent!.trim()).sort(),
+    })),
+  );
+
+test("Source indexes the file's declarations, with every badge the sidebar renders for the same test", async () => {
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
+  await page.locator('[data-files]').waitFor();
+  const paths = await page.locator('[data-file]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file')!));
+  assert.ok(paths.length > 0, 'the sidebar lists something to compare against');
+  for (const path of paths) {
+    const inSidebar = await readDecls(page, `[data-file="${path}"] [data-project-test], [data-file="${path}"] [data-project-crawl]`);
+    await page.goto(`${baseUrl}#/api/source/${path}`);
+    await page.locator('[data-test-index]').waitFor();
+    const inIndex = await readDecls(page, '[data-source-test]');
+    for (const row of inSidebar) {
+      const match = inIndex.find((r) => r.name === row.name && r.line === row.line);
+      assert.ok(match, `${path}: ${row.name} at line ${row.line} is in the index`);
+      assert.deepEqual(match.badges, row.badges, `${path}: ${row.name} carries the sidebar's badges`);
+      assert.deepEqual(match.tags, row.tags, `${path}: ${row.name} carries the sidebar's tags`);
+      assert.equal(match.lenses, row.lenses, `${path}: ${row.name} is behind the same doors`);
+    }
+    // And the index is graded against the server's own projection, not against the sidebar alone —
+    // the sidebar is door-narrowed and the index is not (`D1044`).
+    const view = await fullProject();
+    const entry = view.files.find((f) => f.path === path)!;
+    assert.equal(inIndex.length, entry.tests.length + entry.crawls.length, `${path}: every declaration is indexed, not only this door's`);
+  }
+});
+
+test('the index is not door-filtered: a test behind another door is listed where it lives, and says which door that is', async () => {
+  const view = await fullProject();
+  // A file holding a test the API door does not carry — LOAD's workload is the one in the fixture.
+  const elsewhere = view.files
+    .flatMap((f) => f.tests.map((t) => ({ path: f.path, ...t })))
+    .find((t) => !t.lenses.includes('api') && t.lenses.length > 0);
+  assert.ok(elsewhere, 'the fixture holds a test behind some door other than API');
+  await page.goto(`${baseUrl}#/api/source/${elsewhere.path}`);
+  const row = page.locator(`[data-source-test="${elsewhere.name}"]`);
+  await row.waitFor();
+  assert.equal(await row.getAttribute('data-test-here'), 'no', 'the row says this door is not one of its own');
+  const also = await row.locator('[data-also]').evaluateAll((els) => els.map((e) => e.getAttribute('data-also')!).sort());
+  assert.deepEqual(also, [...elsewhere.lenses].sort(), 'and names every door it is behind');
+  // The sidebar cannot say this: it lists the file with a count and never the test.
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.locator('[data-files]').waitFor();
+  assert.equal(await page.locator(`[data-project-test="${elsewhere.name}"]`).count(), 0);
+});
+
+// The scroll half of `D1067`, on a project of its own.
+//
+// The shared fixture's longest file is 23 lines, and `scrollIntoView({block: 'center'})` cannot
+// centre a line the page has no room to scroll past — so on that fixture the gate is satisfied by
+// any scroll at all. Measured: a row pointing **three lines off** left the target on screen and the
+// first draft of this test passed. A file long enough to have a middle is the instrument.
+test('an index row scrolls the text to its own line, and puts that line in the middle', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-s2-scroll-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 900, height: 300 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    const body: string[] = [];
+    for (let i = 0; i < 24; i++) body.push('@api', `test "case ${i}"`, `  api GET /c/${i}`, '  expect status equals 200', '');
+    await writeFile(join(dir, 'long.tflw'), body.join('\n'));
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    await fresh.goto(`${base}/#/api/source/long.tflw`);
+    await fresh.locator('[data-test-index]').waitFor();
+    const decl = fresh.locator('[data-source-test="case 12"]');
+    const declLine = Number(await decl.getAttribute('data-line'));
+    const text = (await fresh.locator('[data-preview]').textContent())!;
+    const lines = text.split('\n');
+    // **The anchor is the declaration's FIRST line, which is its tag line when it carries tags** —
+    // `@api` sits above `test "…"`, because the node's span starts at its tags. That is the number
+    // the sidebar has always shown; asserted rather than assumed, since the first draft of this
+    // gate expected the `test` keyword and found the tags.
+    const keywordAt = lines.findIndex((l) => l.startsWith('test "case 12"'));
+    assert.ok(keywordAt >= 0);
+    assert.ok(declLine === keywordAt || declLine === keywordAt + 1, `line ${declLine} begins the declaration (the keyword is at ${keywordAt + 1})`);
+    const anchor = fresh.locator(`[data-preview] [data-source-line="${declLine}"]`);
+    assert.equal((await anchor.textContent())!.replace(/\n$/, ''), lines[declLine - 1], 'the anchor holds the file\'s own line');
+
+    // **The `<pre>` is the scroll container, not the page** — `.preview` is `max-height: 40vh;
+    // overflow: auto`, so the line is centred in the text box and the box itself barely moves.
+    // The first draft measured against the viewport's middle and was off by exactly the distance
+    // between the two centres; it is the text box that has to be asked.
+    const boxBefore = (await fresh.locator('[data-preview]').boundingBox())!;
+    const before = (await anchor.boundingBox())!;
+    assert.ok(before.y > boxBefore.y + boxBefore.height, `the declaration starts below the visible text (y ${before.y}, box ends ${boxBefore.y + boxBefore.height})`);
+    await decl.locator(`[data-source-goto="${declLine}"]`).click();
+    // Both boxes are re-read AFTER the press: the index above the text is 24 rows tall, so the
+    // press scrolls the panel as well as the text and a box measured first is a box that moved.
+    const box = (await fresh.locator('[data-preview]').boundingBox())!;
+    const after = (await anchor.boundingBox())!;
+    // Centred, within one line of the middle — the tolerance is the height of the thing being
+    // positioned, so a row pointing one line off is the smallest error this can still see.
+    const middle = box.y + box.height / 2;
+    assert.ok(Math.abs(after.y + after.height / 2 - middle) <= after.height, `line ${declLine} is centred in the text box (y ${after.y}, middle ${middle})`);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // `M209` `S1` — the run strip: `env`, `workers` and the button that starts a run moved out of the
 // sidebar and above the tabs (`M205` Q12, cut into a slice at last by `M209` §0).
 //
@@ -3173,6 +3305,53 @@ test('the Config tab makes the edit the product had been telling the author to m
     });
     assert.equal(sneaky.status, 400);
     assert.match(((await sneaky.json()) as { error: string }).error, /only a \.tflw file can be written here/);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// `M209` `S2`, second half of the green condition: **the index rebuilds after a save.**
+//
+// Its own project, because the assertion is about a file gaining a declaration and the shared
+// fixture is read by every report oracle in this file. The write goes through the page's own
+// gesture rather than through `PUT /api/file`: what is being asserted is that the shell re-reads
+// the projection after a write, and a fetch made from the test would not ask it to.
+test('a test written from Compose appears in the Source index without a reload', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-s2-index-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage();
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await writeFile(join(dir, 'shop.tflw'), ['@api', 'test "the catalogue answers"', '  api GET /catalog', '  expect status equals 200', ''].join('\n'));
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    await fresh.goto(`${base}/#/api/source/shop.tflw`);
+    await fresh.locator('[data-test-index]').waitFor();
+    assert.equal(await fresh.locator('[data-test-index]').getAttribute('data-test-index'), '1');
+    assert.equal(await fresh.locator('[data-source-test]').count(), 1);
+
+    await fresh.locator('[data-tab="compose"]').click();
+    await fresh.locator('[data-api-name]').fill('the orders endpoint answers');
+    await fresh.locator('[data-api-method]').selectOption('GET');
+    await fresh.locator('[data-api-path]').fill('/orders');
+    if (await fresh.locator('[data-api-save]').isDisabled()) assert.fail(`the form cannot write: ${await fresh.locator('[data-api-problem]').textContent()}`);
+    await fresh.locator('[data-api-save]').click();
+    await fresh.locator('[data-api-wrote]').waitFor();
+
+    // No reload — the tab is pressed, and the index is what the shell re-read.
+    await fresh.locator('[data-tab="source"]').click();
+    await fresh.locator('[data-test-index]').waitFor();
+    assert.equal(await fresh.locator('[data-test-index]').getAttribute('data-test-index'), '2');
+    const row = fresh.locator('[data-source-test="the orders endpoint answers"]');
+    await row.waitFor();
+    // At its own line, graded against the file on disk rather than against a number written here.
+    const written = (await readFile(join(dir, 'shop.tflw'), 'utf8')).split('\n');
+    const line = Number(await row.getAttribute('data-line'));
+    assert.match(written[line - 1]!, /^test "the orders endpoint answers"/);
+    assert.equal(await row.getAttribute('data-test-here'), 'yes', 'derived from the `api` step it carries');
   } finally {
     await fresh.close();
     await ui.close();
