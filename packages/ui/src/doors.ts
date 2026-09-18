@@ -90,14 +90,14 @@ export const DEFAULT_TAB: TabId = 'compose';
  * gate re-reads every pre-strip hash.
  */
 export function doorFromHash(hash: string): Lens | null {
-  const id = hash.replace(/^#\/?/, '').split('/')[0] ?? '';
+  const id = withoutQuery(hash).replace(/^#\/?/, '').split('/')[0] ?? '';
   return DOORS.some((d) => d.id === id) ? (id as Lens) : null;
 }
 
 /** The tab named by a location hash. `#/api` is `compose`, and so is a tab nobody has heard of —
  *  the same tolerance `doorFromHash` has, for the same reason. */
 export function tabFromHash(hash: string): TabId {
-  const id = hash.replace(/^#\/?/, '').split('/')[1] ?? '';
+  const id = withoutQuery(hash).replace(/^#\/?/, '').split('/')[1] ?? '';
   return TABS.some((t) => t.id === id) ? (id as TabId) : DEFAULT_TAB;
 }
 
@@ -143,8 +143,53 @@ export const hashForDoor = (id: Lens | null): string => (id === null ? '#' : `#/
  */
 const DOC_SEGMENT = /^@([A-Za-z_][A-Za-z0-9_-]*)$/;
 
+/**
+ * **The selection lives in the address too (`M209` `S4`, `D1066`)** — after a `?`, because it is a
+ * *set* and the slash-separated part of this grammar is a path through one thing.
+ *
+ * Two things change what a run does: which files are selected and, from `S5`, what is searched for.
+ * Both are addressable, so a link reproduces a run and a reload never silently empties the button —
+ * which is the failure mode `D1066` is written against. Expansion is *not* here: it changes what
+ * you can see and nothing about what runs, so every disclosure click would otherwise land in the
+ * URL.
+ *
+ * A path is written as it is, with only `%` and `,` escaped — the separator and the escape. An
+ * address a person cannot read is an address nobody will paste, and `%2F` on every segment of
+ * every path would have made this one of those.
+ */
+export const SELECTION_KEY = 'files';
+
+const withoutQuery = (hash: string): string => hash.split('?')[0] ?? '';
+
+const escapePath = (p: string): string => p.replaceAll('%', '%25').replaceAll(',', '%2C');
+const unescapePath = (p: string): string => p.replaceAll('%2C', ',').replaceAll('%25', '%');
+
+/** The selected files an address names, in the order it names them. Empty for every address
+ *  written before this slice, which is what *nothing selected* has always meant. */
+export function selectionFromHash(hash: string): readonly string[] {
+  const query = hash.split('?')[1];
+  if (query === undefined) return [];
+  for (const part of query.split('&')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    if (part.slice(0, eq) !== SELECTION_KEY) continue;
+    return part
+      .slice(eq + 1)
+      .split(',')
+      .filter((x) => x !== '')
+      .map(unescapePath);
+  }
+  return [];
+}
+
+/** The `?files=…` tail, or nothing at all when nothing is selected — so an address with no
+ *  selection is byte-identical to the address every link written before `S4` carries. */
+export const selectionTail = (selection: readonly string[]): string =>
+  selection.length === 0 ? '' : `?${SELECTION_KEY}=${selection.map(escapePath).join(',')}`;
+
+
 const afterTab = (hash: string): { file: string | null; doc: string | null; line: number | null } => {
-  const rest = hash.replace(/^#\/?/, '').split('/').slice(2).filter((s) => s !== '');
+  const rest = withoutQuery(hash).replace(/^#\/?/, '').split('/').slice(2).filter((s) => s !== '');
   const last = rest[rest.length - 1] ?? '';
   const m = /^L(\d+)$/.exec(last);
   const withoutLine = m ? rest.slice(0, -1) : rest;

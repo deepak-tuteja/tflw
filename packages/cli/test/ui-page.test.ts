@@ -1162,7 +1162,7 @@ test('the run strip carries env, workers and the button on all five tabs of all 
   }
 });
 
-test('the narrowing is still the sidebar\'s gesture and the strip reads it back — one request across two panes', async () => {
+test("the narrowing is the explorer's gesture and the strip reads it back — one request across two panes", async () => {
   // **Reloaded, not merely navigated to.** `goto` to a URL that differs only in its fragment is a
   // fragment navigation and not a load, so the page keeps whatever React state the previous test
   // left behind — which here is a tag chip another test selected and never cleared. The first
@@ -1173,18 +1173,136 @@ test('the narrowing is still the sidebar\'s gesture and the strip reads it back 
   await page.locator('[data-files]').waitFor();
   const run = page.locator('[data-runstrip] [data-run]');
   assert.equal(await run.textContent(), 'run all', 'nothing narrowed');
-  const first = (await page.locator('[data-file-check]').first().getAttribute('data-file-check'))!;
-  await page.locator(`[data-file-check="${first}"]`).check();
-  assert.equal(await run.textContent(), 'run 1 file', 'a file checked in the sidebar reaches the button in the strip');
+  const first = (await page.locator('[data-file-row]').first().getAttribute('data-file-row'))!;
+  await page.locator(`[data-file-row="${first}"]`).click();
+  assert.equal(await run.textContent(), 'run selection · 1 file', 'a file picked in the explorer reaches the button in the strip');
   const tag = (await page.locator('[data-tag]').first().getAttribute('data-tag'))!;
   await page.locator(`[data-tag="${tag}"]`).click();
-  assert.equal(await run.textContent(), `run 1 file · @${tag}`, 'and so does a tag');
+  assert.equal(await run.textContent(), `run selection · 1 file · @${tag}`, 'and so does a tag');
   // The strip survives the tab it was not mounted under: the request is the shell's, not a form's.
   await openTab('config');
-  assert.equal(await page.locator('[data-runstrip] [data-run]').textContent(), `run 1 file · @${tag}`);
-  await page.locator(`[data-file-check="${first}"]`).uncheck();
+  assert.equal(await page.locator('[data-runstrip] [data-run]').textContent(), `run selection · 1 file · @${tag}`);
   await page.locator(`[data-tag="${tag}"]`).click();
+});
+
+// ---------------------------------------------------------------------------
+// `M209` `S4` — open and select. `M205` Q7 (the explorer names the file), Q13 (selection replaces
+// the checkboxes), Q13a (click opens AND selects; cmd/shift extend without moving the subject),
+// `D1066` (the selection is in the address), `D1069` (a folder means its files).
+//
+// Driven by a REAL browser with real pointer events, which is why this gate lives here and not in
+// a jsdom suite: `PLAN_SELECT`'s carry is that a synthetic `click` without the `pointerdown` a
+// mouse sends first hides exactly this class of defect, and 620 unit tests could not see it.
+// ---------------------------------------------------------------------------
+
+/** What the explorer says is selected, in tree order. */
+const selectedFiles = (p: Page): Promise<string[]> =>
+  p.locator('[data-file-row][data-selected="yes"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-row')!));
+
+test('a click opens and selects; cmd extends by one and shift by a range, and neither moves the subject', async () => {
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
+  await page.locator('[data-files]').waitFor();
+  const rows = await page.locator('[data-file-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-row')!));
+  assert.ok(rows.length >= 4, 'the fixture has enough files to range over');
+
+  // 1. A plain click is the whole gesture (`Q13a`): the tabs face it and it is the selection.
+  await page.locator(`[data-file-row="${rows[0]}"]`).click();
+  assert.deepEqual(await selectedFiles(page), [rows[0]]);
+  assert.equal(await page.locator(`[data-file-row="${rows[0]}"]`).getAttribute('data-open'), 'yes');
+  assert.ok(new URL(page.url()).hash.startsWith(`#/api/compose/${rows[0]}?`), `the address names the file it opened (${new URL(page.url()).hash})`);
+
+  // 2. `cmd` extends by one and DOES NOT move the subject — the half a checkbox could never have
+  //    said, and the half a click that also opened would have broken.
+  await page.locator(`[data-file-row="${rows[2]}"]`).click({ modifiers: ['ControlOrMeta'] });
+  assert.deepEqual(await selectedFiles(page), [rows[0], rows[2]]);
+  assert.equal(await page.locator(`[data-file-row="${rows[0]}"]`).getAttribute('data-open'), 'yes', 'the tabs still face the file they were facing');
+  assert.equal(await page.locator(`[data-file-row="${rows[2]}"]`).getAttribute('data-open'), 'no');
+
+  // 3. `cmd` again takes it back out — one gesture, both directions.
+  await page.locator(`[data-file-row="${rows[2]}"]`).click({ modifiers: ['ControlOrMeta'] });
+  assert.deepEqual(await selectedFiles(page), [rows[0]]);
+
+  // 4. `shift` is a range in TREE order, and the order is the tree's rather than the clicking's.
+  await page.locator(`[data-file-row="${rows[0]}"]`).click();
+  await page.locator(`[data-file-row="${rows[3]}"]`).click({ modifiers: ['Shift'] });
+  assert.deepEqual(await selectedFiles(page), rows.slice(0, 4));
+  assert.equal(await page.locator(`[data-file-row="${rows[0]}"]`).getAttribute('data-open'), 'yes', 'a range does not move the subject either');
+  assert.equal(await page.locator('[data-runstrip] [data-run]').textContent(), 'run selection · 4 files');
+
+  // 5. And a plain click collapses it back to one — the gesture that starts over.
+  await page.locator(`[data-file-row="${rows[1]}"]`).click();
+  assert.deepEqual(await selectedFiles(page), [rows[1]]);
+});
+
+test('the selection is in the address, and a reload reproduces it and the button', async () => {
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
+  await page.locator('[data-files]').waitFor();
+  const rows = await page.locator('[data-file-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-row')!));
+  await page.locator(`[data-file-row="${rows[0]}"]`).click();
+  await page.locator(`[data-file-row="${rows[2]}"]`).click({ modifiers: ['ControlOrMeta'] });
+  const link = page.url();
+  assert.match(new URL(link).hash, /\?files=/);
+
+  // `D1066`'s whole point: a link reproduces a run, and a reload never silently empties the button.
+  const fresh = await browser.newPage();
+  try {
+    await fresh.goto(link);
+    await fresh.locator('[data-files]').waitFor();
+    assert.deepEqual(await selectedFiles(fresh), [rows[0], rows[2]]);
+    assert.equal(await fresh.locator('[data-runstrip] [data-run]').textContent(), 'run selection · 2 files');
+  } finally {
+    await fresh.close();
+  }
+
+  // Expansion is NOT in it (`D1066`) — folding a folder leaves the address alone.
+  const folder = (await page.locator('[data-dir-toggle]').first().getAttribute('data-dir-toggle'))!;
+  await page.locator(`[data-dir-toggle="${folder}"]`).click();
+  assert.equal(page.url(), link, 'a disclosure click is not a change to what runs');
+  await page.locator(`[data-dir-toggle="${folder}"]`).click();
+
+  // And an address with nothing selected is byte-identical to every link written before `S4`.
+  await page.goto(`${baseUrl}#/api/compose/${rows[0]}`);
+  await page.locator('[data-files]').waitFor();
+  assert.deepEqual(await selectedFiles(page), []);
   assert.equal(await page.locator('[data-runstrip] [data-run]').textContent(), 'run all');
+});
+
+test('a folder means its files (`D1069`) — plain click folds, cmd-click selects what is under it', async () => {
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
+  await page.locator('[data-files]').waitFor();
+  const view = await fullProject();
+  const folder = (await page.locator('[data-dir-toggle]').first().getAttribute('data-dir-toggle'))!;
+  const under = view.files.filter((f) => f.path.startsWith(`${folder}/`)).map((f) => f.path);
+  assert.ok(under.length > 1, 'the folder holds more than one file, or this proves nothing');
+
+  await page.locator(`[data-dir-toggle="${folder}"]`).click({ modifiers: ['ControlOrMeta'] });
+  assert.deepEqual([...(await selectedFiles(page))].sort(), [...under].sort(), 'the files, expanded by the page — `tflw run` refuses a directory');
+  assert.equal(await page.locator(`[data-dir-toggle="${folder}"]`).getAttribute('aria-expanded'), 'true', 'and selecting is not folding');
+  // The request carries files and never the folder.
+  assert.match(new URL(page.url()).hash, /\?files=/);
+  assert.doesNotMatch(new URL(page.url()).hash, new RegExp(`files=${folder}(,|$)`));
+
+  await page.locator(`[data-dir-toggle="${folder}"]`).click({ modifiers: ['ControlOrMeta'] });
+  assert.deepEqual(await selectedFiles(page), [], 'and it takes them back out again');
+});
+
+test('Compose has no `file` control on any door — the explorer names the file (`M205` Q7)', async () => {
+  for (const [door, attr] of [['api', 'data-api-file'], ['browser', 'data-browser-file'], ['load', 'data-load-file'], ['scan', 'data-scan-file']]) {
+    await page.goto(`${baseUrl}#/${door}`);
+    await page.locator('[data-files]').waitFor();
+    assert.equal(await page.locator(`[${attr}]`).count(), 0, `${door}'s Compose no longer states the file a second time`);
+  }
+  // And the one control that does name it still works: a click opens the file and the form writes
+  // into it.
+  const view = await fullProject();
+  const target = view.files.find((f) => f.tests.length > 0)!.path;
+  await page.goto(`${baseUrl}#/api`);
+  await page.locator('[data-files]').waitFor();
+  await page.locator(`[data-file-row="${target}"]`).click();
+  assert.equal(await page.locator('[data-api-save]').textContent(), `write ${target}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -1318,7 +1436,7 @@ test('the LOAD form writes a real file, and the bytes on disk are the bytes it p
 
   // A file to write into, chosen by the form's own picker rather than by this test.
   const target = 'tests/load.tflw';
-  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   await page.locator('[data-load-name]').fill('written by the page');
   await page.locator('[data-load-tags]').fill('load authored');
   await page.locator('[data-load-shape]').selectOption('iterations');
@@ -1365,7 +1483,7 @@ test('an existing test gains a threshold from the LOAD lens, and nothing else in
   await page.goto(`${baseUrl}#/load`);
   await page.reload(); // the form's fields are component state, and a hash change does not reset them
   await page.locator('[data-load-form]').waitFor();
-  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   await page.locator('[data-load-mode]').selectOption('existing');
   const first = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; lenses: string[] }[] }[] };
   const victim = first.files.find((f) => f.path === target)!.tests[0]!;
@@ -1399,7 +1517,7 @@ test('a write against a file that moved underneath is refused, and says what to 
   await page.goto(`${baseUrl}#/load`);
   await page.reload(); // the form's fields are component state, and a hash change does not reset them
   await page.locator('[data-load-form]').waitFor();
-  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   await page.locator('[data-load-name]').fill('racing the terminal');
   await page.locator('[data-load-preview]').waitFor();
 
@@ -1423,7 +1541,7 @@ test('ticking the workload box turns a functional test into a load test, and the
   await page.goto(`${baseUrl}#/load`);
   await page.reload();
   await page.locator('[data-load-form]').waitFor();
-  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   await page.locator('[data-load-mode]').selectOption('existing');
 
   const before = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; lenses: string[]; workload: boolean }[] }[] };
@@ -1895,7 +2013,7 @@ test('the BROWSER form writes a whole test — open, a scoped block, and an asse
   await page.locator('[data-browser-form]').waitFor();
 
   const target = 'tests/orders.tflw';
-  await page.locator('[data-browser-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   const before = await readFile(join(root, target), 'utf8');
 
   await page.locator('[data-browser-mode]').selectOption('new');
@@ -1956,7 +2074,7 @@ test('the BROWSER form adds steps to a test that already opened a page, and writ
   await page.locator('[data-browser-form]').waitFor();
 
   const target = 'tests/orders.tflw';
-  await page.locator('[data-browser-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   const before = await readFile(join(root, target), 'utf8');
   const openedBefore = (before.match(/^\s*open /gm) ?? []).length;
 
@@ -2173,7 +2291,7 @@ test('the SCANS form grades a response a test already fetches, and writes the as
   assert.equal(await page.locator('[data-scan-unauthorized]').count(), 0);
 
   const target = 'tests/orders.tflw';
-  await page.locator('[data-scan-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   const before = await readFile(join(root, target), 'utf8');
   const testName = await page.locator('[data-scan-test] option:nth-child(2)').getAttribute('value');
   assert.ok(testName, 'the fixture file must hold a test to grade');
@@ -2247,7 +2365,7 @@ test('a project with no `authorized target`: the SCANS form says so, shows the T
     //    so this panel would have shown a clean file and the author would have met the error in a
     //    terminal. That is exactly the surprise `D1052` exists to prevent, on the one door where
     //    it is guaranteed rather than possible.
-    await fresh.locator('[data-scan-file]').selectOption('scan.tflw');
+    await fresh.locator(`[data-file-row="scan.tflw"]`).click();
     await fresh.locator('[data-scan-mode]').selectOption('new');
     await fresh.locator('[data-scan-name]').fill('the page can ask for a scan');
     await fresh.locator('[data-scan-path]').fill('/health');
@@ -2350,7 +2468,7 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
     // 4. Write a workload test by form, into the file the door scaffolded.
     await fresh.reload();
     await fresh.locator('[data-load-form]').waitFor();
-    await fresh.locator('[data-load-file]').selectOption('load.tflw');
+    await fresh.locator(`[data-file-row="load.tflw"]`).click();
     await fresh.locator('[data-load-name]').fill('the health check under load');
     await fresh.locator('[data-load-tags]').fill('load');
     await fresh.locator('[data-load-shape]').selectOption('iterations');
@@ -2383,7 +2501,7 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
     // and look at.
     await fresh.reload();
     await fresh.locator('[data-files]').waitFor();
-    await fresh.locator('[data-file-check="load.tflw"]').check();
+    await fresh.locator('[data-file-row="load.tflw"]').click();
     await fresh.locator('[data-run]').click();
     await fresh.locator('[data-tab-mark="run"]').waitFor({ timeout: 60_000 });
     await fresh.locator('[data-tab="run"]').click();
@@ -2415,7 +2533,7 @@ test('the API form writes a request and its assertions in one edit, and the byte
   await page.locator('[data-api-form]').waitFor();
 
   const target = 'tests/orders.tflw';
-  await page.locator('[data-api-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   await page.locator('[data-api-name]').fill('the page can place an order');
   await page.locator('[data-api-tags]').fill('api authored');
   await page.locator('[data-api-method]').selectOption('POST');
@@ -2506,7 +2624,7 @@ test('the API door adds work to a test the LOAD door started, above its workload
   await page.goto(`${baseUrl}#/load`);
   await page.reload();
   await page.locator('[data-load-form]').waitFor();
-  await page.locator('[data-load-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   await page.locator('[data-load-name]').fill('the API door finishes this one');
   await page.locator('[data-load-tags]').fill('load');
   await page.locator('[data-load-shape]').selectOption('iterations');
@@ -2524,7 +2642,7 @@ test('the API door adds work to a test the LOAD door started, above its workload
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
   await page.locator('[data-api-form]').waitFor();
-  await page.locator('[data-api-file]').selectOption(target);
+  await page.locator(`[data-file-row="${target}"]`).click();
   await page.locator('[data-api-mode]').selectOption('existing');
   await page.locator('[data-api-test]').selectOption('the API door finishes this one');
   await page.locator('[data-api-method]').selectOption('GET');

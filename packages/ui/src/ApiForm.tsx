@@ -45,7 +45,6 @@ export interface ApiFormProps {
   /** The file every tab here is about (`M206` `Q4`), already resolved against the project by the
    *  shell (`S2a`) — this form used to keep its own, which is why a door change reset it. */
   readonly path: string;
-  readonly onFile: (path: string) => void;
   /** The strip's two project-fact tabs, built by the shell (`M206` `S2a`). A project fact is not
    *  this door's to own: a copy per door would be four editors over one `tflw.config`. */
   readonly authPanel: ReactNode;
@@ -120,8 +119,7 @@ interface HeaderRow {
   readonly value: string;
 }
 
-export function ApiForm({ project, onWritten, tab, onTab, path, onFile, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ApiFormProps) {
-  const files = useMemo(() => project.files.map((f) => f.path), [project]);
+export function ApiForm({ project, onWritten, tab, onTab, path, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ApiFormProps) {
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
@@ -439,14 +437,10 @@ export function ApiForm({ project, onWritten, tab, onTab, path, onFile, focusLin
       </header>
 
       <div className="authoring-grid">
-        <label title="which .tflw file this is written into — every file the project discovered">
-          file
-          <select value={path} onChange={(e) => onFile(e.target.value)} data-api-file>
-            {files.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-        </label>
+        {/* **The `file` control is gone (`M205` Q7, deleted by `M209` `S4`).** The explorer names
+            the file: clicking a row in the tree opens it and the address carries it, so a second
+            control stating the same fact is the duplication Q7 was written to end. The file this
+            form writes into is `path`, from the hash, and the pane says which one it is. */}
 
         <label title="write a new test, or add this request to a test already in the file">
           what

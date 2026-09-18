@@ -46,7 +46,6 @@ export interface BrowserFormProps {
   readonly onWritten: (path: string) => void;
   /** The file this form is about (`M206` `Q4`) — from the address, resolved by the shell. */
   readonly filePath: string;
-  readonly onFile: (path: string) => void;
   /** Which stage of this file's life is showing (`M205` §2, propagated by `M206` `S2b`). It lives
    *  in the URL and nowhere else (`D1045`), so the shell owns it and hands it down. */
   readonly tab: TabId;
@@ -111,8 +110,7 @@ export function locatorFromPickLine(line: string): LocatorSpec | null {
   return { kind: step.locator.kind, value: step.locator.value.value };
 }
 
-export function BrowserForm({ project, onWritten, filePath, onFile, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: BrowserFormProps) {
-  const paths = useMemo(() => project.files.map((f) => f.path), [project]);
+export function BrowserForm({ project, onWritten, filePath, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: BrowserFormProps) {
   const path = filePath;
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('new');
@@ -342,14 +340,10 @@ export function BrowserForm({ project, onWritten, filePath, onFile, tab, onTab, 
       </header>
 
       <div className="authoring-grid">
-        <label>
-          file
-          <select value={path} onChange={(e) => onFile(e.target.value)} data-browser-file>
-            {paths.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-        </label>
+        {/* **The `file` control is gone (`M205` Q7, deleted by `M209` `S4`).** The explorer names
+            the file: clicking a row in the tree opens it and the address carries it, so a second
+            control stating the same fact is the duplication Q7 was written to end. The file this
+            form writes into is `path`, from the hash, and the pane says which one it is. */}
 
         <label>
           what

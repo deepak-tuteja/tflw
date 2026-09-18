@@ -41,7 +41,6 @@ export interface ScanFormProps {
   readonly onWritten: (path: string) => void;
   /** The file this form is about (`M206` `Q4`) — from the address, resolved by the shell. */
   readonly filePath: string;
-  readonly onFile: (path: string) => void;
   /** Which stage of this file's life is showing (`M205` §2). It lives in the URL and nowhere else
    *  (`D1045`), so the shell owns it and hands it down. */
   readonly tab: TabId;
@@ -71,8 +70,7 @@ const FAMILIES: ReadonlyArray<readonly [MatcherName, string, string]> = [
 const FLOORS = ['', 'minor', 'moderate', 'serious', 'critical'] as const;
 type Floor = (typeof FLOORS)[number];
 
-export function ScanForm({ project, onWritten, filePath, onFile, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: ScanFormProps) {
-  const paths = useMemo(() => project.files.map((f) => f.path), [project]);
+export function ScanForm({ project, onWritten, filePath, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: ScanFormProps) {
   const path = filePath;
   const [file, setFile] = useState<FileView | null>(null);
   const [mode, setMode] = useState<'new' | 'existing'>('existing');
@@ -263,14 +261,10 @@ export function ScanForm({ project, onWritten, filePath, onFile, tab, onTab, run
       ) : null}
 
       <div className="authoring-grid">
-        <label>
-          file
-          <select value={path} onChange={(e) => onFile(e.target.value)} data-scan-file>
-            {paths.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-        </label>
+        {/* **The `file` control is gone (`M205` Q7, deleted by `M209` `S4`).** The explorer names
+            the file: clicking a row in the tree opens it and the address carries it, so a second
+            control stating the same fact is the duplication Q7 was written to end. The file this
+            form writes into is `path`, from the hash, and the pane says which one it is. */}
 
         <label>
           what
