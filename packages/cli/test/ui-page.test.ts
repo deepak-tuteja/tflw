@@ -181,27 +181,43 @@ async function openReport(id: string): Promise<void> {
   await page.locator(`[data-report="${id}"]`).waitFor();
 }
 
-test('the sidebar is the project behind this door: every file, test, line and tag the server read, and the envs', async () => {
+test('the sidebar is the project as a tree: every file the server read, a leaf name per row, and this door as a count', async () => {
   await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
   await page.locator('[data-files]').waitFor();
-  const project = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; line: number; tags: string[]; lenses: string[] }[] }[]; envs: { name: string; isDefault: boolean }[] };
+  const project = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; line: number; tags: string[]; lenses: string[] }[]; crawls: { lenses: string[] }[] }[]; envs: { name: string; isDefault: boolean }[] };
   assert.ok(project.files.length >= 2, 'the fixture project has two files');
+  // `D1062` — EVERY `.tflw` file, tests or not. The list used to drop a file with nothing
+  // declared in it at all, which is defensible for a list of tests and is a lie in a file tree.
+  assert.equal(await page.locator('[data-files]').getAttribute('data-files'), String(project.files.length));
+  assert.equal(await page.locator('[data-file]').count(), project.files.length);
   for (const f of project.files) {
-    const behind = f.tests.filter((t) => t.lenses.includes('api'));
     const row = page.locator(`[data-file="${f.path}"]`);
-    // A file with nothing behind this door and nothing behind another is not listed at all; the
-    // fixture has no such file, which this assertion would catch if one arrived.
     assert.equal(await row.count(), 1, `file ${f.path} listed once`);
-    for (const t of behind) {
-      const item = row.locator(`[data-project-test="${t.name}"]`);
-      assert.equal(await item.getAttribute('data-line'), String(t.line));
-      const text = await item.textContent();
-      for (const tag of t.tags) assert.ok(text?.includes(`@${tag}`), `${t.name} shows @${tag}`);
-    }
-    for (const t of f.tests.filter((x) => !x.lenses.includes('api'))) {
-      assert.equal(await row.locator(`[data-project-test="${t.name}"]`).count(), 0, `${t.name} is behind another door and is not listed here`);
-    }
+    // `D1061` — a row is a file, named by its LEAF. The 55-character path repeated under every
+    // folder it shares is what made 378 of the sibling's 389 rows wrap.
+    assert.equal(await row.locator('> .file-row > code').textContent(), f.path.split('/').pop());
+    // `D1063` + `D1068` — the door is a count and the count has three states.
+    const behind = f.tests.filter((t) => t.lenses.includes('api')).length + f.crawls.filter((c) => c.lenses.includes('api')).length;
+    const total = f.tests.length + f.crawls.length;
+    const count = row.locator('[data-door-count]');
+    assert.equal(await count.getAttribute('data-door-count'), String(behind));
+    assert.equal(await count.getAttribute('data-door-count-state'), total === 0 ? 'fragment' : behind === 0 ? 'none' : 'some');
+    assert.equal(await count.textContent(), total === 0 ? '—' : String(behind));
+    // Dimmed for `0`, NOT dimmed for `—`: *has tests, none here* and *declares nothing by nature*
+    // are different facts, and without the second the six most-depended-on files in the sibling
+    // would have been greyed out on every screen forever.
+    const dimmed = (await row.locator('> .file-row').getAttribute('class'))!.split(/\s+/).includes('muted');
+    assert.equal(dimmed, total > 0 && behind === 0, `${f.path} dimming follows the count's state`);
   }
+  // The folders are nodes, not prefixes on every row.
+  const dirs = new Set(project.files.flatMap((f) => f.path.split('/').slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join('/'))));
+  assert.equal(await page.locator('[data-dir]').count(), dirs.size, 'one node per directory');
+  for (const d of dirs) {
+    const node = page.locator(`[data-dir="${d}"]`);
+    assert.equal(await node.getAttribute('data-dir-files'), String(project.files.filter((f) => f.path.startsWith(`${d}/`)).length));
+  }
+
   const options = await page.locator('[data-env-select] option').allTextContents();
   assert.deepEqual(
     options,
@@ -841,6 +857,11 @@ interface FullProject {
 }
 const fullProject = async (): Promise<FullProject> => (await (await fetch(`${baseUrl}/api/project`)).json()) as FullProject;
 
+/** The door labels, restated — the cli typecheck has no jsx, so `doors.ts` is not importable here.
+ *  `DoorBar`'s own gate reads the same four out of the page, so a drift between these and the
+ *  product reddens there. */
+const DOOR_LABELS: Record<string, string> = { api: 'API', browser: 'BROWSER', load: 'LOAD', scan: 'SCANS' };
+
 const readDecls = (p: Page, selector: string): Promise<DeclRow[]> =>
   p.locator(selector).evaluateAll((els) =>
     els.map((e) => ({
@@ -852,29 +873,38 @@ const readDecls = (p: Page, selector: string): Promise<DeclRow[]> =>
     })),
   );
 
-test("Source indexes the file's declarations, with every badge the sidebar renders for the same test", async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
-  await page.reload();
-  await page.locator('[data-files]').waitFor();
-  const paths = await page.locator('[data-file]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file')!));
-  assert.ok(paths.length > 0, 'the sidebar lists something to compare against');
-  for (const path of paths) {
-    const inSidebar = await readDecls(page, `[data-file="${path}"] [data-project-test], [data-file="${path}"] [data-project-crawl]`);
-    await page.goto(`${baseUrl}#/api/source/${path}`);
+test("Source indexes every declaration the server read, with the badges the sidebar used to carry", async () => {
+  // **This gate was written against the sidebar and is graded against the projection.** `S2` built
+  // the index while the test rows were still in the tree, and compared the two rows directly —
+  // which is the only moment that comparison can be made. `S3` took the rows out, so a gate still
+  // reading `[data-project-test]` would have gone on passing over an empty set, which is `M209`'s
+  // own subject: a check that reconciles a thing against itself. The oracle is `/api/project`, the
+  // same derivation the sidebar was rendering.
+  const view = await fullProject();
+  for (const f of view.files) {
+    await page.goto(`${baseUrl}#/api/source/${f.path}`);
     await page.locator('[data-test-index]').waitFor();
     const inIndex = await readDecls(page, '[data-source-test]');
-    for (const row of inSidebar) {
-      const match = inIndex.find((r) => r.name === row.name && r.line === row.line);
-      assert.ok(match, `${path}: ${row.name} at line ${row.line} is in the index`);
-      assert.deepEqual(match.badges, row.badges, `${path}: ${row.name} carries the sidebar's badges`);
-      assert.deepEqual(match.tags, row.tags, `${path}: ${row.name} carries the sidebar's tags`);
-      assert.equal(match.lenses, row.lenses, `${path}: ${row.name} is behind the same doors`);
+    assert.equal(await page.locator('[data-test-index]').getAttribute('data-test-index'), String(f.tests.length + f.crawls.length), `${f.path}: every declaration is indexed, not only this door's`);
+    if (f.tests.length + f.crawls.length === 0) {
+      assert.equal(await page.locator('[data-test-index-empty]').count(), 1, `${f.path}: a fragment says what it is`);
+      continue;
     }
-    // And the index is graded against the server's own projection, not against the sidebar alone —
-    // the sidebar is door-narrowed and the index is not (`D1044`).
-    const view = await fullProject();
-    const entry = view.files.find((f) => f.path === path)!;
-    assert.equal(inIndex.length, entry.tests.length + entry.crawls.length, `${path}: every declaration is indexed, not only this door's`);
+    for (const t of f.tests) {
+      const row = inIndex.find((r) => r.name === t.name && r.line === String(t.line));
+      assert.ok(row, `${f.path}: ${t.name} at line ${t.line} is in the index`);
+      assert.deepEqual(row.tags, [...t.tags].map((x) => `@${x}`).sort(), `${f.path}: ${t.name} carries its tags`);
+      assert.equal(row.lenses, t.lenses.join(' '), `${f.path}: ${t.name} carries its whole derivation`);
+      // The three DERIVED facts, which live nowhere else on the page: `workload`, `crawl`, and
+      // every other door this test is behind.
+      const expected = [...(t.workload ? ['workload'] : []), ...t.lenses.filter((l) => l !== 'api').map((l) => DOOR_LABELS[l]!)].sort();
+      assert.deepEqual(row.badges, expected, `${f.path}: ${t.name} carries its derived badges`);
+    }
+    for (const c of f.crawls) {
+      const row = inIndex.find((r) => r.name === c.name && r.line === String(c.line));
+      assert.ok(row, `${f.path}: crawl ${c.name} is in the index`);
+      assert.deepEqual(row.badges, ['crawl', ...c.lenses.filter((l) => l !== 'api').map((l) => DOOR_LABELS[l]!)].sort());
+    }
   }
 });
 
@@ -952,6 +982,150 @@ test('an index row scrolls the text to its own line, and puts that line in the m
     await ui.close();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// `M209` `S3` — the tree. `D1061` a row is a file, `D1062` every file, `D1063` the door is a
+// count, `D1068` three states, `D1066` expansion is inferred and is not in the address.
+// ---------------------------------------------------------------------------
+
+/** The tree's shape as one string per row: what is a folder, what is a file, and in what order. */
+const treeShape = (p: Page): Promise<string[]> =>
+  p.locator('[data-files] [data-dir], [data-files] [data-file]').evaluateAll((els) =>
+    els.map((e) => (e.hasAttribute('data-dir') ? `dir:${e.getAttribute('data-dir')}` : `file:${e.getAttribute('data-file')}`)),
+  );
+
+test('the tree is byte-identical behind all four doors — the door is a count and narrows nothing', async () => {
+  const shapes: Record<string, string[]> = {};
+  for (const door of ['api', 'browser', 'load', 'scan']) {
+    await page.goto(`${baseUrl}#/${door}`);
+    await page.locator('[data-files]').waitFor();
+    shapes[door] = await treeShape(page);
+  }
+  assert.ok(shapes.api!.length > 0);
+  for (const door of ['browser', 'load', 'scan']) {
+    assert.deepEqual(shapes[door], shapes.api, `the tree behind ${door} is the tree behind API`);
+  }
+  // And the claim is exercised rather than merely stated: behind every door at least one file
+  // counts nothing, which is exactly where the old pane dropped a row.
+  const view = await fullProject();
+  for (const door of ['api', 'browser', 'load', 'scan']) {
+    const silent = view.files.filter((f) => f.tests.length + f.crawls.length > 0 && ![...f.tests, ...f.crawls].some((t) => t.lenses.includes(door)));
+    assert.ok(silent.length > 0, `the fixture has a file with nothing behind ${door}, or this gate proves nothing there`);
+    await page.goto(`${baseUrl}#/${door}`);
+    await page.locator('[data-files]').waitFor();
+    for (const f of silent) {
+      assert.equal(await page.locator(`[data-file="${f.path}"] [data-door-count]`).getAttribute('data-door-count-state'), 'none', `${f.path} is listed behind ${door}, counting nothing`);
+    }
+  }
+});
+
+test('a fragment file is in the tree, reads `—`, and is not dimmed', async () => {
+  // `D1068`. The shared fixture declares a test in every file, so this needs a project of its own:
+  // without the third state, `D1062` and `D1063` together would grey out the six most-depended-on
+  // files in the sibling on every screen forever, and a gate with no fragment to look at would
+  // never say so.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-s3-fragment-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage();
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await mkdir(join(dir, 'shared'), { recursive: true });
+    // A fragment: an action and nothing else. Every project that shares a login has one.
+    await writeFile(join(dir, 'shared', 'root.tflw'), ['action "the root" do', '  api GET /', '  expect status equals 200', ''].join('\n'));
+    // A file with tests, none of them behind BROWSER — the `0` state, which IS dimmed.
+    await writeFile(join(dir, 'api.tflw'), ['@api', 'test "the catalogue answers"', '  api GET /catalog', '  expect status equals 200', ''].join('\n'));
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    await fresh.goto(`${base}/#/browser`);
+    await fresh.locator('[data-files]').waitFor();
+    assert.equal(await fresh.locator('[data-file]').count(), 2, 'the fragment is listed at all — it was in no list before this slice');
+
+    const fragment = fresh.locator('[data-file="shared/root.tflw"]');
+    const fCount = fragment.locator('[data-door-count]');
+    assert.equal(await fCount.getAttribute('data-door-count-state'), 'fragment');
+    assert.equal(await fCount.textContent(), '—');
+    assert.doesNotMatch((await fragment.locator('> .file-row').getAttribute('class'))!, /\bmuted\b/, 'a fragment declares nothing by nature and is not dimmed for it');
+
+    const withTests = fresh.locator('[data-file="api.tflw"]');
+    const wCount = withTests.locator('[data-door-count]');
+    assert.equal(await wCount.getAttribute('data-door-count-state'), 'none');
+    assert.equal(await wCount.textContent(), '0');
+    assert.match((await withTests.locator('> .file-row').getAttribute('class'))!, /\bmuted\b/, 'has tests, none behind this door — dimmed');
+
+    // And on the door it IS behind, the same row counts.
+    await fresh.goto(`${base}/#/api`);
+    await fresh.locator('[data-files]').waitFor();
+    assert.equal(await fresh.locator('[data-file="api.tflw"] [data-door-count]').textContent(), '1');
+    assert.equal(await fresh.locator('[data-file="shared/root.tflw"] [data-door-count]').textContent(), '—', 'the fragment reads the same behind every door');
+
+    // The fragment is now openable, which is the capability `D1062` is for: it was in no list, so
+    // it could not be read in Source or edited anywhere.
+    await fresh.goto(`${base}/#/api/source/shared/root.tflw`);
+    await fresh.locator('[data-test-index-empty]').waitFor();
+    assert.match((await fresh.locator('[data-preview]').textContent())!, /action "the root" do/);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a long name at depth is one line and an ellipsis, with the whole path in reach', async () => {
+  // `M209` §4's open item, measured rather than assumed. At 1440x900 the 320 px column leaves
+  // 238 px at depth 3, and **16 of the sibling's 84 leaf names are 27-32 characters** — they
+  // wrapped to two lines and the tree came out 2,554 px against a ~1,850 px forecast. A tree row
+  // does not wrap; the fixture's names are all short, so the instrument is a project with a name
+  // long enough to make the claim falsifiable.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-s3-long-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    const deep = 'tests/api/identity/session-refresh-and-oauth2-and-then-some.tflw';
+    await mkdir(join(dir, 'tests', 'api', 'identity'), { recursive: true });
+    await writeFile(join(dir, deep), ['@api', 'test "it answers"', '  api GET /x', '  expect status equals 200', ''].join('\n'));
+    const port = await ui.listen(0);
+    await fresh.goto(`http://127.0.0.1:${port}/#/api`);
+    await fresh.locator('[data-files]').waitFor();
+
+    const row = fresh.locator(`[data-file="${deep}"] > .file-row`);
+    const box = (await row.boundingBox())!;
+    const lineHeight = Number(await row.evaluate((el) => parseFloat(el.ownerDocument.defaultView!.getComputedStyle(el).lineHeight)));
+    assert.ok(box.height <= lineHeight + 8, `the row is one line (${box.height} against a ${lineHeight} line)`);
+    // Truncated, not shortened: the element is narrower than the text it holds.
+    const code = fresh.locator(`[data-file="${deep}"] code`);
+    const { client, scroll } = await code.evaluate((el) => ({ client: el.clientWidth, scroll: el.scrollWidth }));
+    assert.ok(scroll > client, `the name is clipped rather than fitting (${scroll} into ${client})`);
+    // And nothing is lost: the whole path is on the row and in the address.
+    assert.equal(await row.getAttribute('title'), deep);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a folder collapses, and the address reopens it (`D1066` — expansion is inferred, never in the URL)', async () => {
+  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.reload();
+  await page.locator('[data-files]').waitFor();
+  const view = await fullProject();
+  const nested = view.files.find((f) => f.path.includes('/'))!;
+  const folder = nested.path.split('/')[0]!;
+
+  assert.equal(await page.locator(`[data-dir-toggle="${folder}"]`).getAttribute('aria-expanded'), 'true', 'the tree opens whole — 84 rows is two screens, not a problem to fold away');
+  await page.locator(`[data-dir-toggle="${folder}"]`).click();
+  assert.equal(await page.locator(`[data-dir-toggle="${folder}"]`).getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator(`[data-file="${nested.path}"]`).count(), 0, 'a collapsed folder holds its files');
+  // Collapsing is not in the address — that is the whole of `D1066`'s second half.
+  assert.equal(new URL(page.url()).hash, API_DOOR);
+
+  // And an address naming a file inside it wins: a link that cannot show what it names is broken.
+  await page.goto(`${baseUrl}#/api/source/${nested.path}`);
+  await page.locator(`[data-file="${nested.path}"]`).waitFor();
+  assert.equal(await page.locator(`[data-dir-toggle="${folder}"]`).getAttribute('aria-expanded'), 'true');
 });
 
 // ---------------------------------------------------------------------------
@@ -1066,21 +1240,28 @@ test('a door opens the project, and the URL is the only place the choice lives',
   assert.equal(await page.locator('[data-doorbar]').getAttribute('data-doorbar'), 'scan');
 });
 
-test('the door narrows the list and never the test — a test behind two doors is listed under both', async () => {
+test('the door narrows the count and never the test — a test behind two doors is listed in its file under both', async () => {
   const view = await projectView();
-  const multi = view.files.flatMap((f) => f.tests).filter((t) => t.lenses.length > 1);
+  const multi = view.files.flatMap((f) => f.tests.map((t) => ({ path: f.path, ...t }))).filter((t) => t.lenses.length > 1);
   assert.ok(multi.length > 0, 'the fixture must hold a multi-lens test — D1043’s whole case');
 
+  // **The instrument moved with `M209` `S3`.** A test row is in Source's index now, not in the
+  // sidebar, because the sidebar's rows are files. The claim is unchanged: a test behind three
+  // doors is reachable behind all three, carrying its whole derivation and naming the others.
   for (const test_ of multi) {
     for (const lens of test_.lenses) {
-      await page.goto(`${baseUrl}#/${lens}`);
-      const item = page.locator(`[data-project-test="${test_.name}"]`);
+      await page.goto(`${baseUrl}#/${lens}/source/${test_.path}`);
+      const item = page.locator(`[data-source-test="${test_.name}"]`);
       await item.waitFor();
       assert.equal(await item.getAttribute('data-test-lenses'), test_.lenses.join(' '), `${test_.name} carries its whole derivation behind ${lens}`);
-      // The other doors it is behind are named on the row itself.
+      assert.equal(await item.getAttribute('data-test-here'), 'yes');
       for (const other of test_.lenses.filter((l) => l !== lens)) {
         assert.equal(await item.locator(`[data-also="${other}"]`).count(), 1, `${test_.name} names its ${other} door while in ${lens}`);
       }
+      // And the file's own row counts it behind this door — the door's only mark on the tree.
+      const row = page.locator(`[data-file="${test_.path}"] [data-door-count]`);
+      assert.equal(await row.getAttribute('data-door-count-state'), 'some');
+      assert.ok(Number(await row.getAttribute('data-door-count')) >= 1);
     }
   }
 });
@@ -1088,27 +1269,35 @@ test('the door narrows the list and never the test — a test behind two doors i
 test('the derivation is about constructs, not tags — the page shows it where the tag disagrees', async () => {
   // `security.tflw`'s tests carry `@security` AND an `api` step, so they are behind API as well.
   // `shop.tflw`'s carry no such tag and are behind BROWSER. If the page were reading tags, the
-  // first would be missing from API and the second from BROWSER.
-  const view = await projectView();
+  // first would count zero behind API and the second zero behind BROWSER.
+  const view = await fullProject();
   const tagged = view.files.find((f) => f.path.endsWith('security.tflw'));
   assert.ok(tagged, 'the fixture has security.tflw');
-  await page.goto(`${baseUrl}#/api`);
-  await page.locator('[data-files]').waitFor();
+  await page.goto(`${baseUrl}#/api/source/${tagged.path}`);
+  await page.locator('[data-test-index]').waitFor();
   for (const t of tagged.tests) {
-    assert.equal(await page.locator(`[data-project-test="${t.name}"]`).count(), 1, `${t.name} is behind API because it makes a request, whatever its tag says`);
+    const row = page.locator(`[data-source-test="${t.name}"]`);
+    assert.equal(await row.count(), 1, `${t.name} is indexed`);
+    assert.equal(await row.getAttribute('data-test-here'), 'yes', `${t.name} is behind API because it makes a request, whatever its tag says`);
   }
+  const count = page.locator(`[data-file="${tagged.path}"] [data-door-count]`);
+  assert.equal(await count.getAttribute('data-door-count'), String(tagged.tests.length), 'and the tree counts every one of them behind API');
 });
 
 test('the switcher moves between doors without leaving the project', async () => {
   await page.goto(`${baseUrl}#/api`);
   await page.locator('[data-doorbar]').waitFor();
   const view = await projectView();
-  const browserTests = view.files.flatMap((f) => f.tests).filter((t) => t.lenses.includes('browser') && !t.lenses.includes('api'));
-  assert.ok(browserTests.length > 0, 'the fixture has a browser-only test');
-  assert.equal(await page.locator(`[data-project-test="${browserTests[0]!.name}"]`).count(), 0, 'not listed behind API');
+  const browserOnly = view.files.find((f) => f.tests.length > 0 && f.tests.every((t) => t.lenses.includes('browser') && !t.lenses.includes('api')));
+  assert.ok(browserOnly, 'the fixture has a file whose tests are all browser-only');
+  // `D1063` — the file is STILL THERE behind API, dimmed and counting zero. Hiding it is what the
+  // sidebar used to do, and a project pane that empties as you change doors is how someone
+  // concludes the tool lost their tests.
+  const count = page.locator(`[data-file="${browserOnly.path}"] [data-door-count]`);
+  assert.equal(await count.getAttribute('data-door-count-state'), 'none', 'listed behind API, counting nothing');
 
   await page.locator('[data-door-tab="browser"]').click();
-  await page.locator(`[data-project-test="${browserTests[0]!.name}"]`).waitFor();
+  await page.locator(`[data-file="${browserOnly.path}"] [data-door-count][data-door-count-state="some"]`).waitFor();
   assert.equal(new URL(page.url()).hash, '#/browser');
 
   // And back to the landing, by the one control that says so.

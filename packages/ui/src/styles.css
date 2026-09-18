@@ -42,9 +42,23 @@ button.cancel { background: var(--warn); }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; max-height: 40vh; overflow: auto; }
 .chip { background: var(--bg); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; }
 .chip.on { color: var(--fg); border-color: var(--accent); background: rgba(108, 182, 255, 0.12); }
+/* The tree (`M209` `S3`). A row is a file and a leaf name, not a path: the sibling's 378 wrapped
+   rows were 55-character paths repeated under every folder they share. Indentation is the folder,
+   which is what a tree is for. */
 .files { list-style: none; margin: 0; padding: 0; }
-.files > li { margin-bottom: 8px; }
-.file-row { display: flex; align-items: center; gap: 6px; }
+.tree { list-style: none; margin: 0; padding: 0; }
+.tree .tree { margin-left: 12px; border-left: 1px solid var(--line); padding-left: 6px; }
+.file-row { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+/* ONE LINE PER FILE, ELLIPSISED — measured, not assumed (`M209` §4's open item). At 1440x900 the
+   320 px column leaves 238 px at depth 3, and 16 of the sibling's 84 leaf names are 27-32
+   characters, so they wrapped to two lines and the tree came out 2,554 px against a ~1,850 px
+   forecast. A tree row does not wrap; it truncates and keeps the whole name in reach — the row's
+   `title` is the full path, and so is the address. */
+.file-row > code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dir-row { background: none; border: 0; padding: 1px 0; color: var(--muted); font: inherit; display: flex; align-items: center; gap: 4px; width: 100%; text-align: left; }
+.dir-row:hover { color: var(--fg); }
+.twisty { display: inline-block; width: 10px; font-size: 10px; }
+.file-row .count { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
 .tests-in-file { list-style: none; margin: 2px 0 0 22px; padding: 0; font-size: 13px; }
 .tests-in-file li { padding: 1px 0; }
 .ln { display: inline-block; min-width: 2.2em; text-align: right; font-family: var(--mono); font-size: 11px; }
