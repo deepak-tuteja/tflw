@@ -18,7 +18,7 @@ import type { Server } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer, SCRATCH_PATH } from '../src/ui-server.js';
-import { checkProgram, parseSource } from '@tflw/lang';
+import { checkProgram, parseSource, print, STEP_LENS } from '@tflw/lang';
 import { roundDurationMs, type LoadMetrics, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
 import { describeWorkload, formatThresholdActual, formatThresholdTarget, remediationFor } from '@tflw/reporter';
 import { findingsSummaryLine, sortFindings, WITHHELD_LABEL, SCAN_KIND_LABEL } from '@tflw/runtime';
@@ -169,6 +169,25 @@ after(async () => {
  * `#/api/run` — which is a stronger address than the old one, because it asserts that the report
  * renders inside the tab as well as that it renders.
  */
+/**
+ * Open Compose's legacy *write a new test* form (`M210` `S1`).
+ *
+ * Every gate below this line was written when the Compose **tab** and the authoring **form** were
+ * the same thing. `S1` makes the tab a reader (`D1072`) and keeps `M200` `A1-4`'s form behind a
+ * disclosure, because `D1082`'s *read-only first* is about what the new surface claims, not about
+ * taking the API door's only write path away for four slices. A closed `<details>` does not lay out
+ * its content, so a `fill` into it times out rather than failing — hence a helper rather than a
+ * selector change: these gates still assert exactly what they asserted, one gesture further in.
+ *
+ * `S2`–`S5` dissolve the form, and this helper goes with the last of it.
+ */
+const openLegacyForm = async (p: Page): Promise<void> => {
+  const details = p.locator('[data-compose-legacy]');
+  await details.waitFor();
+  if (!(await details.evaluate((e) => (e as unknown as { open: boolean }).open))) await details.locator('summary').click();
+  await p.locator('[data-api-path]').waitFor();
+};
+
 const API_DOOR = '#/api';
 const API_RUN = '#/api/run';
 
@@ -1864,14 +1883,28 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
     const api = await read('api');
     const browserDoor = await read('browser');
     const load = await read('load');
-    assert.deepEqual(load, api, 'LOAD does not measure what API measures, tab for tab');
-    assert.deepEqual(load, browserDoor, 'LOAD does not measure what BROWSER measures, tab for tab');
+    // **Compose is excluded from the parity, and `D1042` is why — it was always allowed to differ.**
+    // *"The door decides what the 'new test' surface is, and nothing else"* has been the rule since
+    // `M200` `A0-3`; all four doors merely happened to carry forms of the same height, so a parity
+    // over all five tabs was true without being a claim about anything. `M210` `S1` gives API a
+    // Compose that **reads the open file** and leaves the other three doors' forms alone by decision
+    // (§5), so the numbers part company here first. Asserting they still match would be asserting
+    // the round did not happen.
+    const shared = (m: Record<string, number>): Record<string, number> => ({ source: m.source!, run: m.run!, auth: m.auth!, config: m.config! });
+    assert.deepEqual(shared(load), shared(api), 'LOAD does not measure what API measures on the tabs the shell builds once');
+    assert.deepEqual(shared(load), shared(browserDoor), 'LOAD does not measure what BROWSER measures on the tabs the shell builds once');
+    // BROWSER and LOAD have not adopted a reader, so their Compose is still the one-screen form.
+    assert.equal(load.compose, browserDoor.compose, "the two doors that kept their forms still agree");
 
     // And the shape of those numbers, stated rather than left implicit — otherwise three doors
     // that had all regressed identically would satisfy the parity above.
     for (const tab of ['compose', 'source', 'auth', 'config'] as const) {
       assert.equal(load[tab], 900, `LOAD's ${tab} is ${load[tab]} px, not the one screen every door's ${tab} is`);
     }
+    // API's Compose is the one that moved, and by how much is recorded rather than pinned: it is a
+    // pane that draws a whole file's outline plus one request, so *taller than a screen* is what it
+    // is, and a fixture's exact height is not a property worth freezing.
+    assert.ok(api.compose! > 900, `API's Compose reads the file now, so it is taller than the form it replaced (${api.compose} px)`);
     assert.ok(load.run! > 900, 'Run fits in a screen, so this fixture has no report and the parity above is between three empty panes');
 
     // The control this gate needs to mean anything: the instrument can read an overflow at all.
@@ -2693,6 +2726,7 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
 test('the API form writes a request and its assertions in one edit, and the bytes on disk are the bytes it previewed', async () => {
   await page.goto(`${baseUrl}#/api`);
   await page.reload(); // field values are component state; a hash change does not reset them
+  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
 
   const target = 'tests/orders.tflw';
@@ -2804,6 +2838,7 @@ test('the API door adds work to a test the LOAD door started, above its workload
 
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
+  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
   await page.locator(`[data-file-row="${target}"]`).click();
   await page.locator('[data-api-mode]').selectOption('existing');
@@ -2875,6 +2910,7 @@ test('Send writes a scratch file, runs it for real, and shows the response out o
   try {
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
+  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
 
   await page.locator('[data-api-method]').selectOption('GET');
@@ -2965,6 +3001,7 @@ test('Send reports a request that could not be sent, rather than an empty pane',
   // failure — the same sentence a terminal prints — instead of a fetch error the page invented.
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
+  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
   await page.locator('[data-api-method]').selectOption('GET');
   await page.locator('[data-api-path]').fill('/items');
@@ -2984,6 +3021,7 @@ test('the page says when the scratch file is not ignored, rather than editing .g
   // `.gitignore` at all, which is the case that matters — absence, not a wrong rule.
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
+  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
   const notice = await page.locator('[data-api-scratch-unignored]').textContent();
   assert.ok((notice ?? '').includes(SCRATCH_PATH), notice ?? '');
@@ -2999,11 +3037,14 @@ test('the page says when the scratch file is not ignored, rather than editing .g
   assert.equal(view.scratchIgnored, true);
 
   await page.reload();
-  await page.locator('[data-api-form]').waitFor();
+  await openLegacyForm(page);
   assert.equal(await page.locator('[data-api-scratch-unignored]').count(), 0, 'the notice goes when the line is there');
 
   await rm(join(root, '.gitignore'), { force: true });
   await page.reload();
+  // A reload resets the disclosure, because its open state is `ApiForm`'s and not the document's —
+  // which is exactly what makes it survive a tab trip (`ComposePaneProps.legacyOpen`).
+  await openLegacyForm(page);
   await page.locator('[data-api-scratch-unignored]').waitFor();
 });
 
@@ -3019,6 +3060,7 @@ test('the request line stands as tall as every other control, and says so agains
   // this lived through `A1-4` and every gate written since. It belongs here or nowhere.
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
+  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
 
   /** Every control's height, off the browser's own rectangles — no DOM types, and none needed. */
@@ -3032,10 +3074,15 @@ test('the request line stands as tall as every other control, and says so agains
     }
     return out;
   };
-  const lineSel = '.request-line label > input, .request-line label > select';
+  // **Scoped to the legacy form** since `M210` `S1`. Compose is two things on one pane now — the
+  // reader and the form this tab used to be — and the reader draws its own row of request fields.
+  // Unscoped, `line.length` came back 9 against the 4 this gate is about. The first draft of the
+  // reader had also called its row `.request-line`, which is this row's name; it is
+  // `.request-fields` now, and the scope here is belt as well as braces.
+  const lineSel = '[data-compose-legacy] .request-line label > input, [data-compose-legacy] .request-line label > select';
   // The oracle is the form's OTHER controls, not a number written here: a padding or font change
   // should move the whole band together and leave this gate green, and that is the point of it.
-  const otherSel = '.authoring :is(input, select):not(.request-line *)';
+  const otherSel = '[data-compose-legacy] .authoring :is(input, select):not(.request-line *)';
 
   const line = await heights(lineSel);
   const others = await heights(otherSel);
@@ -3068,6 +3115,7 @@ test('the API form opens empty, and an untouched form cannot send anything at al
   // which shows the shape of an answer and never becomes a test the author did not write.
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
+  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
 
   for (const sel of ['[data-api-path]', '[data-api-name]', '[data-api-tags]', '[data-api-service]', '[data-api-label]']) {
@@ -3138,6 +3186,7 @@ test('the strip is an address, and Compose keeps what you typed while you are lo
   // that shape and `doorFromHash` now has to ignore a segment that was not there.
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
+  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
   assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip link stopped opening the door');
 
@@ -3158,7 +3207,8 @@ test('the strip is an address, and Compose keeps what you typed while you are lo
   // assertion in this test true a year from now.
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
-  await page.locator('[data-api-form]').waitFor();
+  // The reload reset the disclosure — see `openLegacyForm`. What this test is about starts here.
+  await openLegacyForm(page);
   await page.locator('[data-api-path]').fill('/items');
   await page.locator('[data-api-name]').fill('typed before leaving');
   await openTab('run');
@@ -3178,6 +3228,13 @@ test('the strip is an address, and Compose keeps what you typed while you are lo
   // green, which is what said otherwise.
   assert.equal(await page.locator('[data-api-path]').inputValue(), '/items');
   assert.equal(await page.locator('[data-api-name]').inputValue(), 'typed before leaving');
+  // **And the disclosure is still open** (`M210` `S1`). This is the half `inputValue` cannot see:
+  // it reads a hidden input happily, so every assertion above stays green on a page where the form
+  // came back shut — which is what `S1` shipped first, and what six gates then met as timeouts on
+  // controls that were present, resolved and invisible. `legacyOpen` lives in `ApiForm` for the
+  // same reason the field values do; put it back inside `ComposePane` and this line reddens alone.
+  assert.equal(await page.locator('[data-compose-legacy]').evaluate((e) => (e as unknown as { open: boolean }).open), true, 'a trip to another tab closed the form');
+  assert.ok(await page.locator('[data-api-path]').isVisible(), 'and its controls came back reachable, not merely present');
 
   // And the back button walks the tabs, because they are addresses and not a mode.
   await openTab('source');
@@ -3804,6 +3861,7 @@ test('a test written from Compose appears in the Source index without a reload',
     assert.equal(await fresh.locator('[data-source-test]').count(), 1);
 
     await fresh.locator('[data-tab="compose"]').click();
+    await openLegacyForm(fresh);
     await fresh.locator('[data-api-name]').fill('the orders endpoint answers');
     await fresh.locator('[data-api-method]').selectOption('GET');
     await fresh.locator('[data-api-path]').fill('/orders');
@@ -3827,4 +3885,327 @@ test('a test written from Compose appears in the Source index without a reload',
     await ui.close();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// `M210` `S1` — Compose reads (`D1072`). The pane that writes a file, showing the file it writes.
+//
+// **THE ORACLE IS THE FILE, PARSED HERE.** Not `/api/project` — that route carries a per-test index
+// and deliberately not an outline, because `D1073`'s unit is one request and a request is a level
+// below anything the project view has ever answered. So these gates parse the fixture's own bytes
+// with `@tflw/lang` and ask whether the page drew what is in them.
+//
+// **AND THEY READ THE PAINT, NOT THE CLASS** (`M209-02`, §7). *Disabled* is asked of the control's
+// own `disabled` property; *dimmed* is asked of the computed opacity. A class is a request for
+// paint and this round is made of controls, so the distinction is the whole difference between a
+// gate that means something here and one that does not.
+
+/** Every request in a file, as the language sees it — `[declaration line, request line, method]`. */
+const requestsInSource = (source: string): Array<{ decl: number; line: number; method: string; path: string }> => {
+  const { program } = parseSource(source);
+  const out: Array<{ decl: number; line: number; method: string; path: string }> = [];
+  for (const d of [...program.hooks, ...program.tests]) {
+    for (const s of d.body) {
+      if (s.type === 'ApiStep') out.push({ decl: d.span.start.line, line: s.span.start.line, method: s.method, path: s.path.raw });
+      else if (s.type === 'WaitUntilApiStmt') out.push({ decl: d.span.start.line, line: s.span.start.line, method: s.request.method, path: s.request.path.raw });
+    }
+  }
+  return out.sort((a, b) => a.line - b.line);
+};
+
+test('Compose draws every request the file holds, at its own line, under the declaration that owns it', async () => {
+  const view = await fullProject();
+  for (const f of view.files) {
+    const source = await readFile(join(root, f.path), 'utf8');
+    const wanted = requestsInSource(source);
+    await page.goto(`${baseUrl}#/api/compose/${f.path}`);
+    // **`[data-compose]` is not the thing to wait for.** The shell reads the file asynchronously
+    // and the pane renders a *reading…* state meanwhile, so a gate that waited for the pane counted
+    // rows before any existed. `[data-compose-summary]` appears only once the outline is in hand.
+    await page.locator('[data-compose-summary]').waitFor();
+    const drawn = await page.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
+    assert.deepEqual(drawn.sort((a, b) => a - b), wanted.map((r) => r.line), `${f.path}: every request in the file is a row in the explorer's outline`);
+    // And the declarations, which is the other half of `D1081`'s two levels.
+    const { program } = parseSource(source);
+    const decls = [...program.hooks, ...program.tests].map((d) => d.span.start.line).sort((a, b) => a - b);
+    const drawnDecls = await page.locator('[data-outline-decl]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-line'))));
+    assert.deepEqual(drawnDecls.sort((a, b) => a - b), decls, `${f.path}: every hook and test is a row too — a declaration with no request is still there`);
+  }
+});
+
+test('the card is the request the address names, and the band is the declaration that holds it', async () => {
+  const view = await fullProject();
+  const withRequests = view.files.find((f) => f.path.endsWith('catalog.tflw'))!;
+  const source = await readFile(join(root, withRequests.path), 'utf8');
+  const wanted = requestsInSource(source);
+  assert.ok(wanted.length >= 2, 'the fixture file holds more than one request, or this asserts nothing');
+  for (const r of wanted) {
+    await page.goto(`${baseUrl}#/api/compose/${withRequests.path}/L${r.line}`);
+    await page.locator(`[data-request-line="${r.line}"]`).waitFor();
+    assert.equal(await page.locator('[data-request-method]').textContent(), r.method);
+    assert.equal(await page.locator('[data-request-path]').getAttribute('data-request-path'), r.path);
+    assert.equal(await page.locator('[data-band-line]').getAttribute('data-band-line'), String(r.decl), `L${r.line} shows the declaration that owns that request`);
+  }
+
+  // **A header's value is printed, not stringified here.** The first draft read the `StringLit`'s
+  // text and fell back to the node's `type` for anything else, so a numeric or interpolated value
+  // rendered `NumberLit` to the reader. The oracle is `print()` over the same node.
+  const withHeaders = requestsInSource(source).map((r) => r.line);
+  const { program: prog } = parseSource(source);
+  const headed = [...prog.hooks, ...prog.tests]
+    .flatMap((d) => d.body)
+    .find((st) => st.type === 'ApiStep' && st.headers.length > 0);
+  if (headed && headed.type === 'ApiStep' && withHeaders.includes(headed.span.start.line)) {
+    await page.goto(`${baseUrl}#/api/compose/${withRequests.path}/L${headed.span.start.line}`);
+    await page.locator(`[data-request-line="${headed.span.start.line}"]`).waitFor();
+    for (const h of headed.headers) {
+      const printed = print(h.value);
+      assert.ok(printed.ok, `the language can print this header's value`);
+      assert.equal(await page.locator(`[data-request-header-value="${h.name.value}"]`).textContent(), printed.text, `header ${h.name.value} is drawn in the language's own spelling`);
+    }
+  }
+});
+
+test('a line naming a declaration opens THAT declaration, not the request nearest it in the file', async () => {
+  // `D1080`'s cost, bounded. Measured on the served page first: `L261` on the sibling's
+  // `tests/mixed/storefront.tflw` opened a request belonging to the test ABOVE the one named,
+  // because that test's own first request is further down than its `test` line.
+  const view = await fullProject();
+  const f = view.files.find((x) => x.path.endsWith('catalog.tflw'))!;
+  const source = await readFile(join(root, f.path), 'utf8');
+  const { program } = parseSource(source);
+  const target = program.tests.find((t) => t.body.some((s) => s.type === 'ApiStep') && t.span.start.line > (requestsInSource(source)[0]?.line ?? 0));
+  assert.ok(target, 'the fixture has a test declared after some earlier request');
+  await page.goto(`${baseUrl}#/api/compose/${f.path}/L${target.span.start.line}`);
+  await page.locator('[data-band-line]').waitFor();
+  assert.equal(await page.locator('[data-band-line]').getAttribute('data-band-line'), String(target.span.start.line));
+  assert.equal(await page.locator('[data-band-name]').textContent(), target.name.value);
+});
+
+test('every control the reader draws is disabled — and it is the control that is asked, not a class', async () => {
+  const view = await fullProject();
+  for (const f of view.files) {
+    await page.goto(`${baseUrl}#/api/compose/${f.path}`);
+    await page.locator('[data-compose-summary]').waitFor();
+    // `document` is a DOM global and this file is typechecked under `types: ["node"]` with no DOM
+    // lib — so every browser-side callback reaches it through `el.ownerDocument`, which Playwright
+    // types for us. The parity gate below already had to do this; it is the file's convention.
+    const state = await page.locator('[data-compose]').evaluate((root) => {
+      const doc = root.ownerDocument;
+      const reader = [...doc.querySelectorAll('.request-card input, .request-card select, .request-card textarea, .test-band input, .test-band select, .test-band textarea')];
+      const all = [...doc.querySelectorAll('.compose-pane input, .compose-pane select, .compose-pane textarea')];
+      // **No named helper inside this callback.** `tsx` transforms this file with esbuild's
+      // `keepNames`, which wraps every function declaration in a `__name(...)` call — a helper that
+      // exists in the test process and not in the page, so a `const off = (e) => …` here dies as
+      // `ReferenceError: __name is not defined` the moment Playwright serialises it. Inline, and it
+      // is one expression anyway.
+      return {
+        reader: reader.length,
+        readerEnabled: reader.filter((e) => (e as unknown as { disabled?: boolean }).disabled !== true).length,
+        enabledOutsideLegacy: all.filter((e) => (e as unknown as { disabled?: boolean }).disabled !== true && e.closest('.legacy') === null).length,
+      };
+    });
+    assert.equal(state.readerEnabled, 0, `${f.path}: nothing in the reader can be typed into (\`D1082\`)`);
+    // **The legacy form is the one carve-out, and it is named rather than tolerated.** `D1082` says
+    // read-only first; deleting the API door's only write path for four slices is not what that
+    // asked for, so `M200` `A1-4`'s form is kept behind a disclosure until `S2`–`S5` dissolve it.
+    // Everything outside that disclosure is the reader, and the reader types nothing.
+    assert.equal(state.enabledOutsideLegacy, 0, `${f.path}: the only enabled controls are the legacy form's`);
+  }
+});
+
+test('a step from another door is drawn in position, locked, and dimmed in paint rather than in a class name', async () => {
+  const view = await fullProject();
+  // `shop.tflw` — four browser steps and no request at all, which is both halves of this at once.
+  const f = view.files.find((x) => x.path.endsWith('shop.tflw'))!;
+  const source = await readFile(join(root, f.path), 'utf8');
+  const { program } = parseSource(source);
+  const browserSteps = program.tests.flatMap((t) => t.body).filter((s) => STEP_LENS[s.type] === 'browser');
+  assert.ok(browserSteps.length > 0, 'the fixture holds steps this door cannot edit');
+  await page.goto(`${baseUrl}#/api/compose/${f.path}/L${program.tests[0]!.span.start.line}`);
+  await page.locator('[data-compose-summary]').waitFor();
+  assert.equal(await page.locator('[data-compose]').getAttribute('data-compose'), 'no-request', 'a file with no request says so rather than drawing an empty card');
+  const drawn = await page.locator('[data-stmt-locked="yes"]').evaluateAll((els) =>
+    els.map((e) => ({
+      line: Number(e.getAttribute('data-stmt-line')),
+      lens: e.getAttribute('data-stmt-lens'),
+      text: e.querySelector('.stmt-text')?.textContent ?? '',
+      // Through the element's own window, for the `types: ["node"]` reason above.
+      opacity: Number(e.ownerDocument.defaultView!.getComputedStyle(e).opacity),
+      door: e.querySelector('[data-stmt-door]')?.getAttribute('href'),
+    })),
+  );
+  const first = program.tests[0]!.body.filter((s) => STEP_LENS[s.type] === 'browser');
+  assert.deepEqual(drawn.map((d) => d.line), first.map((s) => s.span.start.line), 'in position — the file\'s own order, not a bucket at the end');
+  for (const d of drawn) {
+    assert.equal(d.lens, 'browser');
+    assert.ok(d.text.length > 0, 'a locked row still says what the step is');
+    assert.equal(d.door, '#/browser', 'and links to the door that owns it');
+    // Paint, not a class: a rule that fails to load leaves the class and removes the dimming.
+    assert.ok(d.opacity < 1, `a locked row is dimmed — computed opacity ${d.opacity}`);
+  }
+  const free = await page.locator('[data-stmt-locked="no"]').first().evaluate((e) => Number(e.ownerDocument.defaultView!.getComputedStyle(e).opacity));
+  assert.equal(free, 1, 'and a row this door owns is not');
+});
+
+test('a note is collapsed to its first line with a count, opens to the rest, and does not say the first line twice', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m210-notes-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    // A header on line 1, a hook, a note on the test, and a note on a statement — the four places
+    // `D1077` puts a comment. The fixture project has **zero** comment lines, so the rule this
+    // round is built on has no instrument there at all.
+    await writeFile(
+      join(dir, 'noted.tflw'),
+      [
+        '# the file, line one',
+        '# and its second line',
+        '# and a third',
+        '',
+        'before',
+        '  api POST /reset',
+        '  expect status equals 204',
+        '',
+        '# about this test',
+        '@api',
+        'test "it answers"',
+        '  # about the request',
+        '  api GET /thing',
+        '  expect status equals 200',
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+    await fresh.goto(`${base}/#/api/compose/noted.tflw/L11`);
+    await fresh.locator('[data-compose-summary]').waitFor();
+
+    const header = fresh.locator('[data-note="the file"]');
+    assert.equal(await header.getAttribute('data-note-lines'), '3');
+    assert.equal(await header.locator('summary').textContent(), '# the file, line one +2', 'collapsed to the first line with a count');
+    // **Lines two onward.** A `<details>` keeps showing its summary while open, so a body holding
+    // the whole block printed line one twice — which the served page said and no model check could.
+    assert.equal(await header.locator('.note-body').textContent(), '# and its second line\n# and a third');
+
+    assert.equal(await fresh.locator('[data-note="test it answers"]').textContent(), '# about this test');
+    assert.equal(await fresh.locator('[data-note="request 13"]').textContent(), '# about the request');
+
+    // The hook is a declaration with a body like any other, and it is in the outline beside the test.
+    const decls = await fresh.locator('[data-outline-decl]').evaluateAll((els) => els.map((e) => e.getAttribute('data-outline-decl')));
+    assert.deepEqual(decls, ['hook', 'test'], 'a hook is drawn, and before the test, because that is where it is');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the file row carries what the file brings in, comma-separated, and says `none` where there is nothing', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m210-filerow-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await mkdir(join(dir, 'shared'), { recursive: true });
+    await writeFile(join(dir, 'shared', 'a.tflw'), ['action make thing()', '  api POST /t', '  expect status equals 201', ''].join('\n'));
+    await writeFile(join(dir, 'shared', 'b.tflw'), ['action drop thing()', '  api DELETE /t', '  expect status equals 204', ''].join('\n'));
+    await writeFile(
+      join(dir, 'uses.tflw'),
+      ['import "./shared/a.tflw"', 'import "./shared/b.tflw"', '', 'test "it answers"', '  api GET /thing', '  expect status equals 200', ''].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+    await fresh.goto(`${base}/#/api/compose/uses.tflw`);
+    await fresh.locator('[data-file-facts]').waitFor();
+    assert.equal(await fresh.locator('[data-file-imports]').getAttribute('data-file-imports'), '2');
+    // The first draft mapped straight to `<code>` and the three paths in the sibling's own
+    // `storefront.tflw` rendered as one unbroken string. A list with no separator is not a list.
+    assert.equal((await fresh.locator('[data-file-imports]').textContent())!.trim(), 'imports ./shared/a.tflw, ./shared/b.tflw');
+    assert.equal((await fresh.locator('[data-file-uses]').textContent())!.trim(), 'uses none');
+    assert.equal((await fresh.locator('[data-file-actions]').textContent())!.trim(), 'actions none');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the reader's fields stand as tall as its siblings — the hazard the stylesheet predicted in writing", async () => {
+  // **`styles.css` says, above `M205` `S1`'s fix: *"A new column-direction container under
+  // `.authoring` needs a line like this one."* `M210` `S1` added one and walked straight into it.**
+  //
+  // The shared rule `.authoring input, .authoring select { flex: 1 1 120px }` is a WIDTH in every
+  // band of this form, because every other band is a row. Inside a `flex-direction: column` label
+  // the same declaration is a HEIGHT. The reader's field row inherited the fix by accident — it was
+  // called `.request-line` in the first draft — and lost it the moment the name collided with the
+  // legacy form's row and had to change. Five controls at 130 px against their siblings' 26, on a
+  // page that had been correct one edit earlier.
+  //
+  // That is the class no test can catch by asserting what code does: a comment described the
+  // hazard, named the fix, and had been applied in one place and not the next. So the gate reads
+  // the browser's own rectangles, and carries its own negative control.
+  const view = await fullProject();
+  const f = view.files.find((x) => x.path.endsWith('catalog.tflw'))!;
+  const sized = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await sized.goto(`${baseUrl}#/api/compose/${f.path}`);
+    await sized.locator('[data-compose-summary]').waitFor();
+    const heights = async (selector: string): Promise<number[]> => {
+      const all = sized.locator(selector);
+      const out: number[] = [];
+      for (let i = 0; i < (await all.count()); i += 1) {
+        const box = await all.nth(i).boundingBox();
+        assert.ok(box, `${selector} #${i} has no rectangle`);
+        out.push(Math.round(box.height));
+      }
+      return out;
+    };
+    const fields = await heights('.request-fields .field > input');
+    assert.equal(fields.length, 5, 'service, label, timeout, redirects, retry after');
+    for (const h of fields) assert.ok(h < 40, `a reader field is ${h}px — the shared flex rule is being read as a height again`);
+
+    // THE NEGATIVE CONTROL. Put the axis-dependent declaration back and the five have to tower —
+    // otherwise this passes on a page where the fix was never applied, which is the failure mode
+    // this repository files most often.
+    await sized.addStyleTag({ content: '.request-fields .field > input { flex: 1 1 120px !important; }' });
+    for (const h of await heights('.request-fields .field > input')) {
+      assert.ok(h > 80, `with the shared rule reaching the column container a field should tower, got ${h}px`);
+    }
+  } finally {
+    await sized.close();
+  }
+});
+
+test("the explorer's outline opens under the open file's row and under no other", async () => {
+  const view = await fullProject();
+  const f = view.files.find((x) => x.path.endsWith('catalog.tflw'))!;
+  await page.goto(`${baseUrl}#/api/compose/${f.path}`);
+  await page.locator('[data-outline]').waitFor();
+  const shape = await page.locator('.sidebar').evaluate((root, path: string) => {
+    const doc = root.ownerDocument;
+    const outlines = [...doc.querySelectorAll('[data-outline]')];
+    const openRow = doc.querySelector(`[data-file-row="${path}"]`);
+    const owner = outlines[0]?.closest('li')?.querySelector('[data-file-row]')?.getAttribute('data-file-row');
+    const fileLeft = openRow?.getBoundingClientRect().left ?? 0;
+    const declBtn = outlines[0]?.querySelector('[data-outline-decl] > button');
+    const reqBtn = outlines[0]?.querySelector('[data-outline-request] button');
+    return {
+      count: outlines.length,
+      owner,
+      fileLeft: Math.round(fileLeft),
+      declLeft: declBtn ? Math.round(declBtn.getBoundingClientRect().left) : null,
+      reqLeft: reqBtn ? Math.round(reqBtn.getBoundingClientRect().left) : null,
+      sidebarRight: Math.round(root.getBoundingClientRect().right),
+      reqRight: reqBtn ? Math.round(reqBtn.getBoundingClientRect().right) : null,
+    };
+  }, f.path);
+  assert.equal(shape.count, 1, 'exactly one file expands — an outline under all 84 rows is the 26-screen sidebar this pane spent three rounds escaping');
+  assert.equal(shape.owner, f.path, 'and it is the file the tabs are facing');
+  // `D1081`'s nesting, in pixels: each level is indented past the one above it, and the deepest
+  // row still ends inside the pane. The indent is measured, not read off the stylesheet.
+  assert.ok(shape.declLeft! > shape.fileLeft, `a declaration is indented past its file (${shape.fileLeft} → ${shape.declLeft})`);
+  assert.ok(shape.reqLeft! > shape.declLeft!, `a request past its declaration (${shape.declLeft} → ${shape.reqLeft})`);
+  assert.ok(shape.reqRight! <= shape.sidebarRight, `and the deepest row stays inside the pane (${shape.reqRight} ≤ ${shape.sidebarRight})`);
 });
