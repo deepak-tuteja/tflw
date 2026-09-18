@@ -1287,6 +1287,59 @@ test('every kind the value grammar has prints back as the line it was written as
   }
 });
 
+test('a value kind PRINTABLE claims is a value kind `print` will take on its own', () => {
+  // **`PRINTABLE` means *printable on its own* — its own docblock says so — and for twenty-six of
+  // its thirty-one value kinds that was false** (`M210` `S3a`). `printNode`'s switch listed the
+  // five scalar literals and sent `ObjectLit`, `Interp`, `EnvRef`, every generator and the rest to
+  // `default`, where they refused by name: `no printer for ObjectLit`, about a kind this module
+  // has had a `printObject` for since `A1-1`.
+  //
+  // **The test above cannot see it, and that is the interesting half.** It prints the `let` LINE
+  // and then asserts each kind *occurs* somewhere beneath it — which is the right instrument for
+  // the spelling and says nothing about reachability, because every one of those nodes is reached
+  // THROUGH ITS PARENT. So the claim the set makes about itself was defended by a verdict that
+  // could not fail if it were false. Found from the far end, by a form needing a matcher's operand
+  // as editable text: **77 operands across the two corpora refuse** — 35 `ObjectLit`, 32 `Interp`,
+  // 7 `EnvRef`, 2 `TransformExpr`, 1 `DateOffsetLit`.
+  //
+  // This walks the same table and prints each value node **itself**, so a kind that is listed and
+  // unreachable is a red test rather than a silence.
+  const seen = new Set<string>();
+  for (const line of VALUE_SPELLINGS) {
+    const let_ = step(line);
+    assert.equal(let_.type, 'LetStmt');
+    const visit = (n: unknown): void => {
+      if (Array.isArray(n)) { for (const x of n) visit(x); return; }
+      if (!n || typeof n !== 'object') return;
+      const node = n as { type?: unknown };
+      if (typeof node.type === 'string' && PRINTABLE.has(node.type)) {
+        seen.add(node.type);
+        const printed = print(node as Parameters<typeof print>[0]);
+        assert.equal(printed.ok, true, `${node.type} is declared PRINTABLE and refused on its own: ${printed.reason ?? ''} (from \`${line}\`)`);
+      }
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) { if (k !== 'span') visit(v); }
+    };
+    visit((let_ as { value: unknown }).value);
+  }
+  // The control: a claim about "every kind" is worth nothing if the walk found two of them.
+  assert.ok(seen.size >= 31, `the value table should reach at least 31 printable kinds, reached ${seen.size}`);
+
+  // And the round trip that makes it useful to a form — node out as text, text back in as the same
+  // node. This is the direction `M210`'s expect card lives on: an operand is read out of the file
+  // into a field, typed into, and parsed back.
+  for (const [line, operand] of [
+    ['let a = { id: 1, "user name": "x" }', '{ id: 1, "user name": "x" }'],
+    ['let a = {order.items[0].id}', '{order.items[0].id}'],
+    ['let a = env(API_KEY)', 'env(API_KEY)'],
+    ['let a = today - 6 hours', 'today - 6 hours'],
+  ] as const) {
+    const value = (step(line) as { value: Parameters<typeof print>[0] }).value;
+    const printed = print(value);
+    assert.equal(printed.ok, true, printed.reason);
+    assert.equal(printed.text, operand, line);
+  }
+});
+
 test('a negative literal is the unary spelling, and both spellings are the same node', () => {
   // `-x` is sugar for `0 - x` and the parser records only the result (`parser.ts:4986`), so the
   // AST cannot say which was written and the printer picks. It picks the short one — which is
