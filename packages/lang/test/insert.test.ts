@@ -10,7 +10,7 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApiStep, buildClick, buildExpect, buildFill, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type Insertion, type StringLit } from '../src/index.js';
+import { buildApiStep, buildClick, buildExpect, buildFill, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -406,7 +406,7 @@ test('the API builders refuse in the form’s own words', () => {
     [() => buildApiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'json', text: '5' }, label: null }), /JSON object or array/],
     [() => buildApiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'form', fields: [] }, label: null }), /at least one field/],
     [() => buildApiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'form', fields: [{ key: 'a b', value: 'v' }] }, label: null }), /is not a form field name/],
-    [() => buildExpect({ soft: false, quantifier: 'any', subject: { kind: 'status' }, matcher: 'equals', operand: '200' }), /quantify a body path/],
+    [() => buildExpect({ soft: false, quantifier: 'any', subject: { kind: 'status' }, matcher: 'equals', operand: '200' }), /`any` and `all` quantify a list/],
     [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: 'items[x]' }, matcher: 'equals', operand: '1' }), /is not a path segment/],
     [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '' }), /compares against something/],
     [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'request' }, matcher: 'connects', operand: '200' }), /takes no value/],
@@ -423,6 +423,110 @@ test('the API builders refuse in the form’s own words', () => {
   // "give it a value" refusal about the matchers that need one.
   const bare = buildExpect({ soft: false, quantifier: null, subject: { kind: 'request' }, matcher: 'fails', operand: null });
   assert.equal(bare.ok, true, bare.ok ? '' : bare.reason);
+});
+
+test('S3a: the expect builder writes the assertions the corpus writes', () => {
+  // `M210` `S3` came to EDIT an assertion that already exists, and the builder had only ever been
+  // asked to append a new one. Four gaps fell out of that change of direction, each measured over
+  // this repository's 21 files and the sibling's 274 before it was closed. Every row below is a
+  // spelling the corpus holds and this builder refused or corrupted.
+  const ok = <T>(r: { ok: true; node: T } | { ok: false; reason: string }): T => {
+    assert.ok(r.ok, r.ok ? '' : r.reason);
+    return r.node;
+  };
+  const line = (spec: ExpectSpec): string => {
+    const printed = print(ok(buildExpect(spec)), { indent: 1 });
+    assert.equal(printed.ok, true, printed.reason);
+    return printed.text.trim();
+  };
+
+  // **1. NEGATION, which is the one whose absence inverts the meaning.** `negated` was hardcoded
+  // `false`, so rebuilding `expect status not equals 500` from a spec produced `expect status
+  // equals 500` — a file that parses, runs, and asserts the opposite. 92 assertions across the two
+  // corpora are negated, spread over 15 different matchers.
+  assert.equal(line({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '500', negated: true }), 'expect status not equals 500');
+  // The negative control, and it is the half that matters: *absent* must still mean not negated,
+  // because every caller written before this field existed omits it.
+  assert.equal(line({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '500' }), 'expect status equals 500');
+  assert.equal(line({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '500', negated: false }), 'expect status equals 500');
+  // It is not the value matchers' own word: the corpus negates state and scan matchers too.
+  assert.equal(line({ soft: true, quantifier: null, subject: { kind: 'page' }, matcher: 'hasNoA11yViolations', operand: null, negated: true }), 'check page not has no a11y violations');
+
+  // **2. `was made` takes no operand at all** — 13 occurrences, 0 of them with a value — and fell
+  // through to *"compares against something"*. Its subject is the network request the browser door
+  // holds, which no spec can spell, so this is built the way `M210`'s card builds one: a stand-in
+  // subject through the builder, the real node substituted after. That substitution is the whole
+  // mechanism the pane rests on, so it is gated here rather than only in the browser.
+  const made = parseSource('test "t"\n  expect request to "/orders" was made\n');
+  const original = made.program.tests[0]!.body[0] as ExpectStmt;
+  const rebuilt = ok(buildExpect({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'wasMade', operand: null }));
+  const carriedNode: ExpectStmt = { ...rebuilt, subject: original.subject };
+  const carried = print(carriedNode, { indent: 1 });
+  assert.equal(carried.ok, true, carried.reason);
+  assert.equal(carried.text.trim(), 'expect request to "/orders" was made');
+
+  // **3. The three matchers whose operand is a trailing clause.** `matches schema`, `matches file`
+  // and `matches snapshot` were unreachable from any form: with no value they hit the same
+  // *"compares against something"* refusal, and with one the printer refuses for want of the
+  // clause. 25 assertions across the two corpora.
+  assert.equal(
+    line({ soft: false, quantifier: null, subject: { kind: 'body', path: '' }, matcher: 'matchesSchema', operand: null, schema: { name: 'Order', source: 'openapi.json' } }),
+    'expect body matches schema "Order" from "openapi.json"',
+  );
+  assert.equal(
+    line({ soft: false, quantifier: null, subject: { kind: 'body', path: '' }, matcher: 'matchesSchema', operand: null, schema: { name: 'Order', source: '/openapi.json', service: 'root' } }),
+    'expect body matches schema "Order" from root "/openapi.json"',
+  );
+  assert.equal(
+    line({ soft: false, quantifier: null, subject: { kind: 'bodyBytes' }, matcher: 'matchesFile', operand: null, filePath: 'fixtures/logo.png' }),
+    'expect body bytes matches file "fixtures/logo.png"',
+  );
+  assert.equal(
+    line({ soft: false, quantifier: null, subject: { kind: 'page' }, matcher: 'matchesSnapshot', operand: null, snapshotName: 'checkout' }),
+    'expect page matches snapshot "checkout"',
+  );
+  // Each clause belongs to one matcher, and a clause offered to another is a refusal rather than a
+  // silent drop — the rule `severityFloor` already lives by, for the same reason: a form that
+  // ignored it would show a schema name the file does not have.
+  const refusals: readonly (readonly [() => ReturnType<typeof buildExpect>, RegExp])[] = [
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200', filePath: 'x.png' }), /belongs to that matcher/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: '' }, matcher: 'matchesSchema', operand: null, snapshotName: 'x' }), /belongs to that matcher/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: '' }, matcher: 'matchesSchema', operand: '"Order"' }), /takes its operand as the clause/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: '' }, matcher: 'matchesSchema', operand: null }), /names a schema and the document/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: '' }, matcher: 'matchesSchema', operand: null, schema: { name: 'Order', source: '  ' } }), /names a schema and the document/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'bodyBytes' }, matcher: 'matchesFile', operand: null }), /give it a path/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'page' }, matcher: 'matchesSnapshot', operand: null }), /names the baseline/],
+  ];
+  for (const [build, pattern] of refusals) {
+    const r = build();
+    assert.equal(r.ok, false, `expected a refusal matching ${String(pattern)}`);
+    assert.match(r.reason ?? '', pattern);
+  }
+
+  // **4. The quantifier's rule is `quantifiable()`, not `BodySubject`.** 3 of the corpus's 85
+  // quantified assertions quantify a `body csv` path, which the old rule refused — and the card's
+  // carry-the-subject-across mechanism is exactly where that refusal would have landed, about a
+  // file that parses.
+  // Reachable from a spec through `{value}`, which `quantifiable()` has always included and this
+  // builder refused: `expect any {items} equals 1` parses, prints and now builds.
+  assert.equal(line({ soft: false, quantifier: 'any', subject: { kind: 'value', ref: 'items' }, matcher: 'equals', operand: '1' }), 'expect any {items} equals 1');
+  const csv = parseSource('test "t"\n  expect any body csv[0].name equals "Widget"\n');
+  const csvExpect = csv.program.tests[0]!.body[0] as ExpectStmt;
+  const csvRebuilt = ok(buildExpect({ soft: false, quantifier: 'any', subject: { kind: 'body', path: '' }, matcher: 'equals', operand: '"Widget"' }));
+  const csvCarriedNode: ExpectStmt = { ...csvRebuilt, subject: csvExpect.subject };
+  const csvCarried = print(csvCarriedNode, { indent: 1 });
+  assert.equal(csvCarried.ok, true, csvCarried.reason);
+  assert.equal(csvCarried.text.trim(), 'expect any body csv[0].name equals "Widget"');
+
+  // Every one of these is a file the write route has to accept, not only a string (`D1049`).
+  acceptable(
+    'test "t"\n' +
+      '  api GET /orders\n' +
+      '  expect status not equals 500\n' +
+      '  expect body matches schema "Order" from "openapi.json"\n' +
+      '  expect body bytes matches file "fixtures/logo.png"\n',
+    'the S3a vocabulary',
+  );
 });
 
 test('A3-5: the browser builders produce a file the write route would accept', () => {
