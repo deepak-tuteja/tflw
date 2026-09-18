@@ -29,6 +29,14 @@
 // on every screen forever. A file that is **broken** keeps its `data-diagnostics` badge and is not
 // mistaken for a fragment.
 //
+// CLICK OPENS **AND** SELECTS (`M205` Q13/Q13a, built by `M209` `S4`). A plain click is the whole
+// gesture: it points the tabs at the file and makes the selection that one file. `cmd`/`ctrl`
+// extends by one and `shift` extends to a range, and **neither changes which file the tabs are
+// facing** — extending a selection is a statement about what will run, and moving the subject out
+// from under a reader who is mid-range is not part of it. That is also why a folder's plain click
+// expands and its `cmd`-click selects its files (`D1069`): `tflw run` refuses a directory by
+// decision (`cli.ts:281`), so a folder can only ever *mean* the files under it.
+//
 // EXPANSION IS INFERRED AND IS NOT IN THE ADDRESS (`D1066`). The tree opens whole — 84 rows is the
 // measurement above, not a problem to be folded away — and what a reader collapses is theirs for
 // the session. The one thing that is forced is the open file's own path: an address naming a file
@@ -44,9 +52,15 @@ export interface SidebarProps {
   readonly door: Lens;
   /** The file the tabs are facing, from the address. Its folders are open whatever else is not. */
   readonly openFile: string | null;
-  /** The narrowing, owned by the shell so the strip can label the run it is about to start. */
-  readonly files: ReadonlySet<string>;
-  readonly onFiles: (files: ReadonlySet<string>) => void;
+  /** What will run, in the order the address names it (`D1066`). */
+  readonly selection: readonly string[];
+  /**
+   * One gesture, one call: the next selection, and the file to open or `null` for *leave the
+   * subject where it is*. Two callbacks would be two writes to the address, and the second would
+   * rebuild it from the state it closed over — which is exactly how the first draft of this slice
+   * emptied the selection on every plain click.
+   */
+  readonly onPick: (selection: readonly string[], open: string | null) => void;
   readonly tags: ReadonlySet<string>;
   readonly onTags: (tags: ReadonlySet<string>) => void;
 }
@@ -105,8 +119,11 @@ export function filesUnder(node: TreeNode): string[] {
   return node.file ? [node.path] : node.children.flatMap(filesUnder);
 }
 
-export function Sidebar({ project, door, openFile, files, onFiles, tags, onTags }: SidebarProps) {
+export function Sidebar({ project, door, openFile, selection, onPick, tags, onTags }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  /** Where a `shift` range starts. A gesture detail and not a fact about the project, so it is
+   *  neither in the address nor anywhere durable — `D1066` addresses what changes a run. */
+  const [anchor, setAnchor] = useState<string | null>(null);
 
   const tree = useMemo(() => buildTree(project.files), [project.files]);
 
@@ -139,6 +156,45 @@ export function Sidebar({ project, door, openFile, files, onFiles, tags, onTags 
   const testCount = project.files.reduce((n, f) => n + f.tests.filter((t) => t.lenses.includes(door)).length + f.crawls.filter((c) => c.lenses.includes(door)).length, 0);
   const otherCount = project.files.reduce((n, f) => n + f.tests.length, 0) - project.files.reduce((n, f) => n + f.tests.filter((t) => t.lenses.includes(door)).length, 0);
 
+  /** Every file in tree order — what `shift` ranges over. The WHOLE tree, not the visible part:
+   *  a range that skipped a collapsed folder would select a different set depending on what
+   *  somebody had disclosed, and the selection is in the address while the disclosure is not. */
+  const order = useMemo(() => tree.flatMap(filesUnder), [tree]);
+  const chosen = useMemo(() => new Set(selection), [selection]);
+
+  /** Keep the address's order stable: a selection is rewritten in tree order every time, so the
+   *  same set of files is always the same link. */
+  const inOrder = (paths: Iterable<string>): string[] => {
+    const set = new Set(paths);
+    return order.filter((p) => set.has(p));
+  };
+
+  const pick = (e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }, paths: readonly string[], subject: string | null): void => {
+    if (e.shiftKey && anchor !== null) {
+      const from = order.indexOf(anchor);
+      const to = order.indexOf(paths[paths.length - 1] ?? anchor);
+      if (from >= 0 && to >= 0) {
+        const [lo, hi] = from <= to ? [from, to] : [to, from];
+        onPick(inOrder([...selection, ...order.slice(lo, hi + 1)]), null);
+        return;
+      }
+    }
+    if (e.metaKey || e.ctrlKey) {
+      const next = new Set(selection);
+      const adding = paths.some((p) => !next.has(p));
+      for (const p of paths) {
+        if (adding) next.add(p);
+        else next.delete(p);
+      }
+      onPick(inOrder(next), null);
+      setAnchor(paths[paths.length - 1] ?? null);
+      return;
+    }
+    // A plain click is the whole gesture: this is the selection, and this is what the tabs face.
+    onPick(inOrder(paths), subject);
+    setAnchor(paths[0] ?? null);
+  };
+
   const renderNode = (node: TreeNode): ReactElement => {
     if (node.file) {
       const f = node.file;
@@ -149,8 +205,16 @@ export function Sidebar({ project, door, openFile, files, onFiles, tags, onTags 
       const state = total === 0 ? 'fragment' : behind === 0 ? 'none' : 'some';
       return (
         <li key={f.path} data-file={f.path}>
-          <label className={`file-row${state === 'none' ? ' muted' : ''}`} title={f.path}>
-            <input type="checkbox" checked={files.has(f.path)} onChange={() => onFiles(toggle(files, f.path))} data-file-check={f.path} />
+          <button
+            type="button"
+            className={`file-row${state === 'none' ? ' muted' : ''}${chosen.has(f.path) ? ' on' : ''}${openFile === f.path ? ' open' : ''}`}
+            title={f.path}
+            onClick={(e) => pick(e, [f.path], f.path)}
+            data-file-row={f.path}
+            data-selected={chosen.has(f.path) ? 'yes' : 'no'}
+            data-open={openFile === f.path ? 'yes' : 'no'}
+            aria-pressed={chosen.has(f.path)}
+          >
             <code>{node.name}</code>
             <span
               className={`count${state === 'none' ? ' muted' : ''}`}
@@ -165,7 +229,7 @@ export function Sidebar({ project, door, openFile, files, onFiles, tags, onTags 
                 {f.diagnostics} diagnostic{f.diagnostics === 1 ? '' : 's'}
               </span>
             ) : null}
-          </label>
+          </button>
         </li>
       );
     }
@@ -173,7 +237,13 @@ export function Sidebar({ project, door, openFile, files, onFiles, tags, onTags 
     const under = filesUnder(node);
     return (
       <li key={node.path} data-dir={node.path} data-dir-files={under.length}>
-        <button className="dir-row" onClick={() => setCollapsed(toggle(collapsed, node.path))} data-dir-toggle={node.path} aria-expanded={open} title={node.path}>
+        <button
+          className="dir-row"
+          onClick={(e) => (e.metaKey || e.ctrlKey || e.shiftKey ? pick(e, under, null) : setCollapsed(toggle(collapsed, node.path)))}
+          data-dir-toggle={node.path}
+          aria-expanded={open}
+          title={`${node.path} — click to fold, cmd-click to select its ${under.length} file${under.length === 1 ? '' : 's'}`}
+        >
           <span className="twisty" aria-hidden="true">
             {open ? '▾' : '▸'}
           </span>

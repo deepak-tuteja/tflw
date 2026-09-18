@@ -23,8 +23,8 @@ export interface RunStripProps {
    *  nothing at all, and a half-typed `1` must not become a request. `request()` is what decides. */
   readonly workers: string;
   readonly onWorkers: (workers: string) => void;
-  /** The narrowing, for the label only — the sets live with the control that edits them. */
-  readonly files: ReadonlySet<string>;
+  /** The narrowing, for the label only — it lives with the control that edits it. */
+  readonly selection: readonly string[];
   readonly tags: ReadonlySet<string>;
   readonly running: boolean;
   readonly onRun: (request: RunRequest) => void;
@@ -33,7 +33,7 @@ export interface RunStripProps {
   readonly request: () => RunRequest;
 }
 
-export function RunStrip({ project, env, onEnv, workers, onWorkers, files, tags, running, onRun, onCancel, request }: RunStripProps) {
+export function RunStrip({ project, env, onEnv, workers, onWorkers, selection, tags, running, onRun, onCancel, request }: RunStripProps) {
   return (
     <div className="runstrip" data-runstrip>
       <div className="controls">
@@ -59,7 +59,10 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, files, tags,
         </button>
       ) : (
         <button className="run" onClick={() => onRun(request())} data-run>
-          run {files.size > 0 ? `${files.size} file${files.size === 1 ? '' : 's'}` : 'all'}
+          {/* `M205` Q13: the button names the SELECTION, because that is the gesture that filled it.
+              `run all` is not an absence of a choice — it is the choice a project makes when you
+              have not narrowed it, and it has to read as a decision. */}
+          {selection.length > 0 ? `run selection · ${selection.length} file${selection.length === 1 ? '' : 's'}` : 'run all'}
           {tags.size > 0 ? ` · ${[...tags].sort().map((t) => `@${t}`).join(' ')}` : ''}
         </button>
       )}

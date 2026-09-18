@@ -11,7 +11,7 @@ import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getProject, getRe
 import type { DocumentView } from './api';
 import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
-import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, tabFromHash, type TabId } from './doors';
+import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, selectionFromHash, selectionTail, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
@@ -86,7 +86,13 @@ export function App() {
    */
   const [envPick, setEnvPick] = useState<string | null>(null);
   const [workers, setWorkers] = useState('');
-  const [runFiles, setRunFiles] = useState<ReadonlySet<string>>(new Set());
+  /**
+   * The selection — the explorer's own gesture (`M209` `S4`, `M205` Q13) and, since `D1066`, part
+   * of the address. It is an ORDER and not a set on the wire, because the address has to be stable:
+   * a link that reorders its own files every time somebody clicks is a link that never compares
+   * equal to itself.
+   */
+  const [selection, setSelectionState] = useState<readonly string[]>(() => selectionFromHash(window.location.hash));
   const [runTags, setRunTags] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RunRecord[]>([]);
@@ -111,6 +117,7 @@ export function App() {
       setFileState(fileFromHash(window.location.hash));
       setFocusLine(focusFromHash(window.location.hash));
       setDocState(docFromHash(window.location.hash));
+      setSelectionState(selectionFromHash(window.location.hash));
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
@@ -127,14 +134,14 @@ export function App() {
       // were reading API's is a guess; landing on Compose is the door's own promise (`D1042`).
       // The **document** is dropped with the tab, and for the tab's own reason: it is a choice made
       // inside Config, and a door change lands on Compose where there is no document to be showing.
-      const next_hash = next === null ? hashForDoor(null) : hashForTab(next, DEFAULT_TAB, file);
+      const next_hash = next === null ? hashForDoor(null) : hashForTab(next, DEFAULT_TAB, file) + selectionTail(selection);
       window.location.hash = next_hash;
       setDoorState(next);
       setTabState(DEFAULT_TAB);
       setFocusLine(null);
       setDocState(null);
     },
-    [file],
+    [file, selection],
   );
   const setTab = useCallback(
     (next: TabId, focus?: number, nextDoc?: string | null) => {
@@ -144,32 +151,58 @@ export function App() {
       // under them. So an omitted argument keeps the current document and an explicit `null` names
       // `tflw.config`.
       const wanted = nextDoc === undefined ? doc : nextDoc;
-      if (door !== null) window.location.hash = hashForTab(door, next, file, focus, wanted);
+      if (door !== null) window.location.hash = hashForTab(door, next, file, focus, wanted) + selectionTail(selection);
       setTabState(next);
       setFocusLine(focus ?? null);
       setDocState(wanted);
     },
-    [door, file, doc],
+    [door, file, doc, selection],
   );
   /** Choosing a different document inside Config. It drops the focus line for `setFile`'s reason:
    *  a line number is an offset into the document that named it. */
   const setDoc = useCallback(
     (next: string | null) => {
-      if (door !== null) window.location.hash = hashForTab(door, tab, file, undefined, next);
+      if (door !== null) window.location.hash = hashForTab(door, tab, file, undefined, next) + selectionTail(selection);
       setDocState(next);
       setFocusLine(null);
     },
-    [door, tab, file],
+    [door, tab, file, selection],
   );
   /** Choosing a different file. It drops the focus line, because a line number is an offset into
    *  the file that named it and means nothing in the next one. */
   const setFile = useCallback(
     (next: string) => {
-      if (door !== null) window.location.hash = hashForTab(door, tab, next, undefined, doc);
+      if (door !== null) window.location.hash = hashForTab(door, tab, next, undefined, doc) + selectionTail(selection);
       setFileState(next);
       setFocusLine(null);
     },
-    [door, tab, doc],
+    [door, tab, doc, selection],
+  );
+
+  /**
+   * One gesture in the explorer, one write to the address (`M209` `S4`).
+   *
+   * **It has to be one call.** The first draft had the sidebar call `onSelect` and then `onOpen`
+   * for a plain click, and each of those writes the whole hash from the state it closed over — so
+   * the second write rebuilt the address with the *previous* selection and silently emptied it.
+   * A plain click changes two things at once, which makes it one change and not two.
+   *
+   * `open` is `null` for `cmd` and `shift`: extending a selection is a statement about what will
+   * run and must not move the subject (`M205` Q13a), so the file and its focus line stay exactly
+   * where they were.
+   */
+  const pick = useCallback(
+    (nextSelection: readonly string[], open: string | null) => {
+      const nextFile = open ?? file;
+      const line = open === null ? (focusLine ?? undefined) : undefined;
+      if (door !== null) window.location.hash = hashForTab(door, tab, nextFile, line, doc) + selectionTail(nextSelection);
+      setSelectionState(nextSelection);
+      if (open !== null) {
+        setFileState(open);
+        setFocusLine(null);
+      }
+    },
+    [door, tab, file, focusLine, doc],
   );
 
   const refreshLists = useCallback(async () => {
@@ -470,9 +503,12 @@ export function App() {
     if (env) req.env = env;
     if (/^\d+$/.test(workers)) req.workers = Number(workers);
     if (runTags.size > 0) req.tags = [...runTags].sort();
-    if (runFiles.size > 0 && project) req.files = project.files.map((f) => f.path).filter((p) => runFiles.has(p));
+    if (selection.length > 0 && project) {
+      const chosen = new Set(selection);
+      req.files = project.files.map((f) => f.path).filter((p) => chosen.has(p));
+    }
     return req;
-  }, [env, workers, runTags, runFiles, project]);
+  }, [env, workers, runTags, selection, project]);
 
   if (door === null || noProject) {
     // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back
@@ -608,7 +644,7 @@ export function App() {
 
   return (
     <div className="app">
-      {project ? <Sidebar project={project} door={door} openFile={file} files={runFiles} onFiles={setRunFiles} tags={runTags} onTags={setRunTags} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} tags={runTags} onTags={setRunTags} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
       <main className="main">
         {project ? <DoorBar project={project} door={door} onDoor={setDoor} /> : null}
         {/* Above the tabs and below the doorbar (`M205` Q12): one strip per page, so every control
@@ -621,7 +657,7 @@ export function App() {
             onEnv={setEnvPick}
             workers={workers}
             onWorkers={setWorkers}
-            files={runFiles}
+            selection={selection}
             tags={runTags}
             running={running}
             onRun={onRun}
@@ -640,7 +676,6 @@ export function App() {
               void readProjectView();
             }}
             filePath={path}
-            onFile={setFile}
             tab={tab}
             onTab={setTab}
             runPane={runPane}
@@ -657,7 +692,6 @@ export function App() {
             tab={tab}
             onTab={setTab}
             path={path}
-            onFile={setFile}
             focusLine={focusLine}
             authPanel={authPanel}
             configPanel={configPanel}
@@ -671,7 +705,6 @@ export function App() {
             project={project}
             onWritten={() => void readProjectView()}
             filePath={path}
-            onFile={setFile}
             tab={tab}
             onTab={setTab}
             runPane={runPane}
@@ -686,7 +719,6 @@ export function App() {
             project={project}
             onWritten={() => void readProjectView()}
             filePath={path}
-            onFile={setFile}
             tab={tab}
             onTab={setTab}
             runPane={runPane}
