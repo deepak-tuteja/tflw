@@ -182,10 +182,36 @@ export function selectionFromHash(hash: string): readonly string[] {
   return [];
 }
 
-/** The `?files=…` tail, or nothing at all when nothing is selected — so an address with no
- *  selection is byte-identical to the address every link written before `S4` carries. */
-export const selectionTail = (selection: readonly string[]): string =>
-  selection.length === 0 ? '' : `?${SELECTION_KEY}=${selection.map(escapePath).join(',')}`;
+/** The query the search box is holding (`M209` `S5`, `D1066`'s second half). `''` for an address
+ *  that names none, which is every address written before that slice. */
+export const QUERY_KEY = 'q';
+
+export function queryFromHash(hash: string): string {
+  const query = hash.split('?')[1];
+  if (query === undefined) return '';
+  for (const part of query.split('&')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    if (part.slice(0, eq) !== QUERY_KEY) continue;
+    return decodeURIComponent(part.slice(eq + 1).replaceAll('+', ' '));
+  }
+  return '';
+}
+
+/**
+ * The `?files=…&q=…` tail — empty when neither is set, so an address that narrows nothing is
+ * byte-identical to the address every link written before `S4` carries.
+ *
+ * The two things in it are the two things that change what runs (`D1066`). Everything else the
+ * pane holds — which folders are open, which tab is marked — changes what you can *see*, and a
+ * URL that moved on every disclosure click would be a URL nobody could compare to another.
+ */
+export const paneTail = (selection: readonly string[], query = ''): string => {
+  const parts: string[] = [];
+  if (selection.length > 0) parts.push(`${SELECTION_KEY}=${selection.map(escapePath).join(',')}`);
+  if (query !== '') parts.push(`${QUERY_KEY}=${encodeURIComponent(query)}`);
+  return parts.length === 0 ? '' : `?${parts.join('&')}`;
+};
 
 
 const afterTab = (hash: string): { file: string | null; doc: string | null; line: number | null } => {

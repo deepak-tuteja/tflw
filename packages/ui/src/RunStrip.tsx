@@ -13,6 +13,7 @@
 // gesture — this strip shows the total, which is what makes the two halves legible as one request.
 
 import type { ProjectView, RunRequest } from './contract';
+import { matchingFiles, parseQuery } from './search';
 
 export interface RunStripProps {
   readonly project: ProjectView;
@@ -25,7 +26,7 @@ export interface RunStripProps {
   readonly onWorkers: (workers: string) => void;
   /** The narrowing, for the label only — it lives with the control that edits it. */
   readonly selection: readonly string[];
-  readonly tags: ReadonlySet<string>;
+  readonly query: string;
   readonly running: boolean;
   readonly onRun: (request: RunRequest) => void;
   readonly onCancel: () => void;
@@ -33,7 +34,28 @@ export interface RunStripProps {
   readonly request: () => RunRequest;
 }
 
-export function RunStrip({ project, env, onEnv, workers, onWorkers, selection, tags, running, onRun, onCancel, request }: RunStripProps) {
+export function RunStrip({ project, env, onEnv, workers, onWorkers, selection, query, running, onRun, onCancel, request }: RunStripProps) {
+  /**
+   * The button is the request read back (`M205` Q13, `D1064`). Three narrowings in one sentence,
+   * in the order that decides them: an explicit selection wins, then a query, then the project.
+   *
+   * A tag query that matches no tag is the one state where there is nothing to press: `--tag nope`
+   * is an error in the CLI (`cli.ts`), and a search box that quietly ran the whole suite instead
+   * is worse than a button that says so.
+   */
+  const parsed = parseQuery(query, project);
+  const matched = matchingFiles(project, parsed);
+  const nothing = parsed.kind === 'tag' && parsed.tags.length === 0;
+  const label = nothing
+    ? `nothing matches ${parsed.typed}`
+    : selection.length > 0
+      ? `run selection · ${selection.length} file${selection.length === 1 ? '' : 's'}`
+      : parsed.kind === 'tag'
+        ? `run ${parsed.tags.map((t) => `@${t}`).join(' ')}`
+        : parsed.kind === 'text'
+          ? `run ${matched!.size} matching file${matched!.size === 1 ? '' : 's'}`
+          : 'run all';
+
   return (
     <div className="runstrip" data-runstrip>
       <div className="controls">
@@ -58,12 +80,8 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, selection, t
           cancel
         </button>
       ) : (
-        <button className="run" onClick={() => onRun(request())} data-run>
-          {/* `M205` Q13: the button names the SELECTION, because that is the gesture that filled it.
-              `run all` is not an absence of a choice — it is the choice a project makes when you
-              have not narrowed it, and it has to read as a decision. */}
-          {selection.length > 0 ? `run selection · ${selection.length} file${selection.length === 1 ? '' : 's'}` : 'run all'}
-          {tags.size > 0 ? ` · ${[...tags].sort().map((t) => `@${t}`).join(' ')}` : ''}
+        <button className="run" onClick={() => onRun(request())} data-run disabled={nothing} data-run-narrowing={nothing ? 'none' : selection.length > 0 ? 'selection' : parsed.kind}>
+          {label}
         </button>
       )}
     </div>

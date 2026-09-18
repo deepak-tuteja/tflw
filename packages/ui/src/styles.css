@@ -37,6 +37,10 @@ code, pre { font-family: var(--mono); }
 button { font: inherit; cursor: pointer; }
 button.run, button.cancel { border: 0; border-radius: 4px; padding: 7px 10px; color: #0b0d11; background: var(--accent); font-weight: 600; text-align: left; }
 button.cancel { background: var(--warn); }
+/* The search box (`M209` `S5`), where the 84 tag chips went. */
+.search { margin: 12px 0; }
+.search input { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; font: inherit; }
+.search .hint { margin: 4px 0 0; font-size: 11px; }
 .tags-fold { margin-bottom: 12px; }
 .tags-fold > summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; max-height: 40vh; overflow: auto; }
