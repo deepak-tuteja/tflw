@@ -642,6 +642,38 @@ export function buildPause(spec: PauseSpec): BuildResult<PauseStmt> {
   return { ok: true, node: { type: 'PauseStmt', minMs: min, maxMs: max, span: SYNTHETIC } };
 }
 
+/**
+ * `with each` — `M210` `S5`.
+ *
+ * Twelve tests in the two corpora carry one, **nine inline** (the largest 3 rows by 3 columns) and
+ * three reading a file. The cells are the whole value grammar, same as a `let`, so each is parsed
+ * rather than quoted: a table's column of ids is `1`, `2`, `3` and not `"1"`, `"2"`, `"3"`.
+ */
+export type DataTableSpec =
+  | { readonly kind: 'inline'; readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[] }
+  | { readonly kind: 'file'; readonly path: string };
+
+export function buildDataTable(spec: DataTableSpec): BuildResult<DataTable> {
+  if (spec.kind === 'file') {
+    if (spec.path.trim() === '') return bad('a `with each from` needs a path to read the rows from');
+    return { ok: true, node: { type: 'FileDataTable', path: stringLit(spec.path.trim()), span: SYNTHETIC } };
+  }
+  if (spec.columns.length === 0) return bad('a `with each` table needs at least one column');
+  if (spec.rows.length === 0) return bad('a `with each` table needs at least one row of values');
+  const rows: Value[][] = [];
+  for (const [r, row] of spec.rows.entries()) {
+    if (row.length !== spec.columns.length) return bad(`row ${r + 1} has ${row.length} cell(s) and the header has ${spec.columns.length}`);
+    const cells: Value[] = [];
+    for (const [c, cell] of row.entries()) {
+      const parsed = parseValueText(cell);
+      if (!parsed.ok) return bad(`row ${r + 1}, ${spec.columns[c]}: ${parsed.reason}`);
+      cells.push(parsed.node);
+    }
+    rows.push(cells);
+  }
+  return { ok: true, node: { type: 'InlineDataTable', columns: spec.columns, rows, span: SYNTHETIC } };
+}
+
 /** Every locator kind the grammar has, for a form's dropdown — the parser's own list, re-exported
  *  rather than re-typed, so a seventh kind reaches the form the day it reaches the language. */
 export const LOCATOR_KINDS: readonly LocatorKind[] = ['button', 'field', 'text', 'list', 'css', 'xpath'];
