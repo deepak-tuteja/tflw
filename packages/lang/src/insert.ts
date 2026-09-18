@@ -14,7 +14,7 @@
 // AND IT LIVES HERE BECAUSE BOTH SIDES NEED IT. `@tflw/lang` has no dependencies and no Node
 // builtins, so the page runs this in the browser and a test runs it in Node — the same function,
 // which is why `A0-4` can be gated without a browser at all.
-import type { Program, Step, TestDecl, ThresholdDecl, Workload } from './ast.js';
+import type { HookDecl, ImportDecl, Program, Step, TestDecl, ThresholdDecl, UseDecl, Workload } from './ast.js';
 import type { Span } from './token.js';
 import { format, INDENT } from './format.js';
 import { print } from './print.js';
@@ -247,7 +247,23 @@ export interface StepPath {
  */
 export type Replacement =
   | { readonly kind: 'step'; readonly path: StepPath; readonly node: Step }
-  | { readonly kind: 'note'; readonly path: StepPath; readonly lines: readonly string[] };
+  | { readonly kind: 'note'; readonly path: StepPath; readonly lines: readonly string[] }
+  /**
+   * A declaration's **header** — its tags, its `with each` table and its own line (`M210` `S5a`).
+   *
+   * **Never its body**, and that is the whole shape of this member. Printing a `TestDecl` prints
+   * the test *and everything in it*, and the printer emits no comments — so replacing a whole
+   * declaration to change a tag would silently delete every comment inside it, which for this
+   * corpus is 1247 notes. What is replaced is the run of lines from the declaration's first line
+   * down to its own keyword line, and the body below is not touched at all.
+   */
+  | { readonly kind: 'header'; readonly decl: number; readonly node: TestDecl | HookDecl }
+  /** One `threshold` line of a test. `index` at the end of the list appends; `null` removes. */
+  | { readonly kind: 'threshold'; readonly decl: number; readonly index: number; readonly node: ThresholdDecl | null }
+  /** One `import` or `use` line of the file. `index` at the end of the list appends; `null`
+   *  removes. A file with none gets its first one above the first line of code, which is where the
+   *  grammar wants it and below the file's own header comment, which is where a reader wants it. */
+  | { readonly kind: 'file'; readonly what: 'import' | 'use'; readonly index: number; readonly node: ImportDecl | UseDecl | null };
 
 /**
  * Replace one step in place and format the result.
@@ -270,6 +286,13 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
   if (fatal) return { ok: false, reason: `the file does not parse: ${fatal.code} at line ${fatal.span.start.line}` };
 
   const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+
+  // The three members that do not name a step at all (`M210` `S5a`). Each one splices a run of
+  // whole lines and then goes through the same format-and-parse gate as the rest of this module.
+  if (replacement.kind === 'header') return replaceHeader(text, declarations, replacement.decl, replacement.node);
+  if (replacement.kind === 'threshold') return replaceThreshold(text, declarations, replacement);
+  if (replacement.kind === 'file') return replaceFileDecl(text, program, replacement);
+
   const decl = declarations[replacement.path.decl];
   if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.path.decl}` };
   const target = decl.body[replacement.path.step];
@@ -353,4 +376,101 @@ function replaceNote(text: string, decl: { readonly span: Span }, target: Step, 
   const broke = check.diagnostics.find((d) => d.severity === 'error');
   if (broke) return { ok: false, reason: `the edit does not parse: ${broke.code} at line ${broke.span.start.line}` };
   return { ok: true, text: out.formatted };
+}
+
+/** Splice whole lines and put the result through the same gate every edit here goes through: it
+ *  must lex, and it must parse with no error. `from`/`to` are 1-based and inclusive-exclusive. */
+function spliceLines(text: string, from: number, to: number, written: readonly string[]): InsertResult {
+  const lines = text.split('\n');
+  const spliced = [...lines.slice(0, from - 1), ...written, ...lines.slice(to - 1)].join('\n');
+  const out = format(spliced);
+  if (!out.ok) return { ok: false, reason: `the edit does not lex: ${out.reason ?? 'unknown'}` };
+  const check = parseSource(out.formatted);
+  const broke = check.diagnostics.find((d) => d.severity === 'error');
+  if (broke) return { ok: false, reason: `the edit does not parse: ${broke.code} at line ${broke.span.start.line}` };
+  return { ok: true, text: out.formatted };
+}
+
+/**
+ * A declaration's header lines, printed — **the lines above its body and not one more**.
+ *
+ * `printTest` emits tags, then the `with each` table, then the `test …` line, then the body; a
+ * hook emits its own line and then the body. So the header is everything up to and including the
+ * declaration's keyword line, and finding that line in the *printed* text is a search for the one
+ * that starts with the keyword — which no table row and no tag line can.
+ */
+function headerLines(node: TestDecl | HookDecl, level: number): { ok: true; lines: string[] } | { ok: false; reason: string } {
+  const printed = print(node, { indent: level });
+  if (!printed.ok) return { ok: false, reason: printed.reason ?? 'the printer refused this declaration' };
+  const lines = printed.text.split('\n');
+  if (node.type === 'HookDecl') return { ok: true, lines: lines.slice(0, 1) };
+  const index = lines.findIndex((line) => line.trimStart().startsWith('test '));
+  if (index < 0) return { ok: false, reason: 'the printed test has no `test` line, which cannot happen and did' };
+  return { ok: true, lines: lines.slice(0, index + 1) };
+}
+
+function replaceHeader(text: string, declarations: readonly (TestDecl | HookDecl)[], index: number, node: TestDecl | HookDecl): InsertResult {
+  const decl = declarations[index];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${index}` };
+  if (decl.type !== node.type) return { ok: false, reason: `declaration ${index} is a ${decl.type === 'TestDecl' ? 'test' : 'hook'} and this is not` };
+  const level = Math.round((decl.span.start.column - 1) / INDENT.length);
+  const written = headerLines(node, level);
+  if (!written.ok) return written;
+  // A test's own line is where its NAME is, which is the one position the header's length cannot
+  // move: tags above it are one line, a `with each` table is as many as it has rows.
+  const keyword = decl.type === 'TestDecl' ? decl.name.span.start.line : decl.span.start.line;
+  return spliceLines(text, decl.span.start.line, keyword + 1, written.lines);
+}
+
+function replaceThreshold(text: string, declarations: readonly (TestDecl | HookDecl)[], replacement: { readonly decl: number; readonly index: number; readonly node: ThresholdDecl | null }): InsertResult {
+  const decl = declarations[replacement.decl];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.decl}` };
+  if (decl.type !== 'TestDecl') return { ok: false, reason: 'a hook carries no thresholds' };
+  const held = decl.thresholds;
+  const level = Math.round((decl.span.start.column - 1) / INDENT.length) + 1;
+  const printed = ((): { ok: true; lines: string[] } | { ok: false; reason: string } => {
+    if (replacement.node === null) return { ok: true, lines: [] };
+    const out = print(replacement.node, { indent: level });
+    return out.ok ? { ok: true, lines: [out.text] } : { ok: false, reason: out.reason ?? 'the printer refused this threshold' };
+  })();
+  if (!printed.ok) return printed;
+  const existing = held[replacement.index];
+  if (existing) return spliceLines(text, existing.span.start.line, existing.span.end.line + 1, printed.lines);
+  if (replacement.node === null) return { ok: false, reason: `that test has no threshold ${replacement.index}` };
+  // Appended after the last one, or — for a test with none — at the end of its body, which is where
+  // `printTest` puts thresholds and therefore where `format` would move it anyway.
+  const last = held[held.length - 1];
+  const after = last ? last.span.end.line : endLineOf(text, decl);
+  return spliceLines(text, after + 1, after + 1, printed.lines);
+}
+
+/** The last line a declaration's text occupies — its own span's end, trimmed back over the blank
+ *  lines a span runs through on its way to whatever follows it. */
+function endLineOf(text: string, decl: TestDecl | HookDecl): number {
+  const lines = text.split('\n');
+  let line = Math.min(decl.span.end.line, lines.length);
+  while (line > decl.span.start.line && (lines[line - 1] ?? '').trim() === '') line -= 1;
+  return line;
+}
+
+function replaceFileDecl(text: string, program: Program, replacement: { readonly what: 'import' | 'use'; readonly index: number; readonly node: ImportDecl | UseDecl | null }): InsertResult {
+  const held: readonly (ImportDecl | UseDecl)[] = replacement.what === 'import' ? program.imports : program.uses;
+  const printed = ((): { ok: true; lines: string[] } | { ok: false; reason: string } => {
+    if (replacement.node === null) return { ok: true, lines: [] };
+    const out = print(replacement.node);
+    return out.ok ? { ok: true, lines: [out.text] } : { ok: false, reason: out.reason ?? 'the printer refused this line' };
+  })();
+  if (!printed.ok) return printed;
+  const existing = held[replacement.index];
+  if (existing) return spliceLines(text, existing.span.start.line, existing.span.end.line + 1, printed.lines);
+  if (replacement.node === null) return { ok: false, reason: `this file has no ${replacement.what} ${replacement.index}` };
+  const last = held[held.length - 1];
+  if (last) return spliceLines(text, last.span.end.line + 1, last.span.end.line + 1, printed.lines);
+  // A file with none: above its first line of code, which is where the grammar wants it and below
+  // the file's own header comment, which is where a reader wants it. `lex` is what knows which
+  // lines are comments — a `#` inside a string is not one (`D159`).
+  const { lines: records } = lex(text);
+  const first = records.find((r) => r.kind === 'code');
+  const at = first ? first.line : 1;
+  return spliceLines(text, at, at, [...printed.lines, '']);
 }

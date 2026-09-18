@@ -10,7 +10,7 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApiStep, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildGive, buildLet, buildLog, buildPause, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit } from '../src/index.js';
+import { buildApiStep, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildGive, buildLet, buildLog, buildPause, SYNTHETIC, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -656,6 +656,122 @@ test('S4a: a note is replaced where it is, and a note with air under it is still
   const spaced = replaceInSource(file, { kind: 'note', path: { decl: 0, step: 0 }, lines: ['first', '', 'third'] });
   assert.equal(spaced.ok, true, spaced.ok ? '' : spaced.reason);
   assert.match(spaced.text ?? '', /^ {2}# first\n {2}#\n {2}# third\n {2}api GET \/orders$/m);
+});
+
+test('S5a: a declaration\'s header is replaced without touching a byte of its body', () => {
+  // **The body is never reprinted, and that is the shape of this member.** Printing a `TestDecl`
+  // prints the test and everything in it, and the printer emits no comments — so replacing a whole
+  // declaration to change one tag would silently delete every comment inside it. What is replaced
+  // is the run of lines from the declaration's first line down to its own keyword line.
+  const file = [
+    '# the file',
+    '',
+    'import "./shared/helpers.tflw"',
+    '',
+    '@crud @slow',
+    'with each',
+    '  | name  | qty |',
+    '  | "Pen" | 2   |',
+    // Retried, tabled **and** parallel: each of the three is a field `buildTest` hardcoded, and a
+    // fixture carrying the default value cannot tell a carried field from a hardcoded one.
+    'test "it places an order" as admin retry 2 parallel',
+    '  # a note the printer does not know about',
+    '  api POST /orders body { name: {name} }',
+    '  expect status equals 201',
+    '  threshold error rate is less than 1%',
+    '',
+    'before',
+    '  api POST /reset',
+    '',
+  ].join('\n');
+  const { program } = parseSource(file);
+  const test0 = program.tests[0]!;
+
+  // Two tags to one, a session added, the retry kept — and the table, which `buildTest` used to
+  // hardcode to `null` along with `retry` and `concurrency`. **9 tests in the corpus carry a retry,
+  // 12 carry a table and 2 are parallel**, and every one of them is a field this spec had no room
+  // for until now: a rebuild would have dropped it in a file that still parses and runs a different
+  // number of times.
+  const rebuilt = buildTest({
+    name: 'it places an order',
+    tags: ['crud'],
+    sessions: ['admin', 'shopper'],
+    retry: test0.retry,
+    table: test0.table,
+    concurrency: test0.concurrency,
+    workload: test0.workload,
+    thresholds: test0.thresholds,
+    body: test0.body,
+  });
+  assert.ok(rebuilt.ok, rebuilt.ok ? '' : rebuilt.reason);
+  const out = replaceInSource(file, { kind: 'header', decl: 0, node: rebuilt.node });
+  assert.equal(out.ok, true, out.ok ? '' : out.reason);
+  assert.match(out.text ?? '', /^@crud\n/m, 'the tags are one line and the dropped one is gone');
+  assert.match(out.text ?? '', /^test "it places an order" as admin, shopper retry 2 parallel$/m, 'the session is written; the retry and the concurrency survived');
+  assert.match(out.text ?? '', /^with each\n {2}\| name {2}\| qty \|\n {2}\| "Pen" \| 2 {3}\|$/m, 'and so did the table');
+  assert.match(out.text ?? '', /^ {2}# a note the printer does not know about\n {2}api POST \/orders/m, 'the body is untouched, comments included');
+  assert.match(out.text ?? '', /^ {2}threshold error rate is less than 1%$/m);
+  assert.match(out.text ?? '', /^before\n {2}api POST \/reset$/m, 'and the declaration after it did not move');
+
+  // A hook's header is its own one line, and it is the same call.
+  const hook = program.hooks[0]!;
+  // `each` has no keyword — it is the scope you get by writing nothing — so a hook's whole header
+  // is two words at most, and this is both of them changing at once.
+  const moved = replaceInSource(out.text!, { kind: 'header', decl: 1, node: { ...hook, when: 'after', scope: 'file' } });
+  assert.equal(moved.ok, true, moved.ok ? '' : moved.reason);
+  assert.match(moved.text ?? '', /^after file\n {2}api POST \/reset$/m);
+  assert.match(moved.text ?? '', /^test "it places an order" as admin, shopper retry 2 parallel$/m, 'and the test did not move');
+
+  // A header put where the other kind of declaration is, is a refusal rather than a mangled file.
+  const wrong = replaceInSource(file, { kind: 'header', decl: 1, node: rebuilt.node });
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.reason ?? '', /is a hook and this is not/);
+});
+
+test('S5a: a threshold and an import are edited, added and removed where they belong', () => {
+  const file = [
+    '# the file',
+    '',
+    'test "it holds up"',
+    '  run 10 iterations across 2 users',
+    '  api GET /orders',
+    '  threshold p95 duration is less than 500ms',
+    '  threshold error rate is less than 1%',
+    '',
+  ].join('\n');
+
+  const tighter = buildThreshold({ metric: { kind: 'duration', percentile: 95 }, op: 'lessThan', bound: 250, scope: null });
+  assert.ok(tighter.ok, tighter.ok ? '' : tighter.reason);
+  const edited = replaceInSource(file, { kind: 'threshold', decl: 0, index: 0, node: tighter.node });
+  assert.equal(edited.ok, true, edited.ok ? '' : edited.reason);
+  assert.match(edited.text ?? '', /^ {2}threshold p95 duration is less than 250ms\n {2}threshold error rate is less than 1%$/m, 'the one named moved and the one beside it did not');
+
+  const added = buildThreshold({ metric: { kind: 'duration', percentile: 99 }, op: 'lessThan', bound: 900, scope: null });
+  assert.ok(added.ok, added.ok ? '' : added.reason);
+  const appended = replaceInSource(file, { kind: 'threshold', decl: 0, index: 2, node: added.node });
+  assert.equal(appended.ok, true, appended.ok ? '' : appended.reason);
+  assert.match(appended.text ?? '', /^ {2}threshold error rate is less than 1%\n {2}threshold p99 duration is less than 900ms$/m, 'an index past the end appends after the last one');
+
+  const removed = replaceInSource(file, { kind: 'threshold', decl: 0, index: 0, node: null });
+  assert.equal(removed.ok, true, removed.ok ? '' : removed.reason);
+  assert.doesNotMatch(removed.text ?? '', /p95/);
+  assert.match(removed.text ?? '', /^ {2}threshold error rate is less than 1%$/m);
+
+  // An import into a file with none goes **above the first line of code and below the file's own
+  // header comment** — where the grammar wants it and where a reader wants it.
+  const imported = replaceInSource(file, { kind: 'file', what: 'import', index: 0, node: { type: 'ImportDecl', path: stringLit('./shared/helpers.tflw'), span: SYNTHETIC } });
+  assert.equal(imported.ok, true, imported.ok ? '' : imported.reason);
+  assert.match(imported.text ?? '', /^# the file\n\nimport "\.\/shared\/helpers\.tflw"\n\ntest "it holds up"$/m);
+
+  // …and a second one goes under the first, not back at the top.
+  const twice = replaceInSource(imported.text!, { kind: 'file', what: 'import', index: 1, node: { type: 'ImportDecl', path: stringLit('./shared/more.tflw'), span: SYNTHETIC } });
+  assert.equal(twice.ok, true, twice.ok ? '' : twice.reason);
+  assert.match(twice.text ?? '', /^import "\.\/shared\/helpers\.tflw"\nimport "\.\/shared\/more\.tflw"$/m);
+
+  const dropped = replaceInSource(twice.text!, { kind: 'file', what: 'import', index: 0, node: null });
+  assert.equal(dropped.ok, true, dropped.ok ? '' : dropped.reason);
+  assert.doesNotMatch(dropped.text ?? '', /helpers\.tflw/);
+  assert.match(dropped.text ?? '', /^import "\.\/shared\/more\.tflw"$/m);
 });
 
 test('A3-5: the browser builders produce a file the write route would accept', () => {
