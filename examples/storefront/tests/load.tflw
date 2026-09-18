@@ -15,9 +15,34 @@ test "the catalogue holds up when everyone arrives at once"
   api GET /items
   expect status equals 200
 
+# The one test that is workload-bearing AND judged by a scan, which is the combination worth
+# showing: a security rule reads the response it is given, so under load it reads the responses
+# load produces — including the error path, which is where a 503 page with no CSP or a stack frame
+# under stress would appear. Nothing else in this example can catch that.
+#
+# **The workload is bounded on purpose, and `M205-07` is why.** A scan rule is judged once per response
+# and every judgement is recorded, so the report holds one row per response that violates — which is
+# correct, and is what this test is for. It is also multiplicative: `ramp to 3 users over 2s` against
+# an endpoint this fast issued ~29,000 requests, so following this example's own instruction (delete
+# `HttpOnly;` in `server.mjs`) wrote **29,381 findings — one weakness, stated 29,381 times — a 55 MB
+# `report.html`, a 29.9 MB SARIF and a page 3.5 million pixels tall.** Measured 2026-09-19.
+#
+# So the workload is a fixed count, the shape the third test below already uses and explains: 20
+# requests, so the same instruction now writes 20 rows. The duplication is accepted rather than
+# collapsed — the scan reports everything it catches for this workload, which is the honest thing
+# for it to do — and the test simply does not ask it to catch the same thing thirty thousand times.
+#
+# **A rate was tried first and is the wrong tool here, for a reason worth keeping.** `hold 5 rps for
+# 4s` is also ~20 requests, but it bounds by *stretching the run*, and this suite's headline verdict
+# is a property of the whole run's CPU: the rate-capped version dropped the run from `cpu 108%` to
+# under the bottleneck threshold and flipped it from INCONCLUSIVE to PASS — silently falsifying
+# README's first teaching point. A count finishes fast, the catalogue ramp above still saturates the
+# generator, and the verdict is unchanged (measured: INCONCLUSIVE, cpu 112%). **Bounding one test's
+# workload can change another test's verdict**, because the bottleneck judgement is the run's, not
+# the test's.
 @identity @workload
 test "signing in holds up, and is still judged while it does"
-  ramp to 3 users over 2s
+  run 20 iterations across 2 users
   threshold p95 duration is less than 400ms
   threshold error rate is less than 1%
   api POST /login body { email: "sam@example.com", password: "hunter2" }
