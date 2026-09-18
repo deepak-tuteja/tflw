@@ -213,6 +213,17 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .tabstrip-tab.on { color: var(--fg); border-bottom-color: var(--accent); }
 .tabstrip-mark { color: var(--accent); margin-left: 6px; font-size: 14px; line-height: 1; }
 .source-panel [data-source-state] { margin: 0 0 8px; font-size: 12px; }
+
+/* The test index (`M209` `S2`, `D1067`) — the three derived facts the sidebar used to carry, landed
+   where the file is read. It is a list and not a table: a declaration has a line and a name, and
+   the badges are however many the constructs earned. */
+.test-index { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; background: var(--panel); }
+.test-index > p { margin: 0; font-size: 12px; }
+.index-rows { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.index-rows > li { padding: 1px 0; }
+.index-rows > li.muted > .index-row { color: var(--muted); }
+.index-row { background: none; border: 0; padding: 0; margin: 0 4px 0 0; font: inherit; color: var(--fg); text-align: left; }
+.index-row:hover { color: var(--accent); text-decoration: underline; }
 .source-panel .preview { margin-top: 0; }
 .runpane > .response { margin-bottom: 16px; }
 

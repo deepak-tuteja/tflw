@@ -189,7 +189,7 @@ export function ScanForm({ project, onWritten, filePath, onFile, tab, onTab, run
     <section className="doorpane" data-scan-form>
       <TabStrip tab={tab} onTab={onTab} marked={marks} />
 
-      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} /> : null}
+      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} project={project} door="scan" /> : null}
       {tab === 'run' ? <div className="runpane" data-scan-run-tab>{runPane}</div> : null}
       {tab === 'auth' ? authPanel : null}
       {tab === 'config' ? configPanel : null}

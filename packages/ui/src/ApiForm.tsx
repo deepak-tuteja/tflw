@@ -408,7 +408,7 @@ export function ApiForm({ project, onWritten, tab, onTab, path, onFile, focusLin
     <section className="doorpane" data-api-form>
       <TabStrip tab={tab} onTab={onTab} marked={marks} />
 
-      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} /> : null}
+      {tab === 'source' ? <SourcePanel file={file} pending={pending} diagnostics={diagnostics} project={project} door="api" /> : null}
       {tab === 'run' ? (
         <div className="runpane" data-api-run-tab>
           {sent ? <ResponsePane sent={sent} onDiscard={() => void discard()} /> : null}
