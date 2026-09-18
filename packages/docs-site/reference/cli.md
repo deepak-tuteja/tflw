@@ -266,12 +266,21 @@ previews the exact bytes it is about to write and `tflw check` judges them befor
 file on disk is the only truth, and `tflw.config` is not reachable through that route. The forms
 and what each door scaffolds are not documented here yet.
 
-**The project's configuration is edited in its own tab, through its own route.** The API door's
+**The project's configuration is edited in its own tab, through its own route.** Every door's
 *Config* tab is a plain editor over `tflw.config` — the bytes you type are the bytes written, and
 nothing reformats them — refusing only text that does not parse, and writing under the version the
 page read so a file changed by a terminal in the meantime is reported rather than overwritten. It
 is a separate capability from the one above and not a widening of it: the test-writing route still
-refuses this file. Beside it, *Auth* reads what that configuration means for the file you are
+refuses this file.
+
+**That tab is multi-document once the config declares one.** A `baseline` declaration names a second
+file the project owns, so the tab carries a switcher — `tflw.config` first, then one entry per
+declared document, labelled with its path and the block that declares it — and each document is
+addressed in the URL, which is what lets a link point at one line of one of them. They are the same
+editor under the same rules, with one difference the file itself dictates: a declared baseline that
+has not been written yet opens as an empty document rather than an error, because that is where
+every project adopting triage starts, and the config's diagnostics are not applied to a file that is
+not in the config dialect. Beside it, *Auth* reads what that configuration means for the file you are
 looking at — which sessions its tests run as and what each adds to a request, the built-in
 `anonymous` principal, and every `authorized target` in force with its reason and what each
 `probe` opt-in grants.
@@ -298,6 +307,17 @@ vanishing) and the same *possible fixes* entry `report.html` carries. *Which rul
 applied and what stood down, with the reasons. With a second run open under *compare with*, each
 finding says whether the other run had it and with what verdict, and the other run's findings this
 one lacks are listed — the baseline diff, drawn from two reports.
+
+**A finding can be accepted from the page, and accepting it writes nothing.** Each gating finding
+that carries a fingerprint has an `[accept]` link: it resolves which baseline document a run under
+this report's env grades against — the env's own block, or the `defaults` one it falls back to —
+splices the entry into that document in the shape `--baseline-write` emits, and opens the *Config*
+tab on the line it added. The document is then unsaved text in an editor, and stays that way until
+somebody saves it. An acceptance is an affirmation about the application under test that only its
+author can make, so the page stages it and shows it; it does not make it. A document it cannot
+splice honestly — not JSON, no `accepted` array, or already carrying this fingerprint — is returned
+unchanged and opened anyway, and an env with no `baseline` declared is refused with the reason. See
+[Findings, baselines & the gate](/guide/findings-and-baselines) for the workflow this belongs to.
 
 **A run's exit is stated where its report cannot state it.** `tflw run`'s exit codes 0, 1, 3 and
 130 are the report's own verdicts (passed, a failure, inconclusive, aborted) and the header carries
