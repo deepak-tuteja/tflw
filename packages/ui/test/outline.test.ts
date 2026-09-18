@@ -19,7 +19,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApiStep, lex, parseSource, replaceInSource, STEP_LENS, type Step } from '@tflw/lang';
-import { addressed, fileOutline, groupBody, isForeign, readNotes, statementsOf } from '../src/outline';
+import { addressed, fileOutline, groupBody, isForeign, prefixOf, readNotes, statementsOf } from '../src/outline';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
@@ -334,4 +334,53 @@ test('every non-nested statement carries a path, and the paths within a body are
     inLineOrder.map((_, i) => i),
     'a body read in line order gives 0, 1, 2, … — which is what an index into `body` means',
   );
+});
+
+test('the prefix of a request is the hooks and its own declaration up to it — over every request in the corpus', () => {
+  // **Four requests in five cannot run alone**: of the sibling's 1031, 734 read a variable bound
+  // earlier and 379 read a capture from the file's `before` hook. So `send` runs what comes before
+  // the selected request (`D1075`), and *what comes before it* is this function — checked here
+  // against every request this repository holds rather than against one hand-written file, because
+  // the interesting shapes (a hook with two requests, a test whose first request is its fourth
+  // statement, a polling request) are all in there and none of them was written for this test.
+  let checked = 0;
+  for (const path of corpus(repoRoot)) {
+    const outline = fileOutline(path, readFileSync(path, 'utf8'));
+    if (outline.diagnostics.some((d) => d.severity === 'error')) continue;
+    const hookRequests = outline.declarations.filter((d) => d.kind === 'hook').flatMap((d) => d.body.requests);
+    for (const decl of outline.declarations) {
+      for (const request of decl.body.requests) {
+        const at = addressed(outline, request.line);
+        assert.ok(at, path);
+        const prefix = prefixOf(outline, at);
+        assert.ok(prefix, `${path}: ${request.method} ${request.path} has a prefix`);
+        checked += 1;
+
+        // It ends on the request that was asked for, and it says so by its own last row.
+        const last = prefix.requests[prefix.requests.length - 1]!;
+        assert.deepEqual({ method: last.method, path: last.path }, { method: request.method, path: request.path }, `${path}: the prefix ends on the selected request`);
+        // Every hook request is in it, before any of the declaration's own.
+        assert.equal(prefix.requests.length, hookRequests.length + decl.body.requests.filter((r) => r.stepPath.step <= request.stepPath.step).length);
+        for (const [i, hook] of hookRequests.entries()) {
+          assert.equal(prefix.requests[i]!.path, hook.path, `${path}: the hooks run first`);
+        }
+        // And what is attached to the selected request is inside the cut, because it is what reads
+        // the response — a prefix that stopped at the request would report no verdict for the one
+        // thing the author is looking at.
+        const attached = request.attached.filter((x) => x.stepPath !== null);
+        const lastStep = attached.length === 0 ? request.stepPath.step : attached[attached.length - 1]!.stepPath!.step;
+        assert.equal(prefix.upTo, lastStep, `${path}: the cut includes what reads the response`);
+        assert.equal(prefix.decl, decl.index);
+      }
+    }
+  }
+  assert.ok(checked > 20, `expected the corpus's requests, checked ${checked}`);
+});
+
+test('a declaration with no request has no prefix, because there is nothing to send', () => {
+  const outline = fileOutline('t.tflw', 'test "a"\n  open "/catalogue"\n  click button "Buy"\n');
+  const at = addressed(outline, null);
+  assert.ok(at);
+  assert.equal(at.request, null);
+  assert.equal(prefixOf(outline, at), null);
 });

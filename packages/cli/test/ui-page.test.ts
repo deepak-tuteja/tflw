@@ -5077,3 +5077,115 @@ test('`M210` `S5`: a hook\'s header is its two words, and `each` is the one you 
     assert.match(onDisk, /^@crud @orders$/m, 'and the test below it did not move');
   });
 });
+
+// `M210` `S6` — send runs the prefix (`D1075`).
+//
+// **Four requests in five cannot run alone**: of the sibling's 1031, 185 reference nothing, 734
+// read a variable bound earlier, 379 read a capture from the file's `before` hook and 113 read an
+// `env()`. So a Send that fired the selected request by itself would be honest about 18% of them.
+// What runs instead is the file's hooks and this declaration up to the selected request — which is
+// the expensive thing to press, and why the pane lists it first.
+
+test('`M210` `S6`: send runs the file up to the selected request, and says so before it is pressed', async () => {
+  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
+  const target = await fixtureServer.startFixtureServer(fixturePort);
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m210-send-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
+    await writeFile(
+      join(dir, 'send.tflw'),
+      [
+        '# the file this sends from',
+        '',
+        'before',
+        '  api GET /items',
+        '  capture body.items[0].id as seeded',
+        '',
+        'test "it reads one item"',
+        // **A workload, and a request after the selected one.** Both are here because a mutation
+        // said so by surviving: with the selected request last in its test, "keep every request in
+        // the declaration" changes nothing, and with no workload, "keep the workload" changes
+        // nothing either — the fixture's own shape was the mutant's constant, twice.
+        '  run 2 iterations across 1 users',
+        '  api GET /items',
+        '  expect status equals 200',
+        '  capture body.items[0].id as first',
+        '  api GET /items/{first}',
+        '  expect status equals 200',
+        '  expect body.id equals 999',
+        '  api GET /items/{first}/history',
+        '  expect status equals 404',
+        '',
+        'test "another test that must not run"',
+        '  api GET /items',
+        '  expect status equals 500',
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+    await fresh.goto(`${base}/#/api/compose/send.tflw/L12`);
+    await fresh.locator('[data-prefix]').waitFor();
+
+    // **The list is the claim, and it is on screen before anything is pressed.** Three requests:
+    // the hook's, this test's first, and the selected one — in that order.
+    assert.equal(await fresh.locator('[data-prefix]').getAttribute('data-prefix'), '3');
+    assert.deepEqual(
+      await fresh.locator('[data-prefix-request]').evaluateAll((els) => els.map((e) => e.textContent!.replace(/\s+/g, ' ').trim())),
+      ['GET /items before each', 'GET /items it reads one item', 'GET /items/{first} it reads one item'],
+    );
+
+    await fresh.locator('[data-compose-send]').click();
+    await fresh.locator('[data-verdict]').first().waitFor({ timeout: 30_000 });
+
+    // **The scratch is the prefix and nothing else**: the hook, this test truncated after the
+    // selected request's own assertions, and **not** the test below it — which asserts a 500 the
+    // fixture will not give, so a scratch that carried it would have run something the author did
+    // not ask for.
+    const written = await readFile(join(dir, SCRATCH_PATH), 'utf8');
+    assert.match(written, /^before\n {2}api GET \/items$/m);
+    assert.match(written, /^test "scratch"$/m);
+    assert.match(written, /^ {2}api GET \/items\/\{first\}$/m);
+    assert.doesNotMatch(written, /another test that must not run/);
+    assert.doesNotMatch(written, /equals 500/);
+    // …and neither the request below the selected one nor the workload that would turn one press
+    // into a load run. `send` means send this request, not run this test as a workload.
+    assert.doesNotMatch(written, /history/);
+    assert.doesNotMatch(written, /run 2 iterations/);
+
+    // **The verdicts are beside the assertions they belong to**, matched by position from the last
+    // request — the scratch is a printed program with the other test removed, so its line numbers
+    // are not this file's and only the order holds the two together. One passes, one fails, and the
+    // failing one is the assertion that is actually wrong.
+    const verdicts = await fresh.locator('li.stmt').evaluateAll((els) =>
+      els.map((li) => {
+        const mark = li.querySelector('[data-verdict]');
+        return `${li.getAttribute('data-stmt')}:${mark === null ? 'none' : mark.getAttribute('data-verdict')}`;
+      }),
+    );
+    assert.deepEqual(verdicts, ['ExpectStmt:pass', 'ExpectStmt:fail']);
+    assert.match((await fresh.locator('[data-verdict="fail"]').textContent()) ?? '', /999/, 'and it says what the run said, not a second sentence written here');
+
+    // **The response is beside them, and the pane did not go anywhere.** The legacy Send leaves for
+    // Run because that is where its response lives; this one puts the response where the assertions
+    // that read it are, so leaving would take the author off the thing they pressed for.
+    assert.match(new URL(fresh.url()).hash, /^#\/api\/compose\//, 'still on Compose');
+    assert.equal(await fresh.locator('[data-compose-response]').getAttribute('data-compose-response'), '200');
+    assert.match((await fresh.locator('[data-compose-response-url]').textContent()) ?? '', /^GET http:\/\/127\.0\.0\.1:\d+\/items\/\d+ — 200$/);
+    assert.ok(JSON.parse((await fresh.locator('[data-compose-response-body]').textContent()) ?? 'null'), 'the body is the server\'s own JSON');
+
+    // **A verdict is about the bytes that ran.** Type into the assertion it belongs to and it goes:
+    // a ✓ beside an edited assertion says *this passed* about a file nobody has.
+    await fresh.locator('[data-expect-operand]').first().fill('201');
+    await fresh.locator('[data-compose-dirty]').waitFor();
+    assert.equal(await fresh.locator('[data-verdict]').count(), 0, 'the verdicts went with the bytes they were about');
+    assert.equal(await fresh.locator('[data-compose-response]').count(), 0, 'and so did the response');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+    await new Promise<void>((resolve) => target.close(() => resolve()));
+  }
+});

@@ -462,6 +462,19 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
  * every row, because 1247 statements in the corpus carry a note and several thousand do not. */
 .add-note { background: none; border: 0; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; padding: 0 0 0 2px; }
 .add-note:hover { color: var(--fg); }
+/* What `send` will fire, before it is pressed (`M210` `S6`). It is a list rather than a count
+ * because the count is not the thing an author is deciding about: which requests, in what order,
+ * against which env. */
+.prefix { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; justify-items: start; }
+.prefix-list { list-style: decimal; margin: 0; padding-left: 22px; font-size: 12px; display: grid; gap: 2px; }
+.prefix-list code { font-size: 12px; }
+/* A verdict sits at the end of the row it belongs to and says the run's own sentence.
+ * **`.verdict` was taken** — the report pane has used it since `M172` for a whole run's outcome,
+ * bold and letter-spaced — and `M210` `S1` has already paid once for reusing a class name
+ * (`.request-line`, which cost a height gate). A class name is an interface; this one is its own. */
+.step-verdict { flex: 0 0 auto; font-size: 11px; font-family: var(--mono); }
+.step-verdict.pass { color: var(--pass); }
+.step-verdict.fail { color: var(--fail); }
 .note-edit {
   width: 100%;
   margin-top: 4px;
