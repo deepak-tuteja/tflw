@@ -22,6 +22,7 @@ import {
   buildApiStep,
   replaceInSource,
   buildExpect,
+  type ExpectStmt,
   buildTest,
   insertIntoSource,
   type ApiBodySpec,
@@ -32,8 +33,8 @@ import {
 import { putFile, dropScratch, startRun, subscribe, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
 import { TabStrip } from './TabStrip';
-import { ComposePane, editOf, specOf, type RequestEdit } from './ComposePane';
-import { addressed, fileOutline, type OutlineRequest } from './outline';
+import { ComposePane, editOf, expectSpecOf, specOf, stepKey, type ExpectEdit, type RequestEdit } from './ComposePane';
+import { addressed, fileOutline, type OutlineRequest, type OutlineStatement } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
@@ -268,6 +269,62 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
     [at, file, draft, onDraft, path, onTab],
   );
   const [editProblem, setEditProblem] = useState<string | null>(null);
+
+  /**
+   * The assertion row's values, and a change all the way to bytes (`M210` `S3`).
+   *
+   * Held **beside** the request's rather than inside it, and keyed the same way: by the statement's
+   * own index pair, so moving to another row re-reads that row from the file instead of carrying
+   * the last one's half-typed operand onto it.
+   */
+  const [expectEdit, setExpectEdit] = useState<{ key: string; values: ExpectEdit } | null>(null);
+  const applyExpectEdit = useCallback(
+    (statement: OutlineStatement, next: ExpectEdit) => {
+      if (!file || statement.stepPath === null) return;
+      const key = stepKey(statement.stepPath);
+      if (key === null) return;
+      setExpectEdit({ key, values: next });
+      const original = statement.node as ExpectStmt;
+      const built = buildExpect(expectSpecOf(next, original));
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      /**
+       * **What the spec cannot say is carried, not rebuilt** — `S2`'s rule, one construct over.
+       *
+       * The subject when the select still says `carried`: five of the language's sixteen subjects
+       * have no `SubjectSpec` to spell them, and a `status of request to "…"` carries a clause the
+       * spec has no room for either. The build ran against a stand-in of the same shape, so the
+       * real node goes back on afterwards.
+       *
+       * The masks when the matcher is still `matches snapshot`: a `mask <locator>` list is what a
+       * visual comparison paints over before comparing, and losing it would not change whether the
+       * file parses — only which pixels count.
+       */
+      const node: ExpectStmt = {
+        ...built.node,
+        subject: next.subject === 'carried' ? original.subject : built.node.subject,
+        masks: next.matcher === 'matchesSnapshot' && original.matcher.name === 'matchesSnapshot' ? original.masks : built.node.masks,
+      };
+      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: statement.stepPath, node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      onDraft(out.text);
+      // The address names the REQUEST, and an assertion above it can move it — `format` normalises
+      // the whole file before the splice, so a file that was not already formatted shifts. Read the
+      // request's new line back out by the index pair that still identifies it (`D1080`).
+      if (at?.request) {
+        const after = fileOutline(path, out.text);
+        const moved = after.declarations[at.request.stepPath.decl]?.body.requests.find((x) => x.stepPath.step === at.request!.stepPath.step);
+        if (moved && moved.line !== at.request.line) onTab('compose', moved.line);
+      }
+    },
+    [at, file, draft, onDraft, path, onTab],
+  );
 
   const [ownProblem, setProblem] = useState<string | null>(null);
   /** A read failure is the shell's to discover and this pane's to say — there is no third place a
@@ -510,6 +567,10 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
     onFileWritten({ path, text: draft, etag: res.etag });
     onDraft(null);
     setEdit(null);
+    // …and the assertion row's, for the same reason: the buffer is the file now, so every row's
+    // values come from the file again. A held edit would keep re-deriving nothing and would mask
+    // the next external change to that statement.
+    setExpectEdit(null);
     setWrote(path);
     onWritten(path);
   }, [file, draft, path, onFileWritten, onDraft, onWritten]);
@@ -581,11 +642,13 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
           onLegacyOpen={setLegacyOpen}
           edit={values}
           onEdit={at?.request?.kind === 'ApiStep' ? applyEdit : null}
+          expectEdit={expectEdit}
+          onExpectEdit={applyExpectEdit}
           dirty={draft !== null}
           busy={busy}
           problem={editProblem}
           onWrite={() => void writeDraft()}
-          onDiscard={() => { onDraft(null); setEdit(null); setEditProblem(null); }}
+          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setEditProblem(null); }}
           door="api"
           legacy={
             <div className="authoring">
