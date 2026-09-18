@@ -1,4 +1,5 @@
-// Compose, reading (`M210` `S1`, `D1072`). The pane that writes a file, showing the file it writes.
+// Compose (`M210`, `D1072`). The pane that writes a file, showing the file it writes — and then
+// letting you type into what it is showing.
 //
 // §0 of the plan is the whole reason this module exists, and it is worth restating where the code
 // is: **Compose was not a weak representation of the source, it was not a representation at all.**
@@ -26,9 +27,20 @@
 // with holes through the middle exactly where the order lives. Showing a step you cannot edit here
 // is true, so it is allowed; hiding it is not.
 //
-// EVERY CONTROL IS DISABLED, AND THAT IS THE SLICE (`D1082`). Nothing here claims to edit, so
-// nothing here can lie. `S2`–`S5` light the controls one family at a time; until then the AST→form
-// direction — which did not exist in any form before this — is built and gated on its own.
+// IT WAS READ-ONLY FIRST, AND THAT IS WHY IT CAN BE TRUSTED NOW (`D1082`). `S1` shipped every
+// control disabled: nothing claimed to edit, so nothing could lie, and the AST→form direction —
+// which did not exist in any form before it — was built and gated on its own. `S2`–`S5` then lit
+// one family at a time: the request, its assertions, the statements between the requests and the
+// notes above them, and the declaration's own band. **What is still read-only is a list that can be
+// named**, which is what a half-live pane owes a reader: the three clauses `ApiStepSpec` cannot
+// express (carried across an edit, never rebuilt), a subject or a body the builders cannot
+// construct (kept as it is, offered nowhere else), an assertion no index pair can address (inside a
+// `wait until api` block), a step belonging to another door — and the **workload**, which is the
+// LOAD door's to shape (`D1042`) and says so with a link rather than a control.
+//
+// AND SEND RUNS THE PREFIX (`S6`, `D1075`). Four requests in five cannot run alone, so pressing it
+// runs the file's hooks and this declaration up to the selected request — which is the honest thing
+// to run and the expensive thing to press, and why the pane lists what it will send first.
 
 import type { ReactNode } from 'react';
 import type { ApiBodySpec, ApiStepSpec, ExpectSpec, SubjectSpec } from '@tflw/lang';
@@ -59,7 +71,7 @@ import {
   SYNTHETIC,
 } from '@tflw/lang';
 import { DOOR_BY_ID } from './doors';
-import { isForeign, type Addressed, type FileOutline, type Note, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
+import { isForeign, type Addressed, type Prefix, type FileOutline, type Note, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 
 /**
  * A comment, shown where its owner is (`D1077`).
@@ -177,10 +189,12 @@ function bodyLabel(body: ApiBody | null): string {
  * vocabulary every door carries get the row with the fields in it; a step belonging to another
  * door gets a locked one-line row naming that door — the same row, shorter, never absent.
  */
-function StatementRow({ statement, door, editing }: {
+function StatementRow({ statement, door, editing, verdict }: {
   readonly statement: OutlineStatement;
   readonly door: Lens;
   readonly editing: RowEditing;
+  /** What the last run said about this statement, or `null` if nothing has run (`M210` `S6`). */
+  readonly verdict: Verdict | null;
 }) {
   const { row, onRow: onEdit, onNote, noting, onNoting } = editing;
   const foreign = isForeign(statement.lens, door);
@@ -225,9 +239,9 @@ function StatementRow({ statement, door, editing }: {
       ) : null}
       {editable && values !== null ? (
         values.kind === 'expect' ? (
-          <ExpectRow statement={statement} edit={values.expect} onEdit={(next) => onEdit!(statement, { kind: 'expect', expect: next })} trailing={addNote} />
+          <ExpectRow statement={statement} edit={values.expect} onEdit={(next) => onEdit!(statement, { kind: 'expect', expect: next })} trailing={<>{addNote}<VerdictMark verdict={verdict} /></>} />
         ) : (
-          <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit!(statement, next)} trailing={addNote} />
+          <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit!(statement, next)} trailing={<>{addNote}<VerdictMark verdict={verdict} /></>} />
         )
       ) : (
         <div className="stmt-line">
@@ -238,6 +252,7 @@ function StatementRow({ statement, door, editing }: {
               {DOOR_BY_ID[statement.lens!].label}
             </a>
           ) : null}
+          <VerdictMark verdict={verdict} />
           {onEdit !== null && !foreign && statement.stepPath === null ? (
             <span className="muted" data-stmt-unaddressable>
               inside the block above — an index pair names a step of a body, and this is not one
@@ -288,6 +303,37 @@ export interface RowEditing {
   readonly onNoting: ((key: string | null) => void) | null;
 }
 
+/**
+ * What the last run said about one statement (`M210` `S6`).
+ *
+ * `detail` is the runtime's own one-line summary — `status = 200`, `orderId = 42 (captured)`, or
+ * the reason it failed — which is the sentence the report already writes and this pane has no
+ * business writing a second version of.
+ */
+export interface Verdict {
+  readonly ok: boolean;
+  readonly detail: string;
+}
+
+/** The last response, as the report recorded it (`M210` `S6`). It is the run's own trace rather
+ *  than a second HTTP client in this page, which is `D1047` unchanged. */
+export interface Ran {
+  /** The request this ran for — the verdicts are dropped the moment the selection moves. */
+  readonly line: number;
+  readonly steps: readonly Verdict[];
+  readonly response: { readonly status: number; readonly url: string; readonly method: string; readonly bodyText: string } | null;
+}
+
+/** The verdict beside the row it belongs to, and nothing at all before anything has run. */
+function VerdictMark({ verdict }: { readonly verdict: Verdict | null }) {
+  if (verdict === null) return null;
+  return (
+    <span className={`step-verdict ${verdict.ok ? 'pass' : 'fail'}`} data-verdict={verdict.ok ? 'pass' : 'fail'} title={verdict.detail}>
+      {verdict.ok ? '✓' : '✗'} {verdict.detail}
+    </span>
+  );
+}
+
 /** A statement's address as one string, for keying the row being typed into. `null` for a row no
  *  index pair can name. */
 export function stepKey(path: StepPath | null): string | null {
@@ -308,8 +354,9 @@ function Field({ label, value, title, onChange, placeholder }: {
   readonly label: string;
   readonly value: string;
   readonly title?: string;
-  /** Absent means this field is not `S2`'s to light yet — it stays disabled, which is `D1082`
-   *  narrowing one family at a time rather than a pane that is half live and says nothing. */
+  /** Absent means this field is one the builders cannot construct, so it stays disabled and is
+   *  carried across an edit instead — `D1082` narrowing to a list that can be named rather than a
+   *  pane that is half live and says nothing about which half. */
   readonly onChange?: (next: string) => void;
   readonly placeholder?: string;
 }) {
@@ -1084,7 +1131,7 @@ function subjectSpelling(subject: Subject): string {
  * invisible *because* it is rare. §4 item 4 leaves whether that stays to `S2`; drawing them is the
  * answer that cannot hide anything, which is the right side to be on while the pane is read-only.
  */
-function RequestCard({ request: r, door, edit, onEdit, editing }: {
+function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
   readonly request: OutlineRequest;
   readonly door: Lens;
   /** The card's live values. `null` means this pane is still read-only here — `S1`'s state, and
@@ -1093,6 +1140,9 @@ function RequestCard({ request: r, door, edit, onEdit, editing }: {
   readonly onEdit: ((next: RequestEdit) => void) | null;
   /** Everything the rows under this card need to be editable (`S3`, `S4`). */
   readonly editing: RowEditing;
+  /** What the last run said, by the position of each step after the request (`S6`). `null` until
+   *  something has run, and `null` again the moment the selection moves. */
+  readonly ran: Ran | null;
 }) {
   const spec = r.spec;
   const writingNote = editing.noting !== null && editing.noting === stepKey(r.stepPath);
@@ -1153,7 +1203,7 @@ function RequestCard({ request: r, door, edit, onEdit, editing }: {
             oversight.** `ApiStepSpec` has no room for them, so they are carried across an edit by
             `nodeFor` rather than rebuilt — see `RequestEdit`. A field drawn live beside two that
             are not would be worse than either, so they say so by staying disabled. */}
-        <Field label="timeout" value={spec.timeoutMs === null ? '' : `${spec.timeoutMs}ms`} title="this request's own timeout, or blank for the env's — read-only until a later slice" />
+        <Field label="timeout" value={spec.timeoutMs === null ? '' : `${spec.timeoutMs}ms`} title="this request's own timeout, or blank for the env's — drawn and carried across an edit, because the request spec has no room for it" />
         <Field
           label="redirects"
           value={spec.followRedirects ? 'followed' : 'not followed'}
@@ -1241,6 +1291,19 @@ function RequestCard({ request: r, door, edit, onEdit, editing }: {
         )}
       </div>
 
+      {/* **The response, beside the assertions that read it** (`D1075`). It is the report's own
+          trace — the run wrote it, this pane did not fetch it — which is `D1047` unchanged and the
+          reason a send is a run rather than a second HTTP client living in a browser tab. */}
+      {ran !== null && ran.line === r.line && ran.response !== null ? (
+        <div className="response" data-compose-response={ran.response.status}>
+          <h4 className="muted">the last send</h4>
+          <p className="muted" data-compose-response-url>
+            {ran.response.method} {ran.response.url} — {ran.response.status}
+          </p>
+          <pre className="preview" data-compose-response-body>{ran.response.bodyText}</pre>
+        </div>
+      ) : null}
+
       <div className="expects-form" data-request-attached={r.attached.length}>
         <h4 className="muted">
           what this request is read for — {r.attached.length} statement{r.attached.length === 1 ? '' : 's'}
@@ -1251,8 +1314,18 @@ function RequestCard({ request: r, door, edit, onEdit, editing }: {
           </p>
         ) : (
           <ul className="stmts">
-            {r.attached.map((s) => (
-              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={editing} />
+            {r.attached.map((s, i) => (
+              <StatementRow
+                key={`${s.line}-${s.kind}`}
+                statement={s}
+                door={door}
+                editing={editing}
+                /* **By position, not by line.** The scratch is a printed program with the other
+                   tests removed, so its line numbers are not this file's; what holds the two
+                   together is the order, which is the order both were written in. Index 0 of the
+                   run is the request itself, so the attachments start at 1. */
+                verdict={ran !== null && ran.line === r.line ? ran.steps[i + 1] ?? null : null}
+              />
             ))}
           </ul>
         )}
@@ -1476,7 +1549,9 @@ function TestBand({ decl, outline, door, editing }: {
           <h4 className="muted">before the first request</h4>
           <ul className="stmts">
             {decl.body.preamble.map((s) => (
-              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={editing} />
+              /* A preamble statement runs before the request and its verdict is not beside this
+                 card — what `S6` shows is what the selected request was read for. */
+              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={editing} verdict={null} />
             ))}
           </ul>
         </div>
@@ -1693,6 +1768,18 @@ export interface ComposePaneProps {
    * only row that may hold something the file does not is the one under the cursor.
    */
   readonly editing: RowEditing;
+  /**
+   * What `send` will run, listed **before the press** (`M210` `S6`, `D1075`).
+   *
+   * Pressing it fires every one of these for real, against whatever the env points at — which is
+   * the accepted cost of running the prefix rather than the request alone, and the reason the cost
+   * is on screen rather than in a docstring. `null` when no request is selected.
+   */
+  readonly prefix: Prefix | null;
+  readonly onSend: (() => void) | null;
+  readonly sending: boolean;
+  /** The last run's verdicts and response for the selected request. */
+  readonly ran: Ran | null;
   /** Whether the buffer holds anything the file does not (`D1079`). */
   readonly dirty: boolean;
   readonly busy: boolean;
@@ -1703,7 +1790,7 @@ export interface ComposePaneProps {
   readonly onDiscard: () => void;
 }
 
-export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLegacyOpen, edit, onEdit, editing, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
+export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLegacyOpen, edit, onEdit, editing, prefix, onSend, sending, ran, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
   const requests = outline === null ? [] : outline.declarations.flatMap((d) => d.body.requests);
   return (
     <div className="authoring compose-pane" data-compose={outline === null ? 'reading' : at?.request ? 'request' : 'no-request'}>
@@ -1720,8 +1807,8 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
             {/* Written for a reader, not for the plan. A pane that explains itself by slice number is
                 talking to the person who built it. */}
             {outline.declarations.length} declaration{outline.declarations.length === 1 ? '' : 's'} · {requests.length} request
-            {requests.length === 1 ? '' : 's'} — this file, as it is on disk. The request and its assertions take a keystroke; the
-            band above it and the other statement kinds are still read-only.
+            {requests.length === 1 ? '' : 's'} — this file, as it is on disk. What is on this pane can be typed into, except a
+            workload, which the LOAD door shapes, and a step belonging to another door, which says whose it is.
           </p>
         )}
       </header>
@@ -1737,7 +1824,7 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
           {at ? <TestBand decl={at.decl} outline={outline} door={door} editing={editing} /> : <FileRow outline={outline} editing={editing} />}
 
           {at?.request ? (
-            <RequestCard request={at.request} door={door} edit={edit} onEdit={onEdit} editing={editing} />
+            <RequestCard request={at.request} door={door} edit={edit} onEdit={onEdit} editing={editing} ran={ran} />
           ) : (
             <p className="muted" data-compose-no-request>
               {requests.length === 0
@@ -1749,6 +1836,31 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
           )}
         </>
       )}
+
+      {/* **THE PREFIX, LISTED BEFORE THE PRESS** (`D1075`, `D1078`'s sibling argument one construct
+          over). Four requests in five cannot run alone — 734 of the sibling's 1031 read a variable
+          bound earlier, 379 read a capture from the file's `before` hook — so `send` runs what comes
+          before the selected request, for real. That is the honest thing to run and the expensive
+          thing to press: it can create rows in whatever the env points at. So what it will send is
+          on screen, in order, before anything is pressed, rather than in a docstring. */}
+      {outline !== null && prefix !== null && onSend !== null ? (
+        <div className="prefix" data-prefix={prefix.requests.length}>
+          <button className="run" onClick={onSend} disabled={sending || busy} data-compose-send>
+            {sending ? 'sending…' : `send — ${prefix.requests.length} request${prefix.requests.length === 1 ? '' : 's'}`}
+          </button>
+          <ol className="prefix-list">
+            {prefix.requests.map((r, i) => (
+              <li key={i} data-prefix-request={i}>
+                <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span> <code>{r.path}</code>{' '}
+                <span className="muted">{r.where}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="muted">
+            these are sent for real, in this order, against the env the strip names — the last one is the request above
+          </p>
+        </div>
+      ) : null}
 
       {/* The buffer's own line. It appears only when there is something in it, because a write
           button on a pane with nothing to write is a button that teaches you to ignore it. */}
