@@ -31,8 +31,21 @@
 // direction — which did not exist in any form before this — is built and gated on its own.
 
 import type { ReactNode } from 'react';
-import type { ApiBodySpec, ApiStepSpec } from '@tflw/lang';
-import { print, type ApiBody, type Lens } from '@tflw/lang';
+import type { ApiBodySpec, ApiStepSpec, ExpectSpec, SubjectSpec } from '@tflw/lang';
+import {
+  LOCATOR_KINDS,
+  print,
+  quantifiable,
+  type ApiBody,
+  type ExpectStmt,
+  type FindingSeverity,
+  type Lens,
+  type LocatorKind,
+  type MatcherName,
+  type PathSegment,
+  type StepPath,
+  type Subject,
+} from '@tflw/lang';
 import { DOOR_BY_ID } from './doors';
 import { isForeign, type Addressed, type FileOutline, type Note, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 
@@ -90,8 +103,26 @@ function bodyLabel(body: ApiBody | null): string {
  * vocabulary every door carries get the row with the fields in it; a step belonging to another
  * door gets a locked one-line row naming that door — the same row, shorter, never absent.
  */
-function StatementRow({ statement, door }: { readonly statement: OutlineStatement; readonly door: Lens }) {
+function StatementRow({ statement, door, editing, onEdit }: {
+  readonly statement: OutlineStatement;
+  readonly door: Lens;
+  /** The row being typed into, by its own index pair. `null` while nothing is. */
+  readonly editing: { readonly key: string; readonly values: ExpectEdit } | null;
+  /** Where a change goes (`M210` `S3`). `null` means this pane is still read-only here, which is
+   *  `S1`'s state, every door but API's, and every statement kind `S4` has not reached. */
+  readonly onEdit: ((statement: OutlineStatement, next: ExpectEdit) => void) | null;
+}) {
   const foreign = isForeign(statement.lens, door);
+  const key = stepKey(statement.stepPath);
+  /**
+   * **An assertion is editable when the language can address it and this door owns it.**
+   *
+   * `stepPath` is `null` for exactly one population today — the expects nested inside a `wait until
+   * api` block, which are not in the body's own step list and so cannot be named by an index pair.
+   * They stay read-only and say why rather than disappearing, which is `D1078`'s rule one level
+   * down: a reader may always see what a reader may not edit here.
+   */
+  const editable = !foreign && onEdit !== null && statement.kind === 'ExpectStmt' && statement.stepPath !== null;
   return (
     <li
       className={`stmt${foreign ? ' locked' : ''}`}
@@ -99,19 +130,39 @@ function StatementRow({ statement, door }: { readonly statement: OutlineStatemen
       data-stmt-line={statement.line}
       data-stmt-lens={statement.lens ?? 'none'}
       data-stmt-locked={foreign ? 'yes' : 'no'}
+      data-stmt-editable={editable ? 'yes' : 'no'}
     >
       {statement.note ? <NoteBlock note={statement.note} what={`line ${statement.line}`} /> : null}
-      <div className="stmt-line">
-        <span className="ln muted">{statement.line}</span>
-        <code className="stmt-text">{statement.text}</code>
-        {foreign ? (
-          <a className="badge also" href={`#/${statement.lens}`} data-stmt-door={statement.lens} title={`this is ${DOOR_BY_ID[statement.lens!].label}'s to edit — open that door`}>
-            {DOOR_BY_ID[statement.lens!].label}
-          </a>
-        ) : null}
-      </div>
+      {editable ? (
+        <ExpectRow
+          statement={statement}
+          edit={editing !== null && editing.key === key ? editing.values : expectOf(statement.node as ExpectStmt)}
+          onEdit={(next) => onEdit!(statement, next)}
+        />
+      ) : (
+        <div className="stmt-line">
+          <span className="ln muted">{statement.line}</span>
+          <code className="stmt-text">{statement.text}</code>
+          {foreign ? (
+            <a className="badge also" href={`#/${statement.lens}`} data-stmt-door={statement.lens} title={`this is ${DOOR_BY_ID[statement.lens!].label}'s to edit — open that door`}>
+              {DOOR_BY_ID[statement.lens!].label}
+            </a>
+          ) : null}
+          {onEdit !== null && statement.kind === 'ExpectStmt' && statement.stepPath === null ? (
+            <span className="muted" data-stmt-unaddressable>
+              inside the block above — an index pair names a step of a body, and this is not one
+            </span>
+          ) : null}
+        </div>
+      )}
     </li>
   );
+}
+
+/** A statement's address as one string, for keying the row being typed into. `null` for a row no
+ *  index pair can name. */
+export function stepKey(path: StepPath | null): string | null {
+  return path === null ? null : `${path.decl}:${path.step}`;
 }
 
 /**
@@ -240,6 +291,361 @@ export function specOf(edit: RequestEdit): ApiStepSpec {
 }
 
 /**
+ * THE EXPECTATION EDITOR (`M210` `S3`) — 16 subjects, 23 matchers, the quantifier, `expect`/`check`,
+ * the negation and the subset.
+ *
+ * `S2` lit the request; this lights what the request is read for. The vocabulary is the
+ * **language's**, not the corpus's: `MATCHER_LABEL` below is a `Record<MatcherName, string>`, so a
+ * matcher the language gains is a type error here rather than a row that silently stops being
+ * offered — `M200` `A4`'s *ask the language, not the corpus* in the one place a form is most
+ * tempted to hardcode a top ten. The old `ApiForm` row offers 10 of the 23 and 8 of the 16, which
+ * is the right size for *append a new assertion* and not for *show me the one that is there*.
+ */
+const MATCHER_LABEL: Record<MatcherName, string> = {
+  equals: 'equals',
+  contains: 'contains',
+  matches: 'matches (regex)',
+  matchesSubset: 'matches subset',
+  matchesSchema: 'matches schema',
+  matchesFile: 'matches file',
+  matchesSnapshot: 'matches snapshot',
+  greaterThan: 'is greater than',
+  lessThan: 'is less than',
+  hasCount: 'has count',
+  hasValue: 'has value',
+  visible: 'is visible',
+  hidden: 'is hidden',
+  enabled: 'is enabled',
+  disabled: 'is disabled',
+  checked: 'is checked',
+  connects: 'connects',
+  fails: 'fails',
+  wasMade: 'was made',
+  hasNoA11yViolations: 'has no a11y violations',
+  hasNoSecurityViolations: 'has no security violations',
+  hasNoAuthzViolations: 'has no authorization violations',
+  hasNoInputHandlingViolations: 'has no input-handling violations',
+};
+const MATCHERS = Object.entries(MATCHER_LABEL) as readonly (readonly [MatcherName, string])[];
+
+/** The matchers that compare against a value. `fails` is here and its operand is optional — the
+ *  one matcher in the language whose value may be present or absent (`SPEC` §6.2.2). */
+const VALUE_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>([
+  'equals', 'contains', 'matches', 'matchesSubset', 'greaterThan', 'lessThan', 'hasCount', 'hasValue', 'fails',
+]);
+/** The four that grade a whole subject against a rule family, and take a severity floor. */
+const SCAN_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>([
+  'hasNoA11yViolations', 'hasNoSecurityViolations', 'hasNoAuthzViolations', 'hasNoInputHandlingViolations',
+]);
+/** The three whose operand is a **trailing clause** rather than a value — `S3a` in `build.ts` is
+ *  where the builder learned to construct them; this is the same three, spelled as fields. */
+const CLAUSE_MATCHER: Partial<Record<MatcherName, 'schema' | 'file' | 'snapshot'>> = {
+  matchesSchema: 'schema',
+  matchesFile: 'file',
+  matchesSnapshot: 'snapshot',
+};
+const SEVERITIES: readonly FindingSeverity[] = ['minor', 'moderate', 'serious', 'critical'];
+
+/** The subjects a spec can spell, in the words the language uses. Eleven of the language's
+ *  sixteen; the other five arrive as `carried` below. */
+const SUBJECTS = [
+  ['status', 'status'],
+  ['duration', 'duration'],
+  ['request', 'request'],
+  ['header', 'header "…"'],
+  ['body', 'body …'],
+  ['bodyText', 'body text'],
+  ['bodyBytes', 'body bytes'],
+  ['value', '{value}'],
+  ['response', 'response'],
+  ['locator', 'an element'],
+  ['page', 'page'],
+] as const;
+/**
+ * `carried` is the subject this card shows and does not rebuild — `S2`'s `upload` one construct
+ * over.
+ *
+ * Five of the language's sixteen subjects have no `SubjectSpec` to spell them (`body csv`, `body
+ * pdf text`, `request to "…"`, and the two dialog subjects), and a `status of request to "…"`
+ * carries a clause the spec has no room for either. 41 assertions across the two corpora. They are
+ * **shown as themselves and left alone**: the select offers the option only when it is already what
+ * the row says, exactly as the body-kind select offers `upload`, and the original node is put back
+ * after the build. Switching away is a real edit and is allowed; switching *to* one is not offered,
+ * because the builder could not honour it.
+ */
+export type ExpectSubjectKind = (typeof SUBJECTS)[number][0] | 'carried';
+
+export interface ExpectEdit {
+  /** `check` rather than `expect` — soft, records and carries on. */
+  readonly soft: boolean;
+  /**
+   * `not`. **The field whose absence inverts an assertion**: `buildExpect` hardcoded `negated:
+   * false` until `S3a`, and 92 assertions across the two corpora are negated, spread over 15
+   * matchers. A card that rebuilt one without this would turn `expect status not equals 500` into
+   * `expect status equals 500` — a file that parses, runs, and asserts the opposite.
+   */
+  readonly negated: boolean;
+  readonly quantifier: '' | 'any' | 'all';
+  readonly subject: ExpectSubjectKind;
+  /** The header name, the body path, the variable or the element's text — one field, because only
+   *  one subject at a time has an argument. */
+  readonly argument: string;
+  readonly locatorKind: LocatorKind;
+  readonly matcher: MatcherName;
+  readonly operand: string;
+  /** `matches subset { … }` as rows (`S3`'s subset editor). The operand for that one matcher is
+   *  built from these rather than from the text field, which is the same arrangement the request
+   *  card's form body already uses: a value with a shape gets the shape's editor. */
+  readonly subset: readonly { readonly name: string; readonly value: string }[];
+  readonly severityFloor: '' | FindingSeverity;
+  readonly schemaName: string;
+  readonly schemaSource: string;
+  readonly schemaService: string;
+  readonly filePath: string;
+  readonly snapshotName: string;
+}
+
+/** `items[0].price` — a body path as the language spells it. */
+function pathText(segments: readonly PathSegment[]): string {
+  let out = '';
+  for (const segment of segments) {
+    if (segment.kind === 'index') out += `[${segment.index}]`;
+    else out += out === '' ? segment.name : `.${segment.name}`;
+  }
+  return out;
+}
+
+function subjectKindOf(subject: Subject): ExpectSubjectKind {
+  switch (subject.type) {
+    // The `of request to "…"` clause is a fact about the subject the spec cannot hold, so a subject
+    // carrying one is carried whole rather than rebuilt without it.
+    case 'StatusSubject': return subject.of === null ? 'status' : 'carried';
+    case 'HeaderSubject': return subject.of === null ? 'header' : 'carried';
+    case 'BodySubject': return subject.of === null ? 'body' : 'carried';
+    case 'BodyTextSubject': return subject.of === null ? 'bodyText' : 'carried';
+    case 'BodyBytesSubject': return 'bodyBytes';
+    case 'DurationSubject': return 'duration';
+    case 'RequestSubject': return 'request';
+    case 'ValueSubject': return 'value';
+    case 'ResponseSubject': return 'response';
+    case 'PageSubject': return 'page';
+    case 'LocatorSubject': return 'locator';
+    default: return 'carried';
+  }
+}
+
+function argumentOf(subject: Subject): string {
+  switch (subject.type) {
+    case 'HeaderSubject': return subject.name.value;
+    case 'BodySubject': return pathText(subject.path);
+    case 'ValueSubject': return pathText(subject.ref);
+    case 'LocatorSubject': return subject.locator.value.value;
+    default: return '';
+  }
+}
+
+/** The card's current values, read off an assertion the file already holds. */
+export function expectOf(node: ExpectStmt): ExpectEdit {
+  const m = node.matcher;
+  const subset = m.name === 'matchesSubset' && m.value !== null && m.value.type === 'ObjectLit'
+    ? m.value.fields.map((f) => ({ name: f.key, value: printValue(f.value) }))
+    : [];
+  return {
+    soft: node.soft,
+    negated: m.negated,
+    quantifier: node.quantifier ?? '',
+    subject: subjectKindOf(node.subject),
+    argument: argumentOf(node.subject),
+    locatorKind: node.subject.type === 'LocatorSubject' ? node.subject.locator.kind : 'button',
+    matcher: m.name,
+    // **`print` had to learn the value grammar for this line** (`S3a`): `PRINTABLE` declared
+    // thirty-one value kinds and the switch reached five, so 77 operands across the two corpora —
+    // every `{interpolation}`, every `env()`, every `matches subset` object — came back as
+    // `# unprintable` and could not be read into a field at all, let alone typed into.
+    operand: m.value === null ? '' : printValue(m.value),
+    subset,
+    severityFloor: m.severityFloor ?? '',
+    schemaName: m.schemaName?.value ?? '',
+    schemaSource: m.schemaSource?.value ?? '',
+    schemaService: m.schemaService ?? '',
+    filePath: m.filePath?.value ?? '',
+    snapshotName: m.snapshotName?.value ?? '',
+  };
+}
+
+/** A JSON object as the language writes it — the subset editor's rows, joined. A bare key when the
+ *  language can read it back bare, quoted otherwise, which is `printObject`'s own rule. */
+function objectText(rows: readonly { readonly name: string; readonly value: string }[]): string {
+  if (rows.length === 0) return '{}';
+  const parts = rows.map((r) => `${/^[A-Za-z_]\w*$/.test(r.name) ? r.name : JSON.stringify(r.name)}: ${r.value}`);
+  return `{ ${parts.join(', ')} }`;
+}
+
+/**
+ * The spec half of an assertion — what `buildExpect` takes.
+ *
+ * `original` is read for one thing only: a carried subject's **shape**. The builder validates the
+ * quantifier against the subject it is given, so a stand-in for a quantified `body csv` path has to
+ * be quantifiable too or the build refuses about a file that parses. `quantifiable()` is the
+ * language's own predicate, asked rather than re-derived here.
+ */
+export function expectSpecOf(edit: ExpectEdit, original: ExpectStmt | null): ExpectSpec {
+  const subject = ((): SubjectSpec => {
+    switch (edit.subject) {
+      case 'header': return { kind: 'header', name: edit.argument };
+      case 'body': return { kind: 'body', path: edit.argument };
+      case 'value': return { kind: 'value', ref: edit.argument };
+      case 'locator': return { kind: 'locator', locator: { kind: edit.locatorKind, value: edit.argument } };
+      case 'carried': return original !== null && quantifiable(original.subject) ? { kind: 'body', path: '' } : { kind: 'status' };
+      default: return { kind: edit.subject };
+    }
+  })();
+  const clause = CLAUSE_MATCHER[edit.matcher];
+  const operand = clause !== undefined || !VALUE_MATCHERS.has(edit.matcher)
+    ? null
+    : edit.matcher === 'matchesSubset' ? objectText(edit.subset) : edit.operand;
+  return {
+    soft: edit.soft,
+    negated: edit.negated,
+    quantifier: edit.quantifier === '' ? null : edit.quantifier,
+    subject,
+    matcher: edit.matcher,
+    operand,
+    ...(edit.severityFloor === '' || !SCAN_MATCHERS.has(edit.matcher) ? {} : { severityFloor: edit.severityFloor }),
+    ...(clause === 'schema'
+      ? { schema: { name: edit.schemaName, source: edit.schemaSource, ...(edit.schemaService.trim() === '' ? {} : { service: edit.schemaService.trim() }) } }
+      : {}),
+    ...(clause === 'file' ? { filePath: edit.filePath } : {}),
+    ...(clause === 'snapshot' ? { snapshotName: edit.snapshotName } : {}),
+  };
+}
+
+/** One assertion, as controls. The row the legacy form has always had, with the whole vocabulary
+ *  in it and reading an assertion that already exists rather than inventing a new one. */
+function ExpectRow({ statement, edit, onEdit }: {
+  readonly statement: OutlineStatement;
+  readonly edit: ExpectEdit;
+  readonly onEdit: (next: ExpectEdit) => void;
+}) {
+  const node = statement.node as ExpectStmt;
+  const v = edit;
+  const change = (patch: Partial<ExpectEdit>): void => onEdit({ ...v, ...patch });
+  const clause = CLAUSE_MATCHER[v.matcher];
+  const takesValue = VALUE_MATCHERS.has(v.matcher) && v.matcher !== 'matchesSubset';
+  return (
+    <>
+      <div className="row expect-fields" data-expect-line={statement.line}>
+        <select value={v.soft ? 'check' : 'expect'} onChange={(e) => change({ soft: e.target.value === 'check' })} data-expect-kind aria-label="expect or check">
+          <option value="expect">expect</option>
+          <option value="check">check</option>
+        </select>
+        <select value={v.quantifier} onChange={(e) => change({ quantifier: e.target.value as ExpectEdit['quantifier'] })} data-expect-quantifier aria-label="quantifier">
+          <option value="">—</option>
+          <option value="any">any</option>
+          <option value="all">all</option>
+        </select>
+        <select value={v.subject} onChange={(e) => change({ subject: e.target.value as ExpectSubjectKind })} data-expect-subject={v.subject} aria-label="subject">
+          {SUBJECTS.map(([id, text]) => (
+            <option key={id} value={id}>{text}</option>
+          ))}
+          {/* Offered only while it is what this row already says — the builder cannot construct one,
+              so switching *to* it would be a control that writes nothing. */}
+          {v.subject === 'carried' ? <option value="carried">{subjectSpelling(node.subject)} — kept as it is</option> : null}
+        </select>
+        {v.subject === 'locator' ? (
+          <select value={v.locatorKind} onChange={(e) => change({ locatorKind: e.target.value as LocatorKind })} data-expect-locator-kind aria-label="element kind">
+            {LOCATOR_KINDS.map((k) => (
+              <option key={k} value={k}>{k}</option>
+            ))}
+          </select>
+        ) : null}
+        {v.subject === 'header' || v.subject === 'body' || v.subject === 'value' || v.subject === 'locator' ? (
+          <input
+            value={v.argument}
+            onChange={(e) => change({ argument: e.target.value })}
+            data-expect-argument
+            aria-label="subject argument"
+            placeholder={v.subject === 'header' ? 'content-type' : v.subject === 'value' ? 'orderId' : v.subject === 'locator' ? 'Buy' : 'items[0].price'}
+          />
+        ) : null}
+        <label className="not" title="`not` — the word whose absence would invert this assertion">
+          <input type="checkbox" checked={v.negated} onChange={(e) => change({ negated: e.target.checked })} data-expect-negated={v.negated ? 'yes' : 'no'} />
+          not
+        </label>
+        <select value={v.matcher} onChange={(e) => change({ matcher: e.target.value as MatcherName })} data-expect-matcher={v.matcher} aria-label="matcher">
+          {MATCHERS.map(([id, text]) => (
+            <option key={id} value={id}>{text}</option>
+          ))}
+        </select>
+        {takesValue ? (
+          <input value={v.operand} onChange={(e) => change({ operand: e.target.value })} data-expect-operand aria-label="operand" placeholder={v.matcher === 'fails' ? '(any failure)' : '200'} />
+        ) : null}
+        <span className="ln muted">line {statement.line}</span>
+      </div>
+      {SCAN_MATCHERS.has(v.matcher) ? (
+        <div className="row expect-extra" data-expect-extra="severity">
+          <label className="muted">at or above</label>
+          <select value={v.severityFloor} onChange={(e) => change({ severityFloor: e.target.value as ExpectEdit['severityFloor'] })} data-expect-severity aria-label="severity floor">
+            <option value="">every severity</option>
+            {SEVERITIES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+      {clause === 'schema' ? (
+        <div className="row expect-extra" data-expect-extra="schema">
+          <input value={v.schemaName} onChange={(e) => change({ schemaName: e.target.value })} data-expect-schema-name aria-label="schema name" placeholder="Order" />
+          <label className="muted">from</label>
+          <input value={v.schemaService} onChange={(e) => change({ schemaService: e.target.value })} data-expect-schema-service aria-label="schema service" placeholder="(default service)" />
+          <input value={v.schemaSource} onChange={(e) => change({ schemaSource: e.target.value })} data-expect-schema-source aria-label="schema source" placeholder="openapi.json" />
+        </div>
+      ) : null}
+      {clause === 'file' ? (
+        <div className="row expect-extra" data-expect-extra="file">
+          <input value={v.filePath} onChange={(e) => change({ filePath: e.target.value })} data-expect-file aria-label="file path" placeholder="fixtures/report.pdf" />
+        </div>
+      ) : null}
+      {clause === 'snapshot' ? (
+        <div className="row expect-extra" data-expect-extra="snapshot">
+          <input value={v.snapshotName} onChange={(e) => change({ snapshotName: e.target.value })} data-expect-snapshot aria-label="snapshot name" placeholder="checkout" />
+          {/* `mask <locator>` clauses are carried across an edit, not drawn as controls — the same
+              answer `timeout` and `without redirects` get on the request card, and for the same
+              reason: the card would rather say what it keeps than offer a control it cannot honour. */}
+          {node.masks.length > 0 ? (
+            <span className="muted" data-expect-masks={node.masks.length}>
+              {node.masks.length} masked region{node.masks.length === 1 ? '' : 's'}, kept as written
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {v.matcher === 'matchesSubset' ? (
+        <div className="fields subset-editor" data-expect-subset={v.subset.length}>
+          {v.subset.map((f, i) => (
+            <div className="row" key={i}>
+              <input value={f.name} onChange={(e) => change({ subset: v.subset.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} data-subset-key={i} aria-label="key" />
+              <input value={f.value} onChange={(e) => change({ subset: v.subset.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} data-subset-value={i} aria-label="value" />
+              <button onClick={() => change({ subset: v.subset.filter((_, j) => j !== i) })} data-subset-remove={i}>
+                remove
+              </button>
+            </div>
+          ))}
+          <button onClick={() => change({ subset: [...v.subset, { name: '', value: '""' }] })} data-subset-add title="one key the response must carry with this value; the rest of the object is not compared">
+            + key
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** A subject in its own spelling, for the one option the select cannot rebuild. */
+function subjectSpelling(subject: Subject): string {
+  const out = print(subject);
+  return out.ok ? out.text : subject.type;
+}
+
+/**
  * The request card — what `D1073` puts on screen.
  *
  * The whole api vocabulary is drawn, and the fields that are at their default are drawn too rather
@@ -248,13 +654,16 @@ export function specOf(edit: RequestEdit): ApiStepSpec {
  * invisible *because* it is rare. §4 item 4 leaves whether that stays to `S2`; drawing them is the
  * answer that cannot hide anything, which is the right side to be on while the pane is read-only.
  */
-function RequestCard({ request: r, door, edit, onEdit }: {
+function RequestCard({ request: r, door, edit, onEdit, expectEdit, onExpectEdit }: {
   readonly request: OutlineRequest;
   readonly door: Lens;
   /** The card's live values. `null` means this pane is still read-only here — `S1`'s state, and
    *  what every door but API still gets. */
   readonly edit: RequestEdit | null;
   readonly onEdit: ((next: RequestEdit) => void) | null;
+  /** The assertion row being typed into, and where a change goes (`S3`). */
+  readonly expectEdit: { readonly key: string; readonly values: ExpectEdit } | null;
+  readonly onExpectEdit: ((statement: OutlineStatement, next: ExpectEdit) => void) | null;
 }) {
   const spec = r.spec;
   const v = edit ?? editOf(r);
@@ -404,7 +813,7 @@ function RequestCard({ request: r, door, edit, onEdit }: {
         ) : (
           <ul className="stmts">
             {r.attached.map((s) => (
-              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} />
+              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={expectEdit} onEdit={onExpectEdit} />
             ))}
           </ul>
         )}
@@ -460,7 +869,13 @@ function bodyText(body: ApiBody): string {
  * what was being counted was the default value. A band that renders a default as a fact makes the
  * same mistake on screen, every time.
  */
-function TestBand({ decl, outline, door }: { readonly decl: OutlineHook | OutlineTest; readonly outline: FileOutline; readonly door: Lens }) {
+function TestBand({ decl, outline, door, expectEdit, onExpectEdit }: {
+  readonly decl: OutlineHook | OutlineTest;
+  readonly outline: FileOutline;
+  readonly door: Lens;
+  readonly expectEdit: { readonly key: string; readonly values: ExpectEdit } | null;
+  readonly onExpectEdit: ((statement: OutlineStatement, next: ExpectEdit) => void) | null;
+}) {
   const test: OutlineTest | null = decl.kind === 'test' ? decl : null;
   return (
     <div className="test-band" data-band-kind={decl.kind} data-band-line={decl.line}>
@@ -506,7 +921,7 @@ function TestBand({ decl, outline, door }: { readonly decl: OutlineHook | Outlin
           <h4 className="muted">before the first request</h4>
           <ul className="stmts">
             {decl.body.preamble.map((s) => (
-              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} />
+              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={expectEdit} onEdit={onExpectEdit} />
             ))}
           </ul>
         </div>
@@ -592,6 +1007,15 @@ export interface ComposePaneProps {
    */
   readonly edit: RequestEdit | null;
   readonly onEdit: ((next: RequestEdit) => void) | null;
+  /**
+   * The assertion row being typed into, and where a change goes (`M210` `S3`).
+   *
+   * Keyed by the statement's own index pair rather than held per row, for `S2`'s reason one
+   * construct over: the values are re-derived from the file the moment the buffer moves, so the
+   * only row that may hold something the file does not is the one under the cursor.
+   */
+  readonly expectEdit: { readonly key: string; readonly values: ExpectEdit } | null;
+  readonly onExpectEdit: ((statement: OutlineStatement, next: ExpectEdit) => void) | null;
   /** Whether the buffer holds anything the file does not (`D1079`). */
   readonly dirty: boolean;
   readonly busy: boolean;
@@ -602,7 +1026,7 @@ export interface ComposePaneProps {
   readonly onDiscard: () => void;
 }
 
-export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLegacyOpen, edit, onEdit, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
+export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLegacyOpen, edit, onEdit, expectEdit, onExpectEdit, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
   const requests = outline === null ? [] : outline.declarations.flatMap((d) => d.body.requests);
   return (
     <div className="authoring compose-pane" data-compose={outline === null ? 'reading' : at?.request ? 'request' : 'no-request'}>
@@ -619,7 +1043,8 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
             {/* Written for a reader, not for the plan. A pane that explains itself by slice number is
                 talking to the person who built it. */}
             {outline.declarations.length} declaration{outline.declarations.length === 1 ? '' : 's'} · {requests.length} request
-            {requests.length === 1 ? '' : 's'} — this is the file as it is on disk. Nothing here can be typed into yet.
+            {requests.length === 1 ? '' : 's'} — this file, as it is on disk. The request and its assertions take a keystroke; the
+            band above it and the other statement kinds are still read-only.
           </p>
         )}
       </header>
@@ -632,10 +1057,10 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
           comes and goes with a fetch is a pane you cannot hold a gesture across. */}
       {outline === null ? null : (
         <>
-          {at ? <TestBand decl={at.decl} outline={outline} door={door} /> : <FileRow outline={outline} />}
+          {at ? <TestBand decl={at.decl} outline={outline} door={door} expectEdit={expectEdit} onExpectEdit={onExpectEdit} /> : <FileRow outline={outline} />}
 
           {at?.request ? (
-            <RequestCard request={at.request} door={door} edit={edit} onEdit={onEdit} />
+            <RequestCard request={at.request} door={door} edit={edit} onEdit={onEdit} expectEdit={expectEdit} onExpectEdit={onExpectEdit} />
           ) : (
             <p className="muted" data-compose-no-request>
               {requests.length === 0
