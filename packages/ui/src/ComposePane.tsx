@@ -31,6 +31,7 @@
 // direction — which did not exist in any form before this — is built and gated on its own.
 
 import type { ReactNode } from 'react';
+import type { ApiBodySpec, ApiStepSpec } from '@tflw/lang';
 import { print, type ApiBody, type Lens } from '@tflw/lang';
 import { DOOR_BY_ID } from './doors';
 import { isForeign, type Addressed, type FileOutline, type Note, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
@@ -123,13 +124,119 @@ function StatementRow({ statement, door }: { readonly statement: OutlineStatemen
  * `S1`'s gate counts exactly four controls under it. Two different rows wearing one class is the
  * drift class this repository files findings against, and here it had teeth — the gate saw nine.
  */
-function Field({ label, value, title }: { readonly label: string; readonly value: string; readonly title?: string }) {
+function Field({ label, value, title, onChange, placeholder }: {
+  readonly label: string;
+  readonly value: string;
+  readonly title?: string;
+  /** Absent means this field is not `S2`'s to light yet — it stays disabled, which is `D1082`
+   *  narrowing one family at a time rather than a pane that is half live and says nothing. */
+  readonly onChange?: (next: string) => void;
+  readonly placeholder?: string;
+}) {
   return (
     <label className="field" title={title} data-field={label}>
       {label}
-      <input value={value} readOnly disabled data-field-value={label} />
+      <input
+        value={value}
+        placeholder={placeholder}
+        readOnly={onChange === undefined}
+        disabled={onChange === undefined}
+        onChange={onChange === undefined ? undefined : (e) => onChange(e.target.value)}
+        data-field-value={label}
+      />
     </label>
   );
+}
+
+const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
+
+/**
+ * What the card can change about a request — `S2`'s vocabulary, and **not** the whole of one.
+ *
+ * `timeout`, `without redirects` and the per-request `retry honoring "Retry-After"` are drawn on
+ * the card and are not in here, because `ApiStepSpec` cannot express them. That asymmetry is the
+ * hazard this shape exists to make impossible to miss: a node rebuilt from a spec alone would come
+ * back **without** the three fields the spec has no room for, and the file would lose them silently
+ * — source that still parses, still runs, still passes, and tests something the author did not ask
+ * for. `nodeFor` below carries them across explicitly, and a gate asserts they survive an edit.
+ */
+export interface RequestEdit {
+  readonly method: (typeof METHODS)[number];
+  readonly path: string;
+  readonly service: string;
+  readonly label: string;
+  readonly headers: readonly { readonly name: string; readonly value: string }[];
+  /**
+   * **Six named kinds, five of them buildable.** The plan's `S2` says *all six body kinds*;
+   * `ApiBodySpec` has five, because `UploadBody` is a body the **printer** can emit and the
+   * **builder** cannot construct — widening `ApiBodySpec` is its own slice.
+   *
+   * `upload` is named here anyway, and that is the whole point of naming it: the first draft folded
+   * it into `none`, so editing the *path* of a request with an upload body **deleted the body** —
+   * `multipart/form-data` silently gone from a request that still parsed and still ran. Twelve
+   * requests in the sibling carry one. Named, it is carried across an edit exactly as `timeout` and
+   * `without redirects` are, and the control that would change it is the one control this card
+   * refuses to offer.
+   */
+  readonly bodyKind: 'none' | 'json' | 'text' | 'file' | 'form' | 'upload';
+  readonly bodyText: string;
+  readonly formFields: readonly { readonly name: string; readonly value: string }[];
+}
+
+/** The card's current values, read off a request the file already holds. */
+export function editOf(r: OutlineRequest): RequestEdit {
+  const body = r.body;
+  return {
+    method: r.method,
+    path: r.path,
+    service: r.service ?? '',
+    label: r.label ?? '',
+    headers: r.spec.headers.map((h) => ({ name: h.name.value, value: h.value.type === 'StringLit' ? h.value.value : printValue(h.value) })),
+    bodyKind:
+      body === null ? 'none'
+      : body.type === 'InlineBody' ? 'json'
+      : body.type === 'TextBody' ? 'text'
+      : body.type === 'FileBody' ? 'file'
+      : body.type === 'FormBody' ? 'form'
+      : body.type === 'UploadBody' ? 'upload'
+      : 'none',
+    bodyText:
+      body === null ? '{ }'
+      // **The BODY node, with its keyword stripped — not the value inside it.** An `ObjectLit` is
+      // `CONTEXT_BOUND`: it has no source of its own to be re-parsed from, so the printer refuses
+      // it and refusing is correct. Printing `body.value` put `# unprintable: no printer for
+      // ObjectLit` into the field, which then failed to build, so **every edit to a request with a
+      // JSON body was silently refused** — including edits to its path, which have nothing to do
+      // with its body. Found by typing into the served page, not by any check over the model.
+      : body.type === 'InlineBody' ? withoutKeyword(printValue(body))
+      : body.type === 'TextBody' ? body.value.value
+      : body.type === 'FileBody' ? body.path.value
+      : '{ }',
+    formFields: body !== null && body.type === 'FormBody' ? body.fields.map((f) => ({ name: f.key, value: f.value.type === 'StringLit' ? f.value.value : printValue(f.value) })) : [],
+  };
+}
+
+/** The spec half of an edit — what `buildApiStep` takes. */
+export function specOf(edit: RequestEdit): ApiStepSpec {
+  const body = ((): ApiBodySpec | null => {
+    switch (edit.bodyKind) {
+      case 'none': return null;
+      case 'json': return { kind: 'json', text: edit.bodyText };
+      case 'text': return { kind: 'text', text: edit.bodyText };
+      case 'file': return { kind: 'file', path: edit.bodyText };
+      case 'form': return { kind: 'form', fields: edit.formFields.map((f) => ({ key: f.name, value: f.value })) };
+      // The builder has no upload spec; the caller carries the original node across instead.
+      case 'upload': return null;
+    }
+  })();
+  return {
+    service: edit.service.trim() === '' ? null : edit.service.trim(),
+    method: edit.method,
+    path: edit.path,
+    headers: edit.headers.map((h) => ({ name: h.name, value: h.value })),
+    body,
+    label: edit.label.trim() === '' ? null : edit.label.trim(),
+  };
 }
 
 /**
@@ -141,14 +248,48 @@ function Field({ label, value, title }: { readonly label: string; readonly value
  * invisible *because* it is rare. §4 item 4 leaves whether that stays to `S2`; drawing them is the
  * answer that cannot hide anything, which is the right side to be on while the pane is read-only.
  */
-function RequestCard({ request: r, door }: { readonly request: OutlineRequest; readonly door: Lens }) {
+function RequestCard({ request: r, door, edit, onEdit }: {
+  readonly request: OutlineRequest;
+  readonly door: Lens;
+  /** The card's live values. `null` means this pane is still read-only here — `S1`'s state, and
+   *  what every door but API still gets. */
+  readonly edit: RequestEdit | null;
+  readonly onEdit: ((next: RequestEdit) => void) | null;
+}) {
   const spec = r.spec;
+  const v = edit ?? editOf(r);
+  const change = onEdit === null ? null : (patch: Partial<RequestEdit>) => onEdit({ ...v, ...patch });
   return (
-    <section className="request-card" data-request-line={r.line} data-request-kind={r.kind}>
+    <section className="request-card" data-request-line={r.line} data-request-kind={r.kind} data-request-editable={onEdit === null ? 'no' : 'yes'}>
       {r.note ? <NoteBlock note={r.note} what={`request ${r.line}`} /> : null}
       <header className="request-head">
-        <span className={`method m-${r.method.toLowerCase()}`} data-request-method={r.method}>{r.method}</span>
-        <code className="request-path" data-request-path={r.path}>{r.path}</code>
+        {change === null ? (
+          <span className={`method m-${v.method.toLowerCase()}`} data-request-method={v.method}>{v.method}</span>
+        ) : (
+          <select
+            className={`method m-${v.method.toLowerCase()}`}
+            value={v.method}
+            onChange={(e) => change({ method: e.target.value as RequestEdit['method'] })}
+            data-request-method={v.method}
+            aria-label="method"
+          >
+            {METHODS.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        )}
+        {change === null ? (
+          <code className="request-path" data-request-path={v.path}>{v.path}</code>
+        ) : (
+          <input
+            className="request-path"
+            value={v.path}
+            onChange={(e) => change({ path: e.target.value })}
+            data-request-path={v.path}
+            aria-label="path"
+            placeholder="/orders/{orderId}"
+          />
+        )}
         <span className="ln muted">line {r.line}</span>
         {r.kind === 'WaitUntilApiStmt' ? (
           <span className="badge" data-request-polling="yes" title="this request is re-issued until the assertions below it pass">
@@ -158,9 +299,13 @@ function RequestCard({ request: r, door }: { readonly request: OutlineRequest; r
       </header>
 
       <div className="request-fields">
-        <Field label="service" value={r.service ?? ''} title="the name in tflw.config of a second api service — blank is the default one" />
-        <Field label="label" value={r.label ?? ''} title="`as “…”` — the identity this request reports under; blank is the automatic one" />
-        <Field label="timeout" value={spec.timeoutMs === null ? '' : `${spec.timeoutMs}ms`} title="this request's own timeout, or blank for the env's" />
+        <Field label="service" value={v.service} onChange={change === null ? undefined : (service) => change({ service })} placeholder="(default)" title="the name in tflw.config of a second api service — blank is the default one" />
+        <Field label="label" value={v.label} onChange={change === null ? undefined : (label) => change({ label })} placeholder="(automatic)" title="`as “…”` — the identity this request reports under; blank is the automatic one" />
+        {/* **These three are drawn and not editable, and that is `S2`'s scope rather than an
+            oversight.** `ApiStepSpec` has no room for them, so they are carried across an edit by
+            `nodeFor` rather than rebuilt — see `RequestEdit`. A field drawn live beside two that
+            are not would be worse than either, so they say so by staying disabled. */}
+        <Field label="timeout" value={spec.timeoutMs === null ? '' : `${spec.timeoutMs}ms`} title="this request's own timeout, or blank for the env's — read-only until a later slice" />
         <Field
           label="redirects"
           value={spec.followRedirects ? 'followed' : 'not followed'}
@@ -169,32 +314,83 @@ function RequestCard({ request: r, door }: { readonly request: OutlineRequest; r
         <Field label="retry after" value={spec.retryAfter === null ? '' : `up to ${spec.retryAfter.max}`} title="`retry honoring “Retry-After” up to N` — this one request, not the test" />
       </div>
 
-      <div className="headers-form" data-request-headers={spec.headers.length}>
+      <div className="headers-form" data-request-headers={v.headers.length}>
         <h4 className="muted">headers</h4>
-        {spec.headers.length === 0 ? (
+        {v.headers.length === 0 ? (
           <p className="muted" data-request-headers-empty>
             none on this request — the env's <code>api</code> defaults and a session's token are still added at run time
           </p>
         ) : (
           <ul>
-            {spec.headers.map((h, i) => (
-              <li key={i} className="row" data-request-header={h.name.value}>
-                <code>{h.name.value}</code>
-                {/* Through the printer. The first draft read `h.value.value` when the node was a
-                    `StringLit` and fell back to `h.value.type` otherwise, so a header whose value is
-                    a number, a variable or a call rendered the **AST node's name** to the reader —
-                    `NumberLit` where `42` belongs. There is one right spelling of a value and the
-                    language owns it. */}
-                <code className="muted" data-request-header-value={h.name.value}>{printValue(h.value)}</code>
+            {v.headers.map((h, i) => (
+              <li key={i} className="row" data-request-header={h.name}>
+                {change === null ? (
+                  <>
+                    <code>{h.name}</code>
+                    <code className="muted" data-request-header-value={h.name}>{quoted(r, i, h.value)}</code>
+                  </>
+                ) : (
+                  <>
+                    <input value={h.name} onChange={(e) => change({ headers: v.headers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} data-header-edit-name={i} aria-label="header name" />
+                    <input value={h.value} onChange={(e) => change({ headers: v.headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} data-header-edit-value={i} aria-label="header value" />
+                    <button onClick={() => change({ headers: v.headers.filter((_, j) => j !== i) })} data-header-edit-remove={i}>
+                      remove
+                    </button>
+                  </>
+                )}
               </li>
             ))}
           </ul>
         )}
+        {change === null ? null : (
+          <button onClick={() => change({ headers: [...v.headers, { name: '', value: '' }] })} data-header-edit-add title="a header on this request alone">
+            + header
+          </button>
+        )}
       </div>
 
-      <div className="body-form" data-request-body={r.body === null ? 'none' : r.body.type}>
-        <h4 className="muted">body — {bodyLabel(r.body)}</h4>
-        {r.body === null ? null : <pre className="preview body-preview" data-request-body-text>{bodyText(r.body)}</pre>}
+      <div className="body-form" data-request-body={bodyKindOf(r, edit)}>
+        <h4 className="muted">body</h4>
+        {change === null ? (
+          <>
+            <p className="muted">{bodyLabel(r.body)}</p>
+            {r.body === null ? null : <pre className="preview body-preview" data-request-body-text>{bodyText(r.body)}</pre>}
+          </>
+        ) : (
+          <>
+            <select value={v.bodyKind} onChange={(e) => change({ bodyKind: e.target.value as RequestEdit['bodyKind'] })} data-body-edit-kind aria-label="body kind">
+              <option value="none">none</option>
+              <option value="json">JSON</option>
+              <option value="text">raw text</option>
+              <option value="file">from a file</option>
+              <option value="form">form fields</option>
+              {/* Offered only when it is already what this request sends, so the reader can see it
+                  and leave it — and never as something to switch *to*, because the builder cannot
+                  construct one. Switching away is a real edit and is allowed. */}
+              {v.bodyKind === 'upload' ? <option value="upload">upload (multipart) — not editable here</option> : null}
+            </select>
+            {v.bodyKind === 'upload' && r.body !== null ? <pre className="preview body-preview" data-request-body-text>{bodyText(r.body)}</pre> : null}
+            {v.bodyKind === 'json' || v.bodyKind === 'text' || v.bodyKind === 'file' ? (
+              <textarea value={v.bodyText} onChange={(e) => change({ bodyText: e.target.value })} data-body-edit-text rows={3} aria-label="body" />
+            ) : null}
+            {v.bodyKind === 'form' ? (
+              <div className="fields" data-body-edit-fields={v.formFields.length}>
+                {v.formFields.map((f, i) => (
+                  <div className="row" key={i}>
+                    <input value={f.name} onChange={(e) => change({ formFields: v.formFields.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} data-body-edit-key={i} aria-label="field name" />
+                    <input value={f.value} onChange={(e) => change({ formFields: v.formFields.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} data-body-edit-value={i} aria-label="field value" />
+                    <button onClick={() => change({ formFields: v.formFields.filter((_, j) => j !== i) })} data-body-edit-remove={i}>
+                      remove
+                    </button>
+                  </div>
+                ))}
+                <button onClick={() => change({ formFields: [...v.formFields, { name: '', value: '' }] })} data-body-edit-add>
+                  + field
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
 
       <div className="expects-form" data-request-attached={r.attached.length}>
@@ -215,6 +411,24 @@ function RequestCard({ request: r, door }: { readonly request: OutlineRequest; r
       </div>
     </section>
   );
+}
+
+/** `print` emits an `InlineBody` as `body <json>`; the field holds the json. One `slice`, named,
+ *  rather than a second serialiser for the one shape the printer will not emit on its own. */
+function withoutKeyword(printed: string): string {
+  return printed.startsWith('body ') ? printed.slice('body '.length) : printed;
+}
+
+/** A header value as the file spells it, for the read-only rendering. */
+function quoted(r: OutlineRequest, i: number, fallback: string): string {
+  const h = r.spec.headers[i];
+  return h ? printValue(h.value) : fallback;
+}
+
+/** The body kind the card is showing — the edit's when there is one, the file's otherwise. */
+function bodyKindOf(r: OutlineRequest, edit: RequestEdit | null): string {
+  if (edit !== null) return edit.bodyKind;
+  return r.body === null ? 'none' : r.body.type;
 }
 
 /** Any value, in the language's own spelling. Total since `M201`; a refusal is named rather than
@@ -368,9 +582,27 @@ export interface ComposePaneProps {
    */
   readonly legacyOpen: boolean;
   readonly onLegacyOpen: (open: boolean) => void;
+  /**
+   * The selected request's live values, and where a change goes (`M210` `S2`, `D1079`).
+   *
+   * `null` for both means read-only, which is `S1`'s state and still every door but API's. The
+   * values live above this component for `M205` `S5a`'s reason — the strip unmounts panels — and
+   * the *text* they produce is the shell's, so the explorer's outline and Source see the same
+   * buffer this card is editing.
+   */
+  readonly edit: RequestEdit | null;
+  readonly onEdit: ((next: RequestEdit) => void) | null;
+  /** Whether the buffer holds anything the file does not (`D1079`). */
+  readonly dirty: boolean;
+  readonly busy: boolean;
+  /** Why the last change did not become bytes — a half-typed path is not yet a request, and
+   *  saying so is better than a field that refuses the keystroke. */
+  readonly problem: string | null;
+  readonly onWrite: () => void;
+  readonly onDiscard: () => void;
 }
 
-export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLegacyOpen }: ComposePaneProps) {
+export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLegacyOpen, edit, onEdit, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
   const requests = outline === null ? [] : outline.declarations.flatMap((d) => d.body.requests);
   return (
     <div className="authoring compose-pane" data-compose={outline === null ? 'reading' : at?.request ? 'request' : 'no-request'}>
@@ -403,7 +635,7 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
           {at ? <TestBand decl={at.decl} outline={outline} door={door} /> : <FileRow outline={outline} />}
 
           {at?.request ? (
-            <RequestCard request={at.request} door={door} />
+            <RequestCard request={at.request} door={door} edit={edit} onEdit={onEdit} />
           ) : (
             <p className="muted" data-compose-no-request>
               {requests.length === 0
@@ -415,6 +647,27 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
           )}
         </>
       )}
+
+      {/* The buffer's own line. It appears only when there is something in it, because a write
+          button on a pane with nothing to write is a button that teaches you to ignore it. */}
+      {problem !== null ? (
+        <p className="warn" data-compose-problem>
+          {problem}
+        </p>
+      ) : null}
+      {dirty ? (
+        <div className="authoring-actions" data-compose-dirty="yes">
+          <button className="run" onClick={onWrite} disabled={busy} data-compose-write>
+            {busy ? 'writing…' : `write ${path}`}
+          </button>
+          <button onClick={onDiscard} disabled={busy} data-compose-discard>
+            discard
+          </button>
+          <span className="muted">
+            these edits are not on disk — <em>Source</em> shows what <code>{path}</code> becomes
+          </span>
+        </div>
+      ) : null}
 
       {/* **There is no request rail here, and that is a measurement rather than an omission.**
           §1 of the plan priced a horizontal rail of requests and rejected it — the largest file in
