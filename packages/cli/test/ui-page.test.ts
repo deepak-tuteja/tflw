@@ -4109,8 +4109,17 @@ test('a note is collapsed to its first line with a count, opens to the rest, and
     // the whole block printed line one twice — which the served page said and no model check could.
     assert.equal(await header.locator('.note-body').textContent(), '# and its second line\n# and a third');
 
+    // A declaration's note is still the read-only form — `S5`'s to light — so it is one paragraph
+    // and says its line once.
     assert.equal(await fresh.locator('[data-note="test it answers"]').textContent(), '# about this test');
-    assert.equal(await fresh.locator('[data-note="request 13"]').textContent(), '# about the request');
+    // **The request's note is editable since `S4`, and an editable note is a `<details>` even when
+    // it is one line long**: the collapsed form has to open onto something, and the thing it opens
+    // onto is the WHOLE block, first line included, because that is what is being edited. So the
+    // claim above — *lines two onward* — belongs to the read-only body, and the editable form's
+    // claim is the other one: every line exactly once, in the control, without its `#`.
+    const request = fresh.locator('[data-note="request 13"]');
+    assert.equal(await request.locator('summary').textContent(), '# about the request ');
+    assert.equal(await request.locator('[data-note-edit]').inputValue(), 'about the request');
 
     // The hook is a declaration with a body like any other, and it is in the outline beside the test.
     const decls = await fresh.locator('[data-outline-decl]').evaluateAll((els) => els.map((e) => e.getAttribute('data-outline-decl')));
@@ -4648,5 +4657,181 @@ test('`M210` `S3`: an assertion inside a `wait until api` block is read-only, in
     assert.equal(await row.getAttribute('data-stmt-editable'), 'no');
     assert.equal(await row.locator('.stmt-text').textContent(), 'expect body.status equals "done"', 'and it is still drawn, in the language\'s own spelling');
     assert.ok((await row.locator('[data-stmt-unaddressable]').textContent())!.length > 0, 'with the reason on the row');
+  });
+});
+
+// `M210` `S4` — the statements between the requests, and the notes above them.
+//
+// The corpus is mostly made of these: **793 `capture`, 321 `let`, 184 `call`, 71 `log`, 8 `give`,
+// 4 `pause`** across the two corpora, against 1855 requests. A pane that edits a request and an
+// assertion and draws the rest as text cannot change most of a test.
+
+/** A test whose body holds one of each — a preamble before the request, attachments after it, a
+ *  note on a statement, and a polling request with a block of its own. */
+const SCRIPTS = [
+  '# the file header, which must survive every edit below',
+  '',
+  '@crud',
+  'test "it places an order"',
+  '  let email = unique email',
+  '  # why this pause is here',
+  // **A range, and not in milliseconds**, because a fixed pause reads `''` for its upper bound and
+  // a `500ms` one reads the same whether the raw spelling is kept or the node's `ms` is reprinted —
+  // in both cases the mutant's constant is the fixture's value. This one separates them.
+  '  pause 1s to 3s',
+  '  login("a", "b")',
+  '  api POST /orders body { email: {email} }',
+  '  expect status equals 201',
+  '  capture body.id as orderId',
+  // Likewise: an `info` log with no destination is exactly what a reader that drops both returns.
+  '  log warn "created {orderId}" to html',
+  '  give {orderId}',
+  '  wait until api GET /orders/{orderId}',
+  '    header "Authorization" is "Bearer {token}"',
+  '    expect body.status equals "done"',
+  '',
+].join('\n');
+
+test('`M210` `S4`: every statement kind in the body is a row of controls holding what the file says', async () => {
+  await withEditFixture(SCRIPTS, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    const rows = await p.locator('[data-script]').evaluateAll((els) =>
+      // One expression per read — no named helper inside a browser callback (`keepNames`).
+      els.map((el) => ({
+        kind: el.getAttribute('data-script'),
+        values: [...el.querySelectorAll('input,select')].map((c) => `${c.getAttribute('aria-label') ?? ''}=${(c as unknown as { value: string }).value}`),
+      })),
+    );
+    assert.deepEqual(rows, [
+      { kind: 'let', values: ['variable=email', 'value=unique email'] },
+      { kind: 'pause', values: ['pause=1s', 'upper bound=3s'] },
+      { kind: 'call', values: ['action=login', 'argument 1="a"', 'argument 2="b"'] },
+      { kind: 'capture', values: ['subject=body', 'subject argument=id', 'variable=orderId'] },
+      { kind: 'log', values: ['level=warn', 'message=created {orderId}', 'destination=html'] },
+      { kind: 'give', values: ['value={orderId}'] },
+    ]);
+    // A fixed pause is a blank upper bound, and the field says so rather than looking unfinished —
+    // all four pauses in the corpus are fixed.
+    assert.equal(await p.locator('[data-pause-max]').getAttribute('placeholder'), '(a fixed pause)');
+  });
+});
+
+test('`M210` `S4`: each of them becomes bytes, and the statement beside it does not move', async () => {
+  await withEditFixture(SCRIPTS, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    await p.locator('[data-let-value]').fill('unique("ord")');
+    await p.locator('[data-pause-max]').fill('');
+    await p.locator('[data-call-arg="1"]').fill('"c"');
+    await p.locator('[data-capture-name]').fill('placedId');
+    await p.locator('[data-log-level]').selectOption('error');
+    await p.locator('[data-log-destination]').selectOption('');
+    await p.locator('[data-give-value]').fill('{placedId}');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+
+    const onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^ {2}let email = unique\("ord"\)$/m);
+    assert.match(onDisk, /^ {2}pause 1s$/m, 'a cleared upper bound is a fixed pause, and the lower one keeps its own spelling');
+    assert.match(onDisk, /^ {2}login\("a", "c"\)$/m);
+    assert.match(onDisk, /^ {2}capture body\.id as placedId$/m);
+    assert.match(onDisk, /^ {2}log error "created \{orderId\}"$/m, 'and a destination cleared to the default is written by leaving it out');
+    assert.match(onDisk, /^ {2}give \{placedId\}$/m);
+    // …and everything the edits did not name.
+    assert.match(onDisk, /^# the file header, which must survive every edit below$/m);
+    assert.match(onDisk, /^ {2}# why this pause is here$/m);
+    assert.match(onDisk, /^ {2}api POST \/orders body \{ email: \{email\} \}$/m);
+    assert.match(onDisk, /^ {2}expect status equals 201$/m);
+    const { diagnostics } = parseSource(onDisk);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
+test('`M210` `S4`: a note is edited where it is, written where there was none, and removed by clearing it', async () => {
+  // `D1077` — a note is a note on what it explains, which is what gives a comment an address at
+  // all: its owner's index pair. This is the one edit on the pane that is not a node.
+  await withEditFixture(SCRIPTS, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+
+    // The one that is there: opened from its own summary, and edited without its `#`.
+    // **Addressed by the row, not by the line.** A note's `what` is the line of the statement it
+    // explains — which is its whole address (`D1077`), the block itself having no identity of its
+    // own — and a line moves the moment a note grows: this note goes from one line to two below,
+    // and every statement under it shifts. The first draft of this gate named `line 7` twice and
+    // timed out on the second, which is `D1080`'s own cost showing up in a test.
+    const pause = p.locator('li.stmt[data-stmt="PauseStmt"]');
+    await pause.locator('summary').click();
+    const editor = pause.locator('[data-note-edit]');
+    assert.equal(await editor.inputValue(), 'why this pause is here');
+    await editor.fill('the API needs a beat before the order lands\nmeasured, not guessed');
+    await p.locator('[data-compose-dirty]').waitFor();
+
+    // …and one where there was none. The editor **stays open while it is typed into**, which is
+    // the whole reason the gesture owns that state rather than the `<details>` doing: a disclosure
+    // driven by the note's own emptiness shuts on the first keystroke.
+    await p.locator('li.stmt[data-stmt="CaptureStmt"] [data-note-add]').click();
+    const fresh = p.locator('li.stmt[data-stmt="CaptureStmt"] [data-note-edit]');
+    await fresh.waitFor();
+    await fresh.fill('the id the poll below reads');
+    await fresh.waitFor();
+    assert.equal(await fresh.inputValue(), 'the id the poll below reads', 'the editor survived the buffer moving under it');
+
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^ {2}# the API needs a beat before the order lands\n {2}# measured, not guessed\n {2}pause 1s to 3s$/m);
+    assert.match(onDisk, /^ {2}# the id the poll below reads\n {2}capture body\.id as orderId$/m);
+    assert.match(onDisk, /^# the file header, which must survive every edit below$/m, 'and the file header is not a statement note');
+
+    // Cleared to nothing, the note goes — which is the only way to get rid of one, and the reason
+    // the call carries whether there *was* one: the empty editor a new note opens with must not
+    // read as a removal before it has been typed into.
+    await pause.locator('summary').click();
+    await pause.locator('[data-note-edit]').fill('');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const after = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    // **The line is gone, not blanked.** Asserting only that the words went is green against a
+    // note replaced by a bare `#`, which is litter that still parses — so the claim is what is
+    // directly above the statement, and it is the statement before it.
+    assert.match(after, /^ {2}let email = unique email\n {2}pause 1s to 3s$/m, 'the note was removed, not emptied');
+    assert.match(after, /^ {2}# the id the poll below reads$/m, 'and the other note did not move');
+
+    // **And a gesture nobody finished leaves nothing behind.** `+ note` opens an editor and writes
+    // no bytes, so an author who opens one and thinks better of it does not litter the file with a
+    // bare `#` — the same rule as the removal above, which is why there is one rule and not two.
+    const before = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    await p.locator('li.stmt[data-stmt="LetStmt"] [data-note-add]').click();
+    await p.locator('li.stmt[data-stmt="LetStmt"] [data-note-edit]').waitFor();
+    assert.equal(await p.locator('[data-compose-dirty]').count(), 0, 'opening a note is not an edit');
+    await p.locator('li.stmt[data-stmt="LetStmt"] [data-note-edit]').fill('  ');
+    assert.equal(await p.locator('[data-compose-dirty]').count(), 0, 'and neither is typing whitespace into one');
+    assert.equal(await readFile(join(dir, 'edit.tflw'), 'utf8'), before, 'nothing reached disk either');
+  });
+});
+
+test('`M210` `S4`: a polling request is editable, and its own block survives the edit', async () => {
+  // `wait until api` holds an `ApiRequestSpec` in a field rather than being one, and its expects
+  // live inside its own block — which is why `S3` cannot address them and why the card refused to
+  // edit it at all until now. The request is editable; the two things only the block has — those
+  // nested expects and `waitMs`, which is the poll budget and **not** `timeoutMs` — are carried.
+  await withEditFixture(SCRIPTS, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    const lines = await p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
+    await p.goto(`${base}/#/api/compose/edit.tflw/L${lines[lines.length - 1]}`);
+    await p.locator('[data-request-kind="WaitUntilApiStmt"]').waitFor();
+    assert.equal(await p.locator('[data-request-editable]').getAttribute('data-request-editable'), 'yes');
+    await p.locator('[data-request-path]').fill('/orders/{orderId}/status');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^ {2}wait until api GET \/orders\/\{orderId\}\/status$/m);
+    assert.match(onDisk, /^ {4}header "Authorization" is "Bearer \{token\}"$/m, 'the block\'s header survived');
+    assert.match(onDisk, /^ {4}expect body\.status equals "done"$/m, 'and so did the expects only the block can hold');
+    const { diagnostics } = parseSource(onDisk);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
   });
 });

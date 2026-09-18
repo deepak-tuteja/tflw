@@ -454,6 +454,27 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .expect-fields label.not input { flex: 0 0 auto; }
 .expect-fields .ln { flex: 0 0 auto; margin-left: auto; }
 .expect-extra { margin-left: 18px; }
+/* A keyword in a row of controls — `capture … as …`, `let … = …`. It is the language's own word
+ * sitting between two fields, so it reads as the grammar rather than as a label. */
+.expect-fields .kw { flex: 0 0 auto; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.expect-fields button { flex: 0 0 auto; }
+/* The note a statement does not have yet: one small control per row rather than an empty block on
+ * every row, because 1247 statements in the corpus carry a note and several thousand do not. */
+.add-note { background: none; border: 0; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; padding: 0 0 0 2px; }
+.add-note:hover { color: var(--fg); }
+.note-edit {
+  width: 100%;
+  margin-top: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+}
 .expect-extra label { flex: 0 0 auto; font-size: 12px; }
 /* The subset editor's rows sit under the row that named them, indented, because a key of an object
  * is a fact about that assertion and not a sibling of it. */

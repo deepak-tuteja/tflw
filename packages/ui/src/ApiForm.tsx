@@ -21,8 +21,18 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   buildApiStep,
   replaceInSource,
+  buildCall,
+  buildCapture,
   buildExpect,
+  buildGive,
+  buildLet,
+  buildLog,
+  buildPause,
+  type CaptureStmt,
   type ExpectStmt,
+  type Step,
+  type StepPath,
+  type WaitUntilApiStmt,
   buildTest,
   insertIntoSource,
   type ApiBodySpec,
@@ -33,7 +43,7 @@ import {
 import { putFile, dropScratch, startRun, subscribe, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
 import { TabStrip } from './TabStrip';
-import { ComposePane, editOf, expectSpecOf, specOf, stepKey, type ExpectEdit, type RequestEdit } from './ComposePane';
+import { ComposePane, editOf, expectSpecOf, specOf, stepKey, subjectSpecOf, type RequestEdit, type StatementEdit } from './ComposePane';
 import { addressed, fileOutline, type OutlineRequest, type OutlineStatement } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
@@ -194,6 +204,23 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
   const at = useMemo(() => (outline === null ? null : addressed(outline, focusLine)), [outline, focusLine]);
 
   /**
+   * **An edit that produces the bytes already there is not an edit** (`M210` `S4`).
+   *
+   * Every apply below ends here, and the guard exists because one gesture reaches it with nothing
+   * to say: a new note opened and typed with whitespace resolves to *remove the note that is not
+   * there*, which is a faithful no-op — and without this the buffer went dirty, the write button
+   * appeared, and pressing it would have written the file back to itself.
+   */
+  const settle = useCallback(
+    (text: string): boolean => {
+      if (text === (draft ?? file?.text)) return false;
+      onDraft(text);
+      return true;
+    },
+    [draft, file, onDraft],
+  );
+
+  /**
    * The selected request's field values — `M210` `S2`.
    *
    * **Here rather than in the pane**, because the strip unmounts panels (`M205` `S5a`, a rule this
@@ -230,29 +257,37 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
         return;
       }
       const original: OutlineRequest = at.request;
-      const node = original.kind === 'ApiStep'
-        ? {
-            ...built.node,
-            timeoutMs: original.spec.timeoutMs,
-            followRedirects: original.spec.followRedirects,
-            retryAfter: original.spec.retryAfter,
-            // An `upload` body is carried whole for the same reason: `ApiBodySpec` cannot express
-            // one, so the builder returns `body: null` for it, and taking that answer would delete
-            // a `multipart/form-data` payload from a request whose path somebody edited.
-            body: next.bodyKind === 'upload' ? original.spec.body : built.node.body,
-          }
-        : null;
-      if (node === null) {
-        setEditProblem('a `wait until api` request is not editable here yet — its expects are inside its own block');
-        return;
-      }
+      const request = {
+        ...built.node,
+        timeoutMs: original.spec.timeoutMs,
+        followRedirects: original.spec.followRedirects,
+        retryAfter: original.spec.retryAfter,
+        // An `upload` body is carried whole for the same reason: `ApiBodySpec` cannot express
+        // one, so the builder returns `body: null` for it, and taking that answer would delete
+        // a `multipart/form-data` payload from a request whose path somebody edited.
+        body: next.bodyKind === 'upload' ? original.spec.body : built.node.body,
+      };
+      /**
+       * **A polling request is the same request in a different node** (`M210` `S4`).
+       *
+       * `wait until api GET /jobs/{id}` holds an `ApiRequestSpec` in a field rather than being one,
+       * and its expects live inside its own block — which is why `S3` cannot address them and why
+       * this was left read-only until now. Editing the *request* needs none of that: the built step
+       * is an `ApiRequestSpec`, so it goes into the field, and the block's own two facts — the
+       * nested expects and `waitMs`, which is the poll budget and **not** `timeoutMs` — are carried
+       * from the node that was there.
+       */
+      const polling = original.node as WaitUntilApiStmt;
+      const node: Step = original.kind === 'ApiStep'
+        ? request
+        : { type: 'WaitUntilApiStmt', request, expects: polling.expects, waitMs: polling.waitMs, span: polling.span };
       const out = replaceInSource(draft ?? file.text, { kind: 'step', path: original.stepPath, node });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
       }
       setEditProblem(null);
-      onDraft(out.text);
+      settle(out.text);
       /**
        * **Keep the address on the request it was on** (`D1080`).
        *
@@ -266,8 +301,44 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
       const moved = after.declarations[original.stepPath.decl]?.body.requests.find((x) => x.stepPath.step === original.stepPath.step);
       if (moved && moved.line !== original.line) onTab('compose', moved.line);
     },
-    [at, file, draft, onDraft, path, onTab],
+    [at, file, draft, settle, path, onTab],
   );
+
+  /**
+   * A note, all the way to bytes (`D1077`, `M210` `S4`).
+   *
+   * The one edit on this pane that is not a node: a comment is not in the tree, so what addresses
+   * it is its **owner** — the statement below it — through the same index pair. An empty list
+   * removes the note, which is what a cleared textarea sends.
+   */
+  const applyNote = useCallback(
+    (path: StepPath, lines: readonly string[]) => {
+      if (!file) return;
+      /**
+       * **A note with nothing in it is not a note.** Clearing the textarea is the only way to
+       * remove one, and the same rule covers the gesture at the other end: `+ note` opens an editor
+       * and writes nothing, so an author who opens one and thinks better of it leaves no `#` behind.
+       *
+       * The first draft carried a `had` flag to tell those two apart, and the mutation that dropped
+       * it stayed green — because the only difference was whether an abandoned gesture littered the
+       * file with a bare `#`. One rule is both better and smaller.
+       */
+      const blank = lines.every((line) => line.trim() === '');
+      const out = replaceInSource(draft ?? file.text, { kind: 'note', path, lines: blank ? [] : lines });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /** The row whose new note is open — see `RowEditing.noting`. It lives here rather than in the
+   *  pane for `M205` `S5a`'s reason, which this round has now met four times: the strip unmounts
+   *  panels, so a gesture held below one does not survive a glance at Source. */
+  const [noting, setNoting] = useState<string | null>(null);
   const [editProblem, setEditProblem] = useState<string | null>(null);
 
   /**
@@ -277,43 +348,69 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
    * own index pair, so moving to another row re-reads that row from the file instead of carrying
    * the last one's half-typed operand onto it.
    */
-  const [expectEdit, setExpectEdit] = useState<{ key: string; values: ExpectEdit } | null>(null);
+  const [expectEdit, setExpectEdit] = useState<{ key: string; values: StatementEdit } | null>(null);
   const applyExpectEdit = useCallback(
-    (statement: OutlineStatement, next: ExpectEdit) => {
+    (statement: OutlineStatement, next: StatementEdit) => {
       if (!file || statement.stepPath === null) return;
       const key = stepKey(statement.stepPath);
       if (key === null) return;
       setExpectEdit({ key, values: next });
-      const original = statement.node as ExpectStmt;
-      const built = buildExpect(expectSpecOf(next, original));
+      /**
+       * One statement kind per branch, each through the language's own builder (`M210` `S3`/`S4`).
+       *
+       * **What the spec cannot say is carried, not rebuilt** — `S2`'s rule, twice more here. An
+       * assertion's subject when the select still says `carried`: five of the language's sixteen
+       * subjects have no `SubjectSpec`, and a `status of request to "…"` carries a clause the spec
+       * has no room for either, so the build runs against a stand-in of the same shape and the real
+       * node goes back on. Its `mask` list likewise, while the matcher is still `matches snapshot`:
+       * losing it would not change whether the file parses, only which pixels count. And a
+       * `capture`'s subject for exactly the same reason — 774 of the corpus's 793 captures read a
+       * `body` path, and the other nineteen include the shapes the spec cannot spell.
+       */
+      const built: { ok: true; node: Step } | { ok: false; reason: string } = ((): { ok: true; node: Step } | { ok: false; reason: string } => {
+        switch (next.kind) {
+          case 'expect': {
+            const original = statement.node as ExpectStmt;
+            const out = buildExpect(expectSpecOf(next.expect, original));
+            if (!out.ok) return out;
+            return {
+              ok: true,
+              node: {
+                ...out.node,
+                subject: next.expect.subject === 'carried' ? original.subject : out.node.subject,
+                masks: next.expect.matcher === 'matchesSnapshot' && original.matcher.name === 'matchesSnapshot' ? original.masks : out.node.masks,
+              },
+            };
+          }
+          case 'capture': {
+            const original = statement.node as CaptureStmt;
+            const out = buildCapture({ subject: subjectSpecOf(next.subject, next.argument, next.locatorKind, original.subject), name: next.name });
+            if (!out.ok) return out;
+            return { ok: true, node: { ...out.node, subject: next.subject === 'carried' ? original.subject : out.node.subject } };
+          }
+          case 'let':
+            return buildLet({ name: next.name, value: next.value });
+          case 'log':
+            return buildLog({ level: next.level, message: next.message, destination: next.destination === '' ? null : next.destination });
+          case 'call':
+            return buildCall({ name: next.name, args: next.args });
+          case 'give':
+            return buildGive(next.value);
+          case 'pause':
+            return buildPause({ min: next.min, max: next.max });
+        }
+      })();
       if (!built.ok) {
         setEditProblem(built.reason);
         return;
       }
-      /**
-       * **What the spec cannot say is carried, not rebuilt** — `S2`'s rule, one construct over.
-       *
-       * The subject when the select still says `carried`: five of the language's sixteen subjects
-       * have no `SubjectSpec` to spell them, and a `status of request to "…"` carries a clause the
-       * spec has no room for either. The build ran against a stand-in of the same shape, so the
-       * real node goes back on afterwards.
-       *
-       * The masks when the matcher is still `matches snapshot`: a `mask <locator>` list is what a
-       * visual comparison paints over before comparing, and losing it would not change whether the
-       * file parses — only which pixels count.
-       */
-      const node: ExpectStmt = {
-        ...built.node,
-        subject: next.subject === 'carried' ? original.subject : built.node.subject,
-        masks: next.matcher === 'matchesSnapshot' && original.matcher.name === 'matchesSnapshot' ? original.masks : built.node.masks,
-      };
-      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: statement.stepPath, node });
+      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: statement.stepPath, node: built.node });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
       }
       setEditProblem(null);
-      onDraft(out.text);
+      settle(out.text);
       // The address names the REQUEST, and an assertion above it can move it — `format` normalises
       // the whole file before the splice, so a file that was not already formatted shifts. Read the
       // request's new line back out by the index pair that still identifies it (`D1080`).
@@ -571,6 +668,7 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
     // values come from the file again. A held edit would keep re-deriving nothing and would mask
     // the next external change to that statement.
     setExpectEdit(null);
+    setNoting(null);
     setWrote(path);
     onWritten(path);
   }, [file, draft, path, onFileWritten, onDraft, onWritten]);
@@ -641,14 +739,13 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
           legacyOpen={legacyOpen}
           onLegacyOpen={setLegacyOpen}
           edit={values}
-          onEdit={at?.request?.kind === 'ApiStep' ? applyEdit : null}
-          expectEdit={expectEdit}
-          onExpectEdit={applyExpectEdit}
+          onEdit={applyEdit}
+          editing={{ row: expectEdit, onRow: applyExpectEdit, onNote: applyNote, noting, onNoting: setNoting }}
           dirty={draft !== null}
           busy={busy}
           problem={editProblem}
           onWrite={() => void writeDraft()}
-          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setEditProblem(null); }}
+          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setNoting(null); setEditProblem(null); }}
           door="api"
           legacy={
             <div className="authoring">
