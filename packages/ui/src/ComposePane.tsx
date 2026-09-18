@@ -41,10 +41,14 @@ import {
   type FindingSeverity,
   type Lens,
   type LocatorKind,
+  type LogDestination,
+  type LogLevel,
   type MatcherName,
   type PathSegment,
   type StepPath,
+  type Step,
   type Subject,
+  SYNTHETIC,
 } from '@tflw/lang';
 import { DOOR_BY_ID } from './doors';
 import { isForeign, type Addressed, type FileOutline, type Note, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
@@ -62,8 +66,56 @@ import { isForeign, type Addressed, type FileOutline, type Note, type OutlineHoo
  * click and nothing is lost; lifting the open state of every note in a file would be a map keyed by
  * line living above the pane to spare that click.
  */
-function NoteBlock({ note, what }: { readonly note: Note; readonly what: string }) {
-  if (note.lines.length === 1) {
+/** A note's text without its `#`s — the hash is how a comment is spelled, not something an author
+ *  should have to retype on every line. `null` is a note that does not exist yet. */
+function noteText(note: Note | null): string {
+  return note === null ? '' : note.lines.map((line) => line.replace(/^#\s?/, '')).join('\n');
+}
+
+/**
+ * A note being written, open (`M210` `S4`).
+ *
+ * **Not a `<details>`, and that is the whole reason this exists separately.** A new note has to
+ * have somewhere to be typed *before* it exists, and driving a disclosure's `open` from the note's
+ * own emptiness slams it shut on the first keystroke, while forcing `open` from React re-opens it
+ * every time the author closes it. So the gesture owns the state (`RowEditing.noting`) and the
+ * editor is a plain block for as long as it lasts.
+ */
+function NoteOpen({ note, what, onChange }: {
+  readonly note: Note | null;
+  readonly what: string;
+  readonly onChange: (lines: readonly string[]) => void;
+}) {
+  return (
+    <div className="note note-open" data-note={what} data-note-lines={note?.lines.length ?? 0}>
+      <textarea
+        className="note-edit"
+        autoFocus
+        value={noteText(note)}
+        rows={2}
+        onChange={(e) => onChange(e.target.value.split('\n'))}
+        data-note-edit={what}
+        aria-label="note"
+      />
+    </div>
+  );
+}
+
+function NoteBlock({ note, what, onNote }: {
+  readonly note: Note;
+  readonly what: string;
+  /**
+   * Where an edit to this note goes (`M210` `S4`). Absent leaves it read-only, which is every
+   * note this pane cannot address — a declaration's, and the file's own header, both `S5`'s.
+   *
+   * **A note that can be typed into is always a `<details>`, even a one-line one.** The collapsed
+   * form of an editable note has to open onto something, and a one-line note that turned into a
+   * paragraph would be the one note on the pane with no way in.
+   */
+  readonly onNote?: (lines: readonly string[]) => void;
+}) {
+  const text = noteText(note);
+  if (note.lines.length === 1 && onNote === undefined) {
     return (
       <p className="muted note" data-note={what} data-note-lines={1}>
         {note.first}
@@ -73,12 +125,26 @@ function NoteBlock({ note, what }: { readonly note: Note; readonly what: string 
   return (
     <details className="note" data-note={what} data-note-lines={note.lines.length}>
       <summary className="muted">
-        {note.first} <span className="count">+{note.lines.length - 1}</span>
+        {note.first} {note.lines.length > 1 ? <span className="count">+{note.lines.length - 1}</span> : null}
       </summary>
-      {/* Lines **two onward**. The summary is already the first line, and a `<details>` shows its
-          summary while it is open — so joining the whole block here printed line 1 twice, which is
-          what the rendered page said and the model did not. Found by reading the paint. */}
-      <pre className="muted note-body">{note.lines.slice(1).join('\n')}</pre>
+      {onNote === undefined ? (
+        /* Lines **two onward**. The summary is already the first line, and a `<details>` shows its
+           summary while it is open — so joining the whole block here printed line 1 twice, which is
+           what the rendered page said and the model did not. Found by reading the paint. */
+        <pre className="muted note-body">{note.lines.slice(1).join('\n')}</pre>
+      ) : (
+        /* …and the editable form holds the WHOLE block, first line included, because that is the
+           thing being edited. Without its `#`s: the hash is how a comment is spelled, not something
+           an author should have to retype on every line. */
+        <textarea
+          className="note-edit"
+          value={text}
+          rows={Math.min(Math.max(note.lines.length, 2), 12)}
+          onChange={(e) => onNote(e.target.value.split('\n'))}
+          data-note-edit={what}
+          aria-label="note"
+        />
+      )}
     </details>
   );
 }
@@ -103,15 +169,12 @@ function bodyLabel(body: ApiBody | null): string {
  * vocabulary every door carries get the row with the fields in it; a step belonging to another
  * door gets a locked one-line row naming that door — the same row, shorter, never absent.
  */
-function StatementRow({ statement, door, editing, onEdit }: {
+function StatementRow({ statement, door, editing }: {
   readonly statement: OutlineStatement;
   readonly door: Lens;
-  /** The row being typed into, by its own index pair. `null` while nothing is. */
-  readonly editing: { readonly key: string; readonly values: ExpectEdit } | null;
-  /** Where a change goes (`M210` `S3`). `null` means this pane is still read-only here, which is
-   *  `S1`'s state, every door but API's, and every statement kind `S4` has not reached. */
-  readonly onEdit: ((statement: OutlineStatement, next: ExpectEdit) => void) | null;
+  readonly editing: RowEditing;
 }) {
+  const { row, onRow: onEdit, onNote, noting, onNoting } = editing;
   const foreign = isForeign(statement.lens, door);
   const key = stepKey(statement.stepPath);
   /**
@@ -122,7 +185,22 @@ function StatementRow({ statement, door, editing, onEdit }: {
    * They stay read-only and say why rather than disappearing, which is `D1078`'s rule one level
    * down: a reader may always see what a reader may not edit here.
    */
-  const editable = !foreign && onEdit !== null && statement.kind === 'ExpectStmt' && statement.stepPath !== null;
+  const own = statement.stepPath === null || onEdit === null || foreign ? null : statementEditOf(statement.node);
+  const editable = own !== null;
+  const values = row !== null && row.key === key ? row.values : own;
+  /* **A note this statement does not have yet** (`D1077`, `M210` `S4`) — in the row rather than
+     under it. 1247 of the corpus's statements carry a note and several thousand do not, so an
+     always-drawn empty note block would be noise on every row that is fine as it is; and a control
+     on its own line costs 27 px on every row, which the served page priced at +27 px × the 20
+     statements a request can carry before this moved into the row. */
+  const writingNote = noting !== null && noting === key;
+  const addNote = editable && onNote !== null && statement.note === null && !writingNote
+    ? (
+        <button className="add-note" onClick={() => onNoting?.(key)} data-note-add={statement.line} title="a comment above this line, explaining why it is here">
+          + note
+        </button>
+      )
+    : null;
   return (
     <li
       className={`stmt${foreign ? ' locked' : ''}`}
@@ -132,13 +210,17 @@ function StatementRow({ statement, door, editing, onEdit }: {
       data-stmt-locked={foreign ? 'yes' : 'no'}
       data-stmt-editable={editable ? 'yes' : 'no'}
     >
-      {statement.note ? <NoteBlock note={statement.note} what={`line ${statement.line}`} /> : null}
-      {editable ? (
-        <ExpectRow
-          statement={statement}
-          edit={editing !== null && editing.key === key ? editing.values : expectOf(statement.node as ExpectStmt)}
-          onEdit={(next) => onEdit!(statement, next)}
-        />
+      {writingNote ? (
+        <NoteOpen note={statement.note} what={`line ${statement.line}`} onChange={(lines) => onNote?.(statement.stepPath!, lines)} />
+      ) : statement.note ? (
+        <NoteBlock note={statement.note} what={`line ${statement.line}`} onNote={editable && onNote !== null ? (lines) => onNote(statement.stepPath!, lines) : undefined} />
+      ) : null}
+      {editable && values !== null ? (
+        values.kind === 'expect' ? (
+          <ExpectRow statement={statement} edit={values.expect} onEdit={(next) => onEdit!(statement, { kind: 'expect', expect: next })} trailing={addNote} />
+        ) : (
+          <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit!(statement, next)} trailing={addNote} />
+        )
       ) : (
         <div className="stmt-line">
           <span className="ln muted">{statement.line}</span>
@@ -148,7 +230,7 @@ function StatementRow({ statement, door, editing, onEdit }: {
               {DOOR_BY_ID[statement.lens!].label}
             </a>
           ) : null}
-          {onEdit !== null && statement.kind === 'ExpectStmt' && statement.stepPath === null ? (
+          {onEdit !== null && !foreign && statement.stepPath === null ? (
             <span className="muted" data-stmt-unaddressable>
               inside the block above — an index pair names a step of a body, and this is not one
             </span>
@@ -157,6 +239,34 @@ function StatementRow({ statement, door, editing, onEdit }: {
       )}
     </li>
   );
+}
+
+/**
+ * EVERYTHING A ROW NEEDS TO BE EDITABLE, IN ONE OBJECT (`M210` `S4`).
+ *
+ * It was five props threaded through three components by the end of `S3`, and `S5` adds more. The
+ * bundle is passed down whole so a new capability is a field here rather than another parameter on
+ * every component between the shell and the row.
+ *
+ * `null` in `onRow` is what read-only means: `S1`'s state, and every door but API's.
+ */
+export interface RowEditing {
+  /** The row being typed into, by its own index pair, and its live values. */
+  readonly row: { readonly key: string; readonly values: StatementEdit } | null;
+  readonly onRow: ((statement: OutlineStatement, next: StatementEdit) => void) | null;
+  /** Where a change to a note goes (`D1077`) — addressed by the index pair of whatever the note
+   *  explains. A note whose every line is blank is a note removed, at both ends of the gesture. */
+  readonly onNote: ((path: StepPath, lines: readonly string[]) => void) | null;
+  /**
+   * The row whose **new** note is open, by the same key.
+   *
+   * A note being written needs somewhere to be written *before* it exists, and a `<details>` cannot
+   * be that: driving its `open` from the note's own emptiness slams it shut on the first keystroke,
+   * and forcing `open` from React re-opens it every time the author closes it. So a new note is an
+   * open editor rather than a disclosure, and this is the one thing that says which row has one.
+   */
+  readonly noting: string | null;
+  readonly onNoting: ((key: string | null) => void) | null;
 }
 
 /** A statement's address as one string, for keying the row being typed into. `null` for a row no
@@ -482,6 +592,25 @@ function objectText(rows: readonly { readonly name: string; readonly value: stri
 }
 
 /**
+ * The subject half of a spec, shared by the two statements that take one (`M210` `S4`).
+ *
+ * `original` is read for one thing only: a carried subject's **shape**. The builder validates the
+ * quantifier against the subject it is given, so a stand-in for a quantified `body csv` path has to
+ * be quantifiable too or the build refuses about a file that parses. `quantifiable()` is the
+ * language's own predicate, asked rather than re-derived here.
+ */
+export function subjectSpecOf(kind: ExpectSubjectKind, argument: string, locatorKind: LocatorKind, original: Subject | null): SubjectSpec {
+  switch (kind) {
+    case 'header': return { kind: 'header', name: argument };
+    case 'body': return { kind: 'body', path: argument };
+    case 'value': return { kind: 'value', ref: argument };
+    case 'locator': return { kind: 'locator', locator: { kind: locatorKind, value: argument } };
+    case 'carried': return original !== null && quantifiable(original) ? { kind: 'body', path: '' } : { kind: 'status' };
+    default: return { kind };
+  }
+}
+
+/**
  * The spec half of an assertion — what `buildExpect` takes.
  *
  * `original` is read for one thing only: a carried subject's **shape**. The builder validates the
@@ -490,16 +619,7 @@ function objectText(rows: readonly { readonly name: string; readonly value: stri
  * language's own predicate, asked rather than re-derived here.
  */
 export function expectSpecOf(edit: ExpectEdit, original: ExpectStmt | null): ExpectSpec {
-  const subject = ((): SubjectSpec => {
-    switch (edit.subject) {
-      case 'header': return { kind: 'header', name: edit.argument };
-      case 'body': return { kind: 'body', path: edit.argument };
-      case 'value': return { kind: 'value', ref: edit.argument };
-      case 'locator': return { kind: 'locator', locator: { kind: edit.locatorKind, value: edit.argument } };
-      case 'carried': return original !== null && quantifiable(original.subject) ? { kind: 'body', path: '' } : { kind: 'status' };
-      default: return { kind: edit.subject };
-    }
-  })();
+  const subject = subjectSpecOf(edit.subject, edit.argument, edit.locatorKind, original?.subject ?? null);
   const clause = CLAUSE_MATCHER[edit.matcher];
   const operand = clause !== undefined || !VALUE_MATCHERS.has(edit.matcher)
     ? null
@@ -520,12 +640,241 @@ export function expectSpecOf(edit: ExpectEdit, original: ExpectStmt | null): Exp
   };
 }
 
+/** The subject controls, shared by the two statements that take one — an assertion and a `capture`
+ *  (`M210` `S4`). One control set, because the grammar has one subject position. */
+function SubjectFields({ subject, argument, locatorKind, carried, onChange }: {
+  readonly subject: ExpectSubjectKind;
+  readonly argument: string;
+  readonly locatorKind: LocatorKind;
+  /** The spelling of a subject the spec cannot rebuild, or `null` when this row's subject is one it
+   *  can — which is what decides whether the option is offered at all. */
+  readonly carried: string | null;
+  readonly onChange: (patch: { subject?: ExpectSubjectKind; argument?: string; locatorKind?: LocatorKind }) => void;
+}) {
+  return (
+    <>
+      <select value={subject} onChange={(e) => onChange({ subject: e.target.value as ExpectSubjectKind })} data-expect-subject={subject} aria-label="subject">
+        {SUBJECTS.map(([id, text]) => (
+          <option key={id} value={id}>{text}</option>
+        ))}
+        {/* Offered only while it is what this row already says — the builder cannot construct one,
+            so switching *to* it would be a control that writes nothing. */}
+        {subject === 'carried' ? <option value="carried">{carried ?? 'as it is'} — kept as it is</option> : null}
+      </select>
+      {subject === 'locator' ? (
+        <select value={locatorKind} onChange={(e) => onChange({ locatorKind: e.target.value as LocatorKind })} data-expect-locator-kind aria-label="element kind">
+          {LOCATOR_KINDS.map((k) => (
+            <option key={k} value={k}>{k}</option>
+          ))}
+        </select>
+      ) : null}
+      {subject === 'header' || subject === 'body' || subject === 'value' || subject === 'locator' ? (
+        <input
+          value={argument}
+          onChange={(e) => onChange({ argument: e.target.value })}
+          data-expect-argument
+          aria-label="subject argument"
+          placeholder={subject === 'header' ? 'content-type' : subject === 'value' ? 'orderId' : subject === 'locator' ? 'Buy' : 'items[0].price'}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * WHAT A ROW HOLDS (`M210` `S4`) — one member per statement kind this pane can edit.
+ *
+ * The corpus is mostly made of these: **793 `capture`, 321 `let`, 184 `call`, 71 `log`, 8 `give`,
+ * 4 `pause`** across the two corpora, against 1855 requests and 3192 assertions. A pane that edits
+ * a request and an assertion and draws the rest as text is a pane that cannot change most of a
+ * test.
+ *
+ * A kind not listed here is drawn as its printed line and says nothing about being editable — the
+ * browser vocabulary is `D1078`'s locked row, and `wait until api`'s nested expects are `S3`'s
+ * unaddressable ones.
+ */
+export type StatementEdit =
+  | { readonly kind: 'expect'; readonly expect: ExpectEdit }
+  | { readonly kind: 'capture'; readonly subject: ExpectSubjectKind; readonly argument: string; readonly locatorKind: LocatorKind; readonly name: string }
+  | { readonly kind: 'let'; readonly name: string; readonly value: string }
+  | { readonly kind: 'log'; readonly level: LogLevel; readonly message: string; readonly destination: '' | LogDestination }
+  | { readonly kind: 'call'; readonly name: string; readonly args: readonly string[] }
+  | { readonly kind: 'give'; readonly value: string }
+  | { readonly kind: 'pause'; readonly min: string; readonly max: string };
+
+const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
+const LOG_DESTINATIONS: readonly LogDestination[] = ['console', 'html', 'both'];
+
+/**
+ * A duration as the language writes one — **printed through the one node that spells it**.
+ *
+ * `PauseStmt` stores milliseconds and **not** the words the author typed, unlike `DurationLit`,
+ * which keeps its `raw`. So the spelling is the printer's to choose (`1000` is `1s`, `90_000` is
+ * `1m 30s`'s refusal, and so on), and the only honest way to ask is to print a pause and take off
+ * its keyword — the same move `withoutKeyword` makes for a request body. The first draft built a
+ * `DurationLit` with a made-up `raw` instead, and the served page answered `1000ms` where the file
+ * says `1s`: a value invented here, rendered back as if it came from the file.
+ */
+function durationText(ms: number): string {
+  const printed = print({ type: 'PauseStmt', minMs: ms, maxMs: null, span: SYNTHETIC } as Parameters<typeof print>[0]);
+  return printed.ok ? printed.text.replace(/^pause /, '') : `${ms}ms`;
+}
+
+/** What a statement's controls hold, read off the node. `null` for a kind this pane does not edit. */
+export function statementEditOf(node: Step): StatementEdit | null {
+  switch (node.type) {
+    case 'ExpectStmt':
+      return { kind: 'expect', expect: expectOf(node) };
+    case 'CaptureStmt':
+      return {
+        kind: 'capture',
+        subject: subjectKindOf(node.subject),
+        argument: argumentOf(node.subject),
+        locatorKind: node.subject.type === 'LocatorSubject' ? node.subject.locator.kind : 'button',
+        name: node.name,
+      };
+    case 'LetStmt':
+      return { kind: 'let', name: node.name, value: printValue(node.value) };
+    case 'LogStmt':
+      return { kind: 'log', level: node.level, message: node.message.value, destination: node.destination ?? '' };
+    case 'CallStmt':
+      return { kind: 'call', name: node.call.name, args: node.call.args.map((a) => printValue(a)) };
+    case 'GiveStmt':
+      return { kind: 'give', value: printValue(node.value) };
+    case 'PauseStmt':
+      return { kind: 'pause', min: durationText(node.minMs), max: node.maxMs === null ? '' : durationText(node.maxMs) };
+    default:
+      return null;
+  }
+}
+
+/** One statement, as controls — the row for everything that is not an assertion. */
+function ScriptRow({ statement, edit, onEdit, trailing }: {
+  readonly statement: OutlineStatement;
+  /** Everything but an assertion, which has its own row — so the last branch here is `pause` by
+   *  exhaustion rather than by a `default` that would swallow a kind added later. */
+  readonly edit: Exclude<StatementEdit, { readonly kind: 'expect' }>;
+  readonly onEdit: (next: StatementEdit) => void;
+  /** Whatever the row carries at its right-hand end besides the line number — today the `+ note`
+   *  affordance, which lives **in** the row because a control on a line of its own costs 27 px on
+   *  every statement of every request, and a request can carry 20. */
+  readonly trailing: ReactNode;
+}) {
+  const line = (
+    <>
+      <span className="ln muted">line {statement.line}</span>
+      {trailing}
+    </>
+  );
+  if (edit.kind === 'capture') {
+    const node = statement.node as { subject: Subject };
+    return (
+      <div className="row expect-fields" data-script="capture" data-expect-line={statement.line}>
+        <span className="kw">capture</span>
+        <SubjectFields
+          subject={edit.subject}
+          argument={edit.argument}
+          locatorKind={edit.locatorKind}
+          carried={subjectSpelling(node.subject)}
+          onChange={(patch) => onEdit({ ...edit, ...patch })}
+        />
+        <span className="kw">as</span>
+        <input value={edit.name} onChange={(e) => onEdit({ ...edit, name: e.target.value })} data-capture-name aria-label="variable" placeholder="orderId" />
+        {line}
+      </div>
+    );
+  }
+  if (edit.kind === 'let') {
+    return (
+      <div className="row expect-fields" data-script="let" data-expect-line={statement.line}>
+        <span className="kw">let</span>
+        <input value={edit.name} onChange={(e) => onEdit({ ...edit, name: e.target.value })} data-let-name aria-label="variable" placeholder="email" />
+        <span className="kw">=</span>
+        {/* One field for the whole value grammar, which is **23 kinds** across the corpus's 321
+            `let`s — more generators and transforms than literals. A structured editor for that is a
+            second parser; a text field read by the language's own is not. */}
+        <input value={edit.value} onChange={(e) => onEdit({ ...edit, value: e.target.value })} data-let-value aria-label="value" placeholder="unique email" />
+        {line}
+      </div>
+    );
+  }
+  if (edit.kind === 'log') {
+    return (
+      <div className="row expect-fields" data-script="log" data-expect-line={statement.line}>
+        <span className="kw">log</span>
+        <select value={edit.level} onChange={(e) => onEdit({ ...edit, level: e.target.value as LogLevel })} data-log-level aria-label="level">
+          {LOG_LEVELS.map((l) => (
+            <option key={l} value={l}>{l}</option>
+          ))}
+        </select>
+        <input value={edit.message} onChange={(e) => onEdit({ ...edit, message: e.target.value })} data-log-message aria-label="message" placeholder="created {orderId}" />
+        <select value={edit.destination} onChange={(e) => onEdit({ ...edit, destination: e.target.value as '' | LogDestination })} data-log-destination aria-label="destination">
+          <option value="">wherever the run writes</option>
+          {LOG_DESTINATIONS.map((d) => (
+            <option key={d} value={d}>to {d}</option>
+          ))}
+        </select>
+        {line}
+      </div>
+    );
+  }
+  if (edit.kind === 'call') {
+    return (
+      <div className="row expect-fields" data-script="call" data-expect-line={statement.line}>
+        <input value={edit.name} onChange={(e) => onEdit({ ...edit, name: e.target.value })} data-call-name aria-label="action" placeholder="create order" />
+        <span className="kw">(</span>
+        {edit.args.map((arg, i) => (
+          <input
+            key={i}
+            value={arg}
+            onChange={(e) => onEdit({ ...edit, args: edit.args.map((x, j) => (j === i ? e.target.value : x)) })}
+            data-call-arg={i}
+            aria-label={`argument ${i + 1}`}
+          />
+        ))}
+        <span className="kw">)</span>
+        <button onClick={() => onEdit({ ...edit, args: [...edit.args, '""'] })} data-call-arg-add title="one more argument for this action">
+          + argument
+        </button>
+        {edit.args.length > 0 ? (
+          <button onClick={() => onEdit({ ...edit, args: edit.args.slice(0, -1) })} data-call-arg-remove>
+            − argument
+          </button>
+        ) : null}
+        {line}
+      </div>
+    );
+  }
+  if (edit.kind === 'give') {
+    return (
+      <div className="row expect-fields" data-script="give" data-expect-line={statement.line}>
+        <span className="kw">give</span>
+        <input value={edit.value} onChange={(e) => onEdit({ ...edit, value: e.target.value })} data-give-value aria-label="value" placeholder="{orderId}" />
+        {line}
+      </div>
+    );
+  }
+  return (
+    <div className="row expect-fields" data-script="pause" data-expect-line={statement.line}>
+      <span className="kw">pause</span>
+      <input value={edit.min} onChange={(e) => onEdit({ ...edit, min: e.target.value })} data-pause-min aria-label="pause" placeholder="500ms" />
+      <span className="kw">to</span>
+      {/* Blank is a fixed pause, which all four in the corpus are — and saying so in the placeholder
+          is what keeps an empty field from reading as an unfinished one. */}
+      <input value={edit.max} onChange={(e) => onEdit({ ...edit, max: e.target.value })} data-pause-max aria-label="upper bound" placeholder="(a fixed pause)" />
+      {line}
+    </div>
+  );
+}
+
 /** One assertion, as controls. The row the legacy form has always had, with the whole vocabulary
  *  in it and reading an assertion that already exists rather than inventing a new one. */
-function ExpectRow({ statement, edit, onEdit }: {
+function ExpectRow({ statement, edit, onEdit, trailing }: {
   readonly statement: OutlineStatement;
   readonly edit: ExpectEdit;
   readonly onEdit: (next: ExpectEdit) => void;
+  /** See `ScriptRow` — the row's right-hand end. */
+  readonly trailing: ReactNode;
 }) {
   const node = statement.node as ExpectStmt;
   const v = edit;
@@ -544,30 +893,7 @@ function ExpectRow({ statement, edit, onEdit }: {
           <option value="any">any</option>
           <option value="all">all</option>
         </select>
-        <select value={v.subject} onChange={(e) => change({ subject: e.target.value as ExpectSubjectKind })} data-expect-subject={v.subject} aria-label="subject">
-          {SUBJECTS.map(([id, text]) => (
-            <option key={id} value={id}>{text}</option>
-          ))}
-          {/* Offered only while it is what this row already says — the builder cannot construct one,
-              so switching *to* it would be a control that writes nothing. */}
-          {v.subject === 'carried' ? <option value="carried">{subjectSpelling(node.subject)} — kept as it is</option> : null}
-        </select>
-        {v.subject === 'locator' ? (
-          <select value={v.locatorKind} onChange={(e) => change({ locatorKind: e.target.value as LocatorKind })} data-expect-locator-kind aria-label="element kind">
-            {LOCATOR_KINDS.map((k) => (
-              <option key={k} value={k}>{k}</option>
-            ))}
-          </select>
-        ) : null}
-        {v.subject === 'header' || v.subject === 'body' || v.subject === 'value' || v.subject === 'locator' ? (
-          <input
-            value={v.argument}
-            onChange={(e) => change({ argument: e.target.value })}
-            data-expect-argument
-            aria-label="subject argument"
-            placeholder={v.subject === 'header' ? 'content-type' : v.subject === 'value' ? 'orderId' : v.subject === 'locator' ? 'Buy' : 'items[0].price'}
-          />
-        ) : null}
+        <SubjectFields subject={v.subject} argument={v.argument} locatorKind={v.locatorKind} carried={subjectSpelling(node.subject)} onChange={change} />
         <label className="not" title="`not` — the word whose absence would invert this assertion">
           <input type="checkbox" checked={v.negated} onChange={(e) => change({ negated: e.target.checked })} data-expect-negated={v.negated ? 'yes' : 'no'} />
           not
@@ -581,6 +907,7 @@ function ExpectRow({ statement, edit, onEdit }: {
           <input value={v.operand} onChange={(e) => change({ operand: e.target.value })} data-expect-operand aria-label="operand" placeholder={v.matcher === 'fails' ? '(any failure)' : '200'} />
         ) : null}
         <span className="ln muted">line {statement.line}</span>
+        {trailing}
       </div>
       {SCAN_MATCHERS.has(v.matcher) ? (
         <div className="row expect-extra" data-expect-extra="severity">
@@ -654,23 +981,27 @@ function subjectSpelling(subject: Subject): string {
  * invisible *because* it is rare. §4 item 4 leaves whether that stays to `S2`; drawing them is the
  * answer that cannot hide anything, which is the right side to be on while the pane is read-only.
  */
-function RequestCard({ request: r, door, edit, onEdit, expectEdit, onExpectEdit }: {
+function RequestCard({ request: r, door, edit, onEdit, editing }: {
   readonly request: OutlineRequest;
   readonly door: Lens;
   /** The card's live values. `null` means this pane is still read-only here — `S1`'s state, and
    *  what every door but API still gets. */
   readonly edit: RequestEdit | null;
   readonly onEdit: ((next: RequestEdit) => void) | null;
-  /** The assertion row being typed into, and where a change goes (`S3`). */
-  readonly expectEdit: { readonly key: string; readonly values: ExpectEdit } | null;
-  readonly onExpectEdit: ((statement: OutlineStatement, next: ExpectEdit) => void) | null;
+  /** Everything the rows under this card need to be editable (`S3`, `S4`). */
+  readonly editing: RowEditing;
 }) {
   const spec = r.spec;
+  const writingNote = editing.noting !== null && editing.noting === stepKey(r.stepPath);
   const v = edit ?? editOf(r);
   const change = onEdit === null ? null : (patch: Partial<RequestEdit>) => onEdit({ ...v, ...patch });
   return (
     <section className="request-card" data-request-line={r.line} data-request-kind={r.kind} data-request-editable={onEdit === null ? 'no' : 'yes'}>
-      {r.note ? <NoteBlock note={r.note} what={`request ${r.line}`} /> : null}
+      {writingNote ? (
+        <NoteOpen note={r.note} what={`request ${r.line}`} onChange={(lines) => editing.onNote?.(r.stepPath, lines)} />
+      ) : r.note ? (
+        <NoteBlock note={r.note} what={`request ${r.line}`} onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!(r.stepPath, lines)} />
+      ) : null}
       <header className="request-head">
         {change === null ? (
           <span className={`method m-${v.method.toLowerCase()}`} data-request-method={v.method}>{v.method}</span>
@@ -700,6 +1031,11 @@ function RequestCard({ request: r, door, edit, onEdit, expectEdit, onExpectEdit 
           />
         )}
         <span className="ln muted">line {r.line}</span>
+        {editing.onNote !== null && r.note === null && !writingNote ? (
+          <button className="add-note" onClick={() => editing.onNoting?.(stepKey(r.stepPath))} data-note-add={r.line} title="a comment above this request, explaining why it is here">
+            + note
+          </button>
+        ) : null}
         {r.kind === 'WaitUntilApiStmt' ? (
           <span className="badge" data-request-polling="yes" title="this request is re-issued until the assertions below it pass">
             polls
@@ -813,7 +1149,7 @@ function RequestCard({ request: r, door, edit, onEdit, expectEdit, onExpectEdit 
         ) : (
           <ul className="stmts">
             {r.attached.map((s) => (
-              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={expectEdit} onEdit={onExpectEdit} />
+              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={editing} />
             ))}
           </ul>
         )}
@@ -869,12 +1205,11 @@ function bodyText(body: ApiBody): string {
  * what was being counted was the default value. A band that renders a default as a fact makes the
  * same mistake on screen, every time.
  */
-function TestBand({ decl, outline, door, expectEdit, onExpectEdit }: {
+function TestBand({ decl, outline, door, editing }: {
   readonly decl: OutlineHook | OutlineTest;
   readonly outline: FileOutline;
   readonly door: Lens;
-  readonly expectEdit: { readonly key: string; readonly values: ExpectEdit } | null;
-  readonly onExpectEdit: ((statement: OutlineStatement, next: ExpectEdit) => void) | null;
+  readonly editing: RowEditing;
 }) {
   const test: OutlineTest | null = decl.kind === 'test' ? decl : null;
   return (
@@ -921,7 +1256,7 @@ function TestBand({ decl, outline, door, expectEdit, onExpectEdit }: {
           <h4 className="muted">before the first request</h4>
           <ul className="stmts">
             {decl.body.preamble.map((s) => (
-              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={expectEdit} onEdit={onExpectEdit} />
+              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={editing} />
             ))}
           </ul>
         </div>
@@ -1014,8 +1349,7 @@ export interface ComposePaneProps {
    * construct over: the values are re-derived from the file the moment the buffer moves, so the
    * only row that may hold something the file does not is the one under the cursor.
    */
-  readonly expectEdit: { readonly key: string; readonly values: ExpectEdit } | null;
-  readonly onExpectEdit: ((statement: OutlineStatement, next: ExpectEdit) => void) | null;
+  readonly editing: RowEditing;
   /** Whether the buffer holds anything the file does not (`D1079`). */
   readonly dirty: boolean;
   readonly busy: boolean;
@@ -1026,7 +1360,7 @@ export interface ComposePaneProps {
   readonly onDiscard: () => void;
 }
 
-export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLegacyOpen, edit, onEdit, expectEdit, onExpectEdit, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
+export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLegacyOpen, edit, onEdit, editing, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
   const requests = outline === null ? [] : outline.declarations.flatMap((d) => d.body.requests);
   return (
     <div className="authoring compose-pane" data-compose={outline === null ? 'reading' : at?.request ? 'request' : 'no-request'}>
@@ -1057,10 +1391,10 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
           comes and goes with a fetch is a pane you cannot hold a gesture across. */}
       {outline === null ? null : (
         <>
-          {at ? <TestBand decl={at.decl} outline={outline} door={door} expectEdit={expectEdit} onExpectEdit={onExpectEdit} /> : <FileRow outline={outline} />}
+          {at ? <TestBand decl={at.decl} outline={outline} door={door} editing={editing} /> : <FileRow outline={outline} />}
 
           {at?.request ? (
-            <RequestCard request={at.request} door={door} edit={edit} onEdit={onEdit} expectEdit={expectEdit} onExpectEdit={onExpectEdit} />
+            <RequestCard request={at.request} door={door} edit={edit} onEdit={onEdit} editing={editing} />
           ) : (
             <p className="muted" data-compose-no-request>
               {requests.length === 0
