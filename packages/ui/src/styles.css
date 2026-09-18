@@ -441,6 +441,23 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
  * tests that carry two doors' work are the corpus's LARGEST, and drawing them with holes through
  * the middle would remove exactly the ordering a reader came for. */
 .stmt.locked { opacity: 0.6; border-left: 2px solid var(--line); padding-left: 6px; }
+/* THE ASSERTION ROW (`M210` `S3`). A row, not a column — `.request-fields` above is the column
+ * container, and the hazard the comment there describes is about `flex-direction: column` only.
+ * What this needs instead is a floor under the controls that share it: `.expects-form input,
+ * .expects-form select` gives every control `flex: 1 1 90px`, and an assertion row has up to eight
+ * of them, so a matcher select and a two-character operand would otherwise take the same width as
+ * the subject. The three that carry a vocabulary get room; the rest take what they need. */
+.expect-fields { gap: 6px 8px; }
+.expect-fields select[data-expect-kind], .expect-fields select[data-expect-quantifier] { flex: 0 0 auto; }
+.expect-fields select[aria-label='subject'], .expect-fields select[aria-label='matcher'] { flex: 0 1 auto; }
+.expect-fields label.not { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; font-size: 12px; color: var(--muted); }
+.expect-fields label.not input { flex: 0 0 auto; }
+.expect-fields .ln { flex: 0 0 auto; margin-left: auto; }
+.expect-extra { margin-left: 18px; }
+.expect-extra label { flex: 0 0 auto; font-size: 12px; }
+/* The subset editor's rows sit under the row that named them, indented, because a key of an object
+ * is a fact about that assertion and not a sibling of it. */
+.subset-editor { margin: 4px 0 6px 18px; }
 .note { margin: 2px 0; font-size: 12px; }
 .note summary { cursor: pointer; }
 .note .count { font-family: var(--mono); font-size: 11px; }

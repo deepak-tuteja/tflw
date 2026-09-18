@@ -4000,7 +4000,12 @@ test('what the reader has not lit yet is disabled — and it is the control that
     // types for us. The parity gate below already had to do this; it is the file's convention.
     const state = await page.locator('[data-compose]').evaluate((root) => {
       const doc = root.ownerDocument;
-      const reader = [...doc.querySelectorAll('.test-band input, .test-band select, .test-band textarea, .request-card [data-field-value="timeout"], .request-card [data-field-value="redirects"], .request-card [data-field-value="retry after"]')];
+      // **Assertion rows are excluded, and by their element rather than by their band** (`M210`
+      // `S3`). An `expect` is neutral vocabulary, so a browser test seen from this door is one long
+      // preamble of them — inside `.test-band`, live, and correctly so. What `D1082` still claims is
+      // the band's OWN facts: the tags, the table, the workload, the thresholds.
+      const reader = [...doc.querySelectorAll('.test-band input, .test-band select, .test-band textarea, .request-card [data-field-value="timeout"], .request-card [data-field-value="redirects"], .request-card [data-field-value="retry after"]')]
+        .filter((e) => e.closest('li.stmt') === null);
       // **No named helper inside this callback.** `tsx` transforms this file with esbuild's
       // `keepNames`, which wraps every function declaration in a `__name(...)` call — a helper that
       // exists in the test process and not in the page, so a `const off = (e) => …` here dies as
@@ -4019,6 +4024,12 @@ test('what the reader has not lit yet is disabled — and it is the control that
     if (editable > 0) {
       assert.equal(await page.locator('[data-request-editable]').getAttribute('data-request-editable'), 'yes', `${f.path}: its request is editable`);
       assert.equal(await page.locator('[data-request-path]').isEditable(), true, `${f.path}: and its path takes a keystroke`);
+    }
+    // …and so is every assertion the language can address (`M210` `S3`). Same argument as the line
+    // above: a gate that only asserts what is disabled stays green on a pane where nothing works.
+    const rows = await page.locator('li.stmt[data-stmt-editable="yes"]').count();
+    if (rows > 0) {
+      assert.equal(await page.locator('li.stmt[data-stmt-editable="yes"] [aria-label="matcher"]').first().isEditable(), true, `${f.path}: its assertions take a keystroke`);
     }
   }
 });
@@ -4425,5 +4436,217 @@ test('`M210` `S2`: an upload body survives an edit to the request around it', as
     assert.match(onDisk, /api POST \/files\/bulk upload "\.\/f\.png" as "file" type "image\/png"/, 'the path changed and the whole upload clause is still there');
     const { diagnostics } = parseSource(onDisk);
     assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
+// `M210` `S3` — the expectation edits. 16 subjects, 23 matchers, the quantifier, `expect`/`check`,
+// the negation and the subset.
+//
+// `S2` lit the request; this lights what the request is read for. The vocabulary is the language's
+// own — `ComposePane`'s matcher list is a `Record<MatcherName, string>`, so a matcher the language
+// gains is a type error rather than a row that quietly stops being offered — and the gates below
+// are about the two directions a projection can lie in: a value read back wrong, and a field the
+// rebuild cannot say that therefore disappears.
+
+/** A file holding one assertion of each shape this slice has to survive, including two identical
+ *  ones — the case an index pair exists for. */
+const ASSERTIONS = [
+  '# the file header, which must survive every edit below',
+  '',
+  '@crud',
+  'test "the order is what it says"',
+  '  api GET /orders/1',
+  '  expect status not equals 500',
+  '  expect body matches subset { id: 1, name: "Widget" }',
+  '  expect body matches schema "Order" from root "/openapi.json"',
+  '  expect any body csv.qty equals "2"',
+  '  expect response has no security violations',
+  // **A floor that is not the default**, because the control's empty value and a mutant that never
+  // reads the field are the same string — a fixture whose value equals the mutant's constant
+  // asserts nothing, which this repository has paid for twice.
+  '  expect response has no serious authorization violations',
+  '  expect status equals 200',
+  '  expect status equals 200',
+  '  wait until api GET /orders/1',
+  '    expect body.status equals "done"',
+  '',
+].join('\n');
+
+/** The rows of the card, read as a reader would: one object per assertion, from the controls. */
+const assertionRows = (p: Page): Promise<Array<Record<string, string | boolean | null>>> =>
+  p.locator('[data-compose] .stmts').first().evaluate((list) =>
+    // **No named helper inside this callback**, not even a `const value = (s) => …`. `tsx`
+    // transforms this file with esbuild's `keepNames`, which wraps a named function — arrow
+    // assignments included — in a `__name(...)` call that exists in the test process and not in the
+    // page, so the callback dies as `ReferenceError: __name is not defined` the moment Playwright
+    // serialises it. `S1` wrote this down and `S3`'s first draft did it anyway; the rule is that a
+    // browser-side callback is one expression per read, however repetitive it looks.
+    [...list.querySelectorAll('li.stmt')].map((li) => ({
+      line: li.getAttribute('data-stmt-line'),
+      editable: li.getAttribute('data-stmt-editable'),
+      kind: (li.querySelector('[data-expect-kind]') as unknown as { value?: string } | null)?.value ?? null,
+      quantifier: (li.querySelector('[data-expect-quantifier]') as unknown as { value?: string } | null)?.value ?? null,
+      subject: (li.querySelector('[aria-label="subject"]') as unknown as { value?: string } | null)?.value ?? null,
+      argument: (li.querySelector('[data-expect-argument]') as unknown as { value?: string } | null)?.value ?? null,
+      negated: li.querySelector('[data-expect-negated]') === null ? null : (li.querySelector('[data-expect-negated]') as unknown as { checked: boolean }).checked,
+      matcher: (li.querySelector('[aria-label="matcher"]') as unknown as { value?: string } | null)?.value ?? null,
+      operand: (li.querySelector('[data-expect-operand]') as unknown as { value?: string } | null)?.value ?? null,
+      severity: (li.querySelector('[data-expect-severity]') as unknown as { value?: string } | null)?.value ?? null,
+      schema: (li.querySelector('[data-expect-schema-name]') as unknown as { value?: string } | null)?.value ?? null,
+      service: (li.querySelector('[data-expect-schema-service]') as unknown as { value?: string } | null)?.value ?? null,
+      source: (li.querySelector('[data-expect-schema-source]') as unknown as { value?: string } | null)?.value ?? null,
+      carried: li.querySelector('[aria-label="subject"] option[value="carried"]')?.textContent ?? null,
+    })),
+  );
+
+test('`M210` `S3`: every assertion in the file is a row of controls holding what the file says', async () => {
+  // The read direction, across the shapes that are not `status equals 200` — which is 83% of the
+  // corpus and the only one a form built from frequency would get right. Each of these was a
+  // refusal somewhere before this slice: the interpolated operand and the subset object could not
+  // be **printed** at all (`S3a`), the schema clause could not be **built**, and `not` was not in
+  // the spec.
+  await withEditFixture(ASSERTIONS, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    const rows = await assertionRows(p);
+    assert.equal(rows.length, 8, 'every assertion attached to the request is a row');
+    assert.deepEqual(
+      rows.map((r) => [r.subject, r.negated, r.matcher, r.operand, r.quantifier]),
+      [
+        ['status', true, 'equals', '500', ''],
+        ['body', false, 'matchesSubset', null, ''],
+        ['body', false, 'matchesSchema', null, ''],
+        ['carried', false, 'equals', '"2"', 'any'],
+        ['response', false, 'hasNoSecurityViolations', null, ''],
+        ['response', false, 'hasNoAuthzViolations', null, ''],
+        ['status', false, 'equals', '200', ''],
+        ['status', false, 'equals', '200', ''],
+      ],
+    );
+    // The subject the spec cannot spell keeps its own spelling, and is offered nowhere else.
+    assert.equal(rows[3]!.carried, 'body csv.qty — kept as it is');
+    assert.equal(rows[0]!.carried, null, 'a subject the spec CAN spell is not offered as a carried one');
+    // The clause matchers show their clause rather than an operand field.
+    assert.deepEqual([rows[2]!.schema, rows[2]!.service, rows[2]!.source], ['Order', 'root', '/openapi.json']);
+    assert.equal(rows[4]!.severity, '', 'a scan with no floor says every severity, and says it in the control');
+    assert.equal(rows[5]!.severity, 'serious', 'and one with a floor says the floor');
+    // And the subset is rows, not a text field.
+    assert.equal(await p.locator('[data-expect-subset]').getAttribute('data-expect-subset'), '2');
+    assert.deepEqual(await p.locator('[data-subset-key]').evaluateAll((els) => els.map((e) => (e as unknown as { value: string }).value)), ['id', 'name']);
+    assert.deepEqual(await p.locator('[data-subset-value]').evaluateAll((els) => els.map((e) => (e as unknown as { value: string }).value)), ['1', '"Widget"']);
+  });
+});
+
+test('`M210` `S3`: `not` is a control, and an edit that does not touch it cannot drop it', async () => {
+  // **The sharpest failure this slice could have shipped.** `buildExpect` hardcoded `negated:
+  // false`, so rebuilding `expect status not equals 500` from a spec produced `expect status equals
+  // 500` — a file that parses, runs, and asserts the opposite of what its author wrote. 92 such
+  // assertions across the two corpora. Both directions are here: an edit *elsewhere* on the row
+  // keeps the word, and the checkbox puts it on a row that had none.
+  await withEditFixture(ASSERTIONS, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    // **Addressed by the control's own value, never by the row's text.** The first draft picked
+    // rows with `filter({ hasText: … })` and it matched the wrong one every time: every matcher
+    // select carries all 23 options, so the words "security", "snapshot" and "subset" are in the
+    // text of every row on the pane. The gate found it by inverting the assertion it was written to
+    // defend — it un-negated the row it meant to leave alone.
+    const negated = p.locator('li.stmt:has([data-expect-negated])').first();
+    await negated.locator('[data-expect-operand]').fill('503');
+    await p.locator('[data-compose-dirty]').waitFor();
+    await p.locator('[data-tab="source"]').click();
+    assert.match((await p.locator('[data-preview]').textContent())!, /^ {2}expect status not equals 503$/m, 'the operand moved and the negation did not');
+
+    await p.locator('[data-tab="compose"]').click();
+    const plain = p.locator('li.stmt:has([data-expect-matcher="hasNoSecurityViolations"])').first();
+    await plain.locator('[data-expect-negated]').click();
+    await p.locator('[data-tab="source"]').click();
+    assert.match((await p.locator('[data-preview]').textContent())!, /^ {2}expect response not has no security violations$/m, 'and the checkbox writes the word');
+  });
+});
+
+test('`M210` `S3`: a subject the spec cannot spell is kept whole across an edit to the row', async () => {
+  // Five of the language's sixteen subjects have no `SubjectSpec` — `body csv`, `body pdf text`,
+  // `request to "…"` and the two dialog subjects — and a `status of request to "…"` carries a
+  // clause the spec has no room for either. This is `S2`'s `upload` one construct over: the row is
+  // editable in every other field, the original subject goes back on after the build, and the
+  // control that would change it offers the option only where it already applies.
+  await withEditFixture(ASSERTIONS, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    const csv = p.locator('li.stmt').filter({ has: p.locator('option[value="carried"]') }).first();
+    await csv.locator('[aria-label="matcher"]').selectOption('contains');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^ {2}expect any body csv\.qty contains "2"$/m, 'the matcher changed; the subject, its path and the quantifier did not');
+    const { diagnostics } = parseSource(onDisk);
+    assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
+test('`M210` `S3`: the subset editor is the operand, and a clause matcher keeps its clause', async () => {
+  await withEditFixture(ASSERTIONS, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    await p.locator('[data-subset-value="1"]').fill('"Gadget"');
+    await p.locator('[data-compose-dirty]').waitFor();
+    await p.locator('[data-tab="source"]').click();
+    assert.match((await p.locator('[data-preview]').textContent())!, /^ {2}expect body matches subset \{ id: 1, name: "Gadget" \}$/m);
+
+    // A key added from the editor is a key in the object, quoted only where the language needs it.
+    await p.locator('[data-tab="compose"]').click();
+    await p.locator('[data-subset-add]').click();
+    await p.locator('[data-subset-key="2"]').fill('user name');
+    await p.locator('[data-subset-value="2"]').fill('"ada"');
+    await p.locator('[data-tab="source"]').click();
+    assert.match((await p.locator('[data-preview]').textContent())!, /matches subset \{ id: 1, name: "Gadget", "user name": "ada" \}/);
+
+    // …and the schema clause, which is the operand this matcher spells after itself.
+    await p.locator('[data-tab="compose"]').click();
+    await p.locator('[data-expect-schema-name]').fill('OrderV2');
+    await p.locator('[data-tab="source"]').click();
+    assert.match((await p.locator('[data-preview]').textContent())!, /^ {2}expect body matches schema "OrderV2" from root "\/openapi\.json"$/m, 'the service the clause names survives an edit to the name beside it');
+  });
+});
+
+test('`M210` `S3`: two identical assertions, and the edit lands on the one that was asked', async () => {
+  // A line is a position and an index pair is an identity (`D1080`, `replaceInSource`). The file
+  // holds `expect status equals 200` twice, which is legal and says nothing about which is which —
+  // so this is the case where addressing by text or by line would land on the wrong one and look
+  // right.
+  await withEditFixture(ASSERTIONS, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    const twins = p.locator('li.stmt:has([data-expect-subject="status"]):not(:has([data-expect-negated]:checked))');
+    assert.equal(await twins.count(), 2, 'the two identical assertions, and only those');
+    await twins.last().locator('[data-expect-operand]').fill('204');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const lines = (await readFile(join(dir, 'edit.tflw'), 'utf8')).split('\n');
+    const changed = lines.filter((l) => l.trim() === 'expect status equals 204');
+    const kept = lines.filter((l) => l.trim() === 'expect status equals 200');
+    assert.equal(changed.length, 1, 'exactly one of the two moved');
+    assert.equal(kept.length, 1, 'and exactly one stayed');
+    assert.ok(lines.indexOf(kept[0]!) < lines.indexOf(changed[0]!), 'and it was the second one');
+  });
+});
+
+test('`M210` `S3`: an assertion inside a `wait until api` block is read-only, in position, and says why', async () => {
+  // `stepPath` is `null` for exactly one population: the expects nested inside a polling block,
+  // which are not in the body's own step list and so cannot be named by an index pair. They stay
+  // where they are and say so — `D1078`'s rule one level down, where showing what you cannot edit
+  // here is true and therefore allowed.
+  await withEditFixture(ASSERTIONS, async (p, base) => {
+    const wait = await p.goto(`${base}/#/api/compose/edit.tflw`);
+    assert.ok(wait);
+    await p.locator('[data-request-editable="yes"]').waitFor();
+    const lines = await p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
+    await p.goto(`${base}/#/api/compose/edit.tflw/L${lines[lines.length - 1]}`);
+    const row = p.locator('li.stmt[data-stmt="ExpectStmt"]').first();
+    await row.waitFor();
+    assert.equal(await row.getAttribute('data-stmt-editable'), 'no');
+    assert.equal(await row.locator('.stmt-text').textContent(), 'expect body.status equals "done"', 'and it is still drawn, in the language\'s own spelling');
+    assert.ok((await row.locator('[data-stmt-unaddressable]').textContent())!.length > 0, 'with the reason on the row');
   });
 });
