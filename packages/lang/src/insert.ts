@@ -15,7 +15,7 @@
 // builtins, so the page runs this in the browser and a test runs it in Node — the same function,
 // which is why `A0-4` can be gated without a browser at all.
 import type { Program, Step, TestDecl, ThresholdDecl, Workload } from './ast.js';
-import { format } from './format.js';
+import { format, INDENT } from './format.js';
 import { print } from './print.js';
 import { lex } from './lexer.js';
 import { parse as parseTokens } from './parser.js';
@@ -215,4 +215,79 @@ function endOfTestText(source: string, test: TestDecl): number {
   let i = Math.min(test.span.end.offset, source.length);
   while (i > 0 && /\s/.test(source[i - 1]!)) i -= 1;
   return i;
+}
+
+/**
+ * Which step to replace — `M210` `S2` (`D1079`).
+ *
+ * **An index pair, not a line and not a name**, and both halves of that matter. A line is what the
+ * *address* names (`D1080`) and is right for that job, but `replaceInSource` formats before it
+ * edits — `insertIntoSource`'s own first act, for `TF003`'s reason — and formatting moves lines, so
+ * a line handed in against unformatted text names a different statement by the time the edit lands.
+ * A name is worse: a hook has none and duplicate test names are legal.
+ *
+ * `decl` indexes `[...hooks, ...tests]` **sorted by the line they start on**, which is the order a
+ * file declares them and the order the UI's outline already builds. `step` indexes that
+ * declaration's `body`. Neither moves under `format`, because formatting reshapes whitespace and
+ * never reorders declarations.
+ */
+export interface StepPath {
+  readonly decl: number;
+  readonly step: number;
+}
+
+/** What to put where — the replacing half of this module (`M210` `S2`). */
+export type Replacement = { readonly kind: 'step'; readonly path: StepPath; readonly node: Step };
+
+/**
+ * Replace one step in place and format the result.
+ *
+ * This is `insertIntoSource`'s sibling and deliberately shares its discipline rather than its
+ * body: **format first so every offset is into formatted text**, splice one printed node, format
+ * again, and refuse rather than guess. What comes back is a finished file the write route will
+ * accept, which is the whole contract (`D1049`).
+ *
+ * It is a replacement and not a reprint for `D1046`'s reason a second time: every byte the author
+ * wrote outside this one statement is untouched, so the printer has to be right about the node
+ * being edited and about nothing else.
+ */
+export function replaceInSource(source: string, replacement: Replacement): InsertResult {
+  const normalised = format(source);
+  if (!normalised.ok) return { ok: false, reason: `the file does not lex: ${normalised.reason ?? 'unknown'}` };
+  const text = normalised.formatted;
+  const { program, diagnostics } = parseSource(text);
+  const fatal = diagnostics.find((d) => d.severity === 'error');
+  if (fatal) return { ok: false, reason: `the file does not parse: ${fatal.code} at line ${fatal.span.start.line}` };
+
+  const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+  const decl = declarations[replacement.path.decl];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.path.decl}` };
+  const target = decl.body[replacement.path.step];
+  if (!target) return { ok: false, reason: `that declaration has no step ${replacement.path.step}` };
+
+  // The block level of the line being replaced — one per enclosing indent. A step directly in a
+  // test body is level 1; `print` is told that and needs to know nothing else about the file.
+  const lineStart = target.span.start.offset - (target.span.start.column - 1);
+  const level = Math.round((target.span.start.column - 1) / INDENT.length);
+  const printed = print(replacement.node, { indent: level });
+  if (!printed.ok) return { ok: false, reason: printed.reason ?? 'the printer refused this node' };
+
+  /**
+   * **Trim the span's trailing whitespace before cutting.**
+   *
+   * A step's span runs to the start of whatever follows it, so a request with an indented
+   * sub-block ends `…\n  ` — the newline and the *next* line's indentation. Replacing through that
+   * glues the following statement onto the end of the printed one, which does not lex. Measured on
+   * `api POST /orders body { … }` with a `header` block under it.
+   */
+  let end = target.span.end.offset;
+  while (end > lineStart && /\s/.test(text[end - 1] ?? '')) end -= 1;
+
+  const spliced = text.slice(0, lineStart) + printed.text + text.slice(end);
+  const out = format(spliced);
+  if (!out.ok) return { ok: false, reason: `the edit does not lex: ${out.reason ?? 'unknown'}` };
+  const check = parseSource(out.formatted);
+  const broke = check.diagnostics.find((d) => d.severity === 'error');
+  if (broke) return { ok: false, reason: `the edit does not parse: ${broke.code} at line ${broke.span.start.line}` };
+  return { ok: true, text: out.formatted };
 }

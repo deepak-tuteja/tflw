@@ -10,7 +10,7 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApiStep, buildClick, buildExpect, buildFill, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type Insertion, type StringLit } from '../src/index.js';
+import { buildApiStep, buildClick, buildExpect, buildFill, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type Insertion, type StringLit } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -511,4 +511,134 @@ test('A3-5: the browser builders refuse in the form’s own words', () => {
   // the day it reaches the language.
   assert.deepEqual([...LOCATOR_KINDS], ['button', 'field', 'text', 'list', 'css', 'xpath']);
 
+});
+
+// ---------------------------------------------------------------------------
+// `M210` `S2` — `replaceInSource`. The other direction: an edit to a statement that already exists.
+//
+// `insertIntoSource` above adds work to a file. Compose reads a file now (`D1072`), so the next
+// thing it must be able to do is **change one statement without touching any other byte** — which
+// is `D1046`'s splice argument applied to editing rather than to writing, and buys the same thing:
+// the printer has to be right about the node being edited and about nothing else.
+//
+// Every case asserts `acceptable()` for the reason at the top of this file, and every case also
+// asserts what was **not** touched, because "the edit landed" and "the edit landed and nothing else
+// moved" are different claims and only the second one is the point.
+
+/** A file with something of every kind around the statement under edit. */
+const AROUND = `# the file's own header
+#
+# two paragraphs of it
+
+import "./shared/root.tflw"
+
+before
+  api POST /reset
+  expect status equals 204
+
+@crud @orders
+test "it places an order" as admin
+  # a note on the let
+  let n = 1
+  api POST /orders body { itemId: 1 }
+    header "A" is "b"
+  expect status equals 201
+  capture body.id as orderId
+  api GET /orders/{orderId}
+  expect status equals 200
+`;
+
+const putStep = (spec: Partial<ApiStepSpec> = {}) => {
+  const built = buildApiStep({ service: null, method: 'PUT', path: '/orders/{orderId}', headers: [], body: null, label: null, ...spec });
+  assert.ok(built.ok, built.ok ? '' : built.reason);
+  return built.node;
+};
+
+test('`M210` `S2`: a step is replaced in place and every other byte of the file survives', () => {
+  // `step` counts STATEMENTS, and a comment is not one: the `let` is 0 and the request is 1. The
+  // first draft of this test said 2 and replaced the `expect` — which the gate caught, because it
+  // asserts what did *not* move as well as what did.
+  const out = replaceInSource(AROUND, { kind: 'step', path: { decl: 1, step: 1 }, node: putStep({ headers: [{ name: 'X', value: 'y' }], body: { kind: 'json', text: '{ qty: 3 }' }, label: 'place' }) });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  acceptable(out.text, 'a replaced step');
+  assert.match(out.text, /^ {2}api PUT \/orders\/\{orderId\} body \{ qty: 3 \} as "place"$/m);
+  assert.match(out.text, /^ {4}header "X" is "y"$/m, "the new step's own sub-block is there");
+  assert.doesNotMatch(out.text, /api POST \/orders body/, 'and the one it replaced is gone');
+
+  // **What did NOT move.** This is the half that matters: a reprint would have kept the file
+  // parseable while quietly renormalising everything around the edit.
+  assert.match(out.text, /^# the file's own header$/m);
+  assert.match(out.text, /^import "\.\/shared\/root\.tflw"$/m);
+  assert.match(out.text, /^@crud @orders$/m);
+  assert.match(out.text, /^test "it places an order" as admin$/m);
+  assert.match(out.text, /^ {2}# a note on the let$/m, 'a comment above an untouched statement stays where it was');
+  assert.match(out.text, /^ {2}let n = 1$/m);
+  assert.match(out.text, /^ {2}expect status equals 201$/m, 'the assertions that read the response are untouched');
+  assert.match(out.text, /^ {2}capture body\.id as orderId$/m);
+  assert.match(out.text, /^ {2}api GET \/orders\/\{orderId\}$/m, 'and so is the request after it');
+  assert.match(out.text, /^ {2}api POST \/reset$/m, "and the hook's");
+});
+
+test('`M210` `S2`: a hook is a declaration like any other, and `decl` counts in line order', () => {
+  // The hook is declared first, so it is `decl: 0` — the same ordering the UI's outline builds,
+  // and the reason the path is an index pair rather than a test name: a hook has no name.
+  const out = replaceInSource(AROUND, { kind: 'step', path: { decl: 0, step: 0 }, node: putStep({ path: '/reset-all' }) });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  acceptable(out.text, 'a replaced hook step');
+  assert.match(out.text, /^ {2}api PUT \/reset-all$/m);
+  assert.match(out.text, /^ {2}api POST \/orders body \{ itemId: 1 \}$/m, "the test's own request is untouched");
+});
+
+test("`M210` `S2`: the span's trailing whitespace is trimmed, or the next statement is glued on", () => {
+  // A step's span runs to the start of whatever follows it, so a request with an indented
+  // sub-block ends `…\n  ` — the newline and the NEXT line's indentation. Cutting through that
+  // produces text that does not lex. The step under edit here is exactly that shape.
+  const out = replaceInSource(AROUND, { kind: 'step', path: { decl: 1, step: 1 }, node: putStep() });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  const lines = out.text.split('\n');
+  const at = lines.findIndex((l) => l.trim().startsWith('api PUT'));
+  assert.ok(at >= 0);
+  assert.equal(lines[at + 1], '  expect status equals 201', 'the following statement is still its own line');
+});
+
+test('`M210` `S2`: an index that does not exist is refused, and the source comes back untouched', () => {
+  for (const path of [{ decl: 9, step: 0 }, { decl: 1, step: 99 }]) {
+    const out = replaceInSource(AROUND, { kind: 'step', path, node: putStep() });
+    assert.equal(out.ok, false, `path ${JSON.stringify(path)} should be refused`);
+    if (!out.ok) assert.match(out.reason, /has no (declaration|step)/);
+  }
+});
+
+test('`M210` `S2`: source that does not parse is refused rather than guessed at', () => {
+  const out = replaceInSource('test "a"\n  capture body.id as\n', { kind: 'step', path: { decl: 0, step: 0 }, node: putStep() });
+  assert.equal(out.ok, false);
+  if (!out.ok) assert.match(out.reason, /does not parse/);
+});
+
+test('`M210` `S2`: an unformatted file is formatted first, so the indices still name what they named', () => {
+  // `insertIntoSource` normalises for `TF003`'s reason and this must too — but normalising moves
+  // LINES, which is why the path is an index pair rather than a line.
+  //
+  // **THREE-SPACE INDENTATION, AND THAT IS THE WHOLE TEST.** The first draft used four, and the
+  // mutation removing the initial `format()` stayed green: four is exactly twice `INDENT`, so the
+  // block level this function derives from a column came out right by arithmetic coincidence and
+  // the un-normalised splice happened to land at a legal depth. Three is legal tflw (the offside
+  // rule takes any consistent indent) and is not a multiple of two, so the coincidence is gone and
+  // the claim is falsifiable. A fixture that cannot separate the rule from an accident is not a
+  // fixture for that rule.
+  const three = 'test "a"\n   api GET /one\n   expect status equals 200\n   api GET /two\n   expect status equals 200\n';
+  assert.deepEqual(parseSource(three).diagnostics.filter((d) => d.severity === 'error'), [], 'three-space indentation is legal tflw');
+  const out = replaceInSource(three, { kind: 'step', path: { decl: 0, step: 2 }, node: putStep({ path: '/replaced' }) });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  acceptable(out.text, 'a replaced step in a three-space file');
+  assert.match(out.text, /^ {2}api GET \/one$/m, 'the whole file is normalised to `INDENT`, which the write route requires anyway');
+  assert.match(out.text, /^ {2}api PUT \/replaced$/m, 'and the third statement is the one that changed');
+});
+
+test('`M210` `S2`: the result is a fixpoint of `format`, which is what the write route demands', () => {
+  const out = replaceInSource(AROUND, { kind: 'step', path: { decl: 1, step: 4 }, node: putStep({ path: '/orders/{orderId}/pay', method: 'POST' }) });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  const again = format(out.text);
+  assert.ok(again.ok);
+  assert.equal(again.formatted, out.text, '`D1049` refuses text `format` would still change');
 });
