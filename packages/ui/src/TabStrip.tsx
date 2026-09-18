@@ -9,7 +9,8 @@
 // file on disk does not, and Run while a run is going — the two cases where the tab you are not
 // looking at has something to say. That is the whole of what a mark may mean here: it is a fact
 // about this file's state, so a mark that meant "3 other files failed" would be the explorer's
-// job wearing this one's clothes.
+// job wearing this one's clothes — and since `M209` `S4` that job has an owner, `Sidebar.tsx`,
+// rather than being a name this comment used to delegate to.
 
 import { TABS, type TabId } from './doors';
 

@@ -43,7 +43,9 @@ export const DOOR_BY_ID: Readonly<Record<Lens, Door>> = Object.fromEntries(DOORS
  * > file resolves against. A tab never changes which file it is.**
  *
  * It earns its place the way `D1042` does, by refusing rather than describing: a tab that opens a
- * different file (that is the explorer's job), a tab per kind of test (that is a door), and a tab
+ * different file (that is the explorer's job — `Sidebar.tsx`, built by `M209` `S4`, which is where
+ * that clause stopped delegating to a component nobody had written), a tab per kind of test (that
+ * is a door), and a tab
  * that is neither a stage nor a dependency — *History*, *Docs*, *Coverage* — are all refused by
  * it. Adopted **provisionally** for the API door and reopened if BROWSER, LOAD or SCANS cannot be
  * accommodated, because a rule carrying exceptions from the start is a description.

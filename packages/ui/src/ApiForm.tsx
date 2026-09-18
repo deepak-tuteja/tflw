@@ -395,7 +395,8 @@ export function ApiForm({ project, onWritten, tab, onTab, path, focusLine, runPa
    * a tab whose subject is `tflw.config` cannot carry a mark about the `.tflw` file. The refusal
    * that matters is unchanged: a mark reading *3 other files failed* would be the explorer's job
    * wearing the strip's clothes, and is still refused, because the explorer's files are nobody
-   * here's subject.
+   * here's subject. `M209` `S4` built the explorer, so that sentence names a file now
+   * (`Sidebar.tsx`) rather than a component this comment had been delegating to for three rounds.
    */
   const marks: Partial<Record<TabId, string>> = {};
   if (pending.ok && file && pending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';

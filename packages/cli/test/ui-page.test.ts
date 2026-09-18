@@ -191,6 +191,17 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
   // declared in it at all, which is defensible for a list of tests and is a lie in a file tree.
   assert.equal(await page.locator('[data-files]').getAttribute('data-files'), String(project.files.length));
   assert.equal(await page.locator('[data-file]').count(), project.files.length);
+  // The dimmed colour is the stylesheet's own `--muted`, read off the page: a hex written here
+  // would be a second account of a token and would pass while the two drifted apart.
+  const muted = await page.locator('[data-files]').evaluate((el) => {
+    const doc = el.ownerDocument;
+    const probe = doc.createElement('span');
+    probe.style.color = 'var(--muted)';
+    doc.body.append(probe);
+    const c = doc.defaultView!.getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
   for (const f of project.files) {
     const row = page.locator(`[data-file="${f.path}"]`);
     assert.equal(await row.count(), 1, `file ${f.path} listed once`);
@@ -207,8 +218,18 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
     // Dimmed for `0`, NOT dimmed for `—`: *has tests, none here* and *declares nothing by nature*
     // are different facts, and without the second the six most-depended-on files in the sibling
     // would have been greyed out on every screen forever.
-    const dimmed = (await row.locator('> .file-row').getAttribute('class'))!.split(/\s+/).includes('muted');
-    assert.equal(dimmed, total > 0 && behind === 0, `${f.path} dimming follows the count's state`);
+    //
+    // **Read off the rendered colour, not off the class** (`M209-02`). The first draft asserted the
+    // class, and `.file-row` is a `<button>` whose `color: inherit` beat the global `.muted` rule
+    // at equal specificity — so every one of these rows was classed correctly and drawn identically,
+    // and the gate said so for two slices. The class is the label; the colour is the artifact.
+    const paint = await row.locator('> .file-row').evaluate((el) => {
+      const cs = el.ownerDocument.defaultView!.getComputedStyle(el);
+      return { row: cs.color, name: el.ownerDocument.defaultView!.getComputedStyle(el.querySelector('code')!).color };
+    });
+    const shouldDim = total > 0 && behind === 0;
+    assert.equal(paint.row === muted, shouldDim, `${f.path} is painted ${paint.row} and should${shouldDim ? '' : ' not'} be dimmed`);
+    assert.equal(paint.name === muted, shouldDim, `${f.path}'s NAME follows it — dimming the count alone says nothing about the file`);
   }
   // The folders are nodes, not prefixes on every row.
   const dirs = new Set(project.files.flatMap((f) => f.path.split('/').slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join('/'))));
@@ -1255,6 +1276,12 @@ test('the box says which of the two things a query is doing', async () => {
   assert.equal(await page.locator('[data-file-row][data-match="yes"]').count(), filesWithTag.length);
   // Dimmed, not hidden (`D1063` a second time): every file is still on the screen.
   assert.equal(await page.locator('[data-file-row]').count(), view.files.length);
+  // And **dimmed on the screen, not merely in a class** (`M209-02`). Search's dim is its own rule
+  // because it is its own fact: *not what you searched for* is not *nothing behind this door*, and
+  // a row absent from both questions should read as dim twice.
+  const opacityOf = (sel: string) => page.locator(sel).first().evaluate((el) => Number(el.ownerDocument.defaultView!.getComputedStyle(el).opacity));
+  assert.equal(await opacityOf('[data-file-row][data-match="yes"]'), 1, 'a match is at full strength');
+  assert.ok((await opacityOf('[data-file-row][data-match="no"]')) < 0.6, 'and everything else is visibly not');
 
   // A TEXT query — narrows the tree only, and says so, because no flag matches a name.
   const named = view.files.find((f) => f.tests.length > 0)!.tests[0]!.name;
