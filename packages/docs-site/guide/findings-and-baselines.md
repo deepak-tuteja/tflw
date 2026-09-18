@@ -120,6 +120,48 @@ tflw run --baseline /tmp/new.json            # grade against the candidate, not 
 `--baseline-write` between `check` and `run` is a legitimate way to create it. The run itself is
 where it becomes an error.
 
+## Accepting a finding from the page
+
+`tflw ui` turns the two commands above into one gesture. Every gating finding in the page's security
+block carries an **`[accept]`** link beside its fingerprint. Pressing it:
+
+1. asks which document a run under this report's env grades against — not always the env's own
+   block, since a config declaring `baseline` in `defaults` alone sends every env to that one
+   document;
+2. splices the entry into that document's `accepted` array, in the shape `--baseline-write` emits;
+3. opens the *Config* tab on that document, scrolled to the line just added.
+
+**Nothing is written to disk.** The staged text sits in the editor until you save it, and that is
+the point rather than an omission: accepting a finding is an affirmation about your own application
+that only you can make, and a control that committed it silently would be a control that turns a
+scan off. The change is in front of you before it is a fact.
+
+Three consequences worth knowing:
+
+- **A withheld finding has no `[accept]` link**, because there is nothing to accept — one that is
+  already baselined is in the document, and one below the `--fail-on` floor is not being gated on.
+  A `--probe-seeded` finding has no link either: it carries no fingerprint by construction, so
+  there is no stable entry to write.
+- **A declared-but-unwritten baseline is the normal starting state, and the first accept creates
+  it.** That is the state `tflw check` warns about (`TF043`) rather than failing on; the page opens
+  the missing document as an empty one, and saving is what brings it into being.
+- **An env that declares no `baseline` is refused, out loud.** The page says no `baseline` is
+  declared for that env and what to do about it, rather than staging into a document no run reads.
+
+The splice does not re-serialise your file. `JSON.parse` → mutate → `JSON.stringify` would reorder
+and reformat a document you are meant to read in a review, so the entry is inserted as text at the
+indentation already there. Where that cannot be done honestly — a document that is not JSON, one
+with no `accepted` array, one already listing this fingerprint — the document comes back
+**unchanged** and the editor still opens on it. A feature whose every failure mode makes a build
+*greener* should show you the file rather than repair it.
+
+::: tip The Config tab holds more than `tflw.config`
+Once a config declares `baseline`, that tab gains a switcher: `tflw.config` first, then one entry
+per declared document, labelled with its path and the block declaring it. Each is a plain editor
+over the bytes on disk, and each has its own address, so the link to an accepted finding's line
+survives a reload.
+:::
+
 ## `--fail-on` — a severity floor for the whole run
 
 ```sh
