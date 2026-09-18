@@ -429,3 +429,44 @@ export function addressed(outline: FileOutline, line: number | null): Addressed 
   }
   return { decl, request };
 }
+
+/**
+ * THE PREFIX — what `send` actually runs (`M210` `S6`, `D1075`).
+ *
+ * **Four requests in five cannot run alone.** Measured over the sibling: of 1031 requests, 185
+ * reference nothing, **734 read a variable defined earlier**, 379 read a capture from the file's
+ * `before` hook and 113 read an `env()`. So a Send that fired the selected request on its own would
+ * be honest about 18% of them and a lie about the rest — and `D1075`'s answer is to run what comes
+ * before it, for real.
+ *
+ * What comes before it is: the file's hooks, then this declaration's steps **up to and including
+ * the selected request and everything attached to it**. The attachments are in because they are
+ * what reads the response — dropping them would run the request and report no verdict for the one
+ * thing the author is looking at.
+ */
+export interface Prefix {
+  /** The declaration this runs, and the index of the last step that runs in it. */
+  readonly decl: number;
+  readonly upTo: number;
+  /** Every request that will be sent, in order, hooks first — what the pane lists before the
+   *  press, because pressing it writes rows in somebody's database. */
+  readonly requests: readonly { readonly where: string; readonly method: string; readonly path: string }[];
+}
+
+export function prefixOf(outline: FileOutline, at: Addressed): Prefix | null {
+  if (at.request === null) return null;
+  const decl = at.decl;
+  const last = at.request;
+  const attached = last.attached.filter((s) => s.stepPath !== null);
+  const upTo = attached.length === 0 ? last.stepPath.step : attached[attached.length - 1]!.stepPath!.step;
+  const requests: { where: string; method: string; path: string }[] = [];
+  for (const hook of outline.declarations) {
+    if (hook.kind !== 'hook') continue;
+    for (const r of hook.body.requests) requests.push({ where: hook.label, method: r.method, path: r.path });
+  }
+  for (const r of decl.body.requests) {
+    if (r.stepPath.step > last.stepPath.step) break;
+    requests.push({ where: decl.kind === 'test' ? decl.name : decl.label, method: r.method, path: r.path });
+  }
+  return { decl: decl.index, upTo, requests };
+}

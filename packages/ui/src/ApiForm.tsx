@@ -21,6 +21,8 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   buildApiStep,
   replaceInSource,
+  parseSource,
+  print,
   buildCall,
   buildCapture,
   buildExpect,
@@ -34,6 +36,7 @@ import {
   type ExpectStmt,
   type NoteOwner,
   type HookDecl,
+  type Program,
   type Step,
   type TestDecl,
   type WaitUntilApiStmt,
@@ -63,8 +66,10 @@ import {
   type RequestEdit,
   type StatementEdit,
   type ThresholdEdit,
+  type Ran,
+  type Verdict,
 } from './ComposePane';
-import { addressed, fileOutline, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
+import { addressed, fileOutline, prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
@@ -223,6 +228,10 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
    *  test they are showing (`D1080`). */
   const at = useMemo(() => (outline === null ? null : addressed(outline, focusLine)), [outline, focusLine]);
 
+  /** What the last run said about the selected request and the statements attached to it — held
+   *  here because `settle` below drops it the moment the bytes move (`M210` `S6`). */
+  const [ran, setRan] = useState<Ran | null>(null);
+
   /**
    * **An edit that produces the bytes already there is not an edit** (`M210` `S4`).
    *
@@ -235,6 +244,13 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
     (text: string): boolean => {
       if (text === (draft ?? file?.text)) return false;
       onDraft(text);
+      /**
+       * **And the last run's verdicts go, because they are about bytes that no longer exist.**
+       * A ✓ beside an assertion says *this passed*; once the assertion has been typed into, it says
+       * that about a file nobody has. The pane would rather show nothing than show a verdict for a
+       * question that has changed (`D985`'s honesty rule, one construct over).
+       */
+      setRan(null);
       return true;
     },
     [draft, file, onDraft],
@@ -721,6 +737,112 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
   }, [scratchText, project.scratchPath, scratchEtag, onTab]);
 
   /**
+   * SEND RUNS THE PREFIX (`M210` `S6`, `D1075`).
+   *
+   * **Four requests in five cannot run alone** — 734 of the sibling's 1031 read a variable defined
+   * earlier and 379 read a capture from the file's `before` hook — so a Send that fired the
+   * selected request by itself would be honest about 18% of them. What is written is the file's
+   * hooks, this declaration up to and including the selected request and what is attached to it,
+   * and nothing else: the **pending** bytes (`D1079`), so what runs is what the pane is showing
+   * rather than what is on disk.
+   *
+   * It is a **printed** copy rather than a slice of the text, because the cut is structural — other
+   * declarations go, the body stops at a step — and the one thing print drops is comments, which a
+   * scratch file has no reader for. That is the opposite of the rule a *header* edit lives by
+   * (`S5a`: never reprint a body, because the author's notes are in it); the difference is whose
+   * file it is. This one is written to the project's own `.scratch.tflw` and overwritten on the next press.
+   *
+   * Three things are deliberately dropped from the copy. A **workload** would turn one press into a
+   * load run, which is not what `send` means; the **thresholds** that grade one go with it; and any
+   * **crawl** the file declares, which is a second kind of work with no authored body and nothing to
+   * do with the request on screen. The name is `scratch` for the reason it has been since `A1-5`:
+   * `--only` has to name it, and an exploration that renamed itself on every press would leave a
+   * file nobody could re-run by hand.
+   */
+  const prefix = useMemo(() => (outline === null || at === null ? null : prefixOf(outline, at)), [outline, at]);
+  const prefixText = useMemo((): { ok: true; text: string } | { ok: false; reason: string } => {
+    if (!file || prefix === null) return { ok: false, reason: 'pick a request first — send runs the file up to one' };
+    const source = draft ?? file.text;
+    const { program, diagnostics } = parseSource(source);
+    const fatal = diagnostics.find((d) => d.severity === 'error');
+    if (fatal) return { ok: false, reason: `this file does not parse: ${fatal.code} at line ${fatal.span.start.line}` };
+    const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+    const decl = declarations[prefix.decl];
+    if (!decl) return { ok: false, reason: 'that declaration is no longer in the file' };
+    const body = decl.body.slice(0, prefix.upTo + 1);
+    const kept: TestDecl = decl.type === 'TestDecl'
+      ? { ...decl, name: stringLit(SCRATCH_TEST), workload: null, thresholds: [], body }
+      : { type: 'TestDecl', name: stringLit(SCRATCH_TEST), tags: [], sessions: [], retry: 0, table: null, workload: null, thresholds: [], concurrency: 'sequential', body, span: SYNTHETIC };
+    const scratch: Program = { ...program, tests: [kept], crawls: [] };
+    const printed = print(scratch);
+    if (!printed.ok) return { ok: false, reason: printed.reason ?? 'this file cannot be written back' };
+    return { ok: true, text: printed.text.endsWith('\n') ? printed.text : printed.text + '\n' };
+  }, [file, draft, prefix]);
+
+  const sendPrefix = useCallback(async () => {
+    if (!prefixText.ok || !at?.request) return;
+    setSending(true);
+    setProblem(null);
+    setRan(null);
+    try {
+      const put = await putFile(project.scratchPath, prefixText.text, scratchEtag);
+      if (!put.ok) {
+        setProblem(put.code ? `${put.code} at line ${put.line}: ${put.error}` : put.error);
+        setSending(false);
+        return;
+      }
+      setScratchEtag(put.etag);
+      const record = await startRun({ files: [project.scratchPath], only: SCRATCH_TEST, evidence: 'full' });
+      const end = await new Promise<EndEvent>((resolve) => {
+        const stop = subscribe(record.id, { event: () => undefined, noise: () => undefined, end: (e) => { stop(); resolve(e); } });
+      });
+      if (!end.kept) {
+        setProblem('the run wrote no report — nothing to read a response from');
+        setSending(false);
+        return;
+      }
+      const report: RunReport = await getResults(end.kept.split('/').pop() ?? end.kept);
+      const functional = report.tests.filter((t): t is Extract<typeof t, { kind: 'functional' }> => t.kind === 'functional');
+      /**
+       * **The FIRST case, and the steps from the last request onward.**
+       *
+       * A `with each` table runs the prefix once per row, and the pane is showing one request — so
+       * the verdicts beside it are the first case's, which is the one an author reads first. The
+       * steps are matched **by position from the last `api` step**, not by line: the scratch is a
+       * printed program with the other tests removed, so its line numbers are not this file's.
+       */
+      const steps = functional[0]?.steps ?? [];
+      let from = -1;
+      for (const [i, step] of steps.entries()) if (step.kind === 'api') from = i;
+      if (from < 0) {
+        setProblem('the run reported no api step — check the request above');
+        setSending(false);
+        return;
+      }
+      // The report's own sentence per step, not a second one written here — `detail` is what the
+      // run wrote (`status = 200`, `orderId = 42 (captured)`, or why it failed).
+      const step = steps[from]!;
+      setRan({
+        line: at.request.line,
+        steps: steps.slice(from).map((x) => ({ ok: x.ok, detail: x.detail ?? x.source })),
+        response: step.response === undefined
+          ? null
+          : { status: step.response.status, url: step.request?.url ?? '', method: step.request?.method ?? '', bodyText: step.response.bodyText },
+      });
+      /**
+       * **And the pane stays where it is.** The legacy Send goes to Run because that is where its
+       * response lives; this one puts the response and every verdict **beside the assertions that
+       * read them** (`D1075`), so leaving for another tab would take the author away from the thing
+       * they pressed the button to see. Found by a gate that waited 30 seconds for a verdict on a
+       * pane the press had just unmounted.
+       */
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+    setSending(false);
+  }, [prefixText, at, project.scratchPath, scratchEtag, onTab]);
+
+  /**
    * `[Discard]` — the scratch file is removed and *then* the pane goes.
    *
    * THE ORDER IS THE POINT, and the first draft had it backwards: clearing the pane first made it
@@ -861,6 +983,10 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
           onLegacyOpen={setLegacyOpen}
           edit={values}
           onEdit={applyEdit}
+          prefix={prefix}
+          onSend={() => void sendPrefix()}
+          sending={sending}
+          ran={ran}
           editing={{
             row: expectEdit,
             onRow: applyExpectEdit,
