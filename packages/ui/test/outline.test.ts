@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lex, parseSource, STEP_LENS, type Step } from '@tflw/lang';
+import { buildApiStep, lex, parseSource, replaceInSource, STEP_LENS, type Step } from '@tflw/lang';
 import { addressed, fileOutline, groupBody, isForeign, readNotes, statementsOf } from '../src/outline';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -267,4 +267,71 @@ test('a declaration that issues no request resolves to itself with no request', 
 
 test('a file with no declaration at all resolves to nothing', () => {
   assert.equal(addressed(fileOutline('t.tflw', '# just a comment\n'), null), null);
+});
+
+// ---------------------------------------------------------------------------
+// `M210` `S2` — the outline's step paths are `replaceInSource`'s step paths.
+//
+// The reader produces an index pair for every statement; the language looks a statement up by that
+// pair. **Two orderings that agree on every file written so far is exactly the arrangement that
+// breaks on the first file where a hook comes after a test**, so this is asserted behaviourally —
+// take the pair the outline gives, hand it to `replaceInSource`, and check the byte that moved is
+// the one the outline was pointing at.
+
+const HOOK_AFTER_TEST = `test "first"
+  api GET /a
+  expect status equals 200
+
+after
+  api DELETE /cleanup
+  expect status equals 204
+
+test "second"
+  api GET /b
+  expect status equals 200
+`;
+
+test('a request the outline points at is the request `replaceInSource` edits, hook order included', () => {
+  const outline = fileOutline('t.tflw', HOOK_AFTER_TEST);
+  // The hook is declared SECOND here, which is the shape that separates "sorted by line" from
+  // "hooks first" — the ordering `fileOutline` and `replaceInSource` must share.
+  assert.deepEqual(outline.declarations.map((d) => d.kind), ['test', 'hook', 'test']);
+  const marker = (path: string) => {
+    const built = buildApiStep({ service: null, method: 'PUT', path, headers: [], body: null, label: null });
+    assert.ok(built.ok, built.ok ? '' : built.reason);
+    return built.node;
+  };
+  for (const decl of outline.declarations) {
+    for (const r of decl.body.requests) {
+      const out = replaceInSource(HOOK_AFTER_TEST, { kind: 'step', path: r.stepPath, node: marker('/marked') });
+      assert.ok(out.ok, out.ok ? '' : out.reason);
+      // The edited file, read back: exactly one request is the marker, and it sits at the same
+      // position in the same declaration the outline named.
+      const after = fileOutline('t.tflw', out.text);
+      const marked = after.declarations.flatMap((d, i) => d.body.requests.map((x) => ({ decl: i, path: x.path, step: x.stepPath.step })));
+      const hits = marked.filter((m) => m.path === '/marked');
+      assert.equal(hits.length, 1, `editing ${r.method} ${r.path} changed exactly one request`);
+      assert.deepEqual({ decl: hits[0]!.decl, step: hits[0]!.step }, { decl: r.stepPath.decl, step: r.stepPath.step }, 'and it is the one the outline pointed at');
+    }
+  }
+});
+
+test('a nested row has no step path, because an index pair cannot address inside a block', () => {
+  const outline = fileOutline('t.tflw', 'test "a"\n  wait until api GET /jobs/1\n    expect body.state equals "done"\n');
+  const nested = outline.declarations[0]!.body.requests[0]!.attached;
+  assert.equal(nested.length, 1);
+  assert.equal(nested[0]!.nested, true);
+  assert.equal(nested[0]!.stepPath, null);
+});
+
+test('every non-nested statement carries a path, and the paths within a body are the body s own indices', () => {
+  const outline = fileOutline('t.tflw', SRC);
+  const decl = outline.declarations[0]!;
+  const rows = [...decl.body.preamble, ...decl.body.requests.flatMap((r) => [{ line: r.line, stepPath: r.stepPath }, ...r.attached])];
+  const inLineOrder = [...rows].sort((a, b) => a.line - b.line);
+  assert.deepEqual(
+    inLineOrder.map((r) => r.stepPath?.step),
+    inLineOrder.map((_, i) => i),
+    'a body read in line order gives 0, 1, 2, … — which is what an index into `body` means',
+  );
 });
