@@ -13,6 +13,8 @@ import type { ProjectView } from '../src/contract';
 const file = (path: string, tests: Array<{ name: string; tags: string[] }>): ProjectView['files'][number] => ({
   path,
   diagnostics: 0,
+  errors: 0,
+  warnings: 0,
   crawls: [],
   tests: tests.map((t, i) => ({ name: t.name, tags: t.tags, line: i + 1, workload: false, lenses: ['api'] as const, sessions: [], steps: { api: 1, browser: 0, load: 0, scan: 0 } })),
 });

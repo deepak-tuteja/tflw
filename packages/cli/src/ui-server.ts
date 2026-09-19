@@ -137,6 +137,23 @@ export interface ProjectFile {
   readonly crawls: readonly ProjectCrawl[];
   /** Parse diagnostics, counted — the page shows the file as unparseable, the LSP shows why. */
   readonly diagnostics: number;
+  /**
+   * The error half of `diagnostics` (`M211` `S2`, `M202-01`/`M202-02`).
+   *
+   * **Counted apart because they mean different things about the list beside them.** A file with an
+   * error did not parse: `tests` below is whatever panic-mode recovery salvaged, and how much it
+   * salvaged is not knowable from here — measured over nine break shapes on a 12-test corpus file,
+   * an unterminated `{`, `[` or nested object leaves **1 of 12**, while a truncated step, a stray
+   * `}`, an unknown keyword, a bare `expect` and a stray `test` all leave **12 of 12**. A warning
+   * costs nothing: the file parsed, and the list is the file's.
+   *
+   * **`warnings` is latent and filed as such (`M202-02`).** Measured across both corpora, **0 of 160
+   * files** carry a warning with no error, so nothing has ever taken that branch. It is one field
+   * and it is here rather than left to be found live, which is `M166`'s shape.
+   */
+  readonly errors: number;
+  /** The warning half. See `errors`. */
+  readonly warnings: number;
 }
 
 export interface ProjectView {
@@ -448,6 +465,8 @@ export async function readProject(root: string): Promise<ProjectView> {
       // 31 parser goldens asserting what they were written to assert).
       crawls: (program.crawls ?? []).map((c) => ({ name: c.name.value, line: c.span.start.line, lenses: lensesOfCrawl(c), sessions: c.sessions })),
       diagnostics: diagnostics.length,
+      errors: diagnostics.filter((d) => d.severity === 'error').length,
+      warnings: diagnostics.filter((d) => d.severity === 'warning').length,
     });
   }
   const authorization = {

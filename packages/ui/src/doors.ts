@@ -290,21 +290,46 @@ export const focusFromHash = (hash: string): number | null => afterTab(hash).lin
  */
 export const docFromHash = (hash: string): string | null => afterTab(hash).doc;
 
+/**
+ * A file whose tests the landing may count (`M211` `S2`, `M202-01`).
+ *
+ * **A file with an error did not parse, so its test list is a salvage and its count is not a fact
+ * about the project.** `Landing.tsx`'s own sentence is the criterion, read in the direction it was
+ * not written for: *"A door showing 12 tests that the project does not have would be a brochure."*
+ * Both directions of that are now measured on one 12-test corpus file — an unterminated `{` leaves
+ * **1 of 12**, so a door would under-count by eleven; an unterminated test name leaves **13**, the
+ * thirteenth carrying an **empty name**, so a door would advertise a test that does not exist.
+ *
+ * Excluded rather than approximated: there is no honest number to fold in, because the view cannot
+ * know what recovery dropped.
+ */
+export const countsHonestly = (f: { readonly errors: number }): boolean => f.errors === 0;
+
 /** Every test and crawl behind each door, derived. A test behind two doors is counted by both —
- *  that is `D1043` working, not a double count to be corrected. */
+ *  that is `D1043` working, not a double count to be corrected. Files that did not parse are left
+ *  out entirely (`countsHonestly`); `unparsedCount` is how many, so the landing can say so. */
 export function countByDoor(project: ProjectView | null): Readonly<Record<Lens, number>> {
   const counts: Record<Lens, number> = { api: 0, browser: 0, load: 0, scan: 0 };
   for (const file of project?.files ?? []) {
+    if (!countsHonestly(file)) continue;
     for (const t of file.tests) for (const lens of t.lenses) counts[lens] += 1;
     for (const c of file.crawls) for (const lens of c.lenses) counts[lens] += 1;
   }
   return counts;
 }
 
+/** How many files the counts above leave out, because they did not parse. Zero on a healthy
+ *  project, which is why the landing says nothing when it is zero. */
+export function unparsedCount(project: ProjectView | null): number {
+  return (project?.files ?? []).filter((f) => !countsHonestly(f)).length;
+}
+
 /** Tests carrying no construct any door is about. Counted so the landing can say so: a test that
  *  is behind no door is a test nobody will find again unless the page admits it exists. */
 export function lenslessCount(project: ProjectView | null): number {
   let n = 0;
-  for (const file of project?.files ?? []) for (const t of file.tests) if (t.lenses.length === 0) n += 1;
+  // Same exclusion as `countByDoor`, and for the same reason: a recovered test list is not the
+  // file's, so "behind no door" said of it is not a fact about the project either.
+  for (const file of project?.files ?? []) if (countsHonestly(file)) for (const t of file.tests) if (t.lenses.length === 0) n += 1;
   return n;
 }
