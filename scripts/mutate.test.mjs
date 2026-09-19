@@ -30,6 +30,9 @@ import {
   registryProblem,
   tallyLine,
   suiteCommand,
+  coverSetFor,
+  fastCommand,
+  fastPathLine,
 } from './mutate.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -685,3 +688,114 @@ test('an output overflow is not a hang', () => {
 
 // `M194` — the budget warning's own test ended here: `TFLW_MUTATE_BUDGET_MS=1` made the loud path
 // reachable, and the loud path left with the runners' re-shard trigger.
+
+// ---------------------------------------------------------------------------
+// `M212` `S0` — the fast path. `D1089` (a subset proves death, never life) and `D1090` (the cover
+// set is derived from the mutated file's name, and falls back to the whole suite).
+
+test('a cover set is the test files whose name matches the mutated one, and nothing else', () => {
+  const tests = ['test/checker.test.ts', 'test/parser.test.ts', 'test/checkerContract.test.ts'];
+  assert.deepEqual(coverSetFor('packages/lang/src/checker.ts', tests), ['test/checker.test.ts']);
+
+  // Separators and case are noise in this convention, not signal: `ui-page.test.ts` is the gate for
+  // a file that could equally be written `UiPage.tsx`.
+  assert.deepEqual(coverSetFor('packages/cli/src/UiPage.tsx', ['test/ui-page.test.ts']), ['test/ui-page.test.ts']);
+
+  // `checkerContract` must NOT come back for `checker.ts`. A prefix rule would pull it in, and the
+  // cost of a too-wide cover set is paid on every mutation that hits it — the fast path stops being
+  // fast long before it stops being correct, which is the failure this rule is shaped to avoid.
+  assert.equal(coverSetFor('packages/lang/src/checker.ts', tests).includes('test/checkerContract.test.ts'), false);
+});
+
+test('no name match means an empty cover set — the rule degrades rather than guessing', () => {
+  // `D1090` in its own words: *no match -> the whole package, which is today's behaviour exactly*.
+  // This is the branch that makes the other one safe to ship, and it is the common branch: measured
+  // over the registry as it stands, 182 of 375 entries land here.
+  assert.deepEqual(coverSetFor('packages/runtime/src/interpreter.ts', ['test/hooks.test.ts', 'test/expressions.test.ts']), []);
+  assert.deepEqual(coverSetFor('packages/ui/src/Findings.tsx', []), []);
+});
+
+test('a mutation scored against another workspace’s suite is covered by the tests named for it', () => {
+  // `D1091`, and the measurement that forced it. `D1090` alone touches none of the mutations it was
+  // taken for: seventeen entries mutate `packages/ui/src/*` and every one is scored against `tflw`,
+  // whose test directory holds no `findings.test.ts`. Nor would an import rule help —
+  // `ui-page.test.ts` reaches `packages/ui/src` by running **vite over it**, so no static
+  // relationship between a UI source and its gate exists in the tree at all.
+  const cliTests = ['test/e2e.test.ts', 'test/pick.test.ts', 'test/ui-page.test.ts', 'test/ui-server.test.ts'];
+  assert.deepEqual(coverSetFor('packages/ui/src/Findings.tsx', cliTests, 'packages/cli'), ['test/ui-page.test.ts', 'test/ui-server.test.ts']);
+
+  // Tier 1 still wins outright where it applies: a name match is a statement about THIS file, and
+  // the workspace tier is a statement about its neighbourhood.
+  assert.deepEqual(coverSetFor('packages/ui/src/e2e.ts', cliTests, 'packages/cli'), ['test/e2e.test.ts']);
+
+  // And it must NOT fire inside one workspace. `packages/cli/src/cli.ts` scored against `tflw`
+  // would take every test file whose name starts with `cli`, and a rule that can match a whole
+  // suite has stopped distinguishing anything — it would report a saving it did not make.
+  assert.deepEqual(coverSetFor('packages/cli/src/cli.ts', ['test/cli-a.test.ts', 'test/cli-b.test.ts'], 'packages/cli'), []);
+
+  // No suite directory to compare against is the same answer as no match: the whole suite runs.
+  assert.deepEqual(coverSetFor('packages/ui/src/Findings.tsx', cliTests, null), []);
+});
+
+test('a package script becomes a subset command with every one of its own flags kept', () => {
+  // The flags ARE the conditions the suite is measured under. `--test-concurrency=1` is there
+  // because `test-concurrency.test.ts` gates it; dropping it to shorten a run would change the
+  // experiment rather than the experiment's length.
+  assert.equal(
+    fastCommand('node --test --test-concurrency=1 --import tsx test/*.test.ts', ['test/findings.test.ts']),
+    'node --test --test-concurrency=1 --import tsx "test/findings.test.ts" 2>&1',
+  );
+  assert.equal(
+    fastCommand('node --import tsx --test "test/**/*.test.ts"', ['test/checker.test.ts', 'test/errors.test.ts']),
+    'node --import tsx --test "test/checker.test.ts" "test/errors.test.ts" 2>&1',
+  );
+  // `tflw-vscode`'s env prefix is part of the command and survives it.
+  assert.equal(
+    fastCommand('TSX_TSCONFIG_PATH=./tsconfig.test.json node --import tsx --test "test/**/*.test.ts"', ['test/a.test.ts']),
+    'TSX_TSCONFIG_PATH=./tsconfig.test.json node --import tsx --test "test/a.test.ts" 2>&1',
+  );
+});
+
+test('a chained test script gets no subset command at all', () => {
+  // `@tflw/docs-site` runs `node --test scripts/*.test.mjs && node scripts/verify-docs.mjs`. A
+  // subset of the node:test half is **not a subset of that suite**, because the guard script after
+  // the `&&` is where three of this registry's docs mutations are killed (`M110`) — so a green
+  // subset would fall through and a red one would be attributed to a run that never reached the
+  // guard. Refusing is the only answer that keeps `D1089`'s asymmetry true.
+  assert.equal(fastCommand('node --test scripts/*.test.mjs && node scripts/verify-docs.mjs', ['scripts/a.test.mjs']), null);
+
+  // No glob to replace, two globs to choose between, or no files: all refusals, because each one
+  // would mean guessing which argument names the suite's inputs.
+  assert.equal(fastCommand('node --test', ['test/a.test.ts']), null);
+  assert.equal(fastCommand('node --test "a/*.test.ts" "b/*.test.ts"', ['test/a.test.ts']), null);
+  assert.equal(fastCommand('node --import tsx --test "test/**/*.test.ts"', []), null);
+});
+
+test('the summary distinguishes "the fast path found nothing" from "the fast path is off"', () => {
+  // `D1090` degrades silently by design, so those two runs are byte-identical in every other line
+  // of the report. A reader who cannot tell them apart cannot tell whether the rule is earning its
+  // keep — which is the only question `S0` exists to answer.
+  assert.match(fastPathLine({ kills: 0, fellThrough: 0, noCover: 7, noVerdict: 0 }, true), /no cover set for any of 7/);
+  assert.match(fastPathLine({ kills: 0, fellThrough: 0, noCover: 7, noVerdict: 0 }, false), /fast path OFF/);
+  assert.match(
+    fastPathLine({ kills: 6, fellThrough: 1, noCover: 2, noVerdict: 0 }, true),
+    /6 killed by a subset, 1 fell through to the full suite, 0 reached no verdict there, 2 had no cover set/,
+  );
+});
+
+test('--cover and --no-fast-path are refused together, and --cover is refused without a scope', () => {
+  // Not tidiness. `--cover` names the subset to run first and `--no-fast-path` says to run no
+  // subset; a tool that accepted both would have to pick one silently, and the run's own report
+  // would then describe a discipline the operator did not ask for.
+  assert.match(parseArgs(['n', 'm', '--cover=test/a.test.ts', '--no-fast-path', 'id']).error, /contradict each other/);
+
+  // A cover set is derived from **one** mutated file. Applied to a whole sweep it would point every
+  // mutation in the registry at the same test files, and `D1089` makes that safe — which is exactly
+  // why it has to be refused rather than trusted: safe and useless is the shape that gets shipped.
+  assert.match(parseArgs(['n', 'm', '--cover=test/a.test.ts']).error, /needs a scope/);
+
+  assert.deepEqual(parseArgs(['n', 'm', '--cover=test/a.test.ts, test/b.test.ts', 'id']).cover, ['test/a.test.ts', 'test/b.test.ts']);
+  assert.equal(parseArgs(['n', 'm', 'id']).fastPath, true);
+  assert.equal(parseArgs(['n', 'm', '--no-fast-path', 'id']).fastPath, false);
+  assert.equal(parseArgs(['n', 'm', 'id']).cover, null);
+});
