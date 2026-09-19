@@ -25,6 +25,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { buildApiStep, buildExpect, buildTest, insertIntoSource, type ApiStepSpec } from '@tflw/lang';
 import { putFile } from './api';
+import { SourceText } from './Source';
 
 export type NewMode = 'test' | 'file';
 
@@ -155,7 +156,7 @@ export function NewThing({ mode, openPath, openText, openEtag, existing, onDone,
 
         {/* **The bytes, before the button.** Not a courtesy — it is the same value `create` writes,
             so the preview cannot describe a different file from the one that lands. */}
-        <pre className="preview" data-new-preview>{built.ok ? built.text : ''}</pre>
+        <pre className="preview" data-new-preview>{built.ok ? <SourceText text={built.text} /> : ''}</pre>
         {problem === null ? null : (
           <p className="muted" data-new-problem>
             {problem}

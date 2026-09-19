@@ -96,6 +96,16 @@ export interface SidebarProps {
   /** Clicking a request writes `L<line>` and nothing else: it does not change the file, because
    *  the request is *in* the file the tabs already face. */
   readonly onLine: (line: number) => void;
+  /**
+   * **`+ new file`** — `M214` `A6` (`D1118`).
+   *
+   * *"Why no option to add a new file in this sidebar/project explorer"* was the fifth of the five
+   * complaints, and the answer was that the button existed — in the **Compose head**, a toolbar
+   * over a pane about one declaration, two regions away from the list of files it makes another of.
+   * Creation lives where the thing is created. The dialog itself is the shell's, because this pane
+   * and Compose are siblings and both ask for it.
+   */
+  readonly onNew: ((mode: 'test' | 'file') => void) | null;
 }
 
 /** Above this many tags the cloud opens folded: `M192` U7 found the dogfood's 90 tags pushing all
@@ -152,7 +162,7 @@ export function filesUnder(node: TreeNode): string[] {
   return node.file ? [node.path] : node.children.flatMap(filesUnder);
 }
 
-export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, focusLine, onLine }: SidebarProps) {
+export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, focusLine, onLine, onNew }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   /** Where a `shift` range starts. A gesture detail and not a fact about the project, so it is
    *  neither in the address nor anywhere durable — `D1066` addresses what changes a run. */
@@ -409,6 +419,17 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
       <ul className="files tree" data-files={project.files.length}>
         {tree.map(renderNode)}
       </ul>
+
+      {/* At the FOOT of the list and not above it (`D1118`). The list is what the pane is for and a
+          create is what you reach for after reading it; a button above 84 file rows is chrome
+          between the reader and the project. */}
+      {onNew === null ? null : (
+        <div className="explorer-new" data-explorer-new>
+          <button type="button" onClick={() => onNew('file')} data-compose-new-file title="a new `.tflw` file in this project">
+            + new file
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

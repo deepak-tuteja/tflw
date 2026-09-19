@@ -1478,15 +1478,29 @@ export function readCode(root) {
   }
   const files = [];
   const skipped = { images: 0, binary: 0, generated: 0 };
+  /**
+   * Tracked, and not on disk — a file deleted in the working tree and not yet staged (`M213-22`).
+   *
+   * `git ls-files` answers *what is in the index*, which is the right question for **which files
+   * are this repository's** and is not the same question as *which files are here right now*. A
+   * deletion mid-round is an ordinary state, and this loop used to meet it with a bare
+   * `ENOENT: … BrowserForm.tsx` and no other word: no file that cited it, no gate name, no reason.
+   * Four commands to learn that the sweep was reading a file the round had just removed.
+   *
+   * Counted and **named** rather than silently skipped, because the other way to reach this branch
+   * is a path that is genuinely missing, and the two are told apart by looking at the list.
+   */
+  const missing = [];
   for (const path of corpus.paths) {
     if (path.endsWith('.md')) continue;
     if (IMAGE_EXT.has(extname(path).toLowerCase())) { skipped.images++; continue; }
     if (path === OWN_IDENTIFIERS) { skipped.generated++; continue; }
+    if (!existsSync(join(root, path))) { missing.push(path); continue; }
     const buf = readFileSync(join(root, path));
     if (buf.includes(0)) { skipped.binary++; continue; }
     files.push({ path, text: buf.toString('utf8') });
   }
-  return { files, skipped, corpus: describeCorpus(corpus), untracked: new Set(corpus.untracked) };
+  return { files, skipped, missing, corpus: describeCorpus(corpus), untracked: new Set(corpus.untracked) };
 }
 
 /**
@@ -1599,14 +1613,19 @@ export function checkDemand(files, anchors, legacy) {
 }
 
 /** What the demand check read and what it did not, printed on every run of it (`D859`, `D860`). */
-export function demandReport({ files, skipped, corpus }, { unresolved, stale, cited }) {
+export function demandReport({ files, skipped, missing = [], corpus }, { unresolved, stale, cited }) {
   const out = [
     `demand (D858): ${cited} identifiers cited across ${files.length} committable non-prose files (${corpus}; D967)` +
     ` — ${skipped.images} image and ${skipped.binary} binary file(s) not read,`
     + ` ${skipped.generated} generated manifest (${OWN_IDENTIFIERS}, whose every entry resolves by construction),`
     + ` and tracked markdown read by the publish half instead.`,
-    `  declared unresolvable (D860), ${DECLARED_UNRESOLVABLE.size} identifiers, none of which costs a citation site:`,
   ];
+  // Named, not just counted — see the comment at the branch that fills this (`M213-22`).
+  if (missing.length > 0) {
+    out.push(`  tracked and not on disk, so not swept — ${missing.length} path(s), deleted in the working tree and not staged:`);
+    for (const path of missing) out.push(`    ${path}`);
+  }
+  out.push(`  declared unresolvable (D860), ${DECLARED_UNRESOLVABLE.size} identifiers, none of which costs a citation site:`);
   for (const [id, why] of DECLARED_UNRESOLVABLE) out.push(`    ${id.padEnd(5)} ${why}`);
   return out.join('\n');
 }

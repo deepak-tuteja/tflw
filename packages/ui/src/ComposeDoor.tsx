@@ -1,0 +1,1562 @@
+// The authoring door — `M200` `A1-4` as `ApiForm`, generalised to two doors by `M213` `S4`
+// (`D1094`). The second form in tflw that writes a file, and the first that writes *work* rather
+// than a policy about work.
+//
+// **IT WAS CALLED `ApiForm` UNTIL IT SERVED A SECOND DOOR, AND THE RENAME IS THE POINT.** BROWSER
+// had `BrowserForm`: a `<select>` asking which already-open test to append steps to, with the file
+// as an argument rather than as the subject — the staging-form shape `D1088` retired from the API
+// door one day earlier (`M213-08`). Two implementations of one picture is the failure this project
+// keeps recording, and the reason there was never a third pane is that the two doors differ in
+// **what words they know** and in nothing else: `vocabulary.ts` is that difference, as a table, and
+// everything below is one implementation serving both. A component named for one door while
+// serving two is the same defect one level up — the class `M213-19` filed about a field name.
+//
+// IT IS `LoadForm`'s SHAPE AND NOT ITS COPY. Both hold field values and nothing else: the nodes
+// come from `@tflw/lang`'s builders, the splice and the format from `insertIntoSource`, the write
+// from `putFile` under the etag the source was read at. All of it runs in this browser, because
+// the language package has no dependencies and no Node builtins — so there is no second
+// implementation here for the CLI's to drift from.
+//
+// WHAT IT ADDS TO THE LOAD FORM IS THE `steps` INSERTION. A LOAD form can only ever write a
+// policy — a workload line, a threshold — because `api` steps are this door's vocabulary, which
+// is the gap `A0-5`'s green-condition test had to work around and said so where it did. This is
+// `D1044` from the writing side: a door adds the work it knows how to describe, to a test any
+// door may have started.
+//
+// A REQUEST AND ITS ASSERTIONS ARE ONE EDIT. They are built together and spliced together,
+// because `D1049` makes each write a real PUT — and a file that, between two of them, asserts
+// against a response nothing fetched is a file somebody's CI can catch mid-edit.
+
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  buildApiStep,
+  replaceInSource,
+  parseSource,
+  print,
+  buildCall,
+  buildClick,
+  buildFill,
+  buildOpen,
+  buildCapture,
+  buildWaitUntilApi,
+  buildExpect,
+  buildDataTable,
+  buildGive,
+  buildLet,
+  buildLog,
+  buildPause,
+  buildThreshold,
+  type CaptureSpec,
+  type LocatorSpec,
+  type Lens,
+  type CaptureStmt,
+  type ExpectSpec,
+  type ExpectStmt,
+  type NoteOwner,
+  type HookDecl,
+  type Program,
+  type Step,
+  type TestDecl,
+  type WaitUntilApiStmt,
+  stringLit,
+  SYNTHETIC,
+  buildTest,
+  insertIntoSource,
+} from '@tflw/lang';
+import { pickLocators, recordActions, putFile, dropScratch, startRun, subscribe, getReports, getResults, type FileView } from './api';
+import { diagnose } from './diagnose';
+import { indexFromReport, indexFromSend, sameFile, REPORT_LOOKBACK } from './ran';
+import { VOCABULARY } from './vocabulary';
+import { TabStrip } from './TabStrip';
+import {
+  ComposePane,
+  editOf,
+  expectSpecOf,
+  headerEditOf,
+  specOf,
+  stepKey,
+  subjectSpecOf,
+  tableSpecOf,
+  thresholdSpecOf,
+  type HeaderEdit,
+  type RequestEdit,
+  type StatementEdit,
+  type ThresholdEdit,
+  type Ran,
+  type RanIndex,
+  type Verdict,
+} from './ComposePane';
+import { ApiComposePane, type EditorTab } from './ApiComposePane';
+import type { NewMode } from './NewThing';
+import { addressed, fileOutline, prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
+import { SourcePanel } from './SourcePanel';
+import type { TabId } from './doors';
+import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
+import type { FileOutline } from './outline';
+
+/**
+ * Read one line of `tflw pick`'s output as a locator, or `null` if it is not one — `M200` `A3-6`.
+ *
+ * **CLASSIFIED BY THE GRAMMAR, NOT BY EXCLUDING THE BANNERS.** `pick` prints `opening <url> …` and
+ * `ready — click any element …` before the first locator, so the obvious filter is to skip those
+ * two sentences — and it would break the day either is reworded, silently, by turning a banner
+ * into a suggestion. Asking the parser whether `click <line>` is a click step is the same question
+ * asked of the only thing entitled to answer it, and it is immune to wording.
+ *
+ * This is also why the route streams lines unclassified: the server has no parser and should not
+ * grow one to do this (`D1049`).
+ */
+export function locatorFromPickLine(line: string): LocatorSpec | null {
+  const text = line.trim();
+  if (text === '') return null;
+  const { program, diagnostics } = parseSource(`test "pick"\n  click ${text}\n`);
+  if (diagnostics.some((d) => d.severity === 'error')) return null;
+  const step = program.tests[0]?.body[0];
+  if (!step || step.type !== 'ClickStmt') return null;
+  return { kind: step.locator.kind, value: step.locator.value.value };
+}
+
+export interface ComposeDoorProps {
+  /**
+   * Which door this is — `M213` `S4` (`D1094`).
+   *
+   * It selects a row of `vocabulary.ts` and nothing else. Everything conditional below reads that
+   * row rather than this value, so *"what does BROWSER do differently"* is answered in one file a
+   * reader can hold in their head, and adding LOAD or SCAN to this pane is a table entry rather
+   * than a search through a component.
+   */
+  readonly door: Lens;
+  readonly project: ProjectView;
+  readonly onWritten: (path: string) => void;
+  /**
+   * The file every tab here is about, **read by the shell** (`M210` `S1`).
+   *
+   * All four doors used to run this identical read — `getFile(path)` into a `useState`, refreshed
+   * on a path change — which is the four-way duplicate `M206` `S1` removed for the *path* and left
+   * in place for the *bytes*. `D1081` is what forced it: the explorer draws the open file's
+   * outline, so the shell needs the text too, and a fifth copy of the same read was the one
+   * outcome worth refusing outright.
+   */
+  readonly file: FileView | null;
+  /**
+   * That file, read (`M210` `S1`, `D1072`) — derived by the shell, for the explorer and this pane
+   * at once.
+   *
+   * Parsed **in this browser** with the same `@tflw/lang` `tflw check` runs: the package has no
+   * dependencies and no Node builtins, which is why there is no second implementation here to
+   * drift from the one CI grades against. `/api/project` carries a per-test index and deliberately
+   * not this — an outline is a fact about the bytes the page is holding, and `S6`'s pending buffer
+   * will hold bytes the server has not seen.
+   */
+  readonly outline: FileOutline | null;
+  /** The pending buffer, and where a change to it goes (`M210` `S2`, `D1079`). `null` is *nothing
+   *  unsaved*. Held by the shell so the explorer's outline and Source read the same bytes. */
+  readonly draft: string | null;
+  readonly onDraft: (text: string | null) => void;
+  /** Why there is no file, when there is no file — a read failure has to be sayable somewhere. */
+  readonly fileProblem: string | null;
+  /** A write lands here: the shell's copy moves forward so every reader of it agrees at once. */
+  readonly onFileWritten: (file: FileView) => void;
+  /**
+   * **Where a create is asked for** — `M214` `A6` (`D1118`).
+   *
+   * The dialog itself is the **shell's** now, and the reason is that `+ new file` belongs in the
+   * explorer: creation lives where the thing is created, and the explorer is where files are. A
+   * dialog owned by this component could not be opened from a sidebar that is this component's
+   * sibling, so it moved up one level and both call sites hand it the same callback. The Compose
+   * head stops being a toolbar, which is the fifth of this round's five complaints.
+   */
+  readonly onNew: (mode: NewMode) => void;
+  /** Which stage of this file's life is showing (`M205` §2). It lives in the URL and nowhere else
+   *  (`D1045`), so the shell owns it and hands it down — this form does not remember a tab. */
+  readonly tab: TabId;
+  readonly onTab: (tab: TabId, focusLine?: number) => void;
+  /** The file every tab here is about (`M206` `Q4`), already resolved against the project by the
+   *  shell (`S2a`) — this form used to keep its own, which is why a door change reset it. */
+  readonly path: string;
+  /** The strip's two project-fact tabs, built by the shell (`M206` `S2a`). A project fact is not
+   *  this door's to own: a copy per door would be four editors over one `tflw.config`. */
+  readonly authPanel: ReactNode;
+  readonly configPanel: ReactNode;
+  readonly configMark?: string;
+  /** The line an `[edit]` link asked Config to land on — read off the end of the hash (`M205` S5b).
+   *  It arrives from the shell rather than from a callback because it lives in the URL: a jump
+   *  between tabs is a link, and the back button walks back out of it. */
+  readonly focusLine: number | null;
+  /** The project's runs, rendered by the shell. Passed in rather than imported so that `Run` can
+   *  be a tab of this file's strip without this form learning what a report directory is. */
+  readonly runPane: ReactNode;
+  /** Why Run has something to say while you are composing — the shell knows about live runs and
+   *  this form does not. */
+  readonly runMark?: string;
+}
+
+/**
+ * **The retired form's vocabulary tables went with it** (`M212` `S4b`, `D1088`).
+ *
+ * `METHODS`, `SUBJECTS`, `MATCHERS`, `OPERANDLESS`, `ExpectRow` and `HeaderRow` were this file's
+ * own restatement of the language, kept here because the legacy form drew its selects from them.
+ * Compose draws its own from `ComposePane.tsx`, which is the one place they belong now — a second
+ * copy of a vocabulary is a second thing to notice when the language grows, and this one had
+ * already been overtaken once (`M200` `A2-3`'s scan subjects never reached it).
+ */
+/** The one test name Send writes. Fixed, because `--only` has to name it and an exploration
+ *  that renamed itself on every press would leave a file nobody could re-run by hand. */
+const SCRATCH_TEST = 'scratch';
+
+export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ComposeDoorProps) {
+  const [busy, setBusy] = useState(false);
+  /** What `L<line>` names — one resolution, so the band and the card cannot disagree about which
+   *  test they are showing (`D1080`). */
+  const at = useMemo(() => (outline === null ? null : addressed(outline, focusLine)), [outline, focusLine]);
+
+  /**
+   * **What has run, for every request in this file** (`M213` `S2`, `D1099`).
+   *
+   * Two scopes in one map, and the split is between where each came from rather than between what
+   * each can say. `report` is the last run that touched this file, read off disk — one fetch, no
+   * run, every request. `sent` is one request's scoped send and it wins for that request, because
+   * a press two seconds ago is better evidence about it than a run from Tuesday.
+   *
+   * Neither is a claim on its own. `ranIndex` below re-establishes both against the **buffer** on
+   * every keystroke (`D1108`), which is why these hold the raw material and the pane never sees
+   * it: what reaches a row is a verdict that is still about the text on that row.
+   */
+  const [reportRan, setReportRan] = useState<{ report: RunReport; reportId: string } | null>(null);
+  const [sentRan, setSentRan] = useState<{ line: number; steps: readonly StepResult[]; attachedLines: readonly number[]; startedAt: string } | null>(null);
+
+  /**
+   * **An edit that produces the bytes already there is not an edit** (`M210` `S4`).
+   *
+   * Every apply below ends here, and the guard exists because one gesture reaches it with nothing
+   * to say: a new note opened and typed with whitespace resolves to *remove the note that is not
+   * there*, which is a faithful no-op — and without this the buffer went dirty, the write button
+   * appeared, and pressing it would have written the file back to itself.
+   */
+  const settle = useCallback(
+    (text: string): boolean => {
+      if (text === (draft ?? file?.text)) return false;
+      onDraft(text);
+      /**
+       * **The verdicts are not dropped here any more, and that is a change `S2` had to argue for.**
+       *
+       * Until `M213` this line read `setRan(null)`: any edit anywhere blanked every mark in the
+       * pane. That was right when a verdict could only arrive by pressing `send` on the row you
+       * were looking at — the next thing you did was type into that row. It is wrong now that the
+       * default scope is *every request in the file*, because the commonest edit in this pane is
+       * **adding an assertion to one request**, and blanking the file would throw away twelve
+       * correct verdicts to be honest about one.
+       *
+       * What replaced it is stricter, not looser: `ranIndex` re-derives the whole map from the
+       * buffer on every keystroke and keeps a mark only where the line still reads exactly what
+       * ran on it (`D1108`). A row that has been typed into loses its verdict on the first
+       * character, the same as before; a row nobody touched keeps one it has earned.
+       */
+      return true;
+    },
+    [draft, file, onDraft],
+  );
+
+  /**
+   * The selected request's field values — `M210` `S2`.
+   *
+   * **Here rather than in the pane**, because the strip unmounts panels (`M205` `S5a`, a rule this
+   * round has now met three times). Keyed by the request's own index pair so that moving to another
+   * request does not carry the last one's half-typed path with it, and re-derived from the file
+   * whenever the selection changes.
+   */
+  const [edit, setEdit] = useState<{ key: string; values: RequestEdit } | null>(null);
+  const selectedKey = at?.request ? `${at.request.stepPath.decl}:${at.request.stepPath.step}` : null;
+  const values: RequestEdit | null = at?.request ? (edit?.key === selectedKey ? edit.values : editOf(at.request)) : null;
+
+  /**
+   * A field change, all the way to bytes (`D1079`).
+   *
+   * The values are held, the **text** is what they produce, and the text is the shell's — so one
+   * keystroke moves the card, the explorer's outline and Source together, and the write carries
+   * exactly what all three are showing. A change the builder refuses keeps the buffer where it is
+   * and says why: the author can go on typing through an intermediate state that is not yet a
+   * request, which every path is for its first character.
+   *
+   * **`M214` `A2` — the three fields are in the spec now, so they are no longer copied here.**
+   * This used to carry `timeoutMs`, `followRedirects` and `retryAfter` across from the node,
+   * because `ApiStepSpec` had no room for them; a node built from the spec alone came back without
+   * them, which is source that still parses, still runs, still passes, and tests something the
+   * author did not ask for. `specOf` fills all three from `RequestEdit` now and the builder writes
+   * them — so an author can *change* a timeout, which is what the round was for, and the old
+   * survives-an-edit gate is now a survives-an-edit-of-something-else gate.
+   */
+  const applyEdit = useCallback(
+    (next: RequestEdit) => {
+      if (!at?.request || !file) return;
+      setEdit({ key: `${at.request.stepPath.decl}:${at.request.stepPath.step}`, values: next });
+      const built = buildApiStep(specOf(next));
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const original: OutlineRequest = at.request;
+      const request = {
+        ...built.node,
+        // An `upload` body is still carried whole, and it is now the ONLY thing that is:
+        // `ApiBodySpec` cannot express one, so the builder returns `body: null` for it, and taking
+        // that answer would delete a `multipart/form-data` payload from a request whose path
+        // somebody edited. Widening the body spec is its own slice; widening the request spec was
+        // `A2`.
+        body: next.bodyKind === 'upload' ? original.spec.body : built.node.body,
+      };
+      /**
+       * **A polling request is the same request in a different node** (`M210` `S4`).
+       *
+       * `wait until api GET /jobs/{id}` holds an `ApiRequestSpec` in a field rather than being one,
+       * and its expects live inside its own block — which is why `S3` cannot address them and why
+       * this was left read-only until now. Editing the *request* needs none of that: the built step
+       * is an `ApiRequestSpec`, so it goes into the field, and the block's own two facts — the
+       * nested expects and `waitMs`, which is the poll budget and **not** `timeoutMs` — are carried
+       * from the node that was there.
+       */
+      const polling = original.node as WaitUntilApiStmt;
+      const node: Step = original.kind === 'ApiStep'
+        ? request
+        : { type: 'WaitUntilApiStmt', request, expects: polling.expects, waitMs: polling.waitMs, span: polling.span };
+      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: original.stepPath, node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+      /**
+       * **Keep the address on the request it was on** (`D1080`).
+       *
+       * The address is a line and an edit can change how many lines a request occupies — adding a
+       * header moves everything below it down. The request's *identity* across that edit is its
+       * index pair, which is what `replaceInSource` was handed, so the new line is read back out of
+       * the edited text by that pair and written to the hash. Without this, adding a header to the
+       * first of three requests silently moves the selection to the one below.
+       */
+      const after = fileOutline(path, out.text);
+      const moved = after.declarations[original.stepPath.decl]?.body.requests.find((x) => x.stepPath.step === original.stepPath.step);
+      if (moved && moved.line !== original.line) onTab('compose', moved.line);
+    },
+    [at, file, draft, settle, path, onTab],
+  );
+
+  /**
+   * A note, all the way to bytes (`D1077`, `M210` `S4`).
+   *
+   * The one edit on this pane that is not a node: a comment is not in the tree, so what addresses
+   * it is its **owner** — the statement below it — through the same index pair. An empty list
+   * removes the note, which is what a cleared textarea sends.
+   */
+  const applyNote = useCallback(
+    (owner: NoteOwner, lines: readonly string[]) => {
+      if (!file) return;
+      /**
+       * **A note with nothing in it is not a note.** Clearing the textarea is the only way to
+       * remove one, and the same rule covers the gesture at the other end: `+ note` opens an editor
+       * and writes nothing, so an author who opens one and thinks better of it leaves no `#` behind.
+       *
+       * The first draft carried a `had` flag to tell those two apart, and the mutation that dropped
+       * it stayed green — because the only difference was whether an abandoned gesture littered the
+       * file with a bare `#`. One rule is both better and smaller.
+       */
+      const blank = lines.every((line) => line.trim() === '');
+      const out = replaceInSource(draft ?? file.text, { kind: 'note', owner, lines: blank ? [] : lines });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+      /**
+       * **KEEP THE ADDRESS ON WHAT THE NOTE IS ABOUT** — `D1080`, and `M214` is what made this
+       * load-bearing rather than cosmetic.
+       *
+       * A note is the one edit that reliably changes how many lines the thing below it occupies:
+       * writing a two-line note moves its owner down by two, and every statement after it with it.
+       * The address is a **line**, so after the edit it names something else — and under `M212`'s
+       * pane that only meant the highlight drifted, because every statement in the body was on
+       * screen at once. `D1113` draws the SELECTED thing and nothing else, so a stranded address
+       * takes the editor away from the statement whose note is being typed, mid-keystroke.
+       *
+       * `applyEdit` has done this since `M210` `S2` and this path did not, which is the same
+       * defect one construct over: an edit that moves its subject has to say where the subject
+       * went. The index pair is the identity that survives it.
+       */
+      if (owner.on === 'step') {
+        const after = fileOutline(path, out.text);
+        const decl = after.declarations[owner.path.decl];
+        const moved = decl === undefined
+          ? undefined
+          : [...decl.body.preamble, ...decl.body.requests.flatMap((r) => [r, ...r.attached])].find(
+              (x) => x.stepPath !== null && x.stepPath.step === owner.path.step,
+            );
+        if (moved) onTab('compose', moved.line);
+      }
+    },
+    [file, draft, settle, path, onTab],
+  );
+
+  /**
+   * The band's own facts (`M210` `S5`, `D1074`).
+   *
+   * A declaration's header is not a step, so it is not addressed by the index pair: it is the run
+   * of lines from the declaration's first line to its own keyword line, and `replaceInSource`
+   * replaces exactly those. **The body is never reprinted** — the printer emits no comments, so a
+   * tag edit that went through the whole declaration would delete every note inside it.
+   *
+   * `buildTest` is handed the node's **own** workload, thresholds and body, and **none of the three
+   * can reach the file through this path** — `printTest` emits a workload and the thresholds
+   * *inside* the body, and the header replacement takes only the lines above it. They are passed so
+   * the node is not a lie about the test it claims to be, which is what keeps this correct if the
+   * header ever grows a line that reads one. Two mutations say so by staying green: dropping either
+   * changes no byte anywhere, by construction rather than for want of a gate.
+   */
+  const [header, setHeader] = useState<{ key: string; values: HeaderEdit } | null>(null);
+  const applyHeader = useCallback(
+    (decl: OutlineHook | OutlineTest, next: HeaderEdit) => {
+      if (!file) return;
+      setHeader({ key: `decl:${decl.index}`, values: next });
+      const built = ((): { ok: true; node: TestDecl | HookDecl } | { ok: false; reason: string } => {
+        if (decl.kind === 'hook') return { ok: true, node: { ...decl.node, when: next.when, scope: next.scope } };
+        const spec = tableSpecOf(next);
+        const table = spec === null ? null : buildDataTable(spec);
+        if (table !== null && !table.ok) return table;
+        const retry = Number(next.retry.trim() === '' ? '0' : next.retry);
+        if (!Number.isInteger(retry)) return { ok: false, reason: 'a retry count is a whole number of extra attempts' };
+        return buildTest({
+          name: next.name,
+          // Space-separated, because that is how the file writes them: 450 of the corpus's 682 tag
+          // lines carry more than one tag and none carries one per line.
+          tags: next.tags.split(/\s+/).map((t) => t.replace(/^@/, '')).filter((t) => t !== ''),
+          sessions: next.sessions.split(',').map((x) => x.trim()).filter((x) => x !== ''),
+          retry,
+          table: table === null ? null : table.node,
+          concurrency: next.parallel ? 'parallel' : 'sequential',
+          workload: decl.node.workload,
+          thresholds: decl.node.thresholds,
+          body: decl.node.body,
+        });
+      })();
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'header', decl: decl.index, node: built.node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /** One threshold of a test, by its own index — `null` removes it, and an index past the end
+   *  appends. The bound a form holds is the number beside the `%`, not the fraction the AST
+   *  stores; `buildThreshold` owns that conversion so this never has to know it. */
+  const [threshold, setThreshold] = useState<{ key: string; values: ThresholdEdit } | null>(null);
+  const applyThreshold = useCallback(
+    (decl: OutlineTest, index: number, next: ThresholdEdit | null) => {
+      if (!file) return;
+      setThreshold(next === null ? null : { key: `th:${decl.index}:${index}`, values: next });
+      const built = next === null ? null : buildThreshold(thresholdSpecOf(next));
+      if (built !== null && !built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'threshold', decl: decl.index, index, node: built === null ? null : built.node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /** One `import` or `use` line. A blank field is that line removed — the same rule a note
+   *  follows, and the reason there is no second gesture for taking one away. */
+  const applyFileDecl = useCallback(
+    (what: 'import' | 'use', index: number, path: string | null) => {
+      if (!file) return;
+      const node = path === null ? null : what === 'import'
+        ? { type: 'ImportDecl' as const, path: stringLit(path), span: SYNTHETIC }
+        : { type: 'UseDecl' as const, path: stringLit(path), span: SYNTHETIC };
+      const out = replaceInSource(draft ?? file.text, { kind: 'file', what, index, node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **`+ request`** (`M212` `S4b`, `D1088`) — the one thing `.legacy` could do that Compose could
+   * not, moved to where the rest of the `+` gestures live.
+   *
+   * Through the same builders and the same pending buffer as everything else on this pane, which is
+   * `D1087`'s clause applied to a gesture rather than to a dialog: an `api` step and the `expect`
+   * that reads it go in as **one** insertion, because inserting them separately would leave a
+   * file, between two writes, whose assertion names a response nothing fetched.
+   */
+  const addRequest = useCallback(
+    (decl: OutlineTest) => {
+      if (!file) return;
+      const step = buildApiStep({ method: 'GET', path: '/', service: null, label: null, headers: [], body: null });
+      if (!step.ok) {
+        setEditProblem(step.reason);
+        return;
+      }
+      const expect = buildExpect({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' });
+      if (!expect.ok) {
+        setEditProblem(expect.reason);
+        return;
+      }
+      const out = insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [step.node, expect.node] });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **`✕`** — `M214` `A4` (`D1117`).
+   *
+   * The gesture the pane had for a header, a subset entry, a threshold and a table row, and had for
+   * nothing a person actually writes. It goes through `replaceInSource`'s own `remove` member,
+   * which takes a **list** of step indices because removing a request has to remove the statements
+   * attached to it in the same edit — `body` means *the last response*, so an `expect` left behind
+   * after its request is gone reads a different one and may well pass.
+   *
+   * **The refusal is not here.** The pane runs the dependency scan (`depends.ts`) and never calls
+   * this while a later statement is still reading a binding one of these lines makes; this end only
+   * writes bytes. That split is deliberate: the reason lives beside the control that was pressed,
+   * where a reader can act on it.
+   */
+  const removeSteps = useCallback(
+    (decl: OutlineHook | OutlineTest, steps: readonly number[]) => {
+      if (!file) return;
+      const out = replaceInSource(draft ?? file.text, { kind: 'remove', decl: decl.index, steps: [...steps] });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+      /* **The address has to move, because what it named is gone.** A line is a position and the
+         position no longer holds the thing that was there — so the selection lands on the
+         declaration the removal happened in, read back out of the edited text by the index that
+         still identifies it. Leaving it where it was points the editor at whatever moved up. */
+      const after = fileOutline(path, out.text);
+      const moved = after.declarations[decl.index];
+      onTab('compose', moved ? moved.line : 1);
+    },
+    [file, draft, settle, path, onTab],
+  );
+
+  /** The same gesture one level up — the sequence column's first row is the test, so the test has a
+   *  `✕` like everything under it. What follows is the **file**, which is the one subject that
+   *  always exists: an address with no `L` is `selectedAt`'s `file`. */
+  const removeDecl = useCallback(
+    (decl: OutlineHook | OutlineTest) => {
+      if (!file) return;
+      const out = replaceInSource(draft ?? file.text, { kind: 'removeDecl', decl: decl.index });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+      onTab('compose');
+    },
+    [file, draft, settle, onTab],
+  );
+
+  /**
+   * **Tick-to-verify** (`M213` `S2`, `D1100`) — a ticked response becomes one assertion, under the
+   * request it is about.
+   *
+   * `stepsAfter` and not `steps`, which is the whole reason `insert.ts` grew a second member this
+   * slice: `steps` appends at the foot of the test body, and an `expect` written under a *later*
+   * request does not assert about the response that was ticked — `body` means the last response,
+   * so it silently reads a different one and may well pass. The anchor is the request's own last
+   * attachment, or the request itself when nothing is attached yet, so the new line joins the run
+   * of statements that already read this response rather than opening a second one below them.
+   *
+   * It goes through `buildExpect` and the printer like every other gesture on this pane (`D1087`).
+   * Nothing here concatenates a string, which is what keeps a ticked `"` or a key with a space in
+   * it from becoming a file that does not parse.
+   */
+  const verify = useCallback(
+    (request: OutlineRequest, spec: ExpectSpec) => {
+      if (!file) return;
+      const built = buildExpect(spec);
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const last = request.attached.filter((a) => a.stepPath !== null).at(-1);
+      const anchor = last?.stepPath ?? request.stepPath;
+      const out = insertIntoSource(draft ?? file.text, { kind: 'stepsAfter', path: anchor, nodes: [built.node] });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **`capture` from a ticked response** (`M213` `S3`, `D1102`) — the first arrow of *sign in →
+   * capture the token → authed call → assert*.
+   *
+   * One insertion for however many were ticked, under the request they were read from, for
+   * `verify`'s reason one construct over: `body` means the last response, so a capture written
+   * below a later request binds out of a different one. Several statements go in as one edit
+   * because a file between two writes whose second capture is missing is a file that does not run.
+   */
+  const captureFrom = useCallback(
+    (request: OutlineRequest, specs: readonly CaptureSpec[]) => {
+      if (!file || specs.length === 0) return;
+      const nodes: Step[] = [];
+      for (const spec of specs) {
+        const built = buildCapture(spec);
+        if (!built.ok) {
+          setEditProblem(built.reason);
+          return;
+        }
+        nodes.push(built.node);
+      }
+      const last = request.attached.filter((a) => a.stepPath !== null).at(-1);
+      const out = insertIntoSource(draft ?? file.text, { kind: 'stepsAfter', path: last?.stepPath ?? request.stepPath, nodes });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **`+ let`** (`D1102`) — a binding at the **top** of the body.
+   *
+   * Not at the foot, where `+ request` puts its work, and the difference is what a `let` is for: a
+   * binding has to exist before the request that interpolates it, and `outline.ts` measured **97
+   * of the corpus' 100 preamble statements are `let`** — so the place a reader looks for one is
+   * the top of the test, and the place it has to be for the next gesture to use it is above every
+   * request. Both point the same way.
+   *
+   * A test with no steps at all gets it through `kind: 'steps'`, which anchors under the header
+   * (or under the workload line, which is the shape a LOAD-authored test has) — `insertInTest`'s
+   * own careful case, reused rather than re-derived here.
+   */
+  const addLetTo = useCallback(
+    (decl: OutlineTest) => {
+      if (!file) return;
+      const built = buildLet({ name: 'value', value: '"change me"' });
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      /* The first thing in the body that an index pair can name. **`stepPath` is `null` for a row
+         inside a block** — `outline.ts` says so on the field — and a `!` here would have handed
+         `insertIntoSource` an undefined address on a test whose body opens with one. An empty body
+         falls through to `steps`, which anchors under the header or under the workload line: the
+         shape a LOAD-authored test has, and `insertInTest`'s own careful case rather than a second
+         derivation of it here. */
+      const first = [...decl.body.preamble, ...decl.body.requests].find((x) => x.stepPath !== null);
+      const out = first === undefined || first.stepPath === null
+        ? insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] })
+        : insertIntoSource(draft ?? file.text, { kind: 'stepsBefore', path: first.stepPath, nodes: [built.node] });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **`+ wait until`** (`D1102`) — a request re-issued until an assertion under it holds.
+   *
+   * It goes at the foot beside `+ request`, because it *is* a request: it is the statement a test
+   * reaches for when the thing it just asked for happens asynchronously, and that is after
+   * whatever asked for it. The default carries **one** assertion rather than none, and that is the
+   * builder's rule rather than a nicety — `buildWaitUntilApi` refuses an empty block, because a
+   * poll with nothing to wait for is a sleep with a request in it and the parser would accept it.
+   */
+  const addWaitTo = useCallback(
+    (decl: OutlineTest) => {
+      if (!file) return;
+      const built = buildWaitUntilApi({
+        request: { method: 'GET', path: '/', service: null, label: null, headers: [], body: null },
+        expects: [{ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' }],
+        waitMs: null,
+      });
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **`+ open`** (`M213` `S4`, `D1094`) — the page a browser test works against.
+   *
+   * At the **top** of the body, for `+ let`'s reason and a stronger one: every gesture below it
+   * acts on whatever page is open, so an `open` written at the foot is a navigation that undoes
+   * the test above it. `BrowserForm` had the same rule and expressed it as a mode — *"a new test
+   * that opens a page"* versus *"more steps for a test that already opened one"* — which made the
+   * author answer a question the file already answers.
+   */
+  const addOpen = useCallback(
+    (decl: OutlineTest) => {
+      if (!file) return;
+      const built = buildOpen('/');
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const first = [...decl.body.preamble, ...decl.body.requests].find((x) => x.stepPath !== null);
+      const out = first === undefined || first.stepPath === null
+        ? insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] })
+        : insertIntoSource(draft ?? file.text, { kind: 'stepsBefore', path: first.stepPath, nodes: [built.node] });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **`+ click` and `+ fill`** (`D1094`) — one gesture against the open page, at the foot.
+   *
+   * At the foot and not above anything, because a browser test is a **sequence against a page
+   * whose state the previous step left**: a click inserted in the middle acts on a page that has
+   * not had the steps below it applied. That is the same argument `send` loses on this door
+   * (`vocabulary.ts`'s `sends`), seen from the authoring side.
+   *
+   * **THE PLACEHOLDER IS DELIBERATELY NOT PLAUSIBLE, AND THERE IS NO THIRD OPTION.** The first
+   * draft used a blank locator on the reasoning that a name reading as real (`"Buy"`) is a test
+   * that looks written and asserts about an element nobody chose. `buildLocator` refuses a blank
+   * value outright — *"a `button` locator needs something to match"* — so the button wrote nothing
+   * and said so in the problem line, which the gate caught on its first run. What is left is the
+   * same rule `+ let` already follows: a value that is syntactically fine and obviously unfinished,
+   * so the file parses, the row is editable in place, and nobody mistakes it for a decision.
+   */
+  const addGesture = useCallback(
+    (decl: OutlineTest, which: 'click' | 'fill') => {
+      if (!file) return;
+      const built = which === 'click'
+        ? buildClick({ locator: { kind: 'button', value: 'change me' }, kind: 'single' })
+        : buildFill({ locator: { kind: 'field', value: 'change me' }, value: '"change me"' });
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **`tflw pick`, as a locator-fixer** — `M213` `S4` (`D1106`).
+   *
+   * Held here rather than in the pane for the reason this round has now met five times: the strip
+   * unmounts panels (`M205` `S5a`), and a running browser session held below one would die on a
+   * glance at Source. It is also why `endPick` runs on unmount of *this* component — the door
+   * changing is the one event that should close the browser, and `M200` `A3-7`'s own gate asserts
+   * that on the process rather than on the DOM.
+   */
+  const [picking, setPicking] = useState<string | null>(null);
+  const [picked, setPicked] = useState<readonly LocatorSpec[]>([]);
+  /**
+   * The live session's unsubscribe, in a **ref** rather than in state — `M213` `S4`.
+   *
+   * `BrowserForm` held it in state and relied on its own unmount to stop the child, which was
+   * sound while one component served one door. It is not sound now: this component serves **two**,
+   * so a browser → API door change re-renders it instead of unmounting it, and the first run of
+   * `M206` `S3`'s gate after the retirement said so — *"pid 1531376 is still alive 5000 ms after
+   * the door changed — the pick session was orphaned"* (`M213-21`). A ref is what lets the cleanup
+   * below depend on the **door** rather than on the subscription, which a state value cannot:
+   * putting `stopPick` in the dependency list makes the effect re-run on every start and stop the
+   * session it just opened.
+   */
+  const pickStop = useRef<(() => void) | null>(null);
+
+  /**
+   * The page a session opens against, read out of the **file** rather than out of a field.
+   *
+   * `BrowserForm` asked: its mode select decided between the path its own `open` field held and a
+   * bare `/`. The test already says where it works, in its own `open` statement, so the form was
+   * asking the author to repeat a fact the file states — and could be answered wrong. First
+   * `open` in the addressed declaration, `/` when there is none yet.
+   */
+  const pickPath = useMemo(() => {
+    const body = at?.decl?.body;
+    if (!body) return '/';
+    for (const statement of [...body.preamble, ...body.requests.flatMap((r) => r.attached)]) {
+      if (statement.node.type === 'OpenStmt') return statement.node.path.value;
+    }
+    return '/';
+  }, [at]);
+
+  const endPick = useCallback(() => {
+    pickStop.current?.();
+    pickStop.current = null;
+    setPicking(null);
+  }, []);
+
+  const startPick = useCallback(
+    (key: string) => {
+      pickStop.current?.();
+      setPicked([]);
+      setPicking(key);
+      const unsubscribe = pickLocators(pickPath, {
+        line: (text) => {
+          const locator = locatorFromPickLine(text);
+          if (locator) setPicked((current) => [locator, ...current]);
+        },
+        /* A `pick` that cannot start says so on the row rather than in a console nobody is
+           reading — the session is a real browser and the commonest reason it fails is that one
+           is not installed. */
+        problem: (text) => setEditProblem(text),
+        end: () => setPicking(null),
+      });
+      pickStop.current = unsubscribe;
+    },
+    [pickPath],
+  );
+
+  /**
+   * **The door changing is what closes the browser** — `M206` `S3`, asserted on the process and
+   * not on the DOM, because an orphaned browser is invisible to every assertion a page can make
+   * about itself.
+   *
+   * The dependency is `door` and `path`: leaving the door is the event the promise is about, and a
+   * session opened against one file's page has nothing to say about another's. Unmount is covered
+   * by the same cleanup, which is what it used to rely on alone.
+   */
+  useEffect(
+    () => () => {
+      pickStop.current?.();
+      pickStop.current = null;
+    },
+    [door, path],
+  );
+
+  /**
+   * **The session recorder** — `M213` `S5` (`D1095`, `D1106`).
+   *
+   * One press opens a real browser at the page this test opens and writes every action in it into
+   * this test's body, as it happens. It is a `+` gesture and not a mode, which is the whole of the
+   * shape: a recorder that opened its own surface, with its own list of pending steps and its own
+   * save button, would be `BrowserForm` again wearing a camera — and `M213-08` is the row about
+   * exactly that.
+   *
+   * **EACH LINE IS PARSED BEFORE IT IS BELIEVED.** `record` prints two banner lines before the
+   * first statement, and a reader that filtered by matching their wording would be coupled to it —
+   * `pick`'s own lesson, one command over. So a line becomes a step only if the grammar says it is
+   * one, which is a question only the parser is entitled to answer and is immune to rewording.
+   *
+   * **AND EACH ONE IS ITS OWN EDIT.** The alternative — buffer the session and splice it at the
+   * end — loses the whole recording when the browser is closed the wrong way, and makes the pane
+   * show nothing while a person works. `D1079`'s pending buffer already makes an edit cheap and
+   * reversible, so the recorder uses it the way every other gesture does: the statements appear in
+   * the file as they happen, and Discard is what undoes them.
+   */
+  const [recording, setRecording] = useState<number | null>(null);
+  const recordStop = useRef<(() => void) | null>(null);
+  /** The buffer as this component last knew it — see `appendRecorded` for why a ref. */
+  const textRef = useRef<string>('');
+  useEffect(() => {
+    if (recording === null) textRef.current = draft ?? file?.text ?? '';
+  }, [draft, file, recording]);
+  /** The declaration being recorded into, read fresh on each line — see `appendRecorded`. */
+  const recordInto = useRef<string | null>(null);
+
+  /**
+   * One recorded statement into the open buffer.
+   *
+   * **It re-reads the outline from the buffer rather than closing over the declaration**, and that
+   * is not caution: every line this appends moves the lines below it, so a `decl` captured when
+   * the session started is stale by the second statement. The test is named instead, because a
+   * name is the one address that does not move under an insertion — which is `insertIntoSource`'s
+   * own argument for `steps` taking a `testName`.
+   */
+  const appendRecorded = useCallback(
+    (line: string) => {
+      const name = recordInto.current;
+      if (name === null || !file) return;
+      const { program, diagnostics } = parseSource(`test "r"\n  ${line}\n`);
+      if (diagnostics.some((d) => d.severity === 'error')) return;
+      const node = program.tests[0]?.body[0];
+      if (!node) return;
+      /* **The text comes from a ref, updated synchronously**, and not from `draft`.
+         A recorder delivers a burst — a click, a fill's flush, a navigation — and React batches
+         state updates, so two statements arriving in one tick would both be spliced into the text
+         as it was *before* either of them. The ref is written the moment a splice succeeds, which
+         is the only ordering that makes a recording a sequence rather than a race. */
+      const out = insertIntoSource(textRef.current, { kind: 'steps', testName: name, nodes: [node] });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      textRef.current = out.text;
+      settle(out.text);
+    },
+    [file, settle],
+  );
+
+  const stopRecording = useCallback(() => {
+    recordStop.current?.();
+    recordStop.current = null;
+    recordInto.current = null;
+    setRecording(null);
+  }, []);
+
+  const startRecording = useCallback(
+    (decl: OutlineTest) => {
+      recordStop.current?.();
+      recordInto.current = decl.name;
+      setRecording(decl.line);
+      recordStop.current = recordActions(pickPath, {
+        line: appendRecorded,
+        problem: (text) => setEditProblem(text),
+        end: () => {
+          recordStop.current = null;
+          recordInto.current = null;
+          setRecording(null);
+        },
+      });
+    },
+    [pickPath, appendRecorded],
+  );
+
+  /** The door or the file changing closes the browser, for `pick`'s reason and with its gate. */
+  useEffect(
+    () => () => {
+      recordStop.current?.();
+      recordStop.current = null;
+      recordInto.current = null;
+    },
+    [door, path],
+  );
+
+  /**
+   * **Where a `+` gesture goes** — `M213` `S4` (`D1094`).
+   *
+   * One dispatcher over `vocabulary.ts`'s key, rather than a prop per gesture: the pane no longer
+   * knows the API door's three by name, which is what let BROWSER arrive as a table entry instead
+   * of as a second pane. An unknown key is a refusal with the key in it, because the alternative
+   * is a button that does nothing and says nothing — and the two lists that have to agree (this
+   * switch and the table) are in different files by design, so the only way that disagreement
+   * surfaces is if it is made to.
+   */
+  const add = useCallback(
+    (decl: OutlineTest, key: string) => {
+      switch (key) {
+        case 'request': return addRequest(decl);
+        case 'let': return addLetTo(decl);
+        case 'wait': return addWaitTo(decl);
+        case 'open': return addOpen(decl);
+        case 'click': return addGesture(decl, 'click');
+        case 'fill': return addGesture(decl, 'fill');
+        case 'record': return recording === null ? startRecording(decl) : stopRecording();
+        default: return setEditProblem(`this door offers no \`${key}\` gesture — \`vocabulary.ts\` and this switch disagree`);
+      }
+    },
+    [addRequest, addLetTo, addWaitTo, addOpen, addGesture, recording, startRecording, stopRecording],
+  );
+
+  /** The row whose new note is open — see `RowEditing.noting`. It lives here rather than in the
+   *  pane for `M205` `S5a`'s reason, which this round has now met four times: the strip unmounts
+   *  panels, so a gesture held below one does not survive a glance at Source. */
+  const [noting, setNoting] = useState<string | null>(null);
+  /** Which of the request editor's four tabs is open (`M214` `A2`). Held HERE, because the strip
+   *  unmounts panels — `M205` `S5a`, the sixth time this pane has met that rule. */
+  const [editorTab, setEditorTab] = useState<EditorTab>('assert');
+  const [editProblem, setEditProblem] = useState<string | null>(null);
+
+  /**
+   * The assertion row's values, and a change all the way to bytes (`M210` `S3`).
+   *
+   * Held **beside** the request's rather than inside it, and keyed the same way: by the statement's
+   * own index pair, so moving to another row re-reads that row from the file instead of carrying
+   * the last one's half-typed operand onto it.
+   */
+  const [expectEdit, setExpectEdit] = useState<{ key: string; values: StatementEdit } | null>(null);
+  const applyExpectEdit = useCallback(
+    (statement: OutlineStatement, next: StatementEdit) => {
+      if (!file || statement.stepPath === null) return;
+      const key = stepKey(statement.stepPath);
+      if (key === null) return;
+      setExpectEdit({ key, values: next });
+      /**
+       * One statement kind per branch, each through the language's own builder (`M210` `S3`/`S4`).
+       *
+       * **What the spec cannot say is carried, not rebuilt** — `S2`'s rule, twice more here. An
+       * assertion's subject when the select still says `carried`: five of the language's sixteen
+       * subjects have no `SubjectSpec`, and a `status of request to "…"` carries a clause the spec
+       * has no room for either, so the build runs against a stand-in of the same shape and the real
+       * node goes back on. Its `mask` list likewise, while the matcher is still `matches snapshot`:
+       * losing it would not change whether the file parses, only which pixels count. And a
+       * `capture`'s subject for exactly the same reason — 774 of the corpus's 793 captures read a
+       * `body` path, and the other nineteen include the shapes the spec cannot spell.
+       */
+      const built: { ok: true; node: Step } | { ok: false; reason: string } = ((): { ok: true; node: Step } | { ok: false; reason: string } => {
+        switch (next.kind) {
+          case 'expect': {
+            const original = statement.node as ExpectStmt;
+            const out = buildExpect(expectSpecOf(next.expect, original));
+            if (!out.ok) return out;
+            return {
+              ok: true,
+              node: {
+                ...out.node,
+                subject: next.expect.subject === 'carried' ? original.subject : out.node.subject,
+                masks: next.expect.matcher === 'matchesSnapshot' && original.matcher.name === 'matchesSnapshot' ? original.masks : out.node.masks,
+              },
+            };
+          }
+          case 'capture': {
+            const original = statement.node as CaptureStmt;
+            const out = buildCapture({ subject: subjectSpecOf(next.subject, next.argument, next.locatorKind, original.subject), name: next.name });
+            if (!out.ok) return out;
+            return { ok: true, node: { ...out.node, subject: next.subject === 'carried' ? original.subject : out.node.subject } };
+          }
+          case 'let':
+            return buildLet({ name: next.name, value: next.value });
+          case 'log':
+            return buildLog({ level: next.level, message: next.message, destination: next.destination === '' ? null : next.destination });
+          case 'call':
+            return buildCall({ name: next.name, args: next.args });
+          case 'give':
+            return buildGive(next.value);
+          case 'pause':
+            return buildPause({ min: next.min, max: next.max });
+          /* **The BROWSER door's three** (`M213` `S4`). A locator is two fields on the node and
+             two fields here, on all 2,296 corpus instances with no optional clause anywhere, which
+             is why there is no panel for it. */
+          case 'open':
+            return buildOpen(next.path);
+          case 'click':
+            return buildClick({ locator: { kind: next.locatorKind, value: next.locator }, kind: next.clickKind });
+          case 'fill':
+            return buildFill({ locator: { kind: next.locatorKind, value: next.locator }, value: next.value });
+        }
+      })();
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: statement.stepPath, node: built.node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+      /**
+       * **Keep the address on whatever it was naming** (`D1080`), which since `M214` `D1113` is
+       * either the statement or the request — and it matters more than it did, because the address
+       * now decides what the editor DRAWS rather than only which row is highlighted.
+       *
+       * `format` normalises the whole file before the splice, so a file that was not already
+       * formatted shifts even when the edit adds no line. The index pair is what survives that; the
+       * line is read back out of the edited text by it.
+       */
+      const after = fileOutline(path, out.text);
+      const decl = after.declarations[statement.stepPath.decl];
+      if (focusLine !== null && focusLine === statement.line) {
+        const movedStatement = decl === undefined
+          ? undefined
+          : [...decl.body.preamble, ...decl.body.requests.flatMap((r) => r.attached)].find(
+              (x) => x.stepPath !== null && x.stepPath.step === statement.stepPath!.step,
+            );
+        if (movedStatement && movedStatement.line !== statement.line) onTab('compose', movedStatement.line);
+      } else if (at?.request) {
+        const moved = decl?.body.requests.find((x) => x.stepPath.step === at.request!.stepPath.step);
+        if (moved && moved.line !== at.request.line) onTab('compose', moved.line);
+      }
+    },
+    [at, file, draft, onDraft, path, onTab, focusLine],
+  );
+
+  const [ownProblem, setProblem] = useState<string | null>(null);
+  /** A read failure is the shell's to discover and this pane's to say — there is no third place a
+   *  reader looks, and a form that stayed silent about it would show an empty file as an empty
+   *  form, which is the `M210` §0 defect wearing a different hat. */
+  const problem = ownProblem ?? editProblem ?? fileProblem;
+
+  /** Every test in the file, not only the ones behind this door — `D1044` again: an API step is
+   *  legal in a test a LOAD form started, and that is the case this form exists to reach. */
+  const testsInFile = useMemo(() => project.files.find((f) => f.path === path)?.tests ?? [], [project, path]);
+
+  const [sending, setSending] = useState(false);
+
+  /**
+   * The scratch file's hash as this page last knew it — `M205` S3, closing `M205-05`.
+   *
+   * Send and Discard both need it, and both used to fetch it: `getFile(scratchPath).catch(() =>
+   * null)` before each one. On a project nobody has explored yet that is a request whose only
+   * possible answer is `404`, and the browser logs a failed request as a console error **whether
+   * or not the caller catches it** — so the first Send in any project printed one. A page that
+   * logs a benign error by routine is a page whose next real error is invisible.
+   *
+   * Seeded from the project view, which reads the file the server already has in hand, and moved
+   * forward by each write's own response. Deliberately **not** re-seeded when `project` refreshes:
+   * this page's own last write is the fresher fact, and a scratch changed by another terminal is
+   * supposed to surface as the `409` that guard exists for rather than be silently re-read.
+   */
+  const [scratchEtag, setScratchEtag] = useState<string | null>(project.scratchEtag);
+
+  /**
+   * SEND RUNS THE PREFIX (`M210` `S6`, `D1075`).
+   *
+   * **Four requests in five cannot run alone** — 734 of the sibling's 1031 read a variable defined
+   * earlier and 379 read a capture from the file's `before` hook — so a Send that fired the
+   * selected request by itself would be honest about 18% of them. What is written is the file's
+   * hooks, this declaration up to and including the selected request and what is attached to it,
+   * and nothing else: the **pending** bytes (`D1079`), so what runs is what the pane is showing
+   * rather than what is on disk.
+   *
+   * It is a **printed** copy rather than a slice of the text, because the cut is structural — other
+   * declarations go, the body stops at a step — and the one thing print drops is comments, which a
+   * scratch file has no reader for. That is the opposite of the rule a *header* edit lives by
+   * (`S5a`: never reprint a body, because the author's notes are in it); the difference is whose
+   * file it is. This one is written to the project's own `.scratch.tflw` and overwritten on the next press.
+   *
+   * Three things are deliberately dropped from the copy. A **workload** would turn one press into a
+   * load run, which is not what `send` means; the **thresholds** that grade one go with it; and any
+   * **crawl** the file declares, which is a second kind of work with no authored body and nothing to
+   * do with the request on screen. The name is `scratch` for the reason it has been since `A1-5`:
+   * `--only` has to name it, and an exploration that renamed itself on every press would leave a
+   * file nobody could re-run by hand.
+   */
+  const prefix = useMemo(() => (outline === null || at === null ? null : prefixOf(outline, at)), [outline, at]);
+  const prefixText = useMemo((): { ok: true; text: string } | { ok: false; reason: string } => {
+    if (!file || prefix === null) return { ok: false, reason: 'pick a request first — send runs the file up to one' };
+    const source = draft ?? file.text;
+    const { program, diagnostics } = parseSource(source);
+    const fatal = diagnostics.find((d) => d.severity === 'error');
+    if (fatal) return { ok: false, reason: `this file does not parse: ${fatal.code} at line ${fatal.span.start.line}` };
+    const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+    const decl = declarations[prefix.decl];
+    if (!decl) return { ok: false, reason: 'that declaration is no longer in the file' };
+    const body = decl.body.slice(0, prefix.upTo + 1);
+    const kept: TestDecl = decl.type === 'TestDecl'
+      ? { ...decl, name: stringLit(SCRATCH_TEST), workload: null, thresholds: [], body }
+      : { type: 'TestDecl', name: stringLit(SCRATCH_TEST), tags: [], sessions: [], retry: 0, table: null, workload: null, thresholds: [], concurrency: 'sequential', body, span: SYNTHETIC };
+    const scratch: Program = { ...program, tests: [kept], crawls: [] };
+    const printed = print(scratch);
+    if (!printed.ok) return { ok: false, reason: printed.reason ?? 'this file cannot be written back' };
+    return { ok: true, text: printed.text.endsWith('\n') ? printed.text : printed.text + '\n' };
+  }, [file, draft, prefix]);
+
+  /**
+   * **The last run that touched this file** (`D1099`).
+   *
+   * Refetched when the path changes and when the project view refreshes — which is what happens
+   * when a run finishes — so a run started from the Run tab lands here without this pane knowing
+   * anything about it.
+   *
+   * **IT HAS TO OPEN THE REPORTS TO FIND OUT, AND THAT IS WHY THERE IS A CAP.** `ReportEntry.files`
+   * looks like the answer and is not: it is the list of **artefacts** in the directory —
+   * `results.json`, `report.html`, `junit.xml` — not the `.tflw` files the run executed, and the
+   * first draft of this filtered on it and silently matched nothing at all (`M213-19`). Which
+   * tests a report holds is only in its own `results.json`, and those run to hundreds of kilobytes
+   * on a fixture project, so this walks the reports newest-first and stops at the first that
+   * carries a test for this file, opening at most `REPORT_LOOKBACK` of them.
+   *
+   * A file not found within that many runs shows no verdicts. That is a bound stated rather than a
+   * search that quietly grows with the report directory, and the failure it produces is the same
+   * as the ordinary one — a file nobody has run shows nothing — rather than a slow page.
+   *
+   * A failure is silence, deliberately. There being no report for a file is the ordinary state of
+   * a new file, and a page that said *could not read the last run* over every one of them would be
+   * reporting the absence of a thing nobody asked for.
+   */
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const reports = (await getReports()).slice().sort((a, b) => b.at.localeCompare(a.at));
+        for (const entry of reports.slice(0, REPORT_LOOKBACK)) {
+          if (!entry.files.includes('results.json')) continue;
+          const report = await getResults(entry.id);
+          if (!live) return;
+          if (report.tests.some((t) => 'file' in t && sameFile(t.file, path))) {
+            setReportRan({ report, reportId: entry.id });
+            return;
+          }
+        }
+        if (live) setReportRan(null);
+      } catch {
+        if (live) setReportRan(null);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [path, project]);
+
+  /** A send is about one request; opening another one does not make it about that one. */
+  useEffect(() => setSentRan(null), [path]);
+
+  /**
+   * **The join, re-derived from the buffer on every keystroke** (`D1093`, `D1108`).
+   *
+   * This is the one place a verdict becomes visible, and it is a `useMemo` over the *text* rather
+   * than a state anything writes — so there is no way for the pane to hold a mark the buffer has
+   * outgrown. The send wins over the report for its own request and leaves every other request's
+   * alone, which is the two scopes meeting: `D1099` says both are real reports, so the newer one
+   * about a given request is the one to show.
+   */
+  const ranIndex = useMemo((): RanIndex => {
+    const text = draft ?? file?.text ?? '';
+    if (text === '') return new Map();
+    const base = reportRan === null ? new Map<number, Ran>() : new Map(indexFromReport(reportRan.report, path, text));
+    if (sentRan !== null) {
+      const one = indexFromSend({ steps: sentRan.steps, requestLine: sentRan.line, attachedLines: sentRan.attachedLines, bufferText: text, startedAt: sentRan.startedAt });
+      if (one !== null) base.set(sentRan.line, one);
+    }
+    return base;
+  }, [reportRan, sentRan, draft, file, path]);
+
+  const sendPrefix = useCallback(async () => {
+    if (!prefixText.ok || !at?.request) return;
+    setSending(true);
+    setProblem(null);
+    setSentRan(null);
+    try {
+      const put = await putFile(project.scratchPath, prefixText.text, scratchEtag);
+      if (!put.ok) {
+        setProblem(put.code ? `${put.code} at line ${put.line}: ${put.error}` : put.error);
+        setSending(false);
+        return;
+      }
+      setScratchEtag(put.etag);
+      const record = await startRun({ files: [project.scratchPath], only: SCRATCH_TEST, evidence: 'full' });
+      const end = await new Promise<EndEvent>((resolve) => {
+        const stop = subscribe(record.id, { event: () => undefined, noise: () => undefined, end: (e) => { stop(); resolve(e); } });
+      });
+      if (!end.kept) {
+        setProblem('the run wrote no report — nothing to read a response from');
+        setSending(false);
+        return;
+      }
+      const report: RunReport = await getResults(end.kept.split('/').pop() ?? end.kept);
+      const functional = report.tests.filter((t): t is Extract<typeof t, { kind: 'functional' }> => t.kind === 'functional');
+      /**
+       * **The FIRST case, and the steps from the last request onward.**
+       *
+       * A `with each` table runs the prefix once per row, and the pane is showing one request — so
+       * the verdicts beside it are the first case's, which is the one an author reads first. The
+       * steps are matched **by position from the last `api` step**, not by line: the scratch is a
+       * printed program with the other tests removed, so its line numbers are not this file's.
+       */
+      const steps = functional[0]?.steps ?? [];
+      if (!steps.some((x) => x.kind === 'api')) {
+        setProblem('the run reported no api step — check the request above');
+        setSending(false);
+        return;
+      }
+      /**
+       * **The raw steps are kept, and the join is left to `ranIndex`** (`M213` `S2`).
+       *
+       * This used to build the finished `Ran` right here, which meant the send's verdicts were
+       * joined **once**, at the moment they arrived, and were true only until the next keystroke —
+       * which is why the old `settle` had to blank them. Keeping the report's own steps and the
+       * lines they are about lets the same `(line, source)` check that guards the disk scope guard
+       * this one, on every render, from the buffer as it then is.
+       */
+      setSentRan({
+        line: at.request.line,
+        steps,
+        attachedLines: at.request.attached.map((x) => x.line),
+        startedAt: report.startedAt,
+      });
+      /**
+       * **And the pane stays where it is.** The legacy Send goes to Run because that is where its
+       * response lives; this one puts the response and every verdict **beside the assertions that
+       * read them** (`D1075`), so leaving for another tab would take the author away from the thing
+       * they pressed the button to see. Found by a gate that waited 30 seconds for a verdict on a
+       * pane the press had just unmounted.
+       */
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    }
+    setSending(false);
+  }, [prefixText, at, project.scratchPath, scratchEtag, onTab]);
+
+  /**
+   * `[Discard]` — the scratch file is removed and *then* the pane goes.
+   *
+   * THE ORDER IS THE POINT, and the first draft had it backwards: clearing the pane first made it
+   * vanish while the write was still in flight, so the disappearance said nothing about the file
+   * and a refused discard was invisible. Written this way, the pane going is the removal having
+   * landed, and a failure keeps the pane and says why — which is also what lets the gate assert
+   * the file is gone the moment the pane detaches.
+   *
+   * **`A1-5` emptied it; `A2-6` removes it (`D1054`).** An emptied scratch is still a file, so the
+   * landing went on counting it forever — measured `2 files` on a one-test project after a single
+   * explore-and-change-your-mind. The etag is still read first for the same reason it always was:
+   * a scratch that moved under this page belongs to another terminal.
+   */
+  const discard = useCallback(async () => {
+    if (scratchEtag !== null) {
+      const res = await dropScratch(scratchEtag);
+      if (!res.ok) {
+        setProblem(res.status === 409 ? `${res.error} — the scratch file changed under this page` : res.error);
+        return;
+      }
+      setScratchEtag(null);
+    }
+  }, [scratchEtag]);
+
+  /** `D1052` — recomputed with the preview, from the same bytes, so what is shown and what is
+   *  judged cannot be two different files. */
+  // `pending` left with the retired form (`M212` `S4b`): the draft is now the only pending
+  // bytes this pane has, which is `D1079`'s one buffer with nothing beside it.
+  const diagnostics = useMemo(() => (draft !== null ? diagnose(draft) : []), [draft]);
+
+  /**
+   * Write the buffer — `D1049` unchanged: one real `PUT` of the whole file under the etag it was
+   * read at. The bytes are exactly what Source is showing and what the card is drawing, because
+   * there is one buffer and all three read it.
+   */
+  const writeDraft = useCallback(async () => {
+    if (!file || draft === null) return;
+    setBusy(true);
+    setProblem(null);
+    const res = await putFile(path, draft, file.etag);
+    setBusy(false);
+    if (!res.ok) {
+      setProblem(res.status === 409 ? `${res.error} — the file changed under this page; reopen it and apply this again` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
+      return;
+    }
+    onFileWritten({ path, text: draft, etag: res.etag });
+    onDraft(null);
+    setEdit(null);
+    // …and the assertion row's, for the same reason: the buffer is the file now, so every row's
+    // values come from the file again. A held edit would keep re-deriving nothing and would mask
+    // the next external change to that statement.
+    setExpectEdit(null);
+    setHeader(null);
+    setThreshold(null);
+    setNoting(null);
+    onWritten(path);
+  }, [file, draft, path, onFileWritten, onDraft, onWritten]);
+
+  /**
+   * What a tab you are not looking at has to say (`M205` S5).
+   *
+   * Three cases, each a fact about **what that tab's own subject is holding** — not about any
+   * other file, which is the one thing a mark may never mean. Source is marked while Compose
+   * holds bytes the file does not have yet, Run while a run is going, and Config while it holds
+   * an edit nobody has saved.
+   *
+   * *`S5b` widened the wording and not the rule.* `S5a` wrote *a fact about THIS file*, which was
+   * true of the three tabs that existed and wrong the moment the two project-fact tabs landed —
+   * a tab whose subject is `tflw.config` cannot carry a mark about the `.tflw` file. The refusal
+   * that matters is unchanged: a mark reading *3 other files failed* would be the explorer's job
+   * wearing the strip's clothes, and is still refused, because the explorer's files are nobody
+   * here's subject.
+   */
+  /**
+   * What Source shows — the **buffer**, and nothing else since `M212` `S4b`.
+   *
+   * It used to be *the buffer when Compose is holding one (`D1079`), and the legacy form's
+   * projection otherwise* — two answers to one question, with a rule for picking between them.
+   * The legacy form is gone, so there is one pending-bytes answer on this pane and the rule it
+   * needed went with it. Source's own header still says which of the two STATES it is in — *what
+   * this file becomes when you press write* against *as it is on disk*.
+   */
+  const sourcePending: { ok: true; text: string } | { ok: false; reason: string } =
+    draft !== null ? { ok: true, text: draft } : { ok: false, reason: 'nothing pending — this is the file as it is on disk' };
+
+  const marks: Partial<Record<TabId, string>> = {};
+  if (sourcePending.ok && file && sourcePending.text !== file.text) marks.source = 'Compose is holding bytes this file does not have yet';
+  if (runMark) marks.run = runMark;
+  if (configMark) marks.config = configMark;
+  /* **A running `pick` session is a real browser, and the strip is the only thing that says so
+     once Compose is not the tab you are on** (`M213` `S4`, `D1106`). `M206` `S3`'s gate rests on
+     exactly this: the mark is what is still true after the panel unmounts. */
+  if (picking !== null) marks.compose = 'a pick session is open — a real browser is waiting for a click';
+  /* A recording writes into the file while you are looking at another tab, which is a stronger
+     reason to mark the strip than `pick`'s: `pick` waits, this one acts (`M213` `S5`). */
+  if (recording !== null) marks.compose = 'a recording is running — every action in that browser is a step in this file';
+
+  return (
+    /* `data-door-form` rather than `data-api-form` since `M213` `S4`: one pane serves two doors,
+       and an attribute named for one of them is the defect `M213-19` filed about a field name. The
+       door is the attribute's value, so a gate can still say which one it is looking at. */
+    <section className="doorpane" data-door-form={door}>
+      <TabStrip tab={tab} onTab={onTab} marked={marks} />
+
+      {tab === 'source' ? <SourcePanel file={file} pending={sourcePending} diagnostics={diagnostics} project={project} door={door} /> : null}
+      {tab === 'run' ? (
+        <div className="runpane" data-door-run-tab={door}>
+          {runPane}
+        </div>
+      ) : null}
+      {/* The rule's second clause (`M205` §2): a project fact the file resolves against. Auth
+          reads it scoped to this file and sends every edit to Config, which is the file's one
+          editor — `onTab('config', line)` writes the hash, so the jump is a link. */}
+      {tab === 'auth' ? authPanel : null}
+      {tab === 'config' ? configPanel : null}
+
+      {/* **What you typed survives a trip to another tab**, and it is not this line that provides
+          it: every field is `useState` in THIS component, and the strip swaps a panel rather than
+          unmounting the form, so the values come back whether the panel is unmounted or merely
+          hidden. The first draft used `hidden` and said in a comment that it was load-bearing —
+          the mutation to an unmounted panel left the gate green, which is how that got caught.
+          Unmounted is the better of two equal choices: no hidden `[data-api-send]` sitting in the
+          DOM for a selector on another tab to find. */}
+      {tab !== 'compose' ? null : door === 'api' ? (
+        /* **API has its own pane from this round** — `M214` (`D1110`–`D1118`).
+   
+           This reverses `D1094` for the duration and the plan says so in writing rather than
+           quietly: BROWSER and API were one pane, which is what made BROWSER's turn free, and
+           building API its own takes that back. It is the price of *door by door*, which is the
+           instruction this round was opened with after four rounds of moving all four at once and
+           arriving at the same pane. BROWSER keeps `ComposePane` below, unaffected; when its turn
+           comes it either adopts this shape or is answered in its own terms. */
+        <ApiComposePane
+          path={path}
+          outline={outline}
+          at={at}
+          focusLine={focusLine}
+          onLine={(line) => onTab('compose', line)}
+          onNew={onNew}
+          scratchUnignored={project.scratchIgnored ? null : project.scratchPath}
+          edit={values}
+          onEdit={applyEdit}
+          editing={{
+            row: expectEdit,
+            onRow: applyExpectEdit,
+            onNote: applyNote,
+            noting,
+            onNoting: setNoting,
+            header,
+            onHeader: applyHeader,
+            threshold,
+            onThreshold: applyThreshold,
+            onFileDecl: applyFileDecl,
+            pick: null,
+          }}
+          prefix={VOCABULARY[door].sends ? prefix : null}
+          onSend={VOCABULARY[door].sends ? () => void sendPrefix() : null}
+          sending={sending}
+          ran={ranIndex}
+          onVerify={verify}
+          onCapture={captureFrom}
+          onAdd={add}
+          adds={VOCABULARY[door].adds}
+          onRemoveSteps={removeSteps}
+          onRemoveDecl={removeDecl}
+          tab={editorTab}
+          onEditorTab={setEditorTab}
+          dirty={draft !== null}
+          busy={busy}
+          problem={problem}
+          onWrite={() => void writeDraft()}
+          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setNoting(null); setEditProblem(null); }}
+          door={door}
+        />
+      ) : (
+        <ComposePane
+          path={path}
+          outline={outline}
+          at={at}
+          onLine={(line) => onTab('compose', line)}
+          onNew={onNew}
+          dialog={null}
+          scratchUnignored={project.scratchIgnored ? null : project.scratchPath}
+          edit={values}
+          onEdit={applyEdit}
+          /* `send` is API's alone, and `vocabulary.ts` carries the reason: it prints a scratch
+             program cut off after the selected request and runs it, and a browser test's unit is a
+             session — a page opened, then gestures against whatever state the previous one left —
+             so there is no prefix that can be cut at a statement and still mean anything. */
+          prefix={VOCABULARY[door].sends ? prefix : null}
+          onSend={VOCABULARY[door].sends ? () => void sendPrefix() : null}
+          sending={sending}
+          ran={ranIndex}
+          onVerify={verify}
+          onCapture={captureFrom}
+          onAdd={add}
+          recording={recording}
+          editing={{
+            row: expectEdit,
+            onRow: applyExpectEdit,
+            onNote: applyNote,
+            noting,
+            onNoting: setNoting,
+            header,
+            onHeader: applyHeader,
+            threshold,
+            onThreshold: applyThreshold,
+            onFileDecl: applyFileDecl,
+            /* `null` on a door whose vocabulary has no locators in it — `pick` is a locator-fixer
+               and a row with no locator has nothing for it to fix (`D1106`). */
+            pick: VOCABULARY[door].constructs.has('ClickStmt')
+              ? { row: picking, found: picked, onStart: startPick, onStop: endPick }
+              : null,
+          }}
+          dirty={draft !== null}
+          busy={busy}
+          problem={editProblem}
+          onWrite={() => void writeDraft()}
+          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setNoting(null); setEditProblem(null); }}
+          door={door}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * **Source** — the file, and while you are composing, the bytes the write will produce.
+ *
+ * `D985` says the `.tflw` file is the only truth and that a form shows the source it is about to
+ * write. Before the strip those were two panes: an always-on preview of the pending bytes inside
+ * the form, and no view of the file at all. One subject, so one tab — and the panel says which of
+ * the two it is showing, because "this is the file" and "this is what the file is about to be"
+ * are claims a reader must be able to tell apart.
+ */

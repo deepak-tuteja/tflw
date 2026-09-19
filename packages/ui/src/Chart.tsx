@@ -38,6 +38,21 @@ export interface ChartProps {
 
 const HEIGHT = 180;
 
+/** A series colour at a fraction of its opacity, for an area or a bar.
+ *
+ * This was two chained `String.replace`s in place, correct for exactly the shape the four literal
+ * series colours had — `rgb(r, g, b)` — and wrong for anything else. `M213` `S1` made the colours
+ * come from the theme (`theme.ts`), and a theme is free to declare a token with an alpha already on
+ * it; `'rgba(1, 2, 3, 0.5)'.replace(')', ', 0.25)')` produces a five-argument `rgba` that the
+ * canvas rejects silently, leaving the area unfilled with nothing said. No token does that today,
+ * which is exactly why it is worth handling now rather than when one does. */
+function tint(color: string, alpha: number): string {
+  const rgba = /^rgba?\(([^)]+)\)$/.exec(color.trim());
+  if (!rgba) return color;
+  const [r, g, b] = rgba[1]!.split(',').map((p) => p.trim());
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export function Chart({ id, title, unit, x, series, kind, xName, xLabel, yLabel }: ChartProps) {
   const host = useRef<HTMLDivElement>(null);
   const plot = useRef<uPlot | null>(null);
@@ -64,7 +79,7 @@ export function Chart({ id, title, unit, x, series, kind, xName, xLabel, yLabel 
           stroke: s.color,
           width: kind === 'bars' ? 1 : 2,
           dash: s.dashed ? [6, 4] : undefined,
-          fill: kind === 'area' ? s.color.replace(')', ', 0.25)').replace('rgb(', 'rgba(') : kind === 'bars' ? s.color.replace(')', ', 0.5)').replace('rgb(', 'rgba(') : undefined,
+          fill: kind === 'area' ? tint(s.color, 0.25) : kind === 'bars' ? tint(s.color, 0.5) : undefined,
           paths: kind === 'bars' ? uPlot.paths.bars!({ size: [0.6, 24] }) : undefined,
           points: { show: kind !== 'bars' && x.length <= 60 },
           value: (_u, v) => (v == null ? '–' : yLabel(v)),

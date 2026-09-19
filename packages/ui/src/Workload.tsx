@@ -15,6 +15,7 @@ import { describeWorkload } from '../../reporter/src/workload-format.ts';
 import { formatThresholdActual, formatThresholdTarget } from '../../reporter/src/threshold-format.ts';
 import { roundDurationMs } from '../../runtime/src/duration.ts';
 import { Chart, type ChartSeries } from './Chart';
+import { useTokenColors } from './theme';
 
 export interface Comparison {
   readonly id: string;
@@ -66,8 +67,19 @@ function fmtStat(s: Stat, v: number | null): string {
   return s.kind === 'rate' ? pct(v) : s.kind === 'ms' ? dur(v) : String(v);
 }
 
-const COLORS = ['rgb(59, 130, 246)', 'rgb(234, 88, 12)', 'rgb(220, 38, 38)'];
-const RPS_COLOR = 'rgb(22, 163, 74)';
+// `M213` `S1` — the series colours are the THEME's, and they say what the series means.
+//
+// These were four literals (`rgb(59, 130, 246)`, `rgb(234, 88, 12)`, `rgb(220, 38, 38)`,
+// `rgb(22, 163, 74)`) painted identically on all four themes, including the light one, and
+// `S1`'s palette gate found them on its first run. A canvas cannot read a custom property — see
+// `theme.ts` — so they are resolved rather than referenced.
+//
+// **The mapping is semantic, not decorative.** `p50 → p95 → p99` is a ladder from the typical
+// request to the worst one, so it climbs `accent → warn → fail`: the shape of the legend now
+// carries the same meaning the numbers do. Throughput is the thing going right, so it is `pass`;
+// the error rate is the thing going wrong, so it is `fail` — the same token the step list paints a
+// failed step with, three panes away.
+const SERIES_TOKENS = ['--accent', '--warn', '--fail', '--pass'] as const;
 
 /** Two runs' per-second points on one x axis: the union of their offsets, `null` where a run
  * has no bucket for that second. */
@@ -85,15 +97,19 @@ function timelineSeries(a: LoadMetrics, b: LoadMetrics | null, pick: (p: LoadMet
 export function Workload({ test, other }: { test: WorkloadTestResult; other?: Comparison | null }) {
   const b = other?.test ?? null;
   const m = test.metrics;
+  // A new array identity on every theme change, which is what pulls each `useMemo` below — and
+  // through it each `Chart`'s effect — over to the new theme's strokes. `theme.ts` says why that
+  // identity is deliberate rather than a missed memo.
+  const [typical, slow, bad, good] = useTokenColors(SERIES_TOKENS);
 
   const latency = useMemo(() => {
-    const p50 = timelineSeries(m, b?.metrics ?? null, (p) => p.p50, 'p50', COLORS[0]!);
-    const p95 = timelineSeries(m, b?.metrics ?? null, (p) => p.p95, 'p95', COLORS[1]!);
-    const p99 = timelineSeries(m, b?.metrics ?? null, (p) => p.p99, 'p99', COLORS[2]!);
+    const p50 = timelineSeries(m, b?.metrics ?? null, (p) => p.p50, 'p50', typical!);
+    const p95 = timelineSeries(m, b?.metrics ?? null, (p) => p.p95, 'p95', slow!);
+    const p99 = timelineSeries(m, b?.metrics ?? null, (p) => p.p99, 'p99', bad!);
     return { x: p50.x, series: [...p50.series, ...p95.series, ...p99.series] };
-  }, [m, b]);
-  const throughput = useMemo(() => timelineSeries(m, b?.metrics ?? null, (p) => p.rps, 'requests/s', RPS_COLOR), [m, b]);
-  const errors = useMemo(() => timelineSeries(m, b?.metrics ?? null, (p) => p.errorRate * 100, 'error rate', COLORS[2]!), [m, b]);
+  }, [m, b, typical, slow, bad]);
+  const throughput = useMemo(() => timelineSeries(m, b?.metrics ?? null, (p) => p.rps, 'requests/s', good!), [m, b, good]);
+  const errors = useMemo(() => timelineSeries(m, b?.metrics ?? null, (p) => p.errorRate * 100, 'error rate', bad!), [m, b, bad]);
   const histogram = useMemo(() => {
     // Bars over the union of bucket values, in order — one bar per bucket the run recorded.
     const values = [...new Set([...m.histogram, ...(b?.metrics.histogram ?? [])].map((h) => h.value))].sort((p, q) => p - q);
@@ -101,10 +117,10 @@ export function Workload({ test, other }: { test: WorkloadTestResult; other?: Co
       const at = new Map(h.map((x) => [x.value, x.count]));
       return values.map((v) => at.get(v) ?? null);
     };
-    const series: ChartSeries[] = [{ label: 'iterations', values: of(m.histogram), color: COLORS[0]! }];
-    if (b) series.push({ label: 'iterations (compared)', values: of(b.metrics.histogram), color: COLORS[1]!, dashed: true });
+    const series: ChartSeries[] = [{ label: 'iterations', values: of(m.histogram), color: typical! }];
+    if (b) series.push({ label: 'iterations (compared)', values: of(b.metrics.histogram), color: slow!, dashed: true });
     return { x: values.map((_v, i) => i), values, series };
-  }, [m, b]);
+  }, [m, b, typical, slow]);
   const bucketLabel = useMemo(() => (i: number) => (histogram.values[i] === undefined ? '' : dur(histogram.values[i]!)), [histogram]);
 
   return (

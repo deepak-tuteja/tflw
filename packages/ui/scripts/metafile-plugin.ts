@@ -8,6 +8,20 @@
 // esbuild metafile; this plugin writes one from what the chunks say they contain, which is the
 // bundle's own account rather than package.json's. `cli/scripts/bundle.mjs` reads it, unions it
 // with the two esbuild metafiles, and deletes it — it is never shipped.
+//
+// `M213-11` — **ASSETS ARE REDISTRIBUTION TOO, AND THIS FILE COULD NOT SEE THEM.** `S0` vendored
+// five typefaces, and 275 KB of OFL-licensed `.woff2` landed in `cli/dist/ui/assets/` — twelve
+// files, five packages, every one of them requiring its notice to travel with the bytes. The
+// metafile named **none** of them, so `third-party-notices.mjs` would have emitted a file that
+// read as complete and listed no font at all: a `.woff2` referenced from CSS is an `asset` output
+// with no chunk and no modules, and this function walked chunks only. The blind spot was silent by
+// construction — the generator throws when a package it *sees* has no license, and never asks
+// about one it cannot see, which is the same failure `D-M92-2` forbids one layer down.
+//
+// Assets carry `originalFileNames`, the source paths rolldown copied from, so they attribute
+// through the very same `lastIndexOf('node_modules/')` the chunk ids do. They are **resolved
+// against `root` first**: rolldown reports them relative to the project root while module ids are
+// absolute, and the notices generator reads each package's `LICENSE` off the path it is handed.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -15,22 +29,31 @@ import type { Plugin } from 'vite';
 
 export const METAFILE = 'metafile.json';
 
-/** `{ inputs: { <module id>: {} } }` over every rendered chunk's modules. Module ids are the
- * absolute paths rolldown resolved, which `third-party-notices.mjs`'s `lastIndexOf('node_modules/')`
- * attributes exactly as it does esbuild's relative ones. Virtual modules (`\0…`) are not files
- * and are skipped; nothing third-party arrives that way. */
+/** `{ inputs: { <module id>: {} } }` over every rendered chunk's modules AND every emitted asset's
+ * source file. Module ids are the absolute paths rolldown resolved, which
+ * `third-party-notices.mjs`'s `lastIndexOf('node_modules/')` attributes exactly as it does
+ * esbuild's relative ones. Virtual modules (`\0…`) are not files and are skipped; nothing
+ * third-party arrives that way. */
 export interface Metafile { inputs: Record<string, Record<string, never>> }
 
-/** The two fields this reads off a rendered output; rolldown's own type is wider and not needed. */
-export type OutputLike = { type: string; modules?: Record<string, unknown> };
+/** The fields this reads off a rendered output; rolldown's own type is wider and not needed. */
+export type OutputLike = { type: string; modules?: Record<string, unknown>; originalFileNames?: readonly string[] };
 
-export function inputsOf(bundle: Record<string, OutputLike>): Metafile {
+export function inputsOf(bundle: Record<string, OutputLike>, root = ''): Metafile {
   const inputs: Metafile['inputs'] = {};
   for (const output of Object.values(bundle)) {
-    if (output.type !== 'chunk') continue;
-    for (const id of Object.keys(output.modules ?? {})) {
-      if (id.startsWith('\0')) continue;
-      inputs[id] = {};
+    if (output.type === 'chunk') {
+      for (const id of Object.keys(output.modules ?? {})) {
+        if (id.startsWith('\0')) continue;
+        inputs[id] = {};
+      }
+      continue;
+    }
+    // An asset that came from a file — a vendored `.woff2`, an image — is that file's package
+    // redistributed. One with no source (the extracted stylesheet, anything `emitFile`d from a
+    // string) reports no original and contributes nothing, which is correct: it is ours.
+    for (const from of output.originalFileNames ?? []) {
+      inputs[resolve(root, from)] = {};
     }
   }
   return { inputs };
@@ -38,9 +61,11 @@ export function inputsOf(bundle: Record<string, OutputLike>): Metafile {
 
 export function metafilePlugin(): Plugin {
   let outDir = '';
+  let root = '';
   return {
     name: 'tflw:metafile',
     configResolved(config) {
+      root = config.root;
       // `build.outDir` is relative to `root` until resolved here; the hook below runs in an
       // unrelated cwd when the CLI's bundle script drives the build.
       outDir = resolve(config.root, config.build.outDir);
@@ -51,7 +76,7 @@ export function metafilePlugin(): Plugin {
     writeBundle(_options, bundle) {
       // The bundle is rolldown's `OutputBundle`; only `type` and `modules` are read.
       mkdirSync(outDir, { recursive: true });
-      writeFileSync(join(outDir, METAFILE), JSON.stringify(inputsOf(bundle as unknown as Record<string, OutputLike>), null, 2));
+      writeFileSync(join(outDir, METAFILE), JSON.stringify(inputsOf(bundle as unknown as Record<string, OutputLike>, root), null, 2));
     },
   };
 }

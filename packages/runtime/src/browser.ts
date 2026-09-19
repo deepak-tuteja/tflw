@@ -1387,6 +1387,210 @@ function installPickClickCapture(marker: string): void {
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+// The session recorder — `M213` `S5` (`D1095`, `D1106`)
+// ---------------------------------------------------------------------------------------------
+//
+// **IT IS `pick` WITH THE `preventDefault` TAKEN OUT AND MORE EVENT TYPES PUT IN**, and that is
+// the whole of the relationship. `D1106` says so from the other side: `pick`'s inert click-capture
+// is *right* for identifying one element and *wrong* for recording, because a recording is a
+// sequence and a sequence needs the page to actually advance. So this is a second capture mode
+// rather than a flag on that one — but it reuses `resolvePickedLocator` unchanged, because the
+// hard part of both is the same question: **name this element so that the name resolves back to
+// it**, verified against the live DOM rather than guessed at (`D6`/`D7`).
+//
+// **THE PAGE SCRIPT REPORTS RAW EVENTS AND DOES NO THINKING**, for two reasons. The serialisation
+// trap documented above `installPickClickCapture` — a nested named binding becomes a call to a
+// `__name` helper that does not exist in the page — makes anything structured expensive to write
+// there and easy to break silently. And the one piece of real logic a recorder has, coalescing a
+// field's keystrokes into one `fill`, needs state that outlives an event; keeping that in Node is
+// where it can be read, tested and corrected.
+//
+// **WHAT IT RECORDS IS ACTIONS, NEVER EXPECTATIONS** (`D1095`). A recorder that guessed at
+// assertions would be writing the half of a test that carries its meaning, from evidence it does
+// not have: it sees that a page changed, not what about the change mattered. Expectations are
+// authored in Compose, beside the response or the element they are about.
+
+const RECORD_MARKER_ATTR = 'data-tflw-record';
+
+/** One page event, as the injected script reports it. Deliberately close to the DOM: everything
+ *  interpretive happens in Node. */
+export interface RawRecordEvent {
+  readonly kind: 'click' | 'input' | 'change' | 'press';
+  readonly raw: RawPickInfo;
+  /** The element's value for `input`/`change`; the key or chord for `press`. */
+  readonly value: string | null;
+  /** `<input type>` lowercased, for telling a checkbox from a text field and a `<select>` from
+   *  both. `null` for anything that is not an input. */
+  readonly inputType: string | null;
+  readonly tag: string;
+  readonly checked: boolean | null;
+}
+
+/** One recorded action, already resolved to a locator the language can print. */
+export interface RecordedAction {
+  readonly kind: 'click' | 'fill' | 'select' | 'tick' | 'untick' | 'press' | 'open';
+  /** `button "Sign in"` — the same syntax `pick` prints, and `null` for an `open` or a page-level
+   *  `press`, which name no element. */
+  readonly locator: string | null;
+  /** The value for a `fill`/`select`, the key for a `press`, the path for an `open`. */
+  readonly value: string | null;
+}
+
+/**
+ * `page.addInitScript` callback for a recording session — re-attached on every navigation, which a
+ * recorder needs more than `pick` does because a recorded session navigates by design.
+ *
+ * **NOTHING IS PREVENTED.** A click navigates, a submit submits, a key is typed. That is the
+ * difference between this and `installPickClickCapture`, and it is the reason the two cannot be
+ * one function with a flag: an inert capture and a live one are different contracts with the page,
+ * not different settings.
+ *
+ * Written in the same style as its sibling and for the same measured reason: no nested named
+ * bindings anywhere in the body, because `tsx`'s name-preservation transform rewrites one into a
+ * call to a `__name` helper that exists only in this module, and the failure is a
+ * `ReferenceError` inside the page that nothing at the CLI can see.
+ */
+function installRecordCapture(marker: string): void {
+  (window as unknown as { __tflwRecordRaw: (el: Element) => unknown }).__tflwRecordRaw = (el) => {
+    document.querySelectorAll(`[${marker}]`).forEach((prior) => prior.removeAttribute(marker));
+    el.setAttribute(marker, '1');
+    const tag = el.tagName;
+    const ariaLabel = el.getAttribute('aria-label');
+
+    let buttonName: string | null = null;
+    if (ariaLabel?.trim()) {
+      buttonName = ariaLabel.trim();
+    } else {
+      const text = (el as HTMLElement).innerText?.trim();
+      if (text) {
+        buttonName = text;
+      } else {
+        const value: unknown = (el as HTMLInputElement).value;
+        buttonName = typeof value === 'string' && value.trim() ? value.trim() : null;
+      }
+    }
+
+    let fieldName: string | null = null;
+    if (ariaLabel?.trim()) {
+      fieldName = ariaLabel.trim();
+    } else {
+      let label: string | null = null;
+      const id = el.getAttribute('id');
+      if (id) {
+        const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+        if (lbl?.textContent?.trim()) label = lbl.textContent.trim();
+      }
+      if (!label) {
+        const parentLabel = el.closest('label');
+        if (parentLabel?.textContent?.trim()) label = parentLabel.textContent.trim();
+      }
+      if (label) {
+        fieldName = label;
+      } else {
+        const ph = el.getAttribute('placeholder');
+        fieldName = ph?.trim() ? ph.trim() : null;
+      }
+    }
+
+    const listName = ariaLabel?.trim() ? ariaLabel.trim() : null;
+
+    let textName: string | null = null;
+    if (el.children.length === 0) {
+      const t = (el.textContent ?? '').trim();
+      textName = t.length > 0 && t.length < 120 ? t : null;
+    }
+
+    let cssPath: string;
+    if (el.id) {
+      cssPath = `#${CSS.escape(el.id)}`;
+    } else if (el.getAttribute('data-testid')) {
+      cssPath = `[data-testid="${el.getAttribute('data-testid')}"]`;
+    } else if (el.getAttribute('name')) {
+      cssPath = `${tag.toLowerCase()}[name="${el.getAttribute('name')}"]`;
+    } else {
+      const parts: string[] = [];
+      let node: Element | null = el;
+      for (let i = 0; i < 4 && node; i++) {
+        let part = node.tagName.toLowerCase();
+        const parent: Element | null = node.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children).filter((c) => c.tagName === node!.tagName);
+          if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
+        }
+        parts.unshift(part);
+        node = parent;
+      }
+      cssPath = parts.join(' > ');
+    }
+
+    const isButtonish =
+      tag === 'BUTTON' ||
+      el.getAttribute('role') === 'button' ||
+      (tag === 'INPUT' && ['button', 'submit', 'reset'].includes((el as HTMLInputElement).type)) ||
+      (tag === 'A' && el.getAttribute('role') === 'button');
+    const isFieldish = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.getAttribute('role') === 'textbox';
+    const isListish = tag === 'UL' || tag === 'OL' || el.getAttribute('role') === 'list';
+    return {
+      buttonName,
+      fieldName,
+      listName,
+      textName,
+      cssPath,
+      primaryKind: isButtonish ? 'button' : isFieldish ? 'field' : isListish ? 'list' : el.children.length === 0 ? 'text' : null,
+    };
+  };
+
+  (window as unknown as { __tflwRecordSend: (kind: string, el: Element, value: string | null) => void }).__tflwRecordSend = (kind, el, value) => {
+    const input = el as HTMLInputElement;
+    (window as unknown as { __tflwRecordReport: (e: unknown) => void }).__tflwRecordReport({
+      kind,
+      raw: (window as unknown as { __tflwRecordRaw: (el: Element) => unknown }).__tflwRecordRaw(el),
+      value,
+      inputType: el.tagName === 'INPUT' ? String(input.type ?? '').toLowerCase() : null,
+      tag: el.tagName,
+      checked: el.tagName === 'INPUT' ? Boolean(input.checked) : null,
+    });
+  };
+
+  document.addEventListener('click', (event) => {
+    if (event.target instanceof Element) {
+      (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null) => void }).__tflwRecordSend('click', event.target, null);
+    }
+  }, true);
+
+  document.addEventListener('input', (event) => {
+    if (event.target instanceof Element) {
+      const value: unknown = (event.target as HTMLInputElement).value;
+      (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null) => void }).__tflwRecordSend('input', event.target, typeof value === 'string' ? value : null);
+    }
+  }, true);
+
+  document.addEventListener('change', (event) => {
+    if (event.target instanceof Element) {
+      const value: unknown = (event.target as HTMLInputElement).value;
+      (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null) => void }).__tflwRecordSend('change', event.target, typeof value === 'string' ? value : null);
+    }
+  }, true);
+
+  // **Only the keys that are gestures.** Every printable character arrives as an `input` event and
+  // becomes part of a `fill`; recording it as a `press` too would write the same typing twice, once
+  // per letter. What is left is the keys that *do* something a fill cannot say — submitting a form,
+  // moving focus, dismissing — and anything with a modifier, which is by definition a command.
+  document.addEventListener('keydown', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const mods = [event.ctrlKey ? 'Control' : '', event.metaKey ? 'Meta' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : ''].filter((m) => m !== '');
+    const bare = ['Enter', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown'].includes(event.key);
+    if (mods.length === 0 && !bare) return;
+    if (mods.length > 0 && event.key.length > 1 && !bare) return;
+    (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null) => void }).__tflwRecordSend(
+      'press',
+      event.target,
+      [...mods, event.key].join('+'),
+    );
+  }, true);
+}
+
 const PICK_KIND_ORDER: readonly ('button' | 'field' | 'list' | 'text')[] = ['button', 'field', 'list', 'text'];
 
 /** Tries the clicked element's tag-inferred kind first (so a `<div role="button">` prefers its
@@ -1451,10 +1655,235 @@ export function wirePickSession(page: PWPage, onPick: (picked: PickedLocator) =>
   })();
 }
 
+/**
+ * Turns the page's raw event stream into printable actions — `M213` `S5`.
+ *
+ * **THE COALESCING IS HERE AND NOT IN THE PAGE**, and it is the one piece of judgement a recorder
+ * has. A person typing `alice@example.com` produces eighteen `input` events and one `change`; a
+ * test that wrote eighteen `fill` statements would be a keystroke log, and one that wrote none
+ * until `change` would lose a field the author never blurred. So an `input` opens or updates a
+ * **pending** fill for its element, a `change` on the same element replaces it, and any other
+ * action **flushes** first — which is what keeps the statements in the order the person performed
+ * them rather than in the order the DOM finished them.
+ *
+ * The element identity for that buffer is the CSS path the page computed, which is exactly the
+ * right key: it is derived from the live DOM path to that one element, so two fields never share
+ * it and one field keeps it across keystrokes.
+ *
+ * **A checkbox is a `tick`, not a `fill`**, and a `<select>` is a `select` — both arrive as
+ * `change` on an `<input>`/`<select>` and would otherwise be written as *fill this control with
+ * the string "on"*, which parses, runs, and does something else.
+ */
+export class RecordCoalescer {
+  private pending: { readonly cssPath: string; readonly raw: RawPickInfo; value: string } | null = null;
+
+  /** What a `change`/`click`/`press` must emit before itself. `null` when nothing is pending. */
+  flush(): { readonly raw: RawPickInfo; readonly value: string } | null {
+    const out = this.pending;
+    this.pending = null;
+    return out === null ? null : { raw: out.raw, value: out.value };
+  }
+
+  /**
+   * One raw event in; zero or more actions out, in order.
+   *
+   * `resolve` is the caller's, because naming an element needs the live page — `resolvePickedLocator`
+   * asks the DOM whether each candidate name resolves to the element that was acted on, which is
+   * `D7` and is the whole reason a recorded locator is worth pasting.
+   */
+  async accept(
+    event: RawRecordEvent,
+    resolve: (raw: RawPickInfo) => Promise<string>,
+  ): Promise<readonly RecordedAction[]> {
+    const out: RecordedAction[] = [];
+    const emitPending = async (): Promise<void> => {
+      const flushed = this.flush();
+      if (flushed !== null) out.push({ kind: 'fill', locator: await resolve(flushed.raw), value: flushed.value });
+    };
+
+    if (event.kind === 'input') {
+      // A checkbox or a radio fires `input` too, and its `value` is the attribute — `"on"` by
+      // default — not what the user did. Its state is a `change`.
+      if (event.inputType === 'checkbox' || event.inputType === 'radio') return out;
+      if (this.pending !== null && this.pending.cssPath !== event.raw.cssPath) await emitPending();
+      this.pending = { cssPath: event.raw.cssPath, raw: event.raw, value: event.value ?? '' };
+      return out;
+    }
+
+    if (event.kind === 'change') {
+      if (event.inputType === 'checkbox' || event.inputType === 'radio') {
+        await emitPending();
+        out.push({ kind: event.checked ? 'tick' : 'untick', locator: await resolve(event.raw), value: null });
+        return out;
+      }
+      if (event.tag === 'SELECT') {
+        if (this.pending !== null && this.pending.cssPath === event.raw.cssPath) this.flush();
+        else await emitPending();
+        out.push({ kind: 'select', locator: await resolve(event.raw), value: event.value ?? '' });
+        return out;
+      }
+      // A text field: the `change` is the authoritative final value, replacing whatever the
+      // keystrokes left pending for the same element.
+      if (this.pending !== null && this.pending.cssPath !== event.raw.cssPath) await emitPending();
+      this.pending = { cssPath: event.raw.cssPath, raw: event.raw, value: event.value ?? '' };
+      await emitPending();
+      return out;
+    }
+
+    await emitPending();
+    if (event.kind === 'click') {
+      /* **A click on a checkbox, a radio or a `<select>` is not a click.** The browser fires both
+         — `click` then `change` — and writing the click as well would tick the box and then tick
+         it again, which for a checkbox is the opposite of what was recorded. The `change` that
+         follows says what happened; this is the event that says the mouse moved. */
+      if (event.inputType === 'checkbox' || event.inputType === 'radio' || event.tag === 'SELECT') return out;
+      out.push({ kind: 'click', locator: await resolve(event.raw), value: null });
+      return out;
+    }
+    out.push({ kind: 'press', locator: await resolve(event.raw), value: event.value });
+    return out;
+  }
+}
+
 export interface PickSessionHandle {
   /** Closes the browser this session opened. Safe to call even after the user already closed the
    * window themselves (`browser.close()` on an already-closed browser is a no-op in Playwright). */
   readonly close: () => Promise<void>;
+}
+
+/**
+ * Wires an already-created page for **recording** — `M213` `S5`.
+ *
+ * The sibling of `wirePickSession`, and deliberately its shape: it takes a `PWPage` rather than
+ * launching one, so every part of this that is real logic — capture, coalescing, verified
+ * resolution — is testable against an ordinary headless page. Headed versus headless makes no
+ * difference to DOM events, `addInitScript` or `evaluateAll`; only to whether a window is on
+ * screen, and that requirement lives in `startRecordSession` alone.
+ *
+ * **NAVIGATION IS RECORDED ONLY WHEN NOTHING CAUSED IT.** A click that navigates is already
+ * written down as the click; emitting an `open` beside it would make the test navigate twice and
+ * assert against whichever arrived second. What is left — a navigation with no action recorded
+ * since the last one — is the author typing in the address bar, which is an `open` and nothing
+ * else could be. The session's own first URL is always the first `open`, because a browser test
+ * starts by opening a page.
+ */
+export function wireRecordSession(
+  page: PWPage,
+  onAction: (action: RecordedAction) => void,
+  onClosed: () => void,
+): Promise<void> {
+  let closed = false;
+  const notifyClosed = (): void => {
+    if (closed) return;
+    closed = true;
+    onClosed();
+  };
+  page.on('close', notifyClosed);
+  page.context().browser()?.on('disconnected', notifyClosed);
+
+  const coalescer = new RecordCoalescer();
+  const resolve = async (raw: RawPickInfo): Promise<string> => (await resolvePickedRecord(page, raw)).syntax;
+  let actedSinceNavigation = false;
+  let lastUrl: string | null = null;
+  /** Events arrive faster than they resolve, and resolution asks the live DOM — so they are
+   *  queued. Without this a click that navigates would be resolved against the page it navigated
+   *  *to*, and a fill's flush could be emitted after the click that flushed it. */
+  let queue: Promise<void> = Promise.resolve();
+
+  page.on('framenavigated', (frame) => {
+    if (frame !== page.mainFrame()) return;
+    const url = frame.url();
+    if (url === lastUrl || url === 'about:blank') return;
+    const previous = lastUrl;
+    lastUrl = url;
+    if (previous !== null && actedSinceNavigation) {
+      actedSinceNavigation = false;
+      return;
+    }
+    actedSinceNavigation = false;
+    queue = queue.then(() => {
+      onAction({ kind: 'open', locator: null, value: pathOfUrl(url, previous) });
+    });
+  });
+
+  return (async () => {
+    await page.exposeFunction('__tflwRecordReport', (event: RawRecordEvent) => {
+      actedSinceNavigation = true;
+      queue = queue.then(async () => {
+        for (const action of await coalescer.accept(event, resolve)) onAction(action);
+      });
+    });
+    await page.addInitScript(installRecordCapture, RECORD_MARKER_ATTR);
+  })();
+}
+
+/**
+ * The path an `open` records, relative to the page that was already open.
+ *
+ * **A path and not the whole URL**, because `open` resolves against the env's `web` base and a
+ * recorded absolute URL would pin the test to the machine it was recorded on — `http://localhost:3000`
+ * in a file that has to run in CI. When the origin has genuinely changed the whole URL is kept,
+ * which `open` also takes: a test that leaves the site under test is describing something the
+ * `web` base cannot express.
+ */
+export function pathOfUrl(url: string, previous: string | null): string {
+  try {
+    const here = new URL(url);
+    if (previous !== null) {
+      const before = new URL(previous);
+      if (before.origin !== here.origin) return url;
+    }
+    return `${here.pathname}${here.search}${here.hash}`;
+  } catch {
+    return url;
+  }
+}
+
+/** `resolvePickedLocator` under the recorder's own marker attribute. One function, two markers —
+ *  a recording and a pick must not clear each other's mark if both are somehow live. */
+async function resolvePickedRecord(page: PWPage, raw: RawPickInfo): Promise<PickedLocator> {
+  const namesByKind: Record<'button' | 'field' | 'list' | 'text', string | null> = {
+    button: raw.buttonName,
+    field: raw.fieldName,
+    list: raw.listName,
+    text: raw.textName,
+  };
+  const order = raw.primaryKind ? [raw.primaryKind, ...PICK_KIND_ORDER.filter((k) => k !== raw.primaryKind)] : PICK_KIND_ORDER;
+  for (const kind of order) {
+    const name = namesByKind[kind];
+    if (!name) continue;
+    for (const strategy of candidateStrategies(page, kind, name)) {
+      const count = await strategy.pwLocator.count().catch(() => 0);
+      if (count !== 1) continue;
+      const marked = await strategy.pwLocator.first().getAttribute(RECORD_MARKER_ATTR).catch(() => null);
+      if (marked === '1') return { syntax: `${kind} ${JSON.stringify(name)}`, via: kind };
+    }
+  }
+  return { syntax: `css ${JSON.stringify(raw.cssPath)}`, via: 'css' };
+}
+
+export interface RecordSessionHandle {
+  readonly close: () => Promise<void>;
+}
+
+/** Drives one `tflw record <url>` session end-to-end: a real, visible browser at `url` that
+ *  behaves like a browser — links navigate, forms submit — reporting every action as it happens. */
+export async function startRecordSession(
+  url: string,
+  engine: BrowserEngine,
+  onAction: (action: RecordedAction) => void,
+  onClosed: () => void,
+): Promise<RecordSessionHandle> {
+  const manager = new BrowserManager({ engine, headless: false });
+  const browser = await manager.getBrowser();
+  const page = await browser.newPage();
+  await wireRecordSession(page, onAction, onClosed);
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  return {
+    close: async () => {
+      await manager.close().catch(() => {});
+    },
+  };
 }
 
 /** Drives one `tflw pick <url>` session end-to-end: launches a real, visible browser at `url`

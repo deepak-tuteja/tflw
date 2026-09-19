@@ -6,6 +6,22 @@
     <title>tflw</title>
     <!-- The docs site's mark (`packages/docs-site/public/favicon.svg`), copied: U7 found the tab iconless and every load logging a 404. -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- `M213` `S0` (`D1096`) — the theme, stamped before the first paint.
+         This has to run here and not in React: the app mounts after the browser has already
+         painted once, so reading the choice in an effect shows the default for a frame and then
+         swaps. That flash is worst for `Paper`, which is the light one. Four lines, no bundler,
+         no dependency on the app having loaded — and `ThemePick` writes the same attribute, so
+         the two agree by construction rather than by being kept in step. -->
+    <script>
+      try {
+        var t = localStorage.getItem('tflw.theme');
+        if (t === 'terminal' || t === 'ribbon' || t === 'paper' || t === 'instrument') {
+          document.documentElement.setAttribute('data-tflw-theme', t);
+        }
+      } catch (e) {
+        /* no storage (a private window, or it is turned off) — `Terminal` is the default */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

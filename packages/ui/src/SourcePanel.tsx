@@ -28,6 +28,7 @@ import type { diagnose } from './diagnose';
 import type { FileView } from './api';
 import type { Lens, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
+import { SourceText } from './Source';
 
 export function SourcePanel({ file, pending, diagnostics, project, door }: {
   readonly file: FileView | null;
@@ -57,8 +58,6 @@ export function SourcePanel({ file, pending, diagnostics, project, door }: {
     const target = pre.current?.querySelector(`[data-source-line="${line}"]`);
     target?.scrollIntoView({ block: 'center' });
   };
-
-  const lines = shown.split('\n');
 
   return (
     <div className="authoring source-panel" data-source={unwritten ? 'pending' : 'written'}>
@@ -126,12 +125,7 @@ export function SourcePanel({ file, pending, diagnostics, project, door }: {
           text is reassembled exactly — `textContent` here is the file, byte for byte, which is
           what `D985` requires of a projection and what every gate reading `[data-preview]` asserts. */}
       <pre className="preview" data-preview ref={pre}>
-        {lines.map((l, i) => (
-          <span key={i} data-source-line={i + 1}>
-            {l}
-            {i < lines.length - 1 ? '\n' : ''}
-          </span>
-        ))}
+        <SourceText text={shown} />
       </pre>
       {/* `D1052` — what `tflw check` will say about these bytes. Shown, never blocking: the write
           route refuses what cannot be read (`D1049`), and an unbound `{'{'}token{'}'}` reads fine — it is

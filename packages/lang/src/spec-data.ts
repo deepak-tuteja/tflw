@@ -239,7 +239,7 @@ export const STEP_KEYWORDS: readonly StepKeywordEntry[] = [
  * table, decision 16.10) and a later LSP's signature help. */
 export interface CliFlagEntry {
   readonly flag: string;
-  readonly command: 'run' | 'check' | 'init' | 'install-browsers' | 'pick' | 'watch' | 'migrate' | 'fmt' | 'ui' | 'spec' | 'global';
+  readonly command: 'run' | 'check' | 'init' | 'install-browsers' | 'pick' | 'record' | 'watch' | 'migrate' | 'fmt' | 'ui' | 'spec' | 'global';
   readonly effect: string;
 }
 
@@ -621,6 +621,7 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--scan`', command: 'init', effect: 'also scaffolds a `scan.tflw` and a `tflw.config` carrying a **commented-out** `authorized target` — the scan refuses (`TF060`) until a person uncomments it and writes the reason, because that declaration is an affirmation only its author can make (M200/D1053, D21/D291); the config points at a real host rather than the demo service, whose scheme has no origin to authorize' },
   { flag: '`--browser <engine>`', command: 'install-browsers', effect: 'downloads chromium/firefox/webkit (default chromium) — runs the `playwright` CLI inside the optional peer dependency, resolved from the consuming project; refuses if that peer is absent rather than fetching one (M92b)' },
   { flag: '`--browser <engine>`', command: 'pick', effect: 'launches chromium/firefox/webkit (default chromium) instead of chromium' },
+  { flag: '`--browser <engine>`', command: 'record', effect: 'launches chromium/firefox/webkit (default chromium) instead of chromium' },
   { flag: '`--env <name>`', command: 'watch', effect: 'selects a named `env` block from `tflw.config` instead of the `default` one' },
   { flag: '`--seed <n>`', command: 'watch', effect: 'fixes the seed reused by every run for the whole watch session (else one is freshly minted at startup)' },
   { flag: '`--browser <engine>`', command: 'watch', effect: 'switches every browser step to one engine — chromium/firefox/webkit (default chromium)' },

@@ -1,25 +1,218 @@
-/* One file of tokens (M192 §3). Dark by default — the report and the terminal it sits beside are. */
+/* ── THE FOUR THEMES (`M213` `S0`, `D1096`). ───────────────────────────────────────────────────
+ *
+ * A theme here is not a palette. It is a complete token set — colour, **type**, and **shape** —
+ * because the four differ in density and letterform as much as in hue, and a "theme" that only
+ * swapped colours would have made the choice between them unreadable.
+ *
+ * `Terminal` is the default and sits on the bare `:root`, so a page that has never been told
+ * anything renders it. The other three are `:root[data-tflw-theme='…']` — (0,2,0) against
+ * `:root`'s (0,1,0), so the attribute always wins and the source order of these blocks does not
+ * matter. `index.html` stamps the attribute before first paint; `ThemePick` sets it afterwards.
+ *
+ * **THE DEFAULT MOVED, AND NOTHING BUT THESE TWO SELECTORS MOVED WITH IT.** `D1097` shipped
+ * `Instrument` as the default; the user judged the four on the real app on 2026-09-19 (which is
+ * what `D1105` held `S1`–`S6` back for) and chose `Terminal`. The change is the two selectors
+ * swapping bodies — the token sets themselves are untouched, and every consumer reads tokens. A
+ * default that costs one selector to move is the evidence that the theme layer is a theme layer;
+ * if this had needed a component edit, the themes would not have been tokens. See `D1107`.
+ *
+ * `color-scheme` is a declaration and not a decoration: it is what makes the browser's own
+ * scrollbars, focus rings and date pickers match the page. `Paper` is the only light one, and
+ * without this line it would have painted a dark scrollbar down a white page.
+ *
+ * WHAT IS DELIBERATELY ABSENT. The workbench also carried seven syntax tokens — keyword, string,
+ * number, type, variable, comment, operator. None of them is here, because **nothing on this page
+ * can spend them**: the source view is a flat `<pre>` (`SourcePanel.tsx`), and the language's own
+ * exports cannot currently colour one — `TokenType` has no comment (the lexer drops them) and
+ * `SemanticTokenType` has neither `string` nor `comment`. Seven tokens nobody spends is exactly
+ * the defect `§1.5` measured in the palette this round replaces, so they land with the slice that
+ * paints them and not before. Recorded as `M213-10`.
+ */
 :root {
-  --bg: #0f1115;
-  --panel: #171a21;
-  --line: #262b36;
-  --fg: #e6e8ee;
-  --muted: #8b93a7;
-  --accent: #6cb6ff;
-  --pass: #4cd07d;
-  --fail: #ff6b6b;
-  --warn: #f5c542;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+  --bg: #08090b;   --panel: #08090b;  --panel2: #0d0f12;  --input: #0e1114;
+  --line: #1b1f24; --fg: #c9d1d9;     --muted: #6e7681;
+  --accent: #56d4dd; --on-accent: #04191b;
+  --pass: #8fbf6b; --pass-bg: transparent; --pass-bd: transparent; --pass-on: #8fbf6b;
+  --fail: #f07178; --fail-bg: transparent; --fail-bd: transparent; --fail-on: #f07178;
+  --warn: #d9a441; --warn-bg: transparent; --warn-bd: transparent; --warn-on: #d9a441;
+  --m-get: #56d4dd; --m-post: #c3e88d; --m-write: #f78c6c; --m-delete: #f07178;
+  --radius: 0px; --ctl-radius: 0px; --border: 1px; --unit: 7px;
+  --label-transform: lowercase; --label-spacing: 0.02em;
+  --title-size: 13px; --title-weight: 700; --kw-weight: 700;
+  /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
+     is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
+  --syn-kw: #56d4dd; --syn-str: #c3e88d; --syn-num: #f78c6c; --syn-typ: #c792ea;
+  --syn-var: #c9d1d9; --syn-com: #4b525c; --syn-op: #6e7681; --syn-com-style: italic;
+  /* `M213` `S1` — the two colours that were painted as literals until the palette-closure gate
+     asked where they came from. A scrim and a mat under a transparent screenshot are theme
+     decisions like any other: `Paper` cannot use the dark three's black scrim, and `#fff`
+     under a screenshot is invisible on a white page. They were `rgba(0,0,0,0.45)` and
+     `#fff` written in place, which is exactly `§1.5`'s finding one level down. */
+  --scrim: rgba(0, 0, 0, 0.55); --shot-mat: #ffffff;
+  --sans: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+:root[data-tflw-theme='instrument'] {
+  color-scheme: dark;
+  /* surface */
+  --bg: #0b0e13;   --panel: #10151d;  --panel2: #0e131a;  --input: #080b0f;
+  --line: #1e2633; --fg: #dde3ec;     --muted: #78849a;
+  --accent: #5c87c9; --on-accent: #05070a;
+  /* state — THREE tokens each, and the third is the one `Ribbon` needed. `--pass`/`--fail`/`--warn`
+     are FOREGROUNDS on the page's own ground, which is how every rule in this file has always used
+     them (`.error`, `.verdict.fail`, `.badge.fail`, `.step.fail .mark`, …). `-bg`/`-bd` is what a
+     filled chip needs and never had. `-on` is the text ON that fill — and it is a separate token
+     rather than the foreground reused because `Ribbon`'s whole thesis is that *a verdict is a
+     pill*, so its fill is the saturated hue and its chip text is near-black. The first draft here
+     had two tokens and set `Ribbon`'s `--fail` to that near-black; every plain-text use of it then
+     painted `#2a0f12` on a `#2e2b3a` ground — the parse-failure badges in the file tree went
+     invisible. Measured green on every numeric probe, and visible in one screenshot. */
+  --pass: #3fb950; --pass-bg: rgba(63, 185, 80, 0.12);  --pass-bd: rgba(63, 185, 80, 0.34);  --pass-on: #3fb950;
+  --fail: #f85149; --fail-bg: rgba(248, 81, 73, 0.12);  --fail-bd: rgba(248, 81, 73, 0.34);  --fail-on: #f85149;
+  --warn: #d29922; --warn-bg: rgba(210, 153, 34, 0.12); --warn-bd: rgba(210, 153, 34, 0.34); --warn-on: #d29922;
+  /* the method rail (`D1072`) — Instrument spends lightness here and keeps its one red for DELETE,
+     which is the distinction `M210` `S1` says a reader must make at a glance. */
+  --m-get: #dde3ec; --m-post: #aab6c8; --m-write: #8e9bb0; --m-delete: #f85149;
+  /* shape */
+  --radius: 3px; --ctl-radius: 2px; --border: 1px; --unit: 6px;
+  /* type */
+  --label-transform: uppercase; --label-spacing: 0.13em;
+  --title-size: 13.5px; --title-weight: 600; --kw-weight: 600;
+  /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
+     is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
+  --syn-kw: #f2f6fb; --syn-str: #aab6c8; --syn-num: #c6d0de; --syn-typ: #8e9bb0;
+  --syn-var: #dde3ec; --syn-com: #4e5869; --syn-op: #6b7789; --syn-com-style: normal;
+  --scrim: rgba(0, 0, 0, 0.5); --shot-mat: #ffffff;
+  --sans: 'IBM Plex Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+:root[data-tflw-theme='ribbon'] {
+  color-scheme: dark;
+  --bg: #141319;   --panel: #1d1b25;  --panel2: #191822;  --input: #100f15;
+  --line: #2e2b3a; --fg: #ece9f2;     --muted: #948fa6;
+  --accent: #a78bfa; --on-accent: #17122a;
+  --pass: #5bd99a; --pass-bg: #5bd99a; --pass-bd: #5bd99a; --pass-on: #0f1a14;
+  --fail: #ff7a85; --fail-bg: #ff7a85; --fail-bd: #ff7a85; --fail-on: #2a0f12;
+  --warn: #ffc46b; --warn-bg: #ffc46b; --warn-bd: #ffc46b; --warn-on: #2a1f0a;
+  --m-get: #8fa7ff; --m-post: #6fd3c7; --m-write: #ffc46b; --m-delete: #ff7a85;
+  --radius: 12px; --ctl-radius: 8px; --border: 1px; --unit: 11px;
+  --label-transform: none; --label-spacing: 0.01em;
+  --title-size: 16px; --title-weight: 600; --kw-weight: 600;
+  /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
+     is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
+  --syn-kw: #a78bfa; --syn-str: #6fd3c7; --syn-num: #8fa7ff; --syn-typ: #e39bd4;
+  --syn-var: #ece9f2; --syn-com: #615c73; --syn-op: #948fa6; --syn-com-style: normal;
+  --scrim: rgba(12, 10, 20, 0.6); --shot-mat: #ffffff;
+  --sans: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+:root[data-tflw-theme='paper'] {
+  color-scheme: light;
+  --bg: #f7f8fa;   --panel: #ffffff;  --panel2: #eef1f5;  --input: #ffffff;
+  --line: #dde2e9; --fg: #161a20;     --muted: #5c6673;
+  --accent: #2b59c3; --on-accent: #ffffff;
+  --pass: #14532d; --pass-bg: #dcfce7; --pass-bd: #a7e3bd; --pass-on: #14532d;
+  --fail: #7f1d1d; --fail-bg: #fee2e2; --fail-bd: #f2b4b4; --fail-on: #7f1d1d;
+  --warn: #713f12; --warn-bg: #fef3c7; --warn-bd: #e8d08a; --warn-on: #713f12;
+  --m-get: #2b59c3; --m-post: #0f766e; --m-write: #a16207; --m-delete: #b91c1c;
+  --radius: 6px; --ctl-radius: 4px; --border: 1px; --unit: 9px;
+  --label-transform: uppercase; --label-spacing: 0.1em;
+  --title-size: 15px; --title-weight: 600; --kw-weight: 600;
+  /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
+     is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
+  --syn-kw: #2b59c3; --syn-str: #0f766e; --syn-num: #7c3aed; --syn-typ: #0369a1;
+  --syn-var: #161a20; --syn-com: #8a939f; --syn-op: #5c6673; --syn-com-style: normal;
+  --scrim: rgba(22, 26, 32, 0.35); --shot-mat: #ffffff;
+  --sans: 'Public Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ── THE BASE LAYER (`M213` `S0`, `D1097`). ────────────────────────────────────────────────────
+ *
+ * `M213-01`: 19 of the 53 controls on the API compose pane computed to the browser's own chrome —
+ * `rgb(239, 239, 239)`, a `2px outset` bevel, black text — in a dark UI, and every one of them was
+ * the previous milestone's own work. The cause was structural rather than careless. This file
+ * carried exactly ONE rule that styled a control as a control (`button { font: inherit }`) and
+ * **fourteen** that styled one as a descendant of something (`.headers-form button`,
+ * `.thresholds-form button`, `.response-head button`, …). So appearance was a property of *which
+ * container a control was placed in*, and a control placed somewhere new was, correctly and
+ * silently, unstyled. Nothing could go red: every gate in this repository asserts a selector, an
+ * attribute or a count, and a `<button>` holding the right label in the right place at the wrong
+ * appearance satisfies all three (`M209-02`'s own rule, turned back on the round that wrote it).
+ *
+ * The fourteen are gone. A control is styled here, once, as an element. The rules that remain on
+ * controls elsewhere in this file set POSITION and SIZE only — `margin-left: auto`, `width: 140px`,
+ * `flex: 0 0 auto` — never colour, border, radius or padding, and a new one must not either.
+ *
+ * THE BUTTONS THAT ARE NOT BOXES STILL ARE NOT. A dozen `<button>`s here are deliberately flat —
+ * a tree row, a tab, a link (`.file-row`, `.doorbar-tab`, `.tabstrip-tab`, `.linkish`, `.docpick`,
+ * `.index-row`, `.seq-goto`, `.add-note`, `.dir-row`, `.door`). Each already resets background,
+ * border and padding for its own reasons, and each of those rules out-specifies this one, so the
+ * base layer reaches them and changes nothing. That is the test of a base layer: it must be the
+ * thing every control falls back to and the thing no styled control has to fight.
+ *
+ * CHECKBOXES OPT OUT ENTIRELY. `all: revert` hands them back to the user agent, because a native
+ * checkbox is a drawing and not a box — giving it this rule's padding and background is how a
+ * 13 px control becomes 26 px of empty panel with a tick somewhere inside it.
+ */
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); }
 code, pre { font-family: var(--mono); }
 
+button, input, select, textarea { font: inherit; color: var(--fg); }
+button {
+  cursor: pointer;
+  background: var(--panel2);
+  border: var(--border) solid var(--line);
+  border-radius: var(--ctl-radius);
+  padding: calc(var(--unit) * 0.4) calc(var(--unit) * 0.9);
+}
+button:hover { border-color: var(--muted); }
+button:disabled { color: var(--muted); cursor: default; }
+input, select, textarea {
+  background: var(--input);
+  border: var(--border) solid var(--line);
+  border-radius: var(--ctl-radius);
+  padding: calc(var(--unit) * 0.4) calc(var(--unit) * 0.7);
+  min-width: 0;
+}
+input:disabled, select:disabled, textarea:disabled { color: var(--muted); background: var(--panel); }
+input[type='checkbox'], input[type='radio'] { all: revert; flex: none; accent-color: var(--accent); }
+/* The keyboard's own affordance. `:focus-visible` and not `:focus`, so a pointer press does not
+   leave a ring behind it — the page had neither before this slice. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* `M213` `S0b` (`M213-10`) — the language, coloured. Drawn by `Source.tsx` off `highlight.ts`,
+   which reads the three channels `@tflw/lang` exposes: the semantic pass, the token stream, and
+   `LexResult.lines` for the comments the token stream drops.
+   **This is what makes the four themes differ at all.** `Instrument` spends no hue here — its
+   syntax is lightness and weight, so every saturated colour on the page is free to mean a result —
+   while `Terminal` spends hue on syntax and says a verdict with a glyph. Before these seven rules
+   the two rendered identically, and the choice between them was not a choice. */
+.t-kw { color: var(--syn-kw); font-weight: var(--kw-weight); }
+.t-str { color: var(--syn-str); }
+.t-num { color: var(--syn-num); }
+.t-typ { color: var(--syn-typ); }
+.t-var { color: var(--syn-var); }
+.t-op { color: var(--syn-op); }
+.t-com { color: var(--syn-com); font-style: var(--syn-com-style); }
+
+/* The theme switcher (`D1096`). It sits at the right-hand end of the DOORBAR — chrome for the whole
+   page, drawn where a reader stops looking for content, in a row that already exists. Given a row
+   of its own it cost every page ~20 px of height, and the page gate said so on the first run:
+   LOAD's Compose is the one form measured at exactly one screen and it went to 920 while BROWSER's
+   stayed at 900. `margin-left: auto` is what seats it, and `M212`'s header defect is the warning
+   attached — two `margin-left: auto` children of one flex row split the free space between them,
+   so this must stay the only one in `.doorbar`. */
+.theme-pick { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 11px; color: var(--muted); }
+.theme-pick select { font-size: 11px; }
+.theme-pick label { text-transform: var(--label-transform); letter-spacing: var(--label-spacing); }
+
 /* Layout (U2): the project on the left, the runs across the top, the selected run below. */
 .app { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
-.sidebar { border-right: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 12px; }
-.main { overflow: auto; padding: 12px 20px 40px; }
+.sidebar { border-right: var(--border) solid var(--line); background: var(--panel); overflow: auto; padding: calc(var(--unit) * 2); }
+.main { overflow: auto; padding: calc(var(--unit) * 2) calc(var(--unit) * 3) 40px; }
 .muted { color: var(--muted); }
 .error { color: var(--fail); }
 .warn { color: var(--warn); }
@@ -32,27 +225,33 @@ code, pre { font-family: var(--mono); }
 .runstrip { display: flex; align-items: center; gap: 16px; margin: 0 0 12px; }
 .controls { display: flex; align-items: center; gap: 16px; }
 .controls label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
-.controls select, .controls input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; width: 140px; font: inherit; }
-.runstrip button.run, .runstrip button.cancel { text-align: center; }
+/* A fixed width is a guess about a typeface, and there are four of them now — `Terminal`'s
+   sans is a monospace and `local (default)` no longer fitted 140 px. The input keeps a width
+   because it is a free-text field; the select takes what its longest option needs. */
+.controls input { width: 140px; }
+.controls select { min-width: 140px; }
 button { font: inherit; cursor: pointer; }
-button.run, button.cancel { border: 0; border-radius: 4px; padding: 7px 10px; color: #0b0d11; background: var(--accent); font-weight: 600; text-align: left; }
+/* The one PRIMARY button in the vocabulary — `run`, `save`, `create`. Filled, so the page has
+   exactly one thing that looks pressable before anything else does. `--on-accent` rather than a
+   literal near-black: `Paper`'s accent is a dark blue and its text has to be white. */
+button.run, button.cancel { border: 0; padding: calc(var(--unit) * 0.8) calc(var(--unit) * 1.4); color: var(--on-accent); background: var(--accent); font-weight: 600; }
 button.cancel { background: var(--warn); }
 /* The search box (`M209` `S5`), where the 84 tag chips went. */
 .search { margin: 12px 0; }
-.search input { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; font: inherit; }
+.search input { width: 100%; box-sizing: border-box; }
 .search .hint { margin: 4px 0 0; font-size: 11px; }
 .tags-fold { margin-bottom: 12px; }
 .tags-fold > summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; max-height: 40vh; overflow: auto; }
 .chip { background: var(--bg); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; }
-.chip.on { color: var(--fg); border-color: var(--accent); background: rgba(108, 182, 255, 0.12); }
+.chip.on { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 /* The tree (`M209` `S3`). A row is a file and a leaf name, not a path: the sibling's 378 wrapped
    rows were 55-character paths repeated under every folder they share. Indentation is the folder,
    which is what a tree is for. */
 .files { list-style: none; margin: 0; padding: 0; }
 .tree { list-style: none; margin: 0; padding: 0; }
 .tree .tree { margin-left: 12px; border-left: 1px solid var(--line); padding-left: 6px; }
-.file-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; width: 100%; background: none; border: 0; border-radius: 3px; color: inherit; font: inherit; text-align: left; }
+.file-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; width: 100%; background: none; border: 0; border-radius: var(--ctl-radius); color: inherit; font: inherit; text-align: left; }
 /* Selected and open are two different facts and are drawn as two: what will RUN is the tint, what
    the tabs are FACING is the rule down the left. A reader extending a selection with cmd-click has
    to be able to see that the subject did not move (`M205` Q13a). */
@@ -66,10 +265,10 @@ button.cancel { background: var(--warn); }
    A row can be both, and then it is dim twice, which is correct: it is absent from two questions. */
 .file-row.muted, .file-row.muted > code { color: var(--muted); }
 .file-row.unmatched { opacity: 0.38; }
-.file-row.on { background: rgba(108, 182, 255, 0.14); }
+.file-row.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .file-row.open { box-shadow: inset 2px 0 0 var(--accent); }
-.file-row:hover { background: rgba(108, 182, 255, 0.07); }
-.file-row.on:hover { background: rgba(108, 182, 255, 0.2); }
+.file-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.file-row.on:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 /* ONE LINE PER FILE, ELLIPSISED — measured, not assumed (`M209` §4's open item). At 1440x900 the
    320 px column leaves 238 px at depth 3, and 16 of the sibling's 84 leaf names are 27-32
    characters, so they wrapped to two lines and the tree came out 2,554 px against a ~1,850 px
@@ -80,16 +279,24 @@ button.cancel { background: var(--warn); }
 .dir-row:hover { color: var(--fg); }
 .twisty { display: inline-block; width: 10px; font-size: 10px; }
 .file-row .count { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+/* A TREE ROW IS ONE LINE — and `M209` `D1061` had written that rule for the file NAME alone. A
+   file that does not parse carries a `does not parse · …` badge beside the name, and the badge is
+   an ordinary inline-block that wraps: 131 px wide, **three lines, 50 px tall** against its
+   siblings' 22, in a 253 px column. Nothing had ever shown it, because it takes a wide enough face
+   to push that text past the badge's share of the row — which `Terminal`, whose sans IS a
+   monospace, does on the first render. The name and the fact now truncate the same way, so the row
+   keeps its height whatever either of them says. */
+.file-row .badge { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tests-in-file { list-style: none; margin: 2px 0 0 22px; padding: 0; font-size: 13px; }
 .tests-in-file li { padding: 1px 0; }
 .ln { display: inline-block; min-width: 2.2em; text-align: right; font-family: var(--mono); font-size: 11px; }
 .tag { color: var(--muted); font-size: 11px; margin-left: 6px; }
-.badge { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 3px; background: var(--line); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+.badge { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: var(--ctl-radius); background: var(--line); color: var(--muted); margin-left: 6px; vertical-align: middle; }
 .badge.fail { color: var(--fail); }
 .badge.warn { color: var(--warn); }
 
 .runs { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
-.run-row { display: flex; align-items: center; gap: 8px; white-space: nowrap; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+.run-row { display: flex; align-items: center; gap: 8px; white-space: nowrap; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; }
 .run-row.selected { border-color: var(--accent); }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
 .dot.ok { background: var(--pass); }
@@ -98,18 +305,18 @@ button.cancel { background: var(--warn); }
 @keyframes pulse { from { opacity: 0.4; } to { opacity: 1; } }
 
 .report-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 14px; margin-bottom: 6px; }
-.verdict { font-weight: 700; letter-spacing: 0.04em; }
+.verdict { font-weight: 700; letter-spacing: var(--label-spacing); text-transform: var(--label-transform); }
 .verdict.ok { color: var(--pass); }
 .verdict.fail { color: var(--fail); }
 .verdict.warn { color: var(--warn); }
 .verdict.running { color: var(--accent); }
 .files-line a { color: var(--accent); margin-right: 10px; font-size: 12px; text-decoration: none; }
 .file-name { font-family: var(--mono); font-size: 13px; color: var(--muted); font-weight: 500; margin: 18px 0 6px; }
-.test { border: 1px solid var(--line); border-left-width: 3px; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; background: var(--panel); }
+.test { border: var(--border) solid var(--line); border-left-width: 3px; border-radius: var(--radius); padding: calc(var(--unit) * 1.3) calc(var(--unit) * 1.8); margin-bottom: 8px; background: var(--panel); }
 .test.ok { border-left-color: var(--pass); }
 .test.fail { border-left-color: var(--fail); }
 .test.running { border-left-color: var(--accent); }
-.test h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.test h3 { margin: 0 0 6px; font-size: var(--title-size); font-weight: var(--title-weight); display: flex; align-items: center; gap: 8px; }
 .tms { margin-left: auto; color: var(--muted); font-weight: 400; font-size: 12px; }
 .warnings { margin: 4px 0; padding-left: 18px; color: var(--warn); font-size: 13px; }
 .attempt { margin: 4px 0; }
@@ -125,13 +332,13 @@ button.cancel { background: var(--warn); }
 .sms { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .detail { margin: 0 0 2px 1.6em; font-size: 13px; color: var(--muted); }
 .detail.baddetail { color: var(--fail); }
-.log-badge { font-size: 10px; padding: 0 5px; border-radius: 3px; background: var(--line); color: var(--muted); }
+.log-badge { font-size: 10px; padding: 0 5px; border-radius: var(--ctl-radius); background: var(--line); color: var(--muted); }
 .log-warn { color: var(--warn); }
 .log-error { color: var(--fail); }
 .evidence { margin: 2px 0 4px 1.6em; font-size: 12px; }
 .evidence summary { color: var(--muted); cursor: pointer; }
 .trace { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
-.panel { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; min-width: 0; overflow: auto; }
+.panel { background: var(--bg); border: 1px solid var(--line); border-radius: var(--ctl-radius); padding: 6px 8px; min-width: 0; overflow: auto; }
 .phead { font-family: var(--mono); margin-bottom: 4px; }
 .headers { border-collapse: collapse; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .headers td { padding: 0 8px 0 0; vertical-align: top; }
@@ -145,7 +352,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 
 /* Binary evidence (U3). */
 .screenshot { margin: 6px 0; }
-.screenshot img { max-width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.screenshot img { max-width: 100%; border: 1px solid var(--line); border-radius: var(--ctl-radius); background: var(--shot-mat); }
 .screenshot figcaption { font-size: 11px; }
 .snapshot-diff { display: flex; flex-wrap: wrap; gap: 10px; }
 .snapshot-diff .screenshot { flex: 1 1 200px; }
@@ -165,36 +372,48 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .chart-host { width: 100%; }
 .uplot { font-family: inherit; }
 .u-legend { font-size: 0.8rem; }
+/* `M213` `S1` — uPlot's vendored stylesheet carries three colours of its own, and every one of them
+   is a light-theme guess: the drag-select band is `rgba(0, 0, 0, 0.07)` and both crosshair rules are
+   `#607D8B`. They are the last things on this page painted by somebody who could not know what
+   theme it is, and the palette gate named them on its second run — on `Ribbon` and `Paper` only,
+   because the two darker themes happen to declare a scrim whose own RGB triple is black, which is
+   the gate being exactly as precise as it claims to be rather than being lucky. */
+.u-select { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.u-hz .u-cursor-x, .u-vt .u-cursor-y { border-right-color: var(--muted); }
+.u-hz .u-cursor-y, .u-vt .u-cursor-x { border-bottom-color: var(--muted); }
 .endpoints { border-collapse: collapse; margin: 0.5rem 0; font-variant-numeric: tabular-nums; }
 .endpoints th, .endpoints td { padding: 0.15rem 0.75rem 0.15rem 0; text-align: right; }
 .endpoints th:first-child, .endpoints td:first-child { text-align: left; }
 .endpoints th.sortable { cursor: pointer; user-select: none; font-weight: 500; color: var(--muted); }
 .endpoints th[data-sort='asc'], .endpoints th[data-sort='desc'] { color: var(--fg); }
-.compare select { margin-left: 0.25rem; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; font: inherit; }
+.compare select { margin-left: 0.25rem; }
 
 /* U5 - the security kind */
-.findings { border: 1px solid var(--line); border-radius: 6px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
+.findings { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.75rem 1rem; margin: 0.75rem 0; }
 .findings h2 { font-size: 1rem; margin: 0 0 0.5rem; }
 .findings h4 { margin: 0.5rem 0 0.25rem; font-weight: 500; }
 .findings details { margin: 0.5rem 0; }
 .findings summary { cursor: pointer; }
-.sev { display: inline-block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; padding: 0 0.4rem; border-radius: 3px; background: var(--line); }
-.sev-critical, .sev-serious { background: var(--fail); color: #fff; }
-.sev-moderate { background: var(--warn); color: #111; }
+.sev { display: inline-block; font-size: 0.75rem; text-transform: var(--label-transform); letter-spacing: var(--label-spacing); padding: 0 0.4rem; border-radius: var(--ctl-radius); background: var(--line); }
+/* These painted `--fail`/`--warn` as a BACKGROUND with a hard-coded near-white or near-black
+   over it — which works on exactly one palette. `--*-bg`/`--*-bd` is the pair a filled chip needs,
+   and on `Terminal`, whose verdicts are glyphs rather than fills, both are transparent by design. */
+.sev-critical, .sev-serious { background: var(--fail-bg); color: var(--fail-on); border: var(--border) solid var(--fail-bd); }
+.sev-moderate { background: var(--warn-bg); color: var(--warn-on); border: var(--border) solid var(--warn-bd); }
 .finding-list { margin: 0.25rem 0 0.5rem; padding-left: 1.25rem; }
 .finding { margin: 0.4rem 0; }
 .finding-off { opacity: 0.75; }
 .finding-where { color: var(--muted); }
 .finding-detail { white-space: pre-wrap; }
-.finding-withheld { color: var(--warn); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; margin-left: 0.5rem; }
+.finding-withheld { color: var(--warn); font-size: 0.75rem; text-transform: var(--label-transform); letter-spacing: var(--label-spacing); margin-left: 0.5rem; }
 .finding-fp { font-size: 0.8rem; color: var(--muted); }
 .finding-fix { margin: 0.25rem 0 0; }
 .finding-fix p { margin: 0.25rem 0; }
-.badge.new { background: var(--warn); color: #111; }
+.badge.new { background: var(--warn-bg); color: var(--warn-on); border: var(--border) solid var(--warn-bd); }
 .findings a { color: var(--accent); }
 
 /* U7 — a kept directory whose process did not end the way its report says. */
-.run-exit { border: 1px solid var(--warn); border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+.run-exit { border: 1px solid var(--warn); border-radius: var(--radius); padding: 8px 12px; margin: 8px 0; font-size: 13px; }
 .run-exit pre.stderr { margin: 8px 0 0; }
 
 .declines-fold > summary { cursor: pointer; font-size: 13px; }
@@ -204,15 +423,15 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    not a menu above one. */
 .landing { max-width: 880px; margin: 0 auto; padding: 48px 20px 40px; }
 .landing-head h1 { font-size: 28px; margin: 0 0 2px; letter-spacing: -0.01em; }
-.landing-head p { margin: 0 0 24px; }
+.landing-head p { margin: 0 0 24px; max-width: 68ch; }
 .doors { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .door {
   display: grid; gap: 4px; text-align: left; cursor: pointer;
   background: var(--panel); color: var(--fg); border: 1px solid var(--line);
-  border-radius: 8px; padding: 14px 16px; font: inherit;
+  border-radius: var(--radius); padding: 14px 16px; font: inherit;
 }
 .door:hover { border-color: var(--accent); }
-.door-label { font-weight: 600; letter-spacing: 0.04em; font-size: 13px; color: var(--accent); }
+.door-label { font-weight: var(--kw-weight); letter-spacing: var(--label-spacing); text-transform: var(--label-transform); font-size: 13px; color: var(--accent); }
 .door-blurb { font-size: 13px; }
 .door-like, .door-count { font-size: 12px; }
 .door-count { margin-top: 4px; }
@@ -226,10 +445,10 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .doorbar-home:hover { color: var(--fg); }
 .doorbar-tab {
   background: none; border: 1px solid transparent; border-radius: 999px; color: var(--muted);
-  font: inherit; font-size: 12px; letter-spacing: 0.04em; cursor: pointer; padding: 3px 10px;
+  font: inherit; font-size: 12px; letter-spacing: var(--label-spacing); cursor: pointer; padding: 3px 10px;
 }
 .doorbar-tab:hover { color: var(--fg); }
-.doorbar-tab.on { color: var(--fg); border-color: var(--accent); background: rgba(108, 182, 255, 0.12); }
+.doorbar-tab.on { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .doorbar-count { margin-left: 6px; font-size: 11px; }
 .badge.also { background: none; border: 1px solid var(--line); color: var(--muted); font-size: 10px; letter-spacing: 0.04em; }
 .elsewhere { font-size: 12px; font-style: italic; }
@@ -253,7 +472,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 /* The test index (`M209` `S2`, `D1067`) — the three derived facts the sidebar used to carry, landed
    where the file is read. It is a list and not a table: a declaration has a line and a name, and
    the badges are however many the constructs earned. */
-.test-index { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; background: var(--panel); }
+.test-index { margin: 0 0 12px; border: 1px solid var(--line); border-radius: var(--ctl-radius); padding: 8px 10px; background: var(--panel); }
 .test-index > p { margin: 0; font-size: 12px; }
 .index-rows { list-style: none; margin: 0; padding: 0; font-size: 13px; }
 .index-rows > li { padding: 1px 0; }
@@ -272,7 +491,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    be able to tell those apart before clicking. */
 .auth-block { margin: 0 0 18px; }
 .auth-block:last-child { margin-bottom: 0; }
-.auth-block h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.auth-block h3 { margin: 0 0 6px; font-size: var(--title-size); font-weight: var(--title-weight); }
 .auth-block > p { margin: 0 0 8px; font-size: 13px; }
 .auth-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .auth-list > li { border-left: 2px solid var(--line); padding-left: 10px; font-size: 13px; }
@@ -292,8 +511,8 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    a sixty-line enterprise config both open at a usable size. */
 .config-text {
   display: block; width: 100%; box-sizing: border-box; min-height: 320px; resize: vertical;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.5;
-  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
+  border-radius: var(--radius); padding: 10px 12px;
 }
 .config-text:focus { outline: 1px solid var(--accent); }
 
@@ -314,106 +533,152 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 /* The authoring pane (M200 A0-4). The preview is the bytes the PUT carries — not a rendering of
    them — because the file is the only truth (D985) and a form that hid its own output would be
    asking the author to trust a projection over the thing itself. */
-.authoring { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 14px 16px; margin: 0 0 16px; }
-.authoring-head h2 { font-size: 15px; margin: 0 0 2px; }
-.authoring-head p { margin: 0 0 12px; font-size: 12px; }
+.authoring { border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); padding: calc(var(--unit) * 2.2) calc(var(--unit) * 2.6); margin: 0 0 16px; }
+.authoring-head h2 { font-size: var(--title-size); font-weight: var(--title-weight); margin: 0 0 2px; }
+/* `§1.5` — this measured 1046 px at 1440, about 130 characters, roughly double a readable line.
+   A `ch` is the width of the font's own `0`, so the measure follows whichever theme is on. */
+.authoring-head p { margin: 0 0 12px; font-size: 12px; max-width: 68ch; }
 .authoring-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 14px; align-items: center; }
-.authoring label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 13px; }
-.authoring input, .authoring select {
-  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
-  padding: 4px 6px; font: inherit; min-width: 0; flex: 1 1 120px;
-}
+/* `M213-02` — THE THIRD RECURRENCE, AND WHY IT IS THE LAST.
+ *
+ * What stood here was `.authoring label { display: flex; align-items: center; … }` beside
+ * `.authoring input, .authoring select { … flex: 1 1 120px; }`. Two rules, one blast radius: every
+ * label and every control ANYWHERE under `.authoring`, which is the whole authoring surface.
+ *
+ * `.authoring label` is (0,1,1). `.field` — the column-shaped label the compose pane and the
+ * create dialog are built out of — is (0,1,0). So `.field` won `flex-direction: column` and LOST
+ * `align-items: center`, and the result was a column flex that centres its children. On top of
+ * that, `flex-basis` is measured along the CONTAINER's main axis, so `120px` was a width in every
+ * row in this file and a HEIGHT in that column: the create dialog's single-line inputs measured
+ * **130 px tall**, its selects 120, its labels 157, with the fields centred in labels three times
+ * their width. Every one of the 115 page tests was green.
+ *
+ * `M205` hit this, fixed it with `.request-line label > input { flex: none }`, and wrote a comment
+ * ending *"A new column-direction container under `.authoring` needs a line like this one."*
+ * `M210` renamed that container and lost the patch with the name — the second recurrence — and
+ * added a second comment recording it. `M212` built the create dialog and it happened again, with
+ * both comments three screens above the new code. A comment that names a hazard is not a fix; it
+ * is a note saying where the next person will be hurt.
+ *
+ * So the two declarations that caused it are gone rather than patched a third time. The label
+ * layout belongs to the one container that wants a row — `.authoring-grid`'s own direct children —
+ * and controls get their appearance from the base layer at the top of this file, which sets no
+ * `flex` at all. Both `flex: none` patches went with them: they existed only to undo the basis. */
+.authoring-grid > label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 13px; }
+.authoring-grid > label > input, .authoring-grid > label > select { flex: 1 1 120px; }
+/* A tick is a checkbox and the sentence it turns on, so the two belong together at the left —
+   `space-between` had been spreading them to opposite ends of a `1fr` grid cell. */
+.authoring-grid > label.tick { justify-content: flex-start; }
 .stages { grid-column: 1 / -1; display: grid; gap: 6px; }
 .stage-row, .threshold-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .stage-row input { max-width: 90px; }
 .threshold-row input[type="number"] { max-width: 90px; }
 .thresholds-form { display: grid; gap: 6px; margin-top: 10px; }
-.thresholds-form button, .stages button { background: var(--bg); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font: inherit; cursor: pointer; }
-.thresholds-form button:hover, .stages button:hover { color: var(--fg); }
 /* `A1-4` — the API form. The request line, the header rows, the body and the assertion rows are
    four bands of the same `.row` shape the LOAD form's stages and thresholds already use, so the
    two forms read as one surface rather than as two designs. */
 .request-line { display: flex; align-items: flex-end; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 .request-line label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 120px; font-size: 12px; color: var(--muted); }
 .request-line label:nth-child(2) { flex: 3 1 240px; }
-/* `M205` — `flex-basis` is measured along the **container's** main axis, and `.request-line label`
-   above is the one `flex-direction: column` container under `.authoring`. The shared rule at
-   `.authoring input, .authoring select` says `flex: 1 1 120px` meaning *a width*, which it is in
-   every other band because every other band is a row; here the same declaration is a **height**,
-   and it rendered these four controls at 120-130px against every sibling control's 26-30px. No
-   test could see it: the control held the right value, in the right place, at the wrong size.
-   The control keeps its natural height and takes its width from the column's cross-axis stretch.
-   A new column-direction container under `.authoring` needs a line like this one. */
-.request-line label > input, .request-line label > select { flex: none; }
-/* **`M210` `S1` is the "new column-direction container" the line above predicted, and the first
-   draft walked straight into it.** The reader's field row was called `.request-line` to begin with,
-   inherited this fix by accident, and lost it the moment it was renamed to `.request-fields` — five
-   controls at 130 px against their siblings' 26, on a page that had been correct one edit earlier.
-   The comment above described the hazard, named the fix, and had been applied in one place and not
-   the next, which is invisible to every test that asserts what code does rather than what a comment
-   promised. Gated now, off the rendered box, in `ui-page.test.ts`. */
-.request-fields .field > input, .request-fields .field > select { flex: none; }
 .headers-form, .body-form, .expects-form, .fields { display: grid; gap: 6px; margin-top: 10px; }
 .headers-form .row, .expects-form .row, .fields .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .body-form { align-items: start; }
 .body-form label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-.body-form textarea {
-  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
-  padding: 6px 8px; font: inherit; font-size: 12px; width: 100%; resize: vertical;
-}
-.headers-form button, .expects-form button, .fields button {
-  background: var(--bg); color: var(--muted); border: 1px solid var(--line); border-radius: 4px;
-  padding: 2px 8px; font: inherit; cursor: pointer;
-}
-.headers-form button:hover, .expects-form button:hover, .fields button:hover { color: var(--fg); }
-.headers-form button:disabled, .expects-form button:disabled, .fields button:disabled { color: var(--line); cursor: default; }
-.expects-form input:disabled { color: var(--muted); background: var(--panel); }
+.body-form textarea { font-size: 12px; width: 100%; resize: vertical; }
 .expects-form input, .expects-form select, .headers-form input { flex: 1 1 90px; }
 
 .preview {
-  margin: 12px 0 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line);
-  border-radius: 6px; font-size: 12px; max-height: 40vh; overflow: auto; white-space: pre;
+  margin: 12px 0 0; padding: 10px 12px; background: var(--panel2); border: var(--border) solid var(--line);
+  border-radius: var(--radius); font-size: 12px; max-height: 40vh; overflow: auto; white-space: pre;
 }
+/* `M213-03` — the create dialog's preview held `""` and still painted 22 px of filled, bordered
+   box, so the dialog opened showing an empty frame labelled with nothing. A box for bytes that has
+   no bytes is not an empty box, it is an absent one. */
+.preview:empty { display: none; }
 /* `A1-5` — Send's response pane. Deliberately the same `.preview` block for the body, because it
    is the same kind of thing: bytes that came from somewhere real, shown verbatim. */
-.response { margin-top: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.response { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
 .response-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .response-head code { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.response-head button { margin-left: auto; background: var(--bg); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; font: inherit; cursor: pointer; }
+.response-head button { margin-left: auto; }
 .response-headers { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; font-size: 12px; color: var(--muted); max-height: 20vh; overflow: auto; }
 .preview-diagnostics { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12px; }
+/* **The response: a chip in the request's header, and a panel it opens** — `M213` `S2` (`D1109`).
+   The height decision, and it is in the selector: `D1099` puts a response on every request in a
+   file that has run, and the pane was already at 1.44 screens against a 1.50 bar. A closed
+   `<details>` under the fields was measured at **54 px on `Ribbon`** — a bordered box for one line
+   of metadata — and put it at 1.52. The chip lives in a row that already exists, so at rest the
+   response costs **nothing**, and the panel below is drawn only when it is asked for. */
+.response-chip { margin-left: auto; display: inline-flex; align-items: baseline; gap: calc(var(--unit) * 0.5); font-size: 12px; }
+.response-chip[data-compose-response-open='yes'] { background: var(--panel); }
+.status-code { font-family: var(--mono); font-weight: 600; }
+.status-code.pass { color: var(--pass); }
+.status-code.warn { color: var(--warn); }
+.ticks { list-style: none; margin: calc(var(--unit) * 1.5) 0 0; padding: 0; display: grid; gap: calc(var(--unit) * 0.5); max-height: 30vh; overflow: auto; }
+.tick label { display: flex; align-items: center; gap: calc(var(--unit) * 1); cursor: pointer; }
+.tick-path { color: var(--muted); }
+.tick-value { color: var(--accent); overflow-wrap: anywhere; }
+.tick-do { display: flex; align-items: center; gap: calc(var(--unit) * 1.5); flex-wrap: wrap; margin-top: calc(var(--unit) * 1.5); }
+/* `M213` `S3` — `+ request`, `+ let` and `+ wait until` are one row of the same kind of gesture. */
+.seq-adds { display: flex; align-items: center; gap: calc(var(--unit) * 1); flex-wrap: wrap; }
+/* `M213` `S5` — a running recording is the one control on this pane that is doing something while
+   you are not looking at it, so it says so in the theme's `--warn` rather than only in its label. */
+.seq-add.recording { color: var(--warn); border-color: var(--warn-bd); background: var(--warn-bg); }
+/* **The workload grid** — `M213` `S6` (`D1103`). Four profiles down, two units across: the pair
+   you have not chosen is on screen beside the pair you have, which a ten-option `<select>` is the
+   one arrangement that prevents. */
+.shape-grid { display: grid; gap: calc(var(--unit) * 0.5); }
+.shape-cols, .shape-row { display: grid; grid-template-columns: 7rem 4rem 4rem; gap: calc(var(--unit) * 0.5); align-items: center; }
+.shape-aside { grid-template-columns: 7rem 8rem; }
+.shape-grid .profile, .shape-grid .unit, .shape-grid .cell { text-align: center; }
+.shape-grid .profile { text-align: left; }
+.shape-grid .on { color: var(--accent); border-color: var(--accent); }
+.shape-grid .cell { font-family: var(--mono); }
+/* The plot is the preview, so it gets the space the `<pre>` had and none of its scrollbars. */
+.workload-plot { margin-top: calc(var(--unit) * 1.5); }
+.workload-plot p { margin: calc(var(--unit) * 0.5) 0 0; }
+
+/* `M213` `S4` — `pick` beside the locator it fixes (`D1106`). The suggestions are buttons in the
+   row rather than a panel, because one click on a page can be described several ways and choosing
+   between three of them is a glance, not a screen. */
+.pick-field { display: inline-flex; align-items: baseline; gap: calc(var(--unit) * 0.5); flex-wrap: wrap; }
+.picked { display: inline-flex; align-items: baseline; gap: calc(var(--unit) * 0.5); flex-wrap: wrap; }
+.tick-preview { color: var(--muted); overflow-wrap: anywhere; }
+
 .preview-diagnostics li { color: var(--muted); }
 .preview-diagnostics li.error { color: var(--fail); }
 .preview-diagnostics li.warning { color: var(--warn); }
 .preview-diagnostics code { color: inherit; }
 .authoring-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-.authoring-actions .run { background: var(--accent); color: #08121c; border: none; border-radius: 4px; padding: 5px 12px; font: inherit; font-weight: 600; cursor: pointer; }
-.authoring-actions .run:disabled { background: var(--line); color: var(--muted); cursor: default; }
+/* `.run` is one rule now, above — this was the second copy of it, at a different padding and a
+   different hard-coded foreground. What is left here is the only thing it said that the shared
+   rule does not: a filled button that is off has to stop looking filled. */
+button.run:disabled, button.cancel:disabled { background: var(--line); color: var(--muted); }
 
 /* `M210` `S1` — Compose reads (`D1072`). The outline in the explorer, and the request card.
  *
  * THE METHOD IS A COLOUR AND NOT A WORD ONLY. `GET` and `DELETE` are the two a reader has to tell
  * apart at a glance in a rail of thirteen, and they are the two whose consequences differ most.
  * Hue carries the quantity that matters; the word is still there for anybody who cannot see it. */
-.outline .outline-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; width: 100%; background: none; border: 0; border-radius: 3px; color: inherit; font: inherit; text-align: left; }
-.outline .outline-row:hover { background: rgba(108, 182, 255, 0.07); }
-.outline .outline-row.on { background: rgba(108, 182, 255, 0.14); box-shadow: inset 2px 0 0 var(--accent); }
+.outline .outline-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; width: 100%; background: none; border: 0; border-radius: var(--ctl-radius); color: inherit; font: inherit; text-align: left; }
+.outline .outline-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.outline .outline-row.on { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
 /* Depth 7 is ~186 px of label room, measured. A request path fits; a test name does not, and the
  * one that does not is ellipsised rather than wrapped — `M205` measured 378 of 389 wrapped rows at
  * 647 px tall, which is the failure this pane spent a round escaping. */
 .outline .outline-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .outline .ln { font-family: var(--mono); font-size: 11px; }
-.method { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
-.m-get { color: #6cb6ff; }
-.m-post { color: #7ee787; }
-.m-put, .m-patch { color: #e3b341; }
-.m-delete { color: #ff7b72; }
+.method { font-family: var(--mono); font-size: 11px; font-weight: var(--kw-weight); letter-spacing: 0.02em; }
+.m-get { color: var(--m-get); }
+.m-post { color: var(--m-post); }
+.m-put, .m-patch { color: var(--m-write); }
+.m-delete { color: var(--m-delete); }
 .m-head, .m-options { color: var(--muted); }
 
-.compose-pane .authoring-head code { font-size: 15px; }
-.test-band { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; background: var(--panel); }
+.compose-pane .authoring-head code { font-size: var(--title-size); }
+.test-band { border: var(--border) solid var(--line); border-radius: var(--radius); padding: calc(var(--unit) * 1.6) calc(var(--unit) * 1.8); margin-bottom: 12px; background: var(--panel); }
 .band-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
-.band-what { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.band-what { color: var(--muted); font-size: 12px; text-transform: var(--label-transform); letter-spacing: var(--label-spacing); }
 .band-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; }
 .band-facts > li { color: var(--fg); }
 .band-preamble, .file-facts { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
@@ -422,9 +687,9 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    because the two say opposite things: `.legacy` is a form for a file that is not open, and this is
    the open file's own scope. `.file-facts` keeps its top rule only inside `.test-band`, where it no
    longer appears; inside the strip the summary is already the separator. */
-.file-strip { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; background: var(--panel); }
+.file-strip { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; margin-bottom: 10px; background: var(--panel); }
 .file-strip > summary { cursor: pointer; font-size: 12px; list-style-position: outside; }
-.file-strip > summary .scope-tag { font-size: 10px; letter-spacing: 0.08em; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; }
+.file-strip > summary .scope-tag { font-size: 10px; letter-spacing: var(--label-spacing); text-transform: var(--label-transform); color: var(--muted); border: var(--border) solid var(--line); border-radius: var(--ctl-radius); padding: 1px 4px; }
 .file-strip .file-facts { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
 
 /* `M212` `S2` (`D1086`) — the body as a sequence. The list is the test's own order, so it gets no
@@ -433,15 +698,15 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    rows, which is what they are — one line of the file. */
 .body-sequence { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .body-sequence > .seq-open { margin: 6px 0; }
-.seq-request .seq-goto { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; background: none; border: 0; padding: 2px 4px; border-radius: 4px; cursor: pointer; font: inherit; color: inherit; }
+.seq-request .seq-goto { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; background: none; border: 0; padding: 2px 4px; border-radius: var(--ctl-radius); cursor: pointer; font: inherit; color: inherit; }
 .seq-request .seq-goto:hover { background: var(--panel); }
 .seq-request .seq-goto code { color: var(--fg); }
 .file-facts ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--muted); }
 
-.request-card { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: var(--panel); }
+.request-card { border: var(--border) solid var(--line); border-radius: var(--radius); padding: calc(var(--unit) * 1.8); background: var(--panel); }
 .request-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
-.request-path { font-size: 15px; }
-.request-card h4 { margin: 12px 0 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.request-path { font-size: var(--title-size); font-weight: var(--title-weight); }
+.request-card h4 { margin: 12px 0 4px; font-size: 12px; font-weight: var(--kw-weight); text-transform: var(--label-transform); letter-spacing: var(--label-spacing); }
 /* The browser's own `ul` padding is a 40 px indent nobody asked for — visible on the headers list,
  * which then hung a third of the way across the card away from the heading above it. */
 .request-card ul, .band-facts, .file-facts ul { list-style: none; margin: 0; padding: 0; }
@@ -449,7 +714,6 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .request-fields { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
 .request-fields .field { flex: 1 1 140px; }
 .field { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12px; }
-.field input { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
 /* A disabled control is what `D1082` means on screen: this slice shows everything and types
  * nothing, so the pane has to LOOK unwritable rather than merely refuse a keystroke. */
 .field input:disabled { color: var(--fg); opacity: 0.75; cursor: default; }
@@ -494,19 +758,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .step-verdict { flex: 0 0 auto; font-size: 11px; font-family: var(--mono); }
 .step-verdict.pass { color: var(--pass); }
 .step-verdict.fail { color: var(--fail); }
-.note-edit {
-  width: 100%;
-  margin-top: 4px;
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 4px 6px;
-  font: inherit;
-  font-family: var(--mono);
-  font-size: 12px;
-  resize: vertical;
-}
+.note-edit { width: 100%; margin-top: 4px; font-family: var(--mono); font-size: 12px; resize: vertical; }
 .expect-extra label { flex: 0 0 auto; font-size: 12px; }
 /* The subset editor's rows sit under the row that named them, indented, because a key of an object
  * is a fact about that assertion and not a sibling of it. */
@@ -533,7 +785,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .add-clause > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .add-clause ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
 .add-clause li { display: flex; align-items: baseline; gap: 4px; }
-.add-clause button { font: inherit; padding: 1px 6px; }
+.add-clause button { padding: 1px 6px; font-size: 12px; }
 .band-add { margin-top: 4px; }
 
 
@@ -541,8 +793,142 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    page is inside an iframe-free single view and `showModal()`'s top layer would put the card
    outside the pane's own stacking context, which is where every other gate here reads rectangles. */
 .authoring-new { display: flex; gap: 6px; margin: 0 0 8px; }
-.new-thing { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; z-index: 40; }
-.new-thing-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; width: min(560px, 92vw); max-height: 88vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
-.new-thing-card h3 { margin: 0; font-size: 14px; }
+.new-thing { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 40; }
+.new-thing-card { background: var(--panel); border: var(--border) solid var(--line); border-radius: var(--radius); padding: calc(var(--unit) * 2.6); width: min(560px, 92vw); max-height: 88vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.new-thing-card h3 { margin: 0; font-size: var(--title-size); font-weight: var(--title-weight); }
 .new-thing-card .row { display: flex; gap: 8px; align-items: flex-end; }
 .new-thing-card .preview { max-height: 180px; overflow: auto; }
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   `M214` — the API door's Compose pane, in three regions (`D1110`).
+
+   **THE HEIGHT PROBLEM IS SOLVED BY THE LAYOUT AND NOT BY A CEILING.** `D1086` demanded that every
+   request be drawn *and* that the pane fit 1.50 screens; on the thirteen-request file it measured
+   that is 104 px per request with its assertions, which no design satisfies. Four rounds of
+   compression later the pane was still being read as *"a mess"*. What replaces the ceiling is a
+   property this layout holds by construction: the shell column does not scroll at all, and each of
+   the three regions scrolls inside itself, so the page has no vertical overflow at any window
+   height and a thirteen-request file is a thirteen-row list rather than thirteen stacked cards.
+
+   **NOTHING HERE PINS A WIDTH ON PURPOSE.** No `max-width` on the shell, no fixed pixel column but
+   the explorer's own 320 px, which predates this round. The one fixed width this pane inherited was
+   `.band-name` — and it was not even a rule: a bare `<input>` at the user agent's default, holding
+   a 40-character test name, which is why `the catalogue lists what is in stock` read
+   `the catalogue lists wh`. It is `width: 100%` below and the editor is as wide as the window.
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* The shell stops being a scroll container for this one door and tab, so the regions below can own
+   their own overflow. Every other door and every other tab keeps `.main` exactly as it was. */
+.main-fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: calc(var(--unit) * 2); }
+.main-fill > .doorpane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+.api-compose { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: calc(var(--unit) * 1.2); }
+.api-compose.reading { padding: calc(var(--unit) * 2) 0; }
+
+/* One row, not a header block: which file, what is unsaved, and nothing that explains the pane. */
+.api-compose-bar { display: flex; align-items: center; gap: calc(var(--unit) * 1.5); flex-wrap: wrap; min-height: 26px; }
+.api-compose-path { font-size: 12px; color: var(--muted); }
+.api-compose-dirty { display: flex; align-items: center; gap: calc(var(--unit) * 1); font-size: 12px; }
+
+.api-compose-grid { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: calc(var(--unit) * 1.5); flex: 1; min-height: 0; }
+
+/* ── region 2: the sequence (`D1112`) ──────────────────────────────────────────────────────── */
+.seq-col { display: flex; flex-direction: column; min-height: 0; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.seq { list-style: none; margin: 0; padding: calc(var(--unit) * 0.6); flex: 1; min-height: 0; overflow: auto; }
+.seq .seq { padding: 0 0 0 calc(var(--unit) * 1.4); }
+.seq-group { list-style: none; }
+.seq-row { display: flex; align-items: center; gap: 2px; border-radius: var(--ctl-radius); }
+.seq-row.on { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.seq-pick {
+  display: flex; align-items: center; gap: calc(var(--unit) * 0.8); flex: 1; min-width: 0;
+  background: none; border: 0; color: inherit; font: inherit; text-align: left;
+  padding: 2px calc(var(--unit) * 0.6); border-radius: var(--ctl-radius);
+}
+.seq-pick:hover { background: var(--panel2); }
+.seq-row.on .seq-pick:hover { background: transparent; }
+/* One line high, always. A row that wraps is a list that stops being scannable at the third
+   entry, and the full text is on the row's `title` and in the editor next door. */
+.seq-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; font-family: var(--mono); font-size: 12px; }
+.seq-kind { color: var(--muted); font-size: 11px; text-transform: var(--label-transform); letter-spacing: var(--label-spacing); flex: none; }
+.seq-row.under .seq-text { color: var(--muted); }
+
+/* The `✕` (`D1117`). It is never disabled: it is pressed, and if something is holding the thing it
+   answers on the row. A disabled control that does not say why is the pattern this round removes. */
+.seq-x { background: none; border: 0; color: var(--muted); padding: 0 calc(var(--unit) * 0.7); font-size: 13px; line-height: 1; border-radius: var(--ctl-radius); flex: none; }
+.seq-x:hover { color: var(--fail); background: var(--fail-bg); }
+.seq-x.refused { color: var(--warn); }
+.seq-refusal { margin: 2px 0 4px calc(var(--unit) * 3); font-size: 11px; }
+.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; }
+.seq-empty { padding: calc(var(--unit) * 1.5); font-size: 12px; }
+
+/* `D1118` — the gestures that make another of what this column lists, at the foot of the list. */
+.seq-foot { display: flex; flex-wrap: wrap; gap: calc(var(--unit) * 0.8); padding: calc(var(--unit) * 1); border-top: 1px solid var(--line); flex: none; }
+.seq-foot .seq-add { font-size: 12px; }
+.explorer-new { margin-top: calc(var(--unit) * 1.5); padding-top: calc(var(--unit) * 1.2); border-top: 1px solid var(--line); }
+
+/* ── region 3: the editor, and the response under it (`D1113`, `D1116`) ────────────────────── */
+.editor-col { display: grid; min-height: 0; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.editor { overflow: auto; min-height: 0; padding: calc(var(--unit) * 1.6) calc(var(--unit) * 2); }
+.editor-body { display: flex; flex-direction: column; gap: calc(var(--unit) * 1.2); }
+.editor-head { display: flex; align-items: center; gap: calc(var(--unit) * 1); flex-wrap: wrap; }
+/* The one field the fifth complaint was about. It has the width of the sentence it holds now,
+   which is what giving the editor its own region bought. */
+.band-name, .editor-head .request-path { width: 100%; min-width: 0; flex: 1 1 200px; }
+
+.editor-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); flex: none; }
+.editor-tab {
+  background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted);
+  font: inherit; font-size: 12px; padding: calc(var(--unit) * 0.8) calc(var(--unit) * 1.4);
+  display: flex; align-items: center; gap: calc(var(--unit) * 0.6);
+}
+.editor-tab.on { color: var(--fg); border-bottom-color: var(--accent); }
+.editor-tab:hover { color: var(--fg); }
+.tab-count { font-size: 10px; color: var(--muted); background: var(--panel2); border-radius: 999px; padding: 0 5px; }
+.editor-tab.on .tab-count { color: var(--accent); }
+.tabpane { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); }
+.tabpane textarea { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 12px; }
+.more-form { gap: calc(var(--unit) * 0.8); }
+
+/* One assertion: subject · matcher · value · ✕ (`D1114`). */
+.asserts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--unit) * 0.6); }
+.assert { border-bottom: 1px solid var(--line); padding-bottom: calc(var(--unit) * 0.6); }
+.assert:last-child { border-bottom: 0; }
+.assert-fields { display: flex; align-items: center; gap: calc(var(--unit) * 0.8); flex-wrap: wrap; }
+.assert-keyword { color: var(--syn-kw); font-weight: var(--kw-weight); font-size: 12px; }
+.assert-value { flex: 1 1 120px; min-width: 80px; }
+/* The three forms 96% of the corpus does not use. One word at rest; the row that opens carries all
+   three with their meaning spelled out, because a bare em-dash in a select was complaint three. */
+.assert-more { background: none; border: 0; color: var(--muted); padding: 0 calc(var(--unit) * 0.6); font-size: 14px; line-height: 1; }
+.assert-more.on, .assert-more:hover { color: var(--accent); }
+.assert-rare { display: flex; align-items: center; gap: calc(var(--unit) * 1); flex-wrap: wrap; margin-left: calc(var(--unit) * 3); font-size: 12px; }
+
+/* The divider (`D1116`) — a real control, so it takes focus and the arrow keys move it. */
+.split { background: var(--line); cursor: row-resize; border: 0; }
+.split:hover, .split:focus-visible { background: var(--accent); outline: none; }
+.responsebox { overflow: auto; min-height: 0; padding: calc(var(--unit) * 1.4) calc(var(--unit) * 2); border-top: 1px solid var(--line); }
+.response-none { font-size: 12px; }
+.editor-send { display: flex; align-items: center; gap: calc(var(--unit) * 1.2); padding: calc(var(--unit) * 0.8) calc(var(--unit) * 2); border-top: 1px solid var(--line); font-size: 11px; }
+.editor-send .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* One column below the phone-width breakpoint the shell already has, so nothing here introduces a
+   second answer to *how narrow is narrow*. */
+@media (max-width: 900px) {
+  .api-compose-grid { grid-template-columns: 1fr; }
+  .main-fill { overflow: auto; }
+  .main-fill > .doorpane { display: block; }
+  .api-compose { display: block; }
+  .seq-col, .editor-col { height: auto; }
+  .editor-col { display: block; }
+  .split { display: none; }
+}
+
+/* The response region's own line — `D956`'s two scopes, which the retired `D1109` chip carried. */
+.response-head-bar { display: flex; align-items: baseline; gap: calc(var(--unit) * 0.8); font-size: 12px; margin-bottom: calc(var(--unit) * 0.8); }
+/* A statement another door owns — drawn in position and dimmed in PAINT, never in a class name a
+   gate can read off without looking at a colour (`D1078`). */
+/* **Dimmed in PAINT, and in `opacity` specifically**: a gate reads the computed value, because a
+   rule that fails to load leaves the class behind and removes the dimming with nothing to say so. */
+.seq-row.locked { opacity: 0.62; }
+/* A `More` field is a label over its control (`.field` is a column), so it needs a width the
+   sentence fits rather than the editor's whole one. */
+.more-form .field { max-width: 40ch; }

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseConfigSource } from '@tflw/lang';
 import { resolveConfig, selectEnv } from '@tflw/runtime';
-import { UiServer, blockForEnv, readProject, runArgv, initArgv, pickArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, blockForEnv, readProject, runArgv, initArgv, pickArgv, recordArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
 import { readdir } from 'node:fs/promises';
 
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
@@ -1015,6 +1015,13 @@ test('pickUrl composes what `tflw pick` needs from what an author types', () => 
 
   // One URL and nothing else, so the page cannot ask for a session a terminal could not open.
   assert.deepEqual(pickArgv('http://localhost:3000/checkout'), ['pick', 'http://localhost:3000/checkout']);
+  /* **And its sibling names a different command**, which is the one thing `/api/pick` and
+     `/api/record` do not share (`M213` `S5`). One route serves both — the config read, the URL
+     composition, the line framing and the `SIGINT` on disconnect are identical, and `D1106` is
+     precisely the decision that what differs is *what the browser does with a click*. So the
+     branch that picks the argv is the whole difference, and it is worth one line. */
+  assert.deepEqual(recordArgv('http://localhost:3000/checkout'), ['record', 'http://localhost:3000/checkout']);
+  assert.notDeepEqual(pickArgv('http://x/'), recordArgv('http://x/'));
 });
 
 test('GET /api/pick refuses when the env declares no `web` base, rather than opening a browser', async () => {

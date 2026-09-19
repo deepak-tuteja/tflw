@@ -16,6 +16,7 @@ import { createRequire } from 'node:module';
 import { join, resolve, relative, dirname, basename } from 'node:path';
 import { discoverTests } from './project.js';
 import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH } from './ui-server.js';
+import { recordedLine } from './record.js';
 import {
   parseSource,
   parseConfigSource,
@@ -88,6 +89,7 @@ import {
   SUPPORTED_BROWSER_ENGINES,
   LOG_LEVEL_ORDER,
   startPickSession,
+  startRecordSession,
   mergeSelfDiagnosis,
   finalizeVerdict,
   shutdownMtlsWorker,
@@ -101,6 +103,8 @@ import {
   type StepResult,
   type ResolvedConfig,
   type PickSessionHandle,
+  type RecordSessionHandle,
+  type RecordedAction,
   type LoadShardResult,
   type LoadProgressSnapshot,
   type AuthorizedTarget,
@@ -364,6 +368,8 @@ async function main(argv: string[]): Promise<number> {
       return installBrowsersCommand(rest);
     case 'pick':
       return pickCommand(rest);
+    case 'record':
+      return recordCommand(rest);
     case 'watch':
       return watchCommand(rest);
     case 'refactor':
@@ -626,6 +632,92 @@ async function pickCommand(argv: string[]): Promise<number> {
   } catch (e) {
     // The rejection *is* the interrupt when the user asked for it — reporting it would be tflw
     // blaming the user for pressing the key the line above told them to press.
+    if (!interrupted) {
+      process.off('SIGINT', onSigint);
+      err(e instanceof Error ? e.message : String(e));
+      return EXIT_USAGE;
+    }
+  }
+
+  await closed;
+  process.off('SIGINT', onSigint);
+  return EXIT_OK;
+}
+
+// ---- tflw record <url> (`M213` `S5`, `D1095`) --------------------------------
+
+/**
+ * Opens a real, visible browser at `<url>` and prints one tflw statement per action taken in it.
+ *
+ * `tflw pick`'s sibling, and `D1106` is the decision that they are two commands rather than one
+ * with a flag: `pick` is **inert** — it calls `preventDefault`, so clicking a link identifies it
+ * without navigating — which is right for naming one element and wrong for recording a sequence,
+ * because a sequence needs the page to advance. An inert capture and a live one are different
+ * contracts with the page, not different settings.
+ *
+ * Everything else is deliberately identical, including the interrupt handling, whose reasoning is
+ * written out at length above `pickCommand` and applies here word for word.
+ */
+async function recordCommand(argv: string[]): Promise<number> {
+  let url: string | undefined;
+  let browserRaw: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
+    else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
+    else if (a.startsWith('--')) unknownFlag('record', a);
+    else if (url === undefined) url = a;
+    else {
+      err(`unexpected argument \`${a}\`. Usage: tflw record <url> [--browser chromium|firefox|webkit]`);
+      return EXIT_USAGE;
+    }
+  }
+  if (!url) {
+    err('tflw record needs a URL. Usage: tflw record <url> [--browser chromium|firefox|webkit]');
+    return EXIT_USAGE;
+  }
+  if (!ABSOLUTE_URL_RE.test(url)) {
+    err(`\`${url}\` isn't an absolute URL — include a scheme, e.g. http://localhost:3000${url.startsWith('/') ? url : `/${url}`}`);
+    return EXIT_USAGE;
+  }
+  let engine: BrowserEngine = 'chromium';
+  if (browserRaw !== undefined) {
+    if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(browserRaw)) {
+      err(`--browser expects one of ${SUPPORTED_BROWSER_ENGINES.join(', ')}, got "${browserRaw}"`);
+      return EXIT_USAGE;
+    }
+    engine = browserRaw as BrowserEngine;
+  }
+
+  let resolveClosed: () => void = () => {};
+  const closed = new Promise<void>((res) => {
+    resolveClosed = res;
+  });
+  let interrupted = false;
+  let session: RecordSessionHandle | undefined;
+  const onSigint = (): void => {
+    if (interrupted) process.exit(EXIT_ABORTED);
+    interrupted = true;
+    void session?.close();
+    resolveClosed();
+  };
+  process.on('SIGINT', onSigint);
+  process.stdout.write(`recording ${url} — press Ctrl+C to stop.\n`);
+
+  try {
+    session = await startRecordSession(
+      url,
+      engine,
+      (action) => {
+        const line = recordedLine(action);
+        if (line.ok) process.stdout.write(`${line.text}\n`);
+        else process.stderr.write(`skipped one ${action.kind}: ${line.reason}\n`);
+      },
+      () => resolveClosed(),
+    );
+    if (interrupted) void session.close();
+    else process.stdout.write('ready — use the page as a user would. Close the window or press Ctrl+C to stop.\n');
+  } catch (e) {
     if (!interrupted) {
       process.off('SIGINT', onSigint);
       err(e instanceof Error ? e.message : String(e));
@@ -4044,6 +4136,10 @@ function printUsage(): void {
       '  tflw pick <url> [--browser chromium|firefox|webkit]',
       '                                                      click an element in a real browser window, print its best locator (SPEC §12, M5);',
       '                                                      runs until the window is closed or Ctrl+C — <url> must be absolute',
+      '  tflw record <url> [--browser chromium|firefox|webkit]',
+      '                                                      use a page in a real browser window, print one tflw step per action (`M213`);',
+      '                                                      `pick` is inert and this one is not — a click navigates, a form submits.',
+      '                                                      Actions only: expectations are yours to add. Runs until the window is closed or Ctrl+C',
       '  tflw watch [files...] [--env <name>] [--seed <n>] [--browser chromium|firefox|webkit] [--no-color]',
       '                                                      re-run headed on every save, one browser window for the whole session (SPEC §12, M5);',
       '                                                      saving tflw.config re-runs everything; runs until Ctrl+C',

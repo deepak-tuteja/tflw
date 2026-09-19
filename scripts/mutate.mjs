@@ -3398,8 +3398,12 @@ const REGISTRY = [
     pkg: 'tflw',
     file: 'packages/ui/src/Workload.tsx',
     what: 'the p95 series is the per-second mean — a chart labelled p95 that draws a lower, smoother line, which a pixel check cannot tell from the real one; the legend under the cursor can',
-    find: "    const p95 = timelineSeries(m, b?.metrics ?? null, (p) => p.p95, 'p95', COLORS[1]!);",
-    replace: "    const p95 = timelineSeries(m, b?.metrics ?? null, (p) => p.mean, 'p95', COLORS[1]!);",
+    // `COLORS[1]!` became `slow!` in `M213` `S1`: the chart's four literal colours were the one
+    // surface a theme cannot reach — a canvas takes a string, not a custom property — so they come
+    // from `theme.ts` now and are named for what they mean rather than for their index. The
+    // mutation is unchanged in what it does.
+    find: "    const p95 = timelineSeries(m, b?.metrics ?? null, (p) => p.p95, 'p95', slow!);",
+    replace: "    const p95 = timelineSeries(m, b?.metrics ?? null, (p) => p.mean, 'p95', slow!);",
   },
   {
     id: 'the-histogram-drops-its-last-bucket',
@@ -3621,14 +3625,29 @@ const REGISTRY = [
     find: '                <code data-compose-subject-what>{at.decl.kind === \'test\' ? `test ${at.decl.name}` : at.decl.label}</code> · line{\' \'}',
     replace: '                <code data-compose-subject-what>{path}</code> · line{\' \'}',
   },
+  /**
+   * **`the-other-requests-are-not-drawn` is gone, and `M214` §3 is where its argument is.**
+   *
+   * It defended one half of `D1086` — *every request in the test is drawn* — against a pane whose
+   * other half was a 1.50-screen ceiling from `ui-appearance`'s `BAR`. Those two demand thirteen
+   * requests in 1350 px on the file `D1086` itself measures, which no design satisfies, so the only
+   * move left was compression and four rounds of it produced a pane its reader could not use.
+   *
+   * `D1112` answers the completeness half **by construction**: the sequence column IS the test's
+   * whole sequence, in file order, one row per statement — there is no selected-request branch left
+   * to mutate, because there is no branch. What replaced the ceiling is `ui-appearance`'s
+   * *no region of the pane overflows the window*, held on the thirteen-request file the bar never
+   * covered. A mutation defending a branch that no longer exists is not retired for convenience;
+   * it is retired because its subject is.
+   */
   {
-    id: 'the-other-requests-are-not-drawn',
-    milestone: 'm212',
+    id: 'the-sequence-drops-the-statements-between-requests',
+    milestone: 'm214',
     pkg: 'tflw',
-    file: 'packages/ui/src/ComposePane.tsx',
-    what: "`D1086` undone: only the selected request is drawn, so a thirteen-request test shows one of thirteen and the other twelve exist only in the tree — the pane's state for the whole of `M210`",
-    find: '    rows.push(<RequestLine key={`req-${r.line}`} request={r} onLine={onLine} />);',
-    replace: '    continue;',
+    file: 'packages/ui/src/ApiComposePane.tsx',
+    what: "`D1112` undone: the sequence column draws only the requests, so the 101 `let`/`wait until` statements that sit BETWEEN two requests across the corpus vanish — and with them the chaining that is the whole reason this pane is a sequence and not a list of independent requests (617 of 760 bindings are read downstream)",
+    find: '              : statements.map((s) => (',
+    replace: '              : [].map((s) => (',
   },
   {
     id: 'every-clause-is-a-field-again',
@@ -3643,14 +3662,60 @@ const REGISTRY = [
       '  const shows = (_clause: string): boolean => true;\n' +
       "  const add = (k: string): void => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]));",
   },
+  /**
+   * **`the-add-menu-hides-what-it-cannot-add` is gone, and what it was defending is now impossible
+   * to lose rather than defended.**
+   *
+   * It kept `timeout`, `redirects` and `retry after` in the menu as three permanently **disabled**
+   * rows, each carrying the same 80-character sentence — *"the request spec has no room for it yet;
+   * it is carried across an edit, not rebuilt"* — on every one of the corpus's 1058 requests, for
+   * three clauses used **five times in a thousand** between them. The completeness clause it
+   * defended was right; what it was defending was an apology.
+   *
+   * And the apology was false. `ApiRequestSpec` has carried all three fields since the enterprise
+   * arc and `print()` has written them for just as long; what stopped at six fields was
+   * `ApiStepSpec`, the **builder's input**, in one file. `M214` `A2` widened it, so there is no
+   * disabled row and no `locked` state anywhere in the pane — and the mutation below is what says
+   * the clauses are still *reachable*, which is the property `D1076` actually cares about.
+   */
   {
-    id: 'the-add-menu-hides-what-it-cannot-add',
-    milestone: 'm212',
+    id: 'the-rare-clauses-are-unreachable-again',
+    milestone: 'm214',
     pkg: 'tflw',
-    file: 'packages/ui/src/ComposePane.tsx',
-    what: "`D1084`'s completeness clause undone: the menu lists only the clauses this door can construct, so `timeout`, `redirects` and `retry after` disappear from the page entirely — the vocabulary SHRINKS instead of moving one click away, which is the failure `D1076` was written against",
-    find: "            state: shows(c.key) ? ('present' as const) : c.editable ? ('addable' as const) : ('locked' as const),",
-    replace: "            state: shows(c.key) ? ('present' as const) : ('addable' as const),",
+    file: 'packages/ui/src/ApiComposePane.tsx',
+    what: "`D1115` undone: the More tab's menu offers only the clauses this request already writes, so `timeout`, `redirects` and `retry after` are reachable on the five requests in a thousand that use them and on no others — the vocabulary SHRINKS instead of costing one word at rest, which is the failure `D1076` was written against and is what `A2` widened `ApiStepSpec` to end",
+    find: "              ].map((c) => ({ ...c, state: shows(c.key) ? ('present' as const) : ('addable' as const) }))",
+    replace: "              ].filter((c) => shows(c.key)).map((c) => ({ ...c, state: 'present' as const }))",
+  },
+  /**
+   * **`D1117`'s refusal, which is the half of removal that can go wrong silently.** Removing a
+   * request removes what is attached to it; removing anything that BINDS a name something below it
+   * reads has to be refused, because 617 of the corpus's 760 bindings are read downstream. A
+   * removal that writes the bytes anyway leaves a file that parses, runs and fails.
+   */
+  {
+    id: 'a-removal-does-not-check-who-is-holding-it',
+    milestone: 'm214',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ApiComposePane.tsx',
+    what: '`D1117` undone: the dependency scan is never consulted, so deleting a `capture` or a `let` that a later statement interpolates writes the bytes and leaves a file that parses and cannot run — on 81% of the corpus\'s bindings',
+    find: '      const held = holds(decl.body, target.lines);',
+    replace: '      const held = null;',
+  },
+  /**
+   * **`D1114`'s own clause: the vocabulary MOVES, it never shrinks.** `check`, the quantifier and
+   * `not` are behind a `⋯` because 96% of the corpus's 1736 assertions use none of them — and a row
+   * that already uses one draws it inline, open, with no gesture. Drop that and the three become
+   * genuinely hidden, which is the `D1076` failure the disclosure was designed to avoid.
+   */
+  {
+    id: 'a-spent-rare-clause-is-hidden-behind-the-disclosure',
+    milestone: 'm214',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ApiComposePane.tsx',
+    what: "`D1114` undone: an assertion that already spells `check`, `any`/`all` or `not` draws the same three controls as one that does not — so a written word is behind a disclosure and the row is a lie about what it says",
+    find: "  const spent = v.soft || v.quantifier !== '' || v.negated;",
+    replace: '  const spent = false;',
   },
   {
     id: 'a-new-file-is-written-under-an-etag',

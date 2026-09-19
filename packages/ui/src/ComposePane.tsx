@@ -42,18 +42,21 @@
 // runs the file's hooks and this declaration up to the selected request — which is the honest thing
 // to run and the expensive thing to press, and why the pane lists what it will send first.
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { ApiBodySpec, ApiStepSpec, ExpectSpec, SubjectSpec } from '@tflw/lang';
+import type { ApiBodySpec, ApiStepSpec, CaptureSpec, ExpectSpec, SubjectSpec } from '@tflw/lang';
 import {
   LOCATOR_KINDS,
+  buildExpect,
   print,
   quantifiable,
   type ApiBody,
+  type ClickKind,
   type ExpectStmt,
   type FindingSeverity,
   type Lens,
   type LocatorKind,
+  type LocatorSpec,
   type LogDestination,
   type LogLevel,
   type DataTableSpec,
@@ -72,7 +75,10 @@ import {
   SYNTHETIC,
 } from '@tflw/lang';
 import { DOOR_BY_ID } from './doors';
+import { LEAF_CAP, captureName, captureSpecs, leaves, verifySpec } from './response';
+import { VOCABULARY, type AddGesture } from './vocabulary';
 import { isForeign, type Addressed, type Prefix, type FileOutline, type Note, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
+import { StatementText } from './Source';
 
 /**
  * A comment, shown where its owner is (`D1077`).
@@ -102,7 +108,7 @@ function noteText(note: Note | null): string {
  * every time the author closes it. So the gesture owns the state (`RowEditing.noting`) and the
  * editor is a plain block for as long as it lasts.
  */
-function NoteOpen({ note, what, onChange }: {
+export function NoteOpen({ note, what, onChange }: {
   readonly note: Note | null;
   readonly what: string;
   readonly onChange: (lines: readonly string[]) => void;
@@ -122,7 +128,7 @@ function NoteOpen({ note, what, onChange }: {
   );
 }
 
-function NoteBlock({ note, what, onNote }: {
+export function NoteBlock({ note, what, onNote }: {
   readonly note: Note;
   readonly what: string;
   /**
@@ -209,9 +215,9 @@ function bodyLabel(body: ApiBody | null): string {
  * A `<details>` rather than a popup for `D144`'s reason, and for `S1`'s: closed, it contributes
  * nothing to the tab order.
  */
-function AddClause({ what, options, onAdd }: {
+export function AddClause({ what, options, onAdd }: {
   readonly what: string;
-  readonly options: readonly { key: string; label: string; title: string; state: 'addable' | 'present' | 'locked'; why?: string }[];
+  readonly options: readonly { key: string; label: string; title: string; state: 'addable' | 'present' }[];
   readonly onAdd: (key: string) => void;
 }) {
   return (
@@ -224,7 +230,6 @@ function AddClause({ what, options, onAdd }: {
               {o.label}
             </button>
             {o.state === 'present' ? <span className="muted"> — already here</span> : null}
-            {o.state === 'locked' ? <span className="muted"> — {o.why}</span> : null}
           </li>
         ))}
       </ul>
@@ -284,12 +289,12 @@ function StatementRow({ statement, door, editing, verdict }: {
         values.kind === 'expect' ? (
           <ExpectRow statement={statement} edit={values.expect} onEdit={(next) => onEdit!(statement, { kind: 'expect', expect: next })} trailing={<>{addNote}<VerdictMark verdict={verdict} /></>} />
         ) : (
-          <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit!(statement, next)} trailing={<>{addNote}<VerdictMark verdict={verdict} /></>} />
+          <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit!(statement, next)} trailing={<>{addNote}<VerdictMark verdict={verdict} /></>} pick={editing.pick} />
         )
       ) : (
         <div className="stmt-line">
           <span className="ln muted">{statement.line}</span>
-          <code className="stmt-text">{statement.text}</code>
+          <code className="stmt-text"><StatementText text={statement.text} /></code>
           {foreign ? (
             <a className="badge also" href={`#/${statement.lens}`} data-stmt-door={statement.lens} title={`this is ${DOOR_BY_ID[statement.lens!].label}'s to edit — open that door`}>
               {DOOR_BY_ID[statement.lens!].label}
@@ -345,19 +350,25 @@ export interface RowEditing {
   readonly noting: string | null;
   readonly onNoting: ((key: string | null) => void) | null;
   /**
-   * **Add a request to a declaration** (`M212` `S4b`, `D1088`).
+   * **`tflw pick`, as a locator-fixer on the row that holds the locator** — `M213` `S4`
+   * (`D1106`).
    *
-   * `.legacy`'s second mode — *add steps to an existing test* — is the one capability `M210`'s
-   * slices did not replace, and `D1088` cannot retire a form whose job is still half undone. So it
-   * lands where the other `+` gestures already are: at the end of the body's own sequence, adding
-   * the default pair `api GET /` and `expect status equals 200`, into the same pending buffer every
-   * other edit goes to (`D1079`).
+   * `pick` opens a real browser against the page this test opens, and every click in it reports
+   * the locator of what was clicked without navigating (`installPickClickCapture` does
+   * `preventDefault`). `BrowserForm` had it beside a staging form's rows; here it belongs to the
+   * **statement**, because a locator is a field of a statement and *fix this locator* is the
+   * gesture people actually have.
    *
-   * `null` for a hook, and the button says why rather than disappearing: `insertIntoSource` names a
-   * test **by name** and a hook has none, which is a fact about the language and not about this
-   * door.
+   * `null` everywhere on a door with no locators in its vocabulary. `row` is the `stepKey` of the
+   * row a running session will fill, which is enough to name it: a `click` and a `fill` each carry
+   * exactly one locator, on all 2,296 corpus instances.
    */
-  readonly onAddRequest: ((decl: OutlineTest) => void) | null;
+  readonly pick: {
+    readonly row: string | null;
+    readonly found: readonly LocatorSpec[];
+    readonly onStart: (key: string) => void;
+    readonly onStop: () => void;
+  } | null;
 }
 
 /**
@@ -370,25 +381,98 @@ export interface RowEditing {
 export interface Verdict {
   readonly ok: boolean;
   readonly detail: string;
+  /** The statement this is about, as it ran (`D1108`) — the same check the request's own line
+   *  gets, one row down. A verdict beside an assertion that has since been typed into is a claim
+   *  about bytes nobody has. */
+  readonly source: string;
+  /** Whole milliseconds, the report's own figure (`D807`). `StepResult` carries it and nothing
+   *  showed it; an assertion that passes in 4 ms and one that passes in 4 s read the same. */
+  readonly durationMs: number;
 }
 
-/** The last response, as the report recorded it (`M210` `S6`). It is the run's own trace rather
- *  than a second HTTP client in this page, which is `D1047` unchanged. */
+/**
+ * The last response, as the report recorded it (`M210` `S6`, widened by `M213` `S2`).
+ *
+ * It is the run's own trace rather than a second HTTP client in this page, which is `D1047`
+ * unchanged.
+ *
+ * **IT ARRIVES TWO WAYS AND THE PANE SAYS WHICH** (`D1099`). The default is the last run that
+ * touched this file, read off the report already on disk — free, instant, and there for every
+ * request in the file rather than for the one you pressed a button on. A `send` fires a scoped run
+ * of one request and replaces that request's entry. Both are real reports, so `D956` holds for
+ * both; a reader who cannot tell a four-day-old run from a press two seconds ago is reading a
+ * claim with no date on it.
+ */
 export interface Ran {
-  /** The request this ran for — the verdicts are dropped the moment the selection moves. */
+  /** The request this ran for. */
   readonly line: number;
-  readonly steps: readonly Verdict[];
+  /**
+   * **That request's line, exactly as it ran** (`D1108`).
+   *
+   * The join key is `(line, source)` and not `line` alone, which is the whole of why this field
+   * exists. A line number is the most fragile join key there is (`D1093`): insert one request and
+   * every verdict below it attaches to the wrong row, *plausibly*. Carrying the text that ran lets
+   * the pane check rather than assume — a response is shown only where the request still reads the
+   * way it read when the run made it.
+   */
+  readonly source: string;
+  /** Where it came from, in the two words the summary line prints. */
+  readonly scope: 'run' | 'send';
+  /** When the run that produced it started, ISO-8601. Printed, because a report on disk may be
+   *  from this minute or from last Tuesday and only one of those is evidence about now. */
+  readonly at: string;
+  /**
+   * The verdicts, **keyed by the open file's own line** (`D1093`).
+   *
+   * A map and not a list, and the key is the file's line rather than a position in the run — which
+   * is the difference between *this ✓ is about the row it is beside* and *this ✓ is about whatever
+   * is fourth*. The caller builds it and drops every entry whose recorded `source` no longer
+   * matches the buffer, so a verdict that reaches this pane is one that is still about what is
+   * written. Both scopes arrive in this shape: a send runs a printed scratch whose line numbers
+   * are not this file's, so the caller maps its steps back onto the request it sent.
+   */
+  readonly steps: ReadonlyMap<number, Verdict>;
   readonly response: { readonly status: number; readonly url: string; readonly method: string; readonly bodyText: string } | null;
 }
 
-/** The verdict beside the row it belongs to, and nothing at all before anything has run. */
-function VerdictMark({ verdict }: { readonly verdict: Verdict | null }) {
+/** What the pane knows about every request in the open file, by the line each one is on. `null`
+ *  before anything has been read, which is a different state from *read and there was nothing*. */
+export type RanIndex = ReadonlyMap<number, Ran>;
+
+/** The verdict beside the row it belongs to, and nothing at all before anything has run.
+ *
+ *  The duration sits in the mark rather than in a column of its own: it is the one number a reader
+ *  wants *about this row* and it is already in the report. `D807` keeps it whole-millisecond. */
+export function VerdictMark({ verdict }: { readonly verdict: Verdict | null }) {
   if (verdict === null) return null;
   return (
     <span className={`step-verdict ${verdict.ok ? 'pass' : 'fail'}`} data-verdict={verdict.ok ? 'pass' : 'fail'} title={verdict.detail}>
-      {verdict.ok ? '✓' : '✗'} {verdict.detail}
+      {verdict.ok ? '✓' : '✗'} {verdict.detail} <span className="muted" data-verdict-ms={verdict.durationMs}>{verdict.durationMs} ms</span>
     </span>
   );
+}
+
+/**
+ * How long ago a report was produced, in the shortest true form — `M213` `S2`.
+ *
+ * **`now` is a parameter and the caller passes `Date.now()` at render**, so the string ages only
+ * when something else re-renders the card. That is deliberate rather than overlooked: a ticking
+ * clock in a pane would repaint every request once a second for a figure whose whole job is to be
+ * read at a glance, and the absolute time is in the `title` for anyone who needs it exactly.
+ *
+ * A date is what `D956` is about: *a claim carries the evidence it rests on*, and the evidence
+ * here is a run that happened at a particular moment. An absolute clock time would make a reader
+ * do the subtraction, and the subtraction is the whole question — *is this about the code in front
+ * of me?* So the relative form leads, and the absolute one stays in the `title`.
+ */
+export function ago(iso: string, now: number): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return 'at an unrecorded time';
+  const seconds = Math.max(0, Math.round((now - then) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
 }
 
 /** A statement's address as one string, for keying the row being typed into. `null` for a row no
@@ -407,7 +491,7 @@ export function stepKey(path: StepPath | null): string | null {
  * `S1`'s gate counts exactly four controls under it. Two different rows wearing one class is the
  * drift class this repository files findings against, and here it had teeth — the gate saw nine.
  */
-function Field({ label, value, title, onChange, placeholder }: {
+export function Field({ label, value, title, onChange, placeholder }: {
   readonly label: string;
   readonly value: string;
   readonly title?: string;
@@ -432,7 +516,7 @@ function Field({ label, value, title, onChange, placeholder }: {
   );
 }
 
-const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
+export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 
 /**
  * **Every clause a `test` header admits** (`M212` `S3`, `D1084`).
@@ -456,20 +540,26 @@ interface ClauseOption {
   readonly key: string;
   readonly label: string;
   readonly title: string;
-  readonly editable: boolean;
-  /** Why this door cannot construct it — required exactly when `editable` is false, because a
-   *  disabled control with no reason is worse than no control at all. */
-  readonly why?: string;
 }
 
+/**
+ * **Every clause is addable, and `M214` `A2` is what made that true.**
+ *
+ * Three of these seven carried `editable: false` and an 80-character apology — *"the request spec
+ * has no room for it yet; it is carried across an edit, not rebuilt"* — drawn as three permanently
+ * disabled rows on every one of the corpus's 1058 requests. The sentence was about `ApiStepSpec`
+ * and read as a sentence about the language; `ApiRequestSpec` has carried all three fields since
+ * the enterprise arc and the printer has written them for just as long. `A2` widened the builder's
+ * input, so there is no clause left to apologise for and the `locked` state went with the apology.
+ */
 const REQUEST_CLAUSES: readonly ClauseOption[] = [
-  { key: 'service', label: 'service', title: 'the name in tflw.config of a second api service', editable: true },
-  { key: 'label', label: 'label', title: '`as “…”` — the identity this request reports under', editable: true },
-  { key: 'headers', label: 'headers', title: 'a header on this request alone', editable: true },
-  { key: 'body', label: 'body', title: 'what this request sends — JSON, raw text, a file, or form fields', editable: true },
-  { key: 'timeout', label: 'timeout', title: "this request's own timeout, or the env's", editable: false, why: 'the request spec has no room for it yet; it is carried across an edit, not rebuilt' },
-  { key: 'redirects', label: 'redirects', title: '`without redirects` makes the 3xx itself observable', editable: false, why: 'the request spec has no room for it yet; it is carried across an edit, not rebuilt' },
-  { key: 'retryAfter', label: 'retry after', title: '`retry honoring “Retry-After” up to N` — this one request, not the test', editable: false, why: 'the request spec has no room for it yet; it is carried across an edit, not rebuilt' },
+  { key: 'service', label: 'service', title: 'the name in tflw.config of a second api service' },
+  { key: 'label', label: 'label', title: '`as “…”` — the identity this request reports under' },
+  { key: 'headers', label: 'headers', title: 'a header on this request alone' },
+  { key: 'body', label: 'body', title: 'what this request sends — JSON, raw text, a file, or form fields' },
+  { key: 'timeout', label: 'timeout', title: "this request's own timeout, or the env's" },
+  { key: 'redirects', label: 'redirects', title: '`without redirects` makes the 3xx itself observable' },
+  { key: 'retryAfter', label: 'retry after', title: '`retry honoring “Retry-After” up to N` — this one request, not the test' },
 ];
 
 /** The five that are fields rather than groups — the `.request-fields` row. */
@@ -515,6 +605,37 @@ export interface RequestEdit {
   readonly bodyKind: 'none' | 'json' | 'text' | 'file' | 'form' | 'upload';
   readonly bodyText: string;
   readonly formFields: readonly { readonly name: string; readonly value: string }[];
+  /**
+   * **The three `M214` `A2` widened the builder for**, held as text because that is what a field
+   * holds and because an unparseable intermediate state has to be typeable: `3` on the way to
+   * `30s` is not a duration, and a control that refused the keystroke would be a control nobody
+   * can type into.
+   *
+   * `timeout` is the language's own spelling — `30s`, `500ms`, `2m` — and blank means *the env's*.
+   * `retryAfter` is the bare count after `up to`; blank means the clause is not written.
+   */
+  readonly timeout: string;
+  readonly redirects: boolean;
+  readonly retryAfter: string;
+}
+
+/**
+ * A duration as the language spells it, back to milliseconds — the inverse of `print`'s own
+ * `duration()`, which emits `m` above a minute, `s` above a second and `ms` otherwise.
+ *
+ * It is **here and not in `@tflw/lang`** deliberately: the language reads a duration with a
+ * dedicated lexer token and has no reason to grow a string parser for one. What this covers is the
+ * three spellings that function can emit plus a bare number, which is what an author types before
+ * they have typed the unit. Anything else is `null` and the builder says so.
+ */
+export function durationMs(text: string): number | null {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*(ms|s|m)?\s*$/.exec(text);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const scale = m[2] === 'm' ? 60_000 : m[2] === 's' ? 1_000 : 1;
+  const ms = n * scale;
+  return Number.isInteger(ms) ? ms : null;
 }
 
 /** The card's current values, read off a request the file already holds. */
@@ -547,6 +668,10 @@ export function editOf(r: OutlineRequest): RequestEdit {
       : body.type === 'FileBody' ? body.path.value
       : '{ }',
     formFields: body !== null && body.type === 'FormBody' ? body.fields.map((f) => ({ name: f.key, value: f.value.type === 'StringLit' ? f.value.value : printValue(f.value) })) : [],
+    /* Read off the node, which has carried all three since the enterprise arc — `M214` `A2`. */
+    timeout: r.spec.timeoutMs === null ? '' : durationText(r.spec.timeoutMs),
+    redirects: r.spec.followRedirects,
+    retryAfter: r.spec.retryAfter === null ? '' : String(r.spec.retryAfter.max),
   };
 }
 
@@ -570,6 +695,15 @@ export function specOf(edit: RequestEdit): ApiStepSpec {
     headers: edit.headers.map((h) => ({ name: h.name, value: h.value })),
     body,
     label: edit.label.trim() === '' ? null : edit.label.trim(),
+    /* **Always all three, never omitted** — `ApiStepSpec` says why on the fields themselves: they
+       are optional so that a caller building a FRESH request keeps the language's defaults, and a
+       caller REBUILDING one that leaves them out drops them from the file. This is that caller. */
+    /* `NaN` rather than `null` for a string that is not a duration: `null` means *the env's*, which
+       is a real and different answer, so handing it back for `"3x"` would silently discard what was
+       typed. `buildApiStep`'s own `duration()` refuses a `NaN` with a sentence the field shows. */
+    timeoutMs: edit.timeout.trim() === '' ? null : (durationMs(edit.timeout) ?? Number.NaN),
+    followRedirects: edit.redirects,
+    retryAfter: edit.retryAfter.trim() === '' ? null : Number(edit.retryAfter.trim()),
   };
 }
 
@@ -609,29 +743,29 @@ const MATCHER_LABEL: Record<MatcherName, string> = {
   hasNoAuthzViolations: 'has no authorization violations',
   hasNoInputHandlingViolations: 'has no input-handling violations',
 };
-const MATCHERS = Object.entries(MATCHER_LABEL) as readonly (readonly [MatcherName, string])[];
+export const MATCHERS = Object.entries(MATCHER_LABEL) as readonly (readonly [MatcherName, string])[];
 
 /** The matchers that compare against a value. `fails` is here and its operand is optional — the
  *  one matcher in the language whose value may be present or absent (`SPEC` §6.2.2). */
-const VALUE_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>([
+export const VALUE_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>([
   'equals', 'contains', 'matches', 'matchesSubset', 'greaterThan', 'lessThan', 'hasCount', 'hasValue', 'fails',
 ]);
 /** The four that grade a whole subject against a rule family, and take a severity floor. */
-const SCAN_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>([
+export const SCAN_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>([
   'hasNoA11yViolations', 'hasNoSecurityViolations', 'hasNoAuthzViolations', 'hasNoInputHandlingViolations',
 ]);
 /** The three whose operand is a **trailing clause** rather than a value — `S3a` in `build.ts` is
  *  where the builder learned to construct them; this is the same three, spelled as fields. */
-const CLAUSE_MATCHER: Partial<Record<MatcherName, 'schema' | 'file' | 'snapshot'>> = {
+export const CLAUSE_MATCHER: Partial<Record<MatcherName, 'schema' | 'file' | 'snapshot'>> = {
   matchesSchema: 'schema',
   matchesFile: 'file',
   matchesSnapshot: 'snapshot',
 };
-const SEVERITIES: readonly FindingSeverity[] = ['minor', 'moderate', 'serious', 'critical'];
+export const SEVERITIES: readonly FindingSeverity[] = ['minor', 'moderate', 'serious', 'critical'];
 
 /** The subjects a spec can spell, in the words the language uses. Eleven of the language's
  *  sixteen; the other five arrive as `carried` below. */
-const SUBJECTS = [
+export const SUBJECTS = [
   ['status', 'status'],
   ['duration', 'duration'],
   ['request', 'request'],
@@ -899,7 +1033,7 @@ export function thresholdSpecOf(edit: ThresholdEdit): ThresholdSpec {
 
 /** The subject controls, shared by the two statements that take one — an assertion and a `capture`
  *  (`M210` `S4`). One control set, because the grammar has one subject position. */
-function SubjectFields({ subject, argument, locatorKind, carried, onChange }: {
+export function SubjectFields({ subject, argument, locatorKind, carried, onChange, drops }: {
   readonly subject: ExpectSubjectKind;
   readonly argument: string;
   readonly locatorKind: LocatorKind;
@@ -907,11 +1041,23 @@ function SubjectFields({ subject, argument, locatorKind, carried, onChange }: {
    *  can — which is what decides whether the option is offered at all. */
   readonly carried: string | null;
   readonly onChange: (patch: { subject?: ExpectSubjectKind; argument?: string; locatorKind?: LocatorKind }) => void;
+  /**
+   * **Subjects this door does not offer** — `M214` `A3`, from `vocabulary.ts`.
+   *
+   * The API door's select carried `an element` and `page` on all 1736 assertion rows in the corpus,
+   * which is a door offering a word that cannot be true about anything it can fetch. Absent means
+   * *drop nothing*, which is what every door but API passes and what a caller with no opinion gets.
+   *
+   * **A dropped subject that is already written is still drawn**, which is the same rule `carried`
+   * follows one option over: a filter that hid what the file says would make a real assertion
+   * invisible, and `D1076` refuses that in a way it does not refuse an extra option.
+   */
+  readonly drops?: ReadonlySet<string>;
 }) {
   return (
     <>
       <select value={subject} onChange={(e) => onChange({ subject: e.target.value as ExpectSubjectKind })} data-expect-subject={subject} aria-label="subject">
-        {SUBJECTS.map(([id, text]) => (
+        {SUBJECTS.filter(([id]) => drops === undefined || !drops.has(id) || id === subject).map(([id, text]) => (
           <option key={id} value={id}>{text}</option>
         ))}
         {/* Offered only while it is what this row already says — the builder cannot construct one,
@@ -957,9 +1103,17 @@ export type StatementEdit =
   | { readonly kind: 'log'; readonly level: LogLevel; readonly message: string; readonly destination: '' | LogDestination }
   | { readonly kind: 'call'; readonly name: string; readonly args: readonly string[] }
   | { readonly kind: 'give'; readonly value: string }
-  | { readonly kind: 'pause'; readonly min: string; readonly max: string };
+  | { readonly kind: 'pause'; readonly min: string; readonly max: string }
+  /* **The BROWSER door's three** (`M213` `S4`, `D1094`). They are here rather than in a second
+     union because a row is a row: `ScriptRow` draws whichever of these a statement is, and the
+     only per-door fact is whether this door can construct the kind — which `vocabulary.ts` says
+     and this type does not. */
+  | { readonly kind: 'open'; readonly path: string }
+  | { readonly kind: 'click'; readonly locatorKind: LocatorKind; readonly locator: string; readonly clickKind: ClickKind }
+  | { readonly kind: 'fill'; readonly locatorKind: LocatorKind; readonly locator: string; readonly value: string };
 
 const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
+const CLICK_KINDS: readonly ClickKind[] = ['single', 'double', 'right'];
 const LOG_DESTINATIONS: readonly LogDestination[] = ['console', 'html', 'both'];
 
 /**
@@ -972,7 +1126,7 @@ const LOG_DESTINATIONS: readonly LogDestination[] = ['console', 'html', 'both'];
  * `DurationLit` with a made-up `raw` instead, and the served page answered `1000ms` where the file
  * says `1s`: a value invented here, rendered back as if it came from the file.
  */
-function durationText(ms: number): string {
+export function durationText(ms: number): string {
   const printed = print({ type: 'PauseStmt', minMs: ms, maxMs: null, span: SYNTHETIC } as Parameters<typeof print>[0]);
   return printed.ok ? printed.text.replace(/^pause /, '') : `${ms}ms`;
 }
@@ -1000,14 +1154,81 @@ export function statementEditOf(node: Step): StatementEdit | null {
       return { kind: 'give', value: printValue(node.value) };
     case 'PauseStmt':
       return { kind: 'pause', min: durationText(node.minMs), max: node.maxMs === null ? '' : durationText(node.maxMs) };
+    case 'OpenStmt':
+      return { kind: 'open', path: node.path.value };
+    case 'ClickStmt':
+      return { kind: 'click', locatorKind: node.locator.kind, locator: node.locator.value.value, clickKind: node.kind };
+    case 'FillStmt':
+      return { kind: 'fill', locatorKind: node.locator.kind, locator: node.locator.value.value, value: printValue(node.value) };
     default:
       return null;
   }
 }
 
 /** One statement, as controls — the row for everything that is not an assertion. */
-function ScriptRow({ statement, edit, onEdit, trailing }: {
+/**
+ * The `pick` affordance on one locator field — `M213` `S4` (`D1106`).
+ *
+ * **A session is one at a time, and the button says which state it is in** rather than being a
+ * toggle whose meaning depends on somewhere else on the page: `pick` when nothing is running,
+ * `stop` on the row that owns a running session, and disabled on every other row while one is —
+ * because `pick` drives a real browser and two sessions would be two browsers reporting into one
+ * list.
+ *
+ * What comes back is a list rather than a single answer, newest first, because one click on a
+ * page can be described several ways and the author is the one who knows which. Clicking a
+ * suggestion writes both halves of the locator — its kind and its value — which is the whole
+ * reason this is not a text field with a hint beside it.
+ */
+function PickField({ statement, pick, onPicked }: {
   readonly statement: OutlineStatement;
+  readonly pick: NonNullable<RowEditing['pick']>;
+  readonly onPicked: (locator: LocatorSpec) => void;
+}) {
+  const key = stepKey(statement.stepPath);
+  const mine = key !== null && pick.row === key;
+  const busy = pick.row !== null && !mine;
+  return (
+    <span className="pick-field" data-pick-row={key ?? ''}>
+      <button
+        type="button"
+        onClick={() => (mine ? pick.onStop() : key !== null && pick.onStart(key))}
+        disabled={busy || key === null}
+        data-pick={key ?? ''}
+        data-pick-state={mine ? 'running' : busy ? 'busy' : 'idle'}
+        title={
+          key === null
+            ? 'this row is inside a block, so it has no address a session could report back to'
+            : mine
+              ? 'close the browser this session opened'
+              : busy
+                ? 'a pick session is already running on another row — `pick` drives one real browser'
+                : 'open the page and click the element this step means'
+        }
+      >
+        {mine ? 'stop' : 'pick'}
+      </button>
+      {!mine ? null : pick.found.length === 0 ? (
+        <span className="muted" data-picked={0}>
+          click something in the browser that opened
+        </span>
+      ) : (
+        <span className="picked" data-picked={pick.found.length}>
+          {pick.found.map((l, i) => (
+            <button key={`${l.kind}:${l.value}:${i}`} type="button" onClick={() => { onPicked(l); pick.onStop(); }} data-picked-option={i}>
+              {l.kind} “{l.value}”
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function ScriptRow({ statement, edit, onEdit, trailing, pick }: {
+  readonly statement: OutlineStatement;
+  /** The picker, or `null` on a door whose vocabulary has no locators in it (`D1106`). */
+  readonly pick: RowEditing['pick'];
   /** Everything but an assertion, which has its own row — so the last branch here is `pause` by
    *  exhaustion rather than by a `default` that would swallow a kind added later. */
   readonly edit: Exclude<StatementEdit, { readonly kind: 'expect' }>;
@@ -1107,6 +1328,50 @@ function ScriptRow({ statement, edit, onEdit, trailing }: {
       <div className="row expect-fields" data-script="give" data-expect-line={statement.line}>
         <span className="kw">give</span>
         <input value={edit.value} onChange={(e) => onEdit({ ...edit, value: e.target.value })} data-give-value aria-label="value" placeholder="{orderId}" />
+        {line}
+      </div>
+    );
+  }
+  if (edit.kind === 'open') {
+    return (
+      <div className="row expect-fields" data-script="open" data-expect-line={statement.line}>
+        <span className="kw">open</span>
+        <input value={edit.path} onChange={(e) => onEdit({ ...edit, path: e.target.value })} data-open-path aria-label="path" placeholder="/checkout" />
+        {line}
+      </div>
+    );
+  }
+  if (edit.kind === 'click' || edit.kind === 'fill') {
+    return (
+      <div className="row expect-fields" data-script={edit.kind} data-expect-line={statement.line}>
+        {edit.kind === 'click' ? (
+          <select value={edit.clickKind} onChange={(e) => onEdit({ ...edit, clickKind: e.target.value as ClickKind })} data-click-kind aria-label="click kind">
+            {/* `single` is 770 of the corpus's 774 clicks; the other two are two each — so the
+                default is the one everybody writes and the other two are reachable rather than
+                promoted. */}
+            {CLICK_KINDS.map((k) => (
+              <option key={k} value={k}>{k === 'single' ? 'click' : `${k} click`}</option>
+            ))}
+          </select>
+        ) : (
+          <span className="kw">fill</span>
+        )}
+        <select value={edit.locatorKind} onChange={(e) => onEdit({ ...edit, locatorKind: e.target.value as LocatorKind })} data-locator-kind aria-label="element kind">
+          {LOCATOR_KINDS.map((k) => (
+            <option key={k} value={k}>{k}</option>
+          ))}
+        </select>
+        <input value={edit.locator} onChange={(e) => onEdit({ ...edit, locator: e.target.value })} data-locator-value aria-label="element" placeholder="Buy" />
+        {pick === null ? null : <PickField statement={statement} pick={pick} onPicked={(l) => onEdit({ ...edit, locatorKind: l.kind, locator: l.value })} />}
+        {edit.kind === 'fill' ? (
+          <>
+            <span className="kw">with</span>
+            {/* Parsed as a **value**, not as a string: the corpus fills with a `StringLit` 422
+                times, an `EnvRef` 12 and an `Interp` 3, so a field that only took a string would
+                be right 96% of the time and unable to express the rest. */}
+            <input value={edit.value} onChange={(e) => onEdit({ ...edit, value: e.target.value })} data-fill-value aria-label="value" placeholder='"alice@example.com"' />
+          </>
+        ) : null}
         {line}
       </div>
     );
@@ -1224,7 +1489,7 @@ function ExpectRow({ statement, edit, onEdit, trailing }: {
 }
 
 /** A subject in its own spelling, for the one option the select cannot rebuild. */
-function subjectSpelling(subject: Subject): string {
+export function subjectSpelling(subject: Subject): string {
   const out = print(subject);
   return out.ok ? out.text : subject.type;
 }
@@ -1238,7 +1503,205 @@ function subjectSpelling(subject: Subject): string {
  * invisible *because* it is rare. §4 item 4 leaves whether that stays to `S2`; drawing them is the
  * answer that cannot hide anything, which is the right side to be on while the pane is read-only.
  */
-function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
+/**
+ * What came back, as one chip in the request's own header — `M213` `S2` (`D1099`, `D1109`).
+ *
+ * **THIS IS A HEIGHT DECISION TAKEN RATHER THAN DISCOVERED, AND IT WAS TAKEN TWICE.** Until this
+ * slice a response was on screen only after a send, for one request. `D1099` makes it the default
+ * for *every* request in a file that has run, which is the right behaviour and — drawn as the open
+ * block `M210` `S6` used — put the API pane past `S1`'s 1.50-screen bar on the first render,
+ * before anyone pressed anything.
+ *
+ * The first repair was a closed `<details>` under the request's fields. **Measured on the box, it
+ * cost 54 px on `Ribbon`** — 42 for a bordered box holding one line of text, plus its margin — and
+ * landed at 1368 px against a 1350 bar. That is the whole lesson: *a closed disclosure still
+ * occupies a block, and a block for one line of metadata is the defect, not the bar.* So the
+ * trigger moved into `.request-head`, which is a row that already exists and has horizontal room,
+ * and **the response costs nothing at all until it is opened**.
+ *
+ * It is a button and a panel rather than `<details>`/`<summary>` for exactly that reason: a
+ * `<summary>` has to live inside its own `<details>`, so the disclosure could not be in the header
+ * while the body is below the fields. `aria-expanded` and `aria-controls` are what make the pair
+ * the same thing to a reader who is not looking at it.
+ *
+ * **THE CHIP SAYS WHICH SCOPE IT IS.** *from the last run* and *from this send* are different
+ * evidence, and `D956` is the rule that they are told apart rather than both rendered as
+ * "the response".
+ */
+/** The id the chip in the header and the panel below the fields are joined by. One function, so
+ *  the two cannot drift apart into a control that points at nothing. */
+export const responsePanelId = (line: number): string => `response-${line}`;
+
+/** The chip — the whole of what a response costs at rest. It lives in `.request-head`, a row that
+ *  already exists, so the answer to *what came back* is on screen for nothing. */
+function ResponseChip({ ran, open, onToggle }: {
+  readonly ran: Ran;
+  readonly open: boolean;
+  readonly onToggle: () => void;
+}) {
+  const response = ran.response!;
+  return (
+    <button
+      type="button"
+      className="response-chip"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-controls={responsePanelId(ran.line)}
+      data-compose-response={response.status}
+      data-compose-response-scope={ran.scope}
+      data-compose-response-open={open ? 'yes' : 'no'}
+      title={`${response.method} ${response.url} — ${ran.at}`}
+    >
+      <span className={`status-code ${statusTone(response.status)}`} data-compose-response-status={response.status}>{response.status}</span>{' '}
+      <span className="muted" data-compose-response-when>
+        {ran.scope === 'send' ? 'from this send' : 'from the last run'}, {ago(ran.at, Date.now())}
+      </span>
+    </button>
+  );
+}
+
+export function ResponsePanel({ ran, open, onVerify, onCapture }: {
+  readonly ran: Ran;
+  readonly open: boolean;
+  /** `null` where the pane is read-only — the ticks still show what the response holds, and the
+   *  button says the file is not editable rather than disappearing. */
+  readonly onVerify: ((spec: ExpectSpec) => void) | null;
+  /** **The same ticks, a second verb** (`M213` `S3`, `D1102`). *Sign in → capture the token →
+   *  authed call → assert* is the sentence `D1102` exists for, and the first arrow is this one:
+   *  the token is a value in a response that is already on screen with a checkbox beside it. */
+  readonly onCapture: ((specs: readonly CaptureSpec[]) => void) | null;
+}) {
+  const response = ran.response!;
+  const [ticked, setTicked] = useState<readonly string[]>([]);
+  const tickable = useMemo(() => leaves(response.bodyText), [response.bodyText]);
+  const chosen = useMemo(() => tickable.leaves.filter((l) => ticked.includes(l.path)), [tickable, ticked]);
+  const built = useMemo(() => verifySpec(chosen), [chosen]);
+
+  /* The ticks are about **this** response. A new one — a send, or a different request — is a
+     different set of paths, so carrying a tick across would mean a checkbox ticked against a path
+     that may not be in the body under it. */
+  useEffect(() => setTicked([]), [response.bodyText]);
+
+  const toggle = (path: string): void =>
+    setTicked((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]));
+
+  return (
+    <div className="response" id={responsePanelId(ran.line)} hidden={!open} data-compose-response-panel={response.status}>
+      <p className="muted" data-compose-response-url>{response.method} {response.url}</p>
+
+      {/* **Tick what matters; the ticks become one assertion** (`D1100`). One tick is a path
+          assertion, several are one `matches subset` — and a subset ignores what you did not tick,
+          which is why a test written this way does not break when the API gains a field. */}
+      {tickable.leaves.length === 0 ? (
+        <p className="muted" data-compose-tick-none>
+          this response is not JSON — there are no paths to tick. Assert on <code>body text</code> or{' '}
+          <code>status</code> instead.
+        </p>
+      ) : (
+        <>
+          <ul className="ticks" data-compose-ticks={tickable.leaves.length}>
+            {tickable.leaves.map((leaf) => (
+              <li key={leaf.path} className="tick">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={ticked.includes(leaf.path)}
+                    onChange={() => toggle(leaf.path)}
+                    data-tick={leaf.path}
+                    data-tick-subsetable={leaf.subsetable ? 'yes' : 'no'}
+                  />{' '}
+                  <code className="tick-path">{leaf.path === '' ? 'body' : leaf.path}</code>{' '}
+                  <code className="tick-value">{leaf.valueText}</code>
+                </label>
+              </li>
+            ))}
+          </ul>
+          {tickable.capped || tickable.skipped > 0 ? (
+            <p className="muted" data-compose-ticks-elided>
+              {tickable.capped ? `only the first ${LEAF_CAP} values are listed — the body below is whole. ` : ''}
+              {tickable.skipped > 0
+                ? `${tickable.skipped} value${tickable.skipped === 1 ? '' : 's'} sit under a key \`body.<path>\` cannot spell (M213-18) — the body below shows them.`
+                : ''}
+            </p>
+          ) : null}
+          <div className="tick-do">
+            <button
+              onClick={() => { if (built?.ok && onVerify !== null) { onVerify(built.spec); setTicked([]); } }}
+              disabled={onVerify === null || built === null || !built.ok}
+              data-compose-verify
+              title={
+                onVerify === null
+                  ? 'this pane is read-only here'
+                  : built === null
+                    ? 'tick a value first'
+                    : built.ok
+                      ? 'write this assertion under the request'
+                      : built.reason
+              }
+            >
+              verify {chosen.length === 0 ? '' : `${chosen.length} value${chosen.length === 1 ? '' : 's'}`}
+            </button>
+            {/* **The same ticks, bound instead of asserted** (`S3`, `D1102`). One statement per
+                tick rather than one combined — a `capture` binds one name to one value and the
+                language has no n-ary form — inserted as one edit, because a file between two
+                writes whose second capture is missing is a file that does not run. */}
+            <button
+              onClick={() => { if (onCapture !== null && chosen.length > 0) { onCapture(captureSpecs(chosen)); setTicked([]); } }}
+              disabled={onCapture === null || chosen.length === 0}
+              data-compose-capture
+              title={
+                onCapture === null
+                  ? 'this pane is read-only here'
+                  : chosen.length === 0
+                    ? 'tick a value first'
+                    : `bind ${chosen.map((l) => captureName(l.path)).join(', ')} for the requests below this one`
+              }
+            >
+              capture {chosen.length === 0 ? '' : chosen.map((l) => captureName(l.path)).join(', ')}
+            </button>
+            {/* **What it will write, before it writes it.** The gesture composes a statement in a
+                language the author is reading on the same screen; showing the sentence is cheaper
+                than a preview mode and is the only thing that makes the one-versus-several rule
+                visible at all. */}
+            {built === null ? null : built.ok ? (
+              <code className="tick-preview" data-compose-verify-preview>{previewOf(built.spec)}</code>
+            ) : (
+              <span className="warn" data-compose-verify-refused>{built.reason}</span>
+            )}
+          </div>
+        </>
+      )}
+
+      <pre className="preview" data-compose-response-body>{response.bodyText}</pre>
+    </div>
+  );
+}
+
+/**
+ * How a status code is painted — `M213` `S2`.
+ *
+ * `pass` for 2xx and 3xx, `warn` for everything else, and **never `fail`**. A 404 is not a failed
+ * test: `expect status equals 404` is a perfectly ordinary assertion and 118 of the sibling's
+ * expects are exactly that shape. What says whether the test held is the verdict beside the
+ * assertion; what this says is *what came back*, and painting it red would be this pane inventing
+ * a judgement the run did not make. `§1.5` of the plan measured these three tokens declared and
+ * spent nowhere; this is one of the two places `S2` spends them.
+ */
+export function statusTone(status: number): 'pass' | 'warn' {
+  return status >= 200 && status < 400 ? 'pass' : 'warn';
+}
+
+/** The sentence `verify` will write, printed by the language's own printer (`D1087`) — not a
+ *  second spelling of `expect` living in this file. A spec the builder refuses has no sentence,
+ *  which is a state the button is already disabled in. */
+function previewOf(spec: ExpectSpec): string {
+  const out = buildExpect(spec);
+  if (!out.ok) return out.reason;
+  const printed = print(out.node, { indent: 0 });
+  return printed.ok ? printed.text.trim() : '';
+}
+
+function RequestCard({ request: r, door, edit, onEdit, editing, ran, onVerify, onCapture }: {
   readonly request: OutlineRequest;
   readonly door: Lens;
   /** The card's live values. `null` means this pane is still read-only here — `S1`'s state, and
@@ -1247,9 +1710,14 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
   readonly onEdit: ((next: RequestEdit) => void) | null;
   /** Everything the rows under this card need to be editable (`S3`, `S4`). */
   readonly editing: RowEditing;
-  /** What the last run said, by the position of each step after the request (`S6`). `null` until
-   *  something has run, and `null` again the moment the selection moves. */
+  /** What the last run said about **this** request (`S6`, widened by `M213` `S2`). `null` when
+   *  nothing has run it, or when what ran is no longer what is written here (`D1108`). The caller
+   *  resolves that: by the time it reaches this card the join has already been checked. */
   readonly ran: Ran | null;
+  /** Where a ticked assertion goes (`D1100`). `null` where the pane is read-only. */
+  readonly onVerify: ((spec: ExpectSpec) => void) | null;
+  /** Where ticked captures go (`D1102`). `null` where the pane is read-only. */
+  readonly onCapture: ((specs: readonly CaptureSpec[]) => void) | null;
 }) {
   const spec = r.spec;
   const writingNote = editing.noting !== null && editing.noting === stepKey(r.stepPath);
@@ -1258,6 +1726,10 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
 
   /** `M212` `S3` (`D1084`) — which of this request's clauses the file actually writes. */
   const [added, setAdded] = useState<readonly string[]>([]);
+  /** Whether the response is open (`M213` `S2`). It is held here rather than in either half
+   *  because the trigger is in the header and the panel is below the fields — see `ResponseChip`
+   *  for why those are two elements and not a `<details>`. */
+  const [responseOpen, setResponseOpen] = useState(false);
   const states = (clause: string): boolean => {
     switch (clause) {
       case 'service': return v.service !== '';
@@ -1318,6 +1790,12 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
           <span className="badge" data-request-polling="yes" title="this request is re-issued until the assertions below it pass">
             polls
           </span>
+        ) : null}
+        {/* **What came back, in the row that already exists** (`M213` `S2`, `D1109`). The panel it
+            opens is below the fields, beside the assertions that read it (`D1075`); what is here
+            is the answer to *what came back*, which costs no height at all. */}
+        {ran !== null && ran.response !== null ? (
+          <ResponseChip ran={ran} open={responseOpen} onToggle={() => setResponseOpen((v) => !v)} />
         ) : null}
       </header>
 
@@ -1442,15 +1920,7 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
       {/* **The response, beside the assertions that read it** (`D1075`). It is the report's own
           trace — the run wrote it, this pane did not fetch it — which is `D1047` unchanged and the
           reason a send is a run rather than a second HTTP client living in a browser tab. */}
-      {ran !== null && ran.line === r.line && ran.response !== null ? (
-        <div className="response" data-compose-response={ran.response.status}>
-          <h4 className="muted">the last send</h4>
-          <p className="muted" data-compose-response-url>
-            {ran.response.method} {ran.response.url} — {ran.response.status}
-          </p>
-          <pre className="preview" data-compose-response-body>{ran.response.bodyText}</pre>
-        </div>
-      ) : null}
+      {ran !== null && ran.response !== null ? <ResponsePanel ran={ran} open={responseOpen} onVerify={onVerify} onCapture={onCapture} /> : null}
 
       <div className="expects-form" data-request-attached={r.attached.length}>
         <h4 className="muted">
@@ -1468,11 +1938,11 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
                 statement={s}
                 door={door}
                 editing={editing}
-                /* **By position, not by line.** The scratch is a printed program with the other
-                   tests removed, so its line numbers are not this file's; what holds the two
-                   together is the order, which is the order both were written in. Index 0 of the
-                   run is the request itself, so the attachments start at 1. */
-                verdict={ran !== null && ran.line === r.line ? ran.steps[i + 1] ?? null : null}
+                /* **By line, and by the text on it** (`D1093`/`D1108`). The caller keys every
+                   verdict to a line of *this* file and drops the ones whose statement has been
+                   typed into since it ran — so a row with no mark is a row nothing has said
+                   anything about, which is exactly what it should look like. */
+                verdict={ran?.steps.get(s.line) ?? null}
               />
             ))}
           </ul>
@@ -1486,8 +1956,7 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
             key: c.key,
             label: c.label,
             title: c.title,
-            state: shows(c.key) ? ('present' as const) : c.editable ? ('addable' as const) : ('locked' as const),
-            why: c.why,
+            state: shows(c.key) ? ('present' as const) : ('addable' as const),
           }))}
           onAdd={add}
         />
@@ -1498,7 +1967,7 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
 
 /** `print` emits an `InlineBody` as `body <json>`; the field holds the json. One `slice`, named,
  *  rather than a second serialiser for the one shape the printer will not emit on its own. */
-function withoutKeyword(printed: string): string {
+export function withoutKeyword(printed: string): string {
   return printed.startsWith('body ') ? printed.slice('body '.length) : printed;
 }
 
@@ -1509,14 +1978,14 @@ function quoted(r: OutlineRequest, i: number, fallback: string): string {
 }
 
 /** The body kind the card is showing — the edit's when there is one, the file's otherwise. */
-function bodyKindOf(r: OutlineRequest, edit: RequestEdit | null): string {
+export function bodyKindOf(r: OutlineRequest, edit: RequestEdit | null): string {
   if (edit !== null) return edit.bodyKind;
   return r.body === null ? 'none' : r.body.type;
 }
 
 /** Any value, in the language's own spelling. Total since `M201`; a refusal is named rather than
  *  rendered as a blank, because a blank in a projection is the silence `D1076` refuses. */
-function printValue(node: { readonly type: string; readonly span: unknown }): string {
+export function printValue(node: { readonly type: string; readonly span: unknown }): string {
   const out = print(node as Parameters<typeof print>[0]);
   return out.ok ? out.text : `# unprintable: ${out.reason ?? node.type}`;
 }
@@ -1530,7 +1999,7 @@ function printValue(node: { readonly type: string; readonly span: unknown }): st
  * `ObjectLit` is `CONTEXT_BOUND`: it has no source of its own to be re-parsed from, so refusing it
  * is the printer being right. Nothing in the model could have said so — only the paint could.
  */
-function bodyText(body: ApiBody): string {
+export function bodyText(body: ApiBody): string {
   const out = print(body);
   return out.ok ? out.text : `# unprintable: ${out.reason ?? body.type}`;
 }
@@ -1543,7 +2012,7 @@ function bodyText(body: ApiBody): string {
  * what was being counted was the default value. A band that renders a default as a fact makes the
  * same mistake on screen, every time.
  */
-function TestBand({ decl, door, editing }: {
+export function TestBand({ decl, door, editing }: {
   readonly decl: OutlineHook | OutlineTest;
   readonly door: Lens;
   readonly editing: RowEditing;
@@ -1846,7 +2315,7 @@ function Joined({ items }: { readonly items: readonly string[] }) {
 }
 
 /** The one pinned file row (`D1074`): what this file brings in, and what it declares for itself. */
-function FileRow({ outline, editing }: { readonly outline: FileOutline; readonly editing: RowEditing }) {
+export function FileRow({ outline, editing }: { readonly outline: FileOutline; readonly editing: RowEditing }) {
   const { imports, uses, actions, header, tail } = outline.file;
   const empty = imports.length === 0 && uses.length === 0 && actions.length === 0 && header === null;
   const live = editing.onFileDecl !== null;
@@ -1999,7 +2468,7 @@ function PathRows({ what, paths, onChange }: {
  * - **`206 of 396` multi-request tests interleave** (`outline.ts`), so any grouping other than file
  *   order is lossy by construction. This one does no grouping at all.
  */
-function BodySequence({ decl, selected, door, onLine, edit, onEdit, editing, ran }: {
+function BodySequence({ decl, selected, door, onLine, edit, onEdit, editing, ran, onVerify, onCapture, adds, onAdd, recording }: {
   readonly decl: OutlineHook | OutlineTest;
   readonly selected: OutlineRequest | null;
   readonly door: Lens;
@@ -2007,26 +2476,70 @@ function BodySequence({ decl, selected, door, onLine, edit, onEdit, editing, ran
   readonly edit: RequestEdit | null;
   readonly onEdit: ((next: RequestEdit) => void) | null;
   readonly editing: RowEditing;
-  readonly ran: Ran | null;
+  /**
+   * **Every request's last verdict, not just the selected one** (`M213` `S2`, `D1099`).
+   *
+   * This was one `Ran` for one request until this slice, because the only way to get one was to
+   * press `send` on the request you were looking at. Reading the last run off the report on disk
+   * costs one fetch for the whole file, so withholding it from the twelve collapsed rows would be
+   * a decision to hide evidence that is already in hand — and those rows are where it is worth the
+   * most: opening a file and seeing which of its assertions last held is the question a reader has
+   * before they have chosen anything to look at.
+   */
+  readonly ran: RanIndex;
+  readonly onVerify: ((request: OutlineRequest, spec: ExpectSpec) => void) | null;
+  readonly onCapture: ((request: OutlineRequest, specs: readonly CaptureSpec[]) => void) | null;
+  /**
+   * The `+` gestures this door offers, and where one goes — `M213` `S4` (`D1094`).
+   *
+   * A **list from `vocabulary.ts` and one callback**, rather than a prop per gesture. Until this
+   * slice the pane knew the API door's three by name (`onAddRequest`, `onAddLet`, `onAddWait`),
+   * which is exactly the shape that makes a second door a second pane: BROWSER's four are
+   * `open`, `click`, `fill` and `let`, and none of the first three is any of API's.
+   */
+  readonly adds: readonly AddGesture[];
+  readonly onAdd: ((decl: OutlineTest, key: string) => void) | null;
+  /** The declaration a recording is writing into, by its line (`M213` `S5`). `null` when none is
+   *  running. It is a **line and not a boolean** because a recorder writes into one declaration
+   *  and the page draws several `+` rows: a boolean would light every one of them. */
+  readonly recording: number | null;
 }) {
   const rows: ReactNode[] = [];
   for (const s of decl.body.preamble) {
-    // A preamble statement runs before the first request and its verdict is not beside a card, so
-    // it carries none — what `S6` shows is what the selected request was read for.
+    // A preamble statement runs before the first request. It has no request to key off, and the
+    // report's own steps for it are the hook's — so it carries no mark rather than a borrowed one.
     rows.push(<StatementRow key={`pre-${s.line}-${s.kind}`} statement={s} door={door} editing={editing} verdict={null} />);
   }
   for (const r of decl.body.requests) {
+    const rows_ran = ran.get(r.line) ?? null;
     if (selected !== null && r.line === selected.line) {
       rows.push(
         <li className="seq-open" key={`req-${r.line}`} data-seq-open={r.line}>
-          <RequestCard request={r} door={door} edit={edit} onEdit={onEdit} editing={editing} ran={ran} />
+          <RequestCard
+            request={r}
+            door={door}
+            edit={edit}
+            onEdit={onEdit}
+            editing={editing}
+            ran={rows_ran}
+            onVerify={onVerify === null ? null : (spec) => onVerify(r, spec)}
+            onCapture={onCapture === null ? null : (specs) => onCapture(r, specs)}
+          />
         </li>,
       );
       continue;
     }
-    rows.push(<RequestLine key={`req-${r.line}`} request={r} onLine={onLine} />);
+    rows.push(<RequestLine key={`req-${r.line}`} request={r} onLine={onLine} ran={rows_ran} />);
     for (const s of r.attached) {
-      rows.push(<StatementRow key={`att-${r.line}-${s.line}-${s.kind}`} statement={s} door={door} editing={editing} verdict={null} />);
+      rows.push(
+        <StatementRow
+          key={`att-${r.line}-${s.line}-${s.kind}`}
+          statement={s}
+          door={door}
+          editing={editing}
+          verdict={rows_ran?.steps.get(s.line) ?? null}
+        />,
+      );
     }
   }
   return (
@@ -2039,16 +2552,37 @@ function BodySequence({ decl, selected, door, onLine, edit, onEdit, editing, ran
           this declaration has an empty body — nothing runs in it yet
         </p>
       )}
-      {editing.onAddRequest === null ? null : decl.kind === 'test' ? (
-        <button
-          type="button"
-          className="seq-add"
-          onClick={() => editing.onAddRequest?.(decl)}
-          data-seq-add-request={decl.line}
-          title="an `api` step and the assertion that reads it, at the end of this test"
-        >
-          + request
-        </button>
+      {onAdd === null || adds.length === 0 ? null : decl.kind === 'test' ? (
+        <div className="seq-adds" data-seq-adds={adds.map((a) => a.key).join(',')}>
+          {/* **`capture` is not in this row, on either door**, and that is a rule rather than an
+              omission: it reads a response, so it lives on the response (`ResponsePanel`), beside
+              the value being bound. What is here is every gesture that stands on the test rather
+              than on something the run produced. */}
+          {adds.map((a) => {
+            const live = a.key === 'record' && recording === decl.line;
+            return (
+              <button
+                key={a.key}
+                type="button"
+                className={live ? 'seq-add recording' : 'seq-add'}
+                onClick={() => onAdd(decl, a.key)}
+                disabled={recording !== null && !live}
+                data-seq-add={a.key}
+                data-seq-add-line={decl.line}
+                data-seq-add-live={live ? 'yes' : undefined}
+                title={
+                  recording !== null && !live
+                    ? 'a recording is running — every action in that browser is a step in this file'
+                    : live
+                      ? 'close the browser and stop writing steps'
+                      : a.title
+                }
+              >
+                {live ? 'stop recording' : a.label}
+              </button>
+            );
+          })}
+        </div>
       ) : (
         <p className="muted" data-seq-add-hook>
           a request cannot be added to a hook from here — the splice names a test by name, and a hook has none
@@ -2065,7 +2599,13 @@ function BodySequence({ decl, selected, door, onLine, edit, onEdit, editing, ran
  * there is exactly one way to change what Compose is pointed at and it is the address (`D1045`). A
  * second mechanism here would be a second answer to *where am I*.
  */
-function RequestLine({ request, onLine }: { readonly request: OutlineRequest; readonly onLine: (line: number) => void }) {
+function RequestLine({ request, onLine, ran }: {
+  readonly request: OutlineRequest;
+  readonly onLine: (line: number) => void;
+  /** What the last run said about this request (`M213` `S2`). A collapsed row carries the status
+   *  and nothing else — the body and the ticks are what opening it is for. */
+  readonly ran: Ran | null;
+}) {
   return (
     <li className="seq-request" data-seq-request={request.line} data-seq-method={request.method}>
       <button type="button" className="seq-goto" onClick={() => onLine(request.line)} data-seq-goto={request.line} title="open this request">
@@ -2080,6 +2620,15 @@ function RequestLine({ request, onLine }: { readonly request: OutlineRequest; re
           {' · '}
           {request.attached.length} statement{request.attached.length === 1 ? '' : 's'}
         </span>
+        {ran === null || ran.response === null ? null : (
+          <span
+            className={`status-code ${statusTone(ran.response.status)}`}
+            data-seq-status={ran.response.status}
+            title={`${ran.scope === 'send' ? 'from a send' : 'from the last run'} — ${ran.at}`}
+          >
+            {ran.response.status}
+          </span>
+        )}
       </button>
     </li>
   );
@@ -2144,8 +2693,23 @@ export interface ComposePaneProps {
   readonly prefix: Prefix | null;
   readonly onSend: (() => void) | null;
   readonly sending: boolean;
-  /** The last run's verdicts and response for the selected request. */
-  readonly ran: Ran | null;
+  /**
+   * The last run's verdicts and responses, for **every** request in the open file (`D1099`).
+   *
+   * An empty map is a real and common state — a file nothing has run, or a file whose last run is
+   * no longer about what is written. It is not an error and the pane says nothing about it: a
+   * request with no verdict looks like a request with no verdict.
+   */
+  readonly ran: RanIndex;
+  /** Where a ticked assertion goes (`D1100`) — the request it is about, and the statement to write
+   *  under it. `null` while the pane is read-only. */
+  readonly onVerify: ((request: OutlineRequest, spec: ExpectSpec) => void) | null;
+  /** Where ticked captures go (`D1102`). */
+  readonly onCapture: ((request: OutlineRequest, specs: readonly CaptureSpec[]) => void) | null;
+  /** Every other `+` gesture, from `vocabulary.ts` — see `BodySequence` (`D1094`). */
+  readonly onAdd: ((decl: OutlineTest, key: string) => void) | null;
+  /** The declaration a recording is writing into, by line (`M213` `S5`). */
+  readonly recording: number | null;
   /** Whether the buffer holds anything the file does not (`D1079`). */
   readonly dirty: boolean;
   readonly busy: boolean;
@@ -2156,13 +2720,13 @@ export interface ComposePaneProps {
   readonly onDiscard: () => void;
 }
 
-export function ComposePane({ path, outline, at, door, onLine, onNew, dialog, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
+export function ComposePane({ path, outline, at, door, onLine, onNew, dialog, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, onVerify, onCapture, onAdd, recording, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
   const requests = outline === null ? [] : outline.declarations.flatMap((d) => d.body.requests);
   return (
     <div className="authoring compose-pane" data-compose={outline === null ? 'reading' : at?.request ? 'request' : 'no-request'}>
       <header className="authoring-head">
         <h2>
-          <code>{path}</code>
+          <code data-compose-file={path}>{path}</code>
         </h2>
         {/* **The two ways to make something that is not here yet** (`D1087`). `PUT /api/file` with
             no `If-Match` has created files since the route was written, and the page offered no
@@ -2256,6 +2820,11 @@ export function ComposePane({ path, outline, at, door, onLine, onNew, dialog, sc
               onEdit={onEdit}
               editing={editing}
               ran={ran}
+              onVerify={onVerify}
+              onCapture={onCapture}
+              adds={VOCABULARY[door].adds}
+              onAdd={onAdd}
+              recording={recording}
             />
           )}
         </>
