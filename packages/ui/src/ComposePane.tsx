@@ -344,6 +344,20 @@ export interface RowEditing {
    */
   readonly noting: string | null;
   readonly onNoting: ((key: string | null) => void) | null;
+  /**
+   * **Add a request to a declaration** (`M212` `S4b`, `D1088`).
+   *
+   * `.legacy`'s second mode — *add steps to an existing test* — is the one capability `M210`'s
+   * slices did not replace, and `D1088` cannot retire a form whose job is still half undone. So it
+   * lands where the other `+` gestures already are: at the end of the body's own sequence, adding
+   * the default pair `api GET /` and `expect status equals 200`, into the same pending buffer every
+   * other edit goes to (`D1079`).
+   *
+   * `null` for a hook, and the button says why rather than disappearing: `insertIntoSource` names a
+   * test **by name** and a hook has none, which is a fact about the language and not about this
+   * door.
+   */
+  readonly onAddRequest: ((decl: OutlineTest) => void) | null;
 }
 
 /**
@@ -2016,9 +2030,31 @@ function BodySequence({ decl, selected, door, onLine, edit, onEdit, editing, ran
     }
   }
   return (
-    <ol className="body-sequence" data-body-sequence={decl.body.requests.length} data-body-rows={rows.length}>
-      {rows}
-    </ol>
+    <>
+      <ol className="body-sequence" data-body-sequence={decl.body.requests.length} data-body-rows={rows.length}>
+        {rows}
+      </ol>
+      {rows.length > 0 ? null : (
+        <p className="muted" data-compose-empty-body>
+          this declaration has an empty body — nothing runs in it yet
+        </p>
+      )}
+      {editing.onAddRequest === null ? null : decl.kind === 'test' ? (
+        <button
+          type="button"
+          className="seq-add"
+          onClick={() => editing.onAddRequest?.(decl)}
+          data-seq-add-request={decl.line}
+          title="an `api` step and the assertion that reads it, at the end of this test"
+        >
+          + request
+        </button>
+      ) : (
+        <p className="muted" data-seq-add-hook>
+          a request cannot be added to a hook from here — the splice names a test by name, and a hook has none
+        </p>
+      )}
+    </>
   );
 }
 
@@ -2066,10 +2102,10 @@ export interface ComposePaneProps {
   readonly onNew: ((mode: 'test' | 'file') => void) | null;
   /** The dialog itself, when one is open. */
   readonly dialog: ReactNode;
-  /** The old *write a new test* form. `D1082` makes this slice read-only, and deleting the only
-   *  write path the API door has for four slices is not what "read-only first" asked for — so it
-   *  is kept, said to be the old surface, and dissolved by `S2`–`S5` rather than by this one. */
-  readonly legacy: ReactNode;
+  /** The project's scratch path when its `.gitignore` does not list it, or `null`. It lives beside
+   *  `send`, because `send` is what writes it (`M212` `S4b` moved it here from the retired form —
+   *  a warning about a file is worth saying next to the button that writes that file). */
+  readonly scratchUnignored: string | null;
   /**
    * Whether that disclosure is open — **held by `ApiForm`, which the strip never unmounts.**
    *
@@ -2080,8 +2116,6 @@ export interface ComposePaneProps {
    * six gates met it as timeouts on controls that were present, resolved and invisible. A `<details>`
    * owning its own state is right until the element itself stops surviving the gesture.
    */
-  readonly legacyOpen: boolean;
-  readonly onLegacyOpen: (open: boolean) => void;
   /**
    * The selected request's live values, and where a change goes (`M210` `S2`, `D1079`).
    *
@@ -2122,7 +2156,7 @@ export interface ComposePaneProps {
   readonly onDiscard: () => void;
 }
 
-export function ComposePane({ path, outline, at, door, onLine, onNew, dialog, legacy, legacyOpen, onLegacyOpen, edit, onEdit, editing, prefix, onSend, sending, ran, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
+export function ComposePane({ path, outline, at, door, onLine, onNew, dialog, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
   const requests = outline === null ? [] : outline.declarations.flatMap((d) => d.body.requests);
   return (
     <div className="authoring compose-pane" data-compose={outline === null ? 'reading' : at?.request ? 'request' : 'no-request'}>
@@ -2208,11 +2242,11 @@ export function ComposePane({ path, outline, at, door, onLine, onNew, dialog, le
             <p className="muted" data-compose-no-request>
               this file declares nothing yet — no test, no hook, nothing for this pane to be about
             </p>
-          ) : at.decl.body.preamble.length === 0 && at.decl.body.requests.length === 0 ? (
-            <p className="muted" data-compose-no-request>
-              this declaration has an empty body — nothing runs in it yet
-            </p>
           ) : (
+            /* **An empty body still gets a sequence**, and that is not a cosmetic choice: a test the
+               LOAD door started has a workload and no steps at all, and it is the single most
+               likely thing anyone wants to add a request to (`D1044`). The first draft short-cut an
+               empty body to a sentence, which put `+ request` out of reach for exactly that case. */
             <BodySequence
               decl={at.decl}
               selected={at.request}
@@ -2249,6 +2283,16 @@ export function ComposePane({ path, outline, at, door, onLine, onNew, dialog, le
           <p className="muted">
             these are sent for real, in this order, against the env the strip names — the last one is the request above
           </p>
+          {/* An exploration is not a suite, so the file it uses is one path, overwritten, and not
+              something to commit. A project `tflw init` made ignores it; an older one is told
+              rather than edited behind the author's back (`A1-5`). It sits here since `M212` `S4b`,
+              because the form it used to sit in is gone and the button it is about is this one. */}
+          {scratchUnignored === null ? null : (
+            <p className="muted" data-api-scratch-unignored={scratchUnignored}>
+              send writes <code>{scratchUnignored}</code>, and this project&rsquo;s <code>.gitignore</code> does not list it — add
+              that line, or expect it in <code>git status</code>.
+            </p>
+          )}
         </div>
       ) : null}
 
@@ -2280,17 +2324,14 @@ export function ComposePane({ path, outline, at, door, onLine, onNew, dialog, le
           36 buttons wrapped into five rows that took the bottom third of the pane and pushed the
           card they were meant to help reach off the screen. The tree is the navigator (`D1081`). */}
 
-      <details
-        className="legacy"
-        data-compose-legacy
-        open={legacyOpen}
-        onToggle={(e) => onLegacyOpen((e.currentTarget as HTMLDetailsElement).open)}
-      >
-        <summary className="muted">
-          write a new test — the form that was here before this tab could read
-        </summary>
-        {legacy}
-      </details>
+      {/* **`.legacy` is gone** (`M212` `S4b`, `D1088`), on the expiry condition `D1082` wrote for
+          it: it was kept because it was the only way to write a new test, and it has not been that
+          since `M210` `S2`–`S6` made every clause editable and `S4a` gave the page a create.
+          Measured before it went: **13 non-button fields against the request card's 14**, carrying
+          placeholders from a different fictional example (`/orders/{orderId}`, *"the orders
+          endpoint answers"*) — the larger of the pane's two authoring surfaces, describing a file
+          that was not open. Deleted rather than hidden, because the reason to keep a thing hidden
+          is that somebody still needs it, and `+ request` was the last thing anybody did. */}
     </div>
   );
 }

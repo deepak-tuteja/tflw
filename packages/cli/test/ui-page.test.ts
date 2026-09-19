@@ -169,24 +169,10 @@ after(async () => {
  * `#/api/run` — which is a stronger address than the old one, because it asserts that the report
  * renders inside the tab as well as that it renders.
  */
-/**
- * Open Compose's legacy *write a new test* form (`M210` `S1`).
- *
- * Every gate below this line was written when the Compose **tab** and the authoring **form** were
- * the same thing. `S1` makes the tab a reader (`D1072`) and keeps `M200` `A1-4`'s form behind a
- * disclosure, because `D1082`'s *read-only first* is about what the new surface claims, not about
- * taking the API door's only write path away for four slices. A closed `<details>` does not lay out
- * its content, so a `fill` into it times out rather than failing — hence a helper rather than a
- * selector change: these gates still assert exactly what they asserted, one gesture further in.
- *
- * `S2`–`S5` dissolve the form, and this helper goes with the last of it.
- */
-const openLegacyForm = async (p: Page): Promise<void> => {
-  const details = p.locator('[data-compose-legacy]');
-  await details.waitFor();
-  if (!(await details.evaluate((e) => (e as unknown as { open: boolean }).open))) await details.locator('summary').click();
-  await p.locator('[data-api-path]').waitFor();
-};
+/* `openLegacyForm` went with the form it opened (`M212` `S4b`, `D1088`). `M210` `S1` added it
+   because `D1082` kept `M200` `A1-4`'s write path behind a disclosure while Compose learned to
+   read; the docblock ended *`S2`–`S5` dissolve the form, and this helper goes with the last of
+   it*, which is what happened, two rounds later than that sentence expected. */
 
 const API_DOOR = '#/api';
 const API_RUN = '#/api/run';
@@ -1636,14 +1622,17 @@ test('Compose has no `file` control on any door — the explorer names the file 
     await page.locator('[data-files]').waitFor();
     assert.equal(await page.locator(`[${attr}]`).count(), 0, `${door}'s Compose no longer states the file a second time`);
   }
-  // And the one control that does name it still works: a click opens the file and the form writes
-  // into it.
+  // And the one control that does name it still works: a click in the explorer opens the file, and
+  // the pane's own head says which file it is about. `M212` `S4b` retired the form whose write
+  // button used to carry that name, so the claim is read off the head — which is where it has to
+  // be true anyway, since the write button only exists while there is something to write.
   const view = await fullProject();
   const target = view.files.find((f) => f.tests.length > 0)!.path;
   await page.goto(`${baseUrl}#/api`);
   await page.locator('[data-files]').waitFor();
   await page.locator(`[data-file-row="${target}"]`).click();
-  assert.equal(await page.locator('[data-api-save]').textContent(), `write ${target}`);
+  await page.locator('[data-compose-summary]').waitFor();
+  assert.equal(await page.locator('.compose-pane .authoring-head h2 code').textContent(), target);
 });
 
 // ---------------------------------------------------------------------------
@@ -2882,95 +2871,6 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
 // the gap `A0-5`'s green-condition test had to write around. These two say it is closed.
 // ---------------------------------------------------------------------------
 
-test('the API form writes a request and its assertions in one edit, and the bytes on disk are the bytes it previewed', async () => {
-  await page.goto(`${baseUrl}#/api`);
-  await page.reload(); // field values are component state; a hash change does not reset them
-  await openLegacyForm(page);
-  await page.locator('[data-api-form]').waitFor();
-
-  const target = 'tests/orders.tflw';
-  await page.locator(`[data-file-row="${target}"]`).click();
-  await page.locator('[data-api-name]').fill('the page can place an order');
-  await page.locator('[data-api-tags]').fill('api authored');
-  await page.locator('[data-api-method]').selectOption('POST');
-  await page.locator('[data-api-path]').fill('/orders');
-  await page.locator('[data-api-label]').fill('place');
-
-  // A header whose value interpolates a variable NOTHING BINDS. This is `D1052`'s case and it is
-  // how it was found: the write route's two `422`s are parse and format (`D1049`), and
-  // `"Bearer {token}"` is both — so the first run of this test wrote the file happily and then
-  // `tflw check` said `TF030: unknown variable "token"`. The form now says so first.
-  await page.locator('[data-header-add]').click();
-  await page.locator('[data-header-name="0"]').fill('Authorization');
-  await page.locator('[data-header-value="0"]').fill('Bearer {token}');
-  await openTab('source');
-  await page.locator('[data-diagnostics]').waitFor();
-  const unbound = await page.locator('[data-diagnostic-code="TF030"]').textContent();
-  assert.ok(unbound?.includes('token'), unbound ?? 'the form should name the unbound variable');
-  // And it is a warning about the file, not a veto on the write: `D1052` shows, never blocks.
-  await openTab('compose');
-  assert.equal(await page.locator('[data-api-save]').isDisabled(), false);
-
-  // Take the reference back out, and the panel goes with it — the control that keeps the
-  // assertion above about this header rather than about the panel always being there.
-  await page.locator('[data-header-value="0"]').fill('Bearer static-token');
-  await openTab('source');
-  await page.locator('[data-diagnostics]').waitFor({ state: 'detached' });
-  await openTab('compose');
-
-  await page.locator('[data-api-body-kind]').selectOption('json');
-  await page.locator('[data-api-body]').fill('{ itemId: 1, qty: 2 }');
-
-  await page.locator('[data-expect-operand="0"]').fill('201');
-  await page.locator('[data-expect-add]').click();
-  await page.locator('[data-expect-subject="1"]').selectOption('body');
-  await page.locator('[data-expect-argument="1"]').fill('items[0].price');
-  await page.locator('[data-expect-matcher="1"]').selectOption('greaterThan');
-  await page.locator('[data-expect-operand="1"]').fill('0');
-  // A THIRD ROW, AND IT IS A `check` OVER A `header`. Both halves were found by the mutation run
-  // surviving: with every row an `expect` over `status` or `body`, the mutation collapsing
-  // `check` into `expect` and the one sending a literal where the header name goes both changed
-  // nothing this test could see. One row that is soft and names a header covers both.
-  await page.locator('[data-expect-add]').click();
-  await page.locator('[data-expect-kind="2"]').selectOption('check');
-  await page.locator('[data-expect-subject="2"]').selectOption('header');
-  await page.locator('[data-expect-argument="2"]').fill('content-type');
-  await page.locator('[data-expect-matcher="2"]').selectOption('contains');
-  await page.locator('[data-expect-operand="2"]').fill('"json"');
-
-  await openTab('source');
-  // Source says WHICH of the two things it is showing. The claim below is about bytes that are
-  // not on disk yet, so a panel quietly showing the saved file would satisfy every `includes`
-  // under it and mean the opposite.
-  assert.equal(await page.locator('[data-source]').getAttribute('data-source'), 'pending');
-  const preview = await page.locator('[data-preview]').textContent();
-  assert.ok(preview?.includes('@api @authored'), preview ?? '');
-  assert.ok(preview?.includes('api POST /orders body { itemId: 1, qty: 2 } as "place"'), preview ?? '');
-  assert.ok(preview?.includes('header "Authorization" is "Bearer static-token"'), preview ?? '');
-  assert.ok(preview?.includes('expect status equals 201'), preview ?? '');
-  assert.ok(preview?.includes('expect body.items[0].price is greater than 0'), preview ?? '');
-  assert.ok(preview?.includes('check header "content-type" contains "json"'), preview ?? '');
-
-  await openTab('compose');
-
-  const before = await readFile(join(root, target), 'utf8');
-  await page.locator('[data-api-save]').click();
-  await page.locator('[data-api-wrote]').waitFor();
-
-  const after = await readFile(join(root, target), 'utf8');
-  assert.notEqual(after, before, 'the file changed');
-  assert.equal(after, preview, 'the bytes on disk are exactly what the page showed');
-
-  const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
-  assert.ok(!/error/i.test(check), check);
-
-  // And the server's own projection puts it behind API, derived from the `api` step rather than
-  // from the `@api` tag beside it.
-  const view = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; lenses: string[] }[] }[] };
-  const written = view.files.find((f) => f.path === target)?.tests.find((t) => t.name === 'the page can place an order');
-  assert.ok(written, 'the server sees the test the page wrote');
-  assert.ok(written.lenses.includes('api'));
-});
 
 test('the API door adds work to a test the LOAD door started, above its workload’s thresholds', async () => {
   // `A0-5`'s green condition had to reach past the form for exactly this, and said so. A `steps`
@@ -2995,22 +2895,27 @@ test('the API door adds work to a test the LOAD door started, above its workload
   assert.ok(started.includes('run 20 iterations across 2 users'), started);
   assert.ok(!/the API door finishes this one[\s\S]*?\n  api /.test(started), 'the LOAD form wrote no work');
 
+  // **`M212` `S4b` moved this gesture and not this claim.** The retired form did it by picking
+  // *add to an existing test* out of a dropdown; the API door now does it with `+ request` at the
+  // foot of that test's own body. `D1044` is unchanged either way — a door adds the work it knows
+  // how to describe, to a test any door may have started.
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
-  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
   await page.locator(`[data-file-row="${target}"]`).click();
-  await page.locator('[data-api-mode]').selectOption('existing');
-  await page.locator('[data-api-test]').selectOption('the API door finishes this one');
-  await page.locator('[data-api-method]').selectOption('GET');
-  await page.locator('[data-api-path]').fill('/items');
-  await page.locator('[data-expect-operand="0"]').fill('200');
+  const started2 = await readFile(join(root, target), 'utf8');
+  const declLine = started2.split('\n').findIndex((l) => l.includes('test "the API door finishes this one"')) + 1;
+  await page.goto(`${baseUrl}#/api/compose/${target}/L${declLine}`);
+  await page.locator('[data-seq-add-request]').click();
+  await page.locator('[data-compose-dirty]').waitFor();
+  await page.locator('[data-request-path]').fill('/items');
+  await page.locator('[data-compose-dirty]').waitFor();
 
   await openTab('source');
   const preview = (await page.locator('[data-preview]').textContent()) ?? '';
   await openTab('compose');
-  await page.locator('[data-api-save]').click();
-  await page.locator('[data-api-wrote]').waitFor();
+  await page.locator('[data-compose-write]').click();
+  await page.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
 
   const finished = await readFile(join(root, target), 'utf8');
   assert.equal(finished, preview, 'the bytes on disk are the bytes previewed');
@@ -3058,130 +2963,28 @@ test('a header that interpolates a variable the test already captured checks cle
 // runs, and reads the response out of `results.json`.
 // ---------------------------------------------------------------------------
 
-test('Send writes a scratch file, runs it for real, and shows the response out of the report', async () => {
-  // The fixture server has to be up, because Send really sends. The first draft of this test
-  // omitted it and the pane came back saying `no response` with tflw's own
-  // `connection refused; is the service actually listening at that host:port?` — which is the
-  // whole machinery working and reporting the truth, and is why `D1047` puts the request through
-  // a run rather than through a client the page owns.
-  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
-  const target = await fixtureServer.startFixtureServer(fixturePort);
-  try {
-  await page.goto(`${baseUrl}#/api`);
-  await page.reload();
-  await openLegacyForm(page);
-  await page.locator('[data-api-form]').waitFor();
 
-  await page.locator('[data-api-method]').selectOption('GET');
-  await page.locator('[data-api-path]').fill('/items');
-  await page.locator('[data-expect-operand="0"]').fill('200');
-
-  const projectFiles = async (): Promise<number> =>
-    ((await (await fetch(`${baseUrl}/api/project`)).json()) as { files: unknown[] }).files.length;
-  const filesBefore = await projectFiles();
-
-  // No console error on the first Send in a project that has never been explored (`M205-05`).
-  // The page used to read the scratch's etag before writing it, which on a fresh project is a
-  // request whose only possible answer is `404` — and the browser logs a failed request whether
-  // or not the caller catches it, which this one did. Listened for rather than read back, because
-  // a console message is not retrievable after the fact.
-  const consoleErrors: string[] = [];
-  const onConsole = (m: { type(): string; text(): string }): void => {
-    if (m.type() === 'error') consoleErrors.push(m.text());
-  };
-  page.on('console', onConsole);
-
-  await page.locator('[data-api-send]').click();
-  await page.locator('[data-api-response]').waitFor({ timeout: 30_000 });
-  page.off('console', onConsole);
-  assert.deepEqual(consoleErrors, [], 'Send logged to the console on a project with no scratch file');
-
-  // THE RESPONSE IS A REAL ONE. The fixture server beside the project answered it, and the bytes
-  // came back through `results.json` rather than through a second HTTP client in the page —
-  // which is the whole of `D1047`.
-  assert.equal(await page.locator('[data-api-response]').getAttribute('data-api-response'), '200', await page.locator('[data-api-response]').innerHTML());
-  assert.equal(await page.locator('[data-api-response]').getAttribute('data-api-response-ok'), 'true');
-  const url = await page.locator('[data-api-response-url]').textContent();
-  assert.match(url ?? '', /^GET http:\/\/127\.0\.0\.1:\d+\/items$/);
-  const body = await page.locator('[data-api-response-body]').textContent();
-  assert.ok(body && JSON.parse(body), `the body is the server's own JSON: ${body ?? ''}`);
-
-  // WHAT THE PAGE ASKED FOR, not what this project would have given anyway. The fixture's default
-  // env carries no `evidence` key and so is already `full`, which makes `--evidence full`
-  // invisible in the result — the mutation removing it survived every assertion below until this
-  // one. The same goes for `--only`: with one test in the file, running the whole file and
-  // running only that test produce identical reports. So the claim is made against the argv the
-  // server built, which is the only place the request is distinguishable from its outcome.
-  const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { argv: string[]; request: { evidence?: string; only?: string } }[];
-  const latest = runs[0]!;
-  assert.deepEqual(latest.argv, ['run', '--format', 'ndjson', '--no-color', '--only', 'scratch', '--evidence', 'full', SCRATCH_PATH]);
-
-  // **THE SCRATCH IS NOT A TEST IN THIS PROJECT** — `M205` Q15, closing `M205-04`. It used to be:
-  // `discoverTests` found `scratch.tflw` like any other file, so one exploration took a one-test
-  // project to `2 files · 3 behind API` and a bare `tflw run` issued the same request twice,
-  // reporting a test the author does not think exists. `.gitignore` listed it, which is why
-  // nobody saw it — being ignored by git is not being excluded from discovery. The leading dot is
-  // the repair, and this is the assertion that says so: the count does not move for a Send.
-  assert.equal(await projectFiles(), filesBefore, 'Send added a file to the project view');
-  assert.equal(SCRATCH_PATH[0], '.', 'the scratch is dot-prefixed, which is the whole mechanism');
-
-  // And the scratch file on disk is a file a terminal can re-run by hand — the claim that keeps
-  // "one execution path" honest.
-  const scratch = await readFile(join(root, SCRATCH_PATH), 'utf8');
-  assert.equal(scratch, 'test "scratch"\n  api GET /items\n  expect status equals 200\n');
-  const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: root, encoding: 'utf8', stdio: 'pipe' });
-  assert.ok(!/error/i.test(check), check);
-
-  // `[Discard]` drops it — and what "drops" means is the project going back to the shape it had
-  // before Send, which is the claim `A1-5` could not make and did not notice it could not.
-  //
-  // **`A1-5` emptied the scratch and asserted `trim() === ''`**, which is true of a file that is
-  // still there — so `discoverTests` still found it, `readProject` still returned it, and the
-  // landing footer read `2 files` on a one-test project forever after a single exploration. Every
-  // gate in that slice passed. `A2-6` made Discard remove the file, and asserted the project's
-  // file count dropping by one as the thing emptying could not do.
-  //
-  // **That assertion is gone, and its absence is the finding.** Q15's leading dot means the
-  // scratch is not in the project view at any point — the count is pinned above, across Send — so
-  // "the count drops by one" has stopped being a true sentence about a working Discard. What is
-  // left is what Discard always meant: the file is **gone**, not emptied.
-  await page.locator('[data-api-discard]').click();
-  await page.locator('[data-api-response]').waitFor({ state: 'detached' });
-  assert.equal(await projectFiles(), filesBefore, 'Discard moved the project view, which the scratch is not in');
-  await assert.rejects(() => readFile(join(root, SCRATCH_PATH), 'utf8'), /ENOENT/, 'the scratch file is gone, not emptied');
-  } finally {
-    await new Promise<void>((done) => target.close(() => done()));
-  }
-});
-
-test('Send reports a request that could not be sent, rather than an empty pane', async () => {
-  // The control for the case above, and the reason the response pane reads a REPORT rather than a
-  // client of its own: with nothing listening, what comes back is tflw's own diagnosis of the
-  // failure — the same sentence a terminal prints — instead of a fetch error the page invented.
-  await page.goto(`${baseUrl}#/api`);
-  await page.reload();
-  await openLegacyForm(page);
-  await page.locator('[data-api-form]').waitFor();
-  await page.locator('[data-api-method]').selectOption('GET');
-  await page.locator('[data-api-path]').fill('/items');
-  await page.locator('[data-expect-operand="0"]').fill('200');
-  await page.locator('[data-api-send]').click();
-  await page.locator('[data-api-response]').waitFor({ timeout: 30_000 });
-
-  assert.equal(await page.locator('[data-api-response]').getAttribute('data-api-response-ok'), 'false');
-  const detail = await page.locator('[data-api-response-detail]').textContent();
-  assert.match(detail ?? '', /connection refused|fetch failed/);
-  assert.equal(await page.locator('[data-api-response-body]').count(), 0, 'no body, because there was no response');
-});
 
 test('the page says when the scratch file is not ignored, rather than editing .gitignore itself', async () => {
-  // A project `tflw init` makes lists the scratch; an older one does not, and the page tells
-  // the author instead of silently changing a file they own. The fixture project has no
-  // `.gitignore` at all, which is the case that matters — absence, not a wrong rule.
-  await page.goto(`${baseUrl}#/api`);
-  await page.reload();
-  await openLegacyForm(page);
-  await page.locator('[data-api-form]').waitFor();
+  // A project `tflw init` makes lists the scratch; an older one does not, and the page tells the
+  // author instead of silently changing a file they own. The fixture project has no `.gitignore` at
+  // all, which is the case that matters — absence, not a wrong rule.
+  //
+  // **`M212` `S4b` moved the notice, and the move is the point.** It used to sit in the retired
+  // form, under a Send that no longer exists; it now sits beside the Send that does, because a
+  // warning about a file belongs next to the button that writes that file. Reaching it therefore
+  // means selecting a request, which is also when it first becomes true.
+  const view = await fullProject();
+  const f = view.files.find((x) => x.path.endsWith('catalog.tflw'))!;
+  // The reload is load-bearing: a `goto` that only changes the hash is a same-document navigation,
+  // so the shell keeps the project view it already has and the notice would be reading a fact from
+  // before the `.gitignore` was written.
+  const atRequest = async (): Promise<void> => {
+    await page.goto(`${baseUrl}#/api/compose/${f.path}`);
+    await page.reload();
+    await page.locator('[data-prefix]').waitFor();
+  };
+  await atRequest();
   const notice = await page.locator('[data-api-scratch-unignored]').textContent();
   assert.ok((notice ?? '').includes(SCRATCH_PATH), notice ?? '');
   assert.match(notice ?? '', /gitignore/);
@@ -3191,161 +2994,30 @@ test('the page says when the scratch file is not ignored, rather than editing .g
   // this test that checked only `/api/project`. So the line is added, the page reloaded, and the
   // notice has to be gone.
   await writeFile(join(root, '.gitignore'), `${SCRATCH_PATH}\n`, 'utf8');
-  const view = (await (await fetch(`${baseUrl}/api/project`)).json()) as { scratchPath: string; scratchIgnored: boolean };
-  assert.equal(view.scratchPath, SCRATCH_PATH);
-  assert.equal(view.scratchIgnored, true);
+  const project = (await (await fetch(`${baseUrl}/api/project`)).json()) as { scratchPath: string; scratchIgnored: boolean };
+  assert.equal(project.scratchPath, SCRATCH_PATH);
+  assert.equal(project.scratchIgnored, true);
 
-  await page.reload();
-  await openLegacyForm(page);
+  await atRequest();
   assert.equal(await page.locator('[data-api-scratch-unignored]').count(), 0, 'the notice goes when the line is there');
 
   await rm(join(root, '.gitignore'), { force: true });
-  await page.reload();
-  // A reload resets the disclosure, because its open state is `ApiForm`'s and not the document's —
-  // which is exactly what makes it survive a tab trip (`ComposePaneProps.legacyOpen`).
-  await openLegacyForm(page);
+  await atRequest();
   await page.locator('[data-api-scratch-unignored]').waitFor();
 });
 
-test('the request line stands as tall as every other control, and says so against a browser that has rectangles', async () => {
-  // `M205` S1. `styles.css`'s shared `.authoring input, .authoring select { flex: 1 1 120px }` is a
-  // WIDTH in every band of this form, because every other band is a row; `.request-line label` is
-  // the one `flex-direction: column` container under `.authoring`, and there the same declaration
-  // is a HEIGHT. Measured on the live page at `main` `f539654`: method/path/service/label at
-  // 120-130px against every sibling control's 26-30px, the request line 151px of a 904px pane.
-  //
-  // No fake DOM can see this. jsdom has no layout, so every one of these controls reports a zero
-  // rectangle there and holds exactly the right value in exactly the right place — which is why
-  // this lived through `A1-4` and every gate written since. It belongs here or nowhere.
-  await page.goto(`${baseUrl}#/api`);
-  await page.reload();
-  await openLegacyForm(page);
-  await page.locator('[data-api-form]').waitFor();
 
-  /** Every control's height, off the browser's own rectangles — no DOM types, and none needed. */
-  const heights = async (selector: string): Promise<number[]> => {
-    const all = page.locator(selector);
-    const out: number[] = [];
-    for (let i = 0; i < (await all.count()); i += 1) {
-      const box = await all.nth(i).boundingBox();
-      assert.ok(box, `${selector} #${i} has no rectangle`);
-      out.push(Math.round(box.height));
-    }
-    return out;
-  };
-  // **Scoped to the legacy form** since `M210` `S1`. Compose is two things on one pane now — the
-  // reader and the form this tab used to be — and the reader draws its own row of request fields.
-  // Unscoped, `line.length` came back 9 against the 4 this gate is about. The first draft of the
-  // reader had also called its row `.request-line`, which is this row's name; it is
-  // `.request-fields` now, and the scope here is belt as well as braces.
-  const lineSel = '[data-compose-legacy] .request-line label > input, [data-compose-legacy] .request-line label > select';
-  // The oracle is the form's OTHER controls, not a number written here: a padding or font change
-  // should move the whole band together and leave this gate green, and that is the point of it.
-  const otherSel = '[data-compose-legacy] .authoring :is(input, select):not(.request-line *)';
-
-  const line = await heights(lineSel);
-  const others = await heights(otherSel);
-  assert.equal(line.length, 4, 'method, path, service, label');
-  assert.ok(others.length >= 4, 'there are other controls to compare against');
-  const tallestOther = Math.max(...others);
-  for (const h of line) {
-    assert.ok(h <= tallestOther + 2, `a request-line control is ${h}px against the form's tallest other control at ${tallestOther}px`);
-  }
-
-  // THE CONTROL. Put the axis-dependent declaration back, exactly as it was, and the four have to
-  // blow past their siblings again — otherwise this test would pass on a page where the fix was
-  // never applied, which is the failure mode this repository files most often.
-  await page.addStyleTag({ content: '.request-line label > input, .request-line label > select { flex: 1 1 120px !important; }' });
-  for (const h of await heights(lineSel)) {
-    assert.ok(h > tallestOther + 40, `with the shared rule reaching the column container a control should tower, got ${h}px`);
-  }
-  await page.reload(); // the injected sheet dies with the document, so the next test starts clean
-});
-
-test('the API form opens empty, and an untouched form cannot send anything at all', async () => {
-  // `M205` S4, closing `M205-02`. The form opened on `@api test "the orders endpoint answers"` /
-  // `api GET /orders`, and `tflw init` scaffolds a project whose `api` points at tflw's own demo
-  // service, which answers `GET /health` and nothing else. So the first gesture a new author made
-  // — press `send`, unchanged — returned 404 out of the box, with nothing broken: two halves of
-  // one product shipping defaults that disagreed, met on the first click.
-  //
-  // The repair is not a better guess. A default request is a guess about somebody's project, and
-  // an empty field cannot contradict one. What the guess was worth is kept as a PLACEHOLDER,
-  // which shows the shape of an answer and never becomes a test the author did not write.
-  await page.goto(`${baseUrl}#/api`);
-  await page.reload();
-  await openLegacyForm(page);
-  await page.locator('[data-api-form]').waitFor();
-
-  for (const sel of ['[data-api-path]', '[data-api-name]', '[data-api-tags]', '[data-api-service]', '[data-api-label]']) {
-    assert.equal(await page.locator(sel).inputValue(), '', `${sel} opens with a value`);
-  }
-  // The example survives where it cannot be written by accident.
-  assert.equal(await page.locator('[data-api-path]').getAttribute('placeholder'), '/orders/{orderId}');
-  assert.equal(await page.locator('[data-api-name]').getAttribute('placeholder'), 'the orders endpoint answers');
-
-  // NOT emptied, and neither is a guess about the project: `GET` is the identity choice of a
-  // control that must hold something, and the assertion row is load-bearing — `B3-17` records that
-  // an `api` step with no assertions CAN NEVER FAIL, so a form opening with no assertion would make
-  // the shortest path through this page a test that passes for having claimed nothing.
-  assert.equal(await page.locator('[data-api-method]').inputValue(), 'GET');
-  assert.equal(await page.locator('[data-api-expects]').getAttribute('data-api-expects'), '1');
-  assert.equal(await page.locator('[data-expect-operand="0"]').inputValue(), '200');
-
-  // THE CLOSURE OF THE FINDING: there is no 404 to meet, because there is nothing to send. Both
-  // buttons are refused until the form is a request, which is what an empty default buys.
-  assert.equal(await page.locator('[data-api-send]').isDisabled(), true, 'an empty form can be sent');
-  assert.equal(await page.locator('[data-api-save]').isDisabled(), true, 'an empty form can be written');
-  // Source shows the file AS IT IS, because an empty form is not about to write anything — and the
-  // strip carries no mark, because a tab is marked only when the one you are not looking at has
-  // something to say (`M205` §2).
-  assert.equal(await page.locator('[data-tab-mark="source"]').count(), 0, 'the strip marks Source over an empty form');
-  await openTab('source');
-  assert.equal(await page.locator('[data-source]').getAttribute('data-source'), 'written');
-  await openTab('compose');
-
-  // And the first sentence the door says is a hint, not a warning. A blank field rendered as a
-  // warning teaches a new author that the tool is annoyed with them for not having typed anything,
-  // which is the opposite of what an empty form is for.
-  const problem = page.locator('[data-api-problem]');
-  assert.match((await problem.textContent()) ?? '', /like `\/orders`/);
-  assert.equal(await problem.getAttribute('class'), 'muted');
-
-  // One character of a real path and it is a warning again, because now there is something to be
-  // wrong about. Without this the class assertion above holds for a page that never warns at all.
-  await page.locator('[data-api-path]').fill('orders');
-  assert.match((await problem.textContent()) ?? '', /starts with `\/`/);
-  assert.equal(await problem.getAttribute('class'), 'warn');
-
-  // Q11's other half: every control on this form carries a hint. Counted rather than enumerated,
-  // because the claim is coverage — a control added later without one is what this catches, and
-  // naming them here would have to be kept in step with the form by hand.
-  const controls = await page.locator('.authoring label, .authoring [data-header-add], .authoring [data-expect-add]').count();
-  const hinted = await page.locator('.authoring label[title], .authoring [data-header-add][title], .authoring [data-expect-add][title]').count();
-  assert.equal(hinted, controls, `${controls - hinted} of ${controls} controls carry no hint`);
-
-  // Filled in, it is a request again — the form still works, which is the control for all of it.
-  await page.locator('[data-api-path]').fill('/items');
-  await page.locator('[data-api-name]').fill('the items endpoint answers');
-  assert.equal(await page.locator('[data-api-send]').isDisabled(), false);
-  // And now Source has something to say, so the strip says so without taking you off the form.
-  await page.locator('[data-tab-mark="source"]').waitFor();
-  await openTab('source');
-  assert.equal(await page.locator('[data-source]').getAttribute('data-source'), 'pending');
-  assert.match((await page.locator('[data-preview]').textContent()) ?? '', /api GET \/items/);
-});
 
 test('the strip is an address, and Compose keeps what you typed while you are looking somewhere else', async () => {
   // `M205` S5. The tab is the hash's second segment, which buys three things at once: a link to a
-  // tab is a link, the back button walks tabs, and `D1045`'s rule — the choice lives in the URL
-  // and nowhere else — extends to the strip without a second mechanism.
+  // tab is a link, the back button walks tabs, and `D1045`'s rule — the choice lives in the URL and
+  // nowhere else — extends to the strip without a second mechanism.
   //
-  // The first claim is the one with a cost if it is wrong. `#/api` meant something before the
-  // strip existed and has to keep meaning it, because every link anyone has ever pasted is of
-  // that shape and `doorFromHash` now has to ignore a segment that was not there.
+  // The first claim is the one with a cost if it is wrong. `#/api` meant something before the strip
+  // existed and has to keep meaning it, because every link anyone has ever pasted is of that shape
+  // and `doorFromHash` now has to ignore a segment that was not there.
   await page.goto(`${baseUrl}#/api`);
   await page.reload();
-  await openLegacyForm(page);
   await page.locator('[data-api-form]').waitFor();
   assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip link stopped opening the door');
 
@@ -3361,46 +3033,34 @@ test('the strip is an address, and Compose keeps what you typed while you are lo
   await page.reload();
   await page.locator('[data-tabstrip="compose"]').waitFor();
 
-  // Clicking writes the hash, and the DEFAULT tab writes the bare door hash rather than `#/api/
-  // compose` — the commonest address stays the short one, which is also what keeps the first
-  // assertion in this test true a year from now.
-  await page.goto(`${baseUrl}#/api`);
-  await page.reload();
-  // The reload reset the disclosure — see `openLegacyForm`. What this test is about starts here.
-  await openLegacyForm(page);
-  await page.locator('[data-api-path]').fill('/items');
-  await page.locator('[data-api-name]').fill('typed before leaving');
-  await openTab('run');
-  assert.equal(new URL(page.url()).hash, '#/api/run');
-  await openTab('compose');
-  assert.equal(new URL(page.url()).hash, '#/api');
+  // Clicking writes the hash, and the DEFAULT tab writes the bare door hash rather than
+  // `#/api/compose` — the commonest address stays the short one, which is also what keeps the
+  // first assertion in this test true a year from now.
+  const view = await fullProject();
+  const f = view.files.find((x) => x.path.endsWith('catalog.tflw'))!;
+  await page.goto(`${baseUrl}#/api/compose/${f.path}`);
+  await page.locator('[data-request-path]').waitFor();
 
-  // THE STATE CLAIM: a strip whose tabs threw away a half-written request would be worse than the
-  // single long pane it replaced, because the author would learn not to look at Source — the one
-  // tab that exists to be looked at.
-  //
-  // **What this grades, and what it cannot see.** It reddens if the field state is ever moved down
-  // into the Compose panel, which is the way this property gets lost. It does NOT distinguish a
-  // hidden panel from an unmounted one: the fields are `useState` in `ApiForm`, which the strip
-  // never unmounts, so the values return either way. The first draft of this slice used `hidden`
-  // and a comment calling it load-bearing; mutating it to an unmounted panel left this assertion
-  // green, which is what said otherwise.
-  assert.equal(await page.locator('[data-api-path]').inputValue(), '/items');
-  assert.equal(await page.locator('[data-api-name]').inputValue(), 'typed before leaving');
-  // **And the disclosure is still open** (`M210` `S1`). This is the half `inputValue` cannot see:
-  // it reads a hidden input happily, so every assertion above stays green on a page where the form
-  // came back shut — which is what `S1` shipped first, and what six gates then met as timeouts on
-  // controls that were present, resolved and invisible. `legacyOpen` lives in `ApiForm` for the
-  // same reason the field values do; put it back inside `ComposePane` and this line reddens alone.
-  assert.equal(await page.locator('[data-compose-legacy]').evaluate((e) => (e as unknown as { open: boolean }).open), true, 'a trip to another tab closed the form');
-  assert.ok(await page.locator('[data-api-path]').isVisible(), 'and its controls came back reachable, not merely present');
+  // **`M212` `S4b` changed what is typed into, and sharpened what this grades.** The retired form's
+  // fields were `useState` in `ApiForm`, so this test was about a component boundary; Compose's are
+  // the **pending buffer** (`D1079`), which is the thing a tab trip must not drop — and the buffer
+  // is what the write button carries, so losing it loses an edit rather than a draft.
+  await page.locator('[data-request-path]').fill('/typed-before-leaving');
+  await page.locator('[data-compose-dirty]').waitFor();
+  await openTab('run');
+  assert.match(new URL(page.url()).hash, /^#\/api\/run\//);
+  await openTab('compose');
+
+  assert.equal(await page.locator('[data-request-path]').inputValue(), '/typed-before-leaving');
+  assert.ok(await page.locator('[data-request-path]').isVisible(), 'and its controls came back reachable, not merely present');
+  await page.locator('[data-compose-dirty]').waitFor();
 
   // And the back button walks the tabs, because they are addresses and not a mode.
   await openTab('source');
   await page.goBack();
   await page.locator('[data-tabstrip="compose"]').waitFor();
-  assert.equal(new URL(page.url()).hash, '#/api');
-  assert.equal(await page.locator('[data-api-path]').inputValue(), '/items', 'going back re-mounted the form');
+  assert.equal(await page.locator('[data-request-path]').inputValue(), '/typed-before-leaving', 'going back re-mounted the pane over the same buffer');
+  await page.locator('[data-compose-discard]').click();
 });
 
 test('Auth says what a session does NOT reach, and a mixed test is where that matters', async () => {
@@ -4020,13 +3680,14 @@ test('a test written from Compose appears in the Source index without a reload',
     assert.equal(await fresh.locator('[data-source-test]').count(), 1);
 
     await fresh.locator('[data-tab="compose"]').click();
-    await openLegacyForm(fresh);
-    await fresh.locator('[data-api-name]').fill('the orders endpoint answers');
-    await fresh.locator('[data-api-method]').selectOption('GET');
-    await fresh.locator('[data-api-path]').fill('/orders');
-    if (await fresh.locator('[data-api-save]').isDisabled()) assert.fail(`the form cannot write: ${await fresh.locator('[data-api-problem]').textContent()}`);
-    await fresh.locator('[data-api-save]').click();
-    await fresh.locator('[data-api-wrote]').waitFor();
+    // `M212` `S4b`: through the create dialog, which is the page's one way to write a new test.
+    await fresh.locator('[data-compose-new-test]').click();
+    await fresh.locator('[data-new-name]').fill('the orders endpoint answers');
+    await fresh.locator('[data-new-method]').selectOption('GET');
+    await fresh.locator('[data-new-path]').fill('/orders');
+    if (await fresh.locator('[data-new-create]').isDisabled()) assert.fail(`the dialog cannot write: ${await fresh.locator('[data-new-problem]').textContent()}`);
+    await fresh.locator('[data-new-create]').click();
+    await fresh.locator('[data-new-thing]').waitFor({ state: 'detached' });
 
     // No reload — the tab is pressed, and the index is what the shell re-read.
     await fresh.locator('[data-tab="source"]').click();
@@ -4297,6 +3958,46 @@ test('a note is collapsed to its first line with a count, opens to the rest, and
     // The hook is a declaration with a body like any other, and it is in the outline beside the test.
     const decls = await fresh.locator('[data-outline-decl]').evaluateAll((els) => els.map((e) => e.getAttribute('data-outline-decl')));
     assert.deepEqual(decls, ['hook', 'test'], 'a hook is drawn, and before the test, because that is where it is');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a request can be added to a test from the body’s own sequence', async () => {
+  // **`M212` `S4b`.** This is the one thing `.legacy` could do that Compose could not — its second
+  // mode, *add steps to an existing test* — and `D1088` cannot retire a form whose job is still
+  // half undone. It lands where the pane's other `+` gestures already are.
+  //
+  // The step and its assertion go in as ONE insertion, which `insertIntoSource` requires for a
+  // reason worth restating: two writes would leave the file, between them, with an assertion
+  // naming a response nothing fetched.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-addreq-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await writeFile(
+      join(dir, 'grow.tflw'),
+      ['before', '  api GET /reset', '', 'test "it answers"', '  api GET /a', '  expect status equals 200', ''].join('\n'),
+    );
+    const port = await ui.listen(0);
+    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/grow.tflw/L5`);
+    await fresh.locator('[data-seq-add-request]').click();
+    await fresh.locator('[data-compose-dirty]').waitFor();
+    await fresh.locator('[data-compose-write]').click();
+    await fresh.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+
+    const onDisk = await readFile(join(dir, 'grow.tflw'), 'utf8');
+    assert.match(onDisk, /^test "it answers"\n {2}api GET \/a\n {2}expect status equals 200\n {2}api GET \/\n {2}expect status equals 200$/m);
+    assert.match(onDisk, /^before$/m, 'the hook is untouched — a splice, not a rewrite');
+
+    // A hook has no name for the splice to address, which is a fact about the language rather than
+    // a limit of this door — so the pane says so where the button would be, instead of hiding it.
+    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/grow.tflw/L1`);
+    await fresh.locator('[data-seq-add-hook]').waitFor();
+    assert.equal(await fresh.locator('[data-seq-add-request]').count(), 0);
   } finally {
     await fresh.close();
     await ui.close();
