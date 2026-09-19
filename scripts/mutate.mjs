@@ -919,7 +919,20 @@ const REGISTRY = [
     milestone: 'm121',
     pkg: '@tflw/runtime',
     file: INTERP,
-    what: "an open-model (`rps`) arrival goes back out over `sendRequest`'s unpinned `fetch` — `M118-02` restored verbatim, and the state in which a 0.2ms endpoint reported p50 36ms under `hold 10 rps` while `hold 1 users` reported 0ms in the same process. The control for the whole milestone: this is the one line D206 changes, and if it survives then nothing in the suite can tell tflw's two load models apart by the client they use",
+    what:
+      "an open-model (`rps`) arrival goes back out over `sendRequest`'s unpinned `fetch` — the one line D206 " +
+      "changes. The control for the whole milestone: if it survives, nothing in the suite can tell tflw's two " +
+      "load models apart by the client they use. **It is killed structurally, on the client the bytes went " +
+      "out over, and not on latency** — `load.test.ts`'s four `M121` gates, one per open grammar (`ramp to N " +
+      "rps`, `hold N rps`, `step rps`, `spike rps`), assert that no arrival carried `sec-fetch-mode`, a header " +
+      "undici emits and `node:http` does not. Measured 2026-09-19: the mutation dies on exactly those four. " +
+      "**The latency number this entry used to lead with is history, and `M198-02` is why it says so.** " +
+      "`M118-02` recorded a 0.2ms endpoint reporting p50 36ms under `hold 10 rps` against `hold 1 users`' 0ms " +
+      "in the same process — true in `M121`, and gone: re-measured on `fedora-box` at two rates, p50 1.2ms " +
+      "against the shipped build's 1.0ms at 20 rps and 1.1ms against 0.91ms at 200 rps, because the `fetch` " +
+      "this falls back to is undici and undici keeps connections alive by default, so the handshake-per-request " +
+      "cost that number was made of no longer exists. A consequence an entry states as measured fact needs a " +
+      "date on it, or it goes on instructing the next reader after it stops being true",
     find: '  const openArrival = (): Promise<void> => runIteration((openAgents ??= createKeepAliveAgents()));',
     replace: '  const openArrival = (): Promise<void> => runIteration();',
   },
