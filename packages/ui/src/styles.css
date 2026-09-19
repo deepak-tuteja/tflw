@@ -535,3 +535,14 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .add-clause li { display: flex; align-items: baseline; gap: 4px; }
 .add-clause button { font: inherit; padding: 1px 6px; }
 .band-add { margin-top: 4px; }
+
+
+/* `M212` `S4` (`D1087`) — the create dialog. A fixed overlay rather than a native `<dialog>`: the
+   page is inside an iframe-free single view and `showModal()`'s top layer would put the card
+   outside the pane's own stacking context, which is where every other gate here reads rectangles. */
+.authoring-new { display: flex; gap: 6px; margin: 0 0 8px; }
+.new-thing { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; z-index: 40; }
+.new-thing-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; width: min(560px, 92vw); max-height: 88vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.new-thing-card h3 { margin: 0; font-size: 14px; }
+.new-thing-card .row { display: flex; gap: 8px; align-items: flex-end; }
+.new-thing-card .preview { max-height: 180px; overflow: auto; }

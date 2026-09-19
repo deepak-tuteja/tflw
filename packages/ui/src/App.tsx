@@ -795,6 +795,7 @@ export function App() {
             onDraft={setDraft}
             fileProblem={fileProblem}
             onFileWritten={setOpenFileView}
+            onOpenFile={setFile}
             focusLine={focusLine}
             authPanel={authPanel}
             configPanel={configPanel}
