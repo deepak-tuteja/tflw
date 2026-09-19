@@ -28,6 +28,45 @@ export const FOLD_DECLINES_ABOVE = 3;
 const keyOf = (f: ScanFinding): string => f.fingerprint ?? `${f.rule} ${f.endpoint} ${f.location ?? ''}`;
 
 /**
+ * A finding's identity for **collapsing the list** (`M211` `S6`, `M211-01`) — the whole row, with
+ * its keys ordered, so two entries merge only when they are equal in every field.
+ *
+ * **Deliberately not `keyOf`, and the difference is the whole safety argument.** `keyOf` is the
+ * fingerprint, which is `sha256(scan ∥ rule ∥ endpoint ∥ location ∥ invariant)` and excludes
+ * `detail` on purpose — `detail` carries the concrete payload and a response excerpt, so hashing it
+ * would move a baseline entry every time an error message was reworded. That exclusion is right for
+ * a baseline and wrong for this: two occurrences of one fingerprint can carry *different evidence*
+ * (tier 3's input-handling details name the payload and quote the response), and merging them would
+ * discard it. Keying on the whole row cannot lose anything, because nothing that differs is merged.
+ *
+ * It also needs no rule for the rows that have no fingerprint at all — `D369`'s seeded findings and
+ * the a11y scan's endpoint-less ones — which a fingerprint-keyed collapse would have required.
+ */
+const rowKey = (f: ScanFinding): string =>
+  JSON.stringify(Object.keys(f).sort().map((k) => [k, (f as unknown as Record<string, unknown>)[k]]));
+
+/**
+ * One rendered row per distinct finding, carrying how many identical ones it stands for.
+ *
+ * **Why the page groups and the artifact does not.** A scan rule is judged once per response and
+ * every judgement is recorded, which is correct and is what catches an error path that only appears
+ * under load (`D1083`). But a *reader* gains nothing from the same row twice: measured on the
+ * storefront example's own documented instruction, 29,381 finding rows were **one distinct row** —
+ * no field varied — rendering 29,381 `<li>` and 29,381 `[accept]` buttons that all stage the same
+ * single baseline entry, over 3,455,656 px. `results.json` still carries all 29,381.
+ */
+export function groupIdentical(list: readonly ScanFinding[]): readonly { readonly f: ScanFinding; readonly count: number }[] {
+  const by = new Map<string, { f: ScanFinding; count: number }>();
+  for (const f of list) {
+    const k = rowKey(f);
+    const seen = by.get(k);
+    if (seen) seen.count += 1;
+    else by.set(k, { f, count: 1 });
+  }
+  return [...by.values()];
+}
+
+/**
  * What `[accept]` does — `M208` `S3` (`Q1`).
  *
  * **A link into the editor, never a writer.** `M206` `Q6` refused a bare `[accept]` button because
@@ -113,18 +152,23 @@ export function Findings({
         </p>
       )}
       {[...byRule.entries()].map(([rule, list]) => (
-        <details key={rule} open data-rule={rule} data-severity={list[0]!.severity} data-rule-count={list.length}>
+        <details key={rule} open data-rule={rule} data-severity={list[0]!.severity} data-rule-count={list.length} data-rule-distinct={groupIdentical(list).length}>
           <summary>
             <span className={`sev sev-${list[0]!.severity}`}>{list[0]!.severity}</span> <code>{rule}</code>
             <span className="muted">
               {' '}
               · {list.length} finding{list.length === 1 ? '' : 's'}
+              {/* `M211-01` — the count stays the number of judgements, because that is what the run
+                  did and what `results.json` holds. When the rows below stand for more than they
+                  number, the heading says so rather than letting a reader count the list and
+                  disagree with the summary line above it. */}
+              {groupIdentical(list).length < list.length ? `, ${groupIdentical(list).length} distinct` : ''}
               {list.some((f) => f.withheld) ? ` · ${list.filter((f) => f.withheld).length} withheld` : ''}
             </span>
           </summary>
           <ol className="finding-list">
-            {list.map((f, i) => (
-              <Finding key={`${keyOf(f)}-${i}`} f={f} other={otherByKey ? (otherByKey.get(keyOf(f)) ?? null) : undefined} otherId={compare?.id ?? null} onAccept={onAccept ?? null} />
+            {groupIdentical(list).map(({ f, count }, i) => (
+              <Finding key={`${keyOf(f)}-${i}`} f={f} count={count} other={otherByKey ? (otherByKey.get(keyOf(f)) ?? null) : undefined} otherId={compare?.id ?? null} onAccept={onAccept ?? null} />
             ))}
           </ol>
         </details>
@@ -192,14 +236,24 @@ function comparedState(f: ScanFinding, other: ScanFinding | null): { readonly st
 }
 
 /** `other` is `undefined` with no comparison open, `null` when the compared run lacks the finding. */
-function Finding({ f, other, otherId, onAccept }: { f: ScanFinding; other: ScanFinding | null | undefined; otherId: string | null; onAccept: AcceptFinding | null }) {
+function Finding({ f, count, other, otherId, onAccept }: { f: ScanFinding; count: number; other: ScanFinding | null | undefined; otherId: string | null; onAccept: AcceptFinding | null }) {
   const entry = remediationFor(f.rule);
   const where = [f.endpoint, f.location, f.invariant].filter(Boolean).join(' · ');
   const compared = other === undefined ? null : comparedState(f, other);
   return (
-    <li className={`finding ${f.withheld ? 'finding-off' : 'finding-on'}`} data-finding={keyOf(f)} data-endpoint={f.endpoint} data-withheld={f.withheld ?? undefined} data-in-compared={compared?.state}>
+    <li className={`finding ${f.withheld ? 'finding-off' : 'finding-on'}`} data-finding={keyOf(f)} data-endpoint={f.endpoint} data-withheld={f.withheld ?? undefined} data-in-compared={compared?.state} data-occurrences={count}>
       <div className="finding-where">
         {where}
+        {/* `M211-01` — one row per distinct finding, and this says how many judgements it stands for.
+            Rendered only when it stands for more than one, so the ordinary case reads as it always
+            has; the row is identical in every field to the ones it absorbed, so the number is the
+            whole of what they carried. */}
+        {count > 1 ? (
+          <span className="finding-times" data-finding-times={count} title="identical judgements — a scan rule is judged once per response, and every one is in results.json">
+            {' '}
+            × {count.toLocaleString('en-US')}
+          </span>
+        ) : null}
         {f.via ? ` · via ${f.via} seed` : ''}
         {f.file ? (
           <span className="muted" data-finding-source={`${f.file}:${f.line ?? ''}`}>

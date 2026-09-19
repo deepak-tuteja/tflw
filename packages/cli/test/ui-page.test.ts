@@ -681,7 +681,15 @@ test('the findings block: every finding the report holds, grouped by rule in the
       assert.equal(await group.getAttribute('data-rule-count'), String(inRule.length));
       assert.equal(await group.getAttribute('data-severity'), inRule[0]!.severity);
       const rows = group.locator('[data-finding]');
-      assert.equal(await rows.count(), inRule.length);
+      // `M211-01` — **one row per distinct finding**, not per judgement. This gate read
+      // `inRule.length` until `M211` `S6`, which was right only because neither fixture holds a
+      // duplicate: the claim passed by accident rather than because it was true. It is stated
+      // against the same rule the page uses now, so a fixture that grows a duplicate moves both
+      // together; the row count under a rule whose findings differ is still one each, which is what
+      // these two corpora are.
+      const distinct = new Set(inRule.map((f) => JSON.stringify(Object.keys(f).sort().map((k) => [k, (f as unknown as Record<string, unknown>)[k]]))));
+      assert.equal(await rows.count(), distinct.size);
+      assert.equal(distinct.size, inRule.length, `${id}/${rule}: this corpus has no identical findings, so the mapping is still one to one`);
       for (let i = 0; i < inRule.length; i++) {
         const f = inRule[i]!;
         const row = rows.nth(i);
@@ -966,6 +974,85 @@ test('the index is not door-filtered: a test behind another door is listed where
   await page.goto(`${baseUrl}${API_DOOR}`);
   await page.locator('[data-files]').waitFor();
   assert.equal(await page.locator(`[data-project-test="${elsewhere.name}"]`).count(), 0);
+});
+
+// `M211` `S6` (`M211-01`) — a report with tens of thousands of identical findings, on a project of
+// its own, because neither shared fixture holds a duplicate at all.
+//
+// The subject is the shape the storefront example produced by following its own documented
+// instruction: a scan assertion inside a workload judged one endpoint 29,381 times and recorded
+// 29,381 rows that were **byte-identical** — 29,381 `<li>`, 29,381 `[accept]` buttons all staging
+// the same single baseline entry, and a pane 3,455,656 px tall. `M211` `S1` bounded the example's
+// own workload; this gate is the other half, because the page must survive anyone else writing it.
+//
+// 400 rather than 29,381: the claim is the *rule*, and the cost of the fixture is not evidence for
+// it. A count high enough that the unfixed page is visibly broken is enough.
+test('a report holding the same finding many times renders one row saying how many, and one accept button', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m211-dupes-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    // Derived from a real report rather than invented, so every field the row renders is one the
+    // runtime actually writes.
+    const source = oracle['full']!;
+    const one = (source.findings ?? []).find((f) => f.fingerprint !== undefined)!;
+    const COPIES = 400;
+    const differs = { ...one, detail: `${one.detail} (a second site, so this one must NOT merge)` };
+    const findings = [...Array.from({ length: COPIES }, () => ({ ...one })), differs];
+    await mkdir(join(dir, 'report', 'runs', 'dupes'), { recursive: true });
+    await writeFile(join(dir, 'report', 'runs', 'dupes', 'results.json'), JSON.stringify({ ...source, findings }));
+    // The control: the same report with the duplicates removed. The claim is that the pane does
+    // not grow with the number of judgements, and the only honest instrument for that is the same
+    // page rendered both ways — an absolute pixel bound would be a number invented here, and the
+    // first draft of this gate used one (`< 6000`) that failed at 6132 px because this fixture's
+    // pane is ~6,000 px before a single finding is drawn.
+    await mkdir(join(dir, 'report', 'runs', 'plain'), { recursive: true });
+    await writeFile(join(dir, 'report', 'runs', 'plain', 'results.json'), JSON.stringify({ ...source, findings: [one, differs] }));
+    const port = await ui.listen(0);
+
+    await fresh.goto(`http://127.0.0.1:${port}${API_RUN}`);
+    await fresh.locator('[data-report-row="dupes"]').click();
+    await fresh.locator('[data-report="dupes"]').waitFor();
+
+    const group = fresh.locator(`[data-rule="${one.rule}"]`);
+    // The heading counts JUDGEMENTS, because that is what the run did and what `results.json` holds.
+    assert.equal(await group.getAttribute('data-rule-count'), String(COPIES + 1));
+    assert.equal(await group.getAttribute('data-rule-distinct'), '2');
+    // The list counts DISTINCT findings.
+    const rows = group.locator('[data-finding]');
+    assert.equal(await rows.count(), 2, 'the 400 identical rows are one row; the one that differs is its own');
+    assert.equal(await rows.nth(0).getAttribute('data-occurrences'), String(COPIES));
+    assert.equal(await rows.nth(1).getAttribute('data-occurrences'), '1');
+    assert.equal((await rows.nth(0).locator('[data-finding-times]').textContent())?.replace(/\s+/g, ' ').trim(), `× ${COPIES}`);
+    // The ordinary case is untouched: a row standing for one judgement says nothing extra.
+    assert.equal(await rows.nth(1).locator('[data-finding-times]').count(), 0);
+    // The accept buttons follow the ROWS, so they follow the distinct findings: 401 judgements
+    // offered 401 buttons before this slice, every one staging the same single baseline entry —
+    // `M208` `S3` added that control per row and made the defect worse without knowing it.
+    //
+    // **Two, not one, and the difference is the residual stated rather than hidden.** These two
+    // rows differ in `detail` and therefore share a fingerprint, because the fingerprint excludes
+    // `detail` by design; a baseline entry is keyed on the fingerprint, so both buttons stage the
+    // same entry. That is the honest outcome of collapsing on the whole row: it never merges
+    // different evidence, and the price is that one weakness can still show two accept buttons.
+    // Asserted so the day it changes, something says so.
+    const accepts = fresh.locator('[data-accept-finding]');
+    assert.equal(await accepts.count(), 2, 'one per distinct row, not one per judgement');
+    assert.deepEqual(await accepts.evaluateAll((els) => els.map((e) => e.getAttribute('data-accept-finding'))), [one.fingerprint, one.fingerprint]);
+    // And the pane costs the same as if the duplicates had never been written. The unfixed page
+    // measured 3,455,656 px on 29,381 rows — ~118 px each — so 401 rows would have been ~47,000.
+    const tall = await fresh.locator('.main').evaluate((el) => el.scrollHeight);
+    await fresh.goto(`http://127.0.0.1:${port}${API_RUN}`);
+    await fresh.locator('[data-report-row="plain"]').click();
+    await fresh.locator('[data-report="plain"]').waitFor();
+    const control = await fresh.locator('.main').evaluate((el) => el.scrollHeight);
+    assert.equal(tall, control, `401 judgements cost what 2 do: ${tall}px vs ${control}px`);
+  } finally {
+    await fresh.close();
+    await new Promise<void>((r) => ui.server.close(() => r()));
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // The scroll half of `D1067`, on a project of its own.

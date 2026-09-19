@@ -498,3 +498,12 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .note-body { margin: 4px 0 0; white-space: pre-wrap; font-size: 12px; }
 .legacy { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 10px; }
 .legacy > summary { cursor: pointer; font-size: 13px; }
+
+/* `M211` `S6` (`M211-01`) — a finding row that stands for more than one identical judgement.
+   Muted and inline with the locus, because it is a fact about how many times the rule was asked
+   and not about how bad the weakness is; a reader who sees `× 29,381` beside one cookie flag must
+   not read it as severity. */
+.finding-times {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
