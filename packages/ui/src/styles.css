@@ -417,6 +417,25 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .band-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; }
 .band-facts > li { color: var(--fg); }
 .band-preamble, .file-facts { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+
+/* `M212` `S1` (`D1085`) — the FILE strip. A rule of its own rather than a reuse of `.legacy`'s,
+   because the two say opposite things: `.legacy` is a form for a file that is not open, and this is
+   the open file's own scope. `.file-facts` keeps its top rule only inside `.test-band`, where it no
+   longer appears; inside the strip the summary is already the separator. */
+.file-strip { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; background: var(--panel); }
+.file-strip > summary { cursor: pointer; font-size: 12px; list-style-position: outside; }
+.file-strip > summary .scope-tag { font-size: 10px; letter-spacing: 0.08em; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; }
+.file-strip .file-facts { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+
+/* `M212` `S2` (`D1086`) — the body as a sequence. The list is the test's own order, so it gets no
+   bullets and no indentation of its own: every row is at the same depth because every row happens
+   at the same level. The open request keeps `.request-card`'s box; the collapsed ones are `.stmt`
+   rows, which is what they are — one line of the file. */
+.body-sequence { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.body-sequence > .seq-open { margin: 6px 0; }
+.seq-request .seq-goto { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; background: none; border: 0; padding: 2px 4px; border-radius: 4px; cursor: pointer; font: inherit; color: inherit; }
+.seq-request .seq-goto:hover { background: var(--panel); }
+.seq-request .seq-goto code { color: var(--fg); }
 .file-facts ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--muted); }
 
 .request-card { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: var(--panel); }
@@ -507,3 +526,12 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+
+/* `M212` `S3` (`D1084`) — the add menu. A `<details>`, so closed it holds nothing in the tab order,
+   which is the property `.legacy` gets wrong and this round must not repeat. */
+.add-clause > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.add-clause ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+.add-clause li { display: flex; align-items: baseline; gap: 4px; }
+.add-clause button { font: inherit; padding: 1px 6px; }
+.band-add { margin-top: 4px; }
