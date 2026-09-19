@@ -315,9 +315,29 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
             >
               {state === 'fragment' ? '—' : behind}
             </span>
-            {f.diagnostics > 0 ? (
-              <span className="badge fail" data-diagnostics={f.diagnostics}>
-                {f.diagnostics} diagnostic{f.diagnostics === 1 ? '' : 's'}
+            {/* `M211` `S2` (`M202-01`/`M202-02`) — an error and a warning say different things about
+                the rows under this file, so they are two badges and not one count.
+
+                **An error means the list is a salvage, and the page now says which.** The row used
+                to read `N diagnostics` in the failure hue whatever the severity, beside a test list
+                the parser had merely recovered — measured on a 12-test corpus file, an unterminated
+                `{` leaves 1 of those 12 and the row looked identical to a stray `}` that lost
+                nothing.
+
+                **It says "recovered" and never "incomplete", and that wording is the finding.**
+                `PLAN_M202_IMPORTERS.md` §2 Fork A asked for a disclosure that fires only where
+                recovery actually lost a test — amended by `M211` `S2`, because nothing the parser
+                emits distinguishes the cases: over nine break shapes the lossy and lossless ones
+                agree on error count, span width and whether they reach EOF. The view has no ground
+                truth for what the file would have held, so the only honest claim is the one that is
+                true in both cases. */}
+            {f.errors > 0 ? (
+              <span className="badge fail" data-diagnostics={f.diagnostics} data-recovered={f.errors} title={`this file does not parse — ${f.errors} error${f.errors === 1 ? '' : 's'}; the tests listed under it are what the parser recovered, and it cannot say what it lost`}>
+                does not parse · {f.errors} error{f.errors === 1 ? '' : 's'} · recovered
+              </span>
+            ) : f.warnings > 0 ? (
+              <span className="badge" data-diagnostics={f.diagnostics} data-warnings={f.warnings} title="this file parses — the list below is the file's">
+                {f.warnings} warning{f.warnings === 1 ? '' : 's'}
               </span>
             ) : null}
           </button>

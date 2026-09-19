@@ -1055,6 +1055,78 @@ test('a report holding the same finding many times renders one row saying how ma
   }
 });
 
+// `M211` `S2` (`M202-01`/`M202-02`) — a file that does not parse says so, and the landing stops
+// counting it. On a project of its own, because the shared fixture parses.
+//
+// **`PLAN_M202_IMPORTERS.md` §2 Fork A's gate is amended here, and the amendment is gated rather
+// than only written down.** Fork A asked the disclosure to fire *"at every [break] where recovery
+// lost a test"* and, as the mutation that matters, **not** for breaks that recovered fully. That is
+// unsatisfiable: measured over nine break shapes on a 12-test corpus file, the lossy ones (an
+// unterminated `{`, `[` or nested object — 1 of 12 recovered) and the lossless ones (a truncated
+// step, a stray `}`, an unknown keyword, a bare `expect`, a stray `test` — 12 of 12) agree on error
+// count, on span width and on whether they reach EOF. The view has no ground truth for what the
+// file would have held. So the disclosure keys on **having an error**, and the wording is what
+// carries the honesty: *recovered*, never *incomplete*. The case Fork A wanted excluded is asserted
+// here as included, on purpose.
+test('a file that does not parse is badged as recovered, and the landing stops counting it', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m211-broken-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    const body = (n: number, tag = '@api'): string =>
+      Array.from({ length: n }, (_, i) => [tag, `test "case ${i}"`, `  api GET /c/${i}`, '  expect status equals 200', ''].join('\n')).join('\n');
+    await writeFile(join(dir, 'healthy.tflw'), body(3));
+    // Lossy: an unterminated object swallows the rest of the file. Measured on the real corpus at
+    // 1 of 12 recovered.
+    await writeFile(join(dir, 'lossy.tflw'), `@api\ntest "first"\n  api GET /x body {\n  expect status equals 200\n\n${body(3)}`);
+    // Lossless: an unknown step keyword. The parser recovers every test; the badge still fires, and
+    // that is Fork A's negative control inverted by measurement.
+    await writeFile(join(dir, 'lossless.tflw'), `@api\ntest "first"\n  apX GET /x\n  expect status equals 200\n\n${body(2)}`);
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    // The server's own answer first — the page is graded against this, never against a literal.
+    const project = (await (await fetch(`${base}/api/project`)).json()) as {
+      files: { path: string; tests: unknown[]; diagnostics: number; errors: number; warnings: number }[];
+    };
+    const byPath = new Map(project.files.map((f) => [f.path, f]));
+    const healthy = byPath.get('healthy.tflw')!;
+    const lossy = byPath.get('lossy.tflw')!;
+    const lossless = byPath.get('lossless.tflw')!;
+    assert.equal(healthy.errors, 0);
+    assert.ok(lossy.errors > 0 && lossless.errors > 0, 'both broken files carry an error');
+    // The measurement this gate exists for: recovery loses tests in one and not the other, and
+    // nothing in the diagnostics distinguishes them.
+    assert.ok(lossy.tests.length < healthy.tests.length, `the unterminated object lost tests: ${lossy.tests.length}`);
+    assert.equal(lossless.tests.length, 3, 'the unknown keyword lost none — 3 recovered of 3');
+    // `M202-02` is latent and stays latent: nothing here produces a warning without an error.
+    assert.equal(project.files.filter((f) => f.warnings > 0 && f.errors === 0).length, 0);
+
+    await fresh.goto(`${base}${API_DOOR}`);
+    await fresh.locator('[data-files]').waitFor();
+    for (const [path, f] of [['lossy.tflw', lossy], ['lossless.tflw', lossless]] as const) {
+      const badge = fresh.locator(`[data-file-row="${path}"] [data-recovered]`);
+      assert.equal(await badge.getAttribute('data-recovered'), String(f.errors), `${path}: the badge counts errors`);
+      assert.match((await badge.textContent())!, /does not parse .* recovered/, `${path}: it says what the list under it is`);
+    }
+    assert.equal(await fresh.locator('[data-file-row="healthy.tflw"] [data-recovered]').count(), 0, 'a file that parses carries no badge');
+
+    // The landing: the counts leave the two out, and the page says so rather than folding a
+    // salvaged number into a total it presents as the project's.
+    await fresh.goto(`${base}/`);
+    await fresh.locator('[data-landing]').waitFor();
+    assert.equal(await fresh.locator('[data-unparsed]').getAttribute('data-unparsed'), '2');
+    assert.match((await fresh.locator('[data-unparsed]').textContent())!, /not counted/);
+    // The door counts only the file that parses: 3 `@api` tests, not 3 + 1 + 3.
+    assert.equal(await fresh.locator('[data-door="api"]').getAttribute('data-door-count'), '3');
+  } finally {
+    await fresh.close();
+    await new Promise<void>((r) => ui.server.close(() => r()));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 // The scroll half of `D1067`, on a project of its own.
 //
 // The shared fixture's longest file is 23 lines, and `scrollIntoView({block: 'center'})` cannot

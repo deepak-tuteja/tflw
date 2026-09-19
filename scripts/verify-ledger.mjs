@@ -1042,15 +1042,25 @@ export function staleReport(rows, root) {
 export const CORPORA = [
   {
     id: 'verify-ledger/stamp-grammar',
-    subject: "every re-verification stamp written in an open row's status cell, newest first",
+    // `M211` close-out. This read `open` alone until the ledger reached **0 open rows** and the
+    // corpus resolved empty — the gate firing correctly on a state nobody had been in before.
+    //
+    // **The subject was never "open", it was "a row still claiming a live defect", and `deferred` is
+    // the other half of that.** A deferred row says the defect reproduces and names the condition
+    // under which it will be repaired; its stamp carries exactly the weight an open row's does, and
+    // `D526`'s re-verification discipline applies to it identically — `M202-03` was re-measured and
+    // re-stamped on the day it was deferred, which is the whole point. Measured when this widened:
+    // **19 good stamps across 18 deferred rows, 0 malformed, 0 problems**, so nothing new is caught
+    // and nothing previously read is dropped.
+    subject: "every re-verification stamp written in an open or deferred row's status cell, newest first",
     needs: ['ledger'],
     resolve: ({ ledger }) => {
-      const cells = parseIndex(ledger).filter((r) => classify(r.status) === 'open')
+      const cells = parseIndex(ledger).filter((r) => ['open', 'deferred'].includes(classify(r.status)))
       const n = cells.reduce((a, r) => {
         const { good, malformed } = allStamps(r.status)
         return a + good.length + malformed.length
       }, 0)
-      return { units: n, describe: `${n} stamp(s) across ${cells.length} open row(s)` }
+      return { units: n, describe: `${n} stamp(s) across ${cells.length} open or deferred row(s)` }
     },
     plants: [
       {

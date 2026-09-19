@@ -7,7 +7,7 @@
 // someone goes to write their first workload test.
 
 import { useState } from 'react';
-import { DOORS, countByDoor, lenslessCount } from './doors';
+import { DOORS, countByDoor, lenslessCount, unparsedCount } from './doors';
 import { initProject } from './api';
 import type { Lens, ProjectView } from './contract';
 
@@ -45,6 +45,7 @@ export function Landing({ project, error, noProject, onOpen, onCreated }: Landin
 
   const counts = countByDoor(project);
   const lensless = lenslessCount(project);
+  const unparsed = unparsedCount(project);
   const name = project ? (project.root.split('/').filter(Boolean).pop() ?? project.root) : null;
 
   return (
@@ -110,6 +111,20 @@ export function Landing({ project, error, noProject, onOpen, onCreated }: Landin
             <span data-lensless={lensless}>
               {' '}
               · {lensless} test{lensless === 1 ? '' : 's'} behind no door — {lensless === 1 ? 'it carries' : 'they carry'} no construct any door is about
+            </span>
+          ) : null}
+          {/* `M211` `S2` (`M202-01`) — the counts above leave out files that did not parse, and this
+              is the page admitting it. The sentence four lines above this component's own docblock is
+              the reason: *"A door showing 12 tests that the project does not have would be a
+              brochure."* A recovered test list is not the file's, and both directions of the error
+              are measured — an unterminated `{` leaves 1 of a file's 12 tests, an unterminated test
+              name leaves 13 with the extra one carrying an empty name. Neither number is safe to
+              add, and there is no third number to add instead. Silent when zero, which is every
+              healthy project. */}
+          {unparsed > 0 ? (
+            <span data-unparsed={unparsed}>
+              {' '}
+              · {unparsed} file{unparsed === 1 ? '' : 's'} not counted — {unparsed === 1 ? 'it does' : 'they do'} not parse, so what the parser recovered from {unparsed === 1 ? 'it is' : 'them is'} not a count of this project
             </span>
           ) : null}
         </footer>

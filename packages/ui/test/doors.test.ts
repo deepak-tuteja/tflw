@@ -10,7 +10,7 @@
 // test costs nothing and asserts the thing itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countByDoor, lenslessCount, doorFromHash, docFromHash, fileFromHash, hashForDoor, tabFromHash, hashForTab, focusFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
+import { countByDoor, lenslessCount, unparsedCount, countsHonestly, doorFromHash, docFromHash, fileFromHash, hashForDoor, tabFromHash, hashForTab, focusFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
 import type { ProjectView } from '../src/contract';
 
 const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', envs: [], reportDir: './report', files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [], sessions: [] }, webBaseUrl: null });
@@ -18,6 +18,8 @@ const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', env
 const file = (path: string, tests: Array<readonly string[]>, crawls: Array<readonly string[]> = []): ProjectView['files'][number] => ({
   path,
   diagnostics: 0,
+  errors: 0,
+  warnings: 0,
   // `steps` is derived from the lenses the case asked for rather than defaulted to zero: a fixture
   // that quietly fills a field with a value no real project produces is how a construct hides from
   // the gate that covers it (`M168-02`). These cases are about the door arithmetic and never read
@@ -228,4 +230,47 @@ test('a `@name` segment names which project document Config shows, and only that
     assert.equal(tabFromHash(hash), tab.id, `${tab.id} did not survive a round trip with a document`);
     assert.equal(fileFromHash(hash), 'a.tflw', `${tab.id} lost the file`);
   }
+});
+
+// `M211` `S2` (`M202-01`) — a file that did not parse is left out of the landing's counts.
+//
+// `Landing.tsx`'s own docblock is the criterion: *"A door showing 12 tests that the project does
+// not have would be a brochure."* Both directions of that were measured on one 12-test corpus file
+// before this was written — an unterminated `{` leaves **1 of 12**, and an unterminated test name
+// leaves **13**, the thirteenth carrying an empty name. Neither is a count of the project, so the
+// file is excluded rather than approximated: there is no honest number to fold in.
+
+const broken = (path: string, tests: Array<readonly string[]>, errors: number, warnings = 0): ProjectView['files'][number] => ({
+  ...file(path, tests),
+  diagnostics: errors + warnings,
+  errors,
+  warnings,
+});
+
+test('a file with an error is left out of every door count, and `unparsedCount` says how many', () => {
+  const p = project([file('ok.tflw', [['api'], ['api', 'scan']]), broken('bad.tflw', [['api'], ['browser']], 2)]);
+  assert.deepEqual(countByDoor(p), { api: 2, browser: 0, load: 0, scan: 1 });
+  assert.equal(unparsedCount(p), 1);
+});
+
+test('a file with only warnings parsed, so it counts like any other', () => {
+  const p = project([broken('warn.tflw', [['api'], ['load']], 0, 3)]);
+  assert.deepEqual(countByDoor(p), { api: 1, browser: 0, load: 1, scan: 0 });
+  assert.equal(unparsedCount(p), 0, 'a warning is not a failure to parse');
+});
+
+test('`lenslessCount` makes the same exclusion — a recovered test behind no door is not a project fact', () => {
+  const p = project([file('ok.tflw', [[]]), broken('bad.tflw', [[], []], 1)]);
+  assert.equal(lenslessCount(p), 1);
+});
+
+test('a healthy project says nothing — `unparsedCount` is zero, which is what makes the disclosure readable', () => {
+  assert.equal(unparsedCount(project([file('a.tflw', [['api']]), file('b.tflw', [['scan']])])), 0);
+});
+
+// The predicate is exported and asserted directly, because it is the one place the rule lives and
+// three call sites read it. Severity is the whole of it: a count of diagnostics cannot answer this.
+test('`countsHonestly` reads errors and nothing else', () => {
+  assert.equal(countsHonestly({ errors: 0 }), true);
+  assert.equal(countsHonestly({ errors: 1 }), false);
 });
