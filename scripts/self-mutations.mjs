@@ -80,7 +80,17 @@ export const SELF_MUTATIONS = [
     // also the second time this milestone's own edits have gone stale against this file, the first
     // being the tally line below — the standing cost of a control that quotes the code verbatim, and
     // cheaper than the alternative of not quoting it.
-    find: "  const unknown = flags.filter((f) => f !== '--list' && !f.startsWith('--shard=') && !f.startsWith('--manifest='));",
+    //
+    // `M212` `S0` widened it a third time, to admit `--cover=` and `--no-fast-path`, and the `find:`
+    // went stale a third time — caught by the same gate, in the same way, one run after the edit.
+    // Three occurrences is no longer an anecdote: the cost of a control that quotes its target
+    // verbatim is one stale `find:` per edit to that line, and it is still the cheaper side of the
+    // trade, because the alternative — a control that matches loosely — cannot say the line it
+    // quotes is the line that shipped.
+    find:
+      "  const unknown = flags.filter(\n" +
+      "    (f) => f !== '--list' && f !== '--no-fast-path' && !f.startsWith('--shard=') && !f.startsWith('--manifest=') && !f.startsWith('--cover='),\n" +
+      '  );',
     replace: '  const unknown = [];',
   },
   {

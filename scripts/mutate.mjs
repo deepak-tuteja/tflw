@@ -79,7 +79,7 @@
 // old array named, **thirteen** in m98d where it claimed ten, and one in m98b it omitted entirely
 // (`A1-20`'s stray closer, which exists nowhere in this registry under any milestone).
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -3920,8 +3920,16 @@ export function parseArgs(argv) {
   const args = argv.slice(2);
   const flags = args.filter((a) => a.startsWith('-'));
   const positional = args.filter((a) => !a.startsWith('-'));
-  const unknown = flags.filter((f) => f !== '--list' && !f.startsWith('--shard=') && !f.startsWith('--manifest='));
-  if (unknown.length > 0) return { error: `unknown option${unknown.length > 1 ? 's' : ''} ${unknown.join(', ')} — the options are --list, --shard=<i>/<n> and --manifest=<file>. Usage: mutate.mjs [--list] [--shard=<i>/<n>] [--manifest=<file>] [<id>|<milestone>]` };
+  const unknown = flags.filter(
+    (f) => f !== '--list' && f !== '--no-fast-path' && !f.startsWith('--shard=') && !f.startsWith('--manifest=') && !f.startsWith('--cover='),
+  );
+  if (unknown.length > 0)
+    return {
+      error:
+        `unknown option${unknown.length > 1 ? 's' : ''} ${unknown.join(', ')} — the options are --list, --shard=<i>/<n>, ` +
+        `--manifest=<file>, --cover=<test file,...> and --no-fast-path. Usage: mutate.mjs [--list] [--shard=<i>/<n>] ` +
+        `[--manifest=<file>] [--cover=<f,...>] [--no-fast-path] [<id>|<milestone>]`,
+    };
   if (positional.length > 1) return { error: `expected at most one id or milestone, got ${positional.length}: ${positional.join(', ')}` };
 
   // M127. `--shard=3/6`, joined rather than spaced: `--shard 3/6` would leave `3/6` looking exactly
@@ -3956,7 +3964,35 @@ export function parseArgs(argv) {
     };
   }
 
-  return { list: flags.includes('--list'), scope: positional[0], shard, manifest };
+  // `M212` `S0`. `--cover=` is the operator's word for one run, not a registry field: `D1090`
+  // refused to declare cover sets across 375 entries and this does not reintroduce them — nothing
+  // is stored, nothing goes stale, and the paths are still checked against the suite's own test
+  // files before anything runs. It exists because the place the derived rule misses hardest is the
+  // page: `packages/cli/test/ui-page.test.ts` reaches `packages/ui/src` through a **vite build**,
+  // not an import, so no static relationship between a UI source and its gate exists for any rule
+  // to find. `--no-fast-path` is the other direction — `D1089` records *a* killer rather than every
+  // killer, so a claim about which gates cover a construct has to buy the whole suite back.
+  const coverFlag = flags.find((f) => f.startsWith('--cover='));
+  const cover = coverFlag ? coverFlag.slice('--cover='.length).split(',').map((f) => f.trim()).filter(Boolean) : null;
+  if (coverFlag !== undefined && (cover === null || cover.length === 0)) {
+    return { error: `--cover wants one or more package-relative test files, e.g. --cover=test/ui-page.test.ts` };
+  }
+  if (cover && flags.includes('--no-fast-path')) {
+    return {
+      error:
+        `--cover and --no-fast-path contradict each other: one names the subset to run first, the other says to run ` +
+        `no subset at all.`,
+    };
+  }
+  if (cover && !positional[0]) {
+    return {
+      error:
+        `--cover needs a scope. A cover set is derived from one mutated file, and naming one by hand for a whole ` +
+        `sweep would point every mutation at the same test files however unrelated they are.`,
+    };
+  }
+
+  return { list: flags.includes('--list'), scope: positional[0], shard, manifest, cover, fastPath: !flags.includes('--no-fast-path') };
 }
 
 // M112. Every suite run is bounded, because until now none of them was.
@@ -4007,6 +4043,169 @@ export function elapsedLine({ ms, shard }) {
 
 export function suiteCommand(pkg) {
   return pkg === ROOT_SUITE ? 'npm run test:scripts 2>&1' : `npm test -w ${pkg} 2>&1`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// `M212` `S0` — the fast path. `D1089`, `D1090`.
+//
+// `mutate.mjs` has always run a mutation's whole package suite. For `@tflw/lang` that is ~1.4s and
+// nobody noticed; for `tflw` it is **188s measured on the box**, and `M211` `S6`'s seven UI
+// mutations cost 790s for seven one-line edits to one file. That price is what makes a round like
+// `M212` expensive to build, which is why `S0` is built before the slices it pays for.
+//
+// **`D1089` — a subset of a suite can prove a mutation dead, never alive.** The fast path runs only
+// the test files that plausibly cover the mutated file. **Killed there, it is killed.** **Survived
+// there, the full package suite runs before the survival is believed.** The asymmetry is the whole
+// mechanism: a cover set that is too narrow is never a wrong verdict, only a missed saving, so this
+// cannot make the sweep lie — the worst it can do is make it slow.
+//
+// Two things the asymmetry depends on, and both are stated here rather than assumed.
+//
+// 1. **The fast path needs no baseline of its own.** `baseline(pkg)` already runs the whole suite
+//    green before any mutation is applied, and a green whole suite is a green subset of it by
+//    construction. So a red fast path is attributable to the mutation and nothing else, at exactly
+//    the strength the full-suite verdict has always had.
+//
+// 2. **The cover set is searched in the SUITE's package, never the mutated file's.** Those differ
+//    more often than they look: seventeen registry entries mutate `packages/ui/src/*` and every one
+//    of them is scored against `tflw`, the CLI's suite, because the page's gates live in
+//    `packages/cli/test/ui-page.test.ts`. Running `packages/ui/test/findings.test.ts` against one
+//    of those would be a kill by a test that is *not in the suite being scored* — which is not a
+//    subset, and so not covered by the argument above. `D1090`'s worked example
+//    (`packages/ui/src/Findings.tsx` -> `packages/ui/test/findings.test.ts`) crosses that boundary
+//    and is therefore wrong as written; reconciled in `PLAN_M212_COMPOSE_LEGIBLE.md` §6.
+//
+// **The cost that is stated rather than discovered** (`D1089`): a fast-path kill records *a*
+// killer, not *every* killer. That satisfies `M189`/`M198`'s "quote its red line" and would not
+// satisfy a future claim that four named gates all cover one construct. `--no-fast-path` is how
+// such a claim gets its full-suite run back.
+
+/** A file's stem, case- and separator-insensitive: `ui-page.test.ts` and `UiPage.tsx` both `uipage`. */
+function stemOf(file, suffix) {
+  return path.basename(file).replace(suffix, '').toLowerCase().replace(/[-_.]/g, '');
+}
+
+/**
+ * `D1090` — which of a package's test files plausibly cover a mutated file, by name alone.
+ *
+ * `packages/lang/src/checker.ts` -> `packages/lang/test/checker.test.ts`. Nothing is declared and
+ * nothing is kept in sync across 375 entries; where the convention does not hold this returns `[]`
+ * and the caller runs the whole suite, which is today's behaviour exactly. **It degrades rather
+ * than lying**, and the saving is therefore uneven — measured over the registry as it stands,
+ * 193 of 375 entries match and 182 do not.
+ *
+ * Pure, with the listing injected, because the interesting cases are the ones the tree does not
+ * currently have.
+ */
+export function coverSetFor(mutatedFile, testFiles, suiteDir = null) {
+  const want = stemOf(mutatedFile, /\.[^.]+$/);
+  const byName = testFiles.filter((t) => stemOf(t, /\.test\.[^.]+$/) === want);
+  if (byName.length > 0) return byName;
+
+  // `D1091` — the cross-workspace tier, and the measurement that forced it.
+  //
+  // `D1090` was taken to make `M212`'s own slices affordable, and measured against the registry it
+  // does not touch them at all: **seventeen entries mutate `packages/ui/src/*` and every one is
+  // scored against `tflw`**, whose test directory holds no `findings.test.ts`, no `workload.test.ts`
+  // and no `app.test.ts`. There is nothing for a name rule to find, and nothing for an *import* rule
+  // to find either — `packages/cli/test/ui-page.test.ts` reaches `packages/ui/src` by running
+  // **vite over it**, so no static relationship between a UI source and its gate exists anywhere in
+  // the tree. Measured on the box: the `tflw` suite is 188s, of which `ui-page.test.ts` is 42s and
+  // `ui-server.test.ts` is 2.4s, against `e2e` 59s, `pick` 42s and `watch` 28s.
+  //
+  // What does exist is the naming: a suite that tests another workspace names its files after it.
+  // So when the mutated file lives outside the suite's own workspace, the cover set is the suite's
+  // test files named for **that workspace** — `packages/ui/src/Findings.tsx` scored against `tflw`
+  // -> `test/ui-page.test.ts` and `test/ui-server.test.ts`, 44s of 188s.
+  //
+  // Deliberately narrower than it could be: it fires ONLY across a workspace boundary. Inside one
+  // workspace the dir name is the package's own and would match either everything or nothing,
+  // which is a rule that has stopped saying anything. And like every other branch here it is
+  // covered by `D1089` — a cover set that is wrong costs a missed saving, never a wrong verdict.
+  const from = /^(packages\/([^/]+))\//.exec(mutatedFile);
+  if (!from || !suiteDir || from[1] === suiteDir) return [];
+  const ws = from[2].toLowerCase().replace(/[-_.]/g, '');
+  return testFiles.filter((t) => stemOf(t, /\.test\.[^.]+$/).startsWith(ws));
+}
+
+/**
+ * A package's `npm test` rewritten to run only `files`, or `null` if it cannot be.
+ *
+ * The transformation is deliberately timid, because the alternative to refusing is running the
+ * wrong command and calling the result a verdict. It refuses when the script chains (`@tflw/
+ * docs-site` runs `verify-docs.mjs` after node:test, and a subset of the node:test half is not a
+ * subset of *that* suite at all), and it refuses unless exactly one argument looks like a test
+ * glob. Everything else in the script — `--test-concurrency=1`, `--import tsx`, `tflw-vscode`'s
+ * `TSX_TSCONFIG_PATH=` prefix — is carried through untouched, because those are the conditions the
+ * suite is measured under and rewriting them would change the experiment rather than shorten it.
+ *
+ * `files` are package-relative, and the command is meant to be run with the package as its cwd.
+ */
+export function fastCommand(testScript, files) {
+  if (typeof testScript !== 'string' || files.length === 0) return null;
+  if (/&&|\|\||;|\|/.test(testScript)) return null;
+  const globs = testScript.match(/"[^"]*\*[^"]*\.test\.[a-z]+"|'[^']*\*[^']*\.test\.[a-z]+'|\S*\*\S*\.test\.[a-z]+/g) ?? [];
+  if (globs.length !== 1) return null;
+  return `${testScript.replace(globs[0], files.map((f) => JSON.stringify(f)).join(' '))} 2>&1`;
+}
+
+/** `packages/<dir>/test/**\/*.test.{ts,mjs}`, package-relative, sorted. */
+function listPackageTests(dir) {
+  const out = [];
+  const walk = (rel) => {
+    let entries;
+    try {
+      entries = readdirSync(path.join(ROOT, dir, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const next = path.posix.join(rel, e.name);
+      if (e.isDirectory()) walk(next);
+      else if (/\.test\.(ts|mjs)$/.test(e.name)) out.push(next);
+    }
+  };
+  walk('test');
+  return out.sort();
+}
+
+/** The workspace directory a package name resolves to, or `null` — the inverse of `workspaceName`. */
+function packageDir(pkg) {
+  let dirs;
+  try {
+    dirs = readdirSync(path.join(ROOT, 'packages'), { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const e of dirs) {
+    if (e.isDirectory() && workspaceName(`packages/${e.name}`) === pkg) return `packages/${e.name}`;
+  }
+  return null;
+}
+
+/**
+ * The fast path for one mutation, or `null` when there is not one.
+ *
+ * Returns `{ dir, cmd, files }` — everything `runSuite` needs and nothing it has to look up again,
+ * so the decision is made once and the reporting can name the files it ran.
+ */
+function fastPathFor(pkg, mutatedFile, override) {
+  if (!mutatedFile || pkg === ROOT_SUITE) return null;
+  const dir = packageDir(pkg);
+  if (!dir) return null;
+  const available = listPackageTests(dir);
+  // An operator's `--cover=` is still checked against the suite's own test files, for the same
+  // reason the derived set is: a path that is not in this suite is not a subset of it.
+  const files = override ? override.filter((f) => available.includes(f)) : coverSetFor(mutatedFile, available, dir);
+  if (files.length === 0) return null;
+  let script;
+  try {
+    script = JSON.parse(readFileSync(path.join(ROOT, dir, 'package.json'), 'utf8')).scripts?.test;
+  } catch {
+    return null;
+  }
+  const cmd = fastCommand(script, files);
+  return cmd ? { dir, cmd, files } : null;
 }
 
 /**
@@ -4094,9 +4293,14 @@ function workspaceName(dir) {
   }
 }
 
-function runSuite(pkg, mutatedFile) {
+function runSuite(pkg, mutatedFile, fast = null) {
   // `M147-09` — see `rebuildTargetFor`. Skipped entirely when the mutation and its suite share a
   // workspace, which is every mutation in the registry but one.
+  //
+  // `M212` `S0`: the rebuild happens on the fast path too, and deliberately. Whether a sibling's
+  // `dist` is stale has nothing to do with how many test files are about to read it, and skipping
+  // it here would make the fast path's one failure mode a **false kill** — the opposite of the
+  // asymmetry `D1089` rests on.
   const rebuild = mutatedFile ? rebuildTargetFor(mutatedFile, pkg, workspaceName, workspaceBuilds) : null;
   if (rebuild) {
     try {
@@ -4109,8 +4313,8 @@ function runSuite(pkg, mutatedFile) {
     }
   }
   try {
-    const out = execSync(suiteCommand(pkg), {
-      cwd: ROOT,
+    const out = execSync(fast ? fast.cmd : suiteCommand(pkg), {
+      cwd: fast ? path.join(ROOT, fast.dir) : ROOT,
       encoding: 'utf8',
       env: suiteEnv(),
       timeout: SUITE_TIMEOUT_MS,
@@ -4233,8 +4437,30 @@ export function tallyLine({ ran, survived, stale, timedOut = 0, shard, registry 
   );
 }
 
-function sweep(selected, scope, shard) {
+/**
+ * What the fast path did, in the sweep's own summary rather than in a paragraph under it — `M126`'s
+ * rule (*a number under a headline is a number nobody reads*) applied to the number this slice
+ * exists to move.
+ *
+ * It names **`noCover`** as loudly as it names the kills, because `D1090` degrades silently by
+ * design: a run where the convention never matched looks exactly like a run where the fast path is
+ * switched off, and the difference is the whole question of whether the rule is worth keeping.
+ */
+export function fastPathLine({ kills, fellThrough, noCover, noVerdict }, enabled = true) {
+  if (!enabled) return 'fast path OFF — every mutation ran its whole package suite (`--no-fast-path`).';
+  const ran = kills + fellThrough + noVerdict;
+  if (ran === 0) return `fast path: no cover set for any of ${noCover} mutation(s) — every one ran its whole package suite.`;
+  return (
+    `fast path: ${kills} killed by a subset, ${fellThrough} fell through to the full suite, ` +
+    `${noVerdict} reached no verdict there, ${noCover} had no cover set.`
+  );
+}
+
+function sweep(selected, scope, shard, fastPath = true, coverOverride = null) {
   const survivors = [];
+  // `M212` `S0` — what the fast path actually did, reported rather than assumed. `D1090`'s saving
+  // is uneven by construction, so a run that took it nowhere has to be able to say so.
+  const fastTally = { kills: 0, fellThrough: 0, noCover: 0, noVerdict: 0 };
   for (const m of selected) {
     const pkg = m.pkg ?? DEFAULT_PKG;
     const code = baseline(pkg);
@@ -4279,17 +4505,38 @@ function sweep(selected, scope, shard) {
     if (!openJournal({ id: m.id, milestone: m.milestone, pid: process.pid, startedAt: new Date().toISOString(), files })) return 2;
     writeFileSync(full, mutated);
     try {
-      const result = runSuite(pkg, m.file);
+      // `M212` `S0` (`D1089`) — the subset first, and only ever to prove death.
+      const fast = fastPath ? fastPathFor(pkg, m.file, coverOverride) : null;
+      if (!fast) fastTally.noCover += 1;
+      let result = runSuite(pkg, m.file, fast);
+      let via = '';
+      if (fast) {
+        if (!result.green && !result.timedOut && !result.overflowed) {
+          fastTally.kills += 1;
+          via = ` [fast path: ${fast.files.join(' ')}]`;
+        } else if (result.timedOut || result.overflowed) {
+          // Not re-run. The full suite contains the file that just hung, so re-running it buys a
+          // second identical non-verdict at the full price; what the reader needs is the *name of
+          // the file that hung*, and the subset is the only run that can give it.
+          fastTally.noVerdict += 1;
+          via = ` [fast path: ${fast.files.join(' ')}]`;
+        } else {
+          // `D1089`'s one-way door. Green here is not a survival; it is the absence of a kill from
+          // a fraction of the suite, and the fraction does not get to say so.
+          fastTally.fellThrough += 1;
+          result = runSuite(pkg, m.file);
+        }
+      }
       if (result.overflowed) {
         // Distinct from the hang below on purpose (`M147e-01`): this suite *finished*, and what
         // stopped us reading its verdict was our own buffer. No verdict either way, but the reader
         // is sent to the right place.
-        console.log(`✗ NO VERDICT ${m.id} (${m.milestone}) — ${pkg}'s output passed ${SUITE_MAX_BUFFER / (1024 * 1024)}MB and was truncated before a summary could be read; no verdict on: ${m.what}`);
+        console.log(`✗ NO VERDICT ${m.id} (${m.milestone}) — ${pkg}'s output passed ${SUITE_MAX_BUFFER / (1024 * 1024)}MB and was truncated before a summary could be read; no verdict on: ${m.what}${via}`);
         survivors.push({ ...m, verdict: 'timeout' });
       } else if (result.timedOut) {
         // Not a kill and not a survival — the suite never reached a verdict, so neither has this
         // mutation. Counted against the run so a hang can never leave the sweep exiting 0.
-        console.log(`✗ TIMED OUT ${m.id} (${m.milestone}) — ${pkg}'s suite hung; no verdict on: ${m.what}`);
+        console.log(`✗ TIMED OUT ${m.id} (${m.milestone}) — ${pkg}'s suite hung; no verdict on: ${m.what}${via}`);
         survivors.push({ ...m, verdict: 'timeout' });
       } else if (result.green && m.equivalent) {
         console.log(`· no-op     ${m.id} (${m.milestone}) — ${m.what}; survives because it changes nothing`);
@@ -4302,7 +4549,7 @@ function sweep(selected, scope, shard) {
         console.log(`✗ NOT A NO-OP  ${m.id} (${m.milestone}) — killed ${summaryCount(result.out, 'fail') ?? 0} test(s); its \`equivalent\` claim is wrong`);
         survivors.push({ ...m, verdict: 'mislabelled' });
       } else {
-        console.log(`✓ killed    ${m.id} (${m.milestone}) — ${killReason(result.out)}`);
+        console.log(`✓ killed    ${m.id} (${m.milestone}) — ${killReason(result.out)}${via}`);
       }
     } finally {
       // D227 — restore, then read it back. A silent restore failure is the same defect this whole
@@ -4336,6 +4583,7 @@ function sweep(selected, scope, shard) {
       shard,
     })}`,
   );
+  console.log(fastPathLine(fastTally, fastPath));
   if (shard) {
     console.log(
       `  This shard is not the sweep. The other ${shard.of - 1} run elsewhere, and only \`verify-shards.mjs\` over all ${shard.of} manifests\n` +
@@ -4364,7 +4612,7 @@ function main(argv = process.argv) {
     return 2;
   }
 
-  const { error, list, scope, shard, manifest } = parseArgs(argv);
+  const { error, list, scope, shard, manifest, cover, fastPath } = parseArgs(argv);
   if (error) {
     console.error(error);
     return 2;
@@ -4430,7 +4678,7 @@ function main(argv = process.argv) {
 
   const sweepStartedAt = Date.now();
   try {
-    return sweep(selected, scope, shard);
+    return sweep(selected, scope, shard, fastPath, cover);
   } finally {
     // `D573` — unconditional, and in the `finally` so it covers the paths that end a sweep early
     // too. A red baseline aborts the run from inside the loop, which is how a shard could burn
