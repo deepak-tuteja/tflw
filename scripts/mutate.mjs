@@ -3577,6 +3577,90 @@ const REGISTRY = [
     find: "  const forced = process.env.TFLW_SOURCE_ROOT?.trim();",
     replace: "  const forced = undefined as string | undefined;",
   },
+
+  // ---------------------------------------------------------------------------------------------
+  // `M212` — the Compose pane made legible, and the fast path that paid for it.
+  //
+  // **These are in the registry, and that is the round's own correction.** `M211` `S6` measured
+  // seven mutations at 790s and left nothing behind that could measure them again — the round that
+  // priced the instrument did not keep it. `M212` `S0`'s acceptance had to reach for a different
+  // population for exactly that reason, so its own claims are entries rather than a scratch run.
+  {
+    id: 'the-cover-set-matches-by-prefix',
+    milestone: 'm212',
+    pkg: ROOT_SUITE,
+    file: 'scripts/mutate.mjs',
+    what: '`D1090`\'s name match widens to a prefix, so `checker.ts` pulls in `checkerContract.test.ts` as well — a cover set that can match half a suite stops being fast long before it stops being correct, and reports a saving it did not make',
+    find: '  const byName = testFiles.filter((t) => stemOf(t, /\\.test\\.[^.]+$/) === want);',
+    replace: '  const byName = testFiles.filter((t) => stemOf(t, /\\.test\\.[^.]+$/).startsWith(want));',
+  },
+  {
+    id: 'a-chained-suite-gets-a-subset-anyway',
+    milestone: 'm212',
+    pkg: ROOT_SUITE,
+    file: 'scripts/mutate.mjs',
+    what: "`fastCommand` stops refusing a chained `npm test`, so `@tflw/docs-site`'s node:test half is run as if it were the suite — and three of this registry's docs mutations are killed by the `verify-docs.mjs` after the `&&` (`M110`), which the subset never reaches. `D1089`'s asymmetry is false the moment the subset is not a subset",
+    find: '  if (/&&|\\|\\||;|\\|/.test(testScript)) return null;',
+    replace: '  if (false) return null;',
+  },
+  {
+    id: 'the-file-facts-go-back-in-the-test-card',
+    milestone: 'm212',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ComposePane.tsx',
+    what: "`D1085` undone: the file's comment, imports, uses and actions are drawn inside `.test-band` again, so a card headed `TEST health check` ends with four file-scoped facts — `D956`'s family, a claim about one artifact beside a different one",
+    find: '          <FileStrip outline={outline} editing={editing} />',
+    replace: '          <div className="test-band"><FileStrip outline={outline} editing={editing} /></div>',
+  },
+  {
+    id: 'the-head-names-the-file-again',
+    milestone: 'm212',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ComposePane.tsx',
+    what: '`D1085` undone at the head: the selected declaration is named as the file, so the sentence a reader looks at first describes a different artifact from the body under it',
+    find: '                <code data-compose-subject-what>{at.decl.kind === \'test\' ? `test ${at.decl.name}` : at.decl.label}</code> · line{\' \'}',
+    replace: '                <code data-compose-subject-what>{path}</code> · line{\' \'}',
+  },
+  {
+    id: 'the-other-requests-are-not-drawn',
+    milestone: 'm212',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ComposePane.tsx',
+    what: "`D1086` undone: only the selected request is drawn, so a thirteen-request test shows one of thirteen and the other twelve exist only in the tree — the pane's state for the whole of `M210`",
+    find: '    rows.push(<RequestLine key={`req-${r.line}`} request={r} onLine={onLine} />);',
+    replace: '    continue;',
+  },
+  {
+    id: 'every-clause-is-a-field-again',
+    milestone: 'm212',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ComposePane.tsx',
+    what: '`D1084` undone on the request: every clause is drawn whether the file writes it or not, which is the scaffold at 34 fields with 18 of them empty or showing a default',
+    find:
+      '  const shows = (clause: string): boolean => states(clause) || added.includes(clause);\n' +
+      "  const add = (k: string): void => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]));",
+    replace:
+      '  const shows = (_clause: string): boolean => true;\n' +
+      "  const add = (k: string): void => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]));",
+  },
+  {
+    id: 'the-add-menu-hides-what-it-cannot-add',
+    milestone: 'm212',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ComposePane.tsx',
+    what: "`D1084`'s completeness clause undone: the menu lists only the clauses this door can construct, so `timeout`, `redirects` and `retry after` disappear from the page entirely — the vocabulary SHRINKS instead of moving one click away, which is the failure `D1076` was written against",
+    find: "            state: shows(c.key) ? ('present' as const) : c.editable ? ('addable' as const) : ('locked' as const),",
+    replace: "            state: shows(c.key) ? ('present' as const) : ('addable' as const),",
+  },
+  {
+    id: 'a-new-file-is-written-under-an-etag',
+    milestone: 'm212',
+    pkg: 'tflw',
+    file: 'packages/ui/src/NewThing.tsx',
+    what: "`D1087`'s create undone: a new file is PUT with the OPEN file's `If-Match`, which the route reads as *replace this* — so the create the page never had goes back to not having one, by one argument",
+    find: "    const put = await putFile(target, built.text, mode === 'file' ? null : openEtag);",
+    replace: '    const put = await putFile(target, built.text, openEtag);',
+  },
 ];
 
 /**
