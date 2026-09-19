@@ -4304,6 +4304,111 @@ test('a note is collapsed to its first line with a count, opens to the rest, and
   }
 });
 
+test('a new .tflw file can be made from the page, and the page then opens it', async () => {
+  // **`M212` `S4`, `D1087`.** `PUT /api/file` with no `If-Match` creates the file, and has since
+  // the route was written — `writeProjectFile` says so in its own refusal text. **The page offered
+  // no control for it anywhere**, in Compose or in the explorer, so the only way to start a second
+  // file in a project was to leave the page. Third occurrence of the class: `M205` found project
+  // creation built and unreachable behind one `existsSync`, `M209` found four shipped sites
+  // delegating to an explorer nobody had written.
+  //
+  // The last assertion is the one that makes this a capability rather than a write: a create that
+  // leaves you looking at the file you were already on has no visible consequence.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-newfile-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await writeFile(join(dir, 'first.tflw'), ['test "it answers"', '  api GET /a', '  expect status equals 200', ''].join('\n'));
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+    await fresh.goto(`${base}/#/api/compose/first.tflw`);
+    await fresh.locator('[data-compose-new-file]').click();
+    await fresh.locator('[data-new-thing="file"]').waitFor();
+
+    // It refuses before it writes, and says which mistake it is. *That is not a path* and *the file
+    // already exists* are different, and neither should cost a round trip to find out.
+    await fresh.locator('[data-new-file]').fill('first.tflw');
+    await fresh.locator('[data-new-name]').fill('it also answers');
+    await fresh.locator('[data-new-path]').fill('/b');
+    assert.match((await fresh.locator('[data-new-problem]').textContent())!, /already exists/);
+    assert.equal(await fresh.locator('[data-new-create]').isDisabled(), true);
+    await fresh.locator('[data-new-file]').fill('tests/second.md');
+    assert.match((await fresh.locator('[data-new-problem]').textContent())!, /ends in \.tflw/);
+
+    // **The preview is the bytes.** Not a courtesy — it is the same value the button writes, so the
+    // two cannot describe different files.
+    await fresh.locator('[data-new-file]').fill('tests/second.tflw');
+    await fresh.locator('[data-new-method]').selectOption('POST');
+    const preview = (await fresh.locator('[data-new-preview]').textContent())!;
+    await fresh.locator('[data-new-create]').click();
+    await fresh.locator('[data-new-thing="file"]').waitFor({ state: 'detached' });
+
+    const onDisk = await readFile(join(dir, 'tests', 'second.tflw'), 'utf8');
+    assert.equal(onDisk, preview, 'the bytes on disk are the bytes it previewed');
+    assert.match(onDisk, /^test "it also answers"$/m);
+    assert.match(onDisk, /^ {2}api POST \/b$/m);
+    // **The assertion is not a preference** — `B3-17`: an `api` step with nothing reading it can
+    // never fail, so a guided start that produced one would teach the shape the checker warns about.
+    assert.match(onDisk, /^ {2}expect status equals 200$/m);
+
+    assert.match(new URL(fresh.url()).hash, /compose\/tests\/second\.tflw/, 'and the page is now on the file it just made');
+    await fresh.locator('[data-compose-subject-what]').waitFor();
+    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test it also answers');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a new test goes into the open file through the same builders the pane’s own controls use', async () => {
+  // **`D1087`'s load-bearing clause, and the whole of why a dialog is safe here.** A dialog is a
+  // second authoring surface, and this repository has the receipt for what those cost: `.legacy`
+  // drifted until it offered `/orders/{orderId}` and *"the orders endpoint answers"* as
+  // placeholders for whatever file happened to be open. So the claim is not *the dialog works* —
+  // it is that **there is one construction path**, and the way to state that against the rendered
+  // page is that what the dialog writes is what Compose then reads back, clause for clause.
+  //
+  // The existing file is left alone, which is the other half: a splice, not a rewrite.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-newtest-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await writeFile(
+      join(dir, 'one.tflw'),
+      ['# this comment must survive', '', 'test "the first"', '  api GET /a', '  expect status equals 200', ''].join('\n'),
+    );
+    const port = await ui.listen(0);
+    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/one.tflw`);
+    await fresh.locator('[data-compose-new-test]').click();
+    await fresh.locator('[data-new-thing="test"]').waitFor();
+    assert.equal(await fresh.locator('[data-new-file]').count(), 0, 'a new test needs no file name — the pane is already on one');
+    await fresh.locator('[data-new-name]').fill('the second');
+    await fresh.locator('[data-new-path]').fill('/b/{id}');
+    await fresh.locator('[data-new-create]').click();
+    await fresh.locator('[data-new-thing="test"]').waitFor({ state: 'detached' });
+
+    const onDisk = await readFile(join(dir, 'one.tflw'), 'utf8');
+    assert.match(onDisk, /^# this comment must survive$/m, 'the file was spliced, not rewritten');
+    assert.match(onDisk, /^test "the first"$/m);
+    assert.match(onDisk, /^test "the second"$/m);
+
+    // Compose reads the new test back through its own reader, and finds the request where the
+    // builders put it. One construction path means the pane cannot disagree with the dialog.
+    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/one.tflw/L${onDisk.split('\n').findIndex((l) => l.startsWith('test "the second"')) + 1}`);
+    await fresh.locator('[data-compose-subject-what]').waitFor();
+    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test the second');
+    assert.equal(await fresh.locator('[data-seq-open] [data-request-path]').inputValue(), '/b/{id}');
+    assert.equal(await fresh.locator('[data-seq-open] [data-request-attached]').getAttribute('data-request-attached'), '1');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('a clause the file does not write is not a field — it is in a menu that names all of them', async () => {
   // **`M212` `S3`, `D1084` — amending `D1076`.** The scaffold `tflw init` writes is three lines and
   // the pane drew **47 controls, 34 of them fields, 18 of those empty or showing a default**. A

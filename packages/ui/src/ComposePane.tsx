@@ -2060,6 +2060,12 @@ export interface ComposePaneProps {
    *  place the selection lives (`D1045`). `M212` `S2` needs it: a collapsed request in the body's
    *  sequence is the thing you click to open. */
   readonly onLine: (line: number) => void;
+  /** **The two create gestures** (`M212` `S4`, `D1087`) — a new test in this file, and a new file.
+   *  Rendered by the shell so that the dialog can reach `putFile` and the project's file list
+   *  without this pane learning what either is. */
+  readonly onNew: ((mode: 'test' | 'file') => void) | null;
+  /** The dialog itself, when one is open. */
+  readonly dialog: ReactNode;
   /** The old *write a new test* form. `D1082` makes this slice read-only, and deleting the only
    *  write path the API door has for four slices is not what "read-only first" asked for — so it
    *  is kept, said to be the old surface, and dissolved by `S2`–`S5` rather than by this one. */
@@ -2116,7 +2122,7 @@ export interface ComposePaneProps {
   readonly onDiscard: () => void;
 }
 
-export function ComposePane({ path, outline, at, door, onLine, legacy, legacyOpen, onLegacyOpen, edit, onEdit, editing, prefix, onSend, sending, ran, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
+export function ComposePane({ path, outline, at, door, onLine, onNew, dialog, legacy, legacyOpen, onLegacyOpen, edit, onEdit, editing, prefix, onSend, sending, ran, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
   const requests = outline === null ? [] : outline.declarations.flatMap((d) => d.body.requests);
   return (
     <div className="authoring compose-pane" data-compose={outline === null ? 'reading' : at?.request ? 'request' : 'no-request'}>
@@ -2124,6 +2130,21 @@ export function ComposePane({ path, outline, at, door, onLine, legacy, legacyOpe
         <h2>
           <code>{path}</code>
         </h2>
+        {/* **The two ways to make something that is not here yet** (`D1087`). `PUT /api/file` with
+            no `If-Match` has created files since the route was written, and the page offered no
+            control for it anywhere — the third time this repository has found a built capability
+            with no door on it (`M205`, `M209`). They sit in the head because that is the one part
+            of the pane that is about the file rather than about a declaration in it. */}
+        {onNew === null ? null : (
+          <div className="authoring-new" data-compose-new>
+            <button type="button" onClick={() => onNew('test')} disabled={outline === null} data-compose-new-test>
+              + new test
+            </button>
+            <button type="button" onClick={() => onNew('file')} data-compose-new-file>
+              + new file
+            </button>
+          </div>
+        )}
         {outline === null ? (
           <p className="muted" data-compose-state>
             reading {path || 'the project'}…
@@ -2158,6 +2179,8 @@ export function ComposePane({ path, outline, at, door, onLine, legacy, legacyOpe
           </p>
         )}
       </header>
+
+      {dialog}
 
       {/* **The reading state replaces the READER, not the pane**, and that distinction was found on
           the served page rather than reasoned out. Returning early from this component while the

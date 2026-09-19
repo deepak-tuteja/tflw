@@ -69,6 +69,7 @@ import {
   type Ran,
   type Verdict,
 } from './ComposePane';
+import { NewThing, type NewMode } from './NewThing';
 import { addressed, fileOutline, prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
@@ -107,6 +108,9 @@ export interface ApiFormProps {
   readonly fileProblem: string | null;
   /** A write lands here: the shell's copy moves forward so every reader of it agrees at once. */
   readonly onFileWritten: (file: FileView) => void;
+  /** Point the page at a different file — the explorer's own gesture, which `M212` `S4` needs
+   *  because creating a file that the address does not then name is a write with no consequence. */
+  readonly onOpenFile: (path: string) => void;
   /** Which stage of this file's life is showing (`M205` §2). It lives in the URL and nowhere else
    *  (`D1045`), so the shell owns it and hands it down — this form does not remember a tab. */
   readonly tab: TabId;
@@ -188,7 +192,7 @@ interface HeaderRow {
   readonly value: string;
 }
 
-export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ApiFormProps) {
+export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onOpenFile, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ApiFormProps) {
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [testName, setTestName] = useState('');
   /**
@@ -567,6 +571,9 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
   /** Whether Compose's legacy authoring form is disclosed. **Here, not in the pane** — see
    *  `ComposePaneProps.legacyOpen`: the strip unmounts the panel, and this outlives it. */
   const [legacyOpen, setLegacyOpen] = useState(false);
+
+  /** `M212` `S4` (`D1087`) — which create dialog is open, if either. */
+  const [creating, setCreating] = useState<NewMode | null>(null);
 
   /** Every test in the file, not only the ones behind this door — `D1044` again: an API step is
    *  legal in a test a LOAD form started, and that is the case this form exists to reach. */
@@ -980,6 +987,31 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
           outline={outline}
           at={at}
           onLine={(line) => onTab('compose', line)}
+          onNew={setCreating}
+          dialog={
+            creating === null ? null : (
+              <NewThing
+                mode={creating}
+                openPath={path}
+                openText={file?.text ?? ''}
+                openEtag={file?.etag ?? null}
+                existing={project.files.map((f) => f.path)}
+                onCancel={() => setCreating(null)}
+                onDone={(written) => {
+                  const made = creating;
+                  setCreating(null);
+                  // The same two notifications a save makes — the shell re-reads the project,
+                  // because the page is a projection of the file and not a cache of it (`D985`).
+                  if (made === 'test') onFileWritten(written);
+                  onWritten(written.path);
+                  // **A new FILE moves the address to it.** A create that left you looking at the
+                  // file you were already on is a write with no visible consequence, which is the
+                  // shape `M209` found four times over.
+                  if (made === 'file') onOpenFile(written.path);
+                }}
+              />
+            )
+          }
           legacyOpen={legacyOpen}
           onLegacyOpen={setLegacyOpen}
           edit={values}
