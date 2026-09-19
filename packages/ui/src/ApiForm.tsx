@@ -979,6 +979,7 @@ export function ApiForm({ project, onWritten, tab, onTab, path, file, outline, d
           path={path}
           outline={outline}
           at={at}
+          onLine={(line) => onTab('compose', line)}
           legacyOpen={legacyOpen}
           onLegacyOpen={setLegacyOpen}
           edit={values}

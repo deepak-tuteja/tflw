@@ -4304,6 +4304,361 @@ test('a note is collapsed to its first line with a count, opens to the rest, and
   }
 });
 
+test('a clause the file does not write is not a field — it is in a menu that names all of them', async () => {
+  // **`M212` `S3`, `D1084` — amending `D1076`.** The scaffold `tflw init` writes is three lines and
+  // the pane drew **47 controls, 34 of them fields, 18 of those empty or showing a default**. A
+  // pane where half the fields stand for nothing teaches a reader that most of what they are
+  // looking at is noise.
+  //
+  // `D1076` (*Compose models the whole vocabulary*) is answered, not dismissed, and the second half
+  // of this test is that answer: **the menu must name every clause the scope admits**, including
+  // the ones already in use and the ones this door cannot construct. A menu listing only what you
+  // could add would teach a smaller language than the one that exists — which is the failure
+  // `D1076` was written against, arriving by the other road.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-add-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    // The scaffold's own shape — the file this round's §0 is about.
+    await writeFile(join(dir, 'bare.tflw'), ['test "health check"', '  api GET /health', '  expect status equals 200', ''].join('\n'));
+    const port = await ui.listen(0);
+    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/bare.tflw/L2`);
+    await fresh.locator('[data-request-drawn]').waitFor();
+
+    // Nothing is stated, so nothing is drawn: no `service`, no `label`, no `redirects` reading
+    // `followed`, no `body` select reading `none`, no `headers` paragraph.
+    assert.equal(await fresh.locator('[data-request-drawn]').getAttribute('data-request-drawn'), '0');
+    assert.equal(await fresh.locator('[data-request-fields]').count(), 0, 'the five-field row is not drawn at all');
+    assert.equal(await fresh.locator('[data-request-body]').count(), 0, 'a body select reading `none` is not a fact about this request');
+    assert.equal(await fresh.locator('[data-request-headers]').count(), 0);
+    assert.equal(await fresh.locator('[data-band-drawn]').getAttribute('data-band-drawn'), '0', 'the band states none of its six clauses either');
+
+    // And the vocabulary is one click away, complete. `redirects` is the clause that argued in
+    // writing against being hidden — *a field only drawn when it is unusual is invisible exactly
+    // when it matters* — and this is the answer to it: named here on every request, whether or not
+    // this one sets it.
+    const options = await fresh
+      .locator('[data-add-clause="request"] [data-add-option]')
+      .evaluateAll((els) => els.map((e) => `${e.getAttribute('data-add-option')}:${e.getAttribute('data-add-state')}`));
+    assert.deepEqual(options, [
+      'service:addable',
+      'label:addable',
+      'headers:addable',
+      'body:addable',
+      'timeout:locked',
+      'redirects:locked',
+      'retryAfter:locked',
+    ]);
+    const bandOptions = await fresh
+      .locator('[data-add-clause="test"] [data-add-option]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('data-add-option')));
+    assert.deepEqual(bandOptions, ['tags', 'sessions', 'retry', 'table', 'workload', 'thresholds']);
+
+    // Closed, the menu is not in the tab order — `S1`'s lesson, applied to the control `S3` adds,
+    // and read with `S1`'s corrected instrument rather than either of the two that lie.
+    assert.equal(
+      await fresh
+        .locator('[data-add-clause="request"]')
+        .evaluate((d) => [...d.querySelectorAll('button')].filter((b) => b.checkVisibility()).length),
+      0,
+    );
+
+    // Adding one draws it, and only it.
+    await fresh.locator('[data-add-clause="request"] > summary').click();
+    await fresh.locator('[data-add-go="body"]').click();
+    await fresh.locator('[data-request-body]').waitFor();
+    assert.equal(await fresh.locator('[data-request-drawn]').getAttribute('data-request-drawn'), '1');
+    assert.equal(await fresh.locator('[data-request-fields]').count(), 0, 'adding a body did not bring back the four fields beside it');
+    assert.equal(
+      await fresh.locator('[data-add-clause="request"] [data-add-option="body"]').getAttribute('data-add-state'),
+      'present',
+      'the menu stays complete and says which clauses are already here',
+    );
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a clause the file DOES write is drawn without being asked for', async () => {
+  // The control that keeps the test above from being satisfied by a pane that draws nothing. Every
+  // assertion there is a zero, and a component returning `null` would pass all of them.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-addstated-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await writeFile(
+      join(dir, 'stated.tflw'),
+      [
+        '@slow',
+        'test "checkout" retry 2',
+        '  api POST /carts body { sku: "a" } as "open"',
+        '    header "X-Trace" is "1"',
+        '  expect status equals 201',
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/stated.tflw/L3`);
+    await fresh.locator('[data-request-drawn]').waitFor();
+    assert.equal(await fresh.locator('[data-request-fields]').getAttribute('data-request-fields'), 'label');
+    assert.equal(await fresh.locator('[data-request-headers]').getAttribute('data-request-headers'), '1');
+    assert.equal(await fresh.locator('[data-request-body]').getAttribute('data-request-body'), 'json');
+    assert.equal(await fresh.locator('[data-band-drawn]').getAttribute('data-band-drawn'), '2', 'tags and retry are written, so tags and retry are drawn');
+    assert.equal(await fresh.locator('[data-add-clause="request"] [data-add-option="headers"]').getAttribute('data-add-state'), 'present');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+const SEQUENCE_FILE = [
+  'test "checkout"',
+  '  let cart = "c1"',
+  '  api POST /carts',
+  '  expect status equals 201',
+  '  capture body.id as cartId',
+  '  api GET /carts/{cartId}',
+  '  expect status equals 200',
+  '  log "fetched"',
+  '  api POST /carts/{cartId}/checkout',
+  '  expect status equals 200',
+  '',
+].join('\n');
+
+test('every request in the declaration is on the pane, in the file’s own order, with one open', async () => {
+  // **`M212` `S2`, `D1086` — amending `D1073`.** The pane drew the selected request's card and
+  // nothing else, so on the corpus's largest test **twelve of thirteen requests were absent from
+  // Compose entirely** and the only place they existed was the tree on the left. `42.5% of 694
+  // tests carry more than one request`, so this was the common case, not the corner.
+  //
+  // `D1073`'s argument survives and is what this shape satisfies: it was never *show one request*,
+  // it was *do not stack thirteen 410px cards*. One expands; the rest are one line each.
+  //
+  // The order claim is the one that needs a real fixture rather than a pair: `206 of 396`
+  // multi-request tests interleave a non-api statement between two requests, so a pane that
+  // grouped requests and statements separately would be lossy on half the corpus. This fixture
+  // interleaves, and the assertion is the file's line numbers **ascending with no gaps in the set**
+  // — which a grouped rendering cannot produce.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-seq-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await writeFile(join(dir, 'seq.tflw'), SEQUENCE_FILE);
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+    await fresh.goto(`${base}/#/api/compose/seq.tflw/L3`);
+    await fresh.locator('[data-body-sequence]').waitFor();
+
+    // Every request has a row — the open one and the collapsed ones together.
+    const open = await fresh.locator('[data-seq-open]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-seq-open'))));
+    const collapsed = await fresh.locator('[data-seq-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-seq-request'))));
+    assert.deepEqual(open, [3], 'exactly one request is expanded, and it is the one the address names');
+    assert.deepEqual(collapsed, [6, 9], 'the other two are drawn, collapsed, in file order');
+
+    // And the statements between them are drawn too, in the same list. The claim is the whole
+    // sequence: every row the body has, in ascending line order, with the requests among them.
+    const lines = await fresh.locator('[data-body-sequence] > li').evaluateAll((els) =>
+      els.map((e) => Number(e.getAttribute('data-seq-open') ?? e.getAttribute('data-seq-request') ?? e.getAttribute('data-stmt-line'))),
+    );
+    // 4 and 5 are missing on purpose: they are the SELECTED request's attachments, drawn inside
+    // its own card rather than as rows beside it. Every other line of the body is here, ascending.
+    assert.deepEqual(lines, [2, 3, 6, 7, 8, 9, 10], 'the body is one list in the file’s order — preamble, requests, and what reads them');
+
+    // The expanded request keeps its full card, attachments included: expanding is not a highlight.
+    assert.equal(await fresh.locator('[data-seq-open] .request-card').count(), 1);
+    assert.equal(await fresh.locator('[data-seq-open] [data-request-attached]').getAttribute('data-request-attached'), '2');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('clicking a collapsed request opens it, and the one that was open collapses', async () => {
+  // The sequence is a navigator as well as a picture, and it moves the selection **through the
+  // address** (`D1045`) rather than through state of its own — the same gesture the tree's request
+  // rows use. A second mechanism for *where am I* is a second answer to it.
+  //
+  // The second assertion is the one that would be missed: a row that opened without closing the
+  // previous one would satisfy every "the request I clicked is open" check and rebuild the 5.9
+  // screens this slice exists to remove.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-seqclick-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await writeFile(join(dir, 'seq.tflw'), SEQUENCE_FILE);
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+    await fresh.goto(`${base}/#/api/compose/seq.tflw/L3`);
+    await fresh.locator('[data-seq-goto="9"]').click();
+    await fresh.locator('[data-seq-open="9"]').waitFor();
+    assert.equal(await fresh.locator('[data-seq-open]').count(), 1, 'one request is open, not two');
+    assert.match(fresh.url(), /\/L9$/, 'the selection moved through the address');
+    assert.equal(await fresh.locator('[data-seq-request="3"]').count(), 1, 'the request that was open is now a row like the others');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the file’s facts are outside the test card, and on the page whether or not a test is picked', async () => {
+  // **`M212` `S1`, `D1085`.** `FileRow` used to be the last block *inside* `.test-band`, so a card
+  // headed `TEST health check` ended with the FILE's comment, `imports`, `uses` and `actions`. The
+  // card's boundary matched no boundary in the language — `D956`'s family, a claim about one
+  // artifact drawn beside a different one — and no amount of styling could make a card legible
+  // whose edges were in the wrong place.
+  //
+  // Two claims, and the second is the one the old arrangement got backwards: the strip is there
+  // when a declaration is selected AND when none is. `at ? <TestBand/> : <FileRow/>` made the two
+  // scopes alternatives, so picking a test took the file's imports off the screen and the pane's
+  // answer to *what does this file bring in?* depended on where the cursor was.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-strip-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await mkdir(join(dir, 'shared'), { recursive: true });
+    await writeFile(join(dir, 'shared', 'a.tflw'), ['action make thing()', '  api POST /t', '  expect status equals 201', ''].join('\n'));
+    await writeFile(
+      join(dir, 'scoped.tflw'),
+      ['import "./shared/a.tflw"', '', 'test "it answers"', '  api GET /thing', '  expect status equals 200', ''].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    for (const hash of [`#/api/compose/scoped.tflw`, `#/api/compose/scoped.tflw/L4`]) {
+      await fresh.goto(`${base}/${hash}`);
+      await fresh.locator('[data-compose-summary]').waitFor();
+      await fresh.locator('[data-file-strip]').waitFor();
+      assert.equal(await fresh.locator('[data-file-strip]').count(), 1, `${hash}: the file has exactly one strip`);
+      // The containment claim, read off the rendered tree rather than off a class name: `.file-facts`
+      // must have no `.test-band` ancestor. Asserting the two elements exist would have passed
+      // before this slice as well as after it.
+      assert.equal(
+        await fresh.locator('[data-file-facts]').evaluate((e) => e.closest('.test-band') !== null),
+        false,
+        `${hash}: the file's facts are not inside a test's card`,
+      );
+    }
+
+    // With a declaration selected, the band is there too — the scopes are nested, not exclusive.
+    assert.equal(await fresh.locator('.test-band').count(), 1, 'the selected declaration still has its own card');
+    assert.deepEqual(
+      await fresh.locator('.file-strip, .test-band').evaluateAll((els) => els.map((e) => e.className.split(' ')[0])),
+      ['file-strip', 'test-band'],
+      'the wider scope is drawn above the narrower one',
+    );
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the closed FILE strip holds nothing in the tab order, and the open one holds every field it had', async () => {
+  // **The defect this slice must not repeat.** `.legacy` is collapsed to 30px and carries thirteen
+  // non-button fields, reachable by Tab, with placeholders from a different fictional example — so
+  // tabbing through Compose walks into a second authoring form for a file that is not open. A new
+  // disclosure that did the same would be `M212`'s own §0 finding, introduced by the slice written
+  // to fix it.
+  //
+  // Measured rather than reasoned: a `<details>` hides its contents from focus by default, and a
+  // stylesheet is one `display` rule away from undoing that (`M209-02` — a gate asserting a class
+  // or an attribute has not asserted what the reader gets).
+  //
+  // The open half is this test's negative control and it is not optional: `0 focusable` is what a
+  // strip that renders nothing at all would also report, and `D1085` asked for a collapsed strip
+  // that is **still editable**, not for the facts to be taken away.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-striptab-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    await mkdir(join(dir, 'shared'), { recursive: true });
+    await writeFile(join(dir, 'shared', 'a.tflw'), ['action make thing()', '  api POST /t', '  expect status equals 201', ''].join('\n'));
+    await writeFile(
+      join(dir, 'tabbed.tflw'),
+      ['import "./shared/a.tflw"', '', 'test "it answers"', '  api GET /thing', '  expect status equals 200', ''].join('\n'),
+    );
+    const port = await ui.listen(0);
+    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/tabbed.tflw/L3`);
+    await fresh.locator('[data-file-strip]').waitFor();
+
+    // **`checkVisibility()`, and the two instruments that lie about this.** Measured in this
+    // Chromium against a closed `<details>` holding an input and a button:
+    //
+    //     getClientRects().length   1, 1     — says rendered
+    //     offsetParent !== null     true     — says rendered
+    //     checkVisibility()         false    — says not
+    //     focus()                   does not land
+    //     Tab from before it        SUMMARY -> BODY, skipping both
+    //
+    // Chrome hides closed `<details>` content with `content-visibility`, which skips **painting and
+    // focus** but still generates boxes — so the two obvious rendered-ness tests both report a
+    // control that no keyboard can reach as present, and only `checkVisibility()` agrees with what
+    // Tab actually does. Both wrong instruments were written here first and passed review by
+    // looking rigorous, which is `M209-02`'s rule biting the gate rather than the product.
+    const focusableInStrip = async (): Promise<number> =>
+      fresh.locator('[data-file-strip]').evaluate(
+        (strip) => [...strip.querySelectorAll('input, select, textarea, button')].filter((el) => el.checkVisibility()).length,
+      );
+
+    assert.equal(await focusableInStrip(), 0, 'closed, the strip contributes nothing to the tab order');
+    await fresh.locator('[data-file-strip] > summary').click();
+    const open = await focusableInStrip();
+    assert.ok(open > 0, `opened, the strip is editable — it offered ${open} controls`);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the head names the declaration the body is drawing, not the file the body is not', async () => {
+  // **`D1085`.** The head read `8 declarations · 6 requests — this file, as it is on disk` above a
+  // body drawing exactly ONE of the eight, and the only clue as to which was the string `line 30`
+  // further down the pane. One sentence describing a different artifact from the one beneath it:
+  // `D956` in the place a reader looks first.
+  //
+  // Both directions are gated, because the fix has two ways to be wrong — a head that stops naming
+  // the file at all is as bad as one that only names the file.
+  const view = await fullProject();
+  const many = view.files.find((x) => x.tests.length > 1)!;
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    // **An address with no line still has a subject**, and that is `addressed`'s own rule rather
+    // than a fallback drawn here: it answers the file's FIRST declaration when the hash names no
+    // line (`outline.ts`). So the head names a declaration here too, and the thing to gate is that
+    // it names the right one — a head that read `file` on this address would be describing
+    // something the body is not showing, which is the defect this slice is about.
+    await fresh.goto(`${baseUrl}#/api/compose/${many.path}`);
+    await fresh.locator('[data-compose-subject-what]').waitFor();
+    assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'declaration');
+    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test ${many.tests[0]!.name}`);
+
+    const second = many.tests[1]!;
+    await fresh.goto(`${baseUrl}#/api/compose/${many.path}/L${second.line}`);
+    await fresh.locator('[data-compose-subject-what]').waitFor();
+    assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'declaration');
+    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test ${second.name}`);
+    const head = (await fresh.locator('[data-compose-summary]').textContent())!;
+    assert.match(head, new RegExp(`line ${second.line}\\b`), 'the head says which declaration, by line');
+    // And the file's own count survives — demoted to context, not deleted. A head that named only
+    // the declaration would leave a reader unable to tell a one-test file from a forty-test one.
+    assert.match(head, /of \d+ declarations in this file/);
+  } finally {
+    await fresh.close();
+  }
+});
+
 test('the file row carries what the file brings in, comma-separated, and says `none` where there is nothing', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m210-filerow-'));
   const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
@@ -4320,6 +4675,7 @@ test('the file row carries what the file brings in, comma-separated, and says `n
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
     await fresh.goto(`${base}/#/api/compose/uses.tflw`);
+    await fresh.locator('[data-file-strip] > summary').click();
     await fresh.locator('[data-file-facts]').waitFor();
     assert.equal(await fresh.locator('[data-file-imports]').getAttribute('data-file-imports'), '2');
     // **One field per line since `S5`**, and the count is still the claim: the paths are what the
@@ -4369,8 +4725,17 @@ test("the reader's fields stand as tall as its siblings — the hazard the style
       }
       return out;
     };
+    // **`M212` `S3` changed the population, not the claim.** A clause the request does not write
+    // is no longer a field (`D1084`), so this fixture's first request draws none of the five until
+    // they are asked for. Two of them are asked for here; the hazard is a property of the container
+    // and one field in it is enough to see it, which is why this is a smaller census and not a
+    // weaker one.
+    await sized.locator('[data-add-clause="request"] > summary').click();
+    await sized.locator('[data-add-go="service"]').click();
+    await sized.locator('[data-add-go="label"]').click();
+    await sized.locator('.request-fields .field > input').first().waitFor();
     const fields = await heights('.request-fields .field > input');
-    assert.equal(fields.length, 5, 'service, label, timeout, redirects, retry after');
+    assert.equal(fields.length, 2, 'service and label — the two of the five this door can construct');
     for (const h of fields) assert.ok(h < 40, `a reader field is ${h}px — the shared flex rule is being read as a height again`);
 
     // THE NEGATIVE CONTROL. Put the axis-dependent declaration back and the five have to tower —
@@ -4588,6 +4953,10 @@ test('`M210` `S2`: an edit that moves the request keeps the address on it', asyn
     const secondBefore = (await rows())[1]!;
     await p.goto(`${base}/#/api/compose/edit.tflw/L${secondBefore}`);
     await p.locator(`[data-request-line="${secondBefore}"]`).waitFor();
+    // `M212` `S3`: this request writes no header, so the group is in the menu rather than on the
+    // card. One click to ask for it — `D1084`'s stated cost, paid here in the open.
+    await p.locator('[data-add-clause="request"] > summary').click();
+    await p.locator('[data-add-go="headers"]').click();
     await p.locator('[data-header-edit-add]').click();
     await p.locator('[data-header-edit-name="0"]').fill('X-Trace');
     await p.locator('[data-header-edit-value="0"]').fill('abc');
@@ -4830,7 +5199,11 @@ test('`M210` `S3`: an assertion inside a `wait until api` block is read-only, in
     await p.locator('[data-request-editable="yes"]').waitFor();
     const lines = await p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
     await p.goto(`${base}/#/api/compose/edit.tflw/L${lines[lines.length - 1]}`);
-    const row = p.locator('li.stmt[data-stmt="ExpectStmt"]').first();
+    // **Scoped to the open request since `M212` `S2`.** The pane now draws the whole body in file
+    // order, so the first `ExpectStmt` in the document belongs to an earlier request and is
+    // perfectly editable — an unscoped `.first()` was reading a different statement and asserting
+    // about this one.
+    const row = p.locator('[data-seq-open] li.stmt[data-stmt="ExpectStmt"]').first();
     await row.waitFor();
     assert.equal(await row.getAttribute('data-stmt-editable'), 'no');
     assert.equal(await row.locator('.stmt-text').textContent(), 'expect body.status equals "done"', 'and it is still drawn, in the language\'s own spelling');
@@ -5059,6 +5432,11 @@ test('`M210` `S5`: the band holds the declaration\'s own facts, and the workload
     assert.equal(await p.locator('[data-band-sessions-edit]').inputValue(), 'admin');
     assert.equal(await p.locator('[data-band-retry-edit]').inputValue(), '2');
     assert.equal(await p.locator('[data-band-parallel]').getAttribute('data-band-parallel'), 'no');
+    // `M212` `S3`: this test writes no `with each`, so the control is one click away rather than a
+    // select reading `none` — which was never a fact about the test (`M141`'s retracted census
+    // counted exactly this kind of default as a clause in use).
+    await p.locator('[data-add-clause="test"] > summary').click();
+    await p.locator('[data-add-go="table"]').click();
     assert.equal(await p.locator('[data-band-table-kind]').inputValue(), 'none');
     assert.equal(await p.locator('[data-threshold-metric="0"]').inputValue(), 'duration');
     assert.equal(await p.locator('[data-threshold-percentile="0"]').inputValue(), '95');
@@ -5107,6 +5485,8 @@ test('`M210` `S5`: `with each` is written from cells, read from a file, and take
   await withEditFixture(BAND, async (p, base, dir) => {
     await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
     await p.locator('[data-band-name]').waitFor();
+    await p.locator('[data-add-clause="test"] > summary').click();
+    await p.locator('[data-add-go="table"]').click();
     await p.locator('[data-band-table-kind]').selectOption('inline');
     await p.locator('[data-table-column="0"]').fill('email');
     await p.locator('[data-table-cell="0:0"]').fill('"a@b.c"');
@@ -5170,6 +5550,10 @@ test('`M210` `S5`: the file row writes what the file brings in, and the file\'s 
   await withEditFixture(BAND, async (p, base, dir) => {
     await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
     await p.locator('[data-band-name]').waitFor();
+    // `M212` `S1`: the file's facts are their own strip above the declaration, collapsed. Opening
+    // it is the gesture a reader makes to edit a file-scoped thing, and it is what this gate now
+    // makes before editing one.
+    await p.locator('[data-file-strip] > summary').click();
     assert.equal(await p.locator('[data-file-path="import:0"]').inputValue(), './shared/helpers.tflw');
     await p.locator('[data-file-path="import:0"]').fill('./shared/orders.tflw');
     await p.locator('[data-file-path-add="use"]').click();
@@ -5318,7 +5702,9 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
     // request — the scratch is a printed program with the other test removed, so its line numbers
     // are not this file's and only the order holds the two together. One passes, one fails, and the
     // failing one is the assertion that is actually wrong.
-    const verdicts = await fresh.locator('li.stmt').evaluateAll((els) =>
+    // Scoped to the open request since `M212` `S2` — the pane draws the whole body now, and the
+    // verdicts this asserts about are the selected request's own attachments.
+    const verdicts = await fresh.locator('[data-seq-open] li.stmt').evaluateAll((els) =>
       els.map((li) => {
         const mark = li.querySelector('[data-verdict]');
         return `${li.getAttribute('data-stmt')}:${mark === null ? 'none' : mark.getAttribute('data-verdict')}`;

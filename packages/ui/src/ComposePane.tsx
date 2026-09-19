@@ -42,6 +42,7 @@
 // runs the file's hooks and this declaration up to the selected request — which is the honest thing
 // to run and the expensive thing to press, and why the pane lists what it will send first.
 
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ApiBodySpec, ApiStepSpec, ExpectSpec, SubjectSpec } from '@tflw/lang';
 import {
@@ -189,6 +190,48 @@ function bodyLabel(body: ApiBody | null): string {
  * vocabulary every door carries get the row with the fields in it; a step belonging to another
  * door gets a locked one-line row naming that door — the same row, shorter, never absent.
  */
+/**
+ * **One named `+ add` per scope** (`M212` `S3`, `D1084` — amending `D1076`).
+ *
+ * `D1076` said Compose models the whole vocabulary, and the pane implemented it by drawing every
+ * clause as a control whether the file used it or not. Measured on the scaffold `tflw init` writes
+ * — three lines — that is **47 controls, 34 of them fields, 18 of those empty or showing a
+ * default**. A pane where half the fields stand for nothing teaches a reader that most of what they
+ * are looking at is noise, which is the opposite of what `D1076` wanted.
+ *
+ * `D1084` answers `D1076` rather than dismissing it, and the answer is this menu: **the vocabulary
+ * moves one click away, it does not shrink.** So this list must be COMPLETE — every clause the
+ * scope admits is named here, including the ones already in use (shown, disabled, saying so) and
+ * the ones this door cannot construct (shown, disabled, saying why). A menu that listed only what
+ * you could add would teach a smaller language than the one that exists, which is the failure
+ * `D1076` was written against.
+ *
+ * A `<details>` rather than a popup for `D144`'s reason, and for `S1`'s: closed, it contributes
+ * nothing to the tab order.
+ */
+function AddClause({ what, options, onAdd }: {
+  readonly what: string;
+  readonly options: readonly { key: string; label: string; title: string; state: 'addable' | 'present' | 'locked'; why?: string }[];
+  readonly onAdd: (key: string) => void;
+}) {
+  return (
+    <details className="add-clause" data-add-clause={what} data-add-clause-options={options.length}>
+      <summary>+ add to this {what}</summary>
+      <ul>
+        {options.map((o) => (
+          <li key={o.key} data-add-option={o.key} data-add-state={o.state}>
+            <button type="button" disabled={o.state !== 'addable'} onClick={() => onAdd(o.key)} title={o.title} data-add-go={o.key}>
+              {o.label}
+            </button>
+            {o.state === 'present' ? <span className="muted"> — already here</span> : null}
+            {o.state === 'locked' ? <span className="muted"> — {o.why}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function StatementRow({ statement, door, editing, verdict }: {
   readonly statement: OutlineStatement;
   readonly door: Lens;
@@ -376,6 +419,56 @@ function Field({ label, value, title, onChange, placeholder }: {
 }
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
+
+/**
+ * **Every clause a `test` header admits** (`M212` `S3`, `D1084`).
+ *
+ * This list is the pane's answer to `D1076` — *Compose models the whole vocabulary* — now that the
+ * clauses are no longer all drawn at once. It has to stay complete, and a clause the language gains
+ * that is missing from here is a clause the pane has quietly stopped teaching. That is not a
+ * theoretical risk: it is the same shape as `outline.ts`'s placement gate, which is an **equality**
+ * per step kind rather than a floor, for exactly this reason.
+ */
+/**
+ * **Every clause an `api` request admits** (`M212` `S3`, `D1084`), and which of them this pane can
+ * construct.
+ *
+ * `editable: false` is not a gap being hidden — it is `S2`'s stated scope, said in the one place a
+ * reader looks for *what else can this have*: `ApiStepSpec` has no room for a timeout, a redirect
+ * policy or a `Retry-After` bound, so those are carried across an edit by `nodeFor` rather than
+ * rebuilt. A menu that omitted them would teach a language without them.
+ */
+interface ClauseOption {
+  readonly key: string;
+  readonly label: string;
+  readonly title: string;
+  readonly editable: boolean;
+  /** Why this door cannot construct it — required exactly when `editable` is false, because a
+   *  disabled control with no reason is worse than no control at all. */
+  readonly why?: string;
+}
+
+const REQUEST_CLAUSES: readonly ClauseOption[] = [
+  { key: 'service', label: 'service', title: 'the name in tflw.config of a second api service', editable: true },
+  { key: 'label', label: 'label', title: '`as “…”` — the identity this request reports under', editable: true },
+  { key: 'headers', label: 'headers', title: 'a header on this request alone', editable: true },
+  { key: 'body', label: 'body', title: 'what this request sends — JSON, raw text, a file, or form fields', editable: true },
+  { key: 'timeout', label: 'timeout', title: "this request's own timeout, or the env's", editable: false, why: 'the request spec has no room for it yet; it is carried across an edit, not rebuilt' },
+  { key: 'redirects', label: 'redirects', title: '`without redirects` makes the 3xx itself observable', editable: false, why: 'the request spec has no room for it yet; it is carried across an edit, not rebuilt' },
+  { key: 'retryAfter', label: 'retry after', title: '`retry honoring “Retry-After” up to N` — this one request, not the test', editable: false, why: 'the request spec has no room for it yet; it is carried across an edit, not rebuilt' },
+];
+
+/** The five that are fields rather than groups — the `.request-fields` row. */
+const REQUEST_FIELDS: readonly string[] = ['service', 'label', 'timeout', 'redirects', 'retryAfter'];
+
+const BAND_CLAUSES: readonly { key: string; label: string; title: string }[] = [
+  { key: 'tags', label: 'tags', title: '`@name` — labels this test can be selected by' },
+  { key: 'sessions', label: 'as', title: '`as “…”` — the session this test runs under' },
+  { key: 'retry', label: 'retry / parallel', title: '`retry N` and `parallel` — how the runner treats this test’s cases' },
+  { key: 'table', label: 'with each', title: '`with each` — run this test once per row of a table' },
+  { key: 'workload', label: 'workload', title: 'a shape of work over time — the LOAD door shapes one' },
+  { key: 'thresholds', label: 'thresholds', title: 'a bound the whole run is graded against, after it finishes' },
+];
 
 /**
  * What the card can change about a request — `S2`'s vocabulary, and **not** the whole of one.
@@ -1148,8 +1241,26 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
   const writingNote = editing.noting !== null && editing.noting === stepKey(r.stepPath);
   const v = edit ?? editOf(r);
   const change = onEdit === null ? null : (patch: Partial<RequestEdit>) => onEdit({ ...v, ...patch });
+
+  /** `M212` `S3` (`D1084`) — which of this request's clauses the file actually writes. */
+  const [added, setAdded] = useState<readonly string[]>([]);
+  const states = (clause: string): boolean => {
+    switch (clause) {
+      case 'service': return v.service !== '';
+      case 'label': return v.label !== '';
+      case 'headers': return v.headers.length > 0;
+      case 'body': return v.bodyKind !== 'none';
+      case 'timeout': return spec.timeoutMs !== null;
+      case 'redirects': return !spec.followRedirects;
+      case 'retryAfter': return spec.retryAfter !== null;
+      default: return false;
+    }
+  };
+  const shows = (clause: string): boolean => states(clause) || added.includes(clause);
+  const add = (k: string): void => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]));
+  const drawn = REQUEST_CLAUSES.filter((c) => shows(c.key)).length;
   return (
-    <section className="request-card" data-request-line={r.line} data-request-kind={r.kind} data-request-editable={onEdit === null ? 'no' : 'yes'}>
+    <section className="request-card" data-request-line={r.line} data-request-kind={r.kind} data-request-editable={onEdit === null ? 'no' : 'yes'} data-request-drawn={drawn}>
       {writingNote ? (
         <NoteOpen note={r.note} what={`request ${r.line}`} onChange={(lines) => editing.onNote?.({ on: 'step', path: r.stepPath }, lines)} />
       ) : r.note ? (
@@ -1196,27 +1307,47 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
         ) : null}
       </header>
 
-      <div className="request-fields">
-        <Field label="service" value={v.service} onChange={change === null ? undefined : (service) => change({ service })} placeholder="(default)" title="the name in tflw.config of a second api service — blank is the default one" />
-        <Field label="label" value={v.label} onChange={change === null ? undefined : (label) => change({ label })} placeholder="(automatic)" title="`as “…”` — the identity this request reports under; blank is the automatic one" />
-        {/* **These three are drawn and not editable, and that is `S2`'s scope rather than an
-            oversight.** `ApiStepSpec` has no room for them, so they are carried across an edit by
-            `nodeFor` rather than rebuilt — see `RequestEdit`. A field drawn live beside two that
-            are not would be worse than either, so they say so by staying disabled. */}
-        <Field label="timeout" value={spec.timeoutMs === null ? '' : `${spec.timeoutMs}ms`} title="this request's own timeout, or blank for the env's — drawn and carried across an edit, because the request spec has no room for it" />
-        <Field
-          label="redirects"
-          value={spec.followRedirects ? 'followed' : 'not followed'}
-          title="`without redirects` makes the 3xx itself observable. Drawn even at its default, because a field only drawn when it is unusual is invisible exactly when it matters"
-        />
-        <Field label="retry after" value={spec.retryAfter === null ? '' : `up to ${spec.retryAfter.max}`} title="`retry honoring “Retry-After” up to N` — this one request, not the test" />
-      </div>
+      {/* `D1084` — a clause this request does not write is not a field here; it is in the menu at
+          the bottom of the card. Five fields stood here unconditionally, and on the scaffold's
+          `api GET /health` **all five were blank or showing a default**.
 
+          **`redirects` is the one that argued against this, in writing, and the argument is
+          answered rather than deleted.** It used to carry: *"Drawn even at its default, because a
+          field only drawn when it is unusual is invisible exactly when it matters."* That is right
+          about invisibility and wrong about the remedy — the menu below names `redirects` whether
+          or not this request sets it, so the clause is one click away rather than absent. What it
+          is no longer is a field reading `followed` on all 1167 requests in the sibling.
+
+          **The last three are drawn and not editable, and that is `S2`'s scope rather than an
+          oversight.** `ApiStepSpec` has no room for them, so they are carried across an edit by
+          `nodeFor` rather than rebuilt — see `RequestEdit`. The menu says so in place of a field
+          that looks live and is not. */}
+      {REQUEST_FIELDS.some((f) => shows(f)) ? (
+        <div className="request-fields" data-request-fields={REQUEST_FIELDS.filter((f) => shows(f)).join(',')}>
+          {shows('service') ? (
+            <Field label="service" value={v.service} onChange={change === null ? undefined : (service) => change({ service })} placeholder="(default)" title="the name in tflw.config of a second api service — blank is the default one" />
+          ) : null}
+          {shows('label') ? (
+            <Field label="label" value={v.label} onChange={change === null ? undefined : (label) => change({ label })} placeholder="(automatic)" title="`as “…”` — the identity this request reports under; blank is the automatic one" />
+          ) : null}
+          {shows('timeout') ? (
+            <Field label="timeout" value={spec.timeoutMs === null ? '' : `${spec.timeoutMs}ms`} title="this request's own timeout, or blank for the env's — drawn and carried across an edit, because the request spec has no room for it" />
+          ) : null}
+          {shows('redirects') ? (
+            <Field label="redirects" value={spec.followRedirects ? 'followed' : 'not followed'} title="`without redirects` makes the 3xx itself observable — carried across an edit, because the request spec has no room for it" />
+          ) : null}
+          {shows('retryAfter') ? (
+            <Field label="retry after" value={spec.retryAfter === null ? '' : `up to ${spec.retryAfter.max}`} title="`retry honoring “Retry-After” up to N` — this one request, not the test" />
+          ) : null}
+        </div>
+      ) : null}
+
+      {shows('headers') ? (
       <div className="headers-form" data-request-headers={v.headers.length}>
         <h4 className="muted">headers</h4>
         {v.headers.length === 0 ? (
           <p className="muted" data-request-headers-empty>
-            none on this request — the env's <code>api</code> defaults and a session's token are still added at run time
+            none on this request yet — the env's <code>api</code> defaults and a session's token are still added at run time
           </p>
         ) : (
           <ul>
@@ -1246,7 +1377,9 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
           </button>
         )}
       </div>
+      ) : null}
 
+      {shows('body') ? (
       <div className="body-form" data-request-body={bodyKindOf(r, edit)}>
         <h4 className="muted">body</h4>
         {change === null ? (
@@ -1290,6 +1423,7 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
           </>
         )}
       </div>
+      ) : null}
 
       {/* **The response, beside the assertions that read it** (`D1075`). It is the report's own
           trace — the run wrote it, this pane did not fetch it — which is `D1047` unchanged and the
@@ -1330,6 +1464,20 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran }: {
           </ul>
         )}
       </div>
+
+      {change === null ? null : (
+        <AddClause
+          what="request"
+          options={REQUEST_CLAUSES.map((c) => ({
+            key: c.key,
+            label: c.label,
+            title: c.title,
+            state: shows(c.key) ? ('present' as const) : c.editable ? ('addable' as const) : ('locked' as const),
+            why: c.why,
+          }))}
+          onAdd={add}
+        />
+      )}
     </section>
   );
 }
@@ -1381,9 +1529,8 @@ function bodyText(body: ApiBody): string {
  * what was being counted was the default value. A band that renders a default as a fact makes the
  * same mistake on screen, every time.
  */
-function TestBand({ decl, outline, door, editing }: {
+function TestBand({ decl, door, editing }: {
   readonly decl: OutlineHook | OutlineTest;
-  readonly outline: FileOutline;
   readonly door: Lens;
   readonly editing: RowEditing;
 }) {
@@ -1394,8 +1541,32 @@ function TestBand({ decl, outline, door, editing }: {
   const change = (patch: Partial<HeaderEdit>): void => editing.onHeader?.(decl, { ...v, ...patch });
   const writingNote = editing.noting === key;
   const what = decl.kind === 'test' ? `test ${decl.name}` : decl.label;
+
+  /**
+   * **What this declaration actually says** (`M212` `S3`, `D1084`).
+   *
+   * A clause is drawn when the file states it, and otherwise it is in the menu. `retry` and
+   * `parallel` share one row because they share one line in the file, and `retry 0` is not a retry
+   * in use — `M141` retracted a census that counted 420 tests as using `retry` and `concurrency`
+   * because it was counting the default value, and a band that renders a default as a fact makes
+   * the same mistake on screen, every time.
+   */
+  const [added, setAdded] = useState<readonly string[]>([]);
+  const states = (clause: string): boolean => {
+    if (test === null) return false;
+    switch (clause) {
+      case 'tags': return test.tags.length > 0;
+      case 'sessions': return test.sessions.length > 0;
+      case 'retry': return test.retry !== 0 || v.parallel;
+      case 'table': return test.table !== null;
+      case 'workload': return test.workload !== null;
+      case 'thresholds': return test.thresholds.length > 0;
+      default: return false;
+    }
+  };
+  const shows = (clause: string): boolean => states(clause) || added.includes(clause);
   return (
-    <div className="test-band" data-band-kind={decl.kind} data-band-line={decl.line}>
+    <div className="test-band" data-band-kind={decl.kind} data-band-line={decl.line} data-band-drawn={BAND_CLAUSES.filter((c) => shows(c.key)).length}>
       {writingNote ? (
         <NoteOpen note={decl.note} what={what} onChange={(lines) => editing.onNote?.({ on: 'declaration', decl: decl.index }, lines)} />
       ) : decl.note ? (
@@ -1438,6 +1609,7 @@ function TestBand({ decl, outline, door, editing }: {
       </header>
       {test ? (
         <ul className="band-facts" data-band-facts>
+          {shows('tags') ? (
           <li data-band-tags={test.tags.length}>
             tags{' '}
             {live ? (
@@ -1452,6 +1624,8 @@ function TestBand({ decl, outline, door, editing }: {
               test.tags.map((t) => <span key={t} className="tag">@{t}</span>)
             )}
           </li>
+          ) : null}
+          {shows('sessions') ? (
           <li data-band-sessions={test.sessions.length}>
             as{' '}
             {live ? (
@@ -1462,6 +1636,8 @@ function TestBand({ decl, outline, door, editing }: {
               test.sessions.join(', ')
             )}
           </li>
+          ) : null}
+          {shows('retry') ? (
           <li data-band-retry={test.retry}>
             retry{' '}
             {live ? (
@@ -1478,6 +1654,8 @@ function TestBand({ decl, outline, door, editing }: {
               </label>
             ) : null}
           </li>
+          ) : null}
+          {shows('table') ? (
           <li data-band-table={test.table === null ? 'none' : test.table.type}>
             with each{' '}
             {live ? (
@@ -1497,7 +1675,9 @@ function TestBand({ decl, outline, door, editing }: {
               <input value={v.tablePath} onChange={(e) => change({ tablePath: e.target.value })} data-band-table-path aria-label="table path" placeholder="../data/products.json" />
             ) : null}
           </li>
-          {live && v.tableKind === 'inline' ? <TableEditor edit={v} onChange={change} /> : null}
+          ) : null}
+          {shows('table') && live && v.tableKind === 'inline' ? <TableEditor edit={v} onChange={change} /> : null}
+          {shows('workload') ? (
           <li data-band-workload={test.workload === null ? 'none' : test.workload.type}>
             workload{' '}
             {test.workload === null ? (
@@ -1517,6 +1697,8 @@ function TestBand({ decl, outline, door, editing }: {
               </>
             )}
           </li>
+          ) : null}
+          {shows('thresholds') ? (
           <li data-band-thresholds={test.thresholds.length}>
             thresholds {test.thresholds.length === 0 && !live ? <span className="muted">none</span> : null}
             {live ? (
@@ -1541,23 +1723,29 @@ function TestBand({ decl, outline, door, editing }: {
               test.thresholds.length
             )}
           </li>
+          ) : null}
+          {live && test !== null ? (
+            <li className="band-add">
+              <AddClause
+                what="test"
+                options={BAND_CLAUSES.map((c) => ({
+                  key: c.key,
+                  label: c.label,
+                  title: c.title,
+                  state: shows(c.key) ? ('present' as const) : ('addable' as const),
+                }))}
+                onAdd={(k) => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]))}
+              />
+            </li>
+          ) : null}
         </ul>
       ) : null}
 
-      {decl.body.preamble.length > 0 ? (
-        <div className="band-preamble" data-band-preamble={decl.body.preamble.length}>
-          <h4 className="muted">before the first request</h4>
-          <ul className="stmts">
-            {decl.body.preamble.map((s) => (
-              /* A preamble statement runs before the request and its verdict is not beside this
-                 card — what `S6` shows is what the selected request was read for. */
-              <StatementRow key={`${s.line}-${s.kind}`} statement={s} door={door} editing={editing} verdict={null} />
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      {/* **The preamble left this card in `M212` `S2`** (`D1086`). It was drawn here, under the
+          heading *before the first request*, which made it read as a property of the declaration;
+          it is the first thing that happens, and it is now the first rows of the body's sequence,
+          where file order puts it. */}
 
-      <FileRow outline={outline} editing={editing} />
     </div>
   );
 }
@@ -1702,6 +1890,51 @@ function FileRow({ outline, editing }: { readonly outline: FileOutline; readonly
   );
 }
 
+/**
+ * **The `FILE` strip** (`M212` `S1`, `D1085`).
+ *
+ * `FileRow` used to be rendered as the last block *inside* `.test-band`, so a card headed
+ * `TEST health check` ended with the file's comment, its `imports`, its `uses` and its `actions` —
+ * four file-scoped facts drawn inside a test's own boundary. That is `D956`'s family exactly: a
+ * claim about one artifact printed beside a different one. The card's edges matched no edge in the
+ * language, which is why the pane could not be read scope by scope however it was styled.
+ *
+ * So the file's facts get their own strip, above the declaration, and the strip **says which scope
+ * it is** in its own summary. Three properties, each deliberate:
+ *
+ * - **It is always there**, selection or not. The old arrangement showed the file's facts only when
+ *   *nothing* was selected (`at ? <TestBand/> : <FileRow/>`), so picking a test made the file's
+ *   imports disappear — the pane's answer to *what does this file bring in?* depended on where the
+ *   cursor was.
+ * - **It is collapsed and still editable.** `D1085` asked for a strip, not a read-only caption:
+ *   opening it gives back every control `FileRow` has always had, in place.
+ * - **Closed, it holds nothing in the tab order.** This is the one thing `.legacy` gets wrong
+ *   (§1: thirteen fields at 30px, reachable by Tab, carrying another example's placeholders), and
+ *   a new disclosure that repeated it would be this round's own defect. A `<details>` hides its
+ *   contents from focus by default; the gate for this asserts the *rendered* fact rather than the
+ *   element, because a stylesheet is one rule away from undoing it (`M209-02`).
+ */
+function FileStrip({ outline, editing }: { readonly outline: FileOutline; readonly editing: RowEditing }) {
+  const { imports, uses, actions, header } = outline.file;
+  const parts = [
+    imports.length > 0 ? `${imports.length} import${imports.length === 1 ? '' : 's'}` : null,
+    uses.length > 0 ? `${uses.length} use${uses.length === 1 ? '' : 's'}` : null,
+    actions.length > 0 ? `${actions.length} action${actions.length === 1 ? '' : 's'}` : null,
+    header !== null ? 'a note' : null,
+  ].filter((p): p is string => p !== null);
+  return (
+    <details className="file-strip" data-file-strip={parts.length === 0 ? 'empty' : String(parts.length)}>
+      {/* The summary states the scope and then what is in it. A strip that said only `FILE` would
+          make the reader open it to find out whether opening it was worth doing. */}
+      <summary>
+        <span className="scope-tag">FILE</span>{' '}
+        <span className="muted">{parts.length === 0 ? 'imports nothing, uses nothing, declares no action' : parts.join(' · ')}</span>
+      </summary>
+      <FileRow outline={outline} editing={editing} />
+    </details>
+  );
+}
+
 /** The `import`/`use` lines, one field each. A blank field is that line removed, which is the same
  *  rule a note follows: there is no separate gesture for taking something away. */
 function PathRows({ what, paths, onChange }: {
@@ -1727,6 +1960,95 @@ function PathRows({ what, paths, onChange }: {
   );
 }
 
+/**
+ * **The declaration's body, as a sequence** (`M212` `S2`, `D1086` — amending `D1073`).
+ *
+ * `D1073` put *one request on screen* and the pane took it literally: the selected request got a
+ * 410 px card and **every other request in the test was not drawn at all**. That is defensible for
+ * the scaffold, which has one; it is not defensible for the corpus, where **42.5% of 694 tests
+ * carry more than one request and the largest carries 13**. A reader of `cart-checkout.tflw` could
+ * see one thirteenth of the test and had to consult the tree on the left to learn that the other
+ * twelve existed.
+ *
+ * `D1073`'s argument was never *show one request*; it was *do not stack thirteen 410 px cards*,
+ * which at today's height is 5,330 px — 5.9 screens. Both are satisfied by the same shape, and it
+ * is the shape a test already has: **a sequence**. Every request and every statement between them
+ * is one line, in file order, and the selected request is the one that expands.
+ *
+ * Three things follow from *in file order*, and each was a way the old pane lost information:
+ *
+ * - **The preamble is in the list, not above it.** It used to be a separate `.band-preamble` block
+ *   inside the test's card, which drew it as a property of the declaration rather than as the first
+ *   thing that happens.
+ * - **A non-selected request's attachments are still drawn.** They are what the request is read
+ *   for, and a row with no consequence is a row that looks decorative.
+ * - **`206 of 396` multi-request tests interleave** (`outline.ts`), so any grouping other than file
+ *   order is lossy by construction. This one does no grouping at all.
+ */
+function BodySequence({ decl, selected, door, onLine, edit, onEdit, editing, ran }: {
+  readonly decl: OutlineHook | OutlineTest;
+  readonly selected: OutlineRequest | null;
+  readonly door: Lens;
+  readonly onLine: (line: number) => void;
+  readonly edit: RequestEdit | null;
+  readonly onEdit: ((next: RequestEdit) => void) | null;
+  readonly editing: RowEditing;
+  readonly ran: Ran | null;
+}) {
+  const rows: ReactNode[] = [];
+  for (const s of decl.body.preamble) {
+    // A preamble statement runs before the first request and its verdict is not beside a card, so
+    // it carries none — what `S6` shows is what the selected request was read for.
+    rows.push(<StatementRow key={`pre-${s.line}-${s.kind}`} statement={s} door={door} editing={editing} verdict={null} />);
+  }
+  for (const r of decl.body.requests) {
+    if (selected !== null && r.line === selected.line) {
+      rows.push(
+        <li className="seq-open" key={`req-${r.line}`} data-seq-open={r.line}>
+          <RequestCard request={r} door={door} edit={edit} onEdit={onEdit} editing={editing} ran={ran} />
+        </li>,
+      );
+      continue;
+    }
+    rows.push(<RequestLine key={`req-${r.line}`} request={r} onLine={onLine} />);
+    for (const s of r.attached) {
+      rows.push(<StatementRow key={`att-${r.line}-${s.line}-${s.kind}`} statement={s} door={door} editing={editing} verdict={null} />);
+    }
+  }
+  return (
+    <ol className="body-sequence" data-body-sequence={decl.body.requests.length} data-body-rows={rows.length}>
+      {rows}
+    </ol>
+  );
+}
+
+/**
+ * One request, collapsed to its line.
+ *
+ * A button rather than a link, and the same gesture the tree's request rows use (`onLine`), because
+ * there is exactly one way to change what Compose is pointed at and it is the address (`D1045`). A
+ * second mechanism here would be a second answer to *where am I*.
+ */
+function RequestLine({ request, onLine }: { readonly request: OutlineRequest; readonly onLine: (line: number) => void }) {
+  return (
+    <li className="seq-request" data-seq-request={request.line} data-seq-method={request.method}>
+      <button type="button" className="seq-goto" onClick={() => onLine(request.line)} data-seq-goto={request.line} title="open this request">
+        <span className="ln muted">{request.line}</span>
+        <span className={`method m-${request.method.toLowerCase()}`}>{request.method}</span>
+        <code>{request.path}</code>
+        {request.label === null ? null : <span className="muted"> as {request.label}</span>}
+        {/* The count, not the statements. A collapsed request that said nothing about what reads it
+            would look like a request nothing reads — which is a real and different state, and the
+            card says so in red when it happens. */}
+        <span className="muted">
+          {' · '}
+          {request.attached.length} statement{request.attached.length === 1 ? '' : 's'}
+        </span>
+      </button>
+    </li>
+  );
+}
+
 export interface ComposePaneProps {
   readonly path: string;
   readonly outline: FileOutline | null;
@@ -1734,6 +2056,10 @@ export interface ComposePaneProps {
    *  so the band and the card are always showing the same test. */
   readonly at: Addressed | null;
   readonly door: Lens;
+  /** Point Compose at a line — the same gesture the tree's rows use, because the address is the one
+   *  place the selection lives (`D1045`). `M212` `S2` needs it: a collapsed request in the body's
+   *  sequence is the thing you click to open. */
+  readonly onLine: (line: number) => void;
   /** The old *write a new test* form. `D1082` makes this slice read-only, and deleting the only
    *  write path the API door has for four slices is not what "read-only first" asked for — so it
    *  is kept, said to be the old surface, and dissolved by `S2`–`S5` rather than by this one. */
@@ -1790,7 +2116,7 @@ export interface ComposePaneProps {
   readonly onDiscard: () => void;
 }
 
-export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLegacyOpen, edit, onEdit, editing, prefix, onSend, sending, ran, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
+export function ComposePane({ path, outline, at, door, onLine, legacy, legacyOpen, onLegacyOpen, edit, onEdit, editing, prefix, onSend, sending, ran, dirty, busy, problem, onWrite, onDiscard }: ComposePaneProps) {
   const requests = outline === null ? [] : outline.declarations.flatMap((d) => d.body.requests);
   return (
     <div className="authoring compose-pane" data-compose={outline === null ? 'reading' : at?.request ? 'request' : 'no-request'}>
@@ -1803,12 +2129,32 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
             reading {path || 'the project'}…
           </p>
         ) : (
-          <p className="muted" data-compose-summary>
+          <p className="muted" data-compose-summary data-compose-subject={at ? 'declaration' : 'file'}>
             {/* Written for a reader, not for the plan. A pane that explains itself by slice number is
-                talking to the person who built it. */}
-            {outline.declarations.length} declaration{outline.declarations.length === 1 ? '' : 's'} · {requests.length} request
-            {requests.length === 1 ? '' : 's'} — this file, as it is on disk. What is on this pane can be typed into, except a
-            workload, which the LOAD door shapes, and a step belonging to another door, which says whose it is.
+                talking to the person who built it.
+
+                **`M212` `S1`, `D1085` — the head names what the body is showing.** It used to count
+                the whole file (`8 declarations · 6 requests`) above a body drawing exactly ONE of
+                them, and the only clue as to which was the string `line 30` further down. Two
+                artifacts, one sentence: `D956`'s rule, in the place a reader looks first. The file's
+                count does not disappear — it moves to the end of the sentence, where it reads as
+                context for the subject rather than as a description of it. */}
+            {at ? (
+              <>
+                <code data-compose-subject-what>{at.decl.kind === 'test' ? `test ${at.decl.name}` : at.decl.label}</code> · line{' '}
+                {at.decl.line} · {at.decl.body.requests.length} request{at.decl.body.requests.length === 1 ? '' : 's'} —{' '}
+                {outline.declarations.length === 1
+                  ? 'the only declaration in this file'
+                  : `one of ${outline.declarations.length} declarations in this file`}
+                . Everything here can be typed into, except a workload, which the LOAD door shapes, and a step belonging to
+                another door, which says whose it is.
+              </>
+            ) : (
+              <>
+                {outline.declarations.length} declaration{outline.declarations.length === 1 ? '' : 's'} · {requests.length} request
+                {requests.length === 1 ? '' : 's'} — this file, as it is on disk. Pick one from the tree on the left to work on it.
+              </>
+            )}
           </p>
         )}
       </header>
@@ -1821,18 +2167,39 @@ export function ComposePane({ path, outline, at, door, legacy, legacyOpen, onLeg
           comes and goes with a fetch is a pane you cannot hold a gesture across. */}
       {outline === null ? null : (
         <>
-          {at ? <TestBand decl={at.decl} outline={outline} door={door} editing={editing} /> : <FileRow outline={outline} editing={editing} />}
+          {/* `D1085` — the file first and always, then the declaration. The old line read
+              `at ? <TestBand/> : <FileRow/>`, which made the two scopes alternatives: picking a test
+              took the file's imports off the screen, so the pane's answer to *what does this file
+              bring in?* depended on where the cursor was. They are not alternatives; they are
+              nested, and now they are drawn that way. */}
+          <FileStrip outline={outline} editing={editing} />
+          {at ? <TestBand decl={at.decl} door={door} editing={editing} /> : null}
 
-          {at?.request ? (
-            <RequestCard request={at.request} door={door} edit={edit} onEdit={onEdit} editing={editing} ran={ran} />
-          ) : (
+          {/* `D1086` — the body, in its own order, with one request open. The old line drew the
+              selected request's card and NOTHING ELSE: on a thirteen-request test twelve requests
+              were absent from the pane entirely, and the only place they existed was the tree. */}
+          {/* `at` is `null` only for a file that declares nothing at all: `addressed` answers the
+              file's first declaration when the address names no line, so an address without an
+              `L` still has a subject and the head above still names it. */}
+          {at === null ? (
             <p className="muted" data-compose-no-request>
-              {requests.length === 0
-                ? 'this file issues no request — every step in it belongs to another door, and the band above shows them in position'
-                : at === null
-                  ? 'pick a request from the tree on the left'
-                  : 'this declaration issues no request of its own — its steps are in the band above, in position'}
+              this file declares nothing yet — no test, no hook, nothing for this pane to be about
             </p>
+          ) : at.decl.body.preamble.length === 0 && at.decl.body.requests.length === 0 ? (
+            <p className="muted" data-compose-no-request>
+              this declaration has an empty body — nothing runs in it yet
+            </p>
+          ) : (
+            <BodySequence
+              decl={at.decl}
+              selected={at.request}
+              door={door}
+              onLine={onLine}
+              edit={edit}
+              onEdit={onEdit}
+              editing={editing}
+              ran={ran}
+            />
           )}
         </>
       )}
