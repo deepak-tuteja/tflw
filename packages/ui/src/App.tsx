@@ -13,13 +13,13 @@ import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
 import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
+import { ThemePick } from './ThemePick';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
-import { ApiForm } from './ApiForm';
+import { ComposeDoor } from './ComposeDoor';
 import { AuthPanel } from './AuthPanel';
 import { ConfigPanel, documentsOf } from './ConfigPanel';
 import { ScanForm } from './ScanForm';
-import { BrowserForm } from './BrowserForm';
 import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
 import { exitExplained, reportIdOf } from './format';
 import { LiveBody, ReportBody, ReportHeader } from './ReportView';
@@ -28,6 +28,7 @@ import { RunList, type Selection } from './RunList';
 import { RunStrip } from './RunStrip';
 import { matchingFiles, parseQuery } from './search';
 import { Sidebar } from './Sidebar';
+import { NewThing, type NewMode } from './NewThing';
 import { fileOutline } from './outline';
 
 interface LiveRun {
@@ -271,6 +272,19 @@ export function App() {
    * what the write will carry, so there is no second representation to disagree with it.
    */
   const [draft, setDraft] = useState<string | null>(null);
+
+  /**
+   * **Which create dialog is open** — `M214` `A6` (`D1118`), lifted here from `ComposeDoor`.
+   *
+   * `+ new file` belongs in the **explorer**, because creation lives where the thing is created and
+   * the explorer is where files are. The sidebar and the compose pane are siblings, so a dialog
+   * owned by either could not be opened from the other; it moved up to the one component that is
+   * above both, which is also the one that owns the address a new file has to be opened at.
+   *
+   * It was in the Compose head before this — `+ new test` and `+ new file` as a toolbar over a
+   * pane about a declaration — which is the fifth of the five complaints this round answers.
+   */
+  const [creating, setCreating] = useState<NewMode | null>(null);
 
   const readProjectView = useCallback(() => {
     return getProject()
@@ -738,9 +752,41 @@ export function App() {
 
   return (
     <div className="app">
-      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} focusLine={focusLine} onLine={(line) => setTab('compose', line)} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
-      <main className="main">
-        {project ? <DoorBar project={project} door={door} onDoor={setDoor} /> : null}
+      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={setCreating} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+      {/* **The create dialog is the shell's** (`D1118`) — one dialog, two places that ask for it:
+          the explorer's `+ new file` and the sequence column's `+ new test`. */}
+      {creating === null || project === null ? null : (
+        <NewThing
+          mode={creating}
+          openPath={path}
+          openText={openFileView?.text ?? ''}
+          openEtag={openFileView?.etag ?? null}
+          existing={project.files.map((f) => f.path)}
+          onCancel={() => setCreating(null)}
+          onDone={(written) => {
+            const made = creating;
+            setCreating(null);
+            // The same two notifications a save makes — the page is a projection of the file and
+            // not a cache of it (`D985`), so the project is re-read rather than patched.
+            if (made === 'test') setOpenFileView(written);
+            void readProjectView();
+            // **A new FILE moves the address to it.** A create that left you looking at the file
+            // you were already on is a write with no visible consequence — the shape `M209` found
+            // four times over.
+            if (made === 'file') setFile(written.path);
+          }}
+        />
+      )}
+      {/* `M214` `A1` (`D1110`) — the API door's Compose is three regions that each scroll inside
+          themselves, so this column stops scrolling as one document and the page has no vertical
+          overflow at any height. Every other door and every other tab is unchanged. */}
+      <main className={`main${door === 'api' && tab === 'compose' ? ' main-fill' : ''}`}>
+        {/* The theme is a fact about the reader and not about the project, so it is reachable from
+            every door, from the landing, and from the pane that says the project could not be read
+            (`M213` `S0`). It rides IN the doorbar rather than above it, because a row of its own
+            cost every page ~20 px — see `DoorBar`'s own note. The second call site is the one case
+            there is no doorbar to ride in. */}
+        {project ? <DoorBar project={project} door={door} onDoor={setDoor} themePick={<ThemePick />} /> : <ThemePick />}
         {/* Above the tabs and below the doorbar (`M205` Q12): one strip per page, so every control
             it carries is reachable from all five tabs and all four doors rather than from whichever
             pane happened to own it. */}
@@ -782,8 +828,13 @@ export function App() {
             configMark={configMark}
           />
         ) : null}
-        {project && door === 'api' ? (
-          <ApiForm
+        {/* **API and BROWSER are one pane** since `M213` `S4` (`D1094`) — `vocabulary.ts` is the
+            whole of the difference, and `BrowserForm` is gone with the `<select>` that asked which
+            test to append to. LOAD and SCAN keep their own forms this round; `D1103` rebuilds
+            LOAD's in `S6`. */}
+        {project && (door === 'api' || door === 'browser') ? (
+          <ComposeDoor
+            door={door}
             project={project}
             onWritten={() => void readProjectView()}
             tab={tab}
@@ -795,7 +846,7 @@ export function App() {
             onDraft={setDraft}
             fileProblem={fileProblem}
             onFileWritten={setOpenFileView}
-            onOpenFile={setFile}
+            onNew={setCreating}
             focusLine={focusLine}
             authPanel={authPanel}
             configPanel={configPanel}
@@ -806,23 +857,6 @@ export function App() {
         ) : null}
         {project && door === 'scan' ? (
           <ScanForm
-            project={project}
-            onWritten={() => void readProjectView()}
-            filePath={path}
-            file={openFileView}
-            fileProblem={fileProblem}
-            onFileWritten={setOpenFileView}
-            tab={tab}
-            onTab={setTab}
-            runPane={runPane}
-            runMark={live && !live.end ? 'a run is going' : undefined}
-            authPanel={authPanel}
-            configPanel={configPanel}
-            configMark={configMark}
-          />
-        ) : null}
-        {project && door === 'browser' ? (
-          <BrowserForm
             project={project}
             onWritten={() => void readProjectView()}
             filePath={path}

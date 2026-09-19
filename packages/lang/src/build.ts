@@ -12,7 +12,7 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { ApiBody, ApiHeader, ApiStep, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CsrfStmt, DataTable, ExpectStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, OpenStmt, PathSegment, PauseStmt, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, Value, WithinBlock, Workload } from './ast.js';
+import type { ApiBody, ApiHeader, ApiStep, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CsrfStmt, DataTable, ExpectStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, OpenStmt, PathSegment, PauseStmt, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WithinBlock, Workload } from './ast.js';
 import { quantifiable } from './ast.js';
 import { parse as parseTokens, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
@@ -210,7 +210,29 @@ function duration(ms: number, what: string): string | null {
 
 // ---- `A1-4` — the API form's nodes ------------------------------------------
 
-/** What the API form holds: a method, a path, header rows, and one of the body forms. */
+/**
+ * What the API form holds: a method, a path, header rows, one of the body forms, and — since
+ * `M214` `A2` — the three clauses this interface used to have no room for.
+ *
+ * **THE THREE OPTIONAL FIELDS ARE WHY `M214` EXISTS, AND THE APOLOGY THEY REPLACE WAS FALSE.**
+ * `ApiRequestSpec` (`ast.ts`) has carried `timeoutMs`, `followRedirects` and `retryAfter` since the
+ * enterprise arc, and `print()` has written all three for just as long. What stopped at six fields
+ * was **this** interface — the builder's input — and the pane said so 1058 times, on every request
+ * in the corpus, as three permanently-disabled menu rows each repeating *"the request spec has no
+ * room for it yet; it is carried across an edit, not rebuilt"*. That sentence described one
+ * interface in one file and read as a statement about the language. Measured over the corpus the
+ * three clauses are used **five times in a thousand requests** combined, which is what made three
+ * dead rows on every request the worst trade in the pane.
+ *
+ * **THEY ARE OPTIONAL RATHER THAN REQUIRED, AND THE DEFAULTS ARE THE LANGUAGE'S OWN.** A spec that
+ * omits them builds the node the six-field spec always built — `timeoutMs: null`,
+ * `followRedirects: true`, `retryAfter: null` — so every existing caller that constructs a *fresh*
+ * request (`+ request`, `+ wait until`, the importers) keeps its exact behaviour and needed no
+ * edit. The hazard that shape carries is real and is stated here rather than discovered later: a
+ * caller that **rebuilds an existing request** from a spec it filled in by hand, and forgets one of
+ * these, silently drops that clause from the file. The one caller that does that is Compose's
+ * request editor, and it fills all three from `RequestEdit`, which reads them off the node.
+ */
 export interface ApiStepSpec {
   readonly service: string | null;
   readonly method: HttpMethod;
@@ -220,6 +242,15 @@ export interface ApiStepSpec {
   readonly body: ApiBodySpec | null;
   /** `as "checkout"` — the load-report label, null for the automatic identity. */
   readonly label: string | null;
+  /** `timeout <dur>` for this request alone, in milliseconds. Absent and `null` both mean *the
+   *  env's*, which is what 1057 of the corpus's 1058 requests say. */
+  readonly timeoutMs?: number | null;
+  /** `without redirects` is `false` here. Absent means `true` — the language's own default, and
+   *  what every request in both corpora but one writes. */
+  readonly followRedirects?: boolean;
+  /** `retry honoring "Retry-After" up to N` — the N. Absent and `null` both mean the clause is not
+   *  written. Three requests in the corpus carry one. */
+  readonly retryAfter?: number | null;
 }
 
 /** The four body shapes a form can offer. `upload` is deliberately absent: it names a file on the
@@ -255,6 +286,17 @@ export function buildApiStep(spec: ApiStepSpec): BuildResult<ApiStep> {
   if (pathProblem) return bad(pathProblem);
   if (spec.service !== null && !/^[A-Za-z_]\w*$/.test(spec.service)) return bad(`\`${spec.service}\` is not a service name — it is a bare word naming an \`api\` service in tflw.config`);
   if (spec.label !== null && spec.label.trim().length === 0) return bad('a label is the name this request reports under, so it cannot be blank');
+  /* The three `M214` `A2` clauses, each refused rather than rounded. A timeout is a duration the
+     lexer reads as a whole number of milliseconds, so a fractional one is not expressible and a
+     zero one is a request that has already run out of time before it is sent. */
+  if (spec.timeoutMs !== undefined && spec.timeoutMs !== null) {
+    const problem = duration(spec.timeoutMs, 'a request timeout');
+    if (problem) return bad(problem);
+  }
+  if (spec.retryAfter !== undefined && spec.retryAfter !== null) {
+    const problem = positive(spec.retryAfter, 'a `Retry-After` attempt count');
+    if (problem) return bad(problem);
+  }
 
   const headers: ApiHeader[] = [];
   for (const h of spec.headers) {
@@ -278,12 +320,55 @@ export function buildApiStep(spec: ApiStepSpec): BuildResult<ApiStep> {
       path: { type: 'PathExpr', raw: spec.path, span: SYNTHETIC },
       body,
       headers,
-      timeoutMs: null,
-      followRedirects: true,
-      retryAfter: null,
+      /* Absent is the language's default and not a missing value — see `ApiStepSpec`. */
+      timeoutMs: spec.timeoutMs ?? null,
+      followRedirects: spec.followRedirects ?? true,
+      retryAfter:
+        spec.retryAfter === undefined || spec.retryAfter === null
+          ? null
+          : { type: 'RetryAfterClause', max: spec.retryAfter, span: SYNTHETIC },
       tag: spec.label === null ? null : stringLit(spec.label),
       span: SYNTHETIC,
     },
+  };
+}
+
+/**
+ * `wait until api <request>` and the expects it polls against — `M213` `S3` (`D1102`).
+ *
+ * **IT IS BUILT OUT OF THE TWO BUILDERS THAT ALREADY EXIST, WHICH IS THE WHOLE REASON IT IS
+ * CHEAP.** A `WaitUntilApiStmt` is an `ApiRequestSpec` and a list of `ExpectStmt` — the same two
+ * shapes `buildApiStep` and `buildExpect` produce — so this validates nothing of its own beyond
+ * the one thing neither of them can see: **a poll with no expects never stops early.** `expects`
+ * is what the loop is waiting *for*, and an empty list makes the statement mean *issue this
+ * request until the wait budget runs out*, which is a sleep spelled as a poll and is never what
+ * anybody meant. The parser admits it (an empty block is a block), so refusing here is the form
+ * declining to write a statement the language would accept and the author would not want.
+ *
+ * `ApiStep`'s own clauses that `ApiStepSpec` cannot carry — `timeoutMs`, `followRedirects`,
+ * `retryAfter` — are dropped rather than invented, because `ApiRequestSpec` is the shared shape
+ * and a `wait until` written from a form has none of them. `waitMs` is this step's own poll
+ * budget (`D640`), `null` for the env's.
+ */
+export function buildWaitUntilApi(spec: { readonly request: ApiStepSpec; readonly expects: readonly ExpectSpec[]; readonly waitMs: number | null }): BuildResult<WaitUntilApiStmt> {
+  const request = buildApiStep(spec.request);
+  if (!request.ok) return request;
+  if (spec.expects.length === 0) {
+    return bad('`wait until api` polls until something is true — give it at least one assertion, or it is a sleep with a request in it');
+  }
+  if (spec.waitMs !== null && (!Number.isFinite(spec.waitMs) || spec.waitMs <= 0)) {
+    return bad('a wait budget is a duration — leave it blank for the env\'s own `timeout wait`');
+  }
+  const expects: ExpectStmt[] = [];
+  for (const e of spec.expects) {
+    const built = buildExpect(e);
+    if (!built.ok) return built;
+    expects.push(built.node);
+  }
+  const { type: _ignored, span: _span, ...shared } = request.node;
+  return {
+    ok: true,
+    node: { type: 'WaitUntilApiStmt', request: shared, expects, waitMs: spec.waitMs, span: SYNTHETIC },
   };
 }
 
@@ -556,6 +641,68 @@ export function buildExpect(spec: ExpectSpec): BuildResult<ExpectStmt> {
  * duration that is not one, a subject that does not fit) and leave the spelling to the printer,
  * whose refusal reaches the same field either way.
  */
+/**
+ * `select`, `tick`/`untick` and `press` — `M213` `S5` (`D1095`).
+ *
+ * **THE RECORDER IS WHAT NEEDED THEM, AND IT NEEDED THEM FOR A REASON WORTH STATING.** `D1095`
+ * says the recorder emits **actions only** and that every one goes through a builder and the
+ * printer rather than through string concatenation — which is not fastidiousness: a recorder
+ * writes whatever the page gave it, and a page's `<option>` text is arbitrary user content. One
+ * apostrophe in a product name turns a concatenated `select … with 'Women's'` into a file that
+ * does not lex, and the recording is lost after the session is closed. A builder is where the
+ * value becomes a `StringLit` that the printer knows how to quote.
+ *
+ * `buildClick`, `buildFill` and `buildOpen` already existed for `M200` `A3-5`'s BROWSER form. These
+ * four are the rest of what a person does to a page that is not a click or a keystroke into a text
+ * field, and they carry no options between them: a `select` takes one value, a tick takes none, and
+ * a press takes a key and optionally the control it is typed into.
+ */
+export interface SelectSpec {
+  readonly locator: LocatorSpec;
+  /** As typed or as recorded, parsed as a **value** — `buildFill`'s rule, for its reason. */
+  readonly value: string;
+}
+
+export function buildSelect(spec: SelectSpec): BuildResult<SelectStmt> {
+  const locator = buildLocator(spec.locator);
+  if (!locator.ok) return locator;
+  const value = parseValueText(spec.value);
+  if (!value.ok) return bad(value.reason);
+  return { ok: true, node: { type: 'SelectStmt', locator: locator.node, value: value.node, span: SYNTHETIC } };
+}
+
+/** `tick`/`untick` — one builder, because the two nodes differ in exactly their type and a caller
+ *  that has a checkbox's state has a boolean rather than a choice of two functions. */
+export function buildCheck(spec: { readonly locator: LocatorSpec; readonly ticked: boolean }): BuildResult<TickStmt | UntickStmt> {
+  const locator = buildLocator(spec.locator);
+  if (!locator.ok) return locator;
+  return { ok: true, node: { type: spec.ticked ? 'TickStmt' : 'UntickStmt', locator: locator.node, span: SYNTHETIC } };
+}
+
+export interface PressSpec {
+  /** A key name or a chord — `"Enter"`, `"Control+A"`. Playwright's own spelling, which the
+   *  runtime passes through, so this validates that it is *something* rather than which key it is:
+   *  a list here would be a second copy of a table the browser owns. */
+  readonly keys: string;
+  /** The control the key is typed into, or `null` for the page. 
+   *
+   *  **Preferred when there is one**, which is why a recorder records it: `press "Enter"` at page
+   *  level goes to whatever has focus, and *whatever has focus* is a fact about the moment rather
+   *  than about the test. */
+  readonly locator: LocatorSpec | null;
+}
+
+export function buildPress(spec: PressSpec): BuildResult<PressStmt> {
+  if (spec.keys.trim().length === 0) return bad('`press` needs a key — `"Enter"`, `"Tab"`, or a chord like `"Control+A"`');
+  let locator: Locator | null = null;
+  if (spec.locator !== null) {
+    const built = buildLocator(spec.locator);
+    if (!built.ok) return built;
+    locator = built.node;
+  }
+  return { ok: true, node: { type: 'PressStmt', keys: stringLit(spec.keys), locator, span: SYNTHETIC } };
+}
+
 export interface CaptureSpec {
   readonly subject: SubjectSpec;
   /** The variable this binds. */

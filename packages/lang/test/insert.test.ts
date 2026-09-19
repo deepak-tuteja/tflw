@@ -10,7 +10,7 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildApiStep, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildDataTable, buildGive, buildLet, buildLog, buildPause, SYNTHETIC, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit, type TestDecl } from '../src/index.js';
+import { buildApiStep, buildWaitUntilApi, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildDataTable, buildGive, buildLet, buildLog, buildPause, SYNTHETIC, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit, type TestDecl } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -1070,4 +1070,152 @@ test('`M210` `S2`: the result is a fixpoint of `format`, which is what the write
   const again = format(out.text);
   assert.ok(again.ok);
   assert.equal(again.formatted, out.text, '`D1049` refuses text `format` would still change');
+});
+
+// ---------------------------------------------------------------------------------------------
+// `M213` `S2` — `stepsAfter`, the positional insertion (`D1100`).
+//
+// **WHY `steps` COULD NOT BE REUSED, IN ONE SENTENCE:** `body` means *the last response*, so an
+// `expect` appended at the foot of a test asserts about whichever request is last — which for a
+// tick on the first of three is a different response, and one the assertion may well pass against.
+// A misplaced line here is not a cosmetic defect; it is an assertion about the wrong thing that
+// looks exactly like an assertion about the right thing.
+
+const expectBodyOk = () => {
+  const out = buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: 'ok' }, matcher: 'equals', operand: 'true' });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  return out.node;
+};
+
+test('`M213` `S2`: a step goes directly under the one it is anchored to, not at the foot of the test', () => {
+  // `AROUND`'s test body: let(0) api(1) expect(2) capture(3) api(4) expect(5). Anchoring on the
+  // FIRST request's last attachment — the `capture` at index 3 — is the case that separates this
+  // member from `steps`, because the foot of the body is four lines further down and past a
+  // second request.
+  const out = insert(AROUND, { kind: 'stepsAfter', path: { decl: 1, step: 3 }, nodes: [expectBodyOk()] });
+  const lines = out.split('\n');
+  const at = lines.findIndex((l) => l.trim() === 'expect body.ok equals true');
+  assert.ok(at > 0, `the new line is in the file:\n${out}`);
+  assert.equal(lines[at - 1]!.trim(), 'capture body.id as orderId', 'directly under its anchor');
+  assert.equal(lines[at + 1]!.trim(), 'api GET /orders/{orderId}', 'and above the request that follows');
+});
+
+test('`M213` `S2`: the anchor may be the request itself, which is a request with nothing attached yet', () => {
+  const source = 'test "a"\n  api GET /one\n  api GET /two\n  expect status equals 200\n';
+  const out = insert(source, { kind: 'stepsAfter', path: { decl: 0, step: 0 }, nodes: [expectBodyOk()] });
+  assert.equal(out, 'test "a"\n  api GET /one\n  expect body.ok equals true\n  api GET /two\n  expect status equals 200\n');
+});
+
+test('`M213` `S2`: the anchor’s sub-block goes with it — a request’s `header` lines are the request', () => {
+  // The span of `api POST /orders body { … }` runs into the indentation of the line AFTER its
+  // `header` clause. Walking back over whitespace is what puts the new line under the clause
+  // rather than between the request and its own header.
+  const out = insert(AROUND, { kind: 'stepsAfter', path: { decl: 1, step: 1 }, nodes: [expectBodyOk()] });
+  const lines = out.split('\n');
+  const at = lines.findIndex((l) => l.trim() === 'expect body.ok equals true');
+  assert.equal(lines[at - 1]!.trim(), 'header "A" is "b"', 'under the whole request, sub-block included');
+});
+
+test('`M213` `S2`: a step inside a block is printed at the block’s own depth, not dedented out of it', () => {
+  const source = 'test "a"\n  wait until api GET /jobs/1\n    expect status equals 200\n';
+  const out = insertIntoSource(source, { kind: 'stepsAfter', path: { decl: 0, step: 0 }, nodes: [expectBodyOk()] });
+  // The anchor is the `wait until` itself, which sits at level 1 — so the new statement lands at
+  // level 1 beside it and not at level 2 inside the block it does not belong to.
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  acceptable(out.text, 'a step beside a block');
+  assert.match(out.text, /^ {2}expect body\.ok equals true$/m);
+});
+
+test('`M213` `S2`: a hook is addressable too — `steps` names a test by name and a hook has none', () => {
+  const out = insert(AROUND, { kind: 'stepsAfter', path: { decl: 0, step: 0 }, nodes: [expectBodyOk()] });
+  const lines = out.split('\n');
+  const at = lines.findIndex((l) => l.trim() === 'expect body.ok equals true');
+  assert.equal(lines[at - 1]!.trim(), 'api POST /reset', 'inside the `before` hook, under its request');
+});
+
+test('`M213` `S2`: an address the file does not hold is refused, and the source is untouched', () => {
+  for (const path of [{ decl: 9, step: 0 }, { decl: 1, step: 99 }]) {
+    const out = insertIntoSource(AROUND, { kind: 'stepsAfter', path, nodes: [expectBodyOk()] });
+    assert.equal(out.ok, false, `path ${JSON.stringify(path)} should be refused`);
+    if (!out.ok) assert.match(out.reason, /has no (declaration|step)/);
+  }
+});
+
+test('`M213` `S2`: no nodes is a refusal, never a no-op write of identical bytes', () => {
+  const out = insertIntoSource(AROUND, { kind: 'stepsAfter', path: { decl: 1, step: 0 }, nodes: [] });
+  assert.equal(out.ok, false);
+  if (!out.ok) assert.match(out.reason, /no steps to insert/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// `M213` `S3` — `stepsBefore`, and `buildWaitUntilApi` (`D1102`).
+
+const letValue = () => {
+  const out = buildLet({ name: 'token', value: '"abc"' });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  return out.node;
+};
+
+test('`M213` `S3`: a step goes above the one it is anchored to', () => {
+  const source = 'test "a"\n  api GET /one\n  expect status equals 200\n';
+  const out = insert(source, { kind: 'stepsBefore', path: { decl: 0, step: 0 }, nodes: [letValue()] });
+  assert.equal(out, 'test "a"\n  let token = "abc"\n  api GET /one\n  expect status equals 200\n');
+});
+
+test('`M213` `S3`: THE CLAIM — a comment above the anchor belongs to the anchor, and stays with it', () => {
+  // `readNotes` gives a block to the next line of code, blanks crossed (`D1077`). Splicing between
+  // the two would hand this note to the `let` and leave the request it was written about with none.
+  const source = 'test "a"\n  # why this request is first\n  api GET /one\n  expect status equals 200\n';
+  const out = insert(source, { kind: 'stepsBefore', path: { decl: 0, step: 0 }, nodes: [letValue()] });
+  const lines = out.split('\n');
+  assert.equal(lines[1]!.trim(), 'let token = "abc"');
+  assert.equal(lines[2]!.trim(), '# why this request is first', 'the note is still directly above its own request');
+  assert.equal(lines[3]!.trim(), 'api GET /one');
+});
+
+test('`M213` `S3`: the walk stops at a workload line — a `let` must not land above one', () => {
+  // `insertInTest`'s own careful case, from the other direction: a workload line sits directly
+  // under the header and a step above it is a request written outside the shape it runs in.
+  const source = 'test "a"\n  run 2 iterations across 1 users\n  api GET /one\n  expect status equals 200\n';
+  const out = insert(source, { kind: 'stepsBefore', path: { decl: 0, step: 0 }, nodes: [letValue()] });
+  const lines = out.split('\n');
+  assert.equal(lines[1]!.trim(), 'run 2 iterations across 1 users');
+  assert.equal(lines[2]!.trim(), 'let token = "abc"');
+});
+
+test('`M213` `S3`: `buildWaitUntilApi` prints a block the grammar takes back', () => {
+  const out = buildWaitUntilApi({
+    request: { method: 'GET', path: '/jobs/1', service: null, label: null, headers: [], body: null },
+    expects: [{ soft: false, quantifier: null, subject: { kind: 'body', path: 'status' }, matcher: 'equals', operand: '"done"' }],
+    waitMs: null,
+  });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  const text = insert('test "a"\n  api GET /start\n', { kind: 'steps', testName: 'a', nodes: [out.node] });
+  assert.match(text, /^ {2}wait until api GET \/jobs\/1$/m);
+  assert.match(text, /^ {4}expect body\.status equals "done"$/m, 'the expects are inside the block, which is where the poll reads them');
+});
+
+test('`M213` `S3`: a `wait until` with no expects is refused — it is a sleep with a request in it', () => {
+  const out = buildWaitUntilApi({
+    request: { method: 'GET', path: '/x', service: null, label: null, headers: [], body: null },
+    expects: [],
+    waitMs: null,
+  });
+  assert.equal(out.ok, false);
+  if (!out.ok) assert.match(out.reason, /at least one assertion/);
+  // The control: the parser would have taken it, so this really is the form declining rather than
+  // the grammar refusing.
+  assert.deepEqual(
+    parseSource('test "a"\n  wait until api GET /x\n    expect status equals 200\n').diagnostics.filter((d) => d.severity === 'error'),
+    [],
+  );
+});
+
+test('`M213` `S3`: a request the builder refuses is refused by the wait that wraps it', () => {
+  const out = buildWaitUntilApi({
+    request: { method: 'GET', path: 'nope', service: null, label: null, headers: [], body: null },
+    expects: [{ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' }],
+    waitMs: null,
+  });
+  assert.equal(out.ok, false, 'the request half is not validated a second time here, it is validated once');
 });

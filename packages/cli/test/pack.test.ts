@@ -76,8 +76,45 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/
   // `index.html`, at least one hashed script under `assets/`, and nothing else — in particular not
   // the `metafile.json` the build writes beside it for the notice and then removes.
   const ui = files.filter((f) => f.startsWith('dist/ui/'));
-  assert.deepEqual(ui.filter((f) => !/^dist\/ui\/assets\/index-[\w-]+\.(js|css)$/.test(f)).sort(), ['dist/ui/favicon.svg', 'dist/ui/index.html']);
+  const hashless = (f: string) => f.replace(/^dist\/ui\/assets\//, '').replace(/-[\w-]{8}\.woff2$/, '.woff2');
+  const fonts = ui.filter((f) => f.endsWith('.woff2')).map(hashless).sort();
+  assert.deepEqual(ui.filter((f) => !/^dist\/ui\/assets\/(index-[\w-]+\.(js|css)|[\w-]+\.woff2)$/.test(f)).sort(), ['dist/ui/favicon.svg', 'dist/ui/index.html']);
   assert.ok(ui.some((f) => /^dist\/ui\/assets\/index-[\w-]+\.js$/.test(f)), 'the page ships no script');
+  // `M213` `S0` (`D1098`) — the four themes' five vendored families. Asserted as the **exact set of
+  // faces**, by stem, because every omission here is a decision and each fails differently:
+  //   · importing a package's own `wght.css` instead of `gen-fonts.mjs`'s selection ships cyrillic,
+  //     cyrillic-ext, greek and vietnamese as well — 1.4 MB for IBM Plex Sans alone, of which a
+  //     browser downloads nothing, because `unicode-range` gates the fetch and the whole cost lands
+  //     in this tarball. That is invisible to a count and to any check that says "some fonts ship";
+  //   · an italic face slipping in costs 119 KB for two small pieces of text (`Terminal`'s comment
+  //     style and `.elsewhere`), both of which render as synthetic oblique by decision;
+  //   · IBM Plex Mono is the one family with **no variable release**, so it ships static at the two
+  //     weights `--kw-weight` asks for, and a third weight arriving silently is the drift this
+  //     catches.
+  // The content hash is stripped: it moves on every `@fontsource` bump and says nothing about which
+  // faces ship, so pinning it would make this gate a chore rather than a claim.
+  assert.deepEqual(fonts, [
+    'ibm-plex-mono-latin-400-normal.woff2',
+    'ibm-plex-mono-latin-600-normal.woff2',
+    'ibm-plex-mono-latin-ext-400-normal.woff2',
+    'ibm-plex-mono-latin-ext-600-normal.woff2',
+    'ibm-plex-sans-latin-ext-wght-normal.woff2',
+    'ibm-plex-sans-latin-wght-normal.woff2',
+    'jetbrains-mono-latin-ext-wght-normal.woff2',
+    'jetbrains-mono-latin-wght-normal.woff2',
+    'manrope-latin-ext-wght-normal.woff2',
+    'manrope-latin-wght-normal.woff2',
+    'public-sans-latin-ext-wght-normal.woff2',
+    'public-sans-latin-wght-normal.woff2',
+  ]);
+  // `M213-11` — and the bytes above are redistribution, so the notice file has to name them. The
+  // generator reads the bundle's own metafile and could not see an asset at all until this round:
+  // it would have shipped a `THIRD-PARTY-NOTICES.md` that reads as complete and lists no font.
+  const { stdout: noticeText } = await execFileAsync('tar', ['-xzOf', tarballPath, 'package/THIRD-PARTY-NOTICES.md'], { maxBuffer: 32 * 1024 * 1024 });
+  for (const pkgName of ['@fontsource-variable/ibm-plex-sans', '@fontsource-variable/jetbrains-mono', '@fontsource-variable/manrope', '@fontsource-variable/public-sans', '@fontsource/ibm-plex-mono']) {
+    assert.ok(noticeText.includes(pkgName), `the tarball ships ${pkgName}'s typeface and its notice names no such package`);
+  }
+  assert.equal((noticeText.match(/SIL Open Font License/g) ?? []).length, 5, 'one OFL text per vendored family');
   assert.deepEqual(files.filter((f) => !f.startsWith('dist/ui/')), ['LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md', 'dist/artifact-contract.json', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
 
   // The other half of the same property, and the half a file list cannot express (M86). Excluding

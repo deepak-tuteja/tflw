@@ -11,9 +11,17 @@
 // (`D985`), so a form that hid its own output would be asking the author to trust a projection
 // over the thing itself. The preview is the exact bytes the PUT will carry.
 
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Chart } from './Chart';
+import { useTokenColors } from './theme';
+import { overlayIsComparable, plannedSeries } from './plan';
+
+/** `--accent` for the plan and `--warn` for what actually happened — the same pair `Workload.tsx`
+ *  spends on *typical* and *slow*, so one reader's eye carries between the two panes. */
+const PLOT_TOKENS = ['--accent', '--warn'] as const;
 import { buildThreshold, buildTest, buildWorkload, insertIntoSource, type Insertion, type StageSpec, type ThresholdSpec, type WorkloadSpec } from '@tflw/lang';
-import { putFile, type FileView } from './api';
+import { getReports, getResults, putFile, type FileView } from './api';
+import { REPORT_LOOKBACK, sameFile } from './ran';
 import { TabStrip } from './TabStrip';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
@@ -63,13 +71,24 @@ export interface LoadFormProps {
 
 type Shape = 'iterations' | 'iterations-per-user' | 'ramp' | 'hold' | 'step' | 'spike';
 
-const SHAPES: ReadonlyArray<readonly [Shape, string]> = [
-  ['iterations', 'run N iterations across M users'],
-  ['iterations-per-user', 'run N iterations per user across M users'],
-  ['ramp', 'ramp to N over a duration'],
-  ['hold', 'hold N for a duration'],
-  ['step', 'step — a staircase of levels'],
-  ['spike', 'spike — levels and ramps mixed'],
+/** The four profiles and the two units the grid crosses — `M213` `S6` (`D1103`). The `title` on
+ *  each is the sentence the old `<select>` spelled inline, which is where it belongs: a label
+ *  naming the thing, and the explanation one hover away. */
+const PROFILES: ReadonlyArray<readonly [Shape, string, string]> = [
+  ['ramp', 'ramp', 'start at nothing and climb to the target over the duration'],
+  ['hold', 'hold', 'be at the target from the first second and stay there'],
+  ['step', 'step', 'a staircase — each stage jumps to its level and holds'],
+  ['spike', 'spike', 'stages that jump or ramp, mixed — the shape a traffic spike has'],
+];
+
+const UNITS: ReadonlyArray<readonly ['users' | 'rps', string, string]> = [
+  ['users', 'users', 'closed — this many virtual users, each looping; arrivals depend on how fast the system answers'],
+  ['rps', 'rps', 'open — this many arrivals a second regardless of what has finished'],
+];
+
+const ITERATION_SHAPES: ReadonlyArray<readonly [Shape, string, string]> = [
+  ['iterations', 'N iterations', 'a fixed amount of work across M users — it ends when the work is done, and how long that takes is the measurement'],
+  ['iterations-per-user', 'N per user', 'a fixed amount of work each, across M users'],
 ];
 
 interface ThresholdRow {
@@ -84,6 +103,84 @@ const EMPTY_THRESHOLD: ThresholdRow = { metric: 'duration', percentile: 95, op: 
 
 /** Seconds in the form, milliseconds in the language — one conversion, stated once. */
 const secondsToMs = (s: number): number => Math.round(s * 1000);
+
+/**
+ * The workload being composed, plotted — `M213` `S6` (`D1103`).
+ *
+ * **One chart, two series, and the second is only there when the two mean the same thing.**
+ * `TimelinePoint` records `count`, `rps`, `errorRate` and the duration percentiles for each second
+ * of a run — **arrivals**, not concurrency. So an `rps` plan and the run's achieved `rps` are the
+ * same quantity and answer a real question together (*did the generator keep up, and where did it
+ * stop keeping up*), while a `users` plan is a number of loops in flight: drawing the achieved
+ * arrival rate on that axis would put two different quantities in one comparison, which reads as
+ * an answer and is not one. The plot says so in a sentence rather than drawing the line.
+ *
+ * The colours come from `theme.ts` (`S1`), which is what lets a canvas follow a theme at all — a
+ * `ctx.strokeStyle` is a string, not a stylesheet, so `var(--accent)` in one is silently ignored.
+ */
+function WorkloadPlot({ shape, unit, target, seconds, stages, achieved }: {
+  readonly shape: Shape;
+  readonly unit: 'users' | 'rps';
+  readonly target: number;
+  readonly seconds: number;
+  readonly stages: readonly StageSpec[];
+  /** The last run's per-second arrival rate for this file, or `null` when nothing has run it. */
+  readonly achieved: readonly { readonly at: number; readonly rps: number }[] | null;
+}) {
+  const [planned, slow] = useTokenColors(PLOT_TOKENS);
+  const series = useMemo(
+    () => plannedSeries({ shape, unit, target, seconds, stages: stages.map((x) => ({ mode: x.mode, target: x.target, durationMs: x.durationMs })) }),
+    [shape, unit, target, seconds, stages],
+  );
+
+  if (series === null) {
+    return (
+      <p className="muted" data-load-plot-none>
+        this shape has no clock — it runs the iterations and ends when they are done, and how long
+        that takes is what the run measures.
+      </p>
+    );
+  }
+
+  const comparable = overlayIsComparable(unit) && achieved !== null && achieved.length > 0;
+  /* The x-axis is the longer of the two, so a run that overran its plan is visible as exactly
+     that rather than clipped at the plan's own right-hand edge. */
+  const lastAchieved = comparable ? Math.max(...achieved.map((p) => p.at)) : 0;
+  const end = Math.max(series.x[series.x.length - 1] ?? 1, lastAchieved);
+  const x: number[] = [];
+  for (let second = 0; second <= end; second++) x.push(second);
+  const byAt = new Map((achieved ?? []).map((p) => [p.at, p.rps]));
+
+  return (
+    <div className="workload-plot" data-load-plot={unit} data-load-plot-overlay={comparable ? 'yes' : 'no'}>
+      <Chart
+        id="planned"
+        title="the work this test asks for"
+        unit={unit}
+        x={x}
+        kind="line"
+        xName="at"
+        xLabel={(v) => `${v}s`}
+        yLabel={(v) => `${v}`}
+        series={[
+          { label: `planned ${unit}`, color: planned!, values: x.map((second) => (second <= (series.x[series.x.length - 1] ?? 0) ? series.y[second] ?? null : null)) },
+          ...(comparable ? [{ label: 'achieved rps', color: slow!, values: x.map((second) => byAt.get(second) ?? null), dashed: true }] : []),
+        ]}
+      />
+      {overlayIsComparable(unit) ? (
+        achieved === null || achieved.length === 0 ? (
+          <p className="muted" data-load-plot-why="no-run">nothing has run this file yet, so there is no achieved curve to draw over the plan.</p>
+        ) : null
+      ) : (
+        <p className="muted" data-load-plot-why="not-comparable">
+          a run records <strong>arrivals</strong>, not concurrency — so there is no achieved curve
+          that means the same thing as a <code>users</code> plan. Switch the unit to{' '}
+          <code>rps</code>, or read the run’s own charts in Run.
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function LoadForm({ project, onWritten, filePath, file, fileProblem, onFileWritten, tab, onTab, runPane, runMark, authPanel, configPanel, configMark }: LoadFormProps) {
   const path = filePath;
@@ -104,6 +201,41 @@ export function LoadForm({ project, onWritten, filePath, file, fileProblem, onFi
   const [stages, setStages] = useState<readonly StageSpec[]>([{ mode: 'jump', target: 10, durationMs: 5000 }]);
   const [unit, setUnit] = useState<'users' | 'rps'>('users');
   const [thresholds, setThresholds] = useState<readonly ThresholdRow[]>([EMPTY_THRESHOLD]);
+  /**
+   * **The last run's achieved arrival rate for this file** — `M213` `S6` (`D1103`).
+   *
+   * The same walk `S2` gave the API door (`D1099`), and the same bound: `ReportEntry.files` is the
+   * artefacts in a report directory, not the `.tflw` files a run executed (`M213-19`), so which
+   * report holds this file is only in its own `results.json`. Newest first, `REPORT_LOOKBACK` deep,
+   * stop at the first that carries a workload test for this file.
+   *
+   * `null` is the ordinary state of a file nobody has run, and is silent for that reason.
+   */
+  const [achieved, setAchieved] = useState<readonly { readonly at: number; readonly rps: number }[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const reports = (await getReports()).slice().sort((a, b) => b.at.localeCompare(a.at));
+        for (const entry of reports.slice(0, REPORT_LOOKBACK)) {
+          if (!entry.files.includes('results.json')) continue;
+          const report = await getResults(entry.id);
+          if (!live) return;
+          const mine = report.tests.find((t) => t.kind === 'workload' && sameFile(t.file, path));
+          if (mine && mine.kind === 'workload') {
+            setAchieved(mine.metrics.timeline.map((p) => ({ at: p.offsetSeconds, rps: p.rps })));
+            return;
+          }
+        }
+        if (live) setAchieved(null);
+      } catch {
+        if (live) setAchieved(null);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [path, project]);
   const [busy, setBusy] = useState(false);
   const [ownProblem, setProblem] = useState<string | null>(null);
   /** A read failure is the shell's to discover and this pane's to say — there is no third place a
@@ -298,29 +430,87 @@ export function LoadForm({ project, onWritten, filePath, file, fileProblem, onFi
           </>
         )}
 
-        <label hidden={mode === 'existing' && !alsoWorkload}>
-          shape
-          <select value={shape} onChange={(e) => setShape(e.target.value as Shape)} data-load-shape>
-            {SHAPES.map(([id, label]) => (
-              <option key={id} value={id}>{label}</option>
+        {/* **THE SHAPE IS A GRID, NOT TEN OPTIONS** (`M213` `S6`, `D1103`).
+            The language's ten workload shapes are not ten things: they are **four profiles × two
+            units**, plus two iteration shapes that have no time axis at all. A `<select>` spelled
+            them as a flat list of ten sentences, which is the one arrangement that hides the fact
+            a reader most needs — that `ramp` and `hold` differ in where they start, and that
+            `users` and `rps` are a *closed* and an *open* model of arrival rather than two
+            spellings of "how much".
+
+            Drawn as a grid, choosing a profile and choosing a unit are two choices instead of one
+            lookup, and the pair you have not chosen is on screen beside the pair you have. */}
+        <div className="shape-grid" hidden={mode === 'existing' && !alsoWorkload} data-load-shape={shape} data-load-unit={shape === 'iterations' || shape === 'iterations-per-user' ? '' : unit}>
+          <div className="shape-cols">
+            <span />
+            {UNITS.map(([u, label, why]) => (
+              <button
+                key={u}
+                type="button"
+                className={unit === u ? 'unit on' : 'unit'}
+                onClick={() => setUnit(u)}
+                data-shape-unit={u}
+                aria-pressed={unit === u}
+                title={why}
+              >
+                {label}
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+          {PROFILES.map(([p, label, why]) => (
+            <div className="shape-row" key={p}>
+              <button
+                type="button"
+                className={shape === p ? 'profile on' : 'profile'}
+                onClick={() => setShape(p)}
+                data-shape-profile={p}
+                aria-pressed={shape === p}
+                title={why}
+              >
+                {label}
+              </button>
+              {UNITS.map(([u]) => (
+                <button
+                  key={u}
+                  type="button"
+                  className={shape === p && unit === u ? 'cell on' : 'cell'}
+                  onClick={() => { setShape(p); setUnit(u); }}
+                  data-shape-cell={`${p}:${u}`}
+                  aria-pressed={shape === p && unit === u}
+                  title={`${label} ${u}`}
+                >
+                  {shape === p && unit === u ? '●' : '·'}
+                </button>
+              ))}
+            </div>
+          ))}
+          {/* **The two that are not in the grid, and are not an eleventh column either.** An
+              iteration shape names an amount of work, not a rate: the run ends when the iterations
+              are done, and how long that takes is the thing being measured. It has no unit axis to
+              sit on, so it sits beside the grid rather than inside it. */}
+          <div className="shape-row shape-aside">
+            {ITERATION_SHAPES.map(([p, label, why]) => (
+              <button
+                key={p}
+                type="button"
+                className={shape === p ? 'profile on' : 'profile'}
+                onClick={() => setShape(p)}
+                data-shape-profile={p}
+                aria-pressed={shape === p}
+                title={why}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {shape === 'iterations' || shape === 'iterations-per-user' ? (
           <>
             {numberField('iterations', count, setCount, 'count')}
             {numberField('users', vus, setVus, 'vus')}
           </>
-        ) : (
-          <label>
-            unit
-            <select value={unit} onChange={(e) => setUnit(e.target.value as 'users' | 'rps')} data-load-unit>
-              <option value="users">users — closed: each keeps looping</option>
-              <option value="rps">rps — open: arrivals regardless of what finished</option>
-            </select>
-          </label>
-        )}
+        ) : null}
 
         {shape === 'ramp' || shape === 'hold' ? (
           <>
@@ -403,9 +593,25 @@ export function LoadForm({ project, onWritten, filePath, file, fileProblem, onFi
 
       {pending.ok ? (
         <>
-          <pre className="preview" data-load-preview>
-            {pending.text}
-          </pre>
+          {/* **THE PLOT IS THE PREVIEW** (`M213` `S6`, `D1103`).
+              A `<pre>` of the bytes was the right preview when Compose could not read the file;
+              Source has shown those bytes since `M210`, and this door's own question is not *what
+              will be written* but **what shape of work is that**. `planned with achieved overlaid
+              in one frame is the picture a load tool exists to show`, and neither pane showed one
+              — `Workload.tsx` has plotted a *finished* run since `M192` and Compose could not
+              reach it.
+
+              Explicitly **not a JMeter tree**: JMeter's model is containers holding samplers
+              holding assertions, tflw's is flat, and drawing a tree would assert a containment the
+              file does not have. */}
+          <WorkloadPlot
+            shape={shape}
+            unit={unit}
+            target={target}
+            seconds={seconds}
+            stages={stages}
+            achieved={achieved}
+          />
           {/* `D1052` — what `tflw check` will say about these bytes. Shown, never blocking: the
               write route refuses what cannot be read (`D1049`), and an unbound `{'{'}token{'}'}` reads
               fine — it is just wrong, and the author should hear it here rather than in CI. */}

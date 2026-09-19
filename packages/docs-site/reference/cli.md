@@ -12,6 +12,7 @@ const checkFlags = CLI_FLAGS.filter((f) => f.command === 'check');
 const initFlags = CLI_FLAGS.filter((f) => f.command === 'init');
 const installFlags = CLI_FLAGS.filter((f) => f.command === 'install-browsers');
 const pickFlags = CLI_FLAGS.filter((f) => f.command === 'pick');
+const recordFlags = CLI_FLAGS.filter((f) => f.command === 'record');
 const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
 const migrateFlags = CLI_FLAGS.filter((f) => f.command === 'migrate');
 const fmtFlags = CLI_FLAGS.filter((f) => f.command === 'fmt');
@@ -140,6 +141,29 @@ works once the consuming project installs it.
 
 Opens a real, visible browser at `<url>` and prints one verified locator per click; runs until the
 window is closed or Ctrl+C. `<url>` must be absolute — no `tflw.config` involved.
+
+## `tflw record <url>`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in recordFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+Opens a real, visible browser at `<url>` and prints one tflw step per action taken in it — a click,
+a filled field, a ticked box, a chosen option, a key press. `pick`'s sibling, and the difference is
+that **nothing is prevented**: a click navigates and a form submits, because a recording is a
+sequence and a sequence needs the page to advance.
+
+A field's keystrokes are coalesced into one `fill` rather than written per character; a checkbox
+prints `tick` or `untick`; a key press carries the control it was typed into. **Actions only** —
+a recorder can see that a page changed but not what about the change mattered, so expectations are
+yours to add afterwards. Runs until the window is closed or Ctrl+C. `<url>` must be absolute — no
+`tflw.config` involved.
 
 ## `tflw watch`
 

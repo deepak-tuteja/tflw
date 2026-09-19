@@ -8,7 +8,7 @@ import { inputsOf, metafilePlugin, METAFILE } from '../scripts/metafile-plugin.t
 
 const chunk = (modules: Record<string, unknown>) => ({ type: 'chunk', modules });
 
-test('inputsOf lists every chunk module by id, skips assets and virtual modules', () => {
+test('inputsOf lists every chunk module by id and skips virtual modules', () => {
   const bundle = {
     'assets/index-abc.js': chunk({
       '/repo/node_modules/react/index.js': {},
@@ -23,6 +23,36 @@ test('inputsOf lists every chunk module by id, skips assets and virtual modules'
     '/repo/node_modules/react/index.js',
     '/repo/node_modules/uplot/dist/uPlot.esm.js',
     '/repo/packages/ui/src/main.tsx',
+  ]);
+});
+
+// `M213-11`. The claim is not *assets are included* — it is **an asset that came from a package is
+// that package redistributed, and the notice generator has to be told**. So the case that carries
+// it is a vendored font beside the extracted stylesheet: one has an origin on disk, the other was
+// built from a string, and only the first is somebody else's work. The relative-path half is the
+// half that would have failed silently: rolldown reports an asset's origin relative to `root`
+// while a module id is absolute, so without the resolve the generator is handed
+// `../../node_modules/…` and reads a `LICENSE` off whatever the cwd happens to be.
+test('inputsOf attributes an asset to the package it was copied from, resolved against root', () => {
+  const bundle = {
+    'assets/plex-xyz.woff2': {
+      type: 'asset',
+      originalFileNames: ['../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2'],
+    },
+    // Two names, one asset: rolldown coalesces byte-identical sources, and a notice is owed to
+    // every package that contributed one.
+    'assets/shared-xyz.woff2': {
+      type: 'asset',
+      originalFileNames: ['../../node_modules/a/f.woff2', '../../node_modules/b/f.woff2'],
+    },
+    // Ours: extracted from the page's own CSS, no file behind it.
+    'assets/index-abc.css': { type: 'asset', source: '' },
+  };
+  const { inputs } = inputsOf(bundle, '/repo/packages/ui');
+  assert.deepEqual(Object.keys(inputs).sort(), [
+    '/repo/node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2',
+    '/repo/node_modules/a/f.woff2',
+    '/repo/node_modules/b/f.woff2',
   ]);
 });
 

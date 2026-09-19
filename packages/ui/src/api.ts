@@ -172,7 +172,31 @@ export function pickLocators(
   path: string,
   on: { line: (text: string) => void; problem: (text: string) => void; end: () => void },
 ): () => void {
-  const source = new EventSource(`/api/pick?path=${encodeURIComponent(path)}`);
+  return sessionStream('/api/pick', path, on, 'the pick session could not be started');
+}
+
+/**
+ * A `tflw record` session — `M213` `S5` (`D1095`).
+ *
+ * `pickLocators`'s sibling and, at this layer, identical: the same route shape, the same framing,
+ * the same *opening the stream starts it and closing it ends it*. What differs is what the browser
+ * does with a click, which is `D1106`'s decision and is the command's business rather than this
+ * function's. Lines arrive unclassified for `pick`'s reason, and `record` has banners of its own.
+ */
+export function recordActions(
+  path: string,
+  on: { line: (text: string) => void; problem: (text: string) => void; end: () => void },
+): () => void {
+  return sessionStream('/api/record', path, on, 'the recording could not be started');
+}
+
+function sessionStream(
+  route: string,
+  path: string,
+  on: { line: (text: string) => void; problem: (text: string) => void; end: () => void },
+  refusal: string,
+): () => void {
+  const source = new EventSource(`${route}?path=${encodeURIComponent(path)}`);
   source.onmessage = (m: MessageEvent<string>) => on.line(JSON.parse(m.data) as string);
   source.addEventListener('problem', (m) => on.problem(JSON.parse((m as MessageEvent<string>).data) as string));
   source.addEventListener('end', () => {
@@ -184,7 +208,7 @@ export function pickLocators(
   // swallowed, because a picker that silently does nothing is worse than one that says why.
   source.onerror = () => {
     source.close();
-    on.problem('the pick session could not be started — check that this env declares a `web` base');
+    on.problem(`${refusal} — check that this env declares a \`web\` base`);
     on.end();
   };
   return () => {

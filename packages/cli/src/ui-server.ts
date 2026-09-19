@@ -431,6 +431,12 @@ export function pickArgv(url: string): string[] {
   return ['pick', url];
 }
 
+/** What `tflw record` gets — `pickArgv`'s sibling, and the same rule: one URL and nothing else, so
+ *  the page cannot ask for a session a terminal could not open (`M213` `S5`). */
+export function recordArgv(url: string): string[] {
+  return ['record', url];
+}
+
 export function initArgv(door: Lens): string[] {
   if (door === 'load') return ['init', '--load'];
   if (door === 'scan') return ['init', '--scan'];
@@ -1391,7 +1397,7 @@ export class UiServer {
     // unclassified. Which lines are locators is the page's question, and it has `@tflw/lang` to
     // answer it with — `pick` prints two banner lines and then one bare locator per click, and a
     // server that filtered by matching the banner text would be coupled to that wording.
-    if (path === '/api/pick' && method === 'GET') {
+    if ((path === '/api/pick' || path === '/api/record') && method === 'GET') {
       if (!existsSync(join(this.opts.root, CONFIG_PATH))) return json(res, 404, { error: 'not a tflw project here', noProject: true });
       let view: ProjectView;
       try {
@@ -1404,7 +1410,14 @@ export class UiServer {
         return json(res, 409, { error: `env \`${view.authorization.envName}\` declares no \`web\` base, so there is no page to pick from — add \`web "http://localhost:3000"\` to tflw.config` });
       }
 
-      const child = spawn(process.execPath, [...(this.opts.execArgv ?? []), this.opts.cliEntry, ...pickArgv(target)], {
+      /* **One route, two commands** (`M213` `S5`). Everything around the child — the config read,
+         the URL composition, the line framing, the `SIGINT` on disconnect — is identical, and
+         `D1106` is precisely the decision that what differs is *what the browser does with a
+         click*, which is the command's business and not this route's. Duplicating the route to
+         change one array element would be the two-implementations-of-one-picture failure at the
+         server. */
+      const argv = path === '/api/record' ? recordArgv(target) : pickArgv(target);
+      const child = spawn(process.execPath, [...(this.opts.execArgv ?? []), this.opts.cliEntry, ...argv], {
         cwd: this.opts.root,
         env: { ...process.env, FORCE_COLOR: '0' },
         stdio: ['ignore', 'pipe', 'pipe'],

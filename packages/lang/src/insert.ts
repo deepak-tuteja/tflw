@@ -49,7 +49,37 @@ export type Insertion =
    * response are one edit: inserting them separately would leave a file, between two writes, whose
    * assertions name a response nothing fetched.
    */
-  | { readonly kind: 'steps'; readonly testName: string; readonly nodes: readonly Step[] };
+  | { readonly kind: 'steps'; readonly testName: string; readonly nodes: readonly Step[] }
+  /**
+   * Steps spliced **directly under one step that is already there** (`M213` `S2`, `D1100`).
+   *
+   * `steps` above appends at the foot of the body, which is correct for a request and its
+   * assertions arriving together and **wrong for an assertion about a request already in the
+   * file**: tick-to-verify writes an `expect` that reads the response of the request you ticked,
+   * and a test with three requests would put it under the third. An assertion written below a
+   * later request is not a slightly misplaced line — `body` means *the last response*, so it
+   * asserts about a different request and may well pass.
+   *
+   * The anchor is a `StepPath` and not a line for `replaceInSource`'s own reason, stated on that
+   * type: this module formats before it edits, formatting moves lines, and an index pair does not
+   * move under it.
+   */
+  | { readonly kind: 'stepsAfter'; readonly path: StepPath; readonly nodes: readonly Step[] }
+  /**
+   * Steps spliced directly **above** one that is already there (`M213` `S3`, `D1102`).
+   *
+   * Its case is `let`: a binding has to exist before the request that interpolates it, and
+   * `outline.ts` measured **97 of the corpus' 100 preamble statements are `let`** — so the place
+   * a reader looks for one and the place it has to be are the same place, the top of the body.
+   * `stepsAfter` cannot express *above the first thing in this body*, because there is nothing
+   * above it to anchor to.
+   *
+   * A separate member rather than a flag on the one above: the two differ in the offset they
+   * splice at and in nothing else, and they share the implementation — what they do not share is
+   * the sentence at the call site, where `stepsBefore` says which end of the statement's scope it
+   * belongs to.
+   */
+  | { readonly kind: 'stepsBefore'; readonly path: StepPath; readonly nodes: readonly Step[] };
 
 export type InsertResult =
   | { readonly ok: true; readonly text: string }
@@ -83,6 +113,18 @@ export function insertIntoSource(source: string, insertion: Insertion): InsertRe
   const error = diagnostics.find((d) => d.severity === 'error');
   if (error) return { ok: false, reason: `the file does not parse: ${error.code} at line ${error.span.start.line}` };
 
+  /**
+   * `stepsAfter` returns here rather than joining the printing below, because **it is the one
+   * member whose indent is not known up front**. Every other insertion lands directly in a
+   * declaration body, which is level 1; this one lands beside a step that may itself be nested,
+   * and the level it prints at is read off that step. So the printing happens where the anchor is
+   * resolved, and `printedText` below stays the single-level case it was written as.
+   */
+  if (insertion.kind === 'stepsAfter' || insertion.kind === 'stepsBefore') {
+    const spliced = insertBesideStep(text, program, insertion.path, insertion.nodes, insertion.kind === 'stepsBefore' ? 'before' : 'after');
+    return typeof spliced === 'string' ? settleSplice(spliced) : spliced;
+  }
+
   // `steps` prints several fragments and joins them; every other kind prints one node.
   let printedText: string;
   if (insertion.kind === 'steps') {
@@ -114,6 +156,14 @@ export function insertIntoSource(source: string, insertion: Insertion): InsertRe
   // stays green. Deleting the branch on otherwise-correct code changes nothing observable — an
   // equivalent mutant, recorded here rather than chased, since the pair above is what shows the
   // branch is load-bearing.
+  return settleSplice(spliced);
+}
+
+/** The invariant above, as one function because two members now reach it. See the comment at its
+ *  only previous call site: this is not a tidy-up, it is the check that a splice landed on text
+ *  `format` already agrees with — re-formatting here would silently correct a bad splice and hand
+ *  back bytes nobody reasoned about. */
+function settleSplice(spliced: string): InsertResult {
   const formatted = format(spliced);
   if (!formatted.ok) return { ok: false, reason: `the result does not format: ${formatted.reason ?? 'unknown'}` };
   if (formatted.formatted !== spliced) {
@@ -206,6 +256,75 @@ function stepAnchor(source: string, test: TestDecl): number {
   return test.name.span.end.offset;
 }
 
+/**
+ * Splice printed steps directly beside the step at `path` — `M213` `S2`, widened by `S3`.
+ *
+ * Three things are read off the anchor rather than assumed, and each was a defect in an earlier
+ * draft of a sibling function in this file:
+ *
+ * - **The level.** `print` is told the anchor's own indent depth, so an assertion ticked inside a
+ *   `wait until api` block lands inside it rather than dedenting out of it and re-binding to the
+ *   request above the block.
+ * - **The end of the anchor.** A step's span runs to the start of whatever follows, so a request
+ *   with a `header` sub-block ends on the *next* line's indentation. Walking back over whitespace
+ *   is what puts the new line under the last line the anchor actually wrote — including the
+ *   sub-block, which belongs to it.
+ * - **The whole thing re-parses.** The result is formatted and parsed before it is returned, so a
+ *   splice that lands somewhere the grammar does not admit is a refusal and not a broken file.
+ */
+function insertBesideStep(source: string, program: Program, path: StepPath, nodes: readonly Step[], side: 'before' | 'after'): string | InsertResult {
+  if (nodes.length === 0) return { ok: false, reason: 'no steps to insert' };
+  const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+  const decl = declarations[path.decl];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${path.decl}` };
+  const target = decl.body[path.step];
+  if (!target) return { ok: false, reason: `that declaration has no step ${path.step}` };
+
+  const level = Math.round((target.span.start.column - 1) / INDENT.length);
+  const parts: string[] = [];
+  for (const node of nodes) {
+    const one = print(node, { indent: level });
+    if (!one.ok) return { ok: false, reason: one.reason ?? 'the node cannot be printed' };
+    parts.push(one.text);
+  }
+  const at = side === 'before'
+    ? aboveStep(source, lineStartOf(source, target.span.start.offset, target.span.start.column))
+    : afterLineContaining(source, backOverWhitespace(source, target.span.end.offset));
+  return source.slice(0, at) + parts.join('\n') + '\n' + source.slice(at);
+}
+
+/** The offset of the first character of the line an offset sits on. A step's span starts at its
+ *  first *token*, which is past the indentation, and splicing there would put the new statement's
+ *  own indented text after the anchor's leading spaces — a line that does not lex. */
+function lineStartOf(_source: string, offset: number, column: number): number {
+  return offset - (column - 1);
+}
+
+/**
+ * Where a statement goes when it goes **above** another one — `M213` `S3`.
+ *
+ * **NOT THE ANCHOR'S OWN LINE, BECAUSE A COMMENT ABOVE IT BELONGS TO IT.** `readNotes` gives a
+ * block of comment lines to the next line of code, blanks crossed (`D1077`); splicing between the
+ * two hands the note to the new statement and leaves the one it was written about with none. On
+ * this corpus that is 1247 notes' worth of hazard for one insertion point.
+ *
+ * So the walk goes up over comment and blank lines and stops at the first line that is neither —
+ * which needs no floor of its own, because every thing that could be above is one: a previous
+ * step, a `run … iterations` workload line, or the declaration's own `test "…"`. The file's header
+ * block cannot be reached from inside a body for the same reason.
+ */
+function aboveStep(source: string, lineStart: number): number {
+  let at = lineStart;
+  while (at > 0) {
+    const previousEnd = at - 1; // the `\n` that ends the line above
+    const previousStart = source.lastIndexOf('\n', previousEnd - 1) + 1;
+    const text = source.slice(previousStart, previousEnd).trim();
+    if (text !== '' && !text.startsWith('#')) return at;
+    at = previousStart;
+  }
+  return at;
+}
+
 function backOverWhitespace(source: string, offset: number): number {
   let i = Math.min(offset, source.length);
   while (i > 0 && /\s/.test(source[i - 1]!)) i -= 1;
@@ -263,7 +382,28 @@ export type Replacement =
   /** One `import` or `use` line of the file. `index` at the end of the list appends; `null`
    *  removes. A file with none gets its first one above the first line of code, which is where the
    *  grammar wants it and below the file's own header comment, which is where a reader wants it. */
-  | { readonly kind: 'file'; readonly what: 'import' | 'use'; readonly index: number; readonly node: ImportDecl | UseDecl | null };
+  | { readonly kind: 'file'; readonly what: 'import' | 'use'; readonly index: number; readonly node: ImportDecl | UseDecl | null }
+  /**
+   * **Take these steps out of this declaration** — `M214` `A4` (`D1117`).
+   *
+   * The gesture Compose had for a header, a subset entry, a threshold and a table row and had for
+   * **nothing a person actually writes**: not a request, not an assertion, not a `let`. Four
+   * rounds of authoring shipped with no way to unwrite a line.
+   *
+   * It takes a **list** rather than one index, and that is the shape the language forces rather
+   * than a convenience. Removing a request has to remove the statements attached to it in the same
+   * edit: `body` means *the last response*, so an `expect` left behind after its request is gone
+   * silently reads a different one and may well pass. One edit, or a file that is wrong between two
+   * of them.
+   *
+   * A step's **note goes with it**. `D1077` makes a comment a note *on* the line below it, so a
+   * note whose owner has been deleted explains nothing and belongs to whatever moves up into its
+   * place — which is the one outcome worse than losing it.
+   */
+  | { readonly kind: 'remove'; readonly decl: number; readonly steps: readonly number[] }
+  /** A whole declaration, its header, its tags, its body and its note. `D1117`'s other half: the
+   *  sequence column's first row is the test, so the test has a `✕` like everything under it. */
+  | { readonly kind: 'removeDecl'; readonly decl: number };
 
 /**
  * What a note is a note **on** (`D1077`, widened by `M210` `S5`).
@@ -315,6 +455,8 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
   if (replacement.kind === 'threshold') return replaceThreshold(text, declarations, replacement);
   if (replacement.kind === 'file') return replaceFileDecl(text, program, replacement);
   if (replacement.kind === 'note') return replaceNote(text, declarations, replacement.owner, replacement.lines);
+  if (replacement.kind === 'remove') return removeSteps(text, declarations, replacement.decl, replacement.steps);
+  if (replacement.kind === 'removeDecl') return removeDeclaration(text, declarations, replacement.decl);
 
   const decl = declarations[replacement.path.decl];
   if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.path.decl}` };
@@ -515,4 +657,91 @@ function replaceFileDecl(text: string, program: Program, replacement: { readonly
   const first = records.find((r) => r.kind === 'code');
   const at = first ? first.line : 1;
   return spliceLines(text, at, at, [...printed.lines, '']);
+}
+
+
+// ---- `M214` `A4` — taking something out ---------------------------------------------------
+
+/** Which line an offset is on. One count over the text rather than a second index: the lexer's own
+ *  line records are keyed by line and this question goes the other way. */
+function lineAt(text: string, offset: number): number {
+  let line = 1;
+  const stop = Math.min(offset, text.length);
+  for (let i = 0; i < stop; i += 1) if (text[i] === '\n') line += 1;
+  return line;
+}
+
+/**
+ * The run of lines one node occupies, **its note included**.
+ *
+ * Two corrections are baked in and both were paid for elsewhere in this module. A span runs to the
+ * start of whatever follows it, so the trailing whitespace is walked back off the end before the
+ * last line is read — `replaceInSource` learned that on `api POST /orders` with an indented
+ * `header` block, where cutting through the span glued the next statement onto the printed one.
+ * And the note above is found by `replaceNote`'s own walk — up over blank lines, then up over the
+ * contiguous comment block — because **127 of the corpus's 419 blocks have a blank line under
+ * them** and a walk that stopped at the first non-comment would leave every one of those behind.
+ *
+ * `floor` is where the walk may not go: a statement may not claim the note on the `test` above it.
+ */
+function lineRun(text: string, byLine: ReadonlyMap<number, { kind: string }>, span: Span, floor: number): { from: number; to: number } {
+  let end = span.end.offset;
+  while (end > span.start.offset && /\s/.test(text[end - 1] ?? '')) end -= 1;
+  const last = lineAt(text, Math.max(end - 1, span.start.offset));
+  let first = span.start.line;
+  let above = first - 1;
+  while (above > floor && byLine.get(above)?.kind === 'blank') above -= 1;
+  while (above > floor && byLine.get(above)?.kind === 'comment') {
+    first = above;
+    above -= 1;
+  }
+  return { from: first, to: last + 1 };
+}
+
+/** Drop several line runs in ONE pass and put the result through the module's own gate.
+ *
+ *  One pass rather than a splice each, because every splice reformats and every reformat moves the
+ *  lines the next range was measured against — the class of defect `D1080` records one level up,
+ *  where an edit moved the request the address was naming. The ranges are measured against one
+ *  text and applied to that same text. */
+function dropLines(text: string, ranges: readonly { from: number; to: number }[]): InsertResult {
+  const cut = new Set<number>();
+  for (const r of ranges) for (let line = r.from; line < r.to; line += 1) cut.add(line);
+  const kept = text.split('\n').filter((_, i) => !cut.has(i + 1));
+  const out = format(kept.join('\n'));
+  if (!out.ok) return { ok: false, reason: `the edit does not lex: ${out.reason ?? 'unknown'}` };
+  const check = parseSource(out.formatted);
+  const broke = check.diagnostics.find((d) => d.severity === 'error');
+  if (broke) return { ok: false, reason: `the edit does not parse: ${broke.code} at line ${broke.span.start.line}` };
+  return { ok: true, text: out.formatted };
+}
+
+function removeSteps(text: string, declarations: readonly (TestDecl | HookDecl)[], index: number, steps: readonly number[]): InsertResult {
+  const decl = declarations[index];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${index}` };
+  if (steps.length === 0) return { ok: false, reason: 'nothing was named for removal' };
+  const { lines: records } = lex(text);
+  const byLine = new Map(records.map((r) => [r.line, { kind: r.kind as string }]));
+  /* The floor is the declaration's own first line: a statement's note may sit above blank lines
+     but never above the `test` keyword, where it would be the declaration's note instead. */
+  const floor = decl.span.start.line;
+  const ranges: { from: number; to: number }[] = [];
+  for (const step of steps) {
+    const node = decl.body[step];
+    if (!node) return { ok: false, reason: `that declaration has no step ${step}` };
+    ranges.push(lineRun(text, byLine, node.span, floor));
+  }
+  return dropLines(text, ranges);
+}
+
+function removeDeclaration(text: string, declarations: readonly (TestDecl | HookDecl)[], index: number): InsertResult {
+  const decl = declarations[index];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${index}` };
+  const { lines: records } = lex(text);
+  const byLine = new Map(records.map((r) => [r.line, { kind: r.kind as string }]));
+  /* **Line 1 is the floor, and it is the file's header rather than this declaration's note.**
+     `readNotes` gives a block starting on line 1 to the file and to nobody else — 118 of 139 files
+     open with one — so a declaration that walks onto it would take the file's header out with the
+     first test. */
+  return dropLines(text, [lineRun(text, byLine, decl.span, 1)]);
 }

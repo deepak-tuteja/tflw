@@ -6,6 +6,7 @@
 // door you are in narrows what the project pane lists and what "new test" will scaffold; it never
 // narrows what a test shows (`D1044`).
 
+import type { ReactNode } from 'react';
 import { DOORS, countByDoor } from './doors';
 import type { Lens, ProjectView } from './contract';
 
@@ -13,9 +14,16 @@ export interface DoorBarProps {
   readonly project: ProjectView;
   readonly door: Lens;
   readonly onDoor: (door: Lens | null) => void;
+  /** The theme switcher (`M213` `S0`), as an opaque node — the same arrangement `ApiForm` gets
+   * `runPane` through. It is seated here rather than above because **this bar is a row that already
+   * exists**: given its own row it cost every page ~20 px of height, and the page gate caught that
+   * immediately — LOAD's Compose is the one form measured at exactly one screen, and it went to 920
+   * while BROWSER's stayed at 900. Chrome that pushes the product down the page is not free, and
+   * the cheapest place to put a control is a row that is already there. */
+  readonly themePick?: ReactNode;
 }
 
-export function DoorBar({ project, door, onDoor }: DoorBarProps) {
+export function DoorBar({ project, door, onDoor, themePick }: DoorBarProps) {
   const counts = countByDoor(project);
   return (
     <nav className="doorbar" data-doorbar={door}>
@@ -37,6 +45,7 @@ export function DoorBar({ project, door, onDoor }: DoorBarProps) {
           </span>
         </button>
       ))}
+      {themePick}
     </nav>
   );
 }
