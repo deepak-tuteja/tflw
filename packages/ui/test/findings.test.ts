@@ -63,7 +63,16 @@ test('rows with no fingerprint need no special rule — they merge when identica
   assert.equal(groupIdentical([seeded, other]).length, 2);
 });
 
-test('the first occurrence is the one kept, so the report\'s own order survives', () => {
+// This gates **group order**, not which occurrence is kept — and the difference matters, because
+// the `S6` mutation sweep's one survivor was `keep the last occurrence instead of the first` and
+// this test does not kill it. It cannot: two rows only group when their keys are equal, the key is
+// the whole row, and equal keys mean equal `JSON.stringify` output — so the row that is dropped and
+// the row that is kept are indistinguishable to every reader. The mutation is **equivalent over the
+// only input this function has**, which is parsed `results.json`. It becomes observable exactly
+// where JSON cannot go — `undefined` against `null`, `NaN`, `-0` — and a gate built on those would
+// be asserting a shape the corpus cannot produce, which is the vacuity this repository keeps
+// filing rather than the coverage it looks like. Recorded, not gated.
+test('groups come out in first-appearance order, so the report\'s own order survives', () => {
   const first = { ...base, detail: 'first' };
   const second = { ...base, detail: 'second' };
   assert.deepEqual(groupIdentical([first, second, first]).map((g) => g.f.detail), ['first', 'second']);
