@@ -166,7 +166,7 @@ function afterLead(lead: string, text: string): string {
   return text.startsWith(`${lead} `) ? text.slice(lead.length + 1) : text;
 }
 
-function SeqRow({ line, selected, onLine, kind, lead, text, trailing, indent, statement, door, band, refusal }: {
+function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, indent, statement, door, band, refusal }: {
   readonly line: number;
   readonly selected: boolean;
   readonly onLine: (line: number) => void;
@@ -174,6 +174,10 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, indent, st
   readonly lead: ReactNode;
   readonly text: string;
   readonly trailing: ReactNode;
+  /** **`+` — a new request after this one** (`D1137`). Its own slot rather than part of `trailing`
+   *  because only one kind of row has it: `D1138`'s unit is a request and its attachments, and
+   *  *a new request after this `expect`* names nothing the language can honour. */
+  readonly plus?: ReactNode;
   readonly indent?: boolean;
   /** The statement this row is, when it is one — the row carries **whose** it is (`D1078`). A step
    *  from another door is drawn in position and locked, never dropped and never bucketed at the
@@ -228,6 +232,7 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, indent, st
           {DOOR_BY_ID[statement.lens].label}
         </a>
       ) : null}
+      {plus}
       {trailing}
       {refusal === undefined || refusal === null ? null : <Refusal held={refusal} onLine={onLine} />}
     </li>
@@ -250,6 +255,38 @@ function Remove({ what, onGo, refusal, onClear }: {
   return (
     <button type="button" className={`seq-x${refusal ? ' refused' : ''}`} onClick={refusal ? onClear : onGo} data-tip={refusal ? 'dismiss' : `remove this ${what}`} data-seq-remove={what} aria-label={`remove this ${what}`}>
       ✕
+    </button>
+  );
+}
+
+/**
+ * **`+` — a new request after this one** (`M217` `B`, `D1137`, `D1138`).
+ *
+ * It sits beside the `✕` because it is the same kind of thing: a gesture that belongs to one row
+ * and acts on the sequence. `M216` gave that slot its chrome; this adds the other half of it, so a
+ * request row can now say *one more like this, here* as well as *not this one*.
+ *
+ * **It is always drawn, never revealed on hover** (`D1140`). A control only a pointer can reach is
+ * a control some readers do not have — `Grip.tsx` says so in its own docstring — and the reason
+ * this exists at all is that nobody could find where a request comes from.
+ *
+ * The label says **after**, because that is the whole decision: a request goes in after this one
+ * *and the statements attached to it*, so nothing below changes which response it reads.
+ */
+function Plus({ onGo, after }: {
+  readonly onGo: () => void;
+  readonly after: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="seq-plus"
+      onClick={onGo}
+      data-seq-plus={after}
+      data-tip={`a new request after ${after} — below everything that reads its response, so nothing here changes what it asserts about`}
+      aria-label={`add a request after ${after}`}
+    >
+      +
     </button>
   );
 }
@@ -444,6 +481,15 @@ export interface ApiComposePaneProps {
   readonly onCapture: ((request: OutlineRequest, specs: readonly CaptureSpec[]) => void) | null;
   readonly onAdd: ((decl: OutlineTest, key: string) => void) | null;
   readonly adds: readonly AddGesture[];
+  /**
+   * **`+` on a request row** — `M217` `B` (`D1137`, `D1138`): a new request *after this one and
+   * the statements attached to it*. The foot's `+ request` still means *at the end*, and on the
+   * last request of a body the two are the same edit.
+   */
+  readonly onAddAfter: ((decl: OutlineTest, request: OutlineRequest) => void) | null;
+  /** Bumped by every create gesture that lands (`D1136`). The pane focuses the first field of
+   *  whatever opened; a counter rather than a line, because the same line can be landed on twice. */
+  readonly made: number;
   /** `D1117` — take these steps out of this declaration. The pane runs the dependency scan and
    *  never calls this while anything is holding one of them. */
   readonly onRemoveSteps: ((decl: OutlineHook | OutlineTest, steps: readonly number[]) => void) | null;
@@ -489,7 +535,7 @@ function readSplit(): number {
 }
 
 export function ApiComposePane(props: ApiComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, onVerify, onCapture, onAdd, adds, onRemoveSteps, onRemoveDecl, dirty, busy, problem, onWrite, onDiscard, door, tab, onEditorTab: setTab } = props;
+  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, onVerify, onCapture, onAdd, adds, onAddAfter, made, onRemoveSteps, onRemoveDecl, dirty, busy, problem, onWrite, onDiscard, door, tab, onEditorTab: setTab } = props;
 
   const selected = useMemo(() => selectedAt(at, focusLine), [at, focusLine]);
   /** Which request's verdicts and response are in hand. A statement's are its request's. */
@@ -526,6 +572,53 @@ export function ApiComposePane(props: ApiComposePaneProps) {
    *  reason recorded there: a remembered 620 px on a 700 px window is a response with no editor. */
   const [seqWidth, setSeqWidth] = useState<number>(() => storedWidth(COMPOSE));
   const column = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * **The cursor lands in the first field of whatever a create gesture opened** — `M217` `A`
+   * (`D1136`).
+   *
+   * `ComposeDoor` has already moved the address, so by the time this runs the editor beside the
+   * sequence is showing the new statement. What is left is the half a reader notices: a request
+   * whose `path` is `/` and a `let` whose value is the literal string `"change me"` are both
+   * placeholders, and a placeholder you have to go and click is a placeholder that gets left.
+   *
+   * **The first field, not a named one.** A rule that named `.request-path` would be right for one
+   * of the three gestures and silently wrong for the others, and would have to be revisited every
+   * time the editor's first control changes — which `M214` and `M215` both did. The editor's own
+   * DOM order is the answer to *what does a reader type into first*.
+   *
+   * `made` is a counter, so adding the same statement twice in a row fires this twice; a key of
+   * the line would not. `select()` rather than a bare focus, because every one of these values is
+   * a placeholder meant to be replaced rather than appended to.
+   */
+  /**
+   * **`focusLine` is read here and is deliberately NOT a dependency**, and the first draft got this
+   * wrong in a way worth recording: with `[made, focusLine]` the effect re-ran on every selection
+   * change once anything had ever been created, so from then on **clicking any row in the sequence
+   * yanked focus into the editor and selected its text**. The trigger is *a create landed*, which
+   * `made` alone says; the line is only how the effect finds what landed.
+   */
+  const landedAt = useRef<number | null>(focusLine);
+  landedAt.current = focusLine;
+
+  useEffect(() => {
+    if (made === 0) return;
+    /* The row first, because the column scrolls inside itself (`D1110`) and a test of thirteen
+       requests puts a new one below the fold — the selection highlight is on a row nobody can
+       see. `block: 'nearest'` so a row already in view does not jump. */
+    if (landedAt.current !== null) {
+      column.current?.ownerDocument
+        .querySelector(`.seq-col [data-seq-line="${landedAt.current}"]`)
+        ?.scrollIntoView({ block: 'nearest' });
+    }
+    const field = column.current?.querySelector<HTMLElement>(
+      '.editor input:not([type="checkbox"]):not([disabled]), .editor textarea:not([disabled])',
+    );
+    if (field === null || field === undefined) return;
+    field.focus();
+    if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.select();
+  }, [made]);
+
   const dragging = useRef(false);
 
   /** The divider. `pointermove` on the window rather than on the handle, because a pointer that
@@ -704,6 +797,11 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                         }
                         text={r.path}
                         refusal={refusalFor(r.line)}
+                        plus={
+                          onAddAfter === null || decl.kind !== 'test' ? null : (
+                            <Plus onGo={() => onAddAfter(decl, r)} after={`${r.method} ${r.path}`} />
+                          )
+                        }
                         trailing={
                           onRemoveSteps === null ? null : (
                             <Remove what="request" onGo={() => remove(decl, r.line, requestRemoval(r))} refusal={refusalFor(r.line)} onClear={clearRefusal} />

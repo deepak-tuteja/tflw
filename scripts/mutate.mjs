@@ -3813,9 +3813,9 @@ const REGISTRY = [
     milestone: 'm212',
     pkg: 'tflw',
     file: 'packages/ui/src/NewThing.tsx',
-    what: "`D1087`'s create undone: a new file is PUT with the OPEN file's `If-Match`, which the route reads as *replace this* — so the create the page never had goes back to not having one, by one argument",
-    find: "    const put = await putFile(target, built.text, mode === 'file' ? null : openEtag);",
-    replace: '    const put = await putFile(target, built.text, openEtag);',
+    what: "`D1087`'s create undone: a new file is PUT **under an `If-Match`**, which the route reads as *replace this* rather than *make this* — so the create the page never had goes back to not having one, by one argument. **`M217` `C` moved the line this quotes and not the claim it makes**: `D1141` made a new TEST stage into the pending buffer instead of writing, so the dialog's only `putFile` is the file mode's and its `null` is the whole of the create. The etag it used to read is gone with the prop, so the mutation supplies one.",
+    find: "    const put = await putFile(target, built.text, null);",
+    replace: '    const put = await putFile(target, built.text, \'"not-this-file"\');',
   },
 ];
 

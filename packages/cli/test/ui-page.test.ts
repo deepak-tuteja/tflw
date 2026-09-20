@@ -224,7 +224,7 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
     assert.equal(await row.count(), 1, `file ${f.path} listed once`);
     // `D1061` — a row is a file, named by its LEAF. The 55-character path repeated under every
     // folder it shares is what made 378 of the sibling's 389 rows wrap.
-    assert.equal(await row.locator('> .file-row > code').textContent(), f.path.split('/').pop());
+    assert.equal(await row.locator('.file-row > code').textContent(), f.path.split('/').pop());
     // `D1063` + `D1068` — the door is a count and the count has three states.
     const behind = f.tests.filter((t) => t.lenses.includes('api')).length + f.crawls.filter((c) => c.lenses.includes('api')).length;
     const total = f.tests.length + f.crawls.length;
@@ -240,7 +240,7 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
     // class, and `.file-row` is a `<button>` whose `color: inherit` beat the global `.muted` rule
     // at equal specificity — so every one of these rows was classed correctly and drawn identically,
     // and the gate said so for two slices. The class is the label; the colour is the artifact.
-    const paint = await row.locator('> .file-row').evaluate((el) => {
+    const paint = await row.locator('.file-row').evaluate((el) => {
       const cs = el.ownerDocument.defaultView!.getComputedStyle(el);
       return { row: cs.color, name: el.ownerDocument.defaultView!.getComputedStyle(el.querySelector('code')!).color };
     });
@@ -1260,13 +1260,13 @@ test('a fragment file is in the tree, reads `—`, and is not dimmed', async () 
     const fCount = fragment.locator('[data-door-count]');
     assert.equal(await fCount.getAttribute('data-door-count-state'), 'fragment');
     assert.equal(await fCount.textContent(), '—');
-    assert.doesNotMatch((await fragment.locator('> .file-row').getAttribute('class'))!, /\bmuted\b/, 'a fragment declares nothing by nature and is not dimmed for it');
+    assert.doesNotMatch((await fragment.locator('.file-row').getAttribute('class'))!, /\bmuted\b/, 'a fragment declares nothing by nature and is not dimmed for it');
 
     const withTests = fresh.locator('[data-file="api.tflw"]');
     const wCount = withTests.locator('[data-door-count]');
     assert.equal(await wCount.getAttribute('data-door-count-state'), 'none');
     assert.equal(await wCount.textContent(), '0');
-    assert.match((await withTests.locator('> .file-row').getAttribute('class'))!, /\bmuted\b/, 'has tests, none behind this door — dimmed');
+    assert.match((await withTests.locator('.file-row').getAttribute('class'))!, /\bmuted\b/, 'has tests, none behind this door — dimmed');
 
     // And on the door it IS behind, the same row counts.
     await fresh.goto(`${base}/#/api`);
@@ -1304,7 +1304,7 @@ test('a long name at depth is one line and an ellipsis, with the whole path in r
     await fresh.goto(`http://127.0.0.1:${port}/#/api`);
     await fresh.locator('[data-files]').waitFor();
 
-    const row = fresh.locator(`[data-file="${deep}"] > .file-row`);
+    const row = fresh.locator(`[data-file="${deep}"] .file-row`);
     const box = (await row.boundingBox())!;
     const lineHeight = Number(await row.evaluate((el) => parseFloat(el.ownerDocument.defaultView!.getComputedStyle(el).lineHeight)));
     assert.ok(box.height <= lineHeight + 8, `the row is one line (${box.height} against a ${lineHeight} line)`);
@@ -4180,6 +4180,13 @@ test('a test written from Compose appears in the Source index without a reload',
     if (await fresh.locator('[data-new-create]').isDisabled()) assert.fail(`the dialog cannot write: ${await fresh.locator('[data-new-problem]').textContent()}`);
     await fresh.locator('[data-new-create]').click();
     await fresh.locator('[data-new-thing]').waitFor({ state: 'detached' });
+    // **`M217` `C` (`D1141`) put a Save here, and the claim above it is unchanged.** The dialog
+    // used to `PUT` — the only gesture on the pane that wrote straight to the file, which is how it
+    // came to build from the bytes on disk while the author was looking at a buffer (`M217-01`). It
+    // now stages like everything else, so the file this gate reads is written by the same Save that
+    // writes a `+ request`.
+    await fresh.locator('[data-compose-write]').click();
+    await fresh.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
 
     // No reload — the tab is pressed, and the index is what the shell re-read.
     await fresh.locator('[data-tab="source"]').click();
@@ -4621,6 +4628,11 @@ test('a new test goes into the open file through the same builders the pane’s 
     await fresh.locator('[data-new-path]').fill('/b/{id}');
     await fresh.locator('[data-new-create]').click();
     await fresh.locator('[data-new-thing="test"]').waitFor({ state: 'detached' });
+    // `M217` `C` (`D1141`) — a new test lands in the pending buffer and one Save writes it, so
+    // that is now where the bytes come from. The claim being graded is untouched: what the dialog
+    // built is what Compose reads back, clause for clause, through one construction path.
+    await fresh.locator('[data-compose-write]').click();
+    await fresh.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
 
     const onDisk = await readFile(join(dir, 'one.tflw'), 'utf8');
     assert.match(onDisk, /^# this comment must survive$/m, 'the file was spliced, not rewritten');
@@ -5184,7 +5196,10 @@ test("the explorer's outline opens under the open file's row and under no other"
     const openRow = doc.querySelector(`[data-file-row="${path}"]`);
     const owner = outlines[0]?.closest('li')?.querySelector('[data-file-row]')?.getAttribute('data-file-row');
     const fileLeft = openRow?.getBoundingClientRect().left ?? 0;
-    const declBtn = outlines[0]?.querySelector('[data-outline-decl] > button');
+    // `.outline-row` rather than `> button` since `M217` `D`: a declaration row is now a flex pair
+    // holding the row and its `+`, because a `<button>` cannot contain another one. Naming the
+    // class asks about the row itself rather than about where it sits in the tree.
+    const declBtn = outlines[0]?.querySelector('[data-outline-decl] .outline-row');
     const reqBtn = outlines[0]?.querySelector('[data-outline-request] button');
     return {
       count: outlines.length,
@@ -7330,5 +7345,456 @@ test('`M216` `E`: the Compose columns are the reader’s too, by the same grip (
     assert.equal(await seqWidth(), 220);
     // And the project pane is untouched by any of it, which is what *its own key* buys.
     assert.equal(await p.locator('.sidebar').evaluate((el) => Math.round(el.getBoundingClientRect().width)), 320);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `M217` — the create gestures.
+//
+// Three asks, each from a screenshot: a `+` beside a file in the explorer, a `+` beside a test,
+// and a dialog for `+ request` because *"upon its click it just add empty GET at the end which is
+// a bit confusing"*. Measuring the page before scoping changed two of the three.
+//
+// **`+ request` was not only missing a dialog — it pointed at nothing.** Pressed on the test at
+// `L41` of the example it spliced a request in and then moved *nothing*: the hash stayed put,
+// `data-seq-open` stayed null, the editor went on showing the declaration, focus stayed on the
+// button. The new request was the fourteenth row of a list, below nine `expect`s. `+ let` was
+// worse, because what it writes is a placeholder asking to be typed over.
+//
+// **And "after" turned out to be the load-bearing word.** `body` means *the last response*, so a
+// request spliced on the literal next line re-points every assertion under it until the next
+// request. Parsed over `examples/storefront`: **19 requests, 19 with statements attached, 47 of
+// those 49 statements read the response.** There is no request in that project where the next line
+// is a safe place to put another one — so `D1138` reads "after" as *after the request and its
+// attachments*, and the hazard stops existing rather than being detected.
+//
+// The gates below are round trips over what the fixture holds, never lists of names: `M214`'s
+// mutation `the-add-menu-hides-what-it-cannot-add` is this repository's own measured precedent for
+// a completeness gate freezing a pane, and this round adds controls to two lists that will grow.
+// ---------------------------------------------------------------------------
+
+/**
+ * **Every statement that reads a response, paired with the request whose response it reads.**
+ *
+ * This is the only thing an insertion can silently break, and it is the whole of `D1138`. A pair
+ * is `(what the statement says, what the request it reads says)` taken from the source itself via
+ * each node's own span, so it survives every line moving under `format` — which a splice
+ * guarantees they will.
+ *
+ * Returned as a flat list rather than a map because **duplicates are the interesting case**: the
+ * example's third test carries `expect status equals 201` twice, under two different requests, and
+ * a map would silently keep one of them. Multiset containment is what the gate then asserts.
+ */
+function responseReaders(text: string): string[] {
+  const { program } = parseSource(text);
+  const slice = (span: { start: { offset: number }; end: { offset: number } }): string =>
+    text.slice(span.start.offset, span.end.offset).replace(/\s+/g, ' ').trim();
+  const pairs: string[] = [];
+  for (const t of program.tests) {
+    let reading = '(nothing has run yet)';
+    for (const s of t.body) {
+      if (s.type === 'ApiStep' || s.type === 'WaitUntilApiStmt') {
+        reading = slice(s.span);
+        continue;
+      }
+      // `checker.ts`'s own `stepReadsResponse` set: an assertion on a response subject, every
+      // capture, and `csrf from`. Spelled out rather than imported because the export is internal
+      // to the checker, and a gate that drifts from it is a gate that stops asking the question.
+      // (`check` is not in it: the language spells a soft assertion `expect … softly`, so it is an
+      // `ExpectStmt` — `tsc` said so, which is the third time this file has been corrected by the
+      // type of a node rather than by a test.)
+      if (s.type === 'ExpectStmt' || s.type === 'CaptureStmt' || s.type === 'CsrfStmt') {
+        pairs.push(`${t.name} ▸ ${slice(s.span)} ▸ reads ▸ ${reading}`);
+      }
+    }
+  }
+  return pairs;
+}
+
+/** Is every pair in `before` still present in `after`, counting duplicates? The one-directional
+ *  question is deliberate: an insertion is *allowed* to add pairs and never to change one. */
+function keepsEveryReader(before: readonly string[], after: readonly string[]): string | null {
+  const left = [...after];
+  for (const pair of before) {
+    const i = left.indexOf(pair);
+    if (i < 0) return pair;
+    left.splice(i, 1);
+  }
+  return null;
+}
+
+/**
+ * **Open an address with nothing pending.**
+ *
+ * `page.goto` to a URL differing only in its hash does not reload, and since `D1142` a draft lives
+ * in memory for the life of the page — so a gate that presses a gesture, navigates "back" and
+ * presses another was measuring the two of them together. Both `B1` and `B3` failed on exactly
+ * that, which is this round's own feature breaking this round's own gates: before `M217` the
+ * buffer was cleared by opening any file, so the leak could not happen and nothing had to say so.
+ */
+const openClean = async (p: Page, url: string): Promise<void> => {
+  await p.goto(url);
+  await p.reload();
+};
+
+/** A project of several files, served — the sidebar gates need more than one. */
+const withProjectFixture = async (
+  files: Readonly<Record<string, string>>,
+  run: (page: Page, base: string, dir: string) => Promise<void>,
+): Promise<void> => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m217-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    for (const [name, body] of Object.entries(files)) {
+      // Nested paths are supported because the indentation a folder costs is part of what the
+      // sidebar gates measure — a root-level file gets the whole pane and a real project's do not.
+      if (name.includes('/')) await mkdir(dirname(join(dir, name)), { recursive: true });
+      await writeFile(join(dir, name), body);
+    }
+    const port = await ui.listen(0);
+    await run(fresh, `http://127.0.0.1:${port}`, dir);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+/**
+ * A test shaped like the ones the hazard was measured on: **every request carries statements that
+ * read it**, and one statement's binding is interpolated by a later request, which is the case
+ * where a re-pointed reader stops being a wrong assertion and becomes a wrong *request*.
+ */
+const CHAINED = [
+  'test "a chain of three"',
+  '  api POST /baskets',
+  '  expect status equals 201',
+  '  capture body.id as basketId',
+  '  api POST /orders/checkout body { basketId: "{basketId}" }',
+  '  expect status equals 201',
+  '  expect body.total equals 3060',
+  '  api GET /orders/{basketId}',
+  '  expect status equals 200',
+  '',
+].join('\n');
+
+test('`M217` `A1`: a create gesture opens what it made, and puts the cursor in it (`D1136`)', async () => {
+  // **The three foot gestures share one defect and one shape**, so they share one gate. Fixing the
+  // one that was complained about and leaving the other two would have made the inconsistency the
+  // reader's problem — and `+ let` is the worst of them, because `let value = "change me"` is a
+  // placeholder that asks to be typed over and then leaves you looking somewhere else.
+  await withRemovalFixture(CHAINED, async (p, base) => {
+    for (const gesture of ['request', 'let', 'wait'] as const) {
+      await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+      await p.locator(`[data-seq-add="${gesture}"]`).click();
+      await p.locator('[data-compose-dirty]').waitFor();
+
+      // The address moved, and it moved to a line that is now the selected row.
+      const line = new URL(p.url()).hash.match(/\/L(\d+)$/)?.[1] ?? null;
+      assert.ok(line !== null, `${gesture}: the address names a line (${p.url()})`);
+      assert.equal(
+        await p.locator(`[data-seq-line="${line}"]`).getAttribute('data-seq-selected'),
+        'yes',
+        `${gesture}: and the row at that line is the selected one`,
+      );
+
+      // The editor is showing the thing, not the declaration it went into.
+      assert.notEqual(
+        await p.locator('[data-editor]').getAttribute('data-editor'),
+        'test',
+        `${gesture}: the editor left the declaration for what was just made`,
+      );
+
+      // And the cursor is in a field of it. **The first field, whichever it is** — naming
+      // `.request-path` would be right for one of the three and silently wrong for the others.
+      //
+      // Asked through a locator rather than `document.activeElement`, because `tsconfig.test.json`
+      // pins `types: ["node"]` with no DOM lib and `document` is not a name here — this file's own
+      // `S1` finding, met for the fourth time. `.editor :focus` asks both halves at once: it
+      // matches only if something is focused AND it is inside the editor.
+      assert.equal(await p.locator('.editor :focus').count(), 1, `${gesture}: focus is inside the editor`);
+      const tag = await p.locator('.editor :focus').evaluate((el) => el.tagName);
+      assert.ok(['INPUT', 'TEXTAREA'].includes(tag), `${gesture}: and it is a field (${tag})`);
+
+      // **And it happens ONLY on a create.** This clause exists because the first implementation
+      // failed it: the effect listed the selected line among its dependencies, so once anything had
+      // been created, every later selection change re-ran it — and from then on **clicking any row
+      // in the sequence yanked focus into the editor and selected its text**. The trigger is *a
+      // create landed*; the line is only how the effect finds what landed. Caught by driving the
+      // page, not by the clauses above, every one of which was green.
+      const other = await p.locator('.seq-row[data-seq-selected="no"] .seq-pick').first();
+      await other.click();
+      assert.equal(await p.locator('.editor :focus').count(), 0, `${gesture}: selecting another row does not pull focus into the editor`);
+    }
+  });
+});
+
+test('`M217` `B1`: inserting a request changes no reader’s response — asked of every request (`D1138`)', async () => {
+  // **THE gate of this round.** Not *the new request landed on line N* — a line is an accident of
+  // formatting — but the property the placement exists to preserve: every statement that read a
+  // response before the edit reads the same one after it. Derived from the parse, so a fixture
+  // that grows a request grows the gate.
+  await withRemovalFixture(CHAINED, async (p, base, dir) => {
+    const before = responseReaders(await readFile(join(dir, 'x.tflw'), 'utf8'));
+    // An equality, not a floor: a floor here would stay green if the fixture lost a reader, and a
+    // fixture with fewer readers is a weaker question asked with the same confidence.
+    assert.equal(before.length, 5, `the fixture's readers (${before.join(' | ')})`);
+
+    const requests = await p.evaluate(() => 0).then(async () => {
+      await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+      await p.locator('[data-seq-plus]').first().waitFor();
+      return p.locator('[data-seq-plus]').evaluateAll((els) => els.map((e) => e.getAttribute('data-seq-plus')!));
+    });
+    assert.equal(requests.length, 3, `one \`+\` per request (${requests.join(' · ')})`);
+
+    for (const after of requests) {
+      await openClean(p, `${base}/#/api/compose/x.tflw/L1`);
+      await p.locator(`[data-seq-plus="${after}"]`).click();
+      await p.locator('[data-compose-dirty]').waitFor();
+
+      // **Read the sequence BEFORE leaving for Source**, which unmounts the column (`M205` `S5a`'s
+      // rule, met again): read afterwards it comes back `[]`, and `deepEqual` then reports a
+      // placement failure rather than a gate looking at the wrong tab.
+      const order = await p.locator('[data-seq-plus]').evaluateAll((els) => els.map((e) => e.getAttribute('data-seq-plus')!));
+
+      await p.locator('[data-tab="source"]').click();
+      await p.locator('[data-source="pending"]').waitFor();
+      const pending = (await p.locator('[data-preview]').textContent())!;
+
+      const lost = keepsEveryReader(before, responseReaders(pending));
+      assert.equal(lost, null, `+ after \`${after}\`: this reader changed what it reads — ${lost}`);
+      // And the thing was actually inserted, so the assertion above is not vacuously true of a
+      // gesture that did nothing.
+      assert.equal(responseReaders(pending).length, before.length + 1, `+ after \`${after}\`: one new reader, and one only`);
+
+      // **It landed WHERE IT WAS PRESSED**, and this clause exists because the mutation sweep
+      // walked straight through the two above it: swapping `stepsAfter` for `steps` — appending at
+      // the foot of the body, wherever you pressed — re-points nothing and adds exactly one
+      // reader, so *no reader changed* stayed true and *the request is after this one* was never
+      // asked. **A property that is necessary is not thereby sufficient.** The order is read off
+      // the page's own list of `+`s, so it needs no line numbers.
+      const at = requests.indexOf(after);
+      assert.deepEqual(
+        order,
+        [...requests.slice(0, at + 1), 'GET /', ...requests.slice(at + 1)],
+        `+ after \`${after}\`: the new request is directly below the one that was pressed`,
+      );
+    }
+  });
+});
+
+test('`M217` `B2`: the `+` is on requests and nowhere else (`D1137`, `D1144`)', async () => {
+  // A round trip over the DOM's own two answers to *which rows are requests*, so neither side is a
+  // list anybody maintains. `data-stmt` is absent on exactly the request rows — that is what the
+  // sequence column already uses to mark a statement — and `[data-seq-plus]` must agree with it.
+  await withRemovalFixture(CHAINED, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+    await p.locator('[data-seq-plus]').first().waitFor();
+    const rows = await p.locator('.seq-row').evaluateAll((els) =>
+      els.map((e) => ({
+        line: e.getAttribute('data-seq-line')!,
+        kind: e.getAttribute('data-seq-row')!,
+        plus: e.querySelector('[data-seq-plus]') !== null,
+      })));
+    for (const r of rows) {
+      const isRequest = r.kind === 'request' || r.kind === 'wait';
+      assert.equal(r.plus, isRequest, `line ${r.line} (${r.kind}): a \`+\` belongs to a request row and to no other`);
+    }
+    assert.ok(rows.some((r) => !r.plus), 'and some row does not have one, so the claim above is not vacuous');
+  });
+});
+
+test('`M217` `B3`: the last request’s `+` and the foot’s `+ request` write the same bytes', async () => {
+  // **The gate that catches `stepsAfter` and `steps` diverging.** *After the last request and its
+  // attachments* and *at the end of the body* are the same place by construction, so the two
+  // controls must produce byte-identical files — and the mutation that swaps one splice for the
+  // other has to redden HERE and not in `B1`, because appending at the foot never re-points
+  // anything and `B1` would stay green.
+  await withRemovalFixture(CHAINED, async (p, base) => {
+    const bytes = async (press: string): Promise<string> => {
+      await openClean(p, `${base}/#/api/compose/x.tflw/L1`);
+      await p.locator(press).click();
+      await p.locator('[data-compose-dirty]').waitFor();
+      await p.locator('[data-tab="source"]').click();
+      await p.locator('[data-source="pending"]').waitFor();
+      return (await p.locator('[data-preview]').textContent())!;
+    };
+    const viaPlus = await bytes('[data-seq-plus="GET /orders/{basketId}"]');
+    const viaFoot = await bytes('[data-seq-add="request"]');
+    assert.equal(viaPlus, viaFoot, 'the last row’s `+` and the foot’s `+ request` are the same edit');
+  });
+});
+
+test('`M217` `C1`: the create dialog previews the bytes that land, pending edits included (`D1141`)', async () => {
+  // **`D1087` claims this about the dialog and it was false about the page.** The dialog built
+  // from `openFileView.text` — the copy on disk — so with anything pending it previewed and wrote
+  // a file that was not the one the author was looking at, then left a stale buffer behind that
+  // the next Save would have put back over the new test.
+  await withRemovalFixture(CHAINED, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+    await p.locator('[data-seq-plus="POST /baskets"]').click();
+    await p.locator('[data-compose-dirty]').waitFor();
+
+    await p.locator('[data-compose-new-test]').click();
+    await p.locator('[data-new-name]').fill('staged beside a pending edit');
+    await p.locator('[data-new-preview]').waitFor();
+    const preview = (await p.locator('[data-new-preview]').textContent())!;
+    assert.match(preview, /capture body\.id as basketId\n\s+api GET \/\n\s+expect status equals 200/, 'the preview carries the pending request');
+    assert.match(preview, /test "staged beside a pending edit"/, 'and the test about to be made');
+
+    // **It stages; it does not write.** The file on disk is untouched, the buffer is still dirty,
+    // and the pane has grown a declaration.
+    await p.locator('[data-new-create]').click();
+    await p.locator('[data-new-thing]').waitFor({ state: 'detached' });
+    assert.doesNotMatch(await readFile(join(dir, 'x.tflw'), 'utf8'), /staged beside/, 'nothing reached the disk');
+    assert.equal(await p.locator('[data-compose-dirty]').count(), 1, 'and the buffer still holds it');
+
+    // One Save, and both halves land together — which is the thing that was impossible before.
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const written = await readFile(join(dir, 'x.tflw'), 'utf8');
+    assert.match(written, /test "staged beside a pending edit"/, 'the new test is on disk');
+    assert.match(written, /capture body\.id as basketId\n\s+api GET \/\n/, 'and so is the edit that was pending beside it');
+  });
+});
+
+test('`M217` `C2`: a draft belongs to its file and survives a look at another one (`D1142`, `D1143`)', async () => {
+  // Measured before the change, on the example: pending edit on one file, click another in the
+  // explorer — dirty gone, no prompt, nothing in the page text matching unsaved/pending/discard —
+  // click back, the edit gone. `M217` puts a `+` on every file row, which makes crossing a pending
+  // edit a one-click gesture, so that behaviour could not be shipped under it.
+  await withProjectFixture({ 'a.tflw': CHAINED, 'b.tflw': ['test "elsewhere"', '  api GET /b', '  expect status equals 200', ''].join('\n') }, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/a.tflw/L1`);
+    await p.locator('[data-seq-add="request"]').click();
+    await p.locator('[data-compose-dirty]').waitFor();
+    const rows = await p.locator('.seq-row').count();
+
+    // Away. The explorer says which file is unsaved — the set of marks IS the set of drafts, so
+    // the other file must not carry one.
+    await p.locator('[data-file-row="b.tflw"]').click();
+    await p.locator('[data-file-row="b.tflw"][data-open="yes"]').waitFor();
+    assert.equal(await p.locator('[data-compose-dirty]').count(), 0, 'the file you are looking at has nothing pending');
+    assert.deepEqual(
+      await p.locator('[data-file-unsaved]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-unsaved'))),
+      ['a.tflw'],
+      'and the explorer marks the one that does, and only it',
+    );
+
+    // Back, and the work is there.
+    await p.locator('[data-file-row="a.tflw"]').click();
+    await p.locator('[data-compose-dirty]').waitFor();
+    assert.equal(await p.locator('.seq-row').count(), rows, 'the pending edit came back with the file');
+  });
+});
+
+test('`M217` `D1`: a `+` on a file row opens THAT file’s dialog (`D1139`)', async () => {
+  // **The explorer builds nothing.** It opens the file and opens the dialog the sequence column's
+  // own button opens — which is what keeps `D1087`'s single construction path intact while adding
+  // a second place to start from. The dangerous half is timing: `setFile` and the read that
+  // follows it are not the same tick, so a dialog opened too early would splice a test into one
+  // file's name using another file's bytes, or into an empty string.
+  await withProjectFixture({ 'a.tflw': CHAINED, 'b.tflw': ['test "elsewhere"', '  api GET /b', '  expect status equals 200', ''].join('\n') }, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/a.tflw`);
+    await p.locator('li[data-file="b.tflw"] [data-row-plus="test"]').click();
+    await p.locator('[data-new-thing="test"]').waitFor();
+    assert.match((await p.locator('[data-new-thing] h3').textContent())!, /b\.tflw$/, 'the dialog names the file the `+` was on');
+
+    await p.locator('[data-new-name]').fill('made from the explorer');
+    const preview = (await p.locator('[data-new-preview]').textContent())!;
+    assert.match(preview, /test "elsewhere"/, 'and is built from THAT file’s bytes');
+    assert.doesNotMatch(preview, /basketId/, 'not from the one that was open a moment ago');
+  });
+});
+
+test('`M217` `D2`: a `+` on a test row adds a request to that test, and opens it (`D1139`, `D1144`)', async () => {
+  // `before file`, not `before each` — the first draft wrote the latter and `TF010` refused it
+  // (*unexpected `each` at end of declaration*), which is a file Compose will not edit at all: the
+  // gate then timed out waiting for a dirty marker a broken file can never produce. The same trap
+  // `M216`'s `FULL` fixture recorded one construct over, which is why this comment is here too.
+  await withProjectFixture({ 'a.tflw': [CHAINED, 'before file', '  api GET /warm', '  expect status equals 200', ''].join('\n') }, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/a.tflw`);
+    await p.locator('[data-outline-decl="test"]').first().waitFor();
+
+    // A hook gets none, and that is the language rather than a gap: the splice names a test BY
+    // NAME and a hook has none. Asked as a round trip over the outline's own kinds.
+    const decls = await p.locator('[data-outline-decl]').evaluateAll((els) =>
+      els.map((e) => ({ kind: e.getAttribute('data-outline-decl')!, plus: e.querySelector('[data-row-plus="request"]') !== null })));
+    assert.ok(decls.some((d) => d.kind === 'hook'), 'the fixture has a hook, so the claim below is not vacuous');
+    for (const d of decls) assert.equal(d.plus, d.kind === 'test', `a \`${d.kind}\` row carries a \`+\` only if it is a test`);
+
+    // And the accessible name says whose it is, rather than being a constant.
+    const label = await p.locator('[data-outline-decl="test"] [data-row-plus="request"]').first().getAttribute('aria-label');
+    assert.match(label ?? '', /a chain of three/, `the \`+\` names its own subject (${label})`);
+
+    await p.locator('[data-outline-decl="test"] [data-row-plus="request"]').first().click();
+    await p.locator('[data-compose-dirty]').waitFor();
+    assert.equal(await p.locator('[data-editor]').getAttribute('data-editor'), 'request', 'the pane opened what it made');
+    assert.equal(await p.locator('[data-seq-selected="yes"]').count(), 1, 'and exactly one row is selected');
+  });
+});
+
+test('`M217` `D3`: the `+` costs no name that was not already cut (`D1140`)', async () => {
+  // The declaration rows are the most starved text on the page — `.outline-name` gets 182 px at
+  // the pane's default for names whose natural width runs to 596. The claim is not a pixel
+  // constant, which would go stale the day anything else on the row changes; it is a COMPARISON
+  // taken in the same run: hiding the `+` must not make any more names fit.
+  //
+  // **The fixture's names have to be long enough for the question to exist**, and the first draft's
+  // were not: `CHAINED` declares *a chain of three*, which fits at 320 px with or without a `+`, so
+  // the gate compared `0` against `0` and a mutation giving the `+` a 90 px `min-width` walked
+  // through it. A comparison gate needs an input where the two sides CAN differ.
+  //
+  // **And it needs a name in the range where the `+` is what decides**, which is the second thing
+  // the sweep found: with only a long name, both sides read *cut* whichever width the `+` has, so
+  // a mutation giving it a 90 px `min-width` walked through a gate that was true and blind. The
+  // second name below is sized to fit the ~163 px the row gives a name under one folder of
+  // indentation, and not the ~91 px a fat `+` would leave — so it is the one whose verdict the
+  // control actually changes. It was tuned against a measurement, twice: the first length fitted at
+  // the root and not under `tests/`, which is where real files live.
+  const LONG = [
+    'test "a name long enough that the pane has to cut it, which is the case this gate is about"',
+    '  api GET /a',
+    '  expect status equals 200',
+    '',
+    'test "a middling name"',
+    '  api GET /b',
+    '  expect status equals 200',
+    '',
+  ].join('\n');
+  // **Under a folder, like a real project's files are.** At the root the pane gives a declaration
+  // row enough width that it never has to shrink, and a gate measured there cannot see a row that
+  // refuses to — which is exactly the defect above.
+  await withProjectFixture({ 'tests/a.tflw': LONG }, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/tests/a.tflw`);
+    await p.locator('[data-outline-decl="test"]').first().waitFor();
+    const cut = async (): Promise<number> =>
+      p.locator('.outline-row .outline-name').evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
+
+    const withPlus = await cut();
+    // `setAttribute` rather than `.style`, for the same reason as above: there is no `HTMLElement`
+    // in this file's type world.
+    await p.locator('.outline .row-plus').evaluateAll((els) => { for (const e of els) e.setAttribute('style', 'display: none'); });
+    const without = await cut();
+    // **And every `+` is inside the pane it belongs to**, which is the clause that would have
+    // caught the defect this gate was green through: a flex item defaults to `min-width: auto`, so
+    // the declaration row never shrank and its `+` rendered at **305–323 px in a 320 px sidebar**
+    // — outside its own pane, with the pane gaining horizontal overflow. A name that never shrinks
+    // is never newly cut, so the comparison below stayed true of a layout that was not doing the
+    // thing at all.
+    const fit = await p.locator('.sidebar').evaluate((side) => {
+      const right = side.getBoundingClientRect().right;
+      const out = [...side.querySelectorAll('[data-row-plus]')]
+        .map((e) => ({ kind: e.getAttribute('data-row-plus'), r: Math.round(e.getBoundingClientRect().right) }))
+        .filter((e) => e.r > right);
+      return { overflow: side.scrollWidth - side.clientWidth, outside: out, right: Math.round(right) };
+    });
+    assert.deepEqual(fit.outside, [], `every \`+\` ends inside the pane (right edge ${fit.right})`);
+    assert.ok(fit.overflow <= 0, `and the pane has no horizontal overflow (${fit.overflow}px)`);
+
+    assert.ok(without >= 1, `the fixture has a name the pane must cut whatever the \`+\` costs (${without})`);
+    assert.ok(without < 2, `and one it can show whole, so this comparison can fail (${without} of 2 cut with the \`+\` hidden)`);
+    assert.equal(withPlus, without, `the \`+\` truncates no name the row was already showing whole (${withPlus} cut with it, ${without} without)`);
   });
 });

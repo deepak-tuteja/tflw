@@ -70,6 +70,39 @@ import { DOOR_BY_ID } from './doors';
 import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
 import type { FileOutline, OutlineHook, OutlineTest } from './outline';
 
+/**
+ * **`+` on a row of the explorer** — `M217` `D` (`D1139`, `D1140`).
+ *
+ * **A sibling of the row and never inside it**, because both rows the explorer draws *are*
+ * `<button>`s and a button cannot hold another one. So each becomes a flex pair, which is the
+ * shape `.seq-row` has used for its `✕` since `M214`.
+ *
+ * **Always drawn, never revealed on hover** (`D1140`). The declaration rows are the most starved
+ * text on the page — `.outline-name` gets 182 px for names whose natural width is 361–596 px — and
+ * this takes about 20 px of exactly that. Measured, it costs almost nothing that was not already
+ * gone: **5 of 5** names in `tests/checkout.tflw` are cut at 182 px and all five are still cut at
+ * 162, so the count of names going from whole to truncated is **zero**, and what is lost is about
+ * two characters on names that already ended in an ellipsis. Since `M216` the reader can drag the
+ * pane to 720 px and buy back far more than the 20 px ever cost.
+ *
+ * The alternative was a hover reveal, which fails twice here and both failures are already written
+ * down in this repository: `Grip.tsx`'s own docstring says *a control that only a mouse can reach
+ * is a control some readers do not have*, and the whole reason this exists is that nobody could
+ * find where a test comes from — a `+` invisible until you are already pointing at the row
+ * announces nothing.
+ */
+function RowPlus({ onGo, label, kind }: {
+  readonly onGo: () => void;
+  readonly label: string;
+  readonly kind: string;
+}) {
+  return (
+    <button type="button" className="row-plus" onClick={onGo} data-row-plus={kind} data-tip={label} aria-label={label}>
+      +
+    </button>
+  );
+}
+
 export interface SidebarProps {
   readonly project: ProjectView;
   /** The door the reader came through — which counts this pane shows. It narrows nothing. */
@@ -91,6 +124,47 @@ export interface SidebarProps {
   /** The open file, read (`D1081`). `null` while the shell is reading it, or when the address
    *  names no file — the row then draws as it always has. */
   readonly outline: FileOutline | null;
+  /**
+   * **Which files have unsaved edits** — `M217` `C` (`D1143`).
+   *
+   * Empty until `D1142`, because there was nothing to say: a draft died the moment you looked at
+   * another file, so *unsaved* was a property of the open pane and of nothing else. Now a reader
+   * can hold pending edits in three files at once and only the open one would say so, which is how
+   * work gets left behind — and a draft left long enough eventually meets a file somebody else
+   * changed and becomes a `409` a long way from where it was made.
+   */
+  readonly unsaved: ReadonlySet<string>;
+  /**
+   * **`+` on a file row: another test in THAT file** — `M217` `D` (`D1139`).
+   *
+   * **It builds nothing.** It opens the file and opens the dialog the sequence column's
+   * `+ new test` opens, which is what keeps `D1087`'s one construction path intact: the explorer
+   * knows nothing about `.tflw` and holds no form. It carries you to the place and presses the
+   * button.
+   *
+   * `D1118` said *creation where the thing is created* and put `+ new file` in this very pane, so
+   * the explorer already creates; what it forbade was a **toolbar**, a row of create buttons at
+   * the top of Compose detached from what they make. A `+` welded to `checkout.tflw`'s own row is
+   * the opposite of that. `D1139` adds one sentence to `D1118`: a create gesture may live on the
+   * row that represents its subject.
+   *
+   * Measured before it was built: `+ new test` is two clicks away from any file, and its top sits
+   * at **y = 853 in a 900 px window** — visible in the sense that a footer is visible. This saves
+   * one click; what it buys is that the gesture is where a reader looks for it.
+   */
+  readonly onNewIn: ((path: string) => void) | null;
+  /**
+   * **`+` on a test row: another request in THAT test** — `M217` `D` (`D1139`).
+   *
+   * Addressed by the declaration's **index**, not its line, for the reason every other edit on this
+   * project is: `insertIntoSource` formats before it splices and a line moves under `format`.
+   *
+   * The outline is spliced under the **open file only** (measured: `checkout.tflw` 6 declaration
+   * rows, every other file 0), so this never has to navigate between files — which is also why its
+   * honest justification is symmetry with the row above it and proximity to the list a reader is
+   * actually scanning, and not the cross-file shortcut the first framing claimed.
+   */
+  readonly onAddRequest: ((declIndex: number) => void) | null;
   /** Which request the address is pointing at (`D1080`) — a line, not an identity. */
   readonly focusLine: number | null;
   /** Clicking a request writes `L<line>` and nothing else: it does not change the file, because
@@ -162,7 +236,7 @@ export function filesUnder(node: TreeNode): string[] {
   return node.file ? [node.path] : node.children.flatMap(filesUnder);
 }
 
-export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, focusLine, onLine, onNew }: SidebarProps) {
+export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   /** Where a `shift` range starts. A gesture detail and not a fact about the project, so it is
    *  neither in the address nor anywhere durable — `D1066` addresses what changes a run. */
@@ -253,6 +327,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
     <ul className="tree outline" data-outline={o.declarations.length}>
       {o.declarations.map((decl: OutlineHook | OutlineTest) => (
         <li key={`${decl.kind}-${decl.line}`} data-outline-decl={decl.kind} data-outline-line={decl.line}>
+          <div className="row-pair">
           <button
             type="button"
             className={`outline-row${decl.body.requests.some((r) => r.line === focusLine) || decl.line === focusLine ? ' on' : ''}`}
@@ -270,6 +345,14 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
             <span className="seq-kind">{decl.kind === 'test' ? 'test' : decl.label}</span>
             {decl.kind === 'test' ? <span className="outline-name" data-tip-text>{decl.name}</span> : <em className="outline-name" />}
           </button>
+          {/* **A hook gets none, and that is the language rather than a gap** (`D1144`). The splice
+              addresses a test BY NAME and a hook has none — the sequence column already says so
+              where its own buttons would be, and saying nothing here is better than drawing a `+`
+              that refuses. */}
+          {onAddRequest === null || decl.kind !== 'test' ? null : (
+            <RowPlus kind="request" onGo={() => { onLine(decl.line); onAddRequest(decl.index); }} label={`a new request in “${decl.name}”`} />
+          )}
+          </div>
           {decl.body.requests.length === 0 ? null : (
             <ul className="tree">
               {decl.body.requests.map((r) => (
@@ -312,6 +395,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
       const unmatched = matched !== null && !matched.has(f.path);
       return (
         <li key={f.path} data-file={f.path}>
+          <div className="row-pair">
           <button
             type="button"
             className={`file-row${state === 'none' ? ' muted' : ''}${unmatched ? ' unmatched' : ''}${chosen.has(f.path) ? ' on' : ''}${openFile === f.path ? ' open' : ''}`}
@@ -324,6 +408,15 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
             aria-pressed={chosen.has(f.path)}
           >
             <code>{node.name}</code>
+            {/* `D1143` — a dot, drawn before the count so it reads as a property of the file
+                rather than of the number. It says *not written yet*, which is the one thing the
+                count cannot: the count is a fact about the copy on disk, and by design it does not
+                move until a Save does. */}
+            {unsaved.has(f.path) ? (
+              <span className="unsaved-dot" data-file-unsaved={f.path} data-tip="unsaved edits — not written to this file yet" aria-label="has unsaved edits">
+                ●
+              </span>
+            ) : null}
             <span
               className={`count${state === 'none' ? ' muted' : ''}`}
               data-door-count={behind}
@@ -358,6 +451,8 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
               </span>
             ) : null}
           </button>
+          {onNewIn === null ? null : <RowPlus kind="test" onGo={() => onNewIn(f.path)} label={`a new test in ${f.path}`} />}
+          </div>
           {openFile === f.path && outline !== null ? renderOutline(outline) : null}
         </li>
       );

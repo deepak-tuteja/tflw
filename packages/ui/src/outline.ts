@@ -340,6 +340,28 @@ export function groupBody(steps: readonly Step[], notes: FileNotes, decl = 0): O
  * pane that showed nothing for a file with one typo in it would be a pane nobody could use to fix
  * the typo.
  */
+/**
+ * **Where a request's run of statements ends** — the address a new step goes *after* if it is to
+ * join this request rather than steal the next one's readers (`M217` `B`, `D1138`).
+ *
+ * `attached` is *everything between this request and the next*, so its last addressable member is
+ * the last line that reads this response. A step spliced there is below every reader of this
+ * request and above the next request, which is the one position from which it can change nothing:
+ * `body` means the last response, so a step spliced any higher re-points every reader under it.
+ *
+ * **Null `stepPath` is the case that makes this a function.** A row inside a `wait until api`
+ * block is not a step of the body and cannot be addressed by an index pair — this type says so on
+ * the field — so the filter is load-bearing and not defensive. With nothing addressable attached,
+ * the request itself is the anchor.
+ *
+ * Extracted because there were three copies of it by the time `M217` wanted a fourth: `verify`
+ * (tick-to-verify), `captureFrom` and now `addRequestAfter` all ask the same question, and the
+ * first two already carried a comment saying that two derivations of it would be one too many.
+ */
+export function anchorAfter(request: OutlineRequest): StepPath {
+  return request.attached.filter((a) => a.stepPath !== null).at(-1)?.stepPath ?? request.stepPath;
+}
+
 export function fileOutline(path: string, source: string): FileOutline {
   const { program, diagnostics } = parseSource(source);
   const notes = readNotes(source);

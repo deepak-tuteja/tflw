@@ -276,7 +276,41 @@ export function App() {
    * and `replaceInSource` returns a finished file: keeping the finished text is keeping exactly
    * what the write will carry, so there is no second representation to disagree with it.
    */
-  const [draft, setDraft] = useState<string | null>(null);
+  /**
+   * **An explorer `+` that has to be carried out by the pane** — `M217` `D` (`D1139`).
+   *
+   * The explorer builds nothing: `+` on a test row means *do what the sequence column's
+   * `+ request` does, to that test*, and that gesture lives in `ComposeDoor` beside the buffer it
+   * settles into. So the sidebar records an intent here and the door runs it once its outline is
+   * the one being named.
+   *
+   * `n` is a counter for `landOn`'s reason one component over: pressing `+` twice on the same test
+   * is two intents with the same path and index, and an effect keyed on the value alone would fire
+   * once. The declaration is named by **index**, never by line, because a splice re-formats.
+   */
+  const [addIntent, setAddIntent] = useState<{ readonly path: string; readonly declIndex: number; readonly n: number } | null>(null);
+
+  const [drafts, setDrafts] = useState<ReadonlyMap<string, string>>(() => new Map());
+
+  /**
+   * **A draft belongs to its file, and stops dying when you look at another one** — `M217` `C`
+   * (`D1142`).
+   *
+   * This was one `string | null` for the whole page, and the effect that opens a file cleared it.
+   * Measured before the change: pending edit on `checkout.tflw` (14 rows, dirty), click
+   * `load.tflw` in the explorer — `data-compose-dirty` gone, **no prompt, nothing in the page text
+   * matching `unsaved`/`pending`/`discard`** — click back, 8 rows. The work was gone, and the only
+   * reason nobody had hit it hard is that the explorer was the only way to reach another file.
+   * `M217` puts a `+` on every file row, which makes *cross a pending edit on the way to a create*
+   * a one-click gesture, so the old behaviour could not be shipped under it.
+   *
+   * **In memory, for the life of the page, and that is a decision rather than an oversight**
+   * (`D1142`). A draft that outlived a reload would outlive the etag it was read at, and would
+   * need a staleness check, conflict handling and a way to abandon it — a round of its own. A
+   * reload loses drafts today and goes on losing them. `D1045`'s rule is why nothing here reaches
+   * `localStorage` or the server: this is a view of a project, not a fact about one.
+   */
+
 
   /**
    * **Which create dialog is open** — `M214` `A6` (`D1118`), lifted here from `ComposeDoor`.
@@ -607,6 +641,26 @@ export function App() {
   const filePaths = project?.files.map((f) => f.path) ?? [];
   const path = file !== null && filePaths.includes(file) ? file : (filePaths[0] ?? '');
 
+  /** `D1143` — what the explorer marks. A set rather than the map, because the explorer needs to
+   *  know *which* files are unsaved and has no business with their bytes. */
+  const unsavedPaths = useMemo(() => new Set(drafts.keys()), [drafts]);
+
+  /** This file's unsaved bytes, or `null`. See `drafts` above for why it is keyed by path. */
+  const draft = drafts.get(path) ?? null;
+  const setDraft = useCallback(
+    (next: string | null) => {
+      setDrafts((prev) => {
+        if (next === null && !prev.has(path)) return prev;
+        if (next !== null && prev.get(path) === next) return prev;
+        const map = new Map(prev);
+        if (next === null) map.delete(path);
+        else map.set(path, next);
+        return map;
+      });
+    },
+    [path],
+  );
+
   /** One read per open file, for the whole page — see `openFileView`. A path of `''` is *no
    *  project yet*, which is a wait rather than a failure and asks for nothing. */
   useEffect(() => {
@@ -617,9 +671,9 @@ export function App() {
     getFile(path)
       .then((f) => { if (live) setOpenFileView(f); })
       .catch((e: unknown) => { if (live) setFileProblem(e instanceof Error ? e.message : String(e)); });
-    // A buffer belongs to the file it was typed into. Opening another one drops it rather than
-    // carrying it across, which would be an edit to a file nobody made.
-    setDraft(null);
+    // **The buffer is NOT dropped here any more** (`D1142`). A draft belongs to the file it was
+    // typed into, and `drafts` is keyed by path — so opening another file simply reads another
+    // key, and coming back reads this one again.
     return () => { live = false; };
   }, [path]);
 
@@ -631,6 +685,19 @@ export function App() {
    * three times already (the path in `M206` `S1`, the config in `S2a`, the bytes above).
    */
   const fileText = draft ?? openFileView?.text ?? null;
+  /**
+   * **Whether the bytes in hand are THIS file's** — `M217` `D`.
+   *
+   * `setFile` and the read that follows it are not the same tick: for one render `path` is the new
+   * file while `openFileView` is still the old one, so anything reading `fileText` in between is
+   * reading one file's bytes under another file's name. That was harmless while the only way to
+   * open the dialog was from the file already open; `D1139`'s `+` opens a file **and** the dialog
+   * in one gesture, and a `newSource` built on the wrong text would splice a test into the wrong
+   * file — or, with `into: ''`, into an empty one.
+   *
+   * A draft counts as ready because a draft IS that path's text, by construction (`D1142`).
+   */
+  const fileReady = draft !== null || openFileView?.path === path;
   const outline = useMemo(() => (fileText === null || openFileView === null ? null : fileOutline(openFileView.path, fileText)), [openFileView, fileText]);
 
   if (door === null || noProject) {
@@ -760,7 +827,10 @@ export function App() {
        grip moves one number and the media query below 900 px, where the pane stops being a column
        at all, goes on overriding it untouched. */
     <div className="app" style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}>
-      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={setCreating} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} unsaved={unsavedPaths}
+          onNewIn={(p) => { setFile(p); setCreating('test'); }}
+          onAddRequest={(declIndex) => setAddIntent((prev) => ({ path, declIndex, n: (prev?.n ?? 0) + 1 }))}
+          focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={setCreating} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
       <Grip spec={SIDEBAR} width={sidebarWidth} onWidth={setSidebarWidth} />
       {/* One layer for the whole page (`M216` `B1`). It draws nothing until something is hovered
           or focused, and it is here rather than inside a pane because the shell's own chrome asks
@@ -768,25 +838,31 @@ export function App() {
       <TooltipLayer />
       {/* **The create dialog is the shell's** (`D1118`) — one dialog, two places that ask for it:
           the explorer's `+ new file` and the sequence column's `+ new test`. */}
-      {creating === null || project === null ? null : (
+      {creating === null || project === null || (creating === 'test' && !fileReady) ? null : (
         <NewThing
           mode={creating}
           openPath={path}
-          openText={openFileView?.text ?? ''}
-          openEtag={openFileView?.etag ?? null}
+          /* **The file as the author has it** (`M217` `C`, `D1141`). This read `openFileView.text`
+             — the bytes on disk — so with anything pending the dialog previewed and wrote a file
+             that was not the one the author was looking at. */
+          openText={fileText ?? ''}
           existing={project.files.map((f) => f.path)}
           onCancel={() => setCreating(null)}
-          onDone={(written) => {
-            const made = creating;
+          onStage={(text) => {
             setCreating(null);
-            // The same two notifications a save makes — the page is a projection of the file and
-            // not a cache of it (`D985`), so the project is re-read rather than patched.
-            if (made === 'test') setOpenFileView(written);
+            /* Into the buffer, like every other gesture on the pane. Nothing is written, so there
+               is nothing to re-read: the outline is already derived from this text. */
+            setDraft(text);
+          }}
+          onDone={(written) => {
+            setCreating(null);
+            // The same notification a save makes — the page is a projection of the file and not a
+            // cache of it (`D985`), so the project is re-read rather than patched.
             void readProjectView();
             // **A new FILE moves the address to it.** A create that left you looking at the file
             // you were already on is a write with no visible consequence — the shape `M209` found
-            // four times over.
-            if (made === 'file') setFile(written.path);
+            // four times over. `onDone` is now the file mode's alone.
+            setFile(written.path);
           }}
         />
       )}
@@ -860,6 +936,8 @@ export function App() {
             fileProblem={fileProblem}
             onFileWritten={setOpenFileView}
             onNew={setCreating}
+            addIntent={addIntent}
+            onAddIntentDone={() => setAddIntent(null)}
             focusLine={focusLine}
             authPanel={authPanel}
             configPanel={configPanel}
