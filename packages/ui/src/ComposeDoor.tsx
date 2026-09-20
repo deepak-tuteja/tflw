@@ -88,7 +88,7 @@ import {
 } from './ComposePane';
 import { ApiComposePane, type EditorTab } from './ApiComposePane';
 import type { NewMode } from './NewThing';
-import { addressed, fileOutline, prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
+import { addressed, anchorAfter, fileOutline, prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
@@ -167,6 +167,16 @@ export interface ComposeDoorProps {
    * head stops being a toolbar, which is the fifth of this round's five complaints.
    */
   readonly onNew: (mode: NewMode) => void;
+  /**
+   * **What the explorer's `+` asked for, waiting to be carried out** — `M217` `D` (`D1139`).
+   *
+   * The sidebar builds nothing; it records *another request in the test at this index of this
+   * file* and this pane runs it, through the same `addRequest` the sequence column's own button
+   * calls. One construction path (`D1087`) survives a second entry point because the second entry
+   * point is not a path, it is a caller.
+   */
+  readonly addIntent: { readonly path: string; readonly declIndex: number; readonly n: number } | null;
+  readonly onAddIntentDone: () => void;
   /** Which stage of this file's life is showing (`M205` §2). It lives in the URL and nowhere else
    *  (`D1045`), so the shell owns it and hands it down — this form does not remember a tab. */
   readonly tab: TabId;
@@ -204,7 +214,7 @@ export interface ComposeDoorProps {
  *  that renamed itself on every press would leave a file nobody could re-run by hand. */
 const SCRATCH_TEST = 'scratch';
 
-export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ComposeDoorProps) {
+export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, addIntent, onAddIntentDone, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ComposeDoorProps) {
   const [busy, setBusy] = useState(false);
   /** What `L<line>` names — one resolution, so the band and the card cannot disagree about which
    *  test they are showing (`D1080`). */
@@ -224,6 +234,8 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    */
   const [reportRan, setReportRan] = useState<{ report: RunReport; reportId: string } | null>(null);
   const [sentRan, setSentRan] = useState<{ line: number; steps: readonly StepResult[]; startedAt: string } | null>(null);
+  /** `D1136` — bumped every time a create gesture lands, so the pane can focus what opened. */
+  const [made, setMade] = useState(0);
 
   /**
    * **An edit that produces the bytes already there is not an edit** (`M210` `S4`).
@@ -255,6 +267,48 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
       return true;
     },
     [draft, file, onDraft],
+  );
+
+  /**
+   * **A create gesture opens what it made** — `M217` `A` (`D1136`).
+   *
+   * Every `+` on this pane used to insert and then move nothing: the address stayed where it was,
+   * `data-seq-open` stayed null, the editor went on showing the declaration, and focus stayed on
+   * the button. Measured on `examples/storefront`, `+ request` on the test at `L41` put the new
+   * request **fourteen rows down**, below a run of nine `expect`s, with nothing on the page
+   * pointing at it. `+ let` is the worse of the three, because it writes the literal placeholder
+   * `let value = "change me"` and then leaves you looking somewhere else.
+   *
+   * **The line is read back out of the text that was produced, never guessed.** `insertIntoSource`
+   * formats before it splices, so the line a node lands on is not the line anything held before the
+   * edit — this is `removeSteps`' rule (*the address has to move, because what it named is gone*)
+   * applied to the other direction, and it is why `pick` is handed a fresh outline rather than a
+   * number.
+   *
+   * `made` is a counter rather than a line because **the same line can be landed on twice** — add a
+   * request, discard, add it again — and an effect keyed on the line would not fire the second
+   * time. The pane uses it to put the cursor in the first field of whatever opened.
+   */
+  const landOn = useCallback(
+    (text: string, pick: (after: FileOutline) => number | null): void => {
+      setEditProblem(null);
+      settle(text);
+      const line = pick(fileOutline(path, text));
+      if (line === null) return;
+      onTab('compose', line);
+      setMade((n) => n + 1);
+    },
+    [settle, path, onTab],
+  );
+
+  /** The declaration this gesture was fired on, re-read out of the edited text by the index that
+   *  still identifies it — a line moves under `format`, an index does not. */
+  const declAfter = useCallback(
+    (after: FileOutline, decl: OutlineHook | OutlineTest): OutlineTest | null => {
+      const d = after.declarations[decl.index];
+      return d !== undefined && d.kind === 'test' ? d : null;
+    },
+    [],
   );
 
   /**
@@ -524,11 +578,87 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         setEditProblem(out.reason);
         return;
       }
-      setEditProblem(null);
-      settle(out.text);
+      /* `D1136` — the foot's gesture means *at the end*, so what it made is the body's last
+         request. Read out of the edited text, because a `with each` table or a `retry` line above
+         it moves every line below under `format`. */
+      landOn(out.text, (after) => declAfter(after, decl)?.body.requests.at(-1)?.line ?? null);
     },
-    [file, draft, settle],
+    [file, draft, landOn, declAfter],
   );
+
+  /**
+   * **A new request AFTER one that is already there** — `M217` `B` (`D1137`, `D1138`).
+   *
+   * Every request row carries a `+` beside its `✕`, and this is what it does. There is no dialog:
+   * a request has no name to ask for, and the two fields one would ask for — method and path — are
+   * offered by the editor beside this column the instant `landOn` selects the thing. A modal for
+   * them would be a second authoring surface for fields that already have a first one, which is
+   * what `D1087` exists to refuse.
+   *
+   * **“After” means after the request AND the statements attached to it, and that is the whole
+   * decision** (`D1138`). `body` means *the last response*, so a request spliced on the literal next
+   * line re-points every assertion under it until the next request — an `expect status` that still
+   * passes, a `capture` that binds nothing, and a failure surfacing two statements away in a
+   * request nobody touched. Measured on `examples/storefront`: **19 of 19** requests have
+   * statements attached, 47 of the 49 of them read the response, so the literal reading is unsafe
+   * in every single case the corpus has. Anchoring on the last attachment makes the hazard stop
+   * existing rather than be detected — there is nothing to warn about, because nothing below
+   * changes which response it reads.
+   *
+   * The anchor expression is `verify`'s, character for character, and deliberately so: tick-to-verify
+   * had to solve the same problem one construct over, and two derivations of *where does this
+   * request's run of statements end* is two places for it to be wrong.
+   */
+  const addRequestAfter = useCallback(
+    (decl: OutlineTest, request: OutlineRequest) => {
+      if (!file) return;
+      const step = buildApiStep({ method: 'GET', path: '/', service: null, label: null, headers: [], body: null });
+      if (!step.ok) {
+        setEditProblem(step.reason);
+        return;
+      }
+      const expect = buildExpect({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' });
+      if (!expect.ok) {
+        setEditProblem(expect.reason);
+        return;
+      }
+      const out = insertIntoSource(draft ?? file.text, {
+        kind: 'stepsAfter',
+        path: anchorAfter(request),
+        nodes: [step.node, expect.node],
+      });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      /* The one after the one it was fired on. Addressed by POSITION IN THE LIST rather than by
+         line, for `landOn`'s reason: the splice re-formats, so the pre-edit line of the next
+         request is not its post-edit line. */
+      const at = decl.body.requests.findIndex((r) => r.line === request.line);
+      landOn(out.text, (after) => (at < 0 ? null : declAfter(after, decl)?.body.requests[at + 1]?.line ?? null));
+    },
+    [file, draft, landOn, declAfter],
+  );
+
+  /**
+   * **Carrying out the explorer's `+`** — `M217` `D` (`D1139`).
+   *
+   * It waits for `outline` to be **this** file's before it acts, because `setFile` and the read
+   * that follows it are not the same tick: for one render the path has moved and the bytes have
+   * not, and a splice run then would add a request to a declaration index of the *previous* file.
+   * The intent carries the path it was made against, so the comparison is a fact rather than a
+   * timing assumption.
+   *
+   * `onAddIntentDone` fires before the splice, not after — the intent has been *taken*, and leaving
+   * it set for the length of a state update is how one press becomes two requests.
+   */
+  useEffect(() => {
+    if (addIntent === null || outline === null || file === null) return;
+    if (addIntent.path !== path || file.path !== path) return;
+    const decl = outline.declarations[addIntent.declIndex];
+    onAddIntentDone();
+    if (decl !== undefined && decl.kind === 'test') addRequest(decl);
+  }, [addIntent, outline, file, path, addRequest, onAddIntentDone]);
 
   /**
    * **`✕`** — `M214` `A4` (`D1117`).
@@ -606,9 +736,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         setEditProblem(built.reason);
         return;
       }
-      const last = request.attached.filter((a) => a.stepPath !== null).at(-1);
-      const anchor = last?.stepPath ?? request.stepPath;
-      const out = insertIntoSource(draft ?? file.text, { kind: 'stepsAfter', path: anchor, nodes: [built.node] });
+      const out = insertIntoSource(draft ?? file.text, { kind: 'stepsAfter', path: anchorAfter(request), nodes: [built.node] });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -640,8 +768,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         }
         nodes.push(built.node);
       }
-      const last = request.attached.filter((a) => a.stepPath !== null).at(-1);
-      const out = insertIntoSource(draft ?? file.text, { kind: 'stepsAfter', path: last?.stepPath ?? request.stepPath, nodes });
+      const out = insertIntoSource(draft ?? file.text, { kind: 'stepsAfter', path: anchorAfter(request), nodes });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -687,10 +814,12 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         setEditProblem(out.reason);
         return;
       }
-      setEditProblem(null);
-      settle(out.text);
+      /* `D1136`. A `let` goes at the TOP of the body, so what it made is the first thing in the
+         preamble — and this is the gesture that needed opening most, because what it writes is a
+         placeholder (`let value = "change me"`) asking to be typed over. */
+      landOn(out.text, (after) => declAfter(after, decl)?.body.preamble[0]?.line ?? null);
     },
-    [file, draft, settle],
+    [file, draft, landOn, declAfter],
   );
 
   /**
@@ -719,10 +848,11 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         setEditProblem(out.reason);
         return;
       }
-      setEditProblem(null);
-      settle(out.text);
+      /* `D1136`. `wait until api` IS a request — `outline.ts` puts it in `body.requests` — so what
+         this made is the body's last request, exactly as the foot's `+ request` is. */
+      landOn(out.text, (after) => declAfter(after, decl)?.body.requests.at(-1)?.line ?? null);
     },
-    [file, draft, settle],
+    [file, draft, landOn, declAfter],
   );
 
   /**
@@ -1546,6 +1676,8 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onCapture={captureFrom}
           onAdd={add}
           adds={VOCABULARY[door].adds}
+          onAddAfter={addRequestAfter}
+          made={made}
           onRemoveSteps={removeSteps}
           onRemoveDecl={removeDecl}
           tab={editorTab}

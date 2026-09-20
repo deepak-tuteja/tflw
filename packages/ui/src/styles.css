@@ -265,6 +265,19 @@ button.cancel { background: var(--warn); }
 .files { list-style: none; margin: 0; padding: 0; }
 .tree { list-style: none; margin: 0; padding: 0; }
 .tree .tree { margin-left: 12px; border-left: 1px solid var(--line); padding-left: 6px; }
+/* `M217` `D` (`D1139`) — a row and its `+`. Both rows the explorer draws ARE buttons, so the `+`
+   has to be a sibling; this is the pair. */
+/* **`min-width: 0` is the whole of why this works**, and the first draft left it out. A flex item
+   defaults to `min-width: auto`, which means *never shrink below your content* — the file row got
+   away with it because `.file-row > code` already carries `min-width: 0`, and the declaration row
+   did not, so it kept its full 253 px and pushed its `+` to **305–323 px in a 320 px pane**: the
+   control rendered outside its own sidebar and the pane gained horizontal overflow. Measured, not
+   noticed — and `D3` was green throughout, because a name that never shrinks is never newly cut.
+   A gate can be asking exactly the right question of a layout that is not doing the thing at all. */
+.row-pair { display: flex; align-items: center; min-width: 0; }
+.row-pair > .file-row, .row-pair > .outline-row { min-width: 0; }
+.row-plus { background: none; border: 0; color: var(--muted); padding: 0 5px; font-size: 14px; line-height: 1; border-radius: var(--ctl-radius); flex: none; }
+.row-plus:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .file-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; width: 100%; background: none; border: 0; border-radius: var(--ctl-radius); color: inherit; font: inherit; text-align: left; }
 /* Selected and open are two different facts and are drawn as two: what will RUN is the tint, what
    the tabs are FACING is the rule down the left. A reader extending a selection with cmd-click has
@@ -279,6 +292,9 @@ button.cancel { background: var(--warn); }
    A row can be both, and then it is dim twice, which is correct: it is absent from two questions. */
 .file-row.muted, .file-row.muted > code { color: var(--muted); }
 .file-row.unmatched { opacity: 0.38; }
+/* `M217` `C` (`D1143`) — unsaved edits, in the warn hue because it is a state to resolve rather
+   than a fault. `flex: none` so it never competes with the file name for width. */
+.unsaved-dot { color: var(--warn); font-size: 10px; line-height: 1; flex: none; }
 .file-row.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .file-row.open { box-shadow: inset 2px 0 0 var(--accent); }
 .file-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
@@ -871,8 +887,20 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 
 /* The `✕` (`D1117`). It is never disabled: it is pressed, and if something is holding the thing it
    answers on the row. A disabled control that does not say why is the pattern this round removes. */
+/* **They are the row's height, and `M217` is why that is written down.** `ui-appearance`'s
+   out-of-scale rule needs THREE controls in a group before a median means anything, so while a
+   `.seq-row` held only its picker and its `✕` the group was skipped — and the `✕` had been a 14 px
+   target in a 24 px row since `M214`, invisibly. Adding the `+` made the group measurable and it
+   read **1.74×** immediately. Stretching both to the row is the fix rather than tuning a font
+   size: it makes the gate green for the reason the gate exists, and a control the height of its
+   own row is easier to hit. */
+.seq-x, .seq-plus { align-self: stretch; display: flex; align-items: center; justify-content: center; }
 .seq-x { background: none; border: 0; color: var(--muted); padding: 0 calc(var(--unit) * 0.7); font-size: 13px; line-height: 1; border-radius: var(--ctl-radius); flex: none; }
 .seq-x:hover { color: var(--fail); background: var(--fail-bg); }
+/* `M217` `B` (`D1137`, `D1140`) — the `✕`'s twin. Same slot, same weight, same always-drawn rest
+   state: a request row can say *one more like this, here* as well as *not this one*. */
+.seq-plus { background: none; border: 0; color: var(--muted); padding: 0 calc(var(--unit) * 0.7); font-size: 14px; line-height: 1; border-radius: var(--ctl-radius); flex: none; }
+.seq-plus:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .seq-x.refused { color: var(--warn); }
 .seq-refusal { margin: 2px 0 4px calc(var(--unit) * 3); font-size: 11px; }
 .linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; }

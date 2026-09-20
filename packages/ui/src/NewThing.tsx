@@ -12,16 +12,17 @@
 // legacy form drifted until it was offering `/orders/{orderId}` and *"the orders endpoint answers"*
 // as placeholders for whatever file happened to be open. So this builds its AST through
 // `buildApiStep`/`buildExpect`/`buildTest` and splices it with `insertIntoSource` — the same
-// functions Compose's own controls call — and writes it with the same `putFile`. There is no
-// printer here, no template string of `.tflw` source, and nothing that could render a test one way
-// while the pane renders it another.
+// functions Compose's own controls call. There is no printer here, no template string of `.tflw`
+// source, and nothing that could render a test one way while the pane renders it another.
 //
-// **The two modes differ in exactly one thing: where the test goes.** A new test is spliced into
-// the open file under its current etag; a new file is the same test printed into an empty source
-// and PUT with **no** etag, which is the create the route already supported. A file needs a name
-// before it can exist, so that is the one extra field, and the test fields are shared — a guided
-// start is worth more to a newcomer than an empty shell, which is what `D1087` chose over an
-// in-place *add a declaration* gesture.
+// **The two modes differ in exactly one thing: where the test goes**, and `M217` `C` changed one
+// half of that. A new **test** is spliced into the open file *as the author currently has it* and
+// handed back to the pending buffer — it does not reach the network at all (`D1141`). A new
+// **file** is the same test printed into an empty source and PUT with **no** etag, which is the
+// create the route already supported, and it still goes straight out because a file that does not
+// exist has no buffer to splice into. A file needs a name before it can exist, so that is the one
+// extra field, and the test fields are shared — a guided start is worth more to a newcomer than an
+// empty shell, which is what `D1087` chose over an in-place *add a declaration* gesture.
 import { useEffect, useRef, useState } from 'react';
 import { buildApiStep, buildExpect, buildTest, insertIntoSource, type ApiStepSpec } from '@tflw/lang';
 import { putFile } from './api';
@@ -76,13 +77,31 @@ export function newPathProblem(path: string, existing: readonly string[]): strin
   return null;
 }
 
-export function NewThing({ mode, openPath, openText, openEtag, existing, onDone, onCancel }: {
+export function NewThing({ mode, openPath, openText, existing, onStage, onDone, onCancel }: {
   readonly mode: NewMode;
-  /** The file a new **test** goes into. */
+  /**
+   * The file a new **test** goes into — and it is the file **as the author has it**, pending edits
+   * included, never the copy on disk (`M217` `C`, `D1141`).
+   */
   readonly openPath: string;
   readonly openText: string;
-  readonly openEtag: string | null;
   readonly existing: readonly string[];
+  /**
+   * **Where a new TEST goes: into the pending buffer, not onto the disk** (`D1141`).
+   *
+   * This dialog used to `PUT`, and it was the only gesture on the whole pane that did. Everything
+   * else — `+ request`, `✕`, tick-to-verify, every clause edit — settles into the buffer and waits
+   * for Save, and that asymmetry was a measured data-loss path: with a pending edit, the dialog
+   * built its preview and its write from the **saved** bytes, so creating wrote 7 declarations to
+   * disk while the pane, reading the now-stale buffer, still showed 6 and still said dirty. The
+   * next Save would have put the old buffer back over the test just made.
+   *
+   * Staging fixes both halves at once. The preview is built from the same text that lands, which
+   * is what `D1087` claims about this dialog and was true of the card and false of the page; and
+   * one Save writes the pending edits and the new test together, because by then they are one
+   * file.
+   */
+  readonly onStage: (text: string) => void;
   readonly onDone: (written: { path: string; text: string; etag: string }) => void;
   readonly onCancel: () => void;
 }) {
@@ -106,13 +125,20 @@ export function NewThing({ mode, openPath, openText, openEtag, existing, onDone,
 
   const create = async (): Promise<void> => {
     if (!built.ok || pathProblem !== null) return;
+    /* **A new TEST never touches the network** (`D1141`). It joins the buffer the rest of the pane
+       writes into, and the Save that was already there writes it. No etag is consulted, because no
+       write is happening — the `409` guard belongs to the write, and the write has not moved. */
+    if (mode === 'test') {
+      onStage(built.text);
+      return;
+    }
     setBusy(true);
     setFailed(null);
-    // `null` is the create: the route reads a missing `If-Match` as *make this file*. A new
-    // **test** goes into the open file under the etag it was read at, so a file changed by another
-    // terminal surfaces as the `409` that guard exists for rather than being overwritten.
-    const target = mode === 'file' ? file.trim() : openPath;
-    const put = await putFile(target, built.text, mode === 'file' ? null : openEtag);
+    // `null` is the create: the route reads a missing `If-Match` as *make this file*. A **file**
+    // still goes straight out, and has to: a file that does not exist has no buffer to splice
+    // into. That is the one asymmetry, and it is a fact about the route rather than a choice.
+    const target = file.trim();
+    const put = await putFile(target, built.text, null);
     setBusy(false);
     if (put.ok) onDone({ path: target, text: built.text, etag: put.etag });
     else setFailed(put.error);
