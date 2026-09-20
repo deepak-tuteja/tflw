@@ -95,7 +95,14 @@ function corpus(root: string): string[] {
     let entries: string[];
     try { entries = readdirSync(dir); } catch { return; }
     for (const entry of entries) {
-      if (SKIP_DIR.test(entry)) continue;
+      // **A dot-prefixed `.tflw` is not part of the authored corpus** (`M215`). `tflw ui`'s send
+      // writes `.scratch.tflw` into the project it is serving — that is the whole point of the
+      // button — and every walker here reads *every* `.tflw` under the repository root, so a
+      // person driving the served page changed this census by pressing it. It cost three corpus
+      // failures and five `test:scripts` failures once already, repaired by deleting the file;
+      // deleting a file the product writes on purpose is not a repair. The same line is in
+      // `print.test.ts` and `verify-fmt-roundtrip.mjs`, which are the other two walks.
+      if (SKIP_DIR.test(entry) || entry.startsWith('.')) continue;
       const p = join(dir, entry);
       let st;
       try { st = statSync(p); } catch { continue; }

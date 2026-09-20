@@ -49,7 +49,14 @@ const tflwFiles = (): string[] => {
       if (entry.isDirectory()) {
         if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.git') continue;
         walk(full);
-      } else if (entry.name.endsWith('.tflw')) out.push(full);
+      } else if (entry.name.endsWith('.tflw') && !entry.name.startsWith('.')) {
+        // **A dot-prefixed `.tflw` is not part of the authored corpus** (`M215`, `M215-01`). `tflw
+        // ui`'s send writes `.scratch.tflw` into the project it serves, and `examples/storefront`
+        // is both a served project and a root of this walk. This is the **fifth** copy of the same
+        // traversal — `lenses.test.ts`, `print.test.ts`, `outline.test.ts` and
+        // `verify-fmt-roundtrip.mjs` are the others — which is `M215-01`'s open half.
+        out.push(full);
+      }
     }
   };
   for (const root of SOURCE_ROOTS) walk(join(repoRoot, root));

@@ -131,15 +131,16 @@ test('a suffix match cannot let a short name claim a long one’s verdicts', () 
   assert.equal(index.size, 0, '`out.tflw` is a suffix of `checkout.tflw` as text and not as a path');
 });
 
-test('a send maps the scratch’s positional steps back onto this file’s lines', () => {
+test('a send brings back the response and no verdict at all — `M215` `A1`', () => {
   const ran = indexFromSend({
     steps: [
       step({ kind: 'api', source: 'api GET /health', line: 99 }),
       step({ kind: 'api', source: 'api POST /orders', line: 101, response: { status: 201, bodyText: '{}' } as never }),
-      step({ kind: 'expect', source: 'expect status equals 201', line: 102, detail: 'status = 201' }),
+      // A capture is what follows a request in a scratch now; an `expect` cannot, because
+      // `withoutAssertions` took every one of them out before the file was written.
+      step({ kind: 'capture', source: 'capture body.total as total', line: 102, detail: 'total = 2550' }),
     ],
     requestLine: 4,
-    attachedLines: [5],
     bufferText: BUFFER,
     startedAt: '2026-09-19T11:00:00.000Z',
   });
@@ -147,22 +148,20 @@ test('a send maps the scratch’s positional steps back onto this file’s lines
   assert.equal(ran.scope, 'send');
   assert.equal(ran.line, 4, 'the scratch ran it on line 101 and this file has it on line 4');
   assert.equal(ran.response!.status, 201);
-  assert.equal(ran.steps.get(5)!.detail, 'status = 201');
+  assert.equal(ran.steps.size, 0, 'a send grades nothing — a verdict comes from a run');
 });
 
-test('a send is subject to the same text check — a row edited mid-run gets no mark', () => {
-  const edited = BUFFER.replace('expect status equals 201', 'expect status equals 202');
+test('the LAST api step is the one the send was about', () => {
   const ran = indexFromSend({
     steps: [
-      step({ kind: 'api', source: 'api POST /orders', line: 101, response: { status: 201, bodyText: '{}' } as never }),
-      step({ kind: 'expect', source: 'expect status equals 201', line: 102 }),
+      step({ kind: 'api', source: 'api GET /health', line: 99, response: { status: 200, bodyText: '"first"' } as never }),
+      step({ kind: 'api', source: 'api POST /orders', line: 101, response: { status: 201, bodyText: '"last"' } as never }),
     ],
     requestLine: 4,
-    attachedLines: [5],
-    bufferText: edited,
+    bufferText: BUFFER,
     startedAt: '2026-09-19T11:00:00.000Z',
   });
-  assert.equal(ran!.steps.size, 0);
+  assert.equal(ran!.response!.bodyText, '"last"', 'the prefix fires several requests and the pane is showing the last');
 });
 
 test('a run with no api step in it is not a send result at all', () => {
@@ -170,7 +169,6 @@ test('a run with no api step in it is not a send result at all', () => {
     indexFromSend({
       steps: [step({ kind: 'expect', source: 'expect status equals 200', line: 3 })],
       requestLine: 4,
-      attachedLines: [],
       bufferText: BUFFER,
       startedAt: '2026-09-19T11:00:00.000Z',
     }),

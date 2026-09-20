@@ -73,6 +73,18 @@ interface CssLike {
   readonly borderLeftColor: string;
   readonly borderTopStyle: string;
   readonly borderTopWidth: string;
+  /** `M215`'s overlay gate: the metrics that decide where a glyph lands, both boxes compared. */
+  readonly fontFamily: string;
+  readonly fontSize: string;
+  readonly fontWeight: string;
+  readonly fontStyle: string;
+  readonly lineHeight: string;
+  readonly paddingLeft: string;
+  readonly paddingTop: string;
+  readonly borderLeftWidth: string;
+  readonly whiteSpace: string;
+  readonly letterSpacing: string;
+  readonly tabSize: string;
 }
 interface ElLike {
   readonly tagName: string;
@@ -84,7 +96,7 @@ interface ElLike {
   textContent: string | null;
   checkVisibility(): boolean;
   /** `M214`'s overflow gate reads the bottom edge, which is the whole of its second clause. */
-  getBoundingClientRect(): { readonly height: number; readonly bottom: number };
+  getBoundingClientRect(): { readonly height: number; readonly bottom: number; readonly x: number; readonly y: number; readonly width: number };
   /** …and the two heights that say whether a region is scrolling inside itself. */
   readonly scrollHeight: number;
   readonly clientHeight: number;
@@ -740,6 +752,71 @@ test('every colour painted on every door comes from the theme, in all four theme
   }
   assert.ok(painted > 4000, `the gate read ${painted} painted colours — it is not walking the page`);
   assert.deepEqual(bad.slice(0, 25), [], `${bad.length} painted colours are not in the theme’s token set`);
+});
+
+test('`M215` `B3`: the coloured copy and the field under it are one box, in all four themes', async () => {
+  /**
+   * **The one way an overlay editor fails, asserted rather than reviewed.**
+   *
+   * A `<textarea>` cannot be coloured, so the colour is a `<pre>` and the text on top is
+   * transparent — and the classic failure of that arrangement is the two boxes disagreeing about
+   * where a character sits, which shows up as a caret drifting away from the glyph it is in front
+   * of. Every metric that can cause it is compared here: the rectangle first, then the text
+   * metrics, then the one that is easy to miss.
+   *
+   * **`.t-kw` is bold in all four themes** (`--kw-weight` is 600 or 700 everywhere), and a JSON
+   * body's `true`/`false`/`null` are painted `kw` by `jsonview`'s second rule — so without the
+   * rule that neutralises weight in the ink, those characters are wider in the copy than under the
+   * caret and every glyph after them on that line is misplaced. Four themes and not one, because
+   * that hazard is a theme token: a single-theme gate would have been green on whichever theme it
+   * happened to render.
+   */
+  const file = join(projectRoot, 'tests', 'jsonbody.tflw');
+  await writeFile(file, ['test "a body to paint"', '  api POST /orders body { ok: true, who: null, qty: 3 }', '  expect status equals 201', ''].join('\n'));
+  try {
+    for (const theme of THEMES) {
+      await page.goto(`${baseUrl}#/api/compose/tests/jsonbody.tflw`);
+      await page.reload();
+      await page.locator('[data-seq-col]').waitFor();
+      await wear(theme);
+      await page.locator('[data-seq-row="request"] [data-seq-pick]').first().click();
+      await page.locator('[data-editor-tab="body"]').click();
+      await page.locator('[data-body-ink]').waitFor();
+      await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+
+      const fit = await page.evaluate(() => {
+        const ink = document.querySelector('[data-body-ink]')!;
+        const edit = document.querySelector('[data-body-edit-text]')!;
+        const a = ink.getBoundingClientRect();
+        const b = edit.getBoundingClientRect();
+        const ia = getComputedStyle(ink);
+        const ib = getComputedStyle(edit);
+        const kw = ink.querySelector('.t-kw');
+        return {
+          box: [Math.round(a.x - b.x), Math.round(a.y - b.y), Math.round(a.width - b.width), Math.round(a.height - b.height)],
+          differs: (['fontFamily', 'fontSize', 'lineHeight', 'paddingLeft', 'paddingTop', 'borderLeftWidth', 'whiteSpace', 'letterSpacing', 'tabSize'] as const)
+            .filter((k) => ia[k] !== ib[k]),
+          text: ink.textContent,
+          value: (edit as unknown as { value: string }).value,
+          kwText: kw === null ? null : kw.textContent,
+          kwWeight: kw === null ? null : getComputedStyle(kw).fontWeight,
+          kwStyle: kw === null ? null : getComputedStyle(kw).fontStyle,
+          inkWeight: ia.fontWeight,
+          inkStyle: ia.fontStyle,
+        };
+      });
+      assert.deepEqual(fit.box, [0, 0, 0, 0], `${theme}: the coloured copy and the field are not the same rectangle`);
+      assert.deepEqual(fit.differs, [], `${theme}: the two boxes disagree about a metric that decides where a glyph lands`);
+      // The trailing newline is the copy's alone — it is what keeps a caret on the last line
+      // inside the box — and it is the only difference the two are allowed.
+      assert.equal(fit.text, `${fit.value}\n`, `${theme}: the copy and the field are not the same bytes`);
+      assert.equal(fit.kwText, 'true', `${theme}: the literal is not painted as one`);
+      assert.equal(fit.kwWeight, fit.inkWeight, `${theme}: a bold run in the copy shifts every glyph after it`);
+      assert.equal(fit.kwStyle, fit.inkStyle, `${theme}: an italic run does the same`);
+    }
+  } finally {
+    await rm(file, { force: true });
+  }
 });
 
 test('control: the instrument sees a colour the theme never declared', async () => {

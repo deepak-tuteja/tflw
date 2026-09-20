@@ -962,7 +962,24 @@ function bodyPath(raw: string): PathSegment[] | string {
 function parseValueText(text: string): { ok: true; node: Value } | { ok: false; reason: string } {
   const trimmed = text.trim();
   if (trimmed === '') return { ok: false, reason: 'this field is empty' };
-  if (/[\n\r]/.test(trimmed)) return { ok: false, reason: 'a value is written on one line' };
+  /**
+   * **A bracketed literal may span lines; nothing else may** (`M215` `B1`, `D1120`).
+   *
+   * This used to refuse every newline outright, and that refusal was wrong about exactly one
+   * value: the lexer emits no `newline`/`indent`/`dedent` while a `{` or `[` is open (`lexer.ts`,
+   * the comment at its `openers` counter), so an object or array literal written across lines is
+   * already one logical line to the parser and already parses. Measured: `{\n  "id": 4021,\n
+   * "ok": true\n}` returns a clean `ObjectLit`.
+   *
+   * It mattered because a JSON body is the one value a person **pastes**, and pasted JSON is
+   * pretty-printed. The form refused it with *a value is written on one line*, which is a true
+   * sentence about a scalar and a wall in front of the commonest gesture the Body tab has.
+   *
+   * A scalar keeps the old rule, and keeps it for the old reason: `expect status equals 200\nfoo`
+   * is two lines of intent in a field that writes one, and the language cannot carry the second.
+   */
+  const bracketed = trimmed.startsWith('{') || trimmed.startsWith('[');
+  if (!bracketed && /[\n\r]/.test(trimmed)) return { ok: false, reason: 'a value is written on one line' };
   const lexed = lex(`test "_"\n  let _v = ${trimmed}\n`);
   const parsed = parseTokens(lexed.tokens);
   const error = [...lexed.diagnostics, ...parsed.diagnostics].find((d) => d.severity === 'error');

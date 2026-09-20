@@ -34,7 +34,13 @@ function corpus(root: string): string[] {
     let entries: string[];
     try { entries = readdirSync(dir); } catch { return; }
     for (const entry of entries) {
-      if (SKIP_DIR.test(entry)) continue;
+      // **A dot-prefixed `.tflw` is not part of the authored corpus** (`M215`, `M215-01`). `tflw
+      // ui`'s send writes `.scratch.tflw` into the project it is serving — that is what the button
+      // is FOR — and this walk reads every `.tflw` under the repository root, so a person driving
+      // the served page changes what this test asserts over. The same line is in `lenses.test.ts`,
+      // `print.test.ts` and `verify-fmt-roundtrip.mjs`; this is the **fourth** copy of a walk that
+      // exists once in four places, which is the open half of `M215-01`.
+      if (SKIP_DIR.test(entry) || entry.startsWith('.')) continue;
       const p = join(dir, entry);
       let st;
       try { st = statSync(p); } catch { continue; }
@@ -344,6 +350,9 @@ test('the prefix of a request is the hooks and its own declaration up to it — 
   // the interesting shapes (a hook with two requests, a test whose first request is its fourth
   // statement, a polling request) are all in there and none of them was written for this test.
   let checked = 0;
+  /** Requests that have something attached — the population on which the old rule and the new one
+   *  differ. Counted so the assertion above cannot pass because the corpus never exercises it. */
+  let reached = 0;
   for (const path of corpus(repoRoot)) {
     const outline = fileOutline(path, readFileSync(path, 'utf8'));
     if (outline.diagnostics.some((d) => d.severity === 'error')) continue;
@@ -364,17 +373,30 @@ test('the prefix of a request is the hooks and its own declaration up to it — 
         for (const [i, hook] of hookRequests.entries()) {
           assert.equal(prefix.requests[i]!.path, hook.path, `${path}: the hooks run first`);
         }
-        // And what is attached to the selected request is inside the cut, because it is what reads
-        // the response — a prefix that stopped at the request would report no verdict for the one
-        // thing the author is looking at.
+        /**
+         * **And the cut is the request, not what follows it** — `M215` `A1` (`D1119`), which
+         * inverts what this assertion used to say.
+         *
+         * It read *what is attached to the selected request is inside the cut, because it is what
+         * reads the response — a prefix that stopped at the request would report no verdict for
+         * the one thing the author is looking at*. True while a send produced verdicts. It does
+         * not, so the reach buys nothing and costs whatever happens to follow: `attached` is
+         * everything between this request and the **next**, which on `examples/storefront` is an
+         * `open "/"`, so sending an API request launched a browser.
+         *
+         * Asserted over the corpus rather than a fixture for the same reason as everything above
+         * it — and the inequality below is what makes the claim non-vacuous, since on a request
+         * that is last in its declaration with nothing after it the two rules agree.
+         */
+        assert.equal(prefix.upTo, request.stepPath.step, `${path}: the cut is the selected request`);
         const attached = request.attached.filter((x) => x.stepPath !== null);
-        const lastStep = attached.length === 0 ? request.stepPath.step : attached[attached.length - 1]!.stepPath!.step;
-        assert.equal(prefix.upTo, lastStep, `${path}: the cut includes what reads the response`);
+        if (attached.length > 0) reached += 1;
         assert.equal(prefix.decl, decl.index);
       }
     }
   }
   assert.ok(checked > 20, `expected the corpus's requests, checked ${checked}`);
+  assert.ok(reached > 20, `the narrower cut is only a claim where something IS attached; ${reached} such requests is not a corpus`);
 });
 
 test('a declaration with no request has no prefix, because there is nothing to send', () => {
