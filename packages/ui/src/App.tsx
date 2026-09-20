@@ -13,6 +13,8 @@ import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
 import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
+import { Grip, SIDEBAR, storedWidth } from './Grip';
+import { TooltipLayer } from './Tooltip';
 import { ThemePick } from './ThemePick';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
@@ -73,6 +75,9 @@ export function App() {
    *  hash for `D1045`'s reason a fourth time: `[accept]` has to be a link, so the document is part
    *  of the address rather than a callback the findings list carries. */
   const [doc, setDocState] = useState<string | null>(() => docFromHash(window.location.hash));
+  /** The project pane's width (`M216`). Read once from `localStorage` — it is the reader's, per
+   *  served project, and belongs in neither the hash nor the server (`D1045`'s same argument). */
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => storedWidth(SIDEBAR));
   const [project, setProject] = useState<ProjectView | null>(null);
   /**
    * The run request, held by the shell since `M209` `S1`.
@@ -751,8 +756,16 @@ export function App() {
         : `${unsavedDocs.length} project document${unsavedDocs.length === 1 ? '' : 's'} ${unsavedDocs.length === 1 ? 'has' : 'have'} an edit nobody has saved`;
 
   return (
-    <div className="app">
+    /* The pane's width is the reader's (`M216`) — a grid column fed by a custom property so the
+       grip moves one number and the media query below 900 px, where the pane stops being a column
+       at all, goes on overriding it untouched. */
+    <div className="app" style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}>
       {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={setCreating} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+      <Grip spec={SIDEBAR} width={sidebarWidth} onWidth={setSidebarWidth} />
+      {/* One layer for the whole page (`M216` `B1`). It draws nothing until something is hovered
+          or focused, and it is here rather than inside a pane because the shell's own chrome asks
+          for a tooltip too — one of the three screenshots that started this round is a door bar. */}
+      <TooltipLayer />
       {/* **The create dialog is the shell's** (`D1118`) — one dialog, two places that ask for it:
           the explorer's `+ new file` and the sequence column's `+ new test`. */}
       {creating === null || project === null ? null : (

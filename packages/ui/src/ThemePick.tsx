@@ -47,7 +47,7 @@ export function ThemePick() {
     setTheme(next);
   };
   return (
-    <div className="theme-pick" data-theme-pick={theme}>
+    <div className="theme-pick" data-theme-pick={theme} data-tip="colour, type and density together — a theme here is a whole token set, not a palette. Remembered in this browser and nowhere else.">
       <label htmlFor="tflw-theme">theme</label>
       <select id="tflw-theme" value={theme} onChange={(e) => pick(e.target.value as ThemeName)} data-theme-select>
         {THEMES.map(([id, label]) => (

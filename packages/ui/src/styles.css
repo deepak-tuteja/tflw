@@ -210,7 +210,21 @@ input[type='checkbox'], input[type='radio'] { all: revert; flex: none; accent-co
 .theme-pick label { text-transform: var(--label-transform); letter-spacing: var(--label-spacing); }
 
 /* Layout (U2): the project on the left, the runs across the top, the selected run below. */
-.app { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
+/* `M216` — the pane's width is the reader's, so the column is a property the grip writes and the
+   900 px media query below still overrides wholesale. The grip is its own 6 px column so it takes
+   space from neither neighbour and cannot overlap the pane's own scrollbar. */
+.app { display: grid; grid-template-columns: var(--sidebar-w, 320px) 6px 1fr; height: 100%; }
+.col-grip {
+  cursor: col-resize; background: transparent; border: 0; padding: 0;
+  /* Invisible at rest and only as wide as the column: a permanent vertical rule between two panes
+     is one more line on a page that already has a border here. */
+  border-left: var(--border) solid transparent;
+}
+.col-grip:hover, .col-grip.dragging, .col-grip:focus-visible { background: var(--accent); outline: none; }
+.col-grip:focus-visible { border-left-color: var(--accent); }
+/* While a drag is live the pointer owns the window, so nothing under it should select or receive a
+   hover — without this the file tree highlights row by row as the pane is widened. */
+body:has(.col-grip.dragging) { cursor: col-resize; user-select: none; }
 .sidebar { border-right: var(--border) solid var(--line); background: var(--panel); overflow: auto; padding: calc(var(--unit) * 2); }
 .main { overflow: auto; padding: calc(var(--unit) * 2) calc(var(--unit) * 3) 40px; }
 .muted { color: var(--muted); }
@@ -348,7 +362,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .thresholds { border-collapse: collapse; font-size: 13px; }
 .thresholds td { padding: 2px 10px 2px 0; }
 .thresholds tr.fail td { color: var(--fail); }
-@media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar { border-right: 0; border-bottom: 1px solid var(--line); } .trace { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .app { grid-template-columns: 1fr; } .col-grip { display: none; } .sidebar { border-right: 0; border-bottom: 1px solid var(--line); } .trace { grid-template-columns: 1fr; } }
 
 /* Binary evidence (U3). */
 .screenshot { margin: 6px 0; }
@@ -830,7 +844,10 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .api-compose-path { font-size: 12px; color: var(--muted); }
 .api-compose-dirty { display: flex; align-items: center; gap: calc(var(--unit) * 1); font-size: 12px; }
 
-.api-compose-grid { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: calc(var(--unit) * 1.5); flex: 1; min-height: 0; }
+/* `M216` `E` (`D1135`) — this was `minmax(220px, 300px)`, one number the builder chose for every
+   file. It is now the reader's, through the same grip the project pane uses. The `gap` is gone
+   because the grip IS the gap: a 6px column that can be grabbed, rather than 10px that cannot. */
+.api-compose-grid { display: grid; grid-template-columns: var(--seq-w, 300px) 6px minmax(0, 1fr); column-gap: calc(var(--unit) * 0.8); flex: 1; min-height: 0; }
 
 /* ── region 2: the sequence (`D1112`) ──────────────────────────────────────────────────────── */
 .seq-col { display: flex; flex-direction: column; min-height: 0; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
@@ -991,3 +1008,101 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
   background-size: 4px 2px;
   padding-bottom: 1px;
 }
+
+
+/* ---- `M216` ---------------------------------------------------------------------------------
+   Three small rules, one measurement each.
+
+   THE SOURCE GUTTER. Every line of the Source tab already carried `data-source-line` so the index
+   could scroll to it; the number was in the DOM and never drawn, which is what `[Image #26]` was
+   pointing at. It is `::before` and not text because `D985` makes that `<pre>`'s `textContent` the
+   file byte for byte — generated content is outside `textContent`, so the projection is untouched
+   and `user-select` keeps it out of a copy as well. Width comes from the file's own digit count
+   (`--gutter-ch`, set in `SourcePanel`) so line 100 lines up with line 99. */
+.source-text [data-source-line]::before {
+  content: attr(data-source-line);
+  display: inline-block;
+  width: var(--gutter-ch, 3ch);
+  margin-right: 1.5ch;
+  text-align: right;
+  color: var(--muted);
+  opacity: 0.65;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* THE DECLARATION CHIP, in the two lists that lacked it. `.seq-kind` is defined for the Compose
+   sequence; these two rules only place it, because a second definition of the same chip is the
+   drift the shared class was chosen to avoid. The sidebar's is `flex-shrink: 0` so the name, not
+   the marker, is what gives up width when the pane is narrow — a chip that ellipsises into `te…`
+   is worse than no chip. */
+.outline-row .seq-kind { flex: 0 0 auto; }
+.index-rows .seq-kind { margin-right: 0.25ch; }
+
+/* THE BAND. The parent is `.muted`, so the two painted roles have to say their own colour; they
+   take it from the same variables the source colouring uses, which is the whole point — `test` in
+   the band and `test` in the file are one word with one meaning. */
+.api-compose-bar [data-compose-subject-what] .t-kw,
+.api-compose-bar [data-compose-subject-what] .t-str { font-weight: inherit; }
+
+/* ── The hover (`M216` `B1`, `D1124`). ─────────────────────────────────────────────────────────
+ *
+ * Native `title` painted grey Helvetica inside a Terminal-themed page and put itself wherever the
+ * OS liked, which on a list of rows was on top of the next row. Everything here is a token, so the
+ * palette-closure gate in `ui-appearance.test.ts` covers it in all four themes without a line of
+ * its own — and the accent rule on the leading edge is what makes it read as the page's own object
+ * rather than as the browser's.
+ *
+ * `pointer-events: none` is load-bearing: the layer's own `pointerover` listener would otherwise
+ * see the tooltip, fail to find a `[data-tip]` above it, and hide the thing the pointer is on. */
+.tip {
+  position: fixed; z-index: 50; pointer-events: none;
+  max-width: 340px;
+  padding: calc(var(--unit) * 0.7) var(--unit);
+  background: var(--panel2); color: var(--fg);
+  border: var(--border) solid var(--line);
+  border-inline-start: 2px solid var(--accent);
+  border-radius: var(--ctl-radius);
+  font: 12px/1.45 var(--sans);
+  box-shadow: 0 2px 12px var(--scrim);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* ── A refused removal, said on the row that refused it (`M216` `D`, `D1133`). ─────────────────
+ *
+ * Its shape is `.seq-refusal`'s, one level up: the sentence is under the control that produced it,
+ * inline and not on hover, because `D1117` found that a `✕` whose reason lives in a tooltip is
+ * indistinguishable from a broken button. `flex-basis: 100%` is what puts it on its own line — the
+ * menu's `<li>` is a flex row of label, note and `✕`, and without this the reason would read as a
+ * fourth item beside them. */
+.clause-refusal { flex-basis: 100%; margin: 2px 0 0; font-size: 11px; }
+.add-clause li { flex-wrap: wrap; }
+
+/* ── The add menu, drawn as controls (`M216` `E`, `D1134`). ────────────────────────────────────
+ *
+ * Measured before anything moved: the option's label sat at **12.43:1** — excellent — and its
+ * border at **1.16:1**, on a fill identical to the page behind it. *"They are hardly visible"* was
+ * exactly right, and the obvious repair — brighten the text — would have been aimed at the one
+ * number that already passed. These were never dim buttons. They were crisp text with no button
+ * around them.
+ *
+ * **The second number moved by removing its subject rather than by tuning it.** `button:disabled`
+ * paints its label `--muted`, which is 4.18:1 and under the floor, and a clause already present
+ * was disabled. But a present clause is not *unavailable*: it is something this test actually
+ * says, and since `D1131` it has a live `✕` beside it. So its label reads at full strength and
+ * what is disabled is only the *add* — which `— already here` and the `✕` were already saying in
+ * words, twice. */
+.add-clause ul {
+  background: var(--panel);
+  border: var(--border) solid var(--line);
+  border-radius: var(--radius);
+  padding: calc(var(--unit) * 0.7);
+}
+.add-clause [data-add-state='addable'] button { background: var(--input); border-color: var(--muted); }
+.add-clause [data-add-state='addable'] button:hover { border-color: var(--accent); color: var(--accent); }
+/* Present: a label, not a broken button. Nothing to press, so nothing drawn as pressable. */
+.add-clause [data-add-state='present'] [data-add-go] {
+  background: transparent; border-color: transparent; color: var(--fg); padding-inline: 0; cursor: default;
+}
+.add-clause [data-add-remove] { background: var(--input); border-color: var(--muted); }
+.add-clause [data-add-remove]:hover { border-color: var(--fail); color: var(--fail); }

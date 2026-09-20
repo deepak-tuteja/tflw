@@ -257,11 +257,18 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
             type="button"
             className={`outline-row${decl.body.requests.some((r) => r.line === focusLine) || decl.line === focusLine ? ' on' : ''}`}
             onClick={() => onLine(decl.line)}
-            title={decl.kind === 'test' ? decl.name : decl.label}
             data-outline-goto={decl.line}
+            data-tip-derived=""
           >
             <span className="ln muted">{decl.line}</span>
-            {decl.kind === 'test' ? <span className="outline-name">{decl.name}</span> : <em className="outline-name">{decl.label}</em>}
+            {/* **The kind is a chip, not a guess from the prose** (`M216`). A request row under this
+                one has read `POST` + path since `D1081` — a coloured word for what it is and the
+                rest in code font — and the declaration row above it carried neither, so the one row
+                a reader scans for was the only row with no shape. It is the SAME `seq-kind` class
+                the Compose sequence already draws, deliberately: three surfaces now show a
+                declaration and a fourth spelling of the same idea is how they drift apart. */}
+            <span className="seq-kind">{decl.kind === 'test' ? 'test' : decl.label}</span>
+            {decl.kind === 'test' ? <span className="outline-name" data-tip-text>{decl.name}</span> : <em className="outline-name" />}
           </button>
           {decl.body.requests.length === 0 ? null : (
             <ul className="tree">
@@ -271,13 +278,13 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
                     type="button"
                     className={`outline-row request${focusLine === r.line ? ' on' : ''}`}
                     onClick={() => onLine(r.line)}
-                    title={`${r.method} ${r.path}`}
                     data-outline-goto={r.line}
+                    data-tip-derived=""
                     data-outline-method={r.method}
                     aria-pressed={focusLine === r.line}
                   >
                     <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span>
-                    <code className="outline-name">{r.path}</code>
+                    <code className="outline-name" data-tip-text>{r.path}</code>
                   </button>
                 </li>
               ))}
@@ -308,7 +315,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           <button
             type="button"
             className={`file-row${state === 'none' ? ' muted' : ''}${unmatched ? ' unmatched' : ''}${chosen.has(f.path) ? ' on' : ''}${openFile === f.path ? ' open' : ''}`}
-            title={f.path}
+            data-tip={f.path}
             onClick={(e) => pick(e, [f.path], f.path)}
             data-file-row={f.path}
             data-selected={chosen.has(f.path) ? 'yes' : 'no'}
@@ -321,7 +328,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
               className={`count${state === 'none' ? ' muted' : ''}`}
               data-door-count={behind}
               data-door-count-state={state}
-              title={state === 'fragment' ? 'declares no test — a fragment other files resolve against' : `${behind} behind ${DOOR_BY_ID[door].label}`}
+              data-tip={state === 'fragment' ? 'declares no test — a fragment other files resolve against' : `${behind} behind ${DOOR_BY_ID[door].label}`}
             >
               {state === 'fragment' ? '—' : behind}
             </span>
@@ -342,11 +349,11 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
                 truth for what the file would have held, so the only honest claim is the one that is
                 true in both cases. */}
             {f.errors > 0 ? (
-              <span className="badge fail" data-diagnostics={f.diagnostics} data-recovered={f.errors} title={`this file does not parse — ${f.errors} error${f.errors === 1 ? '' : 's'}; the tests listed under it are what the parser recovered, and it cannot say what it lost`}>
+              <span className="badge fail" data-diagnostics={f.diagnostics} data-recovered={f.errors} data-tip={`this file does not parse — ${f.errors} error${f.errors === 1 ? '' : 's'}; the tests listed under it are what the parser recovered, and it cannot say what it lost`}>
                 does not parse · {f.errors} error{f.errors === 1 ? '' : 's'} · recovered
               </span>
             ) : f.warnings > 0 ? (
-              <span className="badge" data-diagnostics={f.diagnostics} data-warnings={f.warnings} title="this file parses — the list below is the file's">
+              <span className="badge" data-diagnostics={f.diagnostics} data-warnings={f.warnings} data-tip="this file parses — the list below is the file's">
                 {f.warnings} warning{f.warnings === 1 ? '' : 's'}
               </span>
             ) : null}
@@ -364,7 +371,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           onClick={(e) => (e.metaKey || e.ctrlKey || e.shiftKey ? pick(e, under, null) : setCollapsed(toggle(collapsed, node.path)))}
           data-dir-toggle={node.path}
           aria-expanded={open}
-          title={`${node.path} — click to fold, cmd-click to select its ${under.length} file${under.length === 1 ? '' : 's'}`}
+          data-tip={`${node.path} — click to fold, cmd-click to select its ${under.length} file${under.length === 1 ? '' : 's'}`}
         >
           <span className="twisty" aria-hidden="true">
             {open ? '▾' : '▸'}
@@ -379,7 +386,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
   return (
     <aside className="sidebar">
       <div className="project" data-project>
-        <div className="root" title={project.root}>
+        <div className="root" data-tip-derived="">
           {project.root.split('/').filter(Boolean).pop() ?? project.root}
         </div>
         <div className="muted" data-project-counts>
@@ -425,7 +432,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           between the reader and the project. */}
       {onNew === null ? null : (
         <div className="explorer-new" data-explorer-new>
-          <button type="button" onClick={() => onNew('file')} data-compose-new-file title="a new `.tflw` file in this project">
+          <button type="button" onClick={() => onNew('file')} data-compose-new-file data-tip="a new `.tflw` file in this project">
             + new file
           </button>
         </div>

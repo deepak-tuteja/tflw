@@ -94,8 +94,12 @@ export function SourcePanel({ file, pending, diagnostics, project, door }: {
                   data-test-lenses={d.lenses.join(' ')}
                   data-test-here={d.lenses.includes(door) ? 'yes' : 'no'}
                 >
-                  <button className="index-row" onClick={() => goToLine(d.line)} data-source-goto={d.line} title={`scroll to line ${d.line}`}>
-                    <span className="muted ln">{d.line}</span> {d.name}
+                  <button className="index-row" onClick={() => goToLine(d.line)} data-source-goto={d.line} data-tip={`scroll to line ${d.line}`}>
+                    {/* The same chip the sidebar outline and the Compose sequence draw (`M216`) —
+                        `D1067` made this index and the outline two answers to different questions,
+                        which is a reason for them to hold different facts and none at all for them
+                        to mark a declaration two different ways. */}
+                    <span className="muted ln">{d.line}</span> <span className="seq-kind">{d.kind}</span> {d.name}
                   </button>
                   {d.kind === 'crawl' ? <span className="badge">crawl</span> : null}
                   {d.workload ? <span className="badge">workload</span> : null}
@@ -124,7 +128,23 @@ export function SourcePanel({ file, pending, diagnostics, project, door }: {
       {/* Each line is its own span so the index has something with a position to scroll to. The
           text is reassembled exactly — `textContent` here is the file, byte for byte, which is
           what `D985` requires of a projection and what every gate reading `[data-preview]` asserts. */}
-      <pre className="preview" data-preview ref={pre}>
+      {/* **The gutter is generated content, and that is a requirement rather than a shortcut**
+          (`M216`). Every line already carried `data-source-line` — the index scrolls to it — so the
+          numbers were in the DOM and simply never drawn. They cannot be drawn as TEXT: `D985` says
+          this `<pre>`'s `textContent` is the file byte for byte, and every gate reading
+          `[data-preview]` rests on it, so a rendered number would corrupt the one property the
+          projection has. A CSS `::before` reading the attribute is outside `textContent` entirely.
+
+          The width is the file's own digit count rather than a constant: at a fixed `3ch` the
+          thousandth line of a long file pushes one character further right than the nine hundred
+          before it, and a gutter that does not line up is worse than no gutter. */}
+      <pre
+        className="preview source-text"
+        data-preview
+        data-source-gutter={String(shown === '' ? 1 : shown.split('\n').length).length}
+        style={{ ['--gutter-ch' as string]: `${String(shown === '' ? 1 : shown.split('\n').length).length}ch` }}
+        ref={pre}
+      >
         <SourceText text={shown} />
       </pre>
       {/* `D1052` — what `tflw check` will say about these bytes. Shown, never blocking: the write

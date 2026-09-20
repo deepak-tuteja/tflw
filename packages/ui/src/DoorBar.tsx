@@ -27,7 +27,7 @@ export function DoorBar({ project, door, onDoor, themePick }: DoorBarProps) {
   const counts = countByDoor(project);
   return (
     <nav className="doorbar" data-doorbar={door}>
-      <button className="doorbar-home" onClick={() => onDoor(null)} data-door-home title="back to the four doors">
+      <button className="doorbar-home" onClick={() => onDoor(null)} data-door-home data-tip="back to the four doors">
         tflw
       </button>
       {DOORS.map((d) => (
@@ -37,7 +37,7 @@ export function DoorBar({ project, door, onDoor, themePick }: DoorBarProps) {
           onClick={() => onDoor(d.id)}
           data-door-tab={d.id}
           aria-pressed={d.id === door}
-          title={d.blurb}
+          data-tip={d.blurb}
         >
           {d.label}
           <span className="muted doorbar-count" data-door-tab-count={counts[d.id]}>
