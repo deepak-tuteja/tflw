@@ -32,6 +32,10 @@ const page = (title, body) =>
 
 export function startStorefront(port = PORT) {
   const orders = new Map();
+  const baskets = new Map();
+  // Keyed by `Idempotency-Key`, which is the whole point of the header: the key is the client's
+  // statement that two presses are one intention, so the server is what has to remember it.
+  const placed = new Map();
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const path = url.pathname;
@@ -95,6 +99,84 @@ export function startStorefront(port = PORT) {
         const order = { id: orders.size + 1, ref: body.ref ?? null, itemId: found.id, qty, total: found.price * qty };
         orders.set(order.id, order);
         json(201, order);
+      });
+    }
+    // ---- The checkout, which is where a request stops being a URL and starts being a document ----
+    //
+    // The three routes below exist because the rest of this server does not need headers or a body
+    // worth reading, and a reader learning tflw needs both: `POST /items` is two fields, and every
+    // header on it is tflw's default. Here a request carries who is ordering, where it is going and
+    // how it is being paid for, and **three different headers each decide something** — one grants
+    // access, one decides whether a second press charges the card twice, and one is handed back so
+    // a caller can find this request in a log. None of them is decoration.
+    if (req.method === 'POST' && path === '/baskets') {
+      return read((body) => {
+        const lines = Array.isArray(body.lines) ? body.lines : [];
+        const priced = [];
+        for (const line of lines) {
+          const found = CATALOGUE.find((i) => i.id === line.itemId);
+          if (!found) return json(400, { error: `no such item ${line.itemId}` });
+          const qty = Number(line.qty ?? 1);
+          priced.push({ itemId: found.id, name: found.name, unitPrice: found.price, qty, lineTotal: found.price * qty });
+        }
+        const subtotal = priced.reduce((n, l) => n + l.lineTotal, 0);
+        // One coupon, spelled one way. A shop with a coupon table would be a different example.
+        const discount = body.coupon === 'SHELF10' ? Math.floor(subtotal / 10) : 0;
+        const basket = {
+          id: `bsk_${baskets.size + 1}`,
+          currency: 'GBP',
+          customer: { email: body.customer?.email ?? null, name: body.customer?.name ?? null },
+          lines: priced,
+          subtotal,
+          discount,
+          total: subtotal - discount,
+        };
+        baskets.set(basket.id, basket);
+        json(201, basket);
+      });
+    }
+    if (req.method === 'POST' && path === '/orders/checkout') {
+      // `Authorization` first, and before the body is even read: a shop that validates the address
+      // of a caller it then turns away has told a stranger which postcodes it accepts.
+      const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
+      if (!bearer) return json(401, { error: 'a bearer token is required to check out' }, { 'www-authenticate': 'Bearer' });
+      // `X-Request-Id` is echoed on every answer below, including the refusals — a correlation id
+      // that only survives the happy path is no use on the day you need it.
+      const echo = { 'x-request-id': req.headers['x-request-id'] ?? 'req-unknown' };
+      return read((body) => {
+        const key = req.headers['idempotency-key'];
+        // A replay is the SAME answer, not a fresh one — 200 rather than 201, because nothing was
+        // created this time. Without this a double-press is a second order and a second charge.
+        if (key && placed.has(key)) return json(200, placed.get(key), { ...echo, 'idempotent-replay': 'true' });
+
+        const shipping = body.shipping ?? {};
+        const errors = [];
+        for (const field of ['line1', 'city', 'postcode']) {
+          if (typeof shipping[field] !== 'string' || shipping[field].trim() === '') {
+            errors.push({ field: `shipping.${field}`, message: 'this is needed to deliver the order' });
+          }
+        }
+        if (errors.length > 0) return json(422, { errors }, echo);
+
+        const basket = baskets.get(body.basketId);
+        if (!basket) return json(404, { error: `no such basket ${body.basketId}` }, echo);
+
+        const id = orders.size + 1;
+        const order = {
+          id,
+          ref: `ORD-${1000 + id}`,
+          status: 'confirmed',
+          basketId: basket.id,
+          currency: basket.currency,
+          total: basket.total,
+          contact: { email: body.contact?.email ?? null, phone: body.contact?.phone ?? null },
+          shipping,
+          payment: { method: body.payment?.method ?? null, last4: body.payment?.last4 ?? null },
+          notes: body.notes ?? null,
+        };
+        orders.set(id, order);
+        if (key) placed.set(key, order);
+        json(201, order, { ...echo, location: `/orders/${id}` });
       });
     }
     const one = /^\/orders\/(\d+)$/.exec(path);

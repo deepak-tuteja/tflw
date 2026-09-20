@@ -181,7 +181,9 @@ test('every test in the corpus classifies, and a third of them land in more than
   // `M200`, and it could not survive the sibling leaving, which is how it failed in CI.
   // `M203` `S3` — the doors corpus (`__fixtures__/doors-corpus/`, 2 files, 8 tests + 1 crawl) joined this repository's corpus: 42 -> 50 (its 8 tests; the crawl is counted by `combos`, not by `total`).
   // `M203` `S4` — the example project (`examples/storefront/tests/`, 4 files, 11 tests + 1 crawl) joined this repository's corpus: 50 -> 61 (its 11 tests; the crawl is counted by `combos`, not by `total`).
-  const EXPECTED_TESTS = 61;
+  // `M216` — the example gained `tests/checkout.tflw` (5 tests, 0 crawls): requests with nested
+  // bodies and headers that decide something, which the example had none of. 61 -> 66.
+  const EXPECTED_TESTS = 66;
   assert.equal(mine.total, EXPECTED_TESTS,
     `the corpus classified ${mine.total} tests, expected ${EXPECTED_TESTS} — move the number in the change that moved the corpus`);
 
