@@ -1,0 +1,98 @@
+# The checkout — the file to read when you want to see a request that is a *document*.
+#
+# The rest of this example is deliberately small: `GET /items` has no body and no header worth
+# writing, which is right for teaching the shape of a test and wrong for teaching the shape of a
+# request. Everything here is the other half — a body with nested objects and an array of lines,
+# and **three headers that each decide something**. If you are looking for where tflw's Compose
+# pane earns the Headers and Body tabs, it is this file.
+#
+# **The bodies are one line each, and that is the canonical form, not a compromise.** A bracketed
+# value may be written across several lines — the lexer holds `newline` while a `{` or `[` is open,
+# so tflw reads it happily — but `print` writes it back on one line, so a multi-line body here
+# would make this the one file in the repository that does not round-trip whole. The layout belongs
+# in the *view*: open any of these in `tflw ui` and press **format** in the Body tab. The file stays
+# canonical; the pane is where it becomes readable (`M215`).
+#
+# **Each test builds its own basket.** Nothing here leans on a test that ran before it: `capture`
+# is scoped to one test, and tests may run in parallel. A file whose third test only passes because
+# its second one ran is the commonest way an example stops being runnable.
+
+@checkout @functional
+test "a basket prices what is in it, line by line"
+  api POST /baskets body { customer: { email: "sam@example.com", name: "Sam Okonjo" }, lines: [{ itemId: 1, qty: 2 }, { itemId: 2, qty: 3 }, { itemId: 3, qty: 1 }], coupon: "SHELF10" }
+    header "Accept" is "application/json"
+  expect status equals 201
+  expect body.lines has count 3
+  # 1400x2 + 850x3 + 900x1, then the coupon takes a tenth off.
+  expect body.subtotal equals 6250
+  expect body.discount equals 625
+  expect body.total equals 5625
+  expect body.currency equals "GBP"
+
+# `Authorization` is read before the body is, and this test is what pins that order. A shop that
+# validates a stranger's address and *then* turns them away has told them which postcodes it takes.
+@checkout @functional
+test "checking out without a token is refused before the address is read"
+  api POST /orders/checkout body { basketId: "bsk_1", shipping: { line1: "14 Bridge Street", city: "Bristol", postcode: "BS1 4ST", country: "GB" } }
+  expect status equals 401
+  expect header "WWW-Authenticate" equals "Bearer"
+  expect body.error contains "bearer token"
+
+@checkout @functional
+test "the whole checkout — who is ordering, where it goes, and how it is paid"
+  api POST /baskets body { customer: { email: "ada@example.com", name: "Ada Whitfield" }, lines: [{ itemId: 2, qty: 4 }], coupon: "SHELF10" }
+  expect status equals 201
+  capture body.id as basketId
+
+  api POST /orders/checkout body { basketId: "{basketId}", contact: { email: "ada@example.com", phone: "+44 7700 900123" }, shipping: { line1: "14 Bridge Street", city: "Bristol", postcode: "BS1 4ST", country: "GB" }, payment: { method: "card", last4: "4242" }, notes: "leave with the neighbour at number 16" }
+    header "Authorization" is "Bearer shelf-demo-token"
+    header "Idempotency-Key" is "ada-first-order"
+    header "X-Request-Id" is "req-4821"
+    header "Accept" is "application/json"
+  expect status equals 201
+  expect body.status equals "confirmed"
+  expect body.total equals 3060
+  expect body.shipping.city equals "Bristol"
+  expect body.payment.last4 equals "4242"
+  # The correlation id comes back on the answer, which is the only thing that makes it useful.
+  expect header "X-Request-Id" equals "req-4821"
+  expect header "Location" contains "/orders/"
+
+# `Idempotency-Key` is the client saying *these two presses are one intention*. The second call
+# below is byte-for-byte the first one; without the key it would be a second order and a second
+# charge, which is the bug this header exists to prevent.
+#
+# It also carries the **bare** interpolation, `basketId: {basketId}`, where the test above writes
+# the quoted one, `"{basketId}"`. They are not the same: quoted interpolates into a string, bare
+# substitutes the captured value itself and keeps its type — so a captured number stays a number
+# instead of arriving as `"3"`. The pane paints them differently for the same reason.
+@checkout @functional
+test "pressing pay twice is one order, not two"
+  api POST /baskets body { customer: { email: "raj@example.com", name: "Raj Mehta" }, lines: [{ itemId: 1, qty: 1 }, { itemId: 3, qty: 2 }] }
+  expect status equals 201
+  capture body.id as basketId
+
+  api POST /orders/checkout body { basketId: {basketId}, contact: { email: "raj@example.com", phone: "+44 7700 900456" }, shipping: { line1: "2 Kiln Lane", city: "Leeds", postcode: "LS1 2AB", country: "GB" }, payment: { method: "card", last4: "1881" } }
+    header "Authorization" is "Bearer shelf-demo-token"
+    header "Idempotency-Key" is "raj-double-press"
+  expect status equals 201
+  capture body.ref as firstRef
+
+  api POST /orders/checkout body { basketId: {basketId}, contact: { email: "raj@example.com", phone: "+44 7700 900456" }, shipping: { line1: "2 Kiln Lane", city: "Leeds", postcode: "LS1 2AB", country: "GB" }, payment: { method: "card", last4: "1881" } }
+    header "Authorization" is "Bearer shelf-demo-token"
+    header "Idempotency-Key" is "raj-double-press"
+  # 200, not 201 — nothing was created the second time, and the status is where that is said.
+  expect status equals 200
+  expect header "Idempotent-Replay" equals "true"
+  expect body.ref equals "{firstRef}"
+
+@checkout @functional
+test "an address missing its city and postcode is refused field by field"
+  api POST /orders/checkout body { basketId: "bsk_1", contact: { email: "lee@example.com" }, shipping: { line1: "9 Anchor Road", country: "GB" }, payment: { method: "card", last4: "9002" } }
+    header "Authorization" is "Bearer shelf-demo-token"
+    header "X-Request-Id" is "req-9002"
+  expect status equals 422
+  expect body.errors has count 2
+  # The refusal carries the correlation id too — an id that survives only the happy path is no use
+  # on the day you need it.
+  expect header "X-Request-Id" equals "req-9002"

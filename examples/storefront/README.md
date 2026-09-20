@@ -3,7 +3,7 @@
 A small shop, and a tflw suite that exercises **every door the page has**. Two commands, no setup:
 
 ```
-npm run example        # the functional suite + the scan — 9 of 9 pass, ~400ms
+npm run example        # the functional suite + the scan — 14 of 14 pass, ~1.1s
 npm run example:load   # the same work, run at a rate
 npm run example:ui     # open it in `tflw ui`
 ```
@@ -16,6 +16,7 @@ and stopped for you.
 | file | what it is for |
 |---|---|
 | `tests/catalogue.tflw` | reading the shop over the API, on the page, and one test that does both |
+| `tests/checkout.tflw` | requests that are *documents* — nested bodies, and three headers that each decide something |
 | `tests/signin.tflw` | signing in, and judging the response that comes back |
 | `tests/load.tflw` | the same work under a workload |
 | `tests/scan.tflw` | a `crawl` that walks what the suite touched, as a stranger |
@@ -24,6 +25,28 @@ Between them they cover **all nine lens combinations the language admits** — w
 `tflw ui` uses to decide which door a test appears behind. A test is in every door whose constructs
 it carries; nothing labels it. `tests/catalogue.tflw`'s third test carries an `api` step *and* an
 `open`, so it shows up under API **and** BROWSER, with no tag involved.
+
+## Where to look for a request worth reading
+
+Most of this example is deliberately small, because the shape of a *test* is easier to learn
+against `GET /items` than against a checkout. That leaves the shape of a *request* untaught, which
+is what `tests/checkout.tflw` is for: bodies with nested objects and an array of lines, and three
+headers that are not decoration —
+
+- **`Authorization`** decides whether the request is answered at all, and is read *before* the body
+  is. A shop that validates a stranger's address and then turns them away has told them which
+  postcodes it takes.
+- **`Idempotency-Key`** decides whether pressing pay twice is one order or two. The second call in
+  *"pressing pay twice is one order, not two"* is byte-for-byte the first one; the key is what makes
+  the answer `200` and the same `ref` instead of a second charge.
+- **`X-Request-Id`** comes back on the answer — including the refusals, because a correlation id
+  that survives only the happy path is no use on the day you need it.
+
+**The bodies are written on one line, and that is the canonical form.** A bracketed value may be
+typed across several lines and tflw reads it happily, but `print` writes it back on one line — so a
+multi-line body here would make this the one file in the repository that does not round-trip whole.
+The layout belongs in the view: open the file in `tflw ui`, pick a request, and press **format** in
+the Body tab.
 
 ## Three things this example is built to teach
 
