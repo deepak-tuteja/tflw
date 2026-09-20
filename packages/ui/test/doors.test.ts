@@ -17,6 +17,9 @@ const project = (files: ProjectView['files']): ProjectView => ({ root: '/p', env
 
 const file = (path: string, tests: Array<readonly string[]>, crawls: Array<readonly string[]> = []): ProjectView['files'][number] => ({
   path,
+  // `M219` — the file's own `action` declarations, and whether each opens a page (`D1161`).
+  // Empty here for the same reason `imports` is: neither fixture declares one.
+  actions: [],
   // `M218` — a file's own `import`/`use` targets. Empty here: these two fixtures are about the
   // tree and the search, and neither has ever had a file importing another.
   imports: [],

@@ -178,6 +178,38 @@ function eachStep(step: Step, visit: (step: Step) => void): void {
   }
 }
 
+/**
+ * **Does this body put a page on screen, and what does it call to find out** — `M219` `B` (`D1161`).
+ *
+ * A browser test's group is the **session**, and a session starts at an `open` — except that 17 of
+ * the corpus's 258 browser tests have no `open` at all and reach their page through a `call`
+ * instead (`action login(email, password)`'s own first statement is `open "/login"`). So the
+ * question a fold has to answer about a `call` is *does this action open a page*, and the only
+ * honest answer comes from the action's body.
+ *
+ * **Measured, the cheap heuristic is right and unsound.** Treating every `call` as a session start
+ * is correct in all 167 calls inside browser-bearing tests — and it is correct by luck: **18 of the
+ * corpus's 22 declared actions are api-only**, they simply are never called from a browser test.
+ * One seeding helper called from a browser test breaks it, silently, by opening a session group
+ * around statements that never met a page.
+ *
+ * This returns the two halves and folds nothing, because the fold is transitive across a whole
+ * project — `readProject` runs it to a fixpoint over every action it indexed, where every other
+ * index fact is computed. The walk is `eachStep`'s, so an `open` inside a `within` counts, which
+ * is the same reason `lensesOfTest` shares it.
+ */
+export function pageOpening(body: readonly Step[]): { readonly opens: boolean; readonly calls: readonly string[] } {
+  let opens = false;
+  const calls: string[] = [];
+  for (const step of body) {
+    eachStep(step, (s) => {
+      if (s.type === 'OpenStmt') opens = true;
+      if (s.type === 'CallStmt') calls.push(s.call.name);
+    });
+  }
+  return { opens, calls };
+}
+
 function collectStep(step: Step, found: Set<Lens>): void {
   eachStep(step, (s) => {
     const lens = STEP_LENS[s.type];

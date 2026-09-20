@@ -25,7 +25,7 @@
 // one of those verdicts is correctly dropped rather than shifted by one.
 
 import type { RunReport, StepResult } from './contract';
-import type { Ran, RanIndex, Verdict } from './ComposePane';
+import type { Ran, RanIndex, Verdict } from './parts';
 
 /**
  * How many reports are opened, newest first, looking for one that ran the open file.

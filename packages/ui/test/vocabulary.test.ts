@@ -15,12 +15,15 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  buildApiStep, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildGive,
-  buildLet, buildLog, buildOpen, buildPause, buildWaitUntilApi, type Step,
+  buildAcceptDialog, buildApiStep, buildCall, buildCapture, buildCheck, buildClick, buildCloseTab,
+  buildDismissDialog, buildDownload, buildDrag, buildDropFile, buildExpect, buildFill, buildFillForm,
+  buildGive, buildHover, buildLet, buildLog, buildOpen, buildPause, buildPress, buildScreenshot,
+  buildScroll, buildSelect, buildStub, buildSwitchToNewTab, buildSwitchToTab, buildWaitUntilApi,
+  buildWaitUntilUi, buildWithin, STEP_LENS, type Step,
 } from '@tflw/lang';
 
 import { VOCABULARY } from '../src/vocabulary.ts';
-import { statementEditOf } from '../src/ComposePane.tsx';
+import { statementEditOf } from '../src/parts.tsx';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const doorSource = readFileSync(join(here, '..', 'src', 'ComposeDoor.tsx'), 'utf8');
@@ -65,6 +68,36 @@ const SAMPLES: Readonly<Record<string, Step>> = {
     expects: [{ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' }],
     waitMs: null,
   })),
+  /* **The other nineteen, from `M219` `C`** (`D1162`). The BROWSER door claimed three of the
+     language's twenty-two browser kinds when this round was scoped; every one of these is a kind
+     a row now draws, and the assertion below is what holds the table to it. */
+  HoverStmt: ok(buildHover({ kind: 'button', value: 'Menu' })),
+  ScrollStmt: ok(buildScroll({ kind: 'button', value: 'Bottom' })),
+  TickStmt: ok(buildCheck({ locator: { kind: 'field', value: 'Subscribe' }, ticked: true })),
+  UntickStmt: ok(buildCheck({ locator: { kind: 'field', value: 'Offers' }, ticked: false })),
+  SelectStmt: ok(buildSelect({ locator: { kind: 'field', value: 'Role' }, value: '"member"' })),
+  PressStmt: ok(buildPress({ keys: 'Enter', locator: null })),
+  DismissDialogStmt: ok(buildDismissDialog()),
+  CloseTabStmt: ok(buildCloseTab()),
+  AcceptDialogStmt: ok(buildAcceptDialog('')),
+  SwitchToTabStmt: ok(buildSwitchToTab('1')),
+  ScreenshotStmt: ok(buildScreenshot('shot')),
+  DropFileStmt: ok(buildDropFile({ filePath: './a.csv', locator: { kind: 'css', value: '.drop' } })),
+  DragStmt: ok(buildDrag({ from: { kind: 'css', value: '.a' }, to: { kind: 'css', value: '.b' } })),
+  FillFormStmt: ok(buildFillForm({ rows: [{ field: 'Email', value: '"a@b.c"' }] })),
+  StubStmt: ok(buildStub({ method: 'GET', urlPattern: '**/x', status: '200', body: '' })),
+  WaitUntilUiStmt: ok(buildWaitUntilUi({
+    expect: { soft: false, quantifier: null, subject: { kind: 'locator', locator: { kind: 'text', value: 'Ok' } }, matcher: 'visible', operand: '' },
+    hold: '',
+    wait: '',
+  })),
+  WithinBlock: ok(buildWithin({
+    locator: { kind: 'list', value: 'Cart' },
+    frame: false,
+    body: [ok(buildClick({ locator: { kind: 'button', value: 'Remove' }, kind: 'single' }))],
+  })),
+  SwitchToNewTabBlock: ok(buildSwitchToNewTab([ok(buildClick({ locator: { kind: 'text', value: 'Receipt' }, kind: 'single' }))])),
+  DownloadBlock: ok(buildDownload({ name: 'file', body: [ok(buildClick({ locator: { kind: 'text', value: 'CSV' }, kind: 'single' }))] })),
 };
 
 /** The two kinds a door constructs that are **not** rows: a request is a card, and `wait until` is
@@ -105,12 +138,41 @@ test('every kind a door claims to construct is one the pane can actually draw', 
   }
 });
 
-test('the control: a kind no row edits is caught, which is how `WithinBlock` was', () => {
-  // `buildWithin` exists, which is what made `WithinBlock` look constructible in the first draft.
-  // `statementEditOf` is what decides, and it says no — so the assertion above would have failed.
-  const within = ok(buildClick({ locator: { kind: 'button', value: 'x' }, kind: 'single' }));
-  assert.ok(statementEditOf(within) !== null, 'the instrument reads a kind that IS editable');
-  assert.equal(statementEditOf({ ...within, type: 'WithinBlock' } as unknown as Step), null, 'and refuses one that is not');
+test('the control: a kind no row edits is still caught — and `WithinBlock` is no longer the example', () => {
+  /**
+   * **This control was vacated by the round it was written for**, and that is worth recording
+   * rather than quietly rewriting. It read: *"`buildWithin` exists, which is what made
+   * `WithinBlock` look constructible in the first draft; `statementEditOf` says no, so the
+   * assertion above would have failed."* True until `M219` `C` made `WithinBlock` a row — after
+   * which the control asserted that `statementEditOf` refuses a kind it now accepts, and the only
+   * reason it failed rather than passing silently is that it asserted the refusal *positively*.
+   *
+   * A control needs a kind the pane genuinely does not edit, and the language has one that will
+   * never be edited by anything: `MalformedStep` is the parser's recovery node — the *absence* of
+   * a construct — so no door can construct it and no row can draw it. It is the right subject for
+   * this gate for the same reason it is `null` in `STEP_LENS`.
+   */
+  const click = ok(buildClick({ locator: { kind: 'button', value: 'x' }, kind: 'single' }));
+  assert.ok(statementEditOf(click) !== null, 'the instrument reads a kind that IS editable');
+  assert.equal(statementEditOf({ ...click, type: 'MalformedStep' } as unknown as Step), null, 'and refuses one that is not');
+  /* And the vacuity check the round itself supplies: the kind this control used to name is now
+     one the pane draws, which is the claim `D1162` makes and this is the cheapest place to hold
+     it against the same instrument. */
+  assert.ok(statementEditOf(SAMPLES.WithinBlock!) !== null, '`WithinBlock` is a row from `M219` `C` — `D1162`');
+});
+
+test('the BROWSER door constructs every browser kind the language has — `D1162`', () => {
+  /**
+   * **Measured when this round was scoped: three of twenty-two.** The other nineteen drew as a
+   * plain code line with no disabled control and no reason — 650 statements, 27% of all browser
+   * steps in the two corpora, which is the pane `D1082` refuses. The number is not written here:
+   * the language's own table is asked, so a kind the language gains reddens this the day it lands
+   * rather than the day somebody updates a count.
+   */
+  const browser = (Object.keys(STEP_LENS) as Step['type'][]).filter((k) => STEP_LENS[k] === 'browser');
+  assert.ok(browser.length >= 22, `the language has ${browser.length} browser kinds — fewer than 22 means this gate is reading the wrong table`);
+  const missing = browser.filter((k) => !VOCABULARY.browser.constructs.has(k));
+  assert.deepEqual(missing, [], `the BROWSER door cannot construct: ${missing.join(', ')}`);
 });
 
 test('only API sends, and the table is where that is decided', () => {

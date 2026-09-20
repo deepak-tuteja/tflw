@@ -2418,8 +2418,38 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
     // — and the way to state that here is that they move together: both are readers of the same
     // file, so either both fit a screen or neither does, and a change that made one a form again
     // would break this without needing a number.
-    assert.ok(browserDoor.compose! > 900, `BROWSER's Compose reads the file now, so it is taller than the form it replaced (${browserDoor.compose} px)`);
-    assert.ok(load.compose! < browserDoor.compose!, 'LOAD is still the form — if it has outgrown the reader, `S6` has landed and this note is stale');
+    //
+    // **AND `M219` `A` MOVED BOTH OF THEM, WHICH IS WHY THIS LINE CHANGED AGAIN** (`D1160`). The
+    // assertion here read `browserDoor.compose > 900` — *"BROWSER's Compose reads the file now, so
+    // it is taller than the form it replaced"* — which was true of the pane `M213` `S4` gave it
+    // and is false of the pane it has now: `M214` replaced a document as tall as its file with
+    // **three regions that each scroll inside themselves** (`D1110`), and `M219` deleted the fork
+    // that kept BROWSER on the old one. So the two doors do not merely *move together*; they are
+    // the same component with a different vocabulary table, and the equality below says so
+    // directly. It is the strongest form of `D1160` this gate can state, and a fork coming back
+    // reddens it without a number to keep current.
+    assert.ok(browserDoor.compose! <= 900, `BROWSER runs the same three regions API does, so the shell does not scroll (${browserDoor.compose} px)`);
+    assert.equal(
+      browserDoor.compose,
+      api.compose,
+      `one pane, two doors (\`D1160\`) — API measures ${api.compose} px and BROWSER ${browserDoor.compose}`,
+    );
+    /**
+     * **And the LOAD half of this comparison is gone, because it stopped being a claim.**
+     *
+     * It read `load.compose < browserDoor.compose` — *"LOAD is still the form"* — which was a true
+     * consequence of BROWSER being a tall reader and says nothing now that BROWSER is three
+     * regions that fit the window. Measured on this fixture in the default theme after `M219` `A`:
+     * **API 900, BROWSER 900, LOAD 900, SCANS 900**, so neither `<` nor `>` holds and inverting
+     * the sign would have been picking whichever one happened to pass.
+     *
+     * *LOAD is still the form* is a **structural** fact and is asserted as one: it draws its own
+     * form and none of the pane's rows, which is what `D1042` says and what `S6` will change.
+     */
+    await sized.goto(`${baseUrl}#/load`);
+    await sized.reload();
+    await sized.locator('[data-load-form]').waitFor();
+    assert.equal(await sized.locator('[data-seq-row]').count(), 0, 'LOAD still draws its own form — `D1103`’s `S6` is where that changes');
 
     // And the shape of those numbers, stated rather than left implicit — otherwise three doors
     // that had all regressed identically would satisfy the parity above.
@@ -2756,25 +2786,50 @@ test('`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the ro
   await page.locator('[data-compose-summary]').waitFor();
   const before = await readFile(join(root, target), 'utf8');
 
-  // The vocabulary is the door's, read off the table and not off this file.
-  assert.equal(await page.locator('[data-seq-adds]').first().getAttribute('data-seq-adds'), 'open,click,fill,let,record');
+  /* **THE TWO DOORS RUN ONE PANE FROM `M219` `A`** (`D1160`), and this is where that is held.
+     Measured when the round was scoped: **30 data-attributes existed on the API door and not on
+     BROWSER, and 32 the other way** — the request-grouped sequence, the editor column, `send`, the
+     response box and both of `M217`/`M218`'s additions were all API-only, and this gate was green
+     throughout. The three below are the ones that separated the panes, asserted in both
+     directions so the fork coming back reddens this rather than passing quietly. */
+  await page.locator('[data-seq-row]').first().waitFor();
+  assert.ok((await page.locator('[data-seq-row]').count()) > 0, 'the sequence column is this door’s too');
+  assert.ok((await page.locator('[data-editor]').count()) > 0, 'and so is the editor beside it');
+  assert.equal(await page.locator('[data-body-rows]').count(), 0, 'the pane `M214` left behind is gone from every door, not narrowed');
+
+  /**
+   * The vocabulary is the door's, read off the table and not off this file.
+   *
+   * **Read as ONE attribute, through a retrying wait, and both halves of that cost a run.**
+   * `count()` and `evaluateAll` do not retry, and the foot is redrawn whenever the address moves —
+   * so a snapshot of the six buttons taken between two commits reads **zero of them** and reports
+   * an empty list as a disagreement with the table. Waiting for one button first does not fix it:
+   * the button that was waited for is not the list that is then read. `data-seq-adds` is the list
+   * as one string, which is why the pane carries it — and putting the value in the SELECTOR makes
+   * the wait itself the retry, without reaching for Playwright's `expect` in a file that asserts
+   * with `node:assert`.
+   */
+  const WANT = 'open,click,fill,let,step,record';
+  /* The selector carries the value, so the wait IS the assertion and retries like every other
+     `waitFor` on this page. The `getAttribute` under it is for the message a failure needs. */
+  await page.locator(`[data-seq-foot][data-seq-adds="${WANT}"]`).waitFor().catch(() => undefined);
+  assert.equal(await page.locator('[data-seq-foot]').getAttribute('data-seq-adds'), WANT, 'the foot draws the door’s vocabulary, in the table’s order');
   assert.equal(await page.locator('[data-seq-add="request"]').count(), 0, '`+ request` is API’s word, not this door’s');
 
-  /* **Waited for, not counted.** `count()` does not retry, and the pane draws the file in two
-     commits — the declaration's own head, then its body — so a count taken the instant the add row
-     exists reads zero rows and the `.last()` below then means the wrong thing. It is `S2`'s report
-     race again, one render apart, which is why both are written down rather than slept through. */
-  await page.locator('[data-script="click"]').first().waitFor();
-  const clicksBefore = await page.locator('[data-script="click"]').count();
-  assert.equal(clicksBefore, 1, 'this fixture clicks exactly once, which is what makes `.last()` below mean “the new one”');
+  /* **The gesture lands ON the statement it wrote** — `D1136`, which this door needed only from
+     `M219` `A`: the pane it used to draw made every row a live form, so a statement spliced at the
+     foot was editable where it landed. This one draws one editor, for whatever the address names,
+     so a `+ click` that moved nothing would put a `change me` fourteen rows down a list nobody is
+     pointing at — `M217` `§2.1`'s finding, inherited by the gesture that never needed the fix. */
   await page.locator('[data-seq-add="click"]').first().click();
-  await page.locator(`[data-script="click"] >> nth=${clicksBefore}`).waitFor();
+  await page.locator('[data-script="click"]').waitFor();
+  assert.equal(await page.locator('[data-editor-statement]').getAttribute('data-editor-statement'), 'ClickStmt');
 
   /* **The placeholder reads as unfinished, and that is a decision the builder forced.** A blank
      locator is refused outright (*"a `button` locator needs something to match"*), so the choice
      was never *blank or plausible* — it was *plausible or obviously unfinished*, and a default
      reading `"Buy"` is a test that looks written and asserts about an element nobody chose. */
-  const row = page.locator('[data-script="click"]').last();
+  const row = page.locator('[data-script="click"]');
   assert.equal(await row.locator('[data-locator-value]').inputValue(), 'change me');
   // The row is a real editor over the statement the gesture just wrote, so filling it edits the
   // file rather than a form's private state.
@@ -2821,7 +2876,9 @@ test('`M213` `S4`: adding a gesture to a test that already opened a page writes 
   assert.ok(openedBefore > 0, 'the fixture must already open a page, or the claim below is vacuous');
 
   await page.locator('[data-seq-add="fill"]').first().click();
-  const row = page.locator('[data-script="fill"]').first();
+  // One editor, for whatever the address names — and `D1136` has just pointed it at the new row.
+  await page.locator('[data-script="fill"]').waitFor();
+  const row = page.locator('[data-script="fill"]');
   await row.locator('[data-locator-value]').fill('Coupon');
   await row.locator('[data-fill-value]').fill('"SAVE10"');
 
@@ -2832,6 +2889,321 @@ test('`M213` `S4`: adding a gesture to a test that already opened a page writes 
   assert.equal((text.match(/^\s*open /gm) ?? []).length, openedBefore, 'adding a gesture must not add an `open`');
 
   await writeFile(join(root, target), before, 'utf8');
+});
+
+/**
+ * **The session fold** — `M219` `B` (`D1160`, `D1161`).
+ *
+ * `groupBody` folded a body by **request** and a browser test frequently has none. Measured over
+ * the two corpora when this round was scoped: 338 declarations carry a browser step, **161 have no
+ * `api` request at all**, and in the 177 mixed ones **1455 of 1927 browser steps (75.5%) were
+ * drawn as attachments to an `api` request** — a `click` rendered as a reader of a login response.
+ *
+ * Its own project because the claim needs **two files**: `D1161` says a session can start at a
+ * `call`, and whether an action opens a page is a fact the project index computes, from a file the
+ * call is not written in.
+ */
+test('`M219` `B`: an `open` starts a session, and so does a `call` the project index says opens a page', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m219-fold-'));
+  const fresh = await browser.newPage();
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
+    // The actions live in another file, reached by `use` — which is the case a per-file answer
+    // gets wrong and the whole reason `opensPage` is computed on the server.
+    await writeFile(
+      join(dir, 'actions.tflw'),
+      'action signIn(email)\n  open "/login"\n  fill field "Email" with {email}\n\naction seed()\n  api POST /seed\n  expect status equals 200\n',
+      'utf8',
+    );
+    await writeFile(
+      join(dir, 'web.tflw'),
+      [
+        'use "./actions.tflw"',
+        '',
+        'test "mixed"',
+        '  api POST /login',
+        '  expect status equals 200',
+        '  open "/account"',
+        '  click button "Buy"',
+        '  expect text "Ok" is visible',
+        '',
+        'test "two pages"',
+        '  open "/one"',
+        '  click button "A"',
+        '  open "/two"',
+        '  click button "B"',
+        '',
+        'test "through a call"',
+        '  seed()',
+        '  signIn("a@b.c")',
+        '  click button "Go"',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      await fresh.goto(`${base}#/browser/compose/web.tflw/L3`);
+      await fresh.locator('[data-seq-rows]').waitFor();
+
+      /** Every sequence row, with the depth the fold drew it at. */
+      const rows = async (): Promise<{ kind: string | null; line: string | null; depth: number }[]> =>
+        fresh.locator('.seq-col .seq-row').evaluateAll((els) =>
+          els.map((e) => {
+            let depth = 0;
+            for (let n = e.parentElement; n !== null; n = n.parentElement) if (n.classList.contains('seq')) depth += 1;
+            return { kind: e.getAttribute('data-seq-row'), line: e.getAttribute('data-seq-line'), depth };
+          }),
+        );
+
+      // **The setup phase keeps grouping by request**, which is `D1138`'s model untouched: the
+      // `expect` reads the response and is drawn under the request. The `click` is not.
+      const mixed = await rows();
+      assert.deepEqual(
+        mixed.map((r) => `${r.kind}@${r.depth}`),
+        ['test@1', 'request@1', 'ExpectStmt@2', 'session@1', 'ClickStmt@2', 'ExpectStmt@2'],
+        `the fold on a mixed test:\n${JSON.stringify(mixed, null, 1)}`,
+      );
+      assert.equal(await fresh.locator('[data-seq-sessions]').getAttribute('data-seq-sessions'), '1');
+
+      // **A second `open` ends the first session** — it is a new page, and what follows is against
+      // it. The mutation this pins is *a second `open` extends the first*.
+      await fresh.goto(`${base}#/browser/compose/web.tflw/L10`);
+      await fresh.locator('[data-seq-sessions]').waitFor();
+      assert.equal(await fresh.locator('[data-seq-sessions]').getAttribute('data-seq-sessions'), '2');
+
+      /**
+       * **`D1161`, and both directions of it.** `seed()` is api-only and starts nothing;
+       * `signIn()` opens a page and starts a session, so the `click` under it belongs to the page
+       * rather than to the seeding call above it.
+       *
+       * This is the assertion the measured alternative would pass **by luck**: *any `call` starts
+       * a session* is right in all 167 calls inside browser-bearing tests, because 18 of the
+       * corpus's 22 declared actions are api-only and are simply never called from a browser test.
+       * `seed()` here is the seeding helper that breaks it.
+       */
+      await fresh.goto(`${base}#/browser/compose/web.tflw/L16`);
+      await fresh.locator('[data-seq-sessions]').waitFor();
+      const called = await rows();
+      assert.deepEqual(
+        called.map((r) => `${r.kind}@${r.depth}`),
+        ['test@1', 'CallStmt@1', 'session@1', 'ClickStmt@2'],
+        `an api-only call is a row and not a session:\n${JSON.stringify(called, null, 1)}`,
+      );
+      assert.equal(await fresh.locator('[data-seq-sessions]').getAttribute('data-seq-sessions'), '1');
+      assert.equal(
+        await fresh.locator('[data-seq-row][data-seq-row="session"]').getAttribute('data-stmt'),
+        'CallStmt',
+        'the session’s head is the `call` itself — an ordinary statement, still selectable and still editable',
+      );
+      // And the api-only call is **still drawn**, which is the degradation `D1161` promises: a
+      // row that opens no session is a row, not an omission.
+      assert.equal(await fresh.locator('[data-seq-row="CallStmt"]').count(), 1);
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await fresh.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * **`within` as a qualifier** — `M219` `D` (`D1163`).
+ *
+ * The language calls it a block and the corpus writes it as a scope on a single gesture: it is the
+ * **third-commonest browser construct** (433) and **397 of its 405 blocks wrap exactly one
+ * statement**. Before this round `outline.ts` never walked a block's body at all, so **430
+ * statements corpus-wide were not rows** — one unaddressable row whose text happened to contain
+ * the gesture inside it.
+ *
+ * Both arms are asserted, because the row's picture depends on what it holds and that is the cost
+ * of the decision.
+ */
+test('`M219` `D`: one statement in a `within` is one row carrying both; more than one is a group', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m219-within-'));
+  const fresh = await browser.newPage();
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(
+      join(dir, 'web.tflw'),
+      [
+        'test "one"',
+        '  open "/cart"',
+        '  within list "Backordered items"',
+        '    click button "Remove"',
+        '',
+        'test "more"',
+        '  open "/cart"',
+        '  within list "Saved"',
+        '    click button "Remove"',
+        '    click button "Undo"',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      await fresh.goto(`${base}#/browser/compose/web.tflw/L1`);
+      await fresh.locator('[data-seq-rows]').waitFor();
+
+      // **THE QUALIFIER ARM.** One row, carrying the scope as a chip and the gesture as the text.
+      const one = fresh.locator('.seq-col .seq-row[data-stmt="WithinBlock"]');
+      assert.equal(await one.count(), 1);
+      assert.equal(await one.locator('[data-seq-scope-of]').textContent(), 'within list "Backordered items"');
+      assert.equal((await one.locator('.seq-text').textContent())?.trim(), 'button "Remove"');
+      assert.equal(await fresh.locator('.seq-col [data-seq-scope]').count(), 0, 'one statement is not a group');
+      // And the `⤺` is there, because the scope can come off and leave the gesture — offered only
+      // on a block holding one, which `replaceInSource` is the reason for: it replaces one step
+      // with one node, and a six-statement block unscopes to six.
+      assert.equal(await one.locator('[data-seq-unscope]').count(), 1);
+
+      /* **The inner statement is editable THROUGH the block**, which is the claim that makes this
+         a fix rather than a rendering. Its address is the block's — the body step *is* the block —
+         and `inner` is the second half, so the edit rebuilds the block with one element replaced. */
+      await one.locator('[data-seq-goto]').click();
+      await fresh.locator('[data-editor-statement="WithinBlock"]').waitFor();
+      await fresh.locator('[data-script="within"] [data-locator-value]').fill('Saved for later');
+      const inner = fresh.locator('[data-inner-line] [data-script="click"]');
+      await inner.locator('[data-locator-value]').fill('Delete');
+      await fresh.locator('[data-tab="source"]').click();
+      await fresh.locator('[data-tabstrip="source"]').waitFor();
+      const text = (await fresh.locator('[data-preview]').textContent())!;
+      // **The scope survives an edit to the statement inside it**, and the statement survives an
+      // edit to the scope. A rebuild that dropped either would print a file that still parses.
+      assert.match(text, /within list "Saved for later"\n\s+click button "Delete"/);
+
+      // **THE GROUP ARM.** Two statements, so the block is a header with its body indented and
+      // every row of it addressable — the eight in the corpus that earn it.
+      await fresh.locator('[data-tab="compose"]').click();
+      await fresh.goto(`${base}#/browser/compose/web.tflw/L6`);
+      await fresh.locator('[data-seq-scope]').waitFor();
+      assert.equal(await fresh.locator('[data-seq-scope]').getAttribute('data-seq-scope-holds'), '2');
+      const held = await fresh.locator('[data-seq-scope] .seq .seq-row').evaluateAll((els) => els.map((e) => (e.querySelector('.seq-text')?.textContent ?? '').trim()));
+      assert.deepEqual(held, ['button "Remove"', 'button "Undo"']);
+      assert.equal(await fresh.locator('[data-seq-scope] > .seq-row .seq-scope').count(), 0, 'a group says its scope on its own row, not as a chip on a gesture');
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await fresh.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * **`+ step…`, and the assertion offer that follows the phase** — `M219` `E`/`G` (`D1164`,
+ * `D1166`).
+ *
+ * The two are in one gate because they need the same fixture — a test with an assertion in each
+ * phase — and neither needs a browser of its own.
+ */
+test('`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer follows the phase', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m219-step-'));
+  const fresh = await browser.newPage();
+  try {
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(
+      join(dir, 'web.tflw'),
+      'test "mixed"\n  api POST /login\n  expect status equals 200\n  open "/account"\n  expect text "Hi" is visible\n  expect status equals 200\n',
+      'utf8',
+    );
+    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    try {
+      const base = `http://127.0.0.1:${await ui.listen(0)}`;
+      await fresh.goto(`${base}#/browser/compose/web.tflw/L1`);
+      await fresh.locator('[data-seq-add="step"]').waitFor();
+
+      /**
+       * **THE OFFER IS AN ORDERING, NOT A DROP** (`D1166`), and the corpus is why. Mirroring
+       * `D1114` — BROWSER drops the response subjects the way API drops `an element` — looked
+       * obvious and is refused by the measurement: inside browser-bearing tests **436 of 1125
+       * assertions (38.8%) use an api subject**, 428 of them `status`, which is the
+       * second-commonest assertion in a browser test. Split by phase instead and it is clean:
+       * setup is 91.0% api, the session 95.2% browser.
+       */
+      await fresh.locator('.seq-col .seq-row[data-stmt="ExpectStmt"]').first().locator('[data-seq-goto]').click();
+      await fresh.locator('[data-expect-phase]').waitFor();
+      assert.equal(await fresh.locator('[data-expect-phase]').getAttribute('data-expect-phase'), 'api');
+      const setupLeads = (await fresh.locator('[data-expect-leads]').getAttribute('data-expect-leads'))!.split(',');
+      assert.equal(setupLeads[0], 'status', 'a row in setup leads with the subject 405 of setup’s 445 assertions use');
+      assert.equal(setupLeads.includes('locator'), false, 'and `an element` is behind `more…`, not gone');
+
+      /* `.nth(1)`, not `.last()`: the fixture holds three assertions — `status` in setup, `text` in
+         the session, and a second `status` in the session, which is the 4.7% the phase split does
+         not claim and is what the `carried` assertion below needs. */
+      await fresh.locator('.seq-col .seq-row[data-stmt="ExpectStmt"]').nth(1).locator('[data-seq-goto]').click();
+      await fresh.locator('[data-expect-phase="browser"]').waitFor();
+      const sessionLeads = (await fresh.locator('[data-expect-leads]').getAttribute('data-expect-leads'))!.split(',');
+      assert.equal(sessionLeads[0], 'value', 'the neutral subject leads both phases — it is evidence of neither');
+      assert.ok(sessionLeads.includes('locator') && sessionLeads.includes('page'), 'the session leads with the browser subjects');
+      assert.equal(sessionLeads.includes('status'), false);
+      /* **Nothing is unreachable**, which is the whole of what makes this an ordering. Every one of
+         the language's subjects is in the select, in one half or the other. */
+      const every = await fresh.locator('[data-expect-subject] option').evaluateAll((els) => els.map((e) => e.getAttribute('value')));
+      for (const id of ['status', 'duration', 'request', 'header', 'body', 'bodyText', 'bodyBytes', 'value', 'response', 'locator', 'page', 'networkRequest', 'dialogMessage', 'dialogType']) {
+        assert.ok(every.includes(id), `\`${id}\` is not reachable from a session row`);
+      }
+      /* **Three of those had never been offered anywhere** (`D1166`): browser-only, 26 occurrences
+         across the two corpora, and absent from every door's select — not dropped by a table,
+         never listed. That is the silent-omission failure `D1076` refuses. */
+      assert.ok(['networkRequest', 'dialogMessage', 'dialogType'].every((id) => sessionLeads.includes(id)));
+
+      /**
+       * **A subject the row already says is always offered, whatever the phase thinks of it.**
+       *
+       * `status` is the second-commonest assertion in a browser test — **428 of them**, in the
+       * corpus, behind `an element` at 645 — and this fixture writes one **in the session**, which
+       * is the 4.7% the phase split does not claim. An ordering that dropped it from the row that
+       * holds it would make a real assertion's own subject unselectable, which is the failure
+       * `D1076` refuses and the reason `carried` has never been dropped by anything.
+       */
+      await fresh.locator('.seq-col .seq-row[data-stmt="ExpectStmt"]').last().locator('[data-seq-goto]').click();
+      await fresh.locator('[data-expect-subject="status"]').waitFor();
+      const kept = (await fresh.locator('[data-expect-leads]').getAttribute('data-expect-leads'))!.split(',');
+      assert.equal(await fresh.locator('[data-expect-phase]').getAttribute('data-expect-phase'), 'browser', 'it is in the session');
+      assert.ok(kept.includes('status'), `a session row that says \`status\` still offers it: ${kept.join(',')}`);
+
+      /**
+       * **`+ step…` previews from the BUFFER, never from the disk** (`D1141`) — `M217`'s own
+       * defect report, inherited rather than re-earned. With a pending edit, a dialog that read
+       * the saved bytes previewed and wrote a file the pane was not showing, and the next Save put
+       * the old buffer back over it.
+       */
+      await fresh.locator('.seq-col .seq-row[data-stmt="ExpectStmt"]').first().locator('[data-seq-goto]').click();
+      await fresh.locator('[data-expect-operand]').fill('201');
+      await fresh.locator('[data-compose-dirty]').waitFor();
+      await fresh.locator('[data-seq-add="step"]').click();
+      await fresh.locator('[data-add-step]').waitFor();
+      const preview = (await fresh.locator('[data-add-step-preview]').textContent())!;
+      assert.match(preview, /expect status equals 201/, `the preview is built from the text the author has:\n${preview}`);
+
+      // The tail is eighteen: 22 browser kinds − the three in the foot − `within`, which under
+      // `D1163` is a field on a row and leaves the `+` vocabulary entirely.
+      assert.equal(await fresh.locator('[data-add-step-count]').getAttribute('data-add-step-count'), '18');
+      assert.equal(await fresh.locator('[data-add-step-kind="WithinBlock"]').count(), 0);
+      // It filters by typing, and the bytes it previews are the bytes that land.
+      await fresh.locator('[data-add-step-filter]').fill('dialog');
+      assert.equal(await fresh.locator('[data-add-step-count]').getAttribute('data-add-step-count'), '2');
+      await fresh.locator('[data-add-step-kind="DismissDialogStmt"]').click();
+      const chosen = (await fresh.locator('[data-add-step-preview]').textContent())!;
+      assert.match(chosen, /dismiss dialog/);
+      await fresh.locator('[data-add-step-go]').click();
+      await fresh.locator('[data-add-step]').waitFor({ state: 'detached' });
+      await fresh.locator('[data-tab="source"]').click();
+      await fresh.locator('[data-tabstrip="source"]').waitFor();
+      const landed = (await fresh.locator('[data-preview]').textContent())!;
+      assert.match(landed, /dismiss dialog/, 'the bytes previewed are the bytes that land');
+      assert.match(landed, /expect status equals 201/, 'and the pending edit is still there — the shape `M217` `2` found');
+    } finally {
+      await ui.close();
+    }
+  } finally {
+    await fresh.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('a pick session outlives a tab switch and dies with the door — asserted on the process, not the DOM', async () => {
@@ -2878,6 +3250,12 @@ test('a pick session outlives a tab switch and dies with the door — asserted o
       await fresh.locator('[data-door-form="browser"]').waitFor();
       await fresh.locator(`[data-file-row="web.tflw"]`).click();
       await fresh.locator('[data-compose-summary]').waitFor();
+      /* **`pick` lives on the row whose locator it fixes** (`D1106`), and from `M219` `A` the row
+         is drawn in the **editor** — one editor for whatever the address names — so the `click` is
+         selected first. Before this round every row was a live form and the button was simply on
+         screen; the affordance is unchanged and where it is drawn is not. */
+      await fresh.locator('[data-seq-row][data-stmt="ClickStmt"] [data-seq-goto]').first().click();
+      await fresh.locator('[data-script="click"]').waitFor();
       await fresh.locator('[data-pick]').first().click();
       await fresh.locator('[data-pick-state="running"]').waitFor();
 
@@ -2966,21 +3344,69 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
 
       await fresh.locator('[data-seq-add="record"]').first().click();
       // The button says it is running, and so does the strip — the strip is the half that is still
-      // true once Compose is not the tab you are on, and a recording writes while you look away.
+      // true once Compose is not the tab you are on, and a recording runs while you look away.
       await fresh.locator('[data-seq-add-live="yes"]').waitFor();
       await fresh.locator('[data-tab-mark="compose"]').waitFor();
 
-      // The three statements land in the buffer, in order, under the test they were recorded into.
-      await fresh.locator('[data-script="click"]').waitFor();
+      /**
+       * **THE LINES LAND IN THE SESSION PANEL, NOT IN THE BUFFER** — `M219` `F` (`D1165`), which
+       * **amends `D1095`**.
+       *
+       * `D1095`'s argument for appending live was that the buffer is reversible. It is; what it is
+       * not is *reviewable*. A two-minute session writes thirty statements into the file the
+       * author is looking at, and the only way to drop the four that were mis-clicks is to find
+       * them among the twenty-six that were not. So the statements are evidence until they are
+       * ticked — `D1102`'s rule, one door over, with a live page as the evidence.
+       *
+       * Everything this gate asserted about *classification* is unchanged and is asserted here:
+       * three lines parse, the two banners and the unreadable line are not statements.
+       */
+      await fresh.locator('[data-session-line]').first().waitFor();
+      const shown = await fresh.locator('[data-session-line]').evaluateAll((els) =>
+        els.map((e) => ({ kind: e.getAttribute('data-session-line-kind'), text: (e.querySelector('.stmt-text')?.textContent ?? '').trim() })),
+      );
+      assert.deepEqual(
+        shown.filter((l) => l.kind === 'step').map((l) => l.text),
+        ['click button "Sign in"', 'fill field "Email" with "alice@example.com"', 'tick field "Remember me"'],
+        'the recorder’s statements arrive as lines, in order',
+      );
+      /**
+       * **And nothing else** — two banners and one unreadable line, none of which is a statement.
+       *
+       * **`M219-01` is here.** The build tried to keep the unreadable line as a marked row, on the
+       * argument that a gesture the language cannot spell vanishing with nothing to report is the
+       * silence `D1076` refuses. It is — and the page cannot act on it, because `tflw record`'s
+       * stream has **no framing**: this stub's two banners fail to parse for exactly the same
+       * reason a refused gesture does. Measured: every session opened with two junk rows. So the
+       * drop is restored and the defect is filed against the stream rather than papered over here,
+       * and **this assertion is what pins it** — the day a line is attributable, the count changes.
+       */
+      assert.equal(shown.length, 3, `two banners and one unreadable line are not rows:\n${JSON.stringify(shown, null, 1)}`);
+      assert.equal(shown.filter((l) => l.kind !== 'step').length, 0);
+
+      /* **And the file has not changed**, which is the whole of what `D1165` adds. The mutation
+         this pins is *the recorder appends straight to the buffer*: with it, the three statements
+         are in the pending source before anything was ticked. */
       await fresh.locator('[data-tab="source"]').click();
       await fresh.locator('[data-tabstrip="source"]').waitFor();
-      const lines = (await fresh.locator('[data-preview]').textContent())!.split('\n').map((l) => l.trim());
-      const click = lines.indexOf('click button "Sign in"');
-      assert.ok(click > 0, `the recording is in the buffer:\n${lines.join('\n')}`);
-      assert.equal(lines[click + 1], 'fill field "Email" with "alice@example.com"');
-      assert.equal(lines[click + 2], 'tick field "Remember me"');
-      // **And nothing else**: two banners and one unparseable line, none of which is a statement.
-      assert.equal(lines.filter((l) => l.startsWith('recording ') || l.startsWith('ready ') || l.startsWith('…and')).length, 0);
+      const before = (await fresh.locator('[data-preview]').textContent())!;
+      assert.equal(before.includes('click button "Sign in"'), false, `nothing is written until it is kept:\n${before}`);
+      assert.equal(await fresh.locator('[data-compose-dirty]').count(), 0, 'and the pane is not dirty, because nothing has been written');
+
+      /* **THE CONTROL, because a gate that only asserts a refusal is half a gate** (`M218` §8.8,
+         and §5's own rule this round). Keeping is the path that must WORK: tick one line and
+         exactly that one statement is spliced. */
+      await fresh.locator('[data-tab="compose"]').click();
+      await fresh.locator('[data-tabstrip="compose"]').waitFor();
+      const keep = fresh.locator('[data-session-line][data-session-line-kind="step"]').nth(1);
+      await keep.locator('[data-session-keep]').click();
+      await fresh.locator('[data-compose-dirty]').waitFor();
+      await fresh.locator('[data-tab="source"]').click();
+      await fresh.locator('[data-tabstrip="source"]').waitFor();
+      const after = (await fresh.locator('[data-preview]').textContent())!;
+      assert.ok(after.includes('fill field "Email" with "alice@example.com"'), `the kept line is in the buffer:\n${after}`);
+      assert.equal(after.includes('click button "Sign in"'), false, 'and only the kept line — the other two are still evidence');
+      assert.equal(after.includes('tick field "Remember me"'), false);
 
       assert.deepEqual(pageErrors, [], 'classifying a line must not throw — a dropped line and a crashed handler are otherwise indistinguishable');
     } finally {
@@ -3056,6 +3482,9 @@ test('`M213` `S4`: `pick` fixes the locator on the row it is pressed on, from a 
       await fresh.locator('[data-file-row="web.tflw"]').click();
       await fresh.locator('[data-compose-summary]').waitFor();
 
+      /* See the sibling gate above — `pick` is drawn on the selected statement from `M219` `A`. */
+      await fresh.locator('[data-seq-row][data-stmt="ClickStmt"] [data-seq-goto]').first().click();
+      await fresh.locator('[data-script="click"]').waitFor();
       await fresh.locator('[data-pick]').first().click();
       await fresh.locator('[data-pick-state="running"]').waitFor();
 

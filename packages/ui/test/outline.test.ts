@@ -19,7 +19,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApiStep, lex, parseSource, replaceInSource, STEP_LENS, type Step } from '@tflw/lang';
-import { addressed, fileOutline, groupBody, isForeign, prefixOf, readNotes, statementsOf } from '../src/outline';
+import { addressed, fileOutline, groupBody, isForeign, pageOpeners, phaseOf, prefixOf, readNotes, requestsOf, statementsOf } from '../src/outline';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
@@ -73,8 +73,10 @@ test('every step of every body lands in exactly one row, by kind', () => {
     for (const s of topLevelSteps(source)) total[s.type] = (total[s.type] ?? 0) + 1;
     const outline = fileOutline(path, source);
     for (const decl of outline.declarations) {
-      // A request is a row; a statement is a row; nothing else is in a body.
-      for (const r of decl.body.requests) placed[r.kind] = (placed[r.kind] ?? 0) + 1;
+      /* A request is a row; a statement is a row; nothing else is in a body — and since `M219`
+         `B` a request can stand inside a **session**, so the flat list is asked for rather than
+         `body.requests`, which is the setup phase's alone. */
+      for (const r of requestsOf(decl.body)) placed[r.kind] = (placed[r.kind] ?? 0) + 1;
       for (const s of statementsOf(decl.body)) {
         // `wait until api`'s nested expects are its own attachments and are NOT top-level steps,
         // so they are counted out here rather than inflating the comparison.
@@ -97,7 +99,7 @@ test('the sibling is pressure and carries no number', { skip: corpus(siblingRoot
     for (const s of topLevelSteps(source)) total[s.type] = (total[s.type] ?? 0) + 1;
     const placed: Record<string, number> = {};
     for (const decl of fileOutline(path, source).declarations) {
-      for (const r of decl.body.requests) placed[r.kind] = (placed[r.kind] ?? 0) + 1;
+      for (const r of requestsOf(decl.body)) placed[r.kind] = (placed[r.kind] ?? 0) + 1;
       for (const s of statementsOf(decl.body)) {
         if (s.nested) continue;
         placed[s.kind] = (placed[s.kind] ?? 0) + 1;
@@ -164,14 +166,111 @@ test('a statement belongs to the request above it, and the preamble is what has 
   assert.equal(t.body.requests[1]!.method, 'POST');
 });
 
-test('a body with no request at all is one preamble, which is what a browser test looks like from here', () => {
+test('a browser test is a SESSION, not a preamble — `M219` `B` (`D1160`)', () => {
+  /**
+   * **This assertion used to say the opposite, and the sentence it said it in is the reason it
+   * was wrong.** It read *"a body with no request at all is one preamble, which is what a browser
+   * test looks like from here"* — a true description of `groupBody` before `M219` and a false
+   * description of a browser test. Measured over the two corpora when this round was scoped: 338
+   * declarations carry a browser step, 161 have no `api` request at all, and in the 177 mixed ones
+   * **1455 of 1927 browser steps (75.5%) were drawn as attachments to an `api` request**.
+   *
+   * So the fold has a second rule and this is it: an `open` starts a session, and the session owns
+   * what follows it.
+   */
   const outline = fileOutline('t.tflw', 'test "a"\n  open "/"\n  click button "Buy"\n');
   const t = outline.declarations[0]!;
   assert.equal(t.body.requests.length, 0);
-  assert.deepEqual(t.body.preamble.map((s) => s.kind), ['OpenStmt', 'ClickStmt']);
-  assert.deepEqual(t.body.preamble.map((s) => s.lens), ['browser', 'browser']);
-  assert.ok(t.body.preamble.every((s) => isForeign(s.lens, 'api')), 'a browser step is foreign to the API door');
-  assert.ok(t.body.preamble.every((s) => s.text.length > 0), 'a locked row still renders what the step is');
+  assert.deepEqual(t.body.preamble, [], 'nothing stands above the `open`, so the setup phase is empty');
+  assert.equal(t.body.sessions.length, 1);
+  const session = t.body.sessions[0]!;
+  assert.equal(session.head.kind, 'OpenStmt');
+  assert.deepEqual(session.body.preamble.map((s) => s.kind), ['ClickStmt']);
+  /* The properties the old assertion held, which are about the ROW and not about the fold, still
+     hold — and they are checked over the flat list so this cannot pass by the rows moving. */
+  const rows = statementsOf(t.body);
+  assert.deepEqual(rows.map((s) => s.kind), ['OpenStmt', 'ClickStmt']);
+  assert.deepEqual(rows.map((s) => s.lens), ['browser', 'browser']);
+  assert.ok(rows.every((s) => isForeign(s.lens, 'api')), 'a browser step is foreign to the API door');
+  assert.ok(rows.every((s) => s.text.length > 0), 'a locked row still renders what the step is');
+});
+
+test('the setup phase keeps grouping by request, and the session takes what is under it', () => {
+  // The mixed shape `D1160` is about: an `api` request and its assertion above the `open`, and the
+  // page's gestures below it. Before `M219` the `click` was an attachment of `POST /login`.
+  const outline = fileOutline(
+    't.tflw',
+    'test "a"\n  api POST /login\n  expect status equals 200\n  open "/account"\n  click button "Buy"\n  expect text "Ok" is visible\n',
+  );
+  const t = outline.declarations[0]!;
+  assert.equal(t.body.requests.length, 1);
+  assert.deepEqual(t.body.requests[0]!.attached.map((s) => s.kind), ['ExpectStmt'], 'the expect reads the response and stays attached to it');
+  assert.equal(t.body.sessions.length, 1);
+  assert.deepEqual(t.body.sessions[0]!.body.preamble.map((s) => s.kind), ['ClickStmt', 'ExpectStmt']);
+  assert.equal(phaseOf(t.body, 3), 'setup');
+  assert.equal(phaseOf(t.body, 4), 'session');
+  assert.equal(phaseOf(t.body, 6), 'session');
+});
+
+test('a second `open` ends the first session — `M219` `B`', () => {
+  const outline = fileOutline('t.tflw', 'test "a"\n  open "/one"\n  click button "A"\n  open "/two"\n  click button "B"\n');
+  const t = outline.declarations[0]!;
+  assert.equal(t.body.sessions.length, 2);
+  assert.deepEqual(t.body.sessions.map((s) => s.body.preamble.map((x) => x.kind)), [['ClickStmt'], ['ClickStmt']]);
+});
+
+test('a `call` opens a session only when the index says the action opens a page — `D1161`', () => {
+  /* **A call is written as the action's own name and no keyword** — `login("a", "b")`, not
+     `call login(...)`: `call` is not in the grammar, and a first draft of this gate that wrote it
+     parsed cleanly as an action named `call login`, which is the language telling you the same
+     thing in the least helpful way it can. */
+  const src = 'test "a"\n  login("a", "b")\n  click button "Buy"\n';
+  /* **With no index, no `call` starts a session**, which is the honest degradation rather than a
+     wrong answer: every `open` still does, and the claim is visibly smaller. */
+  assert.equal(fileOutline('t.tflw', src).declarations[0]!.body.sessions.length, 0);
+  /* **And the cheap heuristic is what this refuses.** *Any `call` starts a session* was measured
+     right in all 167 calls inside browser-bearing tests — by luck: 18 of the corpus's 22 declared
+     actions are api-only and are simply never called from a browser test. */
+  assert.equal(fileOutline('t.tflw', src, new Set(['seedOrders'])).declarations[0]!.body.sessions.length, 0);
+  const opened = fileOutline('t.tflw', src, new Set(['login'])).declarations[0]!;
+  assert.equal(opened.body.sessions.length, 1);
+  assert.equal(opened.body.sessions[0]!.head.kind, 'CallStmt');
+  assert.deepEqual(opened.body.sessions[0]!.body.preamble.map((s) => s.kind), ['ClickStmt']);
+});
+
+test('`pageOpeners` is the one place the index is flattened, and it reads only what opens', () => {
+  assert.deepEqual(
+    [...pageOpeners([
+      { actions: [{ name: 'login', opensPage: true }, { name: 'seed', opensPage: false }] },
+      { actions: [{ name: 'checkout', opensPage: true }] },
+    ])].sort(),
+    ['checkout', 'login'],
+  );
+});
+
+test('a `within` is a scope on the row it holds, and its statement is a row — `M219` `D` (`D1163`)', () => {
+  /**
+   * **430 statements corpus-wide were not rows at all** before this round: `outline.ts` never
+   * walked a block's body, so a `within` was one unaddressable row whose text happened to contain
+   * the gesture inside it. `within` is the third-commonest browser construct (433) and **397 of
+   * its 405 blocks wrap exactly one statement**.
+   */
+  const one = fileOutline('t.tflw', 'test "a"\n  within list "Cart"\n    click button "Remove"\n').declarations[0]!;
+  const block = one.body.preamble[0]!;
+  assert.equal(block.kind, 'WithinBlock');
+  assert.equal(block.text, 'within list "Cart"', 'a block\'s own text is its head line — the body is next door in `body`');
+  assert.equal(block.body?.length, 1);
+  const inner = block.body![0]!;
+  assert.equal(inner.kind, 'ClickStmt');
+  assert.equal(inner.inner, 0, 'its index in the block, which is the second half of its address');
+  assert.deepEqual(inner.stepPath, block.stepPath, 'and the first half is the BLOCK — the body step is the block');
+  assert.equal(inner.owner, block.node, 'the row carries the block an edit rebuilds');
+  assert.ok(inner.nested, 'so the per-kind equality above still counts the block once and skips what is inside it');
+
+  // The block arm: two statements, and both are rows.
+  const two = fileOutline('t.tflw', 'test "a"\n  within list "Cart"\n    click button "Remove"\n    click button "Undo"\n').declarations[0]!;
+  assert.deepEqual(two.body.preamble[0]!.body?.map((s) => s.kind), ['ClickStmt', 'ClickStmt']);
+  assert.deepEqual(two.body.preamble[0]!.body?.map((s) => s.inner), [0, 1]);
 });
 
 test('a neutral statement is nobody s foreign — it is every door s vocabulary', () => {

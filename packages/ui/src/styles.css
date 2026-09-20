@@ -852,24 +852,68 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .main-fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: calc(var(--unit) * 2); }
 .main-fill > .doorpane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
-.api-compose { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: calc(var(--unit) * 1.2); }
-.api-compose.reading { padding: calc(var(--unit) * 2) 0; }
+.compose-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: calc(var(--unit) * 1.2); }
+.compose-pane.reading { padding: calc(var(--unit) * 2) 0; }
 
 /* One row, not a header block: which file, what is unsaved, and nothing that explains the pane. */
-.api-compose-bar { display: flex; align-items: center; gap: calc(var(--unit) * 1.5); flex-wrap: wrap; min-height: 26px; }
-.api-compose-path { font-size: 12px; color: var(--muted); }
-.api-compose-dirty { display: flex; align-items: center; gap: calc(var(--unit) * 1); font-size: 12px; }
+.compose-pane-bar { display: flex; align-items: center; gap: calc(var(--unit) * 1.5); flex-wrap: wrap; min-height: 26px; }
+.compose-pane-path { font-size: 12px; color: var(--muted); }
+.compose-pane-dirty { display: flex; align-items: center; gap: calc(var(--unit) * 1); font-size: 12px; }
 
 /* `M216` `E` (`D1135`) — this was `minmax(220px, 300px)`, one number the builder chose for every
    file. It is now the reader's, through the same grip the project pane uses. The `gap` is gone
    because the grip IS the gap: a 6px column that can be grabbed, rather than 10px that cannot. */
-.api-compose-grid { display: grid; grid-template-columns: var(--seq-w, 300px) 6px minmax(0, 1fr); column-gap: calc(var(--unit) * 0.8); flex: 1; min-height: 0; }
+.compose-pane-grid { display: grid; grid-template-columns: var(--seq-w, 300px) 6px minmax(0, 1fr); column-gap: calc(var(--unit) * 0.8); flex: 1; min-height: 0; }
 
 /* ── region 2: the sequence (`D1112`) ──────────────────────────────────────────────────────── */
 .seq-col { display: flex; flex-direction: column; min-height: 0; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .seq { list-style: none; margin: 0; padding: calc(var(--unit) * 0.6); flex: 1; min-height: 0; overflow: auto; }
 .seq .seq { padding: 0 0 0 calc(var(--unit) * 1.4); }
 .seq-group { list-style: none; }
+/* **A session is a group with a page at its head** — `M219` `B` (`D1160`). It is marked rather
+   than merely indented because the statements under it are *against that page*, and a reader who
+   cannot tell where one page ends and the next begins is reading the sequence wrong. The rule is
+   the same device `.seq-row.on` uses, at rest weight: a hairline down the left of everything the
+   session owns. */
+.seq-group.session > .seq { border-left: var(--border) solid color-mix(in srgb, var(--accent) 34%, var(--line)); margin-left: calc(var(--unit) * 0.7); padding-left: calc(var(--unit) * 0.7); }
+.seq-group.session > .seq-row > .seq-pick .seq-kind { color: var(--accent); }
+/* **A scope, drawn on the row it scopes** — `M219` `D` (`D1163`). It is a chip and not part of the
+   statement's text because it is a different fact: `within list "Backordered items"` says *where*,
+   and `click button "Remove"` says *what*. One ellipsis budget shared between them would truncate
+   whichever came second at 300 px. */
+.seq-scope {
+  font-family: var(--mono); font-size: 11px; color: var(--muted); flex: none;
+  max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0 calc(var(--unit) * 0.5); border-radius: var(--ctl-radius);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.seq-group.scoped > .seq { border-left: var(--border) dashed var(--line); margin-left: calc(var(--unit) * 0.7); padding-left: calc(var(--unit) * 0.7); }
+.inner-row { display: flex; align-items: center; gap: calc(var(--unit) * 0.8); flex-wrap: wrap; padding-left: calc(var(--unit) * 1.4); }
+.field.inline { flex-direction: row; align-items: center; gap: calc(var(--unit) * 0.5); }
+
+/* `+ step…`'s chooser (`M219` `E`, `D1164`) — the dialog `NewThing` established, with a list in it.
+   Capped and scrolling, because eighteen rows of label-and-sentence is taller than a short window
+   and the preview under it is the thing the press is judged by. */
+.add-step-list { list-style: none; margin: 0; padding: 0; max-height: 34vh; overflow: auto; border: var(--border) solid var(--line); border-radius: var(--radius); }
+.add-step-list > li > button {
+  display: flex; gap: calc(var(--unit) * 1); align-items: baseline; width: 100%; text-align: left;
+  background: none; border: 0; color: inherit; font: inherit; padding: calc(var(--unit) * 0.5) calc(var(--unit) * 0.8);
+}
+.add-step-list > li > button:hover { background: var(--panel2); }
+.add-step-list > li > button.on { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.add-step-list code { font-family: var(--mono); font-size: 12px; flex: none; min-width: 9em; }
+.add-step-list .muted { font-size: 11px; }
+
+/* The session panel (`M219` `F`, `D1165`) — the response box's tenant on a door with no `send`.
+   Same region, same scroll, same tick: a line becomes a statement by being kept. */
+.session-panel { display: flex; flex-direction: column; min-height: 0; gap: calc(var(--unit) * 0.6); }
+.session-none { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); align-items: flex-start; }
+.session-lines { list-style: none; margin: 0; padding: 0; overflow: auto; min-height: 0; }
+.session-line { display: flex; align-items: center; gap: calc(var(--unit) * 0.6); padding: 1px 0; }
+.session-line .stmt-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-line .tick, .session-line .tick-none { flex: none; background: none; border: 0; color: var(--muted); font-size: 13px; line-height: 1; padding: 0 calc(var(--unit) * 0.4); }
+.session-line .tick:hover { color: var(--accent); }
+.session-line[data-session-line-kind="unreadable"] { opacity: 0.8; }
 .seq-row { display: flex; align-items: center; gap: 2px; border-radius: var(--ctl-radius); }
 .seq-row.on { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
 .seq-pick {
@@ -958,10 +1002,10 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 /* One column below the phone-width breakpoint the shell already has, so nothing here introduces a
    second answer to *how narrow is narrow*. */
 @media (max-width: 900px) {
-  .api-compose-grid { grid-template-columns: 1fr; }
+  .compose-pane-grid { grid-template-columns: 1fr; }
   .main-fill { overflow: auto; }
   .main-fill > .doorpane { display: block; }
-  .api-compose { display: block; }
+  .compose-pane { display: block; }
   .seq-col, .editor-col { height: auto; }
   .editor-col { display: block; }
   .split { display: none; }
@@ -1070,8 +1114,8 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 /* THE BAND. The parent is `.muted`, so the two painted roles have to say their own colour; they
    take it from the same variables the source colouring uses, which is the whole point — `test` in
    the band and `test` in the file are one word with one meaning. */
-.api-compose-bar [data-compose-subject-what] .t-kw,
-.api-compose-bar [data-compose-subject-what] .t-str { font-weight: inherit; }
+.compose-pane-bar [data-compose-subject-what] .t-kw,
+.compose-pane-bar [data-compose-subject-what] .t-str { font-weight: inherit; }
 
 /* ── The hover (`M216` `B1`, `D1124`). ─────────────────────────────────────────────────────────
  *

@@ -22,7 +22,7 @@
 // the vocabulary this table gives BROWSER is not a reduction of what the door could do; it is
 // everything the retired form could do, in a pane that also draws the file.
 
-import type { Lens, Step } from '@tflw/lang';
+import { STEP_LENS, type Lens, type Step } from '@tflw/lang';
 
 /** One `+` gesture a door offers at the foot of a declaration's body. */
 export interface AddGesture {
@@ -95,22 +95,49 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
       { key: 'wait', label: '+ wait until', title: '`wait until api …` — re-issues a request until the assertions under it pass, instead of sleeping and hoping' },
     ],
     sends: true,
-    /* `an element` and `page` are things a browser has. An `api` request fetches bytes. */
-    dropsSubjects: new Set(['locator', 'page']),
+    /* `an element` and `page` are things a browser has. An `api` request fetches bytes — and so
+       are the three `M219` `G` added to the language's offer (`D1166`): a network request the page
+       made, and the two subjects a native dialog has. `D1167` keeps this door's offer flat this
+       round; keeping it flat is not the same as letting it widen, so they join the drop list under
+       `D1114`'s own rule rather than appearing here by default. */
+    dropsSubjects: new Set(['locator', 'page', 'networkRequest', 'dialogMessage', 'dialogType']),
   },
   browser: {
-    /* **`WithinBlock` is NOT here, and the first draft of this table had it.** `buildWithin`
-       exists, which is what made it look constructible — but nothing in this pane offers a gesture
-       that produces one and no row edits one, so listing it would make the table claim a
-       capability the controls do not have. That is the exact failure this file exists to remove.
-       A scoped block is `§6`-owed; `BrowserForm`'s scope checkbox is not carried forward, because
-       its `within` wrapped *the form's own rows* and there are no such rows any more. */
-    constructs: new Set<Step['type']>([...NEUTRAL_CONSTRUCTS, 'OpenStmt', 'ClickStmt', 'FillStmt']),
+    /* **ALL TWENTY-TWO, FROM `M219` `C`** (`D1162`) — and the comment this replaces is worth
+       keeping the shape of, because it was right about one kind and wrong about the family:
+
+         > *"`WithinBlock` is NOT here, and the first draft of this table had it. `buildWithin`
+         > exists, which is what made it look constructible."*
+
+       Measured when `M219` was scoped: this set held **three** of the language's twenty-two
+       browser kinds, and the other nineteen drew as a plain code line with `data-stmt-editable=
+       "no"`, **no disabled control and no reason of any kind** — 650 statements, 27% of all
+       browser steps in the two corpora. That is not a table being honest about a limit, it is the
+       pane `D1082` refuses: half live and silent about which half. **Five of the nineteen already
+       had builders** (`buildSelect`, `buildCheck`, `buildPress`, `buildWithin`), written and
+       tested and reachable from nothing, which is the `M205`/`M209` shape a fourth time.
+
+       The sharpest form of it: on the API door a `within` row carries a badge reading *"this is
+       BROWSER's to edit — open that door"*, and the BROWSER door could not edit a `within` either.
+
+       So the list is the language's, not a selection from it. `STEP_LENS` is the authority on
+       which kinds those are, and `outline.ts` reads the same table — a second list here of
+       *which kinds are browser's* would be the copy this file's own header refuses. */
+    constructs: new Set<Step['type']>([
+      ...NEUTRAL_CONSTRUCTS,
+      ...(Object.keys(STEP_LENS) as Step['type'][]).filter((k) => STEP_LENS[k] === 'browser'),
+    ]),
     adds: [
       { key: 'open', label: '+ open', title: '`open "/path"` — the page this test works against, resolved against the env’s `web` base' },
       { key: 'click', label: '+ click', title: '`click button "…"` — a gesture against an element on the open page' },
       { key: 'fill', label: '+ fill', title: '`fill field "…" with "…"` — type into an element on the open page' },
       { key: 'let', label: '+ let', title: '`let name = value` — a binding the steps below can interpolate' },
+      /* **The tail, behind one press** — `M219` `E` (`D1164`). `click` (874), `fill` (493) and
+         `open` (378) are 73% of the corpus's 2395 browser statements; the other eighteen kinds are
+         217 occurrences between them. The column is 300 px and four `+` buttons already wrap to
+         two rows in it, so the choice was never *all of them or some of them* — it was *two rows
+         or six*. */
+      { key: 'step', label: '+ step…', title: 'the rest of the browser vocabulary — select, press, tick, dialogs, tabs, stubs, waits' },
       /* **`record` is a `+` gesture and not a mode** (`M213` `S5`, `D1095`). It writes statements
          into the body it is pressed on, the same as the three above it — what is different is only
          that a browser supplies them instead of a default. A recorder that opened its own surface

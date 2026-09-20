@@ -34,7 +34,7 @@
 // `workload` refuses for a different reason and keeps `D1042` intact: a workload is a shape of
 // work with stages in it and the LOAD door is the one built around that shape. The band has said
 // so with a link since `M212`, and *remove* is a change to a workload like any other.
-import type { HeaderEdit, RequestEdit } from './ComposePane';
+import type { HeaderEdit, RequestEdit } from './parts';
 import type { OutlineTest } from './outline';
 
 /**

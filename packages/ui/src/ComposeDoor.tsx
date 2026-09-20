@@ -33,25 +33,28 @@ import {
   replaceInSource,
   parseSource,
   print,
-  buildCall,
   buildClick,
   buildFill,
   buildOpen,
+  /* **The rest of the browser vocabulary** — `M219` `C` (`D1162`). `buildSelect`, `buildCheck`,
+     `buildPress` and `buildWithin` have existed since `M213` `S5` and were reachable from nothing
+     until this import. */
+  buildWithin,
+  buildSwitchToNewTab,
+  buildDownload,
+  type DownloadBlock,
+  type SwitchToNewTabBlock,
+  type WithinBlock,
   buildCapture,
   buildWaitUntilApi,
   buildExpect,
   buildDataTable,
-  buildGive,
   buildLet,
-  buildLog,
-  buildPause,
   buildThreshold,
   type CaptureSpec,
   type LocatorSpec,
   type Lens,
-  type CaptureStmt,
   type ExpectSpec,
-  type ExpectStmt,
   type NoteOwner,
   type HookDecl,
   type Program,
@@ -69,13 +72,9 @@ import { indexFromReport, indexFromSend, sameFile, REPORT_LOOKBACK } from './ran
 import { VOCABULARY } from './vocabulary';
 import { TabStrip } from './TabStrip';
 import {
-  ComposePane,
   editOf,
-  expectSpecOf,
-  headerEditOf,
   specOf,
-  stepKey,
-  subjectSpecOf,
+  rowKey,
   tableSpecOf,
   thresholdSpecOf,
   type HeaderEdit,
@@ -84,12 +83,15 @@ import {
   type ThresholdEdit,
   type Ran,
   type RanIndex,
-  type Verdict,
-} from './ComposePane';
-import { ApiComposePane, type EditorTab, type SeqTarget } from './ApiComposePane';
+} from './parts';
+import { ComposePane, type EditorTab, type SeqTarget } from './ComposePane';
+import { buildStatement } from './statements';
+import { AddStep, stepCatalogue } from './AddStep';
+import type { Session, SessionLine } from './SessionPanel';
 import type { MenuItem, MenuRequest } from './ContextMenu';
 import type { NewMode } from './NewThing';
-import { addressed, anchorAfter, fileOutline, prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
+import { addressed, anchorAfter, fileOutline, pageOpeners, requestsOf, statementsOf,
+  prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
@@ -217,7 +219,41 @@ export interface ComposeDoorProps {
  *  that renamed itself on every press would leave a file nobody could re-run by hand. */
 const SCRATCH_TEST = 'scratch';
 
+/**
+ * **A scoping block with one of its statements replaced** — `M219` `D` (`D1163`).
+ *
+ * Every edit to a statement inside a `within`, a `switch to new tab` or a `download` lands here,
+ * because the body step is the block and not the statement. It goes back through the block's own
+ * builder rather than being assembled here, which is `D1087` holding one level down: the pane
+ * builds nothing, and the refusal a builder returns is the refusal the field shows.
+ *
+ * **The other statements are carried, never rebuilt.** An edit to the third gesture inside a block
+ * is an edit to the third gesture, and the other two go back on as the nodes they were — the same
+ * rule the head's own edit follows.
+ */
+function rescope(statement: OutlineStatement, inner: Step): { ok: true; node: Step } | { ok: false; reason: string } {
+  const owner = statement.owner;
+  if (owner === null || statement.inner === null) return { ok: false, reason: 'this row is not inside a block' };
+  return reblock(owner, owner.body.map((s, i) => (i === statement.inner ? inner : s)));
+}
+
+/** The same block with a different body — one call per block kind, each through its own builder. */
+function reblock(
+  owner: WithinBlock | SwitchToNewTabBlock | DownloadBlock,
+  body: readonly Step[],
+): { ok: true; node: Step } | { ok: false; reason: string } {
+  if (owner.type === 'WithinBlock') return buildWithin({ locator: { kind: owner.locator.kind, value: owner.locator.value.value }, frame: owner.frame, body });
+  if (owner.type === 'SwitchToNewTabBlock') return buildSwitchToNewTab(body);
+  return buildDownload({ name: owner.name, body });
+}
+
 export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ComposeDoorProps) {
+  /** **Which actions open a page** (`M219` `B`, `D1161`) — the index's own answer, flattened by
+   *  the one function `App` flattens it with. Every `fileOutline` in this component re-reads the
+   *  file after an edit to find where a statement moved to, and a re-read that folded sessions
+   *  differently from the outline on screen would report the wrong line. */
+  const opensPage = useMemo(() => pageOpeners(project.files), [project]);
+
   const [busy, setBusy] = useState(false);
   /** What `L<line>` names — one resolution, so the band and the card cannot disagree about which
    *  test they are showing (`D1080`). */
@@ -296,12 +332,12 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
     (text: string, pick: (after: FileOutline) => number | null): void => {
       setEditProblem(null);
       settle(text);
-      const line = pick(fileOutline(path, text));
+      const line = pick(fileOutline(path, text, opensPage));
       if (line === null) return;
       onTab('compose', line);
       setMade((n) => n + 1);
     },
-    [settle, path, onTab],
+    [settle, path, onTab, opensPage],
   );
 
   /** The declaration this gesture was fired on, re-read out of the edited text by the index that
@@ -392,11 +428,11 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
        * the edited text by that pair and written to the hash. Without this, adding a header to the
        * first of three requests silently moves the selection to the one below.
        */
-      const after = fileOutline(path, out.text);
+      const after = fileOutline(path, out.text, opensPage);
       const moved = after.declarations[original.stepPath.decl]?.body.requests.find((x) => x.stepPath.step === original.stepPath.step);
       if (moved && moved.line !== original.line) onTab('compose', moved.line);
     },
-    [at, file, draft, settle, path, onTab],
+    [at, file, draft, settle, path, onTab, opensPage],
   );
 
   /**
@@ -442,17 +478,19 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
        * went. The index pair is the identity that survives it.
        */
       if (owner.on === 'step') {
-        const after = fileOutline(path, out.text);
+        const after = fileOutline(path, out.text, opensPage);
         const decl = after.declarations[owner.path.decl];
         const moved = decl === undefined
           ? undefined
-          : [...decl.body.preamble, ...decl.body.requests.flatMap((r) => [r, ...r.attached])].find(
-              (x) => x.stepPath !== null && x.stepPath.step === owner.path.step,
+          : [...statementsOf(decl.body), ...requestsOf(decl.body)].find(
+              /* `inner !== null` is a row inside a block, which shares the block's index — the
+                 note's owner is the step itself (`M219` `D`). */
+              (x) => x.stepPath !== null && ('inner' in x ? x.inner === null : true) && x.stepPath.step === owner.path.step,
             );
         if (moved) onTab('compose', moved.line);
       }
     },
-    [file, draft, settle, path, onTab],
+    [file, draft, settle, path, onTab, opensPage],
   );
 
   /**
@@ -721,11 +759,110 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
          position no longer holds the thing that was there — so the selection lands on the
          declaration the removal happened in, read back out of the edited text by the index that
          still identifies it. Leaving it where it was points the editor at whatever moved up. */
-      const after = fileOutline(path, out.text);
+      const after = fileOutline(path, out.text, opensPage);
       const moved = after.declarations[decl.index];
       onTab('compose', moved ? moved.line : 1);
     },
-    [file, draft, settle, path, onTab],
+    [file, draft, settle, path, onTab, opensPage],
+  );
+
+  /**
+   * **`✕` on a statement inside a scoping block** — `M219` `D` (`D1163`).
+   *
+   * `removeSteps` takes indices into a body and a statement inside a block is not one of them, so
+   * this is the second removal and not a special case of the first: the block is rebuilt without
+   * it. The last statement out takes the block with it — an empty `within` does not parse, and
+   * both `buildWithin` and the printer refuse one for that reason, so removing it as a *block*
+   * is the honest edit rather than a refusal the author cannot act on.
+   */
+  const removeScoped = useCallback(
+    (statement: OutlineStatement) => {
+      if (!file || statement.owner === null || statement.inner === null || statement.stepPath === null) return;
+      const owner = statement.owner;
+      const addr = statement.stepPath;
+      const body = owner.body.filter((_, i) => i !== statement.inner);
+      const out = body.length === 0
+        ? replaceInSource(draft ?? file.text, { kind: 'remove', decl: addr.decl, steps: [addr.step] })
+        : ((): ReturnType<typeof replaceInSource> => {
+            const rebuilt = reblock(owner, body);
+            return rebuilt.ok ? replaceInSource(draft ?? file.text, { kind: 'step', path: addr, node: rebuilt.node }) : rebuilt;
+          })();
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+      const after = fileOutline(path, out.text, opensPage);
+      const moved = after.declarations[addr.decl];
+      onTab('compose', moved ? moved.line : 1);
+    },
+    [file, draft, settle, onTab, opensPage, path],
+  );
+
+  /**
+   * **Take the scope off and keep the statement** — `M219` `D` (`D1163`).
+   *
+   * Offered on a block that holds exactly one statement, which is **397 of the corpus's 405**
+   * `within` blocks and every one of its `switch to new tab` and `download` blocks. It is not
+   * offered on the other eight, and the reason is a fact about the splice rather than a policy:
+   * `replaceInSource` replaces one step with one node, and a block of six statements unscopes to
+   * six. A gesture that silently dropped five would be worse than one that is not there.
+   */
+  const unscope = useCallback(
+    (statement: OutlineStatement) => {
+      if (!file || statement.stepPath === null || statement.body === null || statement.body.length !== 1) return;
+      const addr = statement.stepPath;
+      const inner = (statement.node as WithinBlock | SwitchToNewTabBlock | DownloadBlock).body[0]!;
+      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: addr, node: inner });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+      /* The statement is where the block was, so the address lands on it rather than on the
+         declaration — the one removal in this file that does not lose what it was pointing at. */
+      const after = fileOutline(path, out.text, opensPage);
+      const moved = statementsOf(after.declarations[addr.decl]?.body ?? { preamble: [], requests: [], sessions: [] })
+        .find((x) => x.inner === null && x.stepPath?.step === addr.step);
+      onTab('compose', moved?.line ?? after.declarations[addr.decl]?.line ?? 1);
+    },
+    [file, draft, settle, onTab, opensPage, path],
+  );
+
+  /**
+   * **Put a scope ON a statement** — `M219` `E`, and the half of `D1163` that keeps `WithinBlock`
+   * constructible without putting it in the `+` list.
+   *
+   * `D1164` takes `within` out of the `+` vocabulary because a scope is not a statement you add,
+   * it is a property of the statement it scopes — so the gesture is on the row: `⤹` wraps it, `⤺`
+   * unwraps it, and between them `D1162`'s claim that all 22 kinds are constructible stays true.
+   *
+   * The locator is a placeholder for the reason every placeholder here is one: `buildLocator`
+   * refuses an empty value, so the choice was *obviously unfinished* or *plausible and wrong*.
+   */
+  const scope = useCallback(
+    (statement: OutlineStatement) => {
+      if (!file || statement.stepPath === null || statement.inner !== null) return;
+      const addr = statement.stepPath;
+      const built = buildWithin({ locator: { kind: 'css', value: 'change me' }, frame: false, body: [statement.node] });
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: addr, node: built.node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      landOn(out.text, (after) =>
+        statementsOf(after.declarations[addr.decl]?.body ?? { preamble: [], requests: [], sessions: [] })
+          .find((x) => x.inner === null && x.stepPath?.step === addr.step)?.line ?? null,
+      );
+    },
+    [file, draft, landOn],
   );
 
   /** The same gesture one level up — the sequence column's first row is the test, so the test has a
@@ -839,7 +976,9 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
          falls through to `steps`, which anchors under the header or under the workload line: the
          shape a LOAD-authored test has, and `insertInTest`'s own careful case rather than a second
          derivation of it here. */
-      const first = [...decl.body.preamble, ...decl.body.requests].find((x) => x.stepPath !== null);
+      const first = [...statementsOf(decl.body).filter((x) => x.inner === null), ...requestsOf(decl.body)]
+        .filter((x) => x.stepPath !== null)
+        .sort((a, b) => a.stepPath!.step - b.stepPath!.step)[0];
       const out = first === undefined || first.stepPath === null
         ? insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] })
         : insertIntoSource(draft ?? file.text, { kind: 'stepsBefore', path: first.stepPath, nodes: [built.node] });
@@ -951,7 +1090,9 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         setEditProblem(built.reason);
         return;
       }
-      const first = [...decl.body.preamble, ...decl.body.requests].find((x) => x.stepPath !== null);
+      const first = [...statementsOf(decl.body).filter((x) => x.inner === null), ...requestsOf(decl.body)]
+        .filter((x) => x.stepPath !== null)
+        .sort((a, b) => a.stepPath!.step - b.stepPath!.step)[0];
       const out = first === undefined || first.stepPath === null
         ? insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] })
         : insertIntoSource(draft ?? file.text, { kind: 'stepsBefore', path: first.stepPath, nodes: [built.node] });
@@ -960,9 +1101,14 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         return;
       }
       setEditProblem(null);
-      settle(out.text);
+      /* Lands on the `open`, for `addGesture`'s reason — it goes to the TOP of the body, so with
+         no selection it is the one create gesture whose result is furthest from where you pressed. */
+      landOn(out.text, (after) => {
+        const body = after.declarations[decl.index]?.body;
+        return body === undefined ? null : body.sessions[0]?.head.line ?? statementsOf(body).find((x) => x.inner === null)?.line ?? null;
+      });
     },
-    [file, draft, settle],
+    [file, draft, landOn],
   );
 
   /**
@@ -996,10 +1142,22 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         setEditProblem(out.reason);
         return;
       }
-      setEditProblem(null);
-      settle(out.text);
+      /**
+       * **It lands ON the new statement, which it did not before `M219` `A`** (`D1136`).
+       *
+       * On the pane this door used to draw, every row was a live form, so a statement spliced at
+       * the foot was already editable where it landed and there was nothing to select. This pane
+       * draws **one** editor, for whatever the address names — so a `+ click` that settled the
+       * text and moved nothing put a row with a `change me` locator fourteen rows down a list
+       * nobody was pointing at. That is `M217` `§2.1`'s finding about `+ request`, inherited by
+       * the two gestures that had never needed the fix.
+       */
+      landOn(out.text, (after) => {
+        const body = after.declarations[decl.index]?.body;
+        return body === undefined ? null : statementsOf(body).filter((x) => x.inner === null).at(-1)?.line ?? null;
+      });
     },
-    [file, draft, settle],
+    [file, draft, landOn],
   );
 
   /**
@@ -1038,7 +1196,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   const pickPath = useMemo(() => {
     const body = at?.decl?.body;
     if (!body) return '/';
-    for (const statement of [...body.preamble, ...body.requests.flatMap((r) => r.attached)]) {
+    for (const statement of statementsOf(body)) {
       if (statement.node.type === 'OpenStmt') return statement.node.path.value;
     }
     return '/';
@@ -1048,6 +1206,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
     pickStop.current?.();
     pickStop.current = null;
     setPicking(null);
+    setSession((current) => (current === null || current.kind !== 'pick' ? current : { ...current, live: false }));
   }, []);
 
   const startPick = useCallback(
@@ -1055,16 +1214,26 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
       pickStop.current?.();
       setPicked([]);
       setPicking(key);
+      /* **A pick streams into the same panel a recording does** (`D1165`). One live browser, one
+         list of what it handed back — the row's own suggestions stay, because the field is where
+         a locator is *used* and the panel is where it arrives. */
+      setSession({ kind: 'pick', live: true, into: null, lines: [] });
       const unsubscribe = pickLocators(pickPath, {
         line: (text) => {
           const locator = locatorFromPickLine(text);
-          if (locator) setPicked((current) => [locator, ...current]);
+          if (!locator) return;
+          setPicked((current) => [locator, ...current]);
+          const id = (lineId.current += 1);
+          setSession((current) => (current === null ? current : { ...current, lines: [{ id, kind: 'locator', locator }, ...current.lines] }));
         },
         /* A `pick` that cannot start says so on the row rather than in a console nobody is
            reading — the session is a real browser and the commonest reason it fails is that one
            is not installed. */
         problem: (text) => setEditProblem(text),
-        end: () => setPicking(null),
+        end: () => {
+          setPicking(null);
+          setSession((current) => (current === null || current.kind !== 'pick' ? current : { ...current, live: false }));
+        },
       });
       pickStop.current = unsubscribe;
     },
@@ -1127,35 +1296,105 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * name is the one address that does not move under an insertion — which is `insertIntoSource`'s
    * own argument for `steps` taking a `testName`.
    */
+  /**
+   * **What the live browser has handed back** — `M219` `F` (`D1165`), and the state that amends
+   * `D1095`.
+   *
+   * A recorded statement lands **here** and not in the buffer. `D1095`'s argument for appending
+   * live was that the buffer is reversible — it is, and what it is not is reviewable: a two-minute
+   * session writes thirty statements into the file the author is looking at, and picking out the
+   * four mis-clicks means finding them among the twenty-six that were not.
+   */
+  const [session, setSession] = useState<Session | null>(null);
+  const lineId = useRef(0);
+  useEffect(() => setSession(null), [path]);
+
   const appendRecorded = useCallback(
     (line: string) => {
-      const name = recordInto.current;
-      if (name === null || !file) return;
+      /**
+       * **Parsed before it is believed, exactly as it was** (`D1095`). A recorder writes whatever
+       * the page gave it and a page's `<option>` text is arbitrary user content, so the line is
+       * read by the language before anything is done with it — what changed in `M219` `F` is only
+       * that a line that reads becomes a **row here** instead of bytes in the file.
+       *
+       * **A LINE THAT DOES NOT READ IS STILL DROPPED, AND THE ATTEMPT TO STOP DROPPING IT IS THE
+       * FINDING** (`M219-01`). Keeping it looked like closing a `D1076` silence — a gesture the
+       * language cannot spell vanishing with nothing to report — and it is not, because
+       * `tflw record`'s stream has **no framing**: the two banners it opens with (*"recording
+       * … — press Ctrl+C to stop."*, *"ready — use the page as a user would."*) fail to parse for
+       * exactly the same reason a refused gesture does, and nothing in the line says which it is.
+       * Built and measured: every session opened with two junk rows. So the page cannot attribute
+       * an unparseable line and does not pretend to; the fix belongs in the stream, and is filed
+       * rather than guessed at here.
+       */
       const { program, diagnostics } = parseSource(`test "r"\n  ${line}\n`);
       if (diagnostics.some((d) => d.severity === 'error')) return;
       const node = program.tests[0]?.body[0];
-      if (!node) return;
-      /* **The text comes from a ref, updated synchronously**, and not from `draft`.
-         A recorder delivers a burst — a click, a fill's flush, a navigation — and React batches
-         state updates, so two statements arriving in one tick would both be spliced into the text
-         as it was *before* either of them. The ref is written the moment a splice succeeds, which
-         is the only ordering that makes a recording a sequence rather than a race. */
-      const out = insertIntoSource(textRef.current, { kind: 'steps', testName: name, nodes: [node] });
+      if (node === undefined) return;
+      const id = (lineId.current += 1);
+      const row: SessionLine = { id, kind: 'step', text: print(node).ok ? (print(node) as { text: string }).text : line, node };
+      setSession((current) => (current === null ? current : { ...current, lines: [...current.lines, row] }));
+    },
+    [],
+  );
+
+  /**
+   * **Keep one line** — the tick that makes a statement out of evidence (`D1102`'s rule, one door
+   * over).
+   *
+   * The splice runs against `textRef`, updated synchronously, for the reason the recorder's own
+   * splice did: React batches, and *keep all* is a burst of them in one tick. The ref is written
+   * the moment a splice succeeds, which is the only ordering that makes a run of keeps a sequence
+   * rather than a race.
+   */
+  const keepLine = useCallback(
+    (line: SessionLine) => {
+      if (!file) return;
+      if (line.kind === 'locator') {
+        /* A picked locator is not a statement; it is an answer to *what do I write in this field*,
+           and the field is the row the pick was started on. Same write `PickField` made. */
+        setPicked([line.locator]);
+        return;
+      }
+      if (line.kind !== 'step') return;
+      const name = session?.into ?? null;
+      if (name === null) return;
+      const out = insertIntoSource(textRef.current, { kind: 'steps', testName: name, nodes: [line.node] });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
       }
       textRef.current = out.text;
       settle(out.text);
+      setSession((current) => (current === null ? current : { ...current, lines: current.lines.filter((l) => l.id !== line.id) }));
     },
-    [file, settle],
+    [file, settle, session],
   );
+
+  const keepAll = useCallback(() => {
+    if (!file || session === null || session.into === null) return;
+    const nodes = session.lines.flatMap((l) => (l.kind === 'step' ? [l.node] : []));
+    if (nodes.length === 0) return;
+    const out = insertIntoSource(textRef.current, { kind: 'steps', testName: session.into, nodes });
+    if (!out.ok) {
+      setEditProblem(out.reason);
+      return;
+    }
+    textRef.current = out.text;
+    settle(out.text);
+    setSession((current) => (current === null ? current : { ...current, lines: current.lines.filter((l) => l.kind !== 'step') }));
+  }, [file, settle, session]);
+
+  const dropLine = useCallback((id: number) => {
+    setSession((current) => (current === null ? current : { ...current, lines: current.lines.filter((l) => l.id !== id) }));
+  }, []);
 
   const stopRecording = useCallback(() => {
     recordStop.current?.();
     recordStop.current = null;
     recordInto.current = null;
     setRecording(null);
+    setSession((current) => (current === null ? current : { ...current, live: false }));
   }, []);
 
   const startRecording = useCallback(
@@ -1163,6 +1402,10 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
       recordStop.current?.();
       recordInto.current = decl.name;
       setRecording(decl.line);
+      /* A new recording starts a new list. Lines from the last one that were never kept were
+         never in the file, so nothing is lost by clearing them — and carrying them would put two
+         sessions' gestures in one list with no way to tell them apart. */
+      setSession({ kind: 'record', live: true, into: decl.name, lines: [] });
       recordStop.current = recordActions(pickPath, {
         line: appendRecorded,
         problem: (text) => setEditProblem(text),
@@ -1170,6 +1413,9 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
           recordStop.current = null;
           recordInto.current = null;
           setRecording(null);
+          /* **The lines stay when the browser closes**, which is the point of the panel: closing
+             the browser is how you stop adding to the list, not how you throw it away. */
+          setSession((current) => (current === null ? current : { ...current, live: false }));
         },
       });
     },
@@ -1196,6 +1442,10 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * switch and the table) are in different files by design, so the only way that disagreement
    * surfaces is if it is made to.
    */
+  /** The declaration `+ step…` was pressed on, or `null` (`M219` `E`, `D1164`). */
+  const [addingStep, setAddingStep] = useState<OutlineTest | null>(null);
+  useEffect(() => setAddingStep(null), [path]);
+
   const add = useCallback(
     (decl: OutlineTest, key: string) => {
       switch (key) {
@@ -1206,6 +1456,10 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         case 'click': return addGesture(decl, 'click');
         case 'fill': return addGesture(decl, 'fill');
         case 'record': return recording === null ? startRecording(decl) : stopRecording();
+        /* **`+ step…` opens a dialog rather than writing a statement** — `M219` `E` (`D1164`).
+           The other gestures have one shape each and can write it; this one is eighteen shapes, so
+           what it opens is a chooser. It still writes through the same `buildStatement`. */
+        case 'step': return setAddingStep(decl);
         default: return setEditProblem(`this door offers no \`${key}\` gesture — \`vocabulary.ts\` and this switch disagree`);
       }
     },
@@ -1232,7 +1486,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   const applyExpectEdit = useCallback(
     (statement: OutlineStatement, next: StatementEdit) => {
       if (!file || statement.stepPath === null) return;
-      const key = stepKey(statement.stepPath);
+      const key = rowKey(statement);
       if (key === null) return;
       setExpectEdit({ key, values: next });
       /**
@@ -1247,53 +1501,31 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
        * `capture`'s subject for exactly the same reason — 774 of the corpus's 793 captures read a
        * `body` path, and the other nineteen include the shapes the spec cannot spell.
        */
-      const built: { ok: true; node: Step } | { ok: false; reason: string } = ((): { ok: true; node: Step } | { ok: false; reason: string } => {
-        switch (next.kind) {
-          case 'expect': {
-            const original = statement.node as ExpectStmt;
-            const out = buildExpect(expectSpecOf(next.expect, original));
-            if (!out.ok) return out;
-            return {
-              ok: true,
-              node: {
-                ...out.node,
-                subject: next.expect.subject === 'carried' ? original.subject : out.node.subject,
-                masks: next.expect.matcher === 'matchesSnapshot' && original.matcher.name === 'matchesSnapshot' ? original.masks : out.node.masks,
-              },
-            };
-          }
-          case 'capture': {
-            const original = statement.node as CaptureStmt;
-            const out = buildCapture({ subject: subjectSpecOf(next.subject, next.argument, next.locatorKind, original.subject), name: next.name });
-            if (!out.ok) return out;
-            return { ok: true, node: { ...out.node, subject: next.subject === 'carried' ? original.subject : out.node.subject } };
-          }
-          case 'let':
-            return buildLet({ name: next.name, value: next.value });
-          case 'log':
-            return buildLog({ level: next.level, message: next.message, destination: next.destination === '' ? null : next.destination });
-          case 'call':
-            return buildCall({ name: next.name, args: next.args });
-          case 'give':
-            return buildGive(next.value);
-          case 'pause':
-            return buildPause({ min: next.min, max: next.max });
-          /* **The BROWSER door's three** (`M213` `S4`). A locator is two fields on the node and
-             two fields here, on all 2,296 corpus instances with no optional clause anywhere, which
-             is why there is no panel for it. */
-          case 'open':
-            return buildOpen(next.path);
-          case 'click':
-            return buildClick({ locator: { kind: next.locatorKind, value: next.locator }, kind: next.clickKind });
-          case 'fill':
-            return buildFill({ locator: { kind: next.locatorKind, value: next.locator }, value: next.value });
-        }
-      })();
+      const built = buildStatement(next, statement.node);
       if (!built.ok) {
         setEditProblem(built.reason);
         return;
       }
-      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: statement.stepPath, node: built.node });
+      /**
+       * **A scoped statement is edited by rebuilding the block that holds it** — `M219` `D`
+       * (`D1163`).
+       *
+       * `within`, `switch to new tab` and `download` hold statements, and a statement inside one
+       * is not a step of the body: the index pair names the **block**, and `inner` names which of
+       * its statements this is. So the edit is *this block, with that one element replaced* — one
+       * more pass through the same builder, then the same `replaceInSource` at the same address.
+       *
+       * **No new address grammar, and that is the reason this shape was chosen** over widening
+       * `StepPath`. `insert.ts` is what every write in the page goes through; a third field on the
+       * pair would reach the splice, the remove, the note owner and the anchor, four of which have
+       * nothing to say about a block.
+       */
+      const target = statement.inner === null ? built : rescope(statement, built.node);
+      if (!target.ok) {
+        setEditProblem(target.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'step', path: statement.stepPath, node: target.node });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -1309,13 +1541,13 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
        * formatted shifts even when the edit adds no line. The index pair is what survives that; the
        * line is read back out of the edited text by it.
        */
-      const after = fileOutline(path, out.text);
+      const after = fileOutline(path, out.text, opensPage);
       const decl = after.declarations[statement.stepPath.decl];
       if (focusLine !== null && focusLine === statement.line) {
         const movedStatement = decl === undefined
           ? undefined
-          : [...decl.body.preamble, ...decl.body.requests.flatMap((r) => r.attached)].find(
-              (x) => x.stepPath !== null && x.stepPath.step === statement.stepPath!.step,
+          : statementsOf(decl.body).find(
+              (x) => x.stepPath !== null && x.inner === statement.inner && x.stepPath.step === statement.stepPath!.step,
             );
         if (movedStatement && movedStatement.line !== statement.line) onTab('compose', movedStatement.line);
       } else if (at?.request) {
@@ -1323,7 +1555,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         if (moved && moved.line !== at.request.line) onTab('compose', moved.line);
       }
     },
-    [at, file, draft, onDraft, path, onTab, focusLine],
+    [at, file, draft, onDraft, path, onTab, focusLine, opensPage],
   );
 
   const [ownProblem, setProblem] = useState<string | null>(null);
@@ -1715,16 +1947,22 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           the mutation to an unmounted panel left the gate green, which is how that got caught.
           Unmounted is the better of two equal choices: no hidden `[data-api-send]` sitting in the
           DOM for a selector on another tab to find. */}
-      {tab !== 'compose' ? null : door === 'api' ? (
-        /* **API has its own pane from this round** — `M214` (`D1110`–`D1118`).
-   
-           This reverses `D1094` for the duration and the plan says so in writing rather than
-           quietly: BROWSER and API were one pane, which is what made BROWSER's turn free, and
-           building API its own takes that back. It is the price of *door by door*, which is the
-           instruction this round was opened with after four rounds of moving all four at once and
-           arriving at the same pane. BROWSER keeps `ComposePane` below, unaffected; when its turn
-           comes it either adopts this shape or is answered in its own terms. */
-        <ApiComposePane
+      {tab !== 'compose' ? null : (
+        /* **ONE PANE, BOTH DOORS** — `M219` `A` (`D1160`), which reinstates `D1094` rather than
+           amending it a second time.
+
+           `M214` forked here on `door === 'api'` and said so in writing: *"BROWSER keeps
+           `ComposePane` below, unaffected; when its turn comes it either adopts this shape or is
+           answered in its own terms."* Measured before this round was scoped: **30 data-attributes
+           existed on the API door and not on BROWSER, and 32 the other way** — everything `M214`
+           through `M218` built was API-only, and the BROWSER door could edit three of the
+           language's twenty-two browser kinds while drawing the other nineteen as dead text with
+           no disabled control and no reason, which is the pane `D1082` refuses.
+
+           The fork is **deleted rather than narrowed**. A narrowed fork is still two
+           implementations of one picture, which is the failure `vocabulary.ts` exists to record.
+           What is per-door is the table it reads, and nothing else. */
+        <ComposePane
           path={path}
           outline={outline}
           at={at}
@@ -1745,7 +1983,13 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
             threshold,
             onThreshold: applyThreshold,
             onFileDecl: applyFileDecl,
-            pick: null,
+            /* **`pick` reaches the door whose rows carry locators** (`D1106`), which since `M219`
+               `A` is decided by the vocabulary rather than by which branch of a fork we are in.
+               `null` on a door with no locator in its constructs — a locator-fixer on a row with
+               no locator has nothing to fix. */
+            pick: VOCABULARY[door].constructs.has('ClickStmt')
+              ? { row: picking, found: picked, onStart: startPick, onStop: endPick }
+              : null,
           }}
           prefix={VOCABULARY[door].sends ? prefix : null}
           onSend={VOCABULARY[door].sends ? () => void sendPrefix() : null}
@@ -1755,10 +1999,19 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onCapture={captureFrom}
           onAdd={add}
           adds={VOCABULARY[door].adds}
+          recording={recording}
           onAddAfter={addRequestAfter} onDuplicate={duplicateRequest} menuFor={seqMenuFor} onMenu={onMenu}
           made={made}
           onRemoveSteps={removeSteps}
           onRemoveDecl={removeDecl}
+          onRemoveScoped={removeScoped}
+          onUnscope={unscope}
+          onScope={scope}
+          session={VOCABULARY[door].sends ? null : session}
+          onKeepLine={keepLine}
+          onKeepAll={keepAll}
+          onDropLine={dropLine}
+          onStopSession={() => (recording !== null ? stopRecording() : endPick())}
           tab={editorTab}
           onEditorTab={setEditorTab}
           dirty={draft !== null}
@@ -1768,52 +2021,29 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setNoting(null); setEditProblem(null); }}
           door={door}
         />
-      ) : (
-        <ComposePane
-          path={path}
-          outline={outline}
-          at={at}
-          onLine={(line) => onTab('compose', line)}
-          onNew={onNew}
-          dialog={null}
-          scratchUnignored={project.scratchIgnored ? null : project.scratchPath}
-          edit={values}
-          onEdit={applyEdit}
-          /* `send` is API's alone, and `vocabulary.ts` carries the reason: it prints a scratch
-             program cut off after the selected request and runs it, and a browser test's unit is a
-             session — a page opened, then gestures against whatever state the previous one left —
-             so there is no prefix that can be cut at a statement and still mean anything. */
-          prefix={VOCABULARY[door].sends ? prefix : null}
-          onSend={VOCABULARY[door].sends ? () => void sendPrefix() : null}
-          sending={sending}
-          ran={ranIndex}
-          onVerify={verify}
-          onCapture={captureFrom}
-          onAdd={add}
-          recording={recording}
-          editing={{
-            row: expectEdit,
-            onRow: applyExpectEdit,
-            onNote: applyNote,
-            noting,
-            onNoting: setNoting,
-            header,
-            onHeader: applyHeader,
-            threshold,
-            onThreshold: applyThreshold,
-            onFileDecl: applyFileDecl,
-            /* `null` on a door whose vocabulary has no locators in it — `pick` is a locator-fixer
-               and a row with no locator has nothing for it to fix (`D1106`). */
-            pick: VOCABULARY[door].constructs.has('ClickStmt')
-              ? { row: picking, found: picked, onStart: startPick, onStop: endPick }
-              : null,
+      )}
+      {/* **`+ step…`'s dialog** — `M219` `E` (`D1164`). It sits beside the pane rather than inside
+          it for the reason `NewThing` does: a modal is the shell's, and a pane that owned one
+          would be a pane that can be unmounted with a half-filled form inside it. */}
+      {addingStep === null || file === null ? null : (
+        <AddStep
+          decl={addingStep}
+          /* **The buffer, never the disk** (`D1141`, and `M217`'s own defect report). */
+          into={draft ?? file.text}
+          anchor={null}
+          offers={stepCatalogue(VOCABULARY[door].constructs, ['open', 'click', 'fill'])}
+          pick={VOCABULARY[door].constructs.has('ClickStmt') ? { row: picking, found: picked, onStart: startPick, onStop: endPick } : null}
+          onStage={(text) => {
+            setAddingStep(null);
+            landOn(text, (after) => {
+              /* The cursor lands on what was just written, which for a foot insert is the last
+                 addressable row of the declaration (`D1136`). */
+              const body = after.declarations[addingStep.index]?.body;
+              if (body === undefined) return null;
+              return statementsOf(body).filter((x) => x.inner === null).at(-1)?.line ?? null;
+            });
           }}
-          dirty={draft !== null}
-          busy={busy}
-          problem={editProblem}
-          onWrite={() => void writeDraft()}
-          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setNoting(null); setEditProblem(null); }}
-          door={door}
+          onCancel={() => setAddingStep(null)}
         />
       )}
     </section>
