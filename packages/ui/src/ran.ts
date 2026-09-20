@@ -142,21 +142,18 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
 }
 
 /**
- * One request's verdicts from a scoped send — `D1099`'s second scope.
+ * One request's **response** from a scoped send — `D1099`'s second scope, narrowed by `M215` `A1`.
  *
  * **The send runs a printed scratch, so its line numbers are not this file's** and `indexFromReport`
  * cannot be pointed at it. What holds the two together is the order: the scratch is this
- * declaration cut off after the selected request, so the steps from its last `api` step onward are
- * the request and the statements attached to it, in the order they are written here.
+ * declaration cut off after the selected request, so its last `api` step is that request.
  *
- * `sourceOf` is the caller's — the pane's own printed text for each row — and it is compared the
- * same way, so a send is subject to `D1108` exactly as a run is. A row whose printed text does not
- * match what the scratch ran is a row the cut did not preserve, and it gets no mark.
+ * The scratch carries no assertions any more, so there is nothing after that step to grade and
+ * this returns a `Ran` with an empty verdict map — see the note on `steps` below.
  */
 export function indexFromSend(args: {
   readonly steps: readonly StepResult[];
   readonly requestLine: number;
-  readonly attachedLines: readonly number[];
   readonly bufferText: string;
   readonly startedAt: string;
 }): Ran | null {
@@ -165,21 +162,24 @@ export function indexFromSend(args: {
   for (const [i, step] of args.steps.entries()) if (step.kind === 'api') from = i;
   if (from < 0) return null;
   const request = args.steps[from]!;
-  const verdicts = new Map<number, Verdict>();
-  for (const [i, line] of args.attachedLines.entries()) {
-    const step = args.steps[from + 1 + i];
-    if (step === undefined) break;
-    // The scratch's own text for the row, against this buffer's line. The scratch was printed from
-    // these very bytes, so a mismatch means the row moved between the press and the answer — which
-    // a `with each` table's re-print and a keystroke during a run both produce.
-    if (stillReads(lines, line, step.source)) verdicts.set(line, verdictOf(step));
-  }
   return {
     line: args.requestLine,
     source: lines[args.requestLine - 1] ?? '',
     scope: 'send',
     at: args.startedAt,
-    steps: verdicts,
+    /**
+     * **A send carries no verdicts, because it ran no assertions** (`M215` `A1`, amending `D1108`).
+     *
+     * This used to map the report's steps after the request onto the buffer's attached lines by
+     * position and show a ✓ or a ✗ beside each. It cannot any more and should not: `withoutAssertions`
+     * takes every `expect` out of the scratch, so the steps that follow a request are its captures,
+     * and pairing those with assertion rows by position would put a mark on a row nothing graded.
+     *
+     * `D1108`'s rule — *a verdict is shown where the buffer's line still reads what ran on it* —
+     * is unchanged and still governs the other scope. What changed is which scopes produce a
+     * verdict at all: a run does, a send does not. The response is the send's whole answer.
+     */
+    steps: new Map(),
     response:
       request.response === undefined
         ? null

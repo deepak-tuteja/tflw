@@ -83,6 +83,8 @@ import { holds, requestRemoval, statementRemoval } from './depends';
 import { isForeign, type Addressed, type FileOutline, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 import type { Prefix } from './outline';
 import { VOCABULARY, type AddGesture } from './vocabulary';
+import { bodyProblem, laidOut } from './jsonview';
+import { BodyText } from './Source';
 
 /**
  * **What the address is pointing at** (`D1113`).
@@ -841,7 +843,8 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                     </button>
                     <p className="muted">
                       nothing has run this request. Send fires these for real, in this order, against the env the strip names — the last one
-                      is the request above.
+                      is the request above. <strong>It does not check the assertions</strong>: it shows you what came back. Run the test from
+                      the Run tab to grade it.
                     </p>
                     <ol className="prefix-list">
                       {prefix.requests.map((r, i) => (
@@ -865,16 +868,93 @@ export function ApiComposePane(props: ApiComposePaneProps) {
           </div>
 
           {/* Send, once a response is already showing — the button has to stay reachable, and the
-              prefix list above is what it costs, so it is a line rather than a block. */}
+              prefix list above is what it costs, so it is a line rather than a block.
+
+              **It is drawn on every tab, which was asked about and refused** (`D1123`). This lives
+              in the response region, not in the tab strip: `D1116` put the response under the
+              editor so ticking a value writes into the Assert tab directly above it, which makes
+              Assert the tab whose workflow needs a send most — and a control that appears and
+              vanishes as the tab changes is the flicker the three regions were built to remove. */}
           {rowRan?.response && prefix !== null && onSend !== null ? (
             <div className="editor-send" data-compose-send-row>
               <button className="run" onClick={onSend} disabled={sending || busy} data-compose-send>
                 {sending ? 'sending…' : `send — ${prefix.requests.length} request${prefix.requests.length === 1 ? '' : 's'}`}
               </button>
-              <span className="muted">{prefix.requests.map((r) => `${r.method} ${r.path}`).join(' → ')}</span>
+              <span className="muted">{prefix.requests.map((r) => `${r.method} ${r.path}`).join(' → ')} — no assertions checked</span>
             </div>
           ) : null}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The JSON body, written into a coloured field (`M215` `B2`/`B3`, `D1121`, `D1122`).
+ *
+ * **A `<textarea>` cannot be coloured, so the colour is a `<pre>` under it and the text on top is
+ * transparent.** That arrangement has one classic failure — the two boxes disagreeing about where a
+ * character sits — and it is removed here rather than tuned: the `<pre>` is the element **in flow**
+ * and the textarea is absolutely positioned over it, so the height is the coloured copy's by
+ * construction, neither box ever scrolls, and one CSS rule sets the font, padding, border and
+ * wrapping for both. What is left to get wrong is a font difference, which `.codearea > *` makes
+ * unstateable.
+ *
+ * **The check is the language's, on every keystroke, and it is the same one the write does.** Until
+ * now a body that could not be read was refused at write time by `buildApiStep`, as a sentence with
+ * no position, after the author had typed three more fields. `bodyProblem` asks the same grammar
+ * the same question as you type and keeps the span, so the answer arrives where the mistake is.
+ *
+ * **`format` lays the body out; the file still gets one line, and that is not a bug to hide.** A
+ * body is a value, `print` writes a value on one line, and every edit in this pane goes back
+ * through `buildApiStep` + `print` — so the layout is a reading aid for as long as the request is
+ * open, and the bytes on disk stay canonical. The button says so. What the same round *did* change
+ * is the other direction: a pasted, pretty-printed body is now accepted rather than refused
+ * (`D1120`), which is the gesture this button exists to make survivable.
+ */
+function BodyEdit({ text, onText }: { readonly text: string; readonly onText: (text: string) => void }) {
+  const problem = useMemo(() => bodyProblem(text), [text]);
+  const pretty = useMemo(() => laidOut(text), [text]);
+  return (
+    <div className="bodyedit" data-body-problem={problem === null ? 'none' : problem.code}>
+      <div className="codearea">
+        {/* The coloured copy is in flow and sets the box; `aria-hidden` because the textarea over it
+            is the thing a screen reader should read, and the two carry identical text. */}
+        <pre className="codearea-ink" aria-hidden="true" data-body-ink>
+          <BodyText text={text} problem={problem} />
+          {'\n'}
+        </pre>
+        <textarea
+          className="codearea-edit"
+          value={text}
+          onChange={(e) => onText(e.target.value)}
+          spellCheck={false}
+          data-body-edit-text
+          aria-label="body"
+          aria-invalid={problem !== null}
+        />
+      </div>
+      <div className="bodyedit-foot">
+        <button
+          type="button"
+          onClick={() => { if (pretty !== null) onText(pretty); }}
+          disabled={pretty === null}
+          data-body-format
+          title={
+            pretty === null
+              ? 'this body is already laid out, or is not an object or a list'
+              : 'lay this body out across lines — the file still writes it on one, because a value is one line to the printer'
+          }
+        >
+          format
+        </button>
+        {problem === null ? (
+          <span className="muted" data-body-ok>reads cleanly</span>
+        ) : (
+          <span className="warn" data-body-problem-text>
+            {problem.code} — {problem.message}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1097,7 +1177,7 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
       {tab === 'body' ? (
         <div className="tabpane body-form" data-request-body={v.bodyKind}>
           {change === null ? (
-            r.body === null ? <p className="muted">no body</p> : <pre className="preview body-preview" data-request-body-text>{bodyText(r.body)}</pre>
+            r.body === null ? <p className="muted">no body</p> : <pre className="preview body-preview" data-request-body-text><BodyText text={laidOut(bodyText(r.body)) ?? bodyText(r.body)} problem={null} /></pre>
           ) : (
             <>
               <select value={v.bodyKind} onChange={(e) => change({ bodyKind: e.target.value as RequestEdit['bodyKind'] })} data-body-edit-kind aria-label="body kind">
@@ -1111,8 +1191,9 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
                     shows it, keeps it, and says so. Twelve requests in the sibling carry one. */}
                 {v.bodyKind === 'upload' ? <option value="upload">upload (multipart) — kept as written</option> : null}
               </select>
-              {v.bodyKind === 'upload' && r.body !== null ? <pre className="preview body-preview" data-request-body-text>{bodyText(r.body)}</pre> : null}
-              {v.bodyKind === 'json' || v.bodyKind === 'text' || v.bodyKind === 'file' ? (
+              {v.bodyKind === 'upload' && r.body !== null ? <pre className="preview body-preview" data-request-body-text><BodyText text={bodyText(r.body)} problem={null} /></pre> : null}
+              {v.bodyKind === 'json' ? <BodyEdit text={v.bodyText} onText={(bodyText) => change({ bodyText })} /> : null}
+              {v.bodyKind === 'text' || v.bodyKind === 'file' ? (
                 <textarea value={v.bodyText} onChange={(e) => change({ bodyText: e.target.value })} data-body-edit-text rows={8} aria-label="body" />
               ) : null}
               {v.bodyKind === 'form' ? (

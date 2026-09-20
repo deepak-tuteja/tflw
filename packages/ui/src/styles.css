@@ -932,3 +932,62 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 /* A `More` field is a label over its control (`.field` is a column), so it needs a width the
    sentence fits rather than the editor's whole one. */
 .more-form .field { max-width: 40ch; }
+
+/* ── The JSON body field — `M215` `B2`/`B3` ─────────────────────────────────────────────────────
+   A coloured `<pre>` in flow, and the editable text absolutely over it with a transparent fill.
+   **Every metric that decides where a character lands is set once, on `.codearea > *`**, because
+   the classic failure of this arrangement is the two boxes disagreeing by a pixel and the caret
+   drifting away from the glyph under it. `box-sizing`, the border, the padding, the font and the
+   wrapping are therefore not allowed to be stated twice. The `<pre>` is the one in flow, so the
+   height is the coloured copy's and **neither box ever scrolls** — which is also why there is no
+   scroll-sync handler anywhere in this feature. */
+.bodyedit { display: grid; gap: 6px; }
+.codearea { position: relative; }
+.bodyedit .codearea > * {
+  box-sizing: border-box;
+  margin: 0;
+  width: 100%;
+  min-height: 7.5em;
+  padding: calc(var(--unit) * 0.4) calc(var(--unit) * 0.7);
+  border: var(--border) solid var(--line);
+  border-radius: var(--ctl-radius);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  text-align: left;
+  letter-spacing: normal;
+}
+.bodyedit .codearea-ink { background: var(--input); color: var(--fg); overflow: hidden; }
+.bodyedit .codearea-edit {
+  position: absolute; inset: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--fg);
+  resize: none;
+  overflow: hidden;
+}
+/* The selection has to be visible through a transparent fill, so it is painted rather than
+   inherited — `::selection` on transparent text draws nothing at all. */
+.bodyedit .codearea-edit::selection { background: rgba(127, 127, 127, 0.35); color: transparent; }
+/* **Weight and slant are metrics, and only one of the two boxes can have them.** `.t-kw` is bold in
+   all four themes and `.t-com` is italic in one, so a `true` or a `null` painted in the ink would be
+   wider than the same characters under the caret and every glyph after it on that line would sit
+   in the wrong place. The colour is the whole point of the overlay; the weight is decoration, and
+   it is the half that has to go. Read-only bodies elsewhere keep both — they have nothing to line
+   up with. */
+.bodyedit .codearea-ink [class^='t-'] { font-weight: inherit; font-style: inherit; }
+.bodyedit-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+/* The underline under the run the language could not read. A repeating gradient rather than
+   `text-decoration: wavy`, because the decoration is inherited by the transparent textarea in some
+   engines and would draw a second squiggle over the first. */
+.squiggle {
+  background-image: linear-gradient(to right, var(--fail) 0 2px, transparent 2px 4px);
+  background-repeat: repeat-x;
+  background-position: left 100%;
+  background-size: 4px 2px;
+  padding-bottom: 1px;
+}

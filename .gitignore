@@ -54,3 +54,15 @@ shard-*.json
 # Never committed — `M147f` swept one into a commit and caught it in review. Untracked by
 # convention since `.m140-scratch/`; a pattern is cheaper than remembering.
 .m*-scratch/
+
+# `SCRATCH_PATH` — `tflw ui`'s send writes its one-request program inside the project it serves, so
+# it appears under `examples/storefront` the moment anyone presses send on the repo's own example.
+# Product output about the last press, never source.
+#
+# `tflw init` scaffolds this same line into a project it creates (`cli.ts`'s `ensureGitignore`), and
+# an existing project gets a notice on the page instead of a silent edit to a file its author owns
+# (`M200` `A1-5`). `examples/storefront` predates that scaffold, which is why the notice fires on it.
+# This rule is the repo's own answer to that notice, not a substitute for it: `scratchIgnored` is an
+# exact-line check against the *project's* `.gitignore`, so the page goes on saying so — truthfully —
+# while `git status` here stays clean for every example, not just the one with a send pressed on it.
+.scratch.tflw

@@ -6172,6 +6172,16 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
         '  api GET /items/{first}',
         '  expect status equals 200',
         '  expect body.id equals 999',
+        // **A non-assertion statement between the selected request and the next one, and the
+        // mutation registry is what says it has to be here.** `a-send-runs-past-the-request-it-is-
+        // about` SURVIVED the first draft of this fixture, because the only things attached to the
+        // selected request were assertions — which `withoutAssertions` removes anyway, so the wide
+        // cut and the narrow one printed the same bytes and the gate could not tell them apart.
+        // `attached` means *everything up to the next request*, so it is a statement that is NOT an
+        // assertion that makes the two rules differ at all. The same family as the two mutants this
+        // fixture's workload and trailing request were added for: the fixture's own shape was the
+        // mutant's constant, for the third time in one file.
+        '  capture body.name as itemName',
         '  api GET /items/{first}/history',
         '  expect status equals 404',
         '',
@@ -6195,82 +6205,103 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
     );
 
     await fresh.locator('[data-compose-send]').click();
-    await fresh.locator('[data-verdict]').first().waitFor({ timeout: 30_000 });
+    await fresh.locator('[data-compose-response]').waitFor({ timeout: 30_000 });
 
-    // **The scratch is the prefix and nothing else**: the hook, this test truncated after the
-    // selected request's own assertions, and **not** the test below it — which asserts a 500 the
-    // fixture will not give, so a scratch that carried it would have run something the author did
-    // not ask for.
+    // **The scratch is the prefix, and it carries NO ASSERTIONS** (`M215` `A1`, `D1119`).
+    //
+    // The hook, this test truncated after the selected request, and **not** the test below it —
+    // which asserts a 500 the fixture will not give, so a scratch that carried it would have run
+    // something the author did not ask for. And not one `expect` from any of them: send fires the
+    // requests and shows what came back; the Run tab is what grades a file.
     const written = await readFile(join(dir, SCRATCH_PATH), 'utf8');
     assert.match(written, /^before\n {2}api GET \/items$/m);
     assert.match(written, /^test "scratch"$/m);
     assert.match(written, /^ {2}api GET \/items\/\{first\}$/m);
     assert.doesNotMatch(written, /another test that must not run/);
-    assert.doesNotMatch(written, /equals 500/);
+    assert.doesNotMatch(written, /\bexpect\b/, 'not one assertion reached the scratch — a send does not validate');
+    // The captures DID, and they have to: 734 of the sibling's 1031 requests read a variable bound
+    // by an earlier one, so a send that dropped the bindings would fire `/items/{first}` with the
+    // braces still in it. The request line above proves the interpolation resolved.
+    assert.match(written, /^ {2}capture body\.items\[0\]\.id as first$/m);
+    // **And it stops AT the request, not after it** (`D1119`). The cut used to run to the last
+    // statement *attached* to the request so the verdicts had steps to come from; nothing grades a
+    // send now, and `attached` is everything between this request and the next — on
+    // `examples/storefront` that is an `open "/"`, so sending an API request booted a browser.
+    assert.match(written, /api GET \/items\/\{first\}\n$/, 'the scratch ends at the selected request');
+    assert.doesNotMatch(written, /itemName/, 'and not at the last thing ATTACHED to it — that reach is what ran the browser step below a request');
     // …and neither the request below the selected one nor the workload that would turn one press
     // into a load run. `send` means send this request, not run this test as a workload.
     assert.doesNotMatch(written, /history/);
     assert.doesNotMatch(written, /run 2 iterations/);
 
-    // **The verdicts are beside the assertions they belong to.** The scratch is a printed program
-    // with the other test removed, so its line numbers are not this file's; the run's steps are
-    // read from its last `api` step in order and mapped back onto *this* file's lines, and then
-    // each one is kept only where this file's line still reads what the scratch ran (`M213` `S2`,
-    // `D1108`). One passes, one fails, and the failing one is the assertion that is actually wrong.
-    // Scoped to the open request since `M212` `S2` — the pane draws the whole body now, and the
-    // verdicts this asserts about are the selected request's own attachments.
-    const verdicts = await fresh.locator('[data-seq-open] li.stmt').evaluateAll((els) =>
-      els.map((li) => {
-        const mark = li.querySelector('[data-verdict]');
-        return `${li.getAttribute('data-stmt')}:${mark === null ? 'none' : mark.getAttribute('data-verdict')}`;
-      }),
-    );
-    assert.deepEqual(verdicts, ['ExpectStmt:pass', 'ExpectStmt:fail']);
-    assert.match((await fresh.locator('[data-verdict="fail"]').textContent()) ?? '', /999/, 'and it says what the run said, not a second sentence written here');
+    // **No verdict, anywhere, from a send** — amending `D1108`, which used to map the scratch's
+    // steps onto the assertion rows by position. There are no steps after the request to map.
+    assert.equal(await fresh.locator('[data-verdict]').count(), 0, 'a send grades nothing');
 
     // **The response is beside them, and the pane did not go anywhere.** The legacy Send leaves for
     // Run because that is where its response lives; this one puts the response where the assertions
     // that read it are, so leaving would take the author off the thing they pressed for.
     assert.match(new URL(fresh.url()).hash, /^#\/api\/compose\//, 'still on Compose');
     assert.equal(await fresh.locator('[data-compose-response]').getAttribute('data-compose-response'), '200');
-    // Since `M213` `S2` this is a chip in the request's own header, and it says which scope
-    // produced it — a press two seconds ago and a report from Tuesday are different evidence
-    // (`D1099`). The body is behind it, because a response on every request drawn open is what put
-    // this pane over its height bar (`D1109`), so the gate opens it the way a reader would.
     assert.equal(await fresh.locator('[data-compose-response-scope]').getAttribute('data-compose-response-scope'), 'send');
     assert.equal(await fresh.locator('[data-compose-response-status]').textContent(), '200');
     assert.match((await fresh.locator('[data-compose-response-when]').textContent()) ?? '', /from this send/);
-    await fresh.locator('[data-compose-response]').click();
     await fresh.locator('[data-compose-response-body]').waitFor();
     assert.match((await fresh.locator('[data-compose-response-url]').textContent()) ?? '', /^GET http:\/\/127\.0\.0\.1:\d+\/items\/\d+$/);
     assert.ok(JSON.parse((await fresh.locator('[data-compose-response-body]').textContent()) ?? 'null'), 'the body is the server\'s own JSON');
+    // …laid out, because that is what `M215` `B2` is for, and the text is still the bytes.
+    assert.equal(await fresh.locator('[data-compose-response-body]').getAttribute('data-compose-response-laid'), 'yes');
+    assert.match((await fresh.locator('[data-compose-response-body]').textContent()) ?? '', /\n/, 'the service answered on one line and the pane did not');
+    // …and painted. The keys are `typ` and not `str`, which is the one distinction a JSON view
+    // exists to draw and the one the raw highlighter gets wrong on a quoted key (`M215` `B2`).
+    const painted = await fresh.locator('[data-compose-response-body]').evaluate((pre) => ({
+      keys: [...pre.querySelectorAll('.t-typ')].map((e) => e.textContent),
+      nums: [...pre.querySelectorAll('.t-num')].map((e) => e.textContent),
+    }));
+    assert.deepEqual(painted.keys, ['"id"', '"name"', '"price"']);
+    assert.ok(painted.nums.length >= 2, 'and the numbers are numbers');
 
     /**
-     * **A verdict is about the bytes that ran — and `M213` `S2` made that claim narrower and
-     * therefore stronger** (`D1108`, amending `D1093`).
+     * **A failing assertion above the request no longer eats the send** — the defect `M215` `A1`
+     * was written for, and the one no gate could see while send ran the assertions.
      *
-     * This assertion read *every mark in the pane goes, and the response with it*, because until
-     * `S2` the only way to get a verdict was to press `send` on the row you were looking at and
-     * the whole thing was dropped on the first keystroke. Under `D1099` a response is on every
-     * request in a file that has run, so dropping the file would throw away a dozen correct
-     * verdicts to be honest about one. The rule is now applied per row, against the text the
-     * report recorded for that row: the assertion typed into loses its mark, the one beside it
-     * keeps the mark it earned, and the **request's own line did not move**, so the response it
-     * fetched is still evidence about the request that is written there.
+     * `expect body.id equals 999` on the selected request is false against this fixture, and a
+     * hard `expect` fails fast (P#16). It sits *after* the request, so the old arrangement still
+     * got a response — which is why this gate passed for two rounds. Move a false assertion
+     * **above** the request instead and the old send aborted at it, the request never left, and
+     * the pane said *the run reported no api step*. The press below is the same press against the
+     * same file with one line changed, and it has to come back with a 200.
      */
-    const before = await fresh.locator('[data-verdict]').count();
-    assert.equal(before, 2);
-    /* **Scoped to the open request, and the unscoped version is what caught this.** The body has an
-       earlier `api GET /items` with its own `expect status equals 200` above the selected request,
-       so a bare `[data-expect-operand]` first-match types into a row that carries no verdict at
-       all — which under the old file-wide drop still blanked both marks and therefore still
-       passed. It is the per-row rule that makes the two gestures distinguishable, and the gate has
-       to name which row it is editing for the same reason. */
-    await fresh.locator('[data-seq-open] [data-expect-operand]').first().fill('201');
-    await fresh.locator('[data-compose-dirty]').waitFor();
-    assert.equal(await fresh.locator('[data-verdict]').count(), 1, 'exactly the edited row lost its mark');
-    assert.equal(await fresh.locator('[data-verdict="fail"]').count(), 1, 'and it is the one that was not touched that survived');
-    assert.equal(await fresh.locator('[data-compose-response]').count(), 1, 'the request line is unchanged, so its response still answers for it');
+    await fresh.goto(`${base}/#/api/compose/send.tflw/L9`);
+    await pickStatement(fresh, 9);
+    await editorTab(fresh, 'assert');
+    // Line 10 — `expect status equals 200` on the request ABOVE the selected one. 418 is a status
+    // this fixture never answers with, so the assertion is false and it is false first.
+    await fresh.locator('[data-seq-open] [data-expect-operand]').first().fill('418');
+    await fresh.locator('[data-compose-write]').click();
+    await fresh.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    assert.match(await readFile(join(dir, 'send.tflw'), 'utf8'), /expect status equals 418/, 'the false assertion is in the file');
+
+    /* **Reloaded, not just re-addressed.** A hash change keeps the page's state, and the first
+       send's response is still held for line 12 — so without this the assertion below would read
+       the OLD response and pass whatever the new press did. The reload is what makes
+       `[data-prefix]` the on-screen state again, which is itself the proof that nothing has run
+       this request yet. */
+    await fresh.goto(`${base}/#/api/compose/send.tflw/L12`);
+    await fresh.reload();
+    await fresh.locator('[data-prefix]').waitFor();
+    assert.equal(await fresh.locator('[data-compose-response]').count(), 0, 'nothing is showing before the press');
+    await fresh.locator('[data-compose-send]').click();
+    await fresh.locator('[data-compose-response]').waitFor({ timeout: 30_000 });
+    assert.equal(
+      await fresh.locator('[data-compose-response]').getAttribute('data-compose-response'),
+      '200',
+      'the request behind a false assertion is exactly the one a person is exploring',
+    );
+    // And the file really does still hold the false assertion — the send did not quietly drop it
+    // from the buffer, it dropped it from the scratch.
+    assert.match(await readFile(join(dir, 'send.tflw'), 'utf8'), /expect status equals 418/);
+    assert.doesNotMatch(await readFile(join(dir, SCRATCH_PATH), 'utf8'), /\bexpect\b/);
   } finally {
     await fresh.close();
     await ui.close();
@@ -6514,5 +6545,79 @@ test('`M214` `A6`: `+ new file` is in the explorer, where files are (`D1118`)', 
     // consequence** — the shape `M209` found four times over.
     await p.locator('[data-file-row="second.tflw"][data-open="yes"]').waitFor();
     assert.match(new URL(p.url()).hash, /second\.tflw/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `M215` `B1`–`B3` — the body, coloured, checked and laid out.
+//
+// **The two blocks that show a JSON document were the two with no colour and no check.** The
+// request body was a bare `<textarea>` whose only feedback was the write being refused with a
+// sentence, after the fact, with no position; the response was a flat `<pre>` of whatever the
+// service sent, which for a real API is one minified line beside the assertions that read it.
+//
+// The language half is `D1120`: a value carrying a newline used to be refused outright, and that
+// refusal was wrong about exactly one shape — a `{`/`[` literal, which the lexer already lets span
+// lines because it emits no `newline` while a bracket is open. It mattered because a JSON body is
+// the one value a person **pastes**, and pasted JSON is pretty-printed.
+// ---------------------------------------------------------------------------
+
+test('`M215` `B3`: the JSON body is painted, and the language underlines what it cannot read', async () => {
+  const body = ['test "one request"', '  api POST /orders body { itemId: 2, qty: 3 }', '  expect status equals 201', ''].join('\n');
+  await withEditFixture(body, async (p, base) => {
+    await openFirstRequest(p, base);
+    await editorTab(p, 'body');
+
+    // **The coloured copy and the editable text are the same bytes.** That is the whole safety
+    // property of drawing one over the other: a reader looking at the ink and a writer typing into
+    // the field must never be looking at two documents.
+    const ink = p.locator('[data-body-ink]');
+    assert.equal(((await ink.textContent()) ?? '').replace(/\n$/, ''), '{ itemId: 2, qty: 3 }');
+    assert.equal(await p.locator('[data-body-edit-text]').inputValue(), '{ itemId: 2, qty: 3 }');
+
+    // A **bare** key is a key, exactly as a quoted one is. The highlighter alone calls the first
+    // `typ` and the second `str`; `jsonview`'s first rule is what makes them agree.
+    assert.deepEqual(await ink.locator('.t-typ').evaluateAll((els) => els.map((e) => e.textContent)), ['itemId', 'qty']);
+    assert.deepEqual(await ink.locator('.t-num').evaluateAll((els) => els.map((e) => e.textContent)), ['2', '3']);
+    assert.equal(await p.locator('[data-body-problem]').getAttribute('data-body-problem'), 'none');
+    assert.equal(await p.locator('[data-body-ok]').count(), 1);
+
+    // **A mistake is underlined where the language says it is**, on the keystroke, not at the write.
+    await p.locator('[data-body-edit-text]').fill('{ itemId: , qty: 3 }');
+    await p.locator('[data-body-problem-text]').waitFor();
+    assert.equal(await p.locator('[data-body-problem]').getAttribute('data-body-problem'), 'TF010');
+    assert.equal(await ink.locator('.squiggle').textContent(), ',', 'the comma standing where a value should be');
+    // The colouring did not collapse because something was wrong — the pieces are computed over
+    // the whole text once, and only their roles change.
+    assert.deepEqual(await ink.locator('.t-typ').evaluateAll((els) => els.map((e) => e.textContent)), ['itemId', 'qty']);
+
+    // **`format` lays it out; the file still gets one line.** A value is one line to the printer
+    // and every edit here goes back through it, so the layout is a reading aid for as long as the
+    // request is open — which is a cost worth paying only because the *other* direction changed.
+    await p.locator('[data-body-edit-text]').fill('{ itemId: 2, qty: 3 }');
+    await p.locator('[data-body-format]').click();
+    assert.equal(await p.locator('[data-body-edit-text]').inputValue(), '{\n  itemId: 2,\n  qty: 3\n}');
+    assert.equal(await p.locator('[data-body-format]').isDisabled(), true, 'there is nothing left to lay out');
+
+  });
+});
+
+test('`M215` `B1`: a pasted, pretty-printed JSON body is accepted and written back on one line', async () => {
+  // **The gesture this round exists for.** Before `D1120` this exact paste was refused with *a
+  // value is written on one line* — true about a scalar, and a wall in front of the commonest
+  // thing anyone does with a Body tab.
+  const body = ['test "one request"', '  api POST /orders body { itemId: 2, qty: 3 }', '  expect status equals 201', ''].join('\n');
+  await withEditFixture(body, async (p, base, dir) => {
+    await openFirstRequest(p, base);
+    await editorTab(p, 'body');
+    await p.locator('[data-body-edit-text]').fill('{\n  "itemId": 7,\n  "qty": 1,\n  "note": "gift",\n  "big": 12345678901234567890\n}');
+    assert.equal(await p.locator('[data-body-problem]').getAttribute('data-body-problem'), 'none', 'the language reads it');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const written = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(written, /^ {2}api POST \/orders body \{ itemId: 7, qty: 1, note: "gift", big: 12345678901234567890 \}$/m);
+    // **The big number is the point of the layout being a whitespace pass.** A `JSON.parse` round
+    // trip would have shown — and written — 12345678901234567000.
+    assert.doesNotMatch(written, /12345678901234567000/);
   });
 });

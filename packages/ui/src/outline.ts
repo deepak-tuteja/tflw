@@ -457,8 +457,19 @@ export function prefixOf(outline: FileOutline, at: Addressed): Prefix | null {
   if (at.request === null) return null;
   const decl = at.decl;
   const last = at.request;
-  const attached = last.attached.filter((s) => s.stepPath !== null);
-  const upTo = attached.length === 0 ? last.stepPath.step : attached[attached.length - 1]!.stepPath!.step;
+  /**
+   * **The cut is the request itself** — `M215` `A1` (`D1119`), narrowed from `M210` `S6`.
+   *
+   * It used to run to the last statement *attached* to the request, and that had one reason: the
+   * assertions under it were what produced the verdicts the pane drew beside them. `D1119` stops a
+   * send grading anything, so that reason is gone — and what is left of the old cut is pure cost,
+   * because `attached` is *everything between this request and the next* rather than everything
+   * about it. Measured on `examples/storefront`: sending `api POST /orders` ran `open "/"` too,
+   * booting a browser to answer a question about an HTTP response, on the API door.
+   *
+   * Nothing after the request contributes to the request. The prefix is what has to happen *first*.
+   */
+  const upTo = last.stepPath.step;
   const requests: { where: string; method: string; path: string }[] = [];
   for (const hook of outline.declarations) {
     if (hook.kind !== 'hook') continue;

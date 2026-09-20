@@ -223,7 +223,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * it: what reaches a row is a verdict that is still about the text on that row.
    */
   const [reportRan, setReportRan] = useState<{ report: RunReport; reportId: string } | null>(null);
-  const [sentRan, setSentRan] = useState<{ line: number; steps: readonly StepResult[]; attachedLines: readonly number[]; startedAt: string } | null>(null);
+  const [sentRan, setSentRan] = useState<{ line: number; steps: readonly StepResult[]; startedAt: string } | null>(null);
 
   /**
    * **An edit that produces the bytes already there is not an edit** (`M210` `S4`).
@@ -1168,6 +1168,47 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * `--only` has to name it, and an exploration that renamed itself on every press would leave a
    * file nobody could re-run by hand.
    */
+/**
+ * A body with its assertions taken out — what `send` actually runs (`M215` `A1`, `D1119`).
+ *
+ * **Send is not a test run, and it had been one.** The scratch used to carry every `expect` in the
+ * prefix, and a hard `expect` fails fast (`interpreter.ts`, P#16) — so a failing assertion on an
+ * *earlier* request aborted the run and the request the author pressed send on never left. The
+ * response was missing for a reason that had nothing to do with the request, at exactly the moment
+ * a person is exploring because something is already wrong. The narrower gesture also matches what
+ * the page already offers twice over: the Run tab runs a file, a selection or a `@tag`.
+ *
+ * `capture` stays, and it is the whole reason this is a filter rather than a slice: 734 of the
+ * sibling's 1031 requests read a variable bound earlier, so a send that dropped the bindings would
+ * fire `/orders/{orderId}` with the braces still in it.
+ *
+ * **A `wait until api` keeps its own assertions, and gets them for free.** They live inside the
+ * node (`WaitUntilApiStmt.expects`), not in the body's step list, so nothing here touches them —
+ * which is correct twice over: they are the *poll condition* rather than a verdict, and a polling
+ * request without them is `TF015`, a file that does not parse.
+ *
+ * The block list below mirrors `lenses.ts`'s `eachStep`, which is the one place it is supposed to
+ * live. The duplication is stated rather than hidden: if a block type is added and not added here,
+ * an assertion nested inside it still runs during a send — a send that is stricter than it claims,
+ * which is a visible wrong answer rather than a silent wrong file.
+ */
+function withoutAssertions(steps: readonly Step[]): readonly Step[] {
+  const out: Step[] = [];
+  for (const step of steps) {
+    if (step.type === 'ExpectStmt') continue;
+    if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
+      const body = withoutAssertions(step.body);
+      // A block that held nothing but assertions is dropped whole: an empty block is not a
+      // cheaper version of itself, it is a construct the printer would have to invent a spelling
+      // for, and nothing in it was going to run.
+      if (body.length > 0) out.push({ ...step, body } as Step);
+      continue;
+    }
+    out.push(step);
+  }
+  return out;
+}
+
   const prefix = useMemo(() => (outline === null || at === null ? null : prefixOf(outline, at)), [outline, at]);
   const prefixText = useMemo((): { ok: true; text: string } | { ok: false; reason: string } => {
     if (!file || prefix === null) return { ok: false, reason: 'pick a request first — send runs the file up to one' };
@@ -1178,11 +1219,29 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
     const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
     const decl = declarations[prefix.decl];
     if (!decl) return { ok: false, reason: 'that declaration is no longer in the file' };
-    const body = decl.body.slice(0, prefix.upTo + 1);
+    const body = withoutAssertions(decl.body.slice(0, prefix.upTo + 1));
     const kept: TestDecl = decl.type === 'TestDecl'
       ? { ...decl, name: stringLit(SCRATCH_TEST), workload: null, thresholds: [], body }
       : { type: 'TestDecl', name: stringLit(SCRATCH_TEST), tags: [], sessions: [], retry: 0, table: null, workload: null, thresholds: [], concurrency: 'sequential', body, span: SYNTHETIC };
-    const scratch: Program = { ...program, tests: [kept], crawls: [] };
+    /* The hooks and the actions run too, so their assertions are dropped for the same reason —
+       `before` is where 379 of the sibling's requests get their captured ids, and a stale
+       assertion in a hook would abort the send before the request on screen ever left. */
+    const scratch: Program = {
+      ...program,
+      /* A hook that was nothing but assertions is dropped rather than printed empty: `before` with
+         no steps is not a cheaper hook, it is a file that does not parse, and there was nothing in
+         it for a send to do. **An action is kept whole in that case instead of dropped**, and the
+         asymmetry is the `call`: nothing names a hook, so removing one is invisible, while removing
+         an action the body calls turns the send into *no such action*. An action that is only
+         assertions is exactly the case where filtering had nothing to gain anyway. */
+      hooks: program.hooks.map((h) => ({ ...h, body: withoutAssertions(h.body) })).filter((h) => h.body.length > 0),
+      actions: program.actions.map((a) => {
+        const body = withoutAssertions(a.body);
+        return body.length > 0 ? { ...a, body } : a;
+      }),
+      tests: [kept],
+      crawls: [],
+    };
     const printed = print(scratch);
     if (!printed.ok) return { ok: false, reason: printed.reason ?? 'this file cannot be written back' };
     return { ok: true, text: printed.text.endsWith('\n') ? printed.text : printed.text + '\n' };
@@ -1252,7 +1311,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
     if (text === '') return new Map();
     const base = reportRan === null ? new Map<number, Ran>() : new Map(indexFromReport(reportRan.report, path, text));
     if (sentRan !== null) {
-      const one = indexFromSend({ steps: sentRan.steps, requestLine: sentRan.line, attachedLines: sentRan.attachedLines, bufferText: text, startedAt: sentRan.startedAt });
+      const one = indexFromSend({ steps: sentRan.steps, requestLine: sentRan.line, bufferText: text, startedAt: sentRan.startedAt });
       if (one !== null) base.set(sentRan.line, one);
     }
     return base;
@@ -1308,7 +1367,6 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
       setSentRan({
         line: at.request.line,
         steps,
-        attachedLines: at.request.attached.map((x) => x.line),
         startedAt: report.startedAt,
       });
       /**

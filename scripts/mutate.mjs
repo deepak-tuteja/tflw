@@ -3708,6 +3708,97 @@ const REGISTRY = [
    * that already uses one draws it inline, open, with no gesture. Drop that and the three become
    * genuinely hidden, which is the `D1076` failure the disclosure was designed to avoid.
    */
+  /**
+   * **`M215` `A1` (`D1119`): a send is not a test run, and it had been one.** The scratch used to
+   * carry every `expect` in the prefix, and a hard `expect` fails fast (P#16) — so a false
+   * assertion on an *earlier* request aborted the run and the request the author pressed send on
+   * never left. This mutation is what says the filter is reached: put the assertions back and the
+   * send behind a false one comes home with no response at all.
+   */
+  {
+    id: 'a-send-runs-the-assertions-too',
+    milestone: 'm215',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ComposeDoor.tsx',
+    what: '`D1119` undone: the scratch carries the prefix\'s assertions, so `send` is a test run again — and a false assertion ABOVE the selected request fails fast, aborts the run, and the request a person is exploring never fires',
+    find: '    const body = withoutAssertions(decl.body.slice(0, prefix.upTo + 1));',
+    replace: '    const body = decl.body.slice(0, prefix.upTo + 1);',
+  },
+  /**
+   * **`M215` `A1` (`D1119`), the other half: the cut is the request itself.** The prefix ran to the
+   * last statement *attached* to the request, which is everything between it and the next one — so
+   * a send fired whatever happened to follow, browser steps included. The verdicts were the only
+   * reason for that reach and a send no longer produces any.
+   */
+  {
+    id: 'a-send-runs-past-the-request-it-is-about',
+    milestone: 'm215',
+    pkg: 'tflw',
+    file: 'packages/ui/src/outline.ts',
+    what: '`D1119` undone at the cut: the send prefix runs to the last statement attached to the request instead of stopping at the request, so pressing send on `api POST /orders` in `examples/storefront` also runs the `open "/"` below it — a browser launched to answer a question about an HTTP response, on the API door',
+    find: '  const upTo = last.stepPath.step;',
+    replace: "  const attachedSteps = last.attached.filter((s) => s.stepPath !== null);\n  const upTo = attachedSteps.length === 0 ? last.stepPath.step : attachedSteps[attachedSteps.length - 1].stepPath.step;",
+  },
+  /**
+   * **`M215` `B1` (`D1120`): the one value a person pastes.** A body carrying a newline used to be
+   * refused outright, and the refusal was wrong about exactly one shape — the lexer emits no
+   * `newline` while a `{` or `[` is open, so a bracketed literal already parses across lines. A
+   * scalar keeps the old rule, which is why the mutation restores the blanket test rather than
+   * deleting the check.
+   */
+  {
+    id: 'a-pasted-body-is-refused-for-its-newlines',
+    milestone: 'm215',
+    pkg: 'tflw',
+    file: 'packages/lang/src/build.ts',
+    what: '`D1120` undone: every value carrying a newline is refused again, including a `{`/`[` literal the lexer already reads across lines — so pasting pretty-printed JSON into a Body tab, the commonest gesture that tab has, is a wall',
+    find: '  if (!bracketed && /[\\n\\r]/.test(trimmed)) return { ok: false, reason: \'a value is written on one line\' };',
+    replace: '  if (/[\\n\\r]/.test(trimmed)) return { ok: false, reason: \'a value is written on one line\' };',
+  },
+  /**
+   * **`M215` `B2` (`D1121`): a quoted key is a key.** The highlighter calls a bare key `typ` and a
+   * quoted one `str`, which is correct about the *language* and wrong about a JSON document, where
+   * every key is quoted — it paints the whole left column the colour of every string value, which
+   * is the one distinction a JSON view exists to draw.
+   */
+  {
+    id: 'a-quoted-key-reads-as-a-string',
+    milestone: 'm215',
+    pkg: 'tflw',
+    file: 'packages/ui/src/jsonview.ts',
+    what: '`D1121` undone: the key rule is dropped, so in a response — where every key is quoted — the keys and the string values are painted the same colour and the document has no structure to read',
+    find: "    if (isOp(next(base, i), ':') && (p.role === 'str' || p.role === 'typ' || (p.role === null && /^\\w+$/.test(p.text)))) {",
+    replace: "    if (false && isOp(next(base, i), ':')) {",
+  },
+  /**
+   * **`M215` `B2`: the layout must not re-read a literal.** `JSON.parse` + `JSON.stringify` is the
+   * obvious pretty-printer and it reinterprets every value on the way through — a response carrying
+   * an id above 2^53 comes back with a *different id*, silently, in a view whose only job is to
+   * show what the service sent.
+   */
+  {
+    id: 'the-layout-re-reads-every-literal',
+    milestone: 'm215',
+    pkg: 'tflw',
+    file: 'packages/ui/src/jsonview.ts',
+    what: '`D1121` undone the other way: the body is laid out by a `JSON.parse`/`JSON.stringify` round trip instead of a whitespace pass over the tokens, so a big integer is rewritten and a body that is not JSON — a bare key, a `{ref}` interpolation — cannot be laid out at all',
+    find: '  const all = pieces(trimmed);',
+    replace: '  const all = pieces(JSON.stringify(JSON.parse(trimmed)));',
+  },
+  /**
+   * **`M215` `B3` (`D1122`): the check has to be on the keystroke.** The builder already refuses a
+   * body it cannot read — as a sentence with no position, at the write, by which time the author
+   * has typed three more fields. Drop the live check and the field goes back to saying nothing.
+   */
+  {
+    id: 'a-broken-body-says-nothing-until-the-write',
+    milestone: 'm215',
+    pkg: 'tflw',
+    file: 'packages/ui/src/ApiComposePane.tsx',
+    what: '`D1122` undone: the body field never asks the language anything, so a mistake is invisible while it is being made and arrives later as a refusal with no position — which is the state `M215` found the tab in',
+    find: '  const problem = useMemo(() => bodyProblem(text), [text]);',
+    replace: '  const problem = useMemo(() => null, [text]);',
+  },
   {
     id: 'a-spent-rare-clause-is-hidden-behind-the-disclosure',
     milestone: 'm214',

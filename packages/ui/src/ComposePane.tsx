@@ -76,9 +76,10 @@ import {
 } from '@tflw/lang';
 import { DOOR_BY_ID } from './doors';
 import { LEAF_CAP, captureName, captureSpecs, leaves, verifySpec } from './response';
+import { laidOut } from './jsonview';
 import { VOCABULARY, type AddGesture } from './vocabulary';
 import { isForeign, type Addressed, type Prefix, type FileOutline, type Note, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
-import { StatementText } from './Source';
+import { StatementText, BodyText } from './Source';
 
 /**
  * A comment, shown where its owner is (`D1077`).
@@ -1576,6 +1577,8 @@ export function ResponsePanel({ ran, open, onVerify, onCapture }: {
   const tickable = useMemo(() => leaves(response.bodyText), [response.bodyText]);
   const chosen = useMemo(() => tickable.leaves.filter((l) => ticked.includes(l.path)), [tickable, ticked]);
   const built = useMemo(() => verifySpec(chosen), [chosen]);
+  /* Once per body, not twice per render: the layout is a lex and a parse over the whole thing. */
+  const laid = useMemo(() => laidOut(response.bodyText), [response.bodyText]);
 
   /* The ticks are about **this** response. A new one — a send, or a different request — is a
      different set of paths, so carrying a tick across would mean a checkbox ticked against a path
@@ -1672,7 +1675,16 @@ export function ResponsePanel({ ran, open, onVerify, onCapture }: {
         </>
       )}
 
-      <pre className="preview" data-compose-response-body>{response.bodyText}</pre>
+      {/* **Laid out for reading, and painted by the same rules as the request body above it**
+          (`M215` `B2`, `D1121`). A real service answers on one line; this pane's whole argument is
+          that the response belongs beside the assertions that read it, and a 4 KB minified line is
+          not beside anything. The layout is a whitespace pass over the language's own tokens rather
+          than a `JSON.parse` round trip, so **no literal is re-read** — an id above 2^53 is shown as
+          the service sent it, which the obvious implementation would have silently changed. A body
+          that is not an object or a list is shown exactly as it arrived. */}
+      <pre className="preview" data-compose-response-body data-compose-response-laid={laid === null ? 'no' : 'yes'}>
+        <BodyText text={laid ?? response.bodyText} problem={null} />
+      </pre>
     </div>
   );
 }

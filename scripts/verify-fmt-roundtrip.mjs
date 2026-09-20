@@ -36,7 +36,14 @@ const SKIP = new Set(['node_modules', '.git', 'dist', 'report']);
 const files = [];
 const walk = (dir) => {
   for (const name of readdirSync(dir).sort()) {
-    if (SKIP.has(name)) continue;
+    // **A dot-prefixed `.tflw` is not part of the authored corpus** (`M215`). `tflw ui`'s send
+    // writes `.scratch.tflw` into the project it is serving — that is the whole point of the
+    // button — and every walker here reads *every* `.tflw` under the repository root, so a
+    // person driving the served page changed this census by pressing it. It cost three corpus
+    // failures and five `test:scripts` failures once already, repaired by deleting the file;
+    // deleting a file the product writes on purpose is not a repair. The same line is in
+    // `lenses.test.ts` and `print.test.ts`, which are the other two walks.
+    if (SKIP.has(name) || name.startsWith('.')) continue;
     const p = path.join(dir, name);
     const st = statSync(p);
     if (st.isDirectory()) walk(p);
