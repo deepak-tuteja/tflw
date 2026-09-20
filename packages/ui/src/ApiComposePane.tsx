@@ -46,6 +46,7 @@
 // I*.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { menuTrigger, type MenuItem, type MenuRequest, type MenuTrigger } from './ContextMenu';
 import type { CaptureSpec, ExpectSpec, Lens, MatcherName } from '@tflw/lang';
 import { requestRefusal, requestWithout } from './clauses';
 import { COMPOSE, Grip, storedWidth } from './Grip';
@@ -166,7 +167,19 @@ function afterLead(lead: string, text: string): string {
   return text.startsWith(`${lead} `) ? text.slice(lead.length + 1) : text;
 }
 
-function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, indent, statement, door, band, refusal }: {
+/**
+ * A right-clicked row of the sequence — `M218` `F`.
+ *
+ * Three kinds because the column draws three: the declaration band, a request, and a statement
+ * attached to one. The menu's items differ by kind for the language's own reason — *duplicate this
+ * request* names a unit `D1138` recognises and *duplicate this `expect`* does not.
+ */
+export type SeqTarget =
+  | { readonly kind: 'test'; readonly decl: OutlineTest; readonly line: number }
+  | { readonly kind: 'request'; readonly decl: OutlineTest; readonly request: OutlineRequest; readonly line: number }
+  | { readonly kind: 'step'; readonly statement: OutlineStatement; readonly line: number };
+
+function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, indent, statement, door, band, refusal, menu }: {
   readonly line: number;
   readonly selected: boolean;
   readonly onLine: (line: number) => void;
@@ -189,6 +202,9 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
    *  — *this is the declaration that holds everything below it* — costing one line instead of a
    *  panel. */
   readonly band?: number;
+  /** The right-click trigger for this row, spread onto the `li` (`M218` `F`). A row without one
+   *  behaves exactly as it did before this round. */
+  readonly menu?: MenuTrigger;
   /**
    * **The refusal this row's `✕` produced, drawn UNDER the row** (`D1117`).
    *
@@ -207,6 +223,7 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
       data-seq-row={kind}
       data-seq-line={line}
       data-seq-selected={selected ? 'yes' : 'no'}
+      {...(menu ?? {})}
       {...(band === undefined ? {} : { 'data-band-line': band })}
       {...(statement === undefined
         ? {}
@@ -487,6 +504,12 @@ export interface ApiComposePaneProps {
    * last request of a body the two are the same edit.
    */
   readonly onAddAfter: ((decl: OutlineTest, request: OutlineRequest) => void) | null;
+  /** **Duplicate a request with its attachments** — `M218` `F` (`D1156`). */
+  readonly onDuplicate: ((decl: OutlineTest, request: OutlineRequest) => void) | null;
+  /** What a right-clicked sequence row can do, and where to put the menu (`M218` `F`). Built by
+   *  the door for the same reason the explorer's is built by the shell: this pane draws rows. */
+  readonly menuFor: ((t: SeqTarget) => readonly MenuItem[]) | null;
+  readonly onMenu: ((r: MenuRequest) => void) | null;
   /** Bumped by every create gesture that lands (`D1136`). The pane focuses the first field of
    *  whatever opened; a counter rather than a line, because the same line can be landed on twice. */
   readonly made: number;
@@ -535,7 +558,14 @@ function readSplit(): number {
 }
 
 export function ApiComposePane(props: ApiComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, onVerify, onCapture, onAdd, adds, onAddAfter, made, onRemoveSteps, onRemoveDecl, dirty, busy, problem, onWrite, onDiscard, door, tab, onEditorTab: setTab } = props;
+  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, onVerify, onCapture, onAdd, adds, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, dirty, busy, problem, onWrite, onDiscard, door, tab, onEditorTab: setTab } = props;
+
+  /** One call per sequence row kind — `M218` `F`. `{}` when the door wired no menu, so the rows
+   *  behave exactly as they did before this round. */
+  const seqMenu = (t: SeqTarget, subject: string): MenuTrigger | undefined =>
+    menuFor === null || onMenu === null
+      ? undefined
+      : menuTrigger(onMenu, () => ({ kind: t.kind, subject, items: menuFor(t) }));
 
   const selected = useMemo(() => selectedAt(at, focusLine), [at, focusLine]);
   /** Which request's verdicts and response are in hand. A statement's are its request's. */
@@ -732,6 +762,7 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                 line={decl.line}
                 kind="test"
                 band={decl.line}
+                {...(decl.kind === 'test' ? { menu: seqMenu({ kind: 'test', decl, line: decl.line }, decl.name) } : {})}
                 selected={selected.kind === 'test'}
                 onLine={onLine}
                 lead={<span className="seq-kind">{decl.kind === 'test' ? 'test' : decl.label}</span>}
@@ -764,6 +795,7 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                     lead={<span className="seq-kind">{seqLead(s.kind)}</span>}
                     text={afterLead(seqLead(s.kind), s.text.split('\n')[0] ?? '')}
                     statement={s}
+                    menu={seqMenu({ kind: 'step', statement: s, line: s.line }, s.text.split('\n')[0] ?? s.kind)}
                     door={door}
                     indent
                     refusal={refusalFor(s.line)}
@@ -783,6 +815,7 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                       <SeqRow
                         line={r.line}
                         kind={r.kind === 'WaitUntilApiStmt' ? 'wait' : 'request'}
+                        {...(decl !== null && decl.kind === 'test' ? { menu: seqMenu({ kind: 'request', decl, request: r, line: r.line }, `${r.method} ${r.path}`) } : {})}
                         selected={selected.kind === 'request' && selected.request.line === r.line}
                         onLine={onLine}
                         lead={
@@ -821,6 +854,7 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                               lead={<span className="seq-kind">{seqLead(s.kind)}</span>}
                               text={afterLead(seqLead(s.kind), s.text.split('\n')[0] ?? '')}
                               statement={s}
+                              menu={seqMenu({ kind: 'step', statement: s, line: s.line }, s.text.split('\n')[0] ?? s.kind)}
                               door={door}
                               refusal={refusalFor(s.line)}
                               trailing={

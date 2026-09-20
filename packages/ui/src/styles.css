@@ -1134,3 +1134,65 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 }
 .add-clause [data-add-remove] { background: var(--input); border-color: var(--muted); }
 .add-clause [data-add-remove]:hover { border-color: var(--fail); color: var(--fail); }
+
+/* ── The right-click menu (`M218` `A`, `D1145`/`D1146`). ────────────────────────────────────────
+ *
+ * `z-index: 45` is chosen rather than inherited: the modal scrim is 40 and `.tip` is 50, so a menu
+ * is never half-covered by the scrim and a menu item can still be explained by a tooltip on hover.
+ *
+ * Every colour is a token, with no literal anywhere, because `ui-appearance`'s palette-closure gate
+ * walks all four themes and a hard-coded hue is exactly what it exists to find. */
+.ctx-menu {
+  position: fixed; z-index: 45;
+  min-width: 190px; max-width: 320px;
+  padding: calc(var(--unit) * 0.4) 0;
+  background: var(--panel2); color: var(--fg);
+  border: var(--border) solid var(--line);
+  border-radius: var(--ctl-radius);
+  box-shadow: 0 6px 24px var(--scrim);
+  font: 12px/1.45 var(--sans);
+}
+.ctx-menu:focus { outline: none; }
+.ctx-menu ul { list-style: none; margin: 0; padding: 0; }
+
+/* The subject line — `D1149` made visible. The menu says what it acts on before it says what it
+ * can do, which is what stops a reader assuming it acts on the selection. */
+.ctx-subject {
+  margin: 0; padding: calc(var(--unit) * 0.35) var(--unit) calc(var(--unit) * 0.5);
+  color: var(--muted); font-size: 11px;
+  border-bottom: var(--border) solid var(--line);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.ctx-item {
+  display: block; width: 100%; box-sizing: border-box;
+  padding: calc(var(--unit) * 0.45) var(--unit);
+  background: none; border: 0; border-radius: 0;
+  color: var(--fg); font: inherit; text-align: start;
+}
+/* `.on` rather than `:hover`: the active item is driven by the keyboard as well as the pointer,
+ * and a rule that only answered to hover would leave arrow-key navigation invisible. */
+.ctx-item.on:not(:disabled) { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.ctx-item.danger.on:not(:disabled) { background: color-mix(in srgb, var(--fail) 18%, transparent); color: var(--fail); }
+.ctx-item:disabled { color: var(--muted); }
+
+/* `D1146` — the reason a disabled item gives, in the menu, under the item that refused. The same
+ * shape `.clause-refusal` uses for a refused removal: said where it was refused. */
+.ctx-why {
+  margin: 0; padding: 0 var(--unit) calc(var(--unit) * 0.45);
+  color: var(--muted); font-size: 11px; line-height: 1.4;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* ── Moving and deleting a file (`M218` `D`/`E`). ───────────────────────────────────────────────
+ *
+ * It reuses `.new-thing`'s modal shell rather than growing a second one: the two dialogs are the
+ * same object — a card over a scrim asking one question — and `D1118` already made that shell the
+ * shell's own rather than any pane's. */
+.new-thing-card .danger { border-color: var(--fail-bd); color: var(--fail-on); background: var(--fail-bg); }
+.new-thing-card .danger:disabled { color: var(--muted); border-color: var(--line); background: none; }
+
+/* What else the move would write (`D1150`) — a list of files, not prose about them. */
+.plan-edits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.plan-edits li { color: var(--muted); font-size: 11px; }
+.plan-edits code { color: var(--fg); }

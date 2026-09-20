@@ -12,6 +12,9 @@ import type { ProjectView } from '../src/contract';
 
 const file = (path: string, tests: Array<{ name: string; tags: string[] }>): ProjectView['files'][number] => ({
   path,
+  // `M218` — a file's own `import`/`use` targets. Empty here: these two fixtures are about the
+  // tree and the search, and neither has ever had a file importing another.
+  imports: [],
   diagnostics: 0,
   errors: 0,
   warnings: 0,

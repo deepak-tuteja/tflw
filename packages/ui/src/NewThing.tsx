@@ -77,8 +77,12 @@ export function newPathProblem(path: string, existing: readonly string[]): strin
   return null;
 }
 
-export function NewThing({ mode, openPath, openText, existing, onStage, onDone, onCancel }: {
+export function NewThing({ mode, openPath, openText, existing, onStage, onDone, onCancel, inDir }: {
   readonly mode: NewMode;
+  /** The directory a `file` create was opened from, or `null` for the foot's own `+ new file`
+   *  (`M218` `B`, `D1159`). It seeds the path field and nothing else — this is still the one
+   *  dialog and still the only place a new file is built (`D1087`). */
+  readonly inDir: string | null;
   /**
    * The file a new **test** goes into — and it is the file **as the author has it**, pending edits
    * included, never the copy on disk (`M217` `C`, `D1141`).
@@ -108,7 +112,9 @@ export function NewThing({ mode, openPath, openText, existing, onStage, onDone, 
   const [name, setName] = useState('');
   const [method, setMethod] = useState<string>('GET');
   const [path, setPath] = useState('/');
-  const [file, setFile] = useState('tests/new.tflw');
+  /** `D1159` — opened from a directory row, the field starts in that directory; the foot's own
+   *  `+ new file` passes `null` and keeps the default it has always had. */
+  const [file, setFile] = useState(inDir === null ? 'tests/new.tflw' : `${inDir.replace(/\/+$/, '')}/new.tflw`);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const first = useRef<HTMLInputElement | null>(null);

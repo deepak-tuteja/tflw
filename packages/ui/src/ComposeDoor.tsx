@@ -86,7 +86,8 @@ import {
   type RanIndex,
   type Verdict,
 } from './ComposePane';
-import { ApiComposePane, type EditorTab } from './ApiComposePane';
+import { ApiComposePane, type EditorTab, type SeqTarget } from './ApiComposePane';
+import type { MenuItem, MenuRequest } from './ContextMenu';
 import type { NewMode } from './NewThing';
 import { addressed, anchorAfter, fileOutline, prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 import { SourcePanel } from './SourcePanel';
@@ -175,6 +176,8 @@ export interface ComposeDoorProps {
    * calls. One construction path (`D1087`) survives a second entry point because the second entry
    * point is not a path, it is a caller.
    */
+  /** The shell's single open-menu slot (`M218` `A`, `D1145`) — this door hands menus to it. */
+  readonly onMenu: ((r: MenuRequest) => void) | null;
   readonly addIntent: { readonly path: string; readonly declIndex: number; readonly n: number } | null;
   readonly onAddIntentDone: () => void;
   /** Which stage of this file's life is showing (`M205` §2). It lives in the URL and nowhere else
@@ -214,7 +217,7 @@ export interface ComposeDoorProps {
  *  that renamed itself on every press would leave a file nobody could re-run by hand. */
 const SCRATCH_TEST = 'scratch';
 
-export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, addIntent, onAddIntentDone, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ComposeDoorProps) {
+export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ComposeDoorProps) {
   const [busy, setBusy] = useState(false);
   /** What `L<line>` names — one resolution, so the band and the card cannot disagree about which
    *  test they are showing (`D1080`). */
@@ -641,6 +644,36 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   );
 
   /**
+   * **Duplicate this request, with the statements that belong to it** — `M218` `F` (`D1156`).
+   *
+   * One edit, never two, and the statements are not optional. `body` means *the last response*
+   * (`checker.ts:1754`), so a request copied without its assertions lands between the original and
+   * its expects and silently re-points every one of them at the copy — the original stops being
+   * checked and the copy is checked twice. `M217` measured that hazard at **19 of 19** requests in
+   * `examples/storefront`, which is why `OutlineRequest.attached` exists and why this reuses it
+   * rather than copying a line range.
+   *
+   * **Nested rows are dropped on purpose.** A `wait until api`'s expects live inside its block and
+   * carry a `null` `stepPath`; the block's own node already contains them, so copying them beside
+   * it would write them twice. The filter is the same one `anchorAfter` applies, for the same
+   * reason.
+   */
+  const duplicateRequest = useCallback(
+    (decl: OutlineTest, request: OutlineRequest) => {
+      if (!file) return;
+      const nodes = [request.node, ...request.attached.filter((a) => a.stepPath !== null).map((a) => a.node)];
+      const out = insertIntoSource(draft ?? file.text, { kind: 'stepsAfter', path: anchorAfter(request), nodes });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      const at = decl.body.requests.findIndex((r) => r.line === request.line);
+      landOn(out.text, (after) => (at < 0 ? null : declAfter(after, decl)?.body.requests[at + 1]?.line ?? null));
+    },
+    [file, draft, landOn, declAfter],
+  );
+
+  /**
    * **Carrying out the explorer's `+`** — `M217` `D` (`D1139`).
    *
    * It waits for `outline` to be **this** file's before it acts, because `setFile` and the read
@@ -854,6 +887,52 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
     },
     [file, draft, landOn, declAfter],
   );
+
+  /**
+   * **What a right-clicked sequence row can do** — `M218` `F`.
+   *
+   * Unlike the explorer's, this menu gathers almost nothing: measured before it was built, **every**
+   * row of the sequence already shows `.seq-pick` and `.seq-x`, and request rows also show `M217`'s
+   * `.seq-plus`. So it earns its place on the two operations that did not exist — *duplicate*, and
+   * *go to this line in Source* — and carries the rest for reachability rather than for discovery.
+   *
+   * `onRemoveSteps` is reused verbatim rather than re-implemented: removing a request has to remove
+   * its attachments in the same edit (`D1117`), and a menu with its own idea of that would be a
+   * second answer to a question the language already settled.
+   */
+  const seqMenuFor = useCallback(
+    (t: SeqTarget): readonly MenuItem[] => {
+      const copyable = typeof navigator !== 'undefined' && navigator.clipboard !== undefined;
+      const clip = (text: string): MenuItem =>
+        copyable
+          ? { id: 'copy', label: 'Copy its source', run: () => { void navigator.clipboard?.writeText(text); } }
+          : { id: 'copy', label: 'Copy its source', run: null, why: 'the clipboard is only available over https or on localhost' };
+      const source: MenuItem = { id: 'source', label: 'Show this line in Source', run: () => onTab('source', t.line) };
+      if (t.kind === 'test') {
+        return [
+          { id: 'new-request', label: 'New request here', run: () => addRequest(t.decl) },
+          { id: 'new-let', label: 'New `let` here', run: () => addLetTo(t.decl) },
+          source,
+        ];
+      }
+      if (t.kind === 'request') {
+        return [
+          { id: 'open', label: 'Open it in the editor', run: () => onTab('compose', t.line) },
+          { id: 'duplicate', label: 'Duplicate it, with its statements', run: () => duplicateRequest(t.decl, t.request) },
+          { id: 'add-after', label: 'New request after it', run: () => addRequestAfter(t.decl, t.request) },
+          source,
+          clip([t.request, ...t.request.attached].map((x) => ('text' in x ? x.text : `${t.request.method} ${t.request.path}`)).join('\n')),
+        ];
+      }
+      return [
+        { id: 'open', label: 'Open it in the editor', run: () => onTab('compose', t.line) },
+        source,
+        clip(t.statement.text),
+      ];
+    },
+    [onTab, addRequest, addLetTo, addRequestAfter, duplicateRequest],
+  );
+
 
   /**
    * **`+ open`** (`M213` `S4`, `D1094`) — the page a browser test works against.
@@ -1676,7 +1755,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onCapture={captureFrom}
           onAdd={add}
           adds={VOCABULARY[door].adds}
-          onAddAfter={addRequestAfter}
+          onAddAfter={addRequestAfter} onDuplicate={duplicateRequest} menuFor={seqMenuFor} onMenu={onMenu}
           made={made}
           onRemoveSteps={removeSteps}
           onRemoveDecl={removeDecl}
