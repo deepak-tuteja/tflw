@@ -7798,3 +7798,333 @@ test('`M217` `D3`: the `+` costs no name that was not already cut (`D1140`)', as
     assert.equal(withPlus, without, `the \`+\` truncates no name the row was already showing whole (${withPlus} cut with it, ${without} without)`);
   });
 });
+
+// ── `M218` — the right-click menu, and moving or deleting a file ───────────────────────────────
+//
+// The properties below are written as round-trips rather than as lists of item names, on `M214`'s
+// measured precedent: its frozen mutation `the-add-menu-hides-what-it-cannot-add` is what a
+// completeness gate spelled as an enumeration looks like when it freezes a UI. So `B1` asks *does
+// every item either work or say why*, never *are these the eight items*.
+
+/** A project whose two tests both import a third file — the shape every refusal here is about. */
+const IMPORTED = {
+  'shared/login.tflw': ['test "signs in"', '  api GET /session', '  expect status equals 200', ''].join('\n'),
+  'tests/checkout.tflw': ['import "../shared/login.tflw"', '', 'test "checks out"', '  api GET /orders', '  expect status equals 200', ''].join('\n'),
+  'tests/basket.tflw': ['import "../shared/login.tflw"', '', 'test "baskets"', '  api GET /baskets', '  expect status equals 200', ''].join('\n'),
+  'tests/lonely.tflw': ['test "alone"', '  api GET /x', '  expect status equals 200', ''].join('\n'),
+};
+
+/**
+ * Right-click a row and wait for the menu to be **placed** rather than merely present.
+ *
+ * **A real right-click, not a dispatched event.** The first draft used
+ * `locator.dispatchEvent('contextmenu', …)` and every gate built on it timed out with no menu at
+ * all, while the same gesture worked from raw page script — Playwright's `dispatchEvent` does not
+ * produce an event React's `onContextMenu` accepts here. The correction is the better gate anyway:
+ * this presses the button a person presses.
+ *
+ * `:not([data-menu-placed="measuring"])` is the wait, because `measuring` is the deliberate hidden
+ * first frame in which the menu is rendered at the origin so `place()` can read its height. Waiting
+ * for visibility alone would measure a box that is about to move.
+ */
+const openMenu = async (p: Page, selector: string): Promise<void> => {
+  await p.locator(selector).first().click({ button: 'right' });
+  await p.locator('.ctx-menu:not([data-menu-placed="measuring"])').waitFor({ state: 'visible' });
+};
+
+test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row kind (`D1145`)', async () => {
+  await withProjectFixture(IMPORTED, async (p, base) => {
+    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    // **Sizes rather than pointer coordinates.** The clamp is only asked a question when the menu
+    // does not fit where it was asked for, and shrinking the window is how a real pointer gets
+    // near an edge — a synthetic corner coordinate would put the menu over a row that is not there.
+    const sizes = [{ width: 1440, height: 900 }, { width: 900, height: 600 }, { width: 700, height: 420 }];
+    const rows = ['[data-file-row="tests/checkout.tflw"]', '[data-dir-toggle="tests"]', '[data-outline-goto="3"]', '[data-seq-line="3"]'];
+    const off: string[] = [];
+    for (const size of sizes) {
+      await p.setViewportSize(size);
+      for (const row of rows) {
+        if (await p.locator(row).count() === 0) continue;
+        await openMenu(p, row);
+        const box = await p.locator('.ctx-menu').boundingBox();
+        if (box === null || box.x < 0 || box.y < 0 || box.x + box.width > size.width || box.y + box.height > size.height) {
+          off.push(`${row} at ${size.width}x${size.height} → ${JSON.stringify(box)}`);
+        }
+        await p.keyboard.press('Escape');
+      }
+    }
+    await p.setViewportSize({ width: 1440, height: 900 });
+    assert.deepEqual(off, [], 'every menu is fully inside the window');
+  });
+});
+
+test('`M218` `A2`: `Shift`+`F10` opens it and `Escape` gives focus back (`D1147`)', async () => {
+  await withProjectFixture(IMPORTED, async (p, base) => {
+    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    const row = p.locator('[data-file-row="tests/checkout.tflw"]');
+    await row.focus();
+    await p.keyboard.press('Shift+F10');
+    await p.locator('.ctx-menu:not([data-menu-placed="measuring"])').waitFor({ state: 'visible' });
+
+    // The arrows move the current item, and only among the ones that can be run.
+    const at = () => p.locator('.ctx-menu').getAttribute('aria-activedescendant');
+    const first = await at();
+    await p.keyboard.press('ArrowDown');
+    assert.notEqual(await at(), first, 'the arrow moved the current item');
+    await p.keyboard.press('End');
+    const last = await at();
+    await p.keyboard.press('ArrowDown');
+    assert.notEqual(await at(), last, 'and it wraps rather than stopping');
+
+    await p.keyboard.press('Escape');
+    await p.locator('.ctx-menu').waitFor({ state: 'detached' });
+    // Asked with a `:focus` locator rather than `document.activeElement`: `tsconfig.test.json`
+    // pins `types: ["node"]` with no DOM lib, so `document` is not a name in this file. That is
+    // this file's own documented `S1` finding, and this is its fifth recurrence.
+    assert.equal(
+      await p.locator('[data-file-row="tests/checkout.tflw"]:focus').count(),
+      1,
+      'focus went back to the row the menu was opened from',
+    );
+  });
+});
+
+test('`M218` `A3`: opening a second menu leaves one open, not two', async () => {
+  await withProjectFixture(IMPORTED, async (p, base) => {
+    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    await openMenu(p, '[data-file-row="tests/checkout.tflw"]');
+    await openMenu(p, '[data-file-row="tests/lonely.tflw"]');
+    assert.equal(await p.locator('.ctx-menu').count(), 1);
+    assert.equal(await p.locator('.ctx-menu').getAttribute('data-menu-subject'), 'tests/lonely.tflw');
+  });
+});
+
+test('`M218` `B1`: every item either runs or says why — asked of every row kind (`D1146`)', async () => {
+  await withProjectFixture(IMPORTED, async (p, base) => {
+    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    const rows = ['[data-file-row="shared/login.tflw"]', '[data-file-row="tests/lonely.tflw"]', '[data-dir-toggle="tests"]', '[data-outline-goto="3"]', '[data-seq-line="3"]', '[data-seq-line="4"]'];
+    const silent: string[] = [];
+    let seenDisabled = 0;
+    for (const row of rows) {
+      await openMenu(p, row);
+      const items = await p.locator('.ctx-menu [data-menu-item]').all();
+      assert.ok(items.length > 0, `${row} offers something`);
+      for (const item of items) {
+        const id = await item.getAttribute('data-menu-item');
+        if ((await item.getAttribute('data-menu-state')) !== 'disabled') continue;
+        seenDisabled += 1;
+        const why = await p.locator(`.ctx-menu [data-menu-why="${id}"]`).textContent();
+        if (why === null || why.trim() === '') silent.push(`${row} ▸ ${id}`);
+      }
+      await p.keyboard.press('Escape');
+    }
+    assert.deepEqual(silent, [], 'no disabled item is silent about why');
+    // The control: if nothing was ever disabled the loop above proved nothing at all. `shared/
+    // login.tflw` is imported twice, so its Delete must be one of them.
+    assert.ok(seenDisabled > 0, 'and at least one item was actually disabled, so the rule was exercised');
+  });
+});
+
+test('`M218` `B1`: Delete is refused on an imported file and names the importers (`D1146`, `D1153`)', async () => {
+  await withProjectFixture(IMPORTED, async (p, base) => {
+    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    await openMenu(p, '[data-file-row="shared/login.tflw"]');
+    assert.equal(await p.locator('.ctx-menu [data-menu-item="delete"]').getAttribute('data-menu-state'), 'disabled');
+    const why = (await p.locator('.ctx-menu [data-menu-why="delete"]').textContent()) ?? '';
+    assert.ok(why.includes('tests/checkout.tflw') && why.includes('tests/basket.tflw'), `the reason names them: ${why}`);
+    await p.keyboard.press('Escape');
+    // …and the same menu on a file nobody imports offers it.
+    await openMenu(p, '[data-file-row="tests/lonely.tflw"]');
+    assert.equal(await p.locator('.ctx-menu [data-menu-item="delete"]').getAttribute('data-menu-state'), 'enabled');
+  });
+});
+
+test('`M218` `B2`: the menu acts on the row under the pointer, not on the selection (`D1149`)', async () => {
+  await withProjectFixture(IMPORTED, async (p, base) => {
+    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    // Build a three-file selection — which in this pane means *what will run*, nothing else.
+    await p.locator('[data-file-row="tests/checkout.tflw"]').click();
+    await p.locator('[data-file-row="tests/basket.tflw"]').click({ modifiers: ['Meta'] });
+    await p.locator('[data-file-row="tests/lonely.tflw"]').click({ modifiers: ['Meta'] });
+    assert.equal(await p.locator('[data-selected="yes"]').count(), 3, 'three files are selected');
+
+    await openMenu(p, '[data-file-row="tests/lonely.tflw"]');
+    assert.equal(await p.locator('.ctx-menu').getAttribute('data-menu-subject'), 'tests/lonely.tflw');
+    // And the selection is untouched by having opened a menu over it.
+    assert.equal(await p.locator('[data-selected="yes"]').count(), 3);
+  });
+});
+
+test('`M218` `C2`: the preview names the files the apply writes, and nothing else (`D1150`)', async () => {
+  await withProjectFixture(IMPORTED, async (p, base, dir) => {
+    const preview = await (await fetch(`${base}/api/refactor?op=move&from=shared%2Flogin.tflw&to=shared%2Fsignin.tflw`)).json() as { edits: { path: string }[]; removes: string[] };
+    const before = new Map<string, string>();
+    for (const name of Object.keys(IMPORTED)) before.set(name, await readFile(join(dir, name), 'utf8'));
+
+    const applied = await fetch(`${base}/api/move`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: 'shared/login.tflw', to: 'shared/signin.tflw' }) });
+    assert.equal(applied.status, 200);
+
+    // What actually changed on disk, asked of the bytes rather than of the response.
+    const changed: string[] = [];
+    for (const [name, was] of before) {
+      const now = await readFile(join(dir, name), 'utf8').catch(() => null);
+      if (now !== was) changed.push(name);
+    }
+    assert.deepEqual(
+      changed.sort(),
+      [...preview.edits.map((e) => e.path).filter((x) => !before.has(x)), ...preview.edits.map((e) => e.path).filter((x) => before.has(x)), ...preview.removes]
+        .filter((x, i, a) => a.indexOf(x) === i && before.has(x)).sort(),
+      'every file the apply touched was named by the preview',
+    );
+    await p.close?.call(p);
+  });
+});
+
+test('`M218` `D1`: deleting an imported file is refused and the file survives (`D1153`)', async () => {
+  await withProjectFixture(IMPORTED, async (_p, base, dir) => {
+    const res = await fetch(`${base}/api/file?path=shared%2Flogin.tflw`, { method: 'DELETE' });
+    assert.equal(res.status, 409);
+    const body = await res.json() as { importers: string[] };
+    assert.deepEqual(body.importers, ['tests/basket.tflw', 'tests/checkout.tflw']);
+    assert.ok(await readFile(join(dir, 'shared/login.tflw'), 'utf8').then(() => true).catch(() => false), 'the file is still there');
+  });
+});
+
+test('`M218` `D2`: the recovery sentence is about this file, and degrades rather than guessing (`D1154`)', async () => {
+  // **All three answers, in one repository this test makes itself.**
+  //
+  // The first draft took its `tracked` control from `examples/storefront`, which is a git checkout
+  // on the machine this was written on and an **rsync copy** on the box the suite actually runs on
+  // — so the gate passed locally and failed remotely, asserting `tracked` against a directory git
+  // has never heard of. A gate whose subject is *whether git knows this file* has to bring its own
+  // git, or it is measuring where it is being run.
+  //
+  // Two directions are required and not one: `unknown` alone is satisfied by a function that always
+  // answers `unknown`, and `tracked` alone by one that always answers `tracked`. `untracked` is the
+  // case the whole decision turned on — a file inside a real repository that git still cannot give
+  // back, which is exactly what a `.git`-directory check would have called recoverable.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m218-git-'));
+  const git = (...args: string[]): void => { execFileSync('git', args, { cwd: dir, stdio: 'ignore' }); };
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
+    const body = ['test "t"', '  api GET /x', '  expect status equals 200', ''].join('\n');
+    await writeFile(join(dir, 'committed.tflw'), body);
+    await writeFile(join(dir, 'never-committed.tflw'), body);
+    const port = await ui.listen(0);
+    const ask = async (name: string): Promise<string> =>
+      ((await (await fetch(`http://127.0.0.1:${port}/api/refactor?op=delete&path=${encodeURIComponent(name)}`)).json()) as { recovery: string }).recovery;
+
+    // 1. No repository at all — the flat "this cannot be undone".
+    assert.equal(await ask('committed.tflw'), 'unknown', 'outside a repository the answer is `unknown`');
+
+    // 2. A repository, and one of the two files committed into it.
+    git('init', '-q');
+    // Set locally: a box with no global identity would otherwise fail the commit, not the gate.
+    git('config', 'user.email', 'gate@example.invalid');
+    git('config', 'user.name', 'gate');
+    git('add', 'committed.tflw');
+    git('commit', '-qm', 'the one git can give back');
+    assert.equal(await ask('committed.tflw'), 'tracked', 'a committed file is `tracked`');
+
+    // 3. The case `D1154` exists for: inside the repository, and gone forever if deleted.
+    assert.equal(await ask('never-committed.tflw'), 'untracked', 'an uncommitted file in a repository is NOT recoverable');
+  } finally {
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`M218` `B3`: `New file here` opens in the folder it was asked from (`D1159`)', async () => {
+  // **Two folders, and neither is the dialog's default.** Checked first on the live page against
+  // `tests/`, whose name is also the default the field has always carried — so the right answer and
+  // a prop doing nothing produce the identical string, and the observation established nothing.
+  // It turned out to be establishing nothing about a prop that really was unused: `inDir` was
+  // destructured and never read, and this gate is what said so.
+  //
+  // The foot's own `+ new file` is asserted too, because `startCreating` exists for it: a create
+  // opened from the foot must not inherit the folder a menu last used.
+  await withProjectFixture(
+    { 'suites/a.tflw': ['test "a"', '  api GET /a', '  expect status equals 200', ''].join('\n'),
+      'flows/b.tflw': ['test "b"', '  api GET /b', '  expect status equals 200', ''].join('\n') },
+    async (p, base) => {
+      await openClean(p, `${base}/#/api/compose/suites/a.tflw/L1`);
+
+      for (const folder of ['suites', 'flows']) {
+        await openMenu(p, `[data-dir-toggle="${folder}"]`);
+        await p.locator('.ctx-menu [data-menu-item="new-file-here"]').click();
+        await p.locator('[data-new-file]').waitFor({ state: 'visible' });
+        assert.equal(await p.locator('[data-new-file]').inputValue(), `${folder}/new.tflw`);
+        await p.locator('[data-new-cancel], [data-file-action-cancel]').first().click().catch(async () => { await p.keyboard.press('Escape'); });
+        await p.locator('[data-new-file]').waitFor({ state: 'detached' });
+      }
+
+      // The foot's `+ new file` lives at the bottom of the explorer and can sit below the fold.
+      const foot = p.locator('[data-compose-new-file]').first();
+      await foot.scrollIntoViewIfNeeded();
+      await foot.click();
+      await p.locator('[data-new-file]').waitFor({ state: 'visible' });
+      assert.equal(await p.locator('[data-new-file]').inputValue(), 'tests/new.tflw', 'the foot inherits no folder');
+    },
+  );
+});
+
+test('`M218` `E4`: a draft follows its file across a rename (`D1155`)', async () => {
+  await withProjectFixture(IMPORTED, async (p, base) => {
+    await openClean(p, `${base}/#/api/compose/tests/lonely.tflw/L1`);
+    // Make a pending edit that exists only in the page.
+    await p.locator('[data-seq-add="request"]').click();
+    await p.locator('[data-file-unsaved="tests/lonely.tflw"]').waitFor({ state: 'visible' });
+
+    await openMenu(p, '[data-file-row="tests/lonely.tflw"]');
+    await p.locator('.ctx-menu [data-menu-item="rename"]').click();
+    await p.locator('[data-file-action="move"]').waitFor({ state: 'visible' });
+    await p.locator('[data-action-to]').fill('tests/renamed.tflw');
+    await p.locator('[data-action-go="move"]').click();
+    await p.locator('[data-file-action]').waitFor({ state: 'detached' });
+
+    // The dot is the page's own claim that bytes are pending, and it has to have moved with them.
+    await p.locator('[data-file-unsaved="tests/renamed.tflw"]').waitFor({ state: 'visible' });
+    assert.equal(await p.locator('[data-file-unsaved="tests/lonely.tflw"]').count(), 0, 'and is not left behind on a path nothing opens');
+  });
+});
+
+test('`M218` `F1`: duplicating a request copies its statements with it (`D1156`)', async () => {
+  await withProjectFixture({ 'a.tflw': CHAINED }, async (p, base) => {
+    await openClean(p, `${base}/#/api/compose/a.tflw/L1`);
+    // Wait for the column before counting it: a count taken on an unrendered page is `0`, which
+    // made this read `4 !== 1` and look like a duplicate that had added four requests.
+    await p.locator('[data-seq-request]').first().waitFor();
+    const before = await p.locator('[data-seq-request]').count();
+    await openMenu(p, '[data-seq-line="2"]');
+    await p.locator('.ctx-menu [data-menu-item="duplicate"]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'visible' });
+    assert.equal(await p.locator('[data-seq-request]').count(), before + 1, 'one more request');
+
+    // The copy carries the two statements attached to the original, and the original keeps its own.
+    const rows = await p.locator('[data-seq-line]').evaluateAll((els) =>
+      els.map((e) => `${e.getAttribute('data-seq-row')}`));
+    // `request, ExpectStmt, CaptureStmt` twice over, back to back.
+    const joined = rows.join(',');
+    assert.ok(
+      joined.includes('request,ExpectStmt,CaptureStmt,request,ExpectStmt,CaptureStmt'),
+      `the copy brought its attachments: ${joined}`,
+    );
+  });
+});
+
+test('`M218` `F2`: duplicating changes no existing assertion’s response (`D1138`, `D1156`)', async () => {
+  await withProjectFixture({ 'a.tflw': CHAINED }, async (p, base) => {
+    await openClean(p, `${base}/#/api/compose/a.tflw/L1`);
+    const before = responseReaders(CHAINED);
+    // Duplicate the FIRST request — the position where a copy landing without its statements
+    // would re-point the originals, which is the whole hazard.
+    await openMenu(p, '[data-seq-line="2"]');
+    await p.locator('.ctx-menu [data-menu-item="duplicate"]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'visible' });
+    await p.locator('[data-tab="source"]').click();
+    const after = await p.locator('[data-compose-source], .source-text, pre').first().innerText();
+    const lost = keepsEveryReader(before, responseReaders(after));
+    assert.equal(lost, null, `this pair stopped being true: ${lost}`);
+  });
+});

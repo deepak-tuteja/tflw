@@ -249,3 +249,54 @@ export function subscribe(id: string, on: { event: (e: RunEvent) => void; noise:
   });
   return () => source.close();
 }
+
+// ── `M218` — moving and deleting a file ────────────────────────────────────────────────────────
+
+/** One file the plan would write, and the sentence the dialog shows for it. */
+export interface PlanEdit {
+  readonly path: string;
+  readonly text: string;
+  readonly why: string;
+}
+
+/**
+ * What a move or a delete would do — `GET /api/refactor` (`D1150`).
+ *
+ * The **same** server function computes this and performs the operation, which is `D1141`
+ * generalised: `M217-01` was a dialog previewing bytes that were not the bytes that landed, and a
+ * preview computed by one path and applied by another is that defect with a project-wide radius.
+ *
+ * `recovery` is `delete` only, and is about **this file** rather than about the project
+ * (`D1154`): `untracked` means git cannot bring it back, and `unknown` means git could not be
+ * asked at all — no repository, or no git — in which case the dialog says the flat *this cannot be
+ * undone*, which is never false.
+ */
+export interface RefactorPlan {
+  readonly op: 'move' | 'delete';
+  readonly subject: string;
+  readonly to: string | null;
+  readonly importers: readonly string[];
+  readonly edits: readonly PlanEdit[];
+  readonly removes: readonly string[];
+  readonly refusals: readonly string[];
+  readonly recovery?: 'tracked' | 'untracked' | 'unknown';
+}
+
+export const planDelete = (path: string) => getJson<RefactorPlan>(`/api/refactor?op=delete&path=${encodeURIComponent(path)}`);
+export const planMove = (from: string, to: string) =>
+  getJson<RefactorPlan>(`/api/refactor?op=move&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+
+/** Apply a move. The server re-reads and re-plans; nothing the page holds is trusted back. */
+export async function moveFile(from: string, to: string): Promise<{ ok: true; rewrote: number } | { ok: false; error: string }> {
+  const res = await fetch('/api/move', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from, to }) });
+  const body = (await res.json()) as { rewrote?: number; error?: string };
+  return res.ok ? { ok: true, rewrote: body.rewrote ?? 0 } : { ok: false, error: body.error ?? `${res.status}` };
+}
+
+/** Apply a delete. Refused with `409` when anything imports it (`D1153`). */
+export async function deleteFile(path: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+  if (res.ok) return { ok: true };
+  const body = (await res.json()) as { error?: string };
+  return { ok: false, error: body.error ?? `${res.status}` };
+}

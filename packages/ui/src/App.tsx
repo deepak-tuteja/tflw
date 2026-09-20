@@ -7,7 +7,7 @@
 // `#/load` is a link to the LOAD door of whatever project this server is serving.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getFile, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, reportFileUrl, startRun, subscribe } from './api';
+import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getFile, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, putFile, reportFileUrl, startRun, subscribe } from './api';
 import type { DocumentView, FileView } from './api';
 import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
@@ -15,6 +15,8 @@ import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, ha
 import { Landing } from './Landing';
 import { Grip, SIDEBAR, storedWidth } from './Grip';
 import { TooltipLayer } from './Tooltip';
+import { ContextMenuLayer, type MenuItem, type MenuRequest } from './ContextMenu';
+import { FileAction, type FileActionKind } from './FileAction';
 import { ThemePick } from './ThemePick';
 import { DoorBar } from './DoorBar';
 import { LoadForm } from './LoadForm';
@@ -30,6 +32,7 @@ import { RunList, type Selection } from './RunList';
 import { RunStrip } from './RunStrip';
 import { matchingFiles, parseQuery } from './search';
 import { Sidebar } from './Sidebar';
+import type { MenuTarget } from './Sidebar';
 import { NewThing, type NewMode } from './NewThing';
 import { fileOutline } from './outline';
 
@@ -289,6 +292,25 @@ export function App() {
    * once. The declaration is named by **index**, never by line, because a splice re-formats.
    */
   const [addIntent, setAddIntent] = useState<{ readonly path: string; readonly declIndex: number; readonly n: number } | null>(null);
+  /**
+   * The open right-click menu, or `null` (`M218` `A`, `D1145`).
+   *
+   * **One piece of state for the whole page**, which is what makes *at most one menu is open* a
+   * property of the shape rather than a rule every opener has to remember. Rows do not own menus;
+   * they hand one over and the shell holds it.
+   */
+  const [menu, setMenu] = useState<MenuRequest | null>(null);
+  /** The open move/delete dialog, or `null` — `M218` `D`/`E`. */
+  const [fileAction, setFileAction] = useState<{ readonly kind: FileActionKind; readonly path: string } | null>(null);
+  /** The directory a `+ New file here` was opened from (`D1159`), or `null`. */
+  const [creatingIn, setCreatingIn] = useState<string | null>(null);
+
+  /** Open the create dialog, saying which directory it was asked for from (`D1159`). Every opener
+   *  goes through this, so a `+ new file` at the foot cannot inherit the folder a menu last used. */
+  const startCreating = useCallback((mode: NewMode, dir: string | null = null) => {
+    setCreatingIn(dir);
+    setCreating(mode);
+  }, []);
 
   const [drafts, setDrafts] = useState<ReadonlyMap<string, string>>(() => new Map());
 
@@ -624,6 +646,7 @@ export function App() {
     return req;
   }, [env, workers, query, selection, project]);
 
+
   /**
    * The file the strip is about, resolved once (`M206` `S1`, `S2a`).
    *
@@ -640,6 +663,120 @@ export function App() {
    */
   const filePaths = project?.files.map((f) => f.path) ?? [];
   const path = file !== null && filePaths.includes(file) ? file : (filePaths[0] ?? '');
+
+  // ── `M218` `B` — what a right-clicked row can do ───────────────────────────────────────────────
+  //
+  // Built here and not in `Sidebar`, which is `D1148`: the explorer describes its row, the shell
+  // decides what may be done to it, and every create item calls the callback its `+` already calls.
+  // Nothing in this block constructs `.tflw` text.
+
+  /** Copy, honestly. `navigator.clipboard` is absent outside a secure context, and a menu item that
+   *  silently did nothing would be worse than one that says it cannot (`D1146`). */
+  const canCopy = typeof navigator !== 'undefined' && navigator.clipboard !== undefined;
+  const copy = useCallback((text: string) => { void navigator.clipboard?.writeText(text); }, []);
+
+  /** Open a file at a given tab without going through `setFile` **then** `setTab` — the second of
+   *  those reads `file` from its own closure and would write the hash for the file we just left.
+   *  The hash is the source of truth and its listener moves the page, so one write does it. */
+  const openAt = useCallback((p: string, at: TabId) => {
+    if (door === null) return;
+    window.location.hash = hashForTab(door, at, p, undefined, doc) + paneTail([p], query);
+  }, [door, doc, query]);
+
+  /**
+   * **Run just this file** — explicit, and therefore not `D1149`'s rejected side effect.
+   *
+   * It overrides `files` on the request the strip would otherwise send and leaves the selection
+   * alone: the narrowing in the address goes on meaning what it meant, and the item's own label is
+   * what tells the reader this run is narrower than that.
+   */
+  const runJust = useCallback((p: string) => { void onRun({ ...request(), files: [p] }); }, [onRun, request]);
+
+  /** A free `…-copy[-n].tflw` beside the original, decided against the project view rather than by
+   *  asking the server and reading a `409` — the answer is already on the page. */
+  const copyNameFor = useCallback((p: string): string => {
+    const taken = new Set((project?.files ?? []).map((f) => f.path));
+    const stem = p.replace(/\.tflw$/, '');
+    for (let n = 1; ; n += 1) {
+      const candidate = `${stem}-copy${n === 1 ? '' : `-${n}`}.tflw`;
+      if (!taken.has(candidate)) return candidate;
+    }
+  }, [project]);
+
+  /** Duplicate a file: read, write under a free name, open it. No new route — `PUT` with a `null`
+   *  etag is already *this file should not exist yet*, which is exactly the claim being made. */
+  const duplicateFile = useCallback(async (p: string) => {
+    try {
+      const src = await getFile(p);
+      const target = copyNameFor(p);
+      const put = await putFile(target, src.text, null);
+      if (!put.ok) { setError(`could not duplicate ${p}: ${put.error}`); return; }
+      await readProjectView();
+      openAt(target, 'compose');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [copyNameFor, openAt, readProjectView]);
+
+  /** Who imports this file, from the view the server already sent (`M218` `C`). One source, two
+   *  deliveries: the page answers the menu instantly and the route answers the apply. */
+  const importersOf = useCallback(
+    (p: string): readonly string[] => (project?.files ?? []).filter((f) => f.path !== p && f.imports.includes(p)).map((f) => f.path),
+    [project],
+  );
+
+  const menuFor = useCallback((t: MenuTarget): readonly MenuItem[] => {
+    if (t.kind === 'dir') {
+      return [
+        { id: 'new-file-here', label: 'New file here…', run: () => startCreating('file', t.path) },
+        { id: 'fold', label: t.expanded ? 'Collapse' : 'Expand', run: t.onToggle },
+        t.files.length === 0
+          ? { id: 'select', label: 'Select its files for the run', run: null, why: 'this folder holds no `.tflw` file' }
+          : { id: 'select', label: `Select its ${t.files.length} file${t.files.length === 1 ? '' : 's'} for the run`, run: () => pick(t.files, null) },
+      ];
+    }
+    if (t.kind === 'file') {
+      return [
+        { id: 'open', label: 'Open', run: () => pick([t.path], t.path) },
+        { id: 'new-test', label: 'New test here…', run: () => { setFile(t.path); startCreating('test'); } },
+        { id: 'duplicate', label: 'Duplicate', run: () => { void duplicateFile(t.path); } },
+        { id: 'reveal-source', label: 'Show its source', run: () => openAt(t.path, 'source') },
+        { id: 'run-file', label: 'Run just this file', run: () => runJust(t.path) },
+        canCopy
+          ? { id: 'copy-path', label: 'Copy path', run: () => copy(t.path) }
+          : { id: 'copy-path', label: 'Copy path', run: null, why: 'the clipboard is only available over https or on localhost' },
+        { id: 'rename', label: 'Move or rename…', run: () => setFileAction({ kind: 'move', path: t.path }) },
+        /* **Disabled with its reason, never hidden** (`D1146`). The project view already carries
+           every file's `import`/`use` targets, so the reverse index is a `filter` over what the
+           page holds and the menu can refuse instantly — the route re-derives the same fact at
+           apply time, which is the authority (`D1150`). */
+        importersOf(t.path).length === 0
+          ? { id: 'delete', label: 'Delete…', danger: true, run: () => setFileAction({ kind: 'delete', path: t.path }) }
+          : {
+              id: 'delete',
+              label: 'Delete…',
+              danger: true,
+              run: null,
+              why: `${importersOf(t.path).length} file${importersOf(t.path).length === 1 ? '' : 's'} import${importersOf(t.path).length === 1 ? 's' : ''} this: ${importersOf(t.path).join(', ')}`,
+            },
+      ];
+    }
+    if (t.kind === 'test') {
+      return [
+        { id: 'goto', label: 'Go to it', run: () => setTab('compose', t.line) },
+        { id: 'new-request', label: 'New request here', run: () => { setTab('compose', t.line); setAddIntent((prev) => ({ path, declIndex: t.declIndex, n: (prev?.n ?? 0) + 1 })); } },
+        canCopy
+          ? { id: 'copy-name', label: 'Copy its name', run: () => copy(t.name) }
+          : { id: 'copy-name', label: 'Copy its name', run: null, why: 'the clipboard is only available over https or on localhost' },
+      ];
+    }
+    return [
+      { id: 'goto', label: 'Go to it', run: () => setTab('compose', t.line) },
+      canCopy
+        ? { id: 'copy-request', label: 'Copy method and path', run: () => copy(`${t.method} ${t.path}`) }
+        : { id: 'copy-request', label: 'Copy method and path', run: null, why: 'the clipboard is only available over https or on localhost' },
+    ];
+  }, [pick, setFile, setTab, duplicateFile, openAt, runJust, copy, canCopy, path, importersOf, startCreating]);
 
   /** `D1143` — what the explorer marks. A set rather than the map, because the explorer needs to
    *  know *which* files are unsaved and has no business with their bytes. */
@@ -828,19 +965,50 @@ export function App() {
        at all, goes on overriding it untouched. */
     <div className="app" style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}>
       {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} unsaved={unsavedPaths}
-          onNewIn={(p) => { setFile(p); setCreating('test'); }}
+          onNewIn={(p) => { setFile(p); startCreating('test'); }}
           onAddRequest={(declIndex) => setAddIntent((prev) => ({ path, declIndex, n: (prev?.n ?? 0) + 1 }))}
-          focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={setCreating} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+          focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={(m) => startCreating(m)}
+          menuFor={menuFor} onMenu={setMenu} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
       <Grip spec={SIDEBAR} width={sidebarWidth} onWidth={setSidebarWidth} />
       {/* One layer for the whole page (`M216` `B1`). It draws nothing until something is hovered
           or focused, and it is here rather than inside a pane because the shell's own chrome asks
           for a tooltip too — one of the three screenshots that started this round is a door bar. */}
       <TooltipLayer />
+      {/* Beside the tooltip and for the same reason (`M218` `A`): the shell owns the floating
+          layers, because a menu opened from a sidebar row must be able to paint over the pane. */}
+      <ContextMenuLayer menu={menu} onClose={() => setMenu(null)} />
+      {/* Moving and deleting, both through the server's own plan (`M218` `D`/`E`, `D1150`). */}
+      {fileAction === null ? null : (
+        <FileAction
+          kind={fileAction.kind}
+          path={fileAction.path}
+          unsaved={unsavedPaths}
+          onClose={() => setFileAction(null)}
+          onDone={(to) => {
+            const gone = fileAction.path;
+            setFileAction(null);
+            /* `D1155` — the draft follows its file, or dies with it. Keyed by path since `D1142`,
+               so a rename that did not re-key would silently strand the reader's pending edits
+               under a path nothing opens any more. */
+            setDrafts((prev) => {
+              const next = new Map(prev);
+              const held = next.get(gone);
+              next.delete(gone);
+              if (to !== null && held !== undefined) next.set(to, held);
+              return next;
+            });
+            void readProjectView();
+            if (to !== null) openAt(to, tab);
+            else if (door !== null) window.location.hash = hashForTab(door, tab, null) + paneTail([], query);
+          }}
+        />
+      )}
       {/* **The create dialog is the shell's** (`D1118`) — one dialog, two places that ask for it:
           the explorer's `+ new file` and the sequence column's `+ new test`. */}
       {creating === null || project === null || (creating === 'test' && !fileReady) ? null : (
         <NewThing
           mode={creating}
+          inDir={creatingIn}
           openPath={path}
           /* **The file as the author has it** (`M217` `C`, `D1141`). This read `openFileView.text`
              — the bytes on disk — so with anything pending the dialog previewed and wrote a file
@@ -935,7 +1103,8 @@ export function App() {
             onDraft={setDraft}
             fileProblem={fileProblem}
             onFileWritten={setOpenFileView}
-            onNew={setCreating}
+            onNew={(m) => startCreating(m)}
+            onMenu={setMenu}
             addIntent={addIntent}
             onAddIntentDone={() => setAddIntent(null)}
             focusLine={focusLine}

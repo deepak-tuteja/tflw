@@ -43,6 +43,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
 import { parseBaseline, resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
+import { importersOf, planDelete, planMove, resolveSpecifier, type RefactorPlan } from './ui-refactor.js';
 
 export const UI_DEFAULT_PORT = 4141;
 
@@ -154,6 +155,16 @@ export interface ProjectFile {
   readonly errors: number;
   /** The warning half. See `errors`. */
   readonly warnings: number;
+  /**
+   * Every `import`/`use` this file declares, as a project-relative path — `M218` `C`.
+   *
+   * **One source, two deliveries.** The server's parse is the authority for both this field and
+   * `GET /api/refactor`; the page holds a copy so a right-click can disable *Delete* with its
+   * reason without a round trip (`D1146`), and the route re-derives at apply time so nothing acts
+   * on a stale view (`D1150`). A specifier pointing outside the project is dropped, because it is
+   * not something this explorer can reason about or repair.
+   */
+  readonly imports: readonly string[];
 }
 
 export interface ProjectView {
@@ -470,6 +481,9 @@ export async function readProject(root: string): Promise<ProjectView> {
       // `crawls` is absent, not empty, on a program that declares none (`ast.ts:44` — it keeps
       // 31 parser goldens asserting what they were written to assert).
       crawls: (program.crawls ?? []).map((c) => ({ name: c.name.value, line: c.span.start.line, lenses: lensesOfCrawl(c), sessions: c.sessions })),
+      imports: [...program.imports, ...program.uses]
+        .map((d) => resolveSpecifier(relative(root, file).split(sep).join('/'), d.path.value))
+        .filter((p): p is string => p !== null),
       diagnostics: diagnostics.length,
       errors: diagnostics.filter((d) => d.severity === 'error').length,
       warnings: diagnostics.filter((d) => d.severity === 'warning').length,
@@ -980,6 +994,84 @@ export async function dropScratch(
   return { removed: true };
 }
 
+/**
+ * Every `.tflw` in the project, as text — the input `ui-refactor` plans against.
+ *
+ * It re-reads rather than reusing `readProject`'s parse, because a plan must be computed against
+ * the bytes on disk **now**: the page's view can be seconds old, and the one thing a destructive
+ * route must not do is act on a project that has changed under it.
+ */
+async function projectTexts(root: string, exclude: readonly string[] | undefined, reportDir: string | undefined): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const file of await discoverTests(root, exclude, reportDir)) {
+    out.set(relative(root, file).split(sep).join('/'), await readFile(file, 'utf8'));
+  }
+  return out;
+}
+
+/**
+ * **Can this exact file be got back?** — `M218` `D` (`D1154`).
+ *
+ * `git ls-files --error-unmatch` answers *is this path tracked at HEAD*, which is the question that
+ * matters. Checking for a `.git` directory was rejected at scoping as answering a different one: a
+ * file created five minutes ago and never committed is exactly as gone inside a repository as
+ * outside one, so a `.git`-based answer would reassure precisely the reader about to lose work.
+ *
+ * Three outcomes, and `'unknown'` is a real one rather than a failure — no git on `PATH`, or not a
+ * repository at all. The dialog then says the flat *this cannot be undone*, which is never false.
+ */
+async function recoverability(root: string, path: string): Promise<'tracked' | 'untracked' | 'unknown'> {
+  return await new Promise((done) => {
+    let child: ChildProcess;
+    try {
+      child = spawn('git', ['ls-files', '--error-unmatch', '--', path], { cwd: root, stdio: 'ignore' });
+    } catch {
+      done('unknown');
+      return;
+    }
+    // A timeout, because this sits in front of a dialog: a git that hangs on a network-backed
+    // worktree must not hang the confirm with it.
+    const timer = setTimeout(() => { child.kill(); done('unknown'); }, 2000);
+    child.on('error', () => { clearTimeout(timer); done('unknown'); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      // 0 tracked, 1 not tracked; 128 is "not a git repository", which is `unknown` and not a no.
+      done(code === 0 ? 'tracked' : code === 1 ? 'untracked' : 'unknown');
+    });
+  });
+}
+
+/**
+ * Apply a plan. **Writes only after every member has been validated** (`D1151`) — `planMove`
+ * returns an empty edit set when anything refused, so this can never see a half-good plan.
+ *
+ * `before` is the text each file held when the plan was computed, and it decides the `If-Match`
+ * each write sends: a file already in it is being **rewritten** and carries its current etag, a
+ * file absent from it is the move's destination and carries `null`, which is `writeProjectFile`'s
+ * own *this should not exist yet*. The first draft sent `null` for every member, which is correct
+ * for exactly one of them and a `409` for every importer.
+ *
+ * **The honest limit.** The apply routes read, plan and write inside one request, so the window in
+ * which another writer could change a file between the read and the write is microseconds wide —
+ * but it is not zero, and this does not pretend otherwise: a member whose etag no longer matches
+ * refuses, and an earlier member may already have been written. That is the one partial state this
+ * round can produce, it needs a concurrent writer to reach, and `409` names the file it stopped at.
+ */
+async function applyPlan(root: string, plan: RefactorPlan, before: ReadonlyMap<string, string>): Promise<{ ok: true } | FileWriteRefusal> {
+  if (plan.refusals.length > 0) return { status: 409, error: plan.refusals.join('; ') };
+  for (const edit of plan.edits) {
+    const current = before.get(edit.path);
+    const written = await writeProjectFile(root, edit.path, edit.text, current === undefined ? null : etagOf(current));
+    if (!('etag' in written)) return written;
+  }
+  for (const gone of plan.removes) {
+    const resolved = resolveWritablePath(root, gone);
+    if (typeof resolved !== 'string') return resolved;
+    await unlink(resolved).catch(() => {});
+  }
+  return { ok: true };
+}
+
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
@@ -1220,6 +1312,16 @@ export class UiServer {
       if (e) entries.push(e);
     }
     return entries;
+  }
+
+  /** The project's `.tflw` texts, discovered with the config's own `exclude`/`report dir` so a
+   *  plan sees exactly the files the sidebar does. */
+  private async texts(): Promise<Map<string, string>> {
+    const configText = await readFile(join(this.opts.root, CONFIG_PATH), 'utf8');
+    const parsed = parseConfigSource(configText);
+    const env = selectEnv(parsed.config, { envVar: process.env.TFLW_ENV });
+    const resolved = resolveConfig(parsed.config, env);
+    return await projectTexts(this.opts.root, resolved.exclude, resolved.reportDir);
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -1552,6 +1654,58 @@ export class UiServer {
       if (file === null) return json(res, 400, { error: 'outside the report directory' });
       if (await sendFile(res, file)) return;
       return json(res, 404, { error: `no ${rest} in ${id}` });
+    }
+
+    // ── `M218` — what a move or a delete would do, and then doing it ─────────────────────────
+    //
+    // **One function answers both questions** (`D1150`): `GET` previews, `POST`/`DELETE` apply, and
+    // all three call `planMove`/`planDelete`. The apply routes re-read and re-plan rather than
+    // trusting anything the page sends back, so a preview the reader left open for a minute cannot
+    // be replayed against a project that has moved on.
+    if (path === '/api/refactor' && method === 'GET') {
+      const op = url.searchParams.get('op');
+      try {
+        const files = await this.texts();
+        if (op === 'delete') {
+          const target = url.searchParams.get('path') ?? '';
+          const plan = planDelete(files, target);
+          return json(res, 200, { ...plan, recovery: await recoverability(this.opts.root, target) });
+        }
+        if (op === 'move') {
+          const from = url.searchParams.get('from') ?? '';
+          const to = url.searchParams.get('to') ?? '';
+          return json(res, 200, planMove(files, from, to));
+        }
+        return json(res, 400, { error: `unknown op ${op ?? '(none)'} — \`move\` or \`delete\`` });
+      } catch (e) {
+        return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    if (path === '/api/move' && method === 'POST') {
+      try {
+        const body = JSON.parse(await readBody(req)) as { from?: string; to?: string };
+        const files = await this.texts();
+        const plan = planMove(files, body.from ?? '', body.to ?? '');
+        const done = await applyPlan(this.opts.root, plan, files);
+        if (!('ok' in done)) return json(res, done.status, { error: done.error, refusals: plan.refusals });
+        return json(res, 200, { moved: plan.subject, to: plan.to, rewrote: plan.edits.length - 1 });
+      } catch (e) {
+        return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    if (path === '/api/file' && method === 'DELETE') {
+      try {
+        const target = url.searchParams.get('path') ?? '';
+        const files = await this.texts();
+        const plan = planDelete(files, target);
+        const done = await applyPlan(this.opts.root, plan, files);
+        if (!('ok' in done)) return json(res, done.status, { error: done.error, importers: plan.importers });
+        return json(res, 200, { deleted: target });
+      } catch (e) {
+        return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+      }
     }
 
     if (path.startsWith('/api/')) return json(res, 404, { error: `no route ${method} ${path}` });

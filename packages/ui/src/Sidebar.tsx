@@ -65,6 +65,7 @@
 // inside a folder somebody collapsed must still show it, or the link is broken.
 
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { menuTrigger, type MenuItem, type MenuRequest } from './ContextMenu';
 import type { Lens, ProjectFile, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
 import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
@@ -180,7 +181,34 @@ export interface SidebarProps {
    * and Compose are siblings and both ask for it.
    */
   readonly onNew: ((mode: 'test' | 'file') => void) | null;
+  /**
+   * **What this row can do** — `M218` `B` (`D1148`, `D1149`).
+   *
+   * Called at open time, never on render: a project with 275 files renders 275 rows and builds
+   * zero item lists until somebody right-clicks one.
+   */
+  readonly menuFor: ((t: MenuTarget) => readonly MenuItem[]) | null;
+  /** Hand the built menu to the shell, which owns the single open-menu slot (`D1145`). */
+  readonly onMenu: ((r: MenuRequest) => void) | null;
 }
+
+/**
+ * What a right-clicked row *is* — `M218` `B`.
+ *
+ * The explorer describes its row and hands it over; the shell decides what can be done to it. That
+ * split is `D1148` in the type system: this pane knows nothing about `.tflw`, holds no form and
+ * builds no source, so a menu item can never become a second construction path by being added
+ * here. It is the same division `M217` already drew for `+` — *"it carries you to the place and
+ * presses the button"*.
+ *
+ * A `dir` carries its own `onToggle` because folding is this pane's local state and nothing
+ * outside it can perform that one.
+ */
+export type MenuTarget =
+  | { readonly kind: 'file'; readonly path: string }
+  | { readonly kind: 'dir'; readonly path: string; readonly files: readonly string[]; readonly expanded: boolean; readonly onToggle: () => void }
+  | { readonly kind: 'test'; readonly declIndex: number; readonly line: number; readonly name: string }
+  | { readonly kind: 'request'; readonly line: number; readonly method: string; readonly path: string };
 
 /** Above this many tags the cloud opens folded: `M192` U7 found the dogfood's 90 tags pushing all
  * 84 files below the first screen, and a file list nobody can see is not a project view. The
@@ -236,7 +264,7 @@ export function filesUnder(node: TreeNode): string[] {
   return node.file ? [node.path] : node.children.flatMap(filesUnder);
 }
 
-export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew }: SidebarProps) {
+export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew, menuFor, onMenu }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   /** Where a `shift` range starts. A gesture detail and not a fact about the project, so it is
    *  neither in the address nor anywhere durable — `D1066` addresses what changes a run. */
@@ -276,6 +304,13 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
    *  somebody had disclosed, and the selection is in the address while the disclosure is not. */
   const order = useMemo(() => tree.flatMap(filesUnder), [tree]);
   const chosen = useMemo(() => new Set(selection), [selection]);
+
+  /** One call per row kind — `null` props mean the shell has not wired a menu, and the rows then
+   *  behave exactly as they did before `M218`. */
+  const rowMenu = (t: MenuTarget, subject: string) =>
+    menuFor === null || onMenu === null
+      ? {}
+      : menuTrigger(onMenu, () => ({ kind: t.kind, subject, items: menuFor(t) }));
 
   /** Keep the address's order stable: a selection is rewritten in tree order every time, so the
    *  same set of files is always the same link. */
@@ -334,6 +369,9 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
             onClick={() => onLine(decl.line)}
             data-outline-goto={decl.line}
             data-tip-derived=""
+            {...(decl.kind === 'test'
+              ? rowMenu({ kind: 'test', declIndex: decl.index, line: decl.line, name: decl.name }, decl.name)
+              : {})}
           >
             <span className="ln muted">{decl.line}</span>
             {/* **The kind is a chip, not a guess from the prose** (`M216`). A request row under this
@@ -365,6 +403,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
                     data-tip-derived=""
                     data-outline-method={r.method}
                     aria-pressed={focusLine === r.line}
+                    {...rowMenu({ kind: 'request', line: r.line, method: r.method, path: r.path }, `${r.method} ${r.path}`)}
                   >
                     <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span>
                     <code className="outline-name" data-tip-text>{r.path}</code>
@@ -406,6 +445,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
             data-match={matched === null ? 'all' : unmatched ? 'no' : 'yes'}
             data-open={openFile === f.path ? 'yes' : 'no'}
             aria-pressed={chosen.has(f.path)}
+            {...rowMenu({ kind: 'file', path: f.path }, f.path)}
           >
             <code>{node.name}</code>
             {/* `D1143` — a dot, drawn before the count so it reads as a property of the file
@@ -466,6 +506,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           onClick={(e) => (e.metaKey || e.ctrlKey || e.shiftKey ? pick(e, under, null) : setCollapsed(toggle(collapsed, node.path)))}
           data-dir-toggle={node.path}
           aria-expanded={open}
+          {...rowMenu({ kind: 'dir', path: node.path, files: under.map((u) => u), expanded: open, onToggle: () => setCollapsed(toggle(collapsed, node.path)) }, node.path)}
           data-tip={`${node.path} — click to fold, cmd-click to select its ${under.length} file${under.length === 1 ? '' : 's'}`}
         >
           <span className="twisty" aria-hidden="true">
