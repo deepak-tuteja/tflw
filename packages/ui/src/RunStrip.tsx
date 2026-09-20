@@ -59,7 +59,11 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, selection, q
   return (
     <div className="runstrip" data-runstrip>
       <div className="controls">
-        <label>
+        {/* `M216` `C`. The three controls on this strip said nothing at all, and the run button is
+            half of `D1130`'s pair: `send` and `run` sit inches apart on the Compose tab and do
+            different things, which is a confusion with a milestone named after it — `M215` exists
+            because pressing `send` was read as running the test. */}
+        <label data-tip="which `env` block of `tflw.config` this run reads — its base URLs, its timeouts, and whatever credentials that block names">
           env
           <select value={env} onChange={(e) => onEnv(e.target.value)} data-env-select disabled={running}>
             {project.envs.map((e) => (
@@ -70,7 +74,12 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, selection, q
             ))}
           </select>
         </label>
-        <label>
+        {/* **What this control does is narrower than its label**, and the hover is where that gets
+            said: the page sends it as `--workers`, which forks load-generating processes for
+            workload-bearing tests and is a documented no-op on a test without a `workload` — so on
+            the API door it is inert. File concurrency is a different axis with a different name.
+            Recorded as `M216-01`; the hover states it rather than implying otherwise. */}
+        <label data-tip="how many processes fork to generate load — for workload-bearing tests only, and a no-op on a test with no `workload`. How many FILES run at once is `tflw.config`'s own `workers N`.">
           workers
           <input type="number" min={1} placeholder="default" value={workers} onChange={(e) => onWorkers(e.target.value)} data-workers disabled={running} />
         </label>
@@ -80,7 +89,7 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, selection, q
           cancel
         </button>
       ) : (
-        <button className="run" onClick={() => onRun(request())} data-run disabled={nothing} data-run-narrowing={nothing ? 'none' : selection.length > 0 ? 'selection' : parsed.kind}>
+        <button className="run" onClick={() => onRun(request())} data-run disabled={nothing} data-tip="runs these tests and grades them — every assertion is judged and the whole run is kept as a report you can reopen. `send`, on the Compose tab, only shows you a response." data-run-narrowing={nothing ? 'none' : selection.length > 0 ? 'selection' : parsed.kind}>
           {label}
         </button>
       )}

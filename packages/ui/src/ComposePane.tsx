@@ -43,6 +43,7 @@
 // to run and the expensive thing to press, and why the pane lists what it will send first.
 
 import { useEffect, useMemo, useState } from 'react';
+import { bandParts, bandRefusal, bandWithout, requestParts, requestRefusal, requestWithout } from './clauses';
 import type { ReactNode } from 'react';
 import type { ApiBodySpec, ApiStepSpec, CaptureSpec, ExpectSpec, SubjectSpec } from '@tflw/lang';
 import {
@@ -216,21 +217,58 @@ function bodyLabel(body: ApiBody | null): string {
  * A `<details>` rather than a popup for `D144`'s reason, and for `S1`'s: closed, it contributes
  * nothing to the tab order.
  */
-export function AddClause({ what, options, onAdd }: {
+/**
+ * The clause menu — and since `M216` `D`, the only place a clause is removed (`D1131`).
+ *
+ * **It was already the complete vocabulary and already knew which clauses were present**, and it
+ * spent that knowledge on the word *"— already here"* beside a disabled button. So that row is the
+ * remove: one list carries what a clause is, whether it is written, and how to unwrite it, and no
+ * clause row grows a control on a band that is already dense.
+ *
+ * `refusalFor` returns the sentence a refused removal says, and it is drawn **under the row,
+ * inline** rather than on hover — `D1117` found that a `✕` whose refusal lives in a `title` is
+ * indistinguishable from a broken button, and 81% of that case's removals refuse, so the reason is
+ * the common outcome rather than the corner.
+ */
+export function AddClause({ what, options, onAdd, onRemove, refusalFor }: {
   readonly what: string;
   readonly options: readonly { key: string; label: string; title: string; state: 'addable' | 'present' }[];
   readonly onAdd: (key: string) => void;
+  readonly onRemove?: (key: string) => void;
+  readonly refusalFor?: (key: string) => string | null;
 }) {
+  const [refused, setRefused] = useState<{ readonly key: string; readonly why: string } | null>(null);
   return (
     <details className="add-clause" data-add-clause={what} data-add-clause-options={options.length}>
       <summary>+ add to this {what}</summary>
       <ul>
         {options.map((o) => (
           <li key={o.key} data-add-option={o.key} data-add-state={o.state}>
-            <button type="button" disabled={o.state !== 'addable'} onClick={() => onAdd(o.key)} title={o.title} data-add-go={o.key}>
+            <button type="button" disabled={o.state !== 'addable'} onClick={() => onAdd(o.key)} data-tip={o.title} data-add-go={o.key}>
               {o.label}
             </button>
             {o.state === 'present' ? <span className="muted"> — already here</span> : null}
+            {o.state === 'present' && onRemove !== undefined ? (
+              <button
+                type="button"
+                className={`seq-x${refused !== null && refused.key === o.key ? ' refused' : ''}`}
+                aria-label={`remove ${o.label} from this ${what}`}
+                data-tip={`unwrite ${o.label} — this ${what} stops saying it`}
+                data-add-remove={o.key}
+                onClick={() => {
+                  if (refused !== null && refused.key === o.key) { setRefused(null); return; }
+                  const why = refusalFor?.(o.key) ?? null;
+                  if (why !== null) { setRefused({ key: o.key, why }); return; }
+                  setRefused(null);
+                  onRemove(o.key);
+                }}
+              >
+                ✕
+              </button>
+            ) : null}
+            {refused !== null && refused.key === o.key ? (
+              <p className="warn clause-refusal" data-add-refusal={o.key}>{refused.why}</p>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -267,7 +305,7 @@ function StatementRow({ statement, door, editing, verdict }: {
   const writingNote = noting !== null && noting === key;
   const addNote = editable && onNote !== null && statement.note === null && !writingNote
     ? (
-        <button className="add-note" onClick={() => onNoting?.(key)} data-note-add={statement.line} title="a comment above this line, explaining why it is here">
+        <button className="add-note" onClick={() => onNoting?.(key)} data-note-add={statement.line} data-tip="a comment above this line, explaining why it is here">
           + note
         </button>
       )
@@ -297,7 +335,7 @@ function StatementRow({ statement, door, editing, verdict }: {
           <span className="ln muted">{statement.line}</span>
           <code className="stmt-text"><StatementText text={statement.text} /></code>
           {foreign ? (
-            <a className="badge also" href={`#/${statement.lens}`} data-stmt-door={statement.lens} title={`this is ${DOOR_BY_ID[statement.lens!].label}'s to edit — open that door`}>
+            <a className="badge also" href={`#/${statement.lens}`} data-stmt-door={statement.lens} data-tip={`this is ${DOOR_BY_ID[statement.lens!].label}'s to edit — open that door`}>
               {DOOR_BY_ID[statement.lens!].label}
             </a>
           ) : null}
@@ -447,7 +485,7 @@ export type RanIndex = ReadonlyMap<number, Ran>;
 export function VerdictMark({ verdict }: { readonly verdict: Verdict | null }) {
   if (verdict === null) return null;
   return (
-    <span className={`step-verdict ${verdict.ok ? 'pass' : 'fail'}`} data-verdict={verdict.ok ? 'pass' : 'fail'} title={verdict.detail}>
+    <span className={`step-verdict ${verdict.ok ? 'pass' : 'fail'}`} data-verdict={verdict.ok ? 'pass' : 'fail'} data-tip={verdict.detail}>
       {verdict.ok ? '✓' : '✗'} {verdict.detail} <span className="muted" data-verdict-ms={verdict.durationMs}>{verdict.durationMs} ms</span>
     </span>
   );
@@ -503,7 +541,7 @@ export function Field({ label, value, title, onChange, placeholder }: {
   readonly placeholder?: string;
 }) {
   return (
-    <label className="field" title={title} data-field={label}>
+    <label className="field" data-tip={title} data-field={label}>
       {label}
       <input
         value={value}
@@ -1197,7 +1235,7 @@ function PickField({ statement, pick, onPicked }: {
         disabled={busy || key === null}
         data-pick={key ?? ''}
         data-pick-state={mine ? 'running' : busy ? 'busy' : 'idle'}
-        title={
+        data-tip={
           key === null
             ? 'this row is inside a block, so it has no address a session could report back to'
             : mine
@@ -1312,7 +1350,7 @@ export function ScriptRow({ statement, edit, onEdit, trailing, pick }: {
           />
         ))}
         <span className="kw">)</span>
-        <button onClick={() => onEdit({ ...edit, args: [...edit.args, '""'] })} data-call-arg-add title="one more argument for this action">
+        <button onClick={() => onEdit({ ...edit, args: [...edit.args, '""'] })} data-call-arg-add data-tip="one more argument for this action">
           + argument
         </button>
         {edit.args.length > 0 ? (
@@ -1417,7 +1455,7 @@ function ExpectRow({ statement, edit, onEdit, trailing }: {
           <option value="all">all</option>
         </select>
         <SubjectFields subject={v.subject} argument={v.argument} locatorKind={v.locatorKind} carried={subjectSpelling(node.subject)} onChange={change} />
-        <label className="not" title="`not` — the word whose absence would invert this assertion">
+        <label className="not" data-tip="`not` — the word whose absence would invert this assertion">
           <input type="checkbox" checked={v.negated} onChange={(e) => change({ negated: e.target.checked })} data-expect-negated={v.negated ? 'yes' : 'no'} />
           not
         </label>
@@ -1480,7 +1518,7 @@ function ExpectRow({ statement, edit, onEdit, trailing }: {
               </button>
             </div>
           ))}
-          <button onClick={() => change({ subset: [...v.subset, { name: '', value: '""' }] })} data-subset-add title="one key the response must carry with this value; the rest of the object is not compared">
+          <button onClick={() => change({ subset: [...v.subset, { name: '', value: '""' }] })} data-subset-add data-tip="one key the response must carry with this value; the rest of the object is not compared">
             + key
           </button>
         </div>
@@ -1551,7 +1589,7 @@ function ResponseChip({ ran, open, onToggle }: {
       data-compose-response={response.status}
       data-compose-response-scope={ran.scope}
       data-compose-response-open={open ? 'yes' : 'no'}
-      title={`${response.method} ${response.url} — ${ran.at}`}
+      data-tip={`${response.method} ${response.url} — ${ran.at}`}
     >
       <span className={`status-code ${statusTone(response.status)}`} data-compose-response-status={response.status}>{response.status}</span>{' '}
       <span className="muted" data-compose-response-when>
@@ -1632,7 +1670,7 @@ export function ResponsePanel({ ran, open, onVerify, onCapture }: {
               onClick={() => { if (built?.ok && onVerify !== null) { onVerify(built.spec); setTicked([]); } }}
               disabled={onVerify === null || built === null || !built.ok}
               data-compose-verify
-              title={
+              data-tip={
                 onVerify === null
                   ? 'this pane is read-only here'
                   : built === null
@@ -1652,7 +1690,7 @@ export function ResponsePanel({ ran, open, onVerify, onCapture }: {
               onClick={() => { if (onCapture !== null && chosen.length > 0) { onCapture(captureSpecs(chosen)); setTicked([]); } }}
               disabled={onCapture === null || chosen.length === 0}
               data-compose-capture
-              title={
+              data-tip={
                 onCapture === null
                   ? 'this pane is read-only here'
                   : chosen.length === 0
@@ -1794,12 +1832,12 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran, onVerify, o
         )}
         <span className="ln muted">line {r.line}</span>
         {editing.onNote !== null && r.note === null && !writingNote ? (
-          <button className="add-note" onClick={() => editing.onNoting?.(stepKey(r.stepPath))} data-note-add={r.line} title="a comment above this request, explaining why it is here">
+          <button className="add-note" onClick={() => editing.onNoting?.(stepKey(r.stepPath))} data-note-add={r.line} data-tip="a comment above this request, explaining why it is here">
             + note
           </button>
         ) : null}
         {r.kind === 'WaitUntilApiStmt' ? (
-          <span className="badge" data-request-polling="yes" title="this request is re-issued until the assertions below it pass">
+          <span className="badge" data-request-polling="yes" data-tip="this request is re-issued until the assertions below it pass">
             polls
           </span>
         ) : null}
@@ -1866,7 +1904,15 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran, onVerify, o
                   <>
                     <input value={h.name} onChange={(e) => change({ headers: v.headers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} data-header-edit-name={i} aria-label="header name" />
                     <input value={h.value} onChange={(e) => change({ headers: v.headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} data-header-edit-value={i} aria-label="header value" />
-                    <button onClick={() => change({ headers: v.headers.filter((_, j) => j !== i) })} data-header-edit-remove={i}>
+                    <button
+                      onClick={() => {
+                        change({ headers: v.headers.filter((_, j) => j !== i) });
+                        // `D1132` — the clause is the list, so an empty list is no clause.
+                        if (v.headers.length === 1) setAdded((prev) => prev.filter((x) => x !== 'headers'));
+                      }}
+                      data-tip={v.headers.length === 1 ? 'the last header — removing it takes the `headers` clause with it' : 'this header'}
+                      data-header-edit-remove={i}
+                    >
                       remove
                     </button>
                   </>
@@ -1876,7 +1922,7 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran, onVerify, o
           </ul>
         )}
         {change === null ? null : (
-          <button onClick={() => change({ headers: [...v.headers, { name: '', value: '' }] })} data-header-edit-add title="a header on this request alone">
+          <button onClick={() => change({ headers: [...v.headers, { name: '', value: '' }] })} data-header-edit-add data-tip="a header on this request alone">
             + header
           </button>
         )}
@@ -1914,7 +1960,15 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran, onVerify, o
                   <div className="row" key={i}>
                     <input value={f.name} onChange={(e) => change({ formFields: v.formFields.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} data-body-edit-key={i} aria-label="field name" />
                     <input value={f.value} onChange={(e) => change({ formFields: v.formFields.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} data-body-edit-value={i} aria-label="field value" />
-                    <button onClick={() => change({ formFields: v.formFields.filter((_, j) => j !== i) })} data-body-edit-remove={i}>
+                    <button
+                      onClick={() => {
+                        const last = v.formFields.length === 1;
+                        change(last ? { formFields: [], bodyKind: 'none', bodyText: '' } : { formFields: v.formFields.filter((_, j) => j !== i) });
+                        if (last) setAdded((prev) => prev.filter((x) => x !== 'body'));
+                      }}
+                      data-tip={v.formFields.length === 1 ? 'the last field — removing it takes the `body` clause with it' : 'this field'}
+                      data-body-edit-remove={i}
+                    >
                       remove
                     </button>
                   </div>
@@ -1971,6 +2025,15 @@ function RequestCard({ request: r, door, edit, onEdit, editing, ran, onVerify, o
             state: shows(c.key) ? ('present' as const) : ('addable' as const),
           }))}
           onAdd={add}
+          /* **Both halves, because a clause can be present in two different senses.** One the file
+             writes, and one the menu is only SHOWING — added a moment ago and not yet filled in.
+             Removing the first is an edit to the bytes; removing the second is forgetting a row
+             was ever drawn, and the reader cannot tell the two apart and should not have to. */
+          onRemove={(k) => {
+            setAdded((prev) => prev.filter((x) => x !== k));
+            if (states(k)) change(requestWithout(k));
+          }}
+          refusalFor={(k) => requestRefusal(k, v)}
         />
       )}
     </section>
@@ -2033,7 +2096,15 @@ export function TestBand({ decl, door, editing }: {
   const key = `decl:${decl.index}`;
   const live = editing.onHeader !== null;
   const v = editing.header !== null && editing.header.key === key ? editing.header.values : headerEditOf(decl);
-  const change = (patch: Partial<HeaderEdit>): void => editing.onHeader?.(decl, { ...v, ...patch });
+  const change = (patch: Partial<HeaderEdit>): void => {
+    // **`D1132` has to be enforced here and not in `TableEditor`.** The editor is a child and
+    // `added` belongs to the band, so an editor that empties its own last row can unwrite the
+    // clause from the FILE and still leave the menu saying *— already here*, because the menu's
+    // other half is a local state the child cannot see. Every band edit passes through this
+    // function, which makes it the one place the two halves can be kept in step.
+    if (patch.tableKind === 'none') setAdded((prev) => prev.filter((x) => x !== 'table'));
+    editing.onHeader?.(decl, { ...v, ...patch });
+  };
   const writingNote = editing.noting === key;
   const what = decl.kind === 'test' ? `test ${decl.name}` : decl.label;
 
@@ -2047,6 +2118,9 @@ export function TestBand({ decl, door, editing }: {
    * the same mistake on screen, every time.
    */
   const [added, setAdded] = useState<readonly string[]>([]);
+  /** The reason a threshold removal was refused, drawn on the row that refused it (`D1117`'s
+   *  shape: pressed, answered, and the answer is a sentence rather than a disabled control). */
+  const [thresholdRefusal, setThresholdRefusal] = useState<string | null>(null);
   const states = (clause: string): boolean => {
     if (test === null) return false;
     switch (clause) {
@@ -2097,7 +2171,7 @@ export function TestBand({ decl, door, editing }: {
         )}
         <span className="ln muted">line {decl.line}</span>
         {editing.onNote !== null && decl.note === null && !writingNote ? (
-          <button className="add-note" onClick={() => editing.onNoting?.(key)} data-note-add={decl.line} title="a comment above this declaration">
+          <button className="add-note" onClick={() => editing.onNoting?.(key)} data-note-add={decl.line} data-tip="a comment above this declaration">
             + note
           </button>
         ) : null}
@@ -2143,7 +2217,7 @@ export function TestBand({ decl, door, editing }: {
               test.retry
             )}
             {live ? (
-              <label className="not" title="`parallel` — this test's cases may run at the same time">
+              <label className="not" data-tip="`parallel` — this test's cases may run at the same time">
                 <input type="checkbox" checked={v.parallel} onChange={(e) => change({ parallel: e.target.checked })} data-band-parallel={v.parallel ? 'yes' : 'no'} />
                 parallel
               </label>
@@ -2186,7 +2260,7 @@ export function TestBand({ decl, door, editing }: {
                     one level down for a step belonging to another door, made here for a
                     declaration's. The cost is stated where it lands: changing one is two clicks
                     away, through a link that says so. */}
-                <a className="badge also" href="#/load" data-band-workload-door title="a workload is the LOAD door's to shape — open it there">
+                <a className="badge also" href="#/load" data-band-workload-door data-tip="a workload is the LOAD door's to shape — open it there">
                   LOAD
                 </a>
               </>
@@ -2203,13 +2277,26 @@ export function TestBand({ decl, door, editing }: {
                     key={i}
                     index={i}
                     edit={editing.threshold !== null && editing.threshold.key === `th:${decl.index}:${i}` ? editing.threshold.values : thresholdEditOf(th)}
-                    onEdit={(next) => editing.onThreshold?.(test, i, next)}
+                    onEdit={(next) => {
+                      if (next === null) {
+                        // **`TF033` is asked here as well as in the menu.** A workload-bearing test
+                        // must carry a threshold, and *removing the last one* is the same forbidden
+                        // state as *removing the clause* — `M214`'s own finding, that a rule
+                        // enforced where a thing is constructed is not enforced where it is
+                        // patched, arriving one level up.
+                        if (test!.thresholds.length === 1 && test!.workload !== null) { setThresholdRefusal(bandRefusal('thresholds', v, test!)); return; }
+                        setThresholdRefusal(null);
+                        if (test!.thresholds.length === 1) setAdded((prev) => prev.filter((x) => x !== 'thresholds'));
+                      }
+                      editing.onThreshold?.(test!, i, next);
+                    }}
                   />
                 ))}
+                {thresholdRefusal === null ? null : <p className="warn clause-refusal" data-threshold-refusal>{thresholdRefusal}</p>}
                 <button
                   onClick={() => editing.onThreshold?.(test, test.thresholds.length, { metric: 'duration', percentile: '95', op: 'lessThan', bound: '500', scope: '' })}
                   data-threshold-add
-                  title="a bound the whole run is graded against, after it finishes"
+                  data-tip="a bound the whole run is graded against, after it finishes"
                 >
                   + threshold
                 </button>
@@ -2230,6 +2317,11 @@ export function TestBand({ decl, door, editing }: {
                   state: shows(c.key) ? ('present' as const) : ('addable' as const),
                 }))}
                 onAdd={(k) => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]))}
+                onRemove={(k) => {
+                  setAdded((prev) => prev.filter((x) => x !== k));
+                  if (states(k)) change(bandWithout(k));
+                }}
+                refusalFor={(k) => bandRefusal(k, v, test)}
               />
             </li>
           ) : null}
@@ -2269,7 +2361,19 @@ function TableEditor({ edit, onChange }: {
           {row.map((cell, c) => (
             <input key={c} value={cell} onChange={(e) => setCell(r, c, e.target.value)} data-table-cell={`${r}:${c}`} aria-label={`row ${r + 1}, column ${c + 1}`} />
           ))}
-          <button onClick={() => onChange({ rows: edit.rows.filter((_, j) => j !== r) })} data-table-row-remove={r} disabled={edit.rows.length === 1}>
+          {/* **The last row is no longer locked, and that lock is the reason `D1132` exists.**
+              `disabled={edit.rows.length === 1}` made `with each` a clause that could never reach
+              empty, so under *refuse while it has content* it could never have been removed at
+              all — the rule chosen in the grilling deadlocked on this one line. Now the last row
+              takes the clause with it, which is one gesture instead of two and needs no
+              per-clause definition of "empty" anywhere. */}
+          <button
+            onClick={() => (edit.rows.length === 1
+              ? onChange({ rows: [], columns: [], tableKind: 'none', tablePath: '' })
+              : onChange({ rows: edit.rows.filter((_, j) => j !== r) }))}
+            data-table-row-remove={r}
+            data-tip={edit.rows.length === 1 ? 'the last row — removing it takes `with each` with it' : 'this row of the table'}
+          >
             remove
           </button>
         </div>
@@ -2340,7 +2444,7 @@ export function FileRow({ outline, editing }: { readonly outline: FileOutline; r
         <NoteBlock note={header} what="the file" onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!({ on: 'file' }, lines)} />
       ) : null}
       {editing.onNote !== null && header === null && !writingNote ? (
-        <button className="add-note" onClick={() => editing.onNoting?.('file')} data-note-add="file" title="a comment at the top of the file, saying what it is for">
+        <button className="add-note" onClick={() => editing.onNoting?.('file')} data-note-add="file" data-tip="a comment at the top of the file, saying what it is for">
           + note
         </button>
       ) : null}
@@ -2582,7 +2686,7 @@ function BodySequence({ decl, selected, door, onLine, edit, onEdit, editing, ran
                 data-seq-add={a.key}
                 data-seq-add-line={decl.line}
                 data-seq-add-live={live ? 'yes' : undefined}
-                title={
+                data-tip={
                   recording !== null && !live
                     ? 'a recording is running — every action in that browser is a step in this file'
                     : live
@@ -2620,7 +2724,7 @@ function RequestLine({ request, onLine, ran }: {
 }) {
   return (
     <li className="seq-request" data-seq-request={request.line} data-seq-method={request.method}>
-      <button type="button" className="seq-goto" onClick={() => onLine(request.line)} data-seq-goto={request.line} title="open this request">
+      <button type="button" className="seq-goto" onClick={() => onLine(request.line)} data-seq-goto={request.line} data-tip="open this request">
         <span className="ln muted">{request.line}</span>
         <span className={`method m-${request.method.toLowerCase()}`}>{request.method}</span>
         <code>{request.path}</code>
@@ -2636,7 +2740,7 @@ function RequestLine({ request, onLine, ran }: {
           <span
             className={`status-code ${statusTone(ran.response.status)}`}
             data-seq-status={ran.response.status}
-            title={`${ran.scope === 'send' ? 'from a send' : 'from the last run'} — ${ran.at}`}
+            data-tip={`${ran.scope === 'send' ? 'from a send' : 'from the last run'} — ${ran.at}`}
           >
             {ran.response.status}
           </span>

@@ -31,11 +31,11 @@ export function TabStrip({ tab, onTab, marked = {} }: TabStripProps) {
           onClick={() => onTab(t.id)}
           data-tab={t.id}
           aria-pressed={t.id === tab}
-          title={t.blurb}
+          data-tip={t.blurb}
         >
           {t.label}
           {marked[t.id] ? (
-            <span className="tabstrip-mark" data-tab-mark={t.id} title={marked[t.id]}>
+            <span className="tabstrip-mark" data-tab-mark={t.id} data-tip={marked[t.id]}>
               •
             </span>
           ) : null}

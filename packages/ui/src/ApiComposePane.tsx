@@ -47,6 +47,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { CaptureSpec, ExpectSpec, Lens, MatcherName } from '@tflw/lang';
+import { requestRefusal, requestWithout } from './clauses';
+import { COMPOSE, Grip, storedWidth } from './Grip';
 import type { ExpectStmt } from '@tflw/lang';
 import {
   AddClause,
@@ -140,14 +142,37 @@ export function selectedAt(at: Addressed | null, line: number | null): Selected 
  * requests and their thirty assertions stop being a height problem: the column is a list, and the
  * thing being worked on is in the region next door at whatever size it needs.
  */
-function SeqRow({ line, selected, onLine, kind, lead, text, title, trailing, indent, statement, door, band, refusal }: {
+/** The word a statement's chip carries. One spelling, because `afterLead` strips exactly what the
+ *  chip shows — two copies of this expression is how a chip and its strip drift apart. */
+function seqLead(kind: string): string {
+  return kind === 'LetStmt' ? 'let' : kind.replace(/Stmt$/, '').toLowerCase();
+}
+
+/**
+ * The text a row shows, given the keyword its own chip already carries (`M216`).
+ *
+ * **The chip IS the keyword and the text is what follows it.** Every statement row drew a `seq-kind`
+ * chip derived from the node (`ExpectStmt` -> `expect`) beside the statement's own source line,
+ * which *begins* with that same word — so the pane read `expect expect status equals 201`, and on
+ * the example's first test **6 of 7 rows repeated themselves**. It reads correctly on a `test` row
+ * only because a test's text is its name and a name carries no keyword, which is why the shape
+ * looked right where it was designed and stuttered everywhere it was reused.
+ *
+ * The strip is conditional on the text actually starting with the chip's word, so a kind whose chip
+ * is not the first word of its line (`WaitUntilApiStmt` against `wait until api …`) is left exactly
+ * as it was rather than mangled. `title` keeps the whole line either way.
+ */
+function afterLead(lead: string, text: string): string {
+  return text.startsWith(`${lead} `) ? text.slice(lead.length + 1) : text;
+}
+
+function SeqRow({ line, selected, onLine, kind, lead, text, trailing, indent, statement, door, band, refusal }: {
   readonly line: number;
   readonly selected: boolean;
   readonly onLine: (line: number) => void;
   readonly kind: string;
   readonly lead: ReactNode;
   readonly text: string;
-  readonly title: string;
   readonly trailing: ReactNode;
   readonly indent?: boolean;
   /** The statement this row is, when it is one — the row carries **whose** it is (`D1078`). A step
@@ -183,16 +208,23 @@ function SeqRow({ line, selected, onLine, kind, lead, text, title, trailing, ind
         ? {}
         : { 'data-stmt': statement.kind, 'data-stmt-line': statement.line, 'data-stmt-lens': statement.lens ?? 'none', 'data-stmt-locked': foreign ? 'yes' : 'no' })}
     >
-      <button type="button" className="seq-pick" onClick={() => onLine(line)} title={title} aria-pressed={selected} data-seq-pick={line} data-seq-goto={line}>
+      {/* **The hover here is DERIVED and never authored** (`D1127`). Every one of these rows used
+          to carry a `title` that was its own visible text said again — the declaration's name, the
+          request's `METHOD path`, the statement's own line — which is a tooltip that tells a reader
+          what they are already looking at. What is worth showing is the part the ellipsis took, and
+          only when it took one, which is a question the row can answer about itself at any width.
+          `A2` has just made the width a variable, so an authored answer would have been wrong at
+          every width but one. */}
+      <button type="button" className="seq-pick" onClick={() => onLine(line)} aria-pressed={selected} data-seq-pick={line} data-seq-goto={line} data-tip-derived="">
         <span className="ln muted">{line}</span>
         {lead}
-        <span className="seq-text stmt-text">{text}</span>
+        <span className="seq-text stmt-text" data-tip-text>{text}</span>
       </button>
       {/* **A step another door owns is drawn in position and links to that door** (`D1078`). The
           door decides what may be EDITED and never what may be seen, so the row says what the step
           is and where it can be worked on — which is the one thing a reader needs from it here. */}
       {foreign && statement?.lens ? (
-        <a className="badge also" href={`#/${statement.lens}`} data-stmt-door={statement.lens} title={`this is ${DOOR_BY_ID[statement.lens].label}'s to edit — open that door`}>
+        <a className="badge also" href={`#/${statement.lens}`} data-stmt-door={statement.lens} data-tip={`this is ${DOOR_BY_ID[statement.lens].label}'s to edit — open that door`}>
           {DOOR_BY_ID[statement.lens].label}
         </a>
       ) : null}
@@ -216,7 +248,7 @@ function Remove({ what, onGo, refusal, onClear }: {
   readonly onClear: () => void;
 }) {
   return (
-    <button type="button" className={`seq-x${refusal ? ' refused' : ''}`} onClick={refusal ? onClear : onGo} title={refusal ? 'dismiss' : `remove this ${what}`} data-seq-remove={what} aria-label={`remove this ${what}`}>
+    <button type="button" className={`seq-x${refusal ? ' refused' : ''}`} onClick={refusal ? onClear : onGo} data-tip={refusal ? 'dismiss' : `remove this ${what}`} data-seq-remove={what} aria-label={`remove this ${what}`}>
       ✕
     </button>
   );
@@ -307,7 +339,8 @@ function AssertRow({ statement, edit, onEdit, verdict, trailing, onRemove, refus
           className={`assert-more${rare ? ' on' : ''}`}
           onClick={() => setOpen((x) => !x)}
           aria-expanded={rare}
-          title="`check` instead of `expect`, `any`/`all`, and `not` — the three forms 96% of this corpus's assertions do not use"
+          aria-label="more forms for this assertion"
+          data-tip="`check` instead of `expect`, `any`/`all`, and `not` — the three forms 96% of this corpus's assertions do not use"
           data-assert-more={rare ? 'open' : 'shut'}
         >
           ⋯
@@ -327,7 +360,7 @@ function AssertRow({ statement, edit, onEdit, verdict, trailing, onRemove, refus
             <option value="any">any</option>
             <option value="all">all</option>
           </select>
-          <label className="not" title="`not` — the word whose absence would invert this assertion">
+          <label className="not" data-tip="`not` — the word whose absence would invert this assertion">
             <input type="checkbox" checked={v.negated} onChange={(e) => change({ negated: e.target.checked })} data-expect-negated={v.negated ? 'yes' : 'no'} />
             not
           </label>
@@ -378,7 +411,7 @@ function AssertRow({ statement, edit, onEdit, verdict, trailing, onRemove, refus
               </button>
             </div>
           ))}
-          <button onClick={() => change({ subset: [...v.subset, { name: '', value: '""' }] })} data-subset-add title="one key the response must carry with this value; the rest of the object is not compared">
+          <button onClick={() => change({ subset: [...v.subset, { name: '', value: '""' }] })} data-subset-add data-tip="one key the response must carry with this value; the rest of the object is not compared">
             + key
           </button>
         </div>
@@ -487,6 +520,11 @@ export function ApiComposePane(props: ApiComposePaneProps) {
   const clearRefusal = useCallback(() => setRefused(null), []);
 
   const [split, setSplit] = useState<number>(readSplit);
+  /** The sequence column's width (`D1135`) — a fixed number of pixels the reader chose, where the
+   *  grid used to hold a builder's `minmax(220px, 300px)`. Separate from `split` above, which is
+   *  the horizontal divider inside the editor column and a FRACTION rather than a width, for the
+   *  reason recorded there: a remembered 620 px on a 700 px window is a response with no editor. */
+  const [seqWidth, setSeqWidth] = useState<number>(() => storedWidth(COMPOSE));
   const column = useRef<HTMLDivElement | null>(null);
   const dragging = useRef(false);
 
@@ -546,7 +584,22 @@ export function ApiComposePane(props: ApiComposePaneProps) {
         <span className="muted" data-compose-summary data-compose-subject={at ? 'declaration' : 'file'}>
           {at ? (
             <>
-              <code data-compose-subject-what>{at.decl.kind === 'test' ? `test ${at.decl.name}` : at.decl.label}</code> · line {at.decl.line} ·{' '}
+              {/* **The band says the same words, painted** (`M216`). It was one flat grey sentence, so
+                  the one fact a reader wants off it — *which declaration am I composing* — had the
+                  same weight as the counts around it. The roles are the language's own: the keyword
+                  is a keyword and the name is the string it is written as in the file, which is why
+                  the quotes are here and not in the sidebar's row — this line is prose ABOUT a
+                  declaration, so it quotes it the way the file does. Nothing is rearranged: the
+                  sentence, its order and its counts are untouched. */}
+              <code data-compose-subject-what>
+                {at.decl.kind === 'test' ? (
+                  <>
+                    <span className="t-kw">test</span> <span className="t-str">&quot;{at.decl.name}&quot;</span>
+                  </>
+                ) : (
+                  <span className="t-kw">{at.decl.label}</span>
+                )}
+              </code> · line {at.decl.line} ·{' '}
               {at.decl.body.requests.length} request{at.decl.body.requests.length === 1 ? '' : 's'} —{' '}
               {outline.declarations.length === 1 ? 'the only declaration in this file' : `one of ${outline.declarations.length} declarations in this file`}
             </>
@@ -572,7 +625,12 @@ export function ApiComposePane(props: ApiComposePaneProps) {
         ) : null}
       </div>
 
-      <div className="api-compose-grid">
+      {/* **The split is the reader's** (`M216` `E`, `D1135`). The first column was
+          `minmax(220px, 300px)` — one number chosen by the builder for every file — and a file of
+          long assertions and a file of `GET /a` want different ones. The mechanism is `A2`'s grip
+          used a second time and not a second implementation of it, which is why the clamp, the
+          keyboard handling and the per-project persistence come for free. */}
+      <div className="api-compose-grid" style={{ ['--seq-w' as string]: `${seqWidth}px` }}>
         {/* ── region 2: the sequence (`D1112`) ─────────────────────────────────────────── */}
         <div className="seq-col" data-seq-col={decl === null ? 0 : decl.body.requests.length}>
           <ol className="seq" data-body-sequence={decl === null ? 0 : decl.body.requests.length} data-seq-rows={decl === null ? 0 : decl.body.requests.length + statements.length}>
@@ -585,7 +643,6 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                 onLine={onLine}
                 lead={<span className="seq-kind">{decl.kind === 'test' ? 'test' : decl.label}</span>}
                 text={decl.kind === 'test' ? decl.name : ''}
-                title={decl.kind === 'test' ? decl.name : decl.label}
                 refusal={refusalFor(decl.line)}
                 trailing={
                   onRemoveDecl === null ? null : (
@@ -611,9 +668,8 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                     kind={s.kind}
                     selected={selected.kind === 'statement' && selected.statement.line === s.line}
                     onLine={onLine}
-                    lead={<span className="seq-kind">{s.kind === 'LetStmt' ? 'let' : s.kind.replace(/Stmt$/, '').toLowerCase()}</span>}
-                    text={s.text.split('\n')[0] ?? ''}
-                    title={s.text}
+                    lead={<span className="seq-kind">{seqLead(s.kind)}</span>}
+                    text={afterLead(seqLead(s.kind), s.text.split('\n')[0] ?? '')}
                     statement={s}
                     door={door}
                     indent
@@ -640,14 +696,13 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                           <>
                             <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span>
                             {rr === null || rr.response === null ? null : (
-                              <span className={`status-code ${statusTone(rr.response.status)}`} data-seq-status={rr.response.status} title={`${rr.scope === 'send' ? 'from a send' : 'from the last run'} — ${rr.at}`}>
+                              <span className={`status-code ${statusTone(rr.response.status)}`} data-seq-status={rr.response.status} data-tip={`${rr.scope === 'send' ? 'from a send' : 'from the last run'} — ${rr.at}`}>
                                 {rr.response.status}
                               </span>
                             )}
                           </>
                         }
                         text={r.path}
-                        title={`${r.method} ${r.path}`}
                         refusal={refusalFor(r.line)}
                         trailing={
                           onRemoveSteps === null ? null : (
@@ -665,9 +720,8 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                               selected={selected.kind === 'statement' && selected.statement.line === s.line}
                               onLine={onLine}
                               indent
-                              lead={<span className="seq-kind">{s.kind.replace(/Stmt$/, '').toLowerCase()}</span>}
-                              text={s.text.split('\n')[0] ?? ''}
-                              title={s.text}
+                              lead={<span className="seq-kind">{seqLead(s.kind)}</span>}
+                              text={afterLead(seqLead(s.kind), s.text.split('\n')[0] ?? '')}
                               statement={s}
                               door={door}
                               refusal={refusalFor(s.line)}
@@ -706,12 +760,12 @@ export function ApiComposePane(props: ApiComposePaneProps) {
             {onAdd === null || decl === null || decl.kind !== 'test'
               ? null
               : adds.map((a) => (
-                  <button key={a.key} type="button" className="seq-add" onClick={() => onAdd(decl, a.key)} data-seq-add={a.key} data-seq-add-line={decl.line} title={a.title}>
+                  <button key={a.key} type="button" className="seq-add" onClick={() => onAdd(decl, a.key)} data-seq-add={a.key} data-seq-add-line={decl.line} data-tip={a.title}>
                     {a.label}
                   </button>
                 ))}
             {onNew === null ? null : (
-              <button type="button" className="seq-add new" onClick={() => onNew('test')} data-compose-new-test title="another test in this file">
+              <button type="button" className="seq-add new" onClick={() => onNew('test')} data-compose-new-test data-tip="another test in this file">
                 + new test
               </button>
             )}
@@ -719,6 +773,8 @@ export function ApiComposePane(props: ApiComposePaneProps) {
         </div>
 
         {/* ── region 3: the editor, and the response under it (`D1113`, `D1116`) ───────── */}
+        <Grip spec={COMPOSE} width={seqWidth} onWidth={setSeqWidth} />
+
         {/* **`data-seq-open` is still the open request's line**, and that it survived the rebuild is
             the point rather than a convenience: *which request is open* is a real fact about the
             pane, and `M214` moved where the card is drawn without changing what is open. It is on
@@ -811,7 +867,7 @@ export function ApiComposePane(props: ApiComposePaneProps) {
                   className="response-head-bar"
                   data-compose-response={rowRan.response.status}
                   data-compose-response-scope={rowRan.scope}
-                  title={`${rowRan.response.method} ${rowRan.response.url} — ${rowRan.at}`}
+                  data-tip={`${rowRan.response.method} ${rowRan.response.url} — ${rowRan.at}`}
                 >
                   <span className={`status-code ${statusTone(rowRan.response.status)}`} data-compose-response-status={rowRan.response.status}>
                     {rowRan.response.status}
@@ -838,7 +894,7 @@ export function ApiComposePane(props: ApiComposePaneProps) {
               <div className="response-none">
                 {prefix !== null && onSend !== null ? (
                   <div className="prefix" data-prefix={prefix.requests.length}>
-                    <button className="run" onClick={onSend} disabled={sending || busy} data-compose-send>
+                    <button className="run" onClick={onSend} disabled={sending || busy} data-compose-send data-tip="issues this request and the ones above it that feed it, and shows what came back — nothing is graded and nothing is kept. The assertions under it are read by run, next door.">
                       {sending ? 'sending…' : `send — ${prefix.requests.length} request${prefix.requests.length === 1 ? '' : 's'}`}
                     </button>
                     <p className="muted">
@@ -877,7 +933,7 @@ export function ApiComposePane(props: ApiComposePaneProps) {
               vanishes as the tab changes is the flicker the three regions were built to remove. */}
           {rowRan?.response && prefix !== null && onSend !== null ? (
             <div className="editor-send" data-compose-send-row>
-              <button className="run" onClick={onSend} disabled={sending || busy} data-compose-send>
+              <button className="run" onClick={onSend} disabled={sending || busy} data-compose-send data-tip="issues this request and the ones above it that feed it, and shows what came back — nothing is graded and nothing is kept. The assertions under it are read by run, next door.">
                 {sending ? 'sending…' : `send — ${prefix.requests.length} request${prefix.requests.length === 1 ? '' : 's'}`}
               </button>
               <span className="muted">{prefix.requests.map((r) => `${r.method} ${r.path}`).join(' → ')} — no assertions checked</span>
@@ -940,7 +996,7 @@ function BodyEdit({ text, onText }: { readonly text: string; readonly onText: (t
           onClick={() => { if (pretty !== null) onText(pretty); }}
           disabled={pretty === null}
           data-body-format
-          title={
+          data-tip={
             pretty === null
               ? 'this body is already laid out, or is not an object or a list'
               : 'lay this body out across lines — the file still writes it on one, because a value is one line to the printer'
@@ -985,7 +1041,7 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
   return (
     <div className="editor-body" data-editor-statement={statement.kind} data-editor-line={statement.line}>
       <header className="editor-head">
-        <span className="seq-kind">{statement.kind.replace(/Stmt$/, '').toLowerCase()}</span>
+        <span className="seq-kind">{seqLead(statement.kind)}</span>
         <span className="ln muted">line {statement.line}</span>
         <VerdictMark verdict={verdict} />
         {onRemove === null ? null : <Remove what="statement" onGo={onRemove} refusal={refusal} onClear={onClearRefusal} />}
@@ -996,7 +1052,7 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
       ) : statement.note ? (
         <NoteBlock note={statement.note} what={`line ${statement.line}`} onNote={onEdit !== null && onNote !== null && statement.stepPath !== null ? (lines) => onNote({ on: 'step', path: statement.stepPath! }, lines) : undefined} />
       ) : onNote !== null && statement.stepPath !== null && !foreign ? (
-        <button className="add-note" onClick={() => onNoting?.(key)} data-note-add={statement.line} title="a comment above this line, explaining why it is here">
+        <button className="add-note" onClick={() => onNoting?.(key)} data-note-add={statement.line} data-tip="a comment above this line, explaining why it is here">
           + note
         </button>
       ) : null}
@@ -1067,16 +1123,21 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
   /** Which clauses the More tab draws. A clause the file states is always there; one it does not is
    *  added from the menu — `D1084` unchanged, and now with nothing locked in it. */
   const [added, setAdded] = useState<readonly string[]>([]);
-  const shows = (clause: string): boolean => {
+  /** **What the file writes**, as against what the menu is only showing (`M216` `D`). The two were
+   *  one predicate until removal existed, because nothing downstream cared which of them was true;
+   *  removing a clause is an edit to the bytes in one case and forgetting a drawn row in the other,
+   *  and the reader cannot tell them apart and should not have to. */
+  const states = (clause: string): boolean => {
     switch (clause) {
-      case 'service': return v.service !== '' || added.includes(clause);
-      case 'label': return v.label !== '' || added.includes(clause);
-      case 'timeout': return v.timeout !== '' || added.includes(clause);
-      case 'redirects': return !v.redirects || added.includes(clause);
-      case 'retryAfter': return v.retryAfter !== '' || added.includes(clause);
-      default: return added.includes(clause);
+      case 'service': return v.service !== '';
+      case 'label': return v.label !== '';
+      case 'timeout': return v.timeout !== '';
+      case 'redirects': return !v.redirects;
+      case 'retryAfter': return v.retryAfter !== '';
+      default: return false;
     }
   };
+  const shows = (clause: string): boolean => states(clause) || added.includes(clause);
   const counts: Record<EditorTab, number> = {
     headers: v.headers.length,
     body: v.bodyKind === 'none' ? 0 : 1,
@@ -1109,12 +1170,12 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
         )}
         <span className="ln muted">line {r.line}</span>
         {r.kind === 'WaitUntilApiStmt' ? (
-          <span className="badge" data-request-polling="yes" title="this request is re-issued until the assertions below it pass">
+          <span className="badge" data-request-polling="yes" data-tip="this request is re-issued until the assertions below it pass">
             polls
           </span>
         ) : null}
         {editing.onNote !== null && r.note === null && !writingNote ? (
-          <button className="add-note" onClick={() => editing.onNoting?.(stepKey(r.stepPath))} data-note-add={r.line} title="a comment above this request, explaining why it is here">
+          <button className="add-note" onClick={() => editing.onNoting?.(stepKey(r.stepPath))} data-note-add={r.line} data-tip="a comment above this request, explaining why it is here">
             + note
           </button>
         ) : null}
@@ -1157,7 +1218,7 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
                     <>
                       <input value={h.name} onChange={(e) => change({ headers: v.headers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} data-header-edit-name={i} aria-label="header name" />
                       <input value={h.value} onChange={(e) => change({ headers: v.headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} data-header-edit-value={i} aria-label="header value" />
-                      <button className="seq-x" onClick={() => change({ headers: v.headers.filter((_, j) => j !== i) })} data-header-edit-remove={i} aria-label="remove this header">
+                      <button className="seq-x" onClick={() => change({ headers: v.headers.filter((_, j) => j !== i) })} data-header-edit-remove={i} aria-label="remove this header" data-tip={v.headers.length === 1 ? 'the last header — this request stops sending one' : 'this header'}>
                         ✕
                       </button>
                     </>
@@ -1167,7 +1228,7 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
             </ul>
           )}
           {change === null ? null : (
-            <button onClick={() => change({ headers: [...v.headers, { name: '', value: '' }] })} data-header-edit-add title="a header on this request alone">
+            <button onClick={() => change({ headers: [...v.headers, { name: '', value: '' }] })} data-header-edit-add data-tip="a header on this request alone">
               + header
             </button>
           )}
@@ -1202,7 +1263,15 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
                     <div className="row" key={i}>
                       <input value={f.name} onChange={(e) => change({ formFields: v.formFields.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} data-body-edit-key={i} aria-label="field name" />
                       <input value={f.value} onChange={(e) => change({ formFields: v.formFields.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} data-body-edit-value={i} aria-label="field value" />
-                      <button className="seq-x" onClick={() => change({ formFields: v.formFields.filter((_, j) => j !== i) })} data-body-edit-remove={i} aria-label="remove this field">
+                      <button
+                        className="seq-x"
+                        onClick={() => change(v.formFields.length === 1
+                          ? { formFields: [], bodyKind: 'none', bodyText: '' }
+                          : { formFields: v.formFields.filter((_, j) => j !== i) })}
+                        data-body-edit-remove={i}
+                        aria-label="remove this field"
+                        data-tip={v.formFields.length === 1 ? 'the last field — removing it takes the body with it' : 'this field'}
+                      >
                         ✕
                       </button>
                     </div>
@@ -1326,6 +1395,11 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
                 { key: 'retryAfter', label: 'retry after', title: '`retry honoring “Retry-After” up to N`' },
               ].map((c) => ({ ...c, state: shows(c.key) ? ('present' as const) : ('addable' as const) }))}
               onAdd={(k) => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]))}
+              onRemove={(k) => {
+                setAdded((prev) => prev.filter((x) => x !== k));
+                if (states(k)) change(requestWithout(k));
+              }}
+              refusalFor={(k) => requestRefusal(k, v)}
             />
           )}
         </div>

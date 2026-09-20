@@ -1312,8 +1312,11 @@ test('a long name at depth is one line and an ellipsis, with the whole path in r
     const code = fresh.locator(`[data-file="${deep}"] code`);
     const { client, scroll } = await code.evaluate((el) => ({ client: el.clientWidth, scroll: el.scrollWidth }));
     assert.ok(scroll > client, `the name is clipped rather than fitting (${scroll} into ${client})`);
-    // And nothing is lost: the whole path is on the row and in the address.
-    assert.equal(await row.getAttribute('title'), deep);
+    // And nothing is lost: the whole path is on the row and in the address. It is `data-tip` and
+    // no longer `title` since `M216` `B3` — the hover is presented by the page now, and this row is
+    // one of the few where the hover is AUTHORED rather than derived, because the row shows a leaf
+    // name and the thing worth reading is the path it sits at, which is more than the ellipsis took.
+    assert.equal(await row.getAttribute('data-tip'), deep);
   } finally {
     await fresh.close();
     await ui.close();
@@ -4583,7 +4586,7 @@ test('a new .tflw file can be made from the page, and the page then opens it', a
 
     assert.match(new URL(fresh.url()).hash, /compose\/tests\/second\.tflw/, 'and the page is now on the file it just made');
     await fresh.locator('[data-compose-subject-what]').waitFor();
-    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test it also answers');
+    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test "it also answers"');
   } finally {
     await fresh.close();
     await ui.close();
@@ -4629,7 +4632,7 @@ test('a new test goes into the open file through the same builders the pane’s 
     const declLine = onDisk.split('\n').findIndex((l) => l.startsWith('test "the second"')) + 1;
     await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/one.tflw/L${declLine}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
-    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test the second');
+    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test "the second"');
     // **`M214` `D1113` — a declaration's own line selects the declaration.** It used to resolve to
     // that declaration's FIRST REQUEST, which is why the editor could never show a test's own
     // fields and why a 40-character name sat in a 176 px box. The test is now the sequence
@@ -5054,13 +5057,13 @@ test('the head names the declaration the body is drawing, not the file the body 
     await fresh.goto(`${baseUrl}#/api/compose/${many.path}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
     assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'declaration');
-    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test ${many.tests[0]!.name}`);
+    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test "${many.tests[0]!.name}"`);
 
     const second = many.tests[1]!;
     await fresh.goto(`${baseUrl}#/api/compose/${many.path}/L${second.line}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
     assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'declaration');
-    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test ${second.name}`);
+    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test "${second.name}"`);
     const head = (await fresh.locator('[data-compose-summary]').textContent())!;
     assert.match(head, new RegExp(`line ${second.line}\\b`), 'the head says which declaration, by line');
     // And the file's own count survives — demoted to context, not deleted. A head that named only
@@ -6619,5 +6622,713 @@ test('`M215` `B1`: a pasted, pretty-printed JSON body is accepted and written ba
     // **The big number is the point of the layout being a whitespace pass.** A `JSON.parse` round
     // trip would have shown — and written — 12345678901234567000.
     assert.doesNotMatch(written, /12345678901234567000/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `M216` `B0` — the gates slice `A` shipped without.
+//
+// **Slice `A` was built during the grilling that scoped this round, and it landed with no gate at
+// all.** Five changes went in on measurement — a line-number gutter, a resizable project pane, a
+// `test` chip on three surfaces, the `expect expect` stutter, and the Compose band painted in place
+// — and the whole suite stayed green through every one of them, because not one of those five is a
+// thing any existing assertion asks about. `PLAN_M216_REMOVE_AND_PRESENT.md` `§4` puts this slice
+// first for that reason: `A4` especially, since a stutter fix with no gate is exactly the change a
+// later refactor undoes by accident, and the pane would go back to reading `expect expect status
+// equals 201` with 4494 tests green.
+//
+// **Each claim here is a property, never a string.** The round's standing instruction is *stop
+// producing gates that freeze a lifeless UI*, and three Compose rounds ended in the same pane
+// because a gate pinned an arrangement or a sentence. So: no row's text is pinned, no name is
+// pinned, no palette is pinned. What is pinned is *a row does not repeat its own chip*, *the text
+// under the gutter is still the file*, *the pane obeys the reader*, and *one class draws a
+// declaration on all three surfaces that draw one*.
+// ---------------------------------------------------------------------------
+
+/** Slice `A`'s subject: a file long enough to need a two-digit gutter, with a declaration name long
+ *  enough to truncate at the pane's floor and short enough to fit at its ceiling — the two widths
+ *  `A2`'s claim has to be asked at, since a truncation rule passes vacuously at one. */
+const LEGIBLE = [
+  '# the file, so line 1 is not a declaration',
+  '',
+  '@checkout',
+  'test "it accepts a basket and confirms one order"',
+  '  api POST /baskets body { lines: [{ itemId: 1, qty: 2 }], coupon: "SHELF10" }',
+  '    header "Accept" is "application/json"',
+  '  expect status equals 201',
+  '  expect body.total equals 2520',
+  '  capture body.id as basketId',
+  '  api POST /orders/checkout body { basketId: "{basketId}" }',
+  '    header "Authorization" is "Bearer tok"',
+  '  expect status equals 401',
+  '',
+  'test "short"',
+  '  api GET /health',
+  '  expect status equals 200',
+  '',
+].join('\n');
+
+test('`M216` `B0`/`A1`: Source numbers every line, and the text under the numbers is still the file byte for byte (`D985`)', async () => {
+  await withRemovalFixture(LEGIBLE, async (p, base, dir) => {
+    await p.goto(`${base}/#/api/source/x.tflw`);
+    const file = await readFile(join(dir, 'x.tflw'), 'utf8');
+    const lines = file.split('\n');
+    // The last line, not the `<pre>`: the element is in the document before the bytes are.
+    await p.locator(`[data-preview] [data-source-line="${lines.length}"]`).waitFor();
+
+    // **This assertion is `A1`'s whole design, not a side condition.** `D985` makes this `<pre>`'s
+    // `textContent` the file byte for byte, and every page gate that reads `[data-preview]` rests
+    // on it — so the numbers had to be drawn as generated content, which `textContent` does not
+    // see. Render them as text instead and this line reddens on the first character: it IS the
+    // mutation detector for the obvious implementation.
+    assert.equal(await p.locator('[data-preview]').textContent(), file, 'the gutter costs the projection nothing');
+
+    // Every physical line is numbered, including the blank ones — a gutter that skips the empties
+    // renumbers the file.
+    const spans = p.locator('[data-preview] [data-source-line]');
+    assert.equal(await spans.count(), lines.length, `${lines.length} lines, ${lines.length} numbers`);
+    assert.deepEqual(
+      await spans.evaluateAll((els) => els.map((e) => e.getAttribute('data-source-line'))),
+      lines.map((_, i) => String(i + 1)),
+      'and they count from one, in order',
+    );
+
+    // **The number the READER sees**, which is a different claim from the attribute being present:
+    // the attribute has been there since `M213` for the index to scroll to, and nothing drew it.
+    const drawn = await spans.first().evaluate((el) => {
+      const view = el.ownerDocument.defaultView!;
+      const before = view.getComputedStyle(el, '::before');
+      return { content: before.content, width: Math.round(Number.parseFloat(before.width)) };
+    });
+    assert.match(drawn.content, /1/, `the first line's gutter draws its number (${drawn.content})`);
+    assert.ok(drawn.width > 0, `and it occupies the page (${drawn.width}px)`);
+
+    // **The gutter is as wide as the widest number and no wider**, which is why it is a variable
+    // rather than a constant: a 17-line file spends two characters and a 120-line file spends
+    // three. Asked at both, so the rule cannot pass by agreeing with one hardcoded answer.
+    assert.equal(await p.locator('[data-preview]').getAttribute('data-source-gutter'), '2', '17 lines, two digits');
+  });
+
+  const long: string[] = ['# a file past a hundred lines', ''];
+  for (let i = 0; i < 30; i++) long.push('@api', `test "case ${i}"`, `  api GET /c/${i}`, '  expect status equals 200', '');
+  await withRemovalFixture(long.join('\n'), async (p, base) => {
+    await p.goto(`${base}/#/api/source/x.tflw`);
+    // Waited for by its LAST line, not by the `<pre>`: the element is in the document before the
+    // bytes are, and a gutter width read off an empty buffer is one digit — which is how the first
+    // draft of this assertion failed while the page was perfectly correct.
+    await p.locator(`[data-preview] [data-source-line="${long.length}"]`).waitFor();
+    assert.equal(await p.locator('[data-preview]').getAttribute('data-source-gutter'), '3', `${long.length} lines, three digits`);
+  });
+});
+
+test('`M216` `B0`/`A2`: the project pane is the reader’s width — nudged, dragged, clamped at both ends, and remembered', async () => {
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.locator('[data-files]').waitFor();
+
+    const grip = p.locator('[data-grip="sidebar"]');
+    const paneWidth = (): Promise<number> => p.locator('.sidebar').evaluate((el) => Math.round(el.getBoundingClientRect().width));
+    // The long declaration's label, which is what the width is FOR. `A2` does not abolish
+    // truncation and is not meant to; what it buys is that the trade is the reader's.
+    // The declaration's OWN button — the `<li>` also holds a nested list of request rows, and
+    // every one of them draws an `.outline-name` too.
+    const label = p.locator('.sidebar [data-outline-decl="test"]').first().locator('.outline-row').first().locator('.outline-name');
+    const cut = (): Promise<boolean> => label.evaluate((el) => el.scrollWidth > el.clientWidth);
+
+    assert.equal(await grip.getAttribute('role'), 'separator', 'a separator, not a div with a pointer handler');
+    assert.equal(await grip.getAttribute('aria-valuenow'), '320');
+    assert.equal(await paneWidth(), 320, 'and the grid agrees with the value it announces');
+
+    // **The keyboard first.** A control only a pointer can reach is a control some readers do not
+    // have, and it is also the cheapest way to prove the value and the geometry move together.
+    await grip.focus();
+    await p.keyboard.press('ArrowRight');
+    assert.equal(await paneWidth(), 336, 'one nudge is 16px');
+    await p.keyboard.press('ArrowLeft');
+    assert.equal(await paneWidth(), 320);
+
+    // **Dragged past the ceiling, and it stops at the ceiling.** The pointer owns the window during
+    // a drag — the listeners are on `window`, not on the 6px target — so a pointer that leaves the
+    // grip is the normal case, which is exactly what this drag does.
+    const box = (await grip.boundingBox())!;
+    await p.mouse.move(box.x + box.width / 2, box.y + 100);
+    await p.mouse.down();
+    await p.mouse.move(1430, box.y + 100, { steps: 8 });
+    await p.mouse.up();
+    assert.equal(await paneWidth(), 720, 'clamped at the ceiling — half of a 1440 window');
+    assert.equal(await cut(), false, 'and at the ceiling the long name is whole');
+
+    await p.mouse.move((await grip.boundingBox())!.x + 3, box.y + 100);
+    await p.mouse.down();
+    await p.mouse.move(4, box.y + 100, { steps: 8 });
+    await p.mouse.up();
+    assert.equal(await paneWidth(), 200, 'clamped at the floor');
+    assert.equal(await cut(), true, 'and at the floor it is an ellipsis — the two widths the rule has to be asked at');
+
+    // **Remembered where a per-viewer convenience belongs** — `localStorage`, keyed per origin,
+    // which is per served project. Nothing about a pane's width is a fact about the project.
+    assert.equal(
+      await grip.evaluate((el) => el.ownerDocument.defaultView!.localStorage.getItem('tflw.sidebar.width')),
+      '200',
+    );
+    await p.reload();
+    await p.locator('[data-files]').waitFor();
+    assert.equal(await paneWidth(), 200, 'a remembered width a reload forgets is not remembered');
+
+    await p.locator('[data-grip="sidebar"]').focus();
+    await p.keyboard.press('Home');
+    assert.equal(await paneWidth(), 320, 'and there is a way back');
+  });
+});
+
+test('`M216` `B0`/`A3`: a declaration wears the same chip on all three surfaces that draw one', async () => {
+  // **Three surfaces now say *this is a declaration* and a fourth spelling is how they drift
+  // apart.** The sidebar outline and the Source index both drew a bare name — the one row a reader
+  // scans a list for was the only row in the list with no shape, while the request rows under it
+  // had carried a coloured method chip since `D1081`. This asserts the class is literally shared,
+  // which is the thing a later edit breaks by restyling one of them in place.
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.locator('[data-files]').waitFor();
+    assert.equal(
+      await p.locator('.sidebar [data-outline-decl="test"]').first().locator('.outline-row > .seq-kind').textContent(),
+      'test',
+      'the sidebar outline',
+    );
+    const band = p.locator('[data-band-line]').first().locator('.seq-kind');
+    assert.equal(await band.textContent(), 'test', 'the Compose sequence');
+
+    await p.locator('[data-tab="source"]').click();
+    await p.locator('[data-test-index]').waitFor();
+    assert.equal(
+      await p.locator('[data-source-test="it accepts a basket and confirms one order"] .seq-kind').textContent(),
+      'test',
+      'the Source index',
+    );
+  });
+});
+
+test('`M216` `B0`/`A4`: no sequence row repeats its own chip — the chip is the keyword and the text is what follows it', async () => {
+  // **The defect this replaces was in six of seven rows on the example's first test.** Every
+  // statement row drew a chip derived from the node (`ExpectStmt` → `expect`) beside the
+  // statement's own source line, which *begins* with that same word — so the pane read `expect
+  // expect status equals 201`. It read correctly on the declaration row only because a test's text
+  // is its name and a name carries no keyword, which is why the shape looked right where it was
+  // designed and stuttered everywhere it was reused.
+  //
+  // **Written as a property over whatever rows are on screen**, not as a list of expected strings:
+  // a gate naming the rows is a gate that has to be edited to admit a fourteenth statement kind,
+  // and pinning the sentences is how the last three rounds froze this pane.
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.locator('[data-seq-row]').first().waitFor();
+    const rows = await p.locator('li[data-stmt]').evaluateAll((els) =>
+      els.map((el) => ({
+        kind: el.getAttribute('data-stmt'),
+        chip: (el.querySelector('.seq-kind')?.textContent ?? '').trim(),
+        text: (el.querySelector('.seq-text')?.textContent ?? '').trim(),
+      })),
+    );
+    // The vacuity control: a property over an empty list is green, and this one would have been
+    // green on a Compose pane that rendered nothing at all.
+    // Four, not seven: the two `api` steps are REQUESTS, drawn as their own groups, and what
+    // `data-stmt` marks is the statements between them.
+    assert.ok(rows.length >= 4, `the test's statements are on screen (${rows.length} rows)`);
+    for (const row of rows) {
+      assert.ok(row.chip.length > 0, `${row.kind} carries a chip`);
+      assert.ok(
+        !row.text.startsWith(`${row.chip} `),
+        `${row.kind}: the chip says "${row.chip}" and the text must not say it again — got "${row.text}"`,
+      );
+    }
+    // And the positive half, because *never starts with its chip* is also satisfied by a row that
+    // shows nothing: one row, read whole, is the keyword and then the rest of its own line.
+    const expects = rows.filter((r) => r.kind === 'ExpectStmt');
+    assert.ok(expects.length >= 3);
+    assert.equal(expects[0]!.chip, 'expect');
+    assert.equal(expects[0]!.text, 'status equals 201', 'the line, less the word already on the chip');
+  });
+});
+
+test('`M216` `B0`/`A5`: the Compose band says which declaration this is, in the language’s own roles', async () => {
+  // It was one flat grey sentence, so the single fact a reader wants off that line — *which
+  // declaration am I composing* — carried the same weight as the counts beside it. Nothing was
+  // rearranged: the sentence, its order and its counts are untouched, and only the subject is
+  // painted. The roles are the language's own, which is why the quotes are here and not on the
+  // sidebar's row: this line is prose ABOUT a declaration, so it quotes it the way the file does.
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    const what = p.locator('[data-compose-subject-what]');
+    await what.waitFor();
+    assert.equal(await what.locator('.t-kw').textContent(), 'test', 'the keyword is a keyword');
+    assert.equal(
+      await what.locator('.t-str').textContent(),
+      '"it accepts a basket and confirms one order"',
+      'and the name is the string the file writes',
+    );
+    // The colouring is two spans over the same words, never a second copy of them.
+    assert.equal(await what.textContent(), 'test "it accepts a basket and confirms one order"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `M216` `B1`-`B3` — the hover, presented by us.
+//
+// **The round's premise was wrong and measuring it is what produced this slice.** *"No hover info
+// anywhere?"* — and 62 of the API door's 67 interactive controls already carried a `title`, 40 of
+// them real guidance. What failed is the four things `title` does not expose: the ~1 s delay, the
+// position, the OS styling, and invisibility to touch. All three of the user's screenshots are
+// position, and all three are the same shape — the tooltip covering the row underneath.
+//
+// So nothing here reads a sentence. What is gated is where the box lands, that it lands at all on
+// a keyboard, that an icon-only control did not lose its name on the way, and `D1127`'s derived
+// rule asked at **two widths**, because a truncation rule is green at one width by luck.
+// ---------------------------------------------------------------------------
+
+/** The tooltip's own rect, and the rect of the control it is describing. */
+const tipGeometry = async (p: Page): Promise<{ tip: { x: number; y: number; w: number; h: number }; side: string }> => {
+  const el = p.locator('#tflw-tip');
+  await el.waitFor();
+  const r = (await el.boundingBox())!;
+  return { tip: { x: r.x, y: r.y, w: r.width, h: r.height }, side: (await el.getAttribute('data-tip-shown'))! };
+};
+
+const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; width: number; height: number }): boolean =>
+  a.x < b.x + b.width && a.x + a.w > b.x && a.y < b.y + b.height && a.y + a.h > b.y;
+
+test('`M216` `B3`: `title` is retired across the shell and the Compose pane — every hover is ours', async () => {
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.locator('[data-seq-row]').first().waitFor();
+
+    // **The vacuity control comes first**, because *no element carries a `title`* is also true of a
+    // blank page, and it is exactly what a half-finished migration looks like.
+    const asking = await p.locator('[data-tip], [data-tip-derived]').count();
+    assert.ok(asking >= 30, `the page's controls still ask for a hover (${asking} of them)`);
+
+    const left = await p.locator('[title]').evaluateAll((els) =>
+      els.map((e) => `${e.tagName.toLowerCase()}[${e.className}]: ${e.getAttribute('title')}`));
+    assert.deepEqual(left, [], 'and not one of them asks the platform for it');
+  });
+});
+
+test('`M216` `B1`/`B2`: the hover is our element, and it covers neither the control nor the row under it (`D1125`)', async () => {
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.locator('[data-seq-row]').first().waitFor();
+
+    // A row in a list with a row directly beneath it — the shape of all three screenshots.
+    await p.locator('[data-add-clause="test"] summary').click();
+    const row = p.locator('[data-add-go="tags"]');
+    const own = row.locator('xpath=ancestor-or-self::li[1]');
+    await row.hover();
+    const { tip, side } = await tipGeometry(p);
+
+    const control = (await row.boundingBox())!;
+    const next = await own.evaluate((el) => {
+      const sib = el.nextElementSibling;
+      if (sib === null) return null;
+      const r = sib.getBoundingClientRect();
+      return { x: r.left, y: r.top, width: r.width, height: r.height };
+    });
+    assert.equal(overlaps(tip, control), false, `the tooltip is clear of its own control (side ${side})`);
+    if (next !== null) assert.equal(overlaps(tip, next), false, 'and clear of the row under it — the defect this round exists for');
+
+    // On the screen, which a native `title` also manages and is worth keeping true.
+    const view = p.viewportSize()!;
+    assert.ok(tip.x >= 0 && tip.y >= 0 && tip.x + tip.w <= view.width && tip.y + tip.h <= view.height, 'and on the screen');
+  });
+});
+
+test('`M216` `B1`: it appears on keyboard focus, and describes without renaming (`D1129`)', async () => {
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.locator('[data-seq-row]').first().waitFor();
+
+    // **A tooltip a keyboard cannot reach is a tooltip some readers do not have**, and `title` had
+    // exactly that property.
+    const x = p.locator('[data-seq-remove]').first();
+    await x.focus();
+    await p.locator('#tflw-tip').waitFor();
+    assert.equal(await x.getAttribute('aria-describedby'), 'tflw-tip', 'the control points at what describes it');
+    assert.equal(await p.locator('#tflw-tip').getAttribute('role'), 'tooltip');
+
+    // **And the name survived the migration.** On an icon-only control `title` was doing two jobs;
+    // moving it to `data-tip` without this leaves the button announced as "button" and nothing
+    // else — a regression nothing on the page shows.
+    // **"Icon-only" is *carries no letter or digit*, and the first draft of this rule got it
+    // wrong in a useful way**: a length cutoff called the `as` clause button an icon, and `as` is
+    // the language's own keyword rendered as a two-character word. A glyph is a glyph because it
+    // is unreadable, not because it is short.
+    const nameless = await p.locator('[data-tip], [data-tip-derived]').evaluateAll((els) =>
+      els.filter((e) => ['BUTTON', 'A'].includes(e.tagName))
+        .filter((e) => !/[\p{L}\p{N}]/u.test((e.textContent ?? '').trim()))
+        .filter((e) => ((e.getAttribute('aria-label') ?? '').trim() === ''))
+        .map((e) => e.outerHTML.slice(0, 160)));
+    assert.deepEqual(nameless, [], 'every icon-only control still carries its own accessible name');
+
+    await p.keyboard.press('Escape');
+    await p.locator('#tflw-tip').waitFor({ state: 'detached' });
+    assert.equal(await x.getAttribute('aria-describedby'), null, 'and the pointer is dropped when it goes');
+  });
+});
+
+test('`M216` `B3`: a row’s hover is derived from whether it is truncated, asked at two widths (`D1127`)', async () => {
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.locator('[data-files]').waitFor();
+    const label = p.locator('.sidebar [data-outline-decl="test"]').first().locator('.outline-row').first();
+    const grip = p.locator('[data-grip="sidebar"]');
+    const setWidth = async (to: number): Promise<void> => {
+      const box = (await grip.boundingBox())!;
+      await p.mouse.move(box.x + box.width / 2, box.y + 100);
+      await p.mouse.down();
+      await p.mouse.move(to, box.y + 100, { steps: 6 });
+      await p.mouse.up();
+    };
+
+    // **Wide: the row says it all, so the tooltip says nothing.** Fifteen of the 67 titles were a
+    // row's own visible text said back to it, and this is what replaces them — not a shorter
+    // sentence, no sentence.
+    await setWidth(1430);
+    await p.mouse.move(4, 4);
+    await label.hover();
+    await p.waitForTimeout(600);
+    assert.equal(await p.locator('#tflw-tip').count(), 0, 'nothing is hidden, so nothing is offered');
+
+    // **Narrow: the same row, the same zero authored strings, and now there is something to say.**
+    await p.mouse.move(4, 4);
+    await setWidth(4);
+    await label.hover();
+    assert.equal(
+      await p.locator('#tflw-tip').textContent(),
+      'it accepts a basket and confirms one order',
+      'the part the ellipsis took, and only the part the ellipsis took',
+    );
+  });
+});
+
+test('`M216` `B1`: the hover is painted from the theme, in all four (`D1124`)', async () => {
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.locator('[data-seq-row]').first().waitFor();
+    await p.locator('[data-add-clause="test"] summary').click();
+    const seen = new Set<string>();
+    for (const theme of ['terminal', 'instrument', 'paper', 'blueprint']) {
+      // Through an element's OWN document, because this package is typechecked with `types:
+      // ["node"]` and no DOM lib — `document` is not a name here even though it exists in the
+      // browser the callback is serialised into. `tsx` strips types without checking them, so the
+      // first draft of both of these passed every gate and failed `tsc`: the file's own `S1`
+      // finding, arriving a third time.
+      await p.locator('body').evaluate((el, t) => { el.ownerDocument.documentElement.setAttribute('data-tflw-theme', t); }, theme);
+      await p.mouse.move(4, 4);
+      await p.locator('[data-add-go="tags"]').hover();
+      await p.locator('#tflw-tip').waitFor();
+      // **Compared against a probe painted from the same token**, rather than against a literal:
+      // a gate holding four hex values is a gate that has to be edited to repaint a theme, and
+      // `D1096` makes a theme a token set precisely so nothing downstream holds its values.
+      const [got, want] = await p.locator('#tflw-tip').evaluate((el) => {
+        const doc = el.ownerDocument;
+        const probe = doc.createElement('div');
+        probe.style.background = 'var(--panel2)';
+        doc.body.appendChild(probe);
+        const wanted = doc.defaultView!.getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return [doc.defaultView!.getComputedStyle(el).backgroundColor, wanted];
+      });
+      assert.equal(got, want, `${theme}: the tooltip is the theme's own surface`);
+      seen.add(got);
+      await p.mouse.move(4, 4);
+    }
+    // The vacuity control: four themes that all resolve to one colour would pass every equality
+    // above while proving the tooltip is painted with a constant.
+    assert.ok(seen.size >= 2, `the four themes are not one theme (${[...seen].join(', ')})`);
+  });
+});
+
+test('`M216` `C`: `send` and `run` each say what they do, and they do not say the same thing (`D1130`)', async () => {
+  // **One gate for slice `C`, and deliberately not five.** `§5` leaves *which controls have a
+  // hover, and how many* free on purpose — a gate holding a list of five is a gate that has to be
+  // edited to add a sixth, and pinning the sentences is how the last three Compose rounds froze
+  // this pane. What is not free is `D1130`: `send` and `run` sit inches apart, do different things,
+  // and the confusion between them **has a milestone named after it** — `M215` exists because
+  // pressing `send` was read as running the test and grading it. So the claim is the narrow one:
+  // both speak, and they are not saying the same sentence. Neither sentence is pinned.
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.locator('[data-compose-send]').first().waitFor();
+    const send = await p.locator('[data-compose-send]').first().getAttribute('data-tip');
+    const run = await p.locator('[data-run]').getAttribute('data-tip');
+    assert.ok((send ?? '').trim().length > 20, `send says what it does (${send})`);
+    assert.ok((run ?? '').trim().length > 20, `run says what it does (${run})`);
+    assert.notEqual(send, run, 'and the two controls the round exists to tell apart are told apart');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `M216` `D` — thirteen clauses could be added and none could be removed.
+//
+// **The hole was total and it was exactly one level above where the page was fine.** Rows —
+// declarations, requests, statements — have carried a `✕` with a refusal since `D1117`. Clauses
+// had nothing: 13 addable, 0 removable, and four of them in the worst state of the three, letting
+// you delete their contents one at a time and never the clause, so `headers` could be emptied to
+// nothing and still be there.
+//
+// **The first gate is a round trip over whatever the vocabulary holds, not a list of thirteen
+// names.** A gate naming the clauses is a gate that has to be edited to admit a fourteenth, and
+// `M214`'s `the-add-menu-hides-what-it-cannot-add` is this repository's own measured precedent for
+// a completeness gate freezing a pane. So: *every option the menu offers is either removable or
+// refuses with a reason*, asked of the menu itself.
+// ---------------------------------------------------------------------------
+
+/** A file whose test carries every band clause the menu can name, and whose request carries the
+ *  request ones — so the round trip is asked about clauses that are WRITTEN, not only drawn. */
+const FULL = [
+  '@crud @slow',
+  // `retry` is written ON the test line — `packages/ui/fixtures/project/tests/orders.tflw:13` is
+  // the shape. The first draft of this fixture put it on its own line and did not parse, and four
+  // gates then timed out waiting for a dirty marker a broken file can never produce.
+  'test "it carries every clause the band can draw" retry 2',
+  '  api POST /orders body { itemId: 1 } timeout 9s without redirects as "place"',
+  '    header "Authorization" is "Bearer t"',
+  '  expect status equals 201',
+  '',
+].join('\n');
+
+test('`M216` `D1`: every clause the menu offers can be removed, or refuses with a reason (`D1131`)', async () => {
+  await withRemovalFixture(FULL, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.locator('[data-add-clause="test"]').waitFor();
+    await p.locator('[data-add-clause="test"] summary').click();
+
+    // **The round trip, over the menu's own list.** Nothing here knows how many clauses there are
+    // or what they are called; it reads the vocabulary off the page and asks the same question of
+    // each member, so a fourteenth clause is covered the day someone adds it.
+    const options = await p.locator('[data-add-clause="test"] [data-add-option]').evaluateAll((els) =>
+      els.map((e) => ({ key: e.getAttribute('data-add-option')!, state: e.getAttribute('data-add-state')! })));
+    assert.ok(options.length >= 6, `the band's vocabulary is on the page (${options.length} clauses)`);
+
+    for (const o of options) {
+      const row = p.locator(`[data-add-clause="test"] [data-add-option="${o.key}"]`);
+      if (o.state === 'present') {
+        assert.equal(await row.locator('[data-add-remove]').count(), 1, `${o.key}: a present clause offers its removal`);
+      } else {
+        // An absent clause has nothing to remove, so the round trip is asked the other way: add it,
+        // and the removal has to appear. This is what makes the property a ROUND TRIP rather than
+        // an inventory of the file's current state.
+        await row.locator(`[data-add-go="${o.key}"]`).click();
+        await p.locator(`[data-add-clause="test"] [data-add-option="${o.key}"][data-add-state="present"]`).waitFor();
+        assert.equal(await row.locator('[data-add-remove]').count(), 1, `${o.key}: added, and now removable`);
+      }
+    }
+  });
+});
+
+test('`M216` `D1`: removing a clause unwrites it, and the bytes say so', async () => {
+  await withRemovalFixture(FULL, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.locator('[data-add-clause="test"] summary').click();
+
+    // `tags` is written in the file (`@crud @slow` above the test) and has no per-part control, so
+    // the menu is the only place its removal could live.
+    assert.equal(await p.locator('[data-add-option="tags"]').getAttribute('data-add-state'), 'present');
+    await p.locator('[data-add-option="tags"] [data-add-remove]').click();
+    await p.locator('[data-compose-dirty]').waitFor();
+
+    await p.locator('[data-tab="source"]').click();
+    await p.locator('[data-source="pending"]').waitFor();
+    const text = (await p.locator('[data-preview]').textContent())!;
+    assert.doesNotMatch(text, /@crud/, 'the tag line is gone from the pending bytes');
+    assert.match(text, /^test "it carries every clause the band can draw" retry 2$/m, 'and the test it was on is not, nor the clause beside it');
+    assert.match(text, /^ {2}api POST \/orders /m, 'nor anything under it');
+  });
+});
+
+test('`M216` `D2`: the last part takes its clause with it, and the lock that made that impossible is gone (`D1132`)', async () => {
+  // **This gate exists because the rule chosen in the grilling deadlocked.** *Refuse while it has
+  // content, empty it first* — and `TableEditor` disabled its row remove at `rows.length === 1`,
+  // so `with each` could never reach empty and could therefore never be removed at all.
+  await withRemovalFixture(FULL, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.locator('[data-add-clause="test"] summary').click();
+    await p.locator('[data-add-go="table"]').click();
+    await p.locator('[data-band-table-kind]').selectOption('inline');
+    await p.locator('[data-table-row-add]').click();
+    const rows = p.locator('[data-table-row-remove]');
+    assert.ok(await rows.count() >= 1);
+
+    // While it has rows, the menu refuses and says why — and the clause is still there afterwards,
+    // which is the half a refusal that silently succeeded would also satisfy.
+    await p.locator('[data-add-option="table"] [data-add-remove]').click();
+    const why = await p.locator('[data-add-refusal="table"]').textContent();
+    assert.match(why ?? '', /empty it first/, `the refusal says what to do (${why})`);
+    assert.equal(await p.locator('[data-add-option="table"]').getAttribute('data-add-state'), 'present', 'and refused means refused');
+
+    // **The last row is pressable**, which it was not before this round.
+    const last = p.locator('[data-table-row-remove]').last();
+    assert.equal(await last.isDisabled(), false, 'the last row is not locked');
+    while (await p.locator('[data-table-row-remove]').count() > 0) {
+      await p.locator('[data-table-row-remove]').last().click();
+    }
+    await p.locator('[data-add-clause="test"] [data-add-option="table"][data-add-state="addable"]').waitFor();
+  });
+});
+
+test('`M216` `D3`: `TF033` refuses by name, in both places the removal can be attempted (`D1133`)', async () => {
+  // A workload-bearing test must carry a threshold. **The rule is asked in the menu AND on the
+  // threshold row**, because `M214`'s own finding — a rule enforced where a thing is constructed is
+  // not enforced where it is patched — is exactly this shape one level up.
+  // The shape is `examples/storefront/tests/load.tflw`'s: a `ramp` line is what makes a test
+  // workload-bearing, and ONE threshold, because the gate's premise is *this is the last one*.
+  const workloadFile = [
+    'test "it is graded under load"',
+    '  ramp to 4 users over 2s',
+    '  threshold error rate is less than 1%',
+    '  api GET /items',
+    '  expect status equals 200',
+    '',
+  ].join('\n');
+  await withRemovalFixture(workloadFile, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+    await p.locator('[data-add-clause="test"] summary').click();
+
+    await p.locator('[data-add-option="thresholds"] [data-add-remove]').click();
+    const menu = await p.locator('[data-add-refusal="thresholds"]').textContent();
+    assert.match(menu ?? '', /TF033/, `the menu names the rule that refused (${menu})`);
+
+    // And the other door into the same forbidden state: removing the last threshold from the row.
+    await p.locator('[data-threshold-remove="0"]').click();
+    const row = await p.locator('[data-threshold-refusal]').textContent();
+    assert.match(row ?? '', /TF033/, `the row names it too (${row})`);
+    assert.equal(await p.locator('[data-threshold="0"]').count(), 1, 'and the threshold is still there');
+  });
+});
+
+test('`M216` `D4`: the request scope removes the same way, and an added-but-unwritten clause just stops being drawn', async () => {
+  await withRemovalFixture(FULL, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await openFirstRequest(p, base, 'x.tflw');
+    await editorTab(p, 'more');
+    await p.locator('[data-add-clause="request"] summary').click();
+
+    // **Written, so removing it is an edit to the bytes.** `timeout 9s` is on the request above.
+    assert.equal(await p.locator('[data-add-clause="request"] [data-add-option="timeout"]').getAttribute('data-add-state'), 'present');
+    await p.locator('[data-add-clause="request"] [data-add-option="timeout"] [data-add-remove]').click();
+    await p.locator('[data-compose-dirty]').waitFor();
+    await p.locator('[data-tab="source"]').click();
+    await p.locator('[data-source="pending"]').waitFor();
+    assert.doesNotMatch((await p.locator('[data-preview]').textContent())!, /timeout 9s/, 'the clause is unwritten');
+
+    // **Drawn but never written, so removing it is forgetting a row.** The reader cannot tell the
+    // two cases apart, and the point of the gate is that they do not have to.
+    await p.locator('[data-tab="compose"]').click();
+    await editorTab(p, 'more');
+    await p.locator('[data-add-clause="request"] summary').click();
+    await p.locator('[data-add-clause="request"] [data-add-go="service"]').click();
+    await p.locator('[data-add-clause="request"] [data-add-option="service"][data-add-state="present"]').waitFor();
+    await p.locator('[data-add-clause="request"] [data-add-option="service"] [data-add-remove]').click();
+    await p.locator('[data-add-clause="request"] [data-add-option="service"][data-add-state="addable"]').waitFor();
+    assert.equal(await p.locator('[data-field="service"]').count(), 0, 'and the field it drew is gone with it');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `M216` `E` — the chrome, and the second split.
+//
+// `§1.2`'s measurement is the whole of this slice: the add menu's label was at **12.43:1** and its
+// **border at 1.16:1**, on a fill the same colour as the page. *"Hardly visible"* was right and
+// the obvious repair would have brightened the one number that already passed.
+// ---------------------------------------------------------------------------
+
+/** WCAG relative luminance and the contrast ratio, over a browser's own `rgb(...)` strings. */
+const contrast = (a: string, b: string): number => {
+  const lum = (css: string): number => {
+    const [r, g, bl] = (/rgba?\(([^)]+)\)/.exec(css)![1]!).split(',').slice(0, 3).map((n) => Number(n.trim()) / 255);
+    const c = (v: number): number => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * c(r!) + 0.7152 * c(g!) + 0.0722 * c(bl!);
+  };
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p) as [number, number];
+  return (x + 0.05) / (y + 0.05);
+};
+
+test('`M216` `E`: the add menu’s options are drawn as controls, in all four themes (`D1134`)', async () => {
+  await withRemovalFixture(FULL, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.locator('[data-add-clause="test"] summary').click();
+    for (const theme of ['terminal', 'instrument', 'paper', 'blueprint']) {
+      // Through an element's OWN document, because this package is typechecked with `types:
+      // ["node"]` and no DOM lib — `document` is not a name here even though it exists in the
+      // browser the callback is serialised into. `tsx` strips types without checking them, so the
+      // first draft of both of these passed every gate and failed `tsc`: the file's own `S1`
+      // finding, arriving a third time.
+      await p.locator('body').evaluate((el, t) => { el.ownerDocument.documentElement.setAttribute('data-tflw-theme', t); }, theme);
+      const read = await p.locator('[data-add-clause="test"] [data-add-option]').evaluateAll((els) =>
+        els.map((li) => {
+          const view = li.ownerDocument.defaultView!;
+          const go = li.querySelector('[data-add-go]')!;
+          const s = view.getComputedStyle(go);
+          return {
+            key: li.getAttribute('data-add-option'),
+            state: li.getAttribute('data-add-state'),
+            border: s.borderTopColor,
+            fill: s.backgroundColor,
+            label: s.color,
+            behind: view.getComputedStyle(li.parentElement!).backgroundColor,
+          };
+        }));
+      assert.ok(read.length >= 6, 'the vacuity control: a menu with no options passes every floor below');
+      for (const o of read) {
+        // **Every label, not only the enabled ones.** The disabled-label figure was 4.18:1, and it
+        // moved by removing its subject: a present clause is not *unavailable*, it is something
+        // this test says, so it reads at full strength and only the ADD is disabled.
+        const against = o.state === 'addable' ? o.fill : o.behind;
+        assert.ok(contrast(o.label, against) >= 4.5,
+          `${theme}/${o.key}: the label reads (${contrast(o.label, against).toFixed(2)}:1)`);
+        if (o.state === 'addable') {
+          assert.ok(contrast(o.border, o.fill) >= 3,
+            `${theme}/${o.key}: there is a button around it (${contrast(o.border, o.fill).toFixed(2)}:1, was 1.16:1)`);
+        }
+      }
+    }
+  });
+});
+
+test('`M216` `E`: the Compose columns are the reader’s too, by the same grip (`D1135`)', async () => {
+  await withRemovalFixture(FULL, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.locator('[data-grip="compose"]').waitFor();
+    const grip = p.locator('[data-grip="compose"]');
+    const seqWidth = (): Promise<number> => p.locator('.seq-col').evaluate((el) => Math.round(el.getBoundingClientRect().width));
+
+    // **One mechanism, so the same claims hold without being reimplemented**: a separator role, a
+    // keyboard, a clamp at both ends, and a memory that survives a reload.
+    assert.equal(await grip.getAttribute('role'), 'separator');
+    assert.equal(await seqWidth(), 300, 'the default is the ceiling the grid used to hold');
+    await grip.focus();
+    await p.keyboard.press('ArrowRight');
+    assert.equal(await seqWidth(), 316);
+
+    const box = (await grip.boundingBox())!;
+    await p.mouse.move(box.x + box.width / 2, box.y + 60);
+    await p.mouse.down();
+    await p.mouse.move(1430, box.y + 60, { steps: 6 });
+    await p.mouse.up();
+    assert.equal(await seqWidth(), 620, 'clamped at the ceiling');
+    await p.mouse.move((await grip.boundingBox())!.x + 3, box.y + 60);
+    await p.mouse.down();
+    await p.mouse.move(4, box.y + 60, { steps: 6 });
+    await p.mouse.up();
+    assert.equal(await seqWidth(), 220, 'and at the floor');
+
+    assert.equal(
+      await grip.evaluate((el) => el.ownerDocument.defaultView!.localStorage.getItem('tflw.compose.width')),
+      '220',
+      'remembered under its own key — the two grips do not share a width',
+    );
+    await p.reload();
+    await p.locator('[data-grip="compose"]').waitFor();
+    assert.equal(await seqWidth(), 220);
+    // And the project pane is untouched by any of it, which is what *its own key* buys.
+    assert.equal(await p.locator('.sidebar').evaluate((el) => Math.round(el.getBoundingClientRect().width)), 320);
   });
 });
