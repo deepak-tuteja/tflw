@@ -34,7 +34,7 @@ import { matchingFiles, parseQuery } from './search';
 import { Sidebar } from './Sidebar';
 import type { MenuTarget } from './Sidebar';
 import { NewThing, type NewMode } from './NewThing';
-import { fileOutline } from './outline';
+import { fileOutline, pageOpeners } from './outline';
 
 interface LiveRun {
   readonly id: string;
@@ -835,7 +835,22 @@ export function App() {
    * A draft counts as ready because a draft IS that path's text, by construction (`D1142`).
    */
   const fileReady = draft !== null || openFileView?.path === path;
-  const outline = useMemo(() => (fileText === null || openFileView === null ? null : fileOutline(openFileView.path, fileText)), [openFileView, fileText]);
+  /**
+   * **Which actions put a page on screen, project-wide** — `M219` `B` (`D1161`).
+   *
+   * The index computed it once, on the server, from the same parse every other index fact comes
+   * from; this is the page flattening it into the one shape the fold asks for. It is names and not
+   * paths because that is how a `call` names an action, and an action reached through a `use` is
+   * declared in the file it came from — so the set has to span the project, not the open file.
+   */
+  const opensPage = useMemo(
+    () => pageOpeners(project?.files ?? []),
+    [project],
+  );
+  const outline = useMemo(
+    () => (fileText === null || openFileView === null ? null : fileOutline(openFileView.path, fileText, opensPage)),
+    [openFileView, fileText, opensPage],
+  );
 
   if (door === null || noProject) {
     // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back

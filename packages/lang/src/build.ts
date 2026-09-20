@@ -12,8 +12,8 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { ApiBody, ApiHeader, ApiStep, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CsrfStmt, DataTable, ExpectStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, OpenStmt, PathSegment, PauseStmt, Stage, Step, StringLit, Subject, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WithinBlock, Workload } from './ast.js';
-import { quantifiable } from './ast.js';
+import type { AcceptDialogStmt, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ExpectStmt, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
+import { pollable, quantifiable } from './ast.js';
 import { parse as parseTokens, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
 
@@ -471,7 +471,20 @@ export type SubjectSpec =
   | { readonly kind: 'locator'; readonly locator: LocatorSpec }
   /** `expect page has no a11y violations` (`M200` `A3-5`). Carries no data of its own; `ast.ts`
    *  calls it and `response` deliberately parallel. */
-  | { readonly kind: 'page' };
+  | { readonly kind: 'page' }
+  /* ── The three browser subjects no form has ever offered — `M219` `G` (`D1166`) ───────────────
+   *
+   * Measured when `M219` was scoped: the language has **16** assertion subjects and every door's
+   * select offered **11**. These three are browser-only, appear **26 times** across the two
+   * corpora, and had never been offered anywhere — not dropped by a table, simply never listed.
+   * That is the silent-omission failure `D1076` refuses, which is why they land here rather than
+   * behind a decision about which door deserves them. */
+  /** `expect request to "<url>" [with method "<M>"] was made` — a request the page itself made. */
+  | { readonly kind: 'networkRequest'; readonly urlPattern: string; readonly method: string }
+  /** `expect dialog message equals "…"` — what the native dialog said. */
+  | { readonly kind: 'dialogMessage' }
+  /** `expect dialog type equals "prompt"` — which kind of native dialog it was. */
+  | { readonly kind: 'dialogType' };
 
 /**
  * A locator, as a form holds it — `M200` `A3-5`.
@@ -901,6 +914,221 @@ export function buildWithin(spec: WithinSpec): BuildResult<WithinBlock> {
   return { ok: true, node: { type: 'WithinBlock', locator: locator.node, frame: spec.frame, body: spec.body, span: SYNTHETIC } };
 }
 
+/* ── The rest of the browser vocabulary — `M219` `C` (`D1162`) ──────────────────────────────────
+ *
+ * **Measured before it was written: the BROWSER door could construct three of the language's
+ * twenty-two browser kinds**, and drew the other nineteen as a plain code line with no disabled
+ * control and no reason — 650 statements, 27% of all browser steps in the two corpora, which is
+ * exactly the pane `D1082` refuses. Five of the nineteen already had builders sitting here
+ * unreachable (`buildSelect`, `buildCheck`, `buildPress`, `buildWithin`), which is the `M205` /
+ * `M209` shape a fourth time: written, tested, and offered by nothing.
+ *
+ * **They are cheap because the AST says so.** Four take a locator and nothing else, two take no
+ * fields at all, three take one scalar, four take a locator and one more field, three are blocks
+ * whose head is a locator or a name, and three have a form of their own. The expensive half was
+ * never the building.
+ *
+ * **A BLOCK'S BODY IS CARRIED, NEVER REBUILT.** `within`, `switch to new tab` and `download` hold
+ * statements; an edit to the head of one is an edit to its locator or its name, and the body goes
+ * back on untouched. That is `S2`'s rule — *what the spec cannot say is carried* — and here it is
+ * not a nicety: rebuilding a body from a form would be a second authoring surface for every
+ * statement inside it, which is the whole of what `D1087` refuses.
+ */
+
+/** `hover`/`scroll to` — a locator and nothing else. */
+export function buildHover(spec: LocatorSpec): BuildResult<HoverStmt> {
+  const locator = buildLocator(spec);
+  return locator.ok ? { ok: true, node: { type: 'HoverStmt', locator: locator.node, span: SYNTHETIC } } : locator;
+}
+
+export function buildScroll(spec: LocatorSpec): BuildResult<ScrollStmt> {
+  const locator = buildLocator(spec);
+  return locator.ok ? { ok: true, node: { type: 'ScrollStmt', locator: locator.node, span: SYNTHETIC } } : locator;
+}
+
+/** `dismiss dialog` and `close tab` — no fields, so no refusal. They are builders rather than
+ *  literals at the call site for the reason the module header gives: a span this file owns, and
+ *  one construction path the pane cannot step around (`D1087`). */
+export function buildDismissDialog(): BuildResult<DismissDialogStmt> {
+  return { ok: true, node: { type: 'DismissDialogStmt', span: SYNTHETIC } };
+}
+
+export function buildCloseTab(): BuildResult<CloseTabStmt> {
+  return { ok: true, node: { type: 'CloseTabStmt', span: SYNTHETIC } };
+}
+
+/** `accept dialog [with "<text>"]` — the answer typed into a `prompt` (`D800`). Blank means the
+ *  bare form, which accepts with the empty string; it is a real spelling and not a missing value,
+ *  which is why this takes a string rather than a `string | null`. */
+export function buildAcceptDialog(text: string): BuildResult<AcceptDialogStmt> {
+  if (text.trim() === '') return { ok: true, node: { type: 'AcceptDialogStmt', span: SYNTHETIC } };
+  const value = parseValueText(text);
+  if (!value.ok) return bad(value.reason);
+  return { ok: true, node: { type: 'AcceptDialogStmt', text: value.node, span: SYNTHETIC } };
+}
+
+/** `switch to tab <n>` — an index, and the language counts from 0. A non-integer is refused here
+ *  rather than at the write, because `switch to tab 1.5` lexes as a number and means nothing. */
+export function buildSwitchToTab(index: string): BuildResult<SwitchToTabStmt> {
+  const n = Number(index.trim());
+  if (index.trim() === '' || !Number.isInteger(n) || n < 0) return bad('`switch to tab` takes a whole tab number, counting from 0');
+  return { ok: true, node: { type: 'SwitchToTabStmt', index: n, span: SYNTHETIC } };
+}
+
+/** `screenshot "<name>"` — the name the file is written under, so an empty one is refused for the
+ *  same reason an empty locator is: it produces an artefact nobody can find. */
+export function buildScreenshot(name: string): BuildResult<ScreenshotStmt> {
+  if (name.trim() === '') return bad('`screenshot` needs a name — it is what the image is filed under');
+  return { ok: true, node: { type: 'ScreenshotStmt', name: stringLit(name.trim()), span: SYNTHETIC } };
+}
+
+export interface DropFileSpec {
+  readonly filePath: string;
+  readonly locator: LocatorSpec;
+}
+
+/** `drop file "<path>" on <locator>`. The path is a plain string literal, never interpolated —
+ *  the same choice `matches file` makes, and for the same reason: it is read from disk directly. */
+export function buildDropFile(spec: DropFileSpec): BuildResult<DropFileStmt> {
+  if (spec.filePath.trim() === '') return bad('`drop file` needs a path — the file to drop, relative to this test file');
+  const locator = buildLocator(spec.locator);
+  if (!locator.ok) return locator;
+  return { ok: true, node: { type: 'DropFileStmt', filePath: stringLit(spec.filePath.trim()), locator: locator.node, span: SYNTHETIC } };
+}
+
+export interface DragSpec {
+  readonly from: LocatorSpec;
+  readonly to: LocatorSpec;
+}
+
+/** `drag <locator> to <locator>` — two locators, each refused on its own terms so the field that
+ *  is empty is the field the message names. */
+export function buildDrag(spec: DragSpec): BuildResult<DragStmt> {
+  const from = buildLocator(spec.from);
+  if (!from.ok) return from;
+  const to = buildLocator(spec.to);
+  if (!to.ok) return to;
+  return { ok: true, node: { type: 'DragStmt', from: from.node, to: to.node, span: SYNTHETIC } };
+}
+
+/** `switch to new tab` and its body. The body is the caller's — see the family note above. */
+export function buildSwitchToNewTab(body: readonly Step[]): BuildResult<SwitchToNewTabBlock> {
+  if (body.length === 0) return bad('`switch to new tab` scopes the steps inside it, so it needs at least one');
+  return { ok: true, node: { type: 'SwitchToNewTabBlock', body, span: SYNTHETIC } };
+}
+
+export interface DownloadSpec {
+  /** The variable the downloaded file is bound to — `download as receipt`. */
+  readonly name: string;
+  readonly body: readonly Step[];
+}
+
+export function buildDownload(spec: DownloadSpec): BuildResult<DownloadBlock> {
+  if (!/^[A-Za-z_]\w*$/.test(spec.name.trim())) return bad('`download as` binds a name — a word, starting with a letter or `_`');
+  if (spec.body.length === 0) return bad('a `download` block holds the step that starts the download, so it needs at least one');
+  return { ok: true, node: { type: 'DownloadBlock', name: spec.name.trim(), body: spec.body, span: SYNTHETIC } };
+}
+
+export interface FillFormSpec {
+  readonly rows: readonly { readonly field: string; readonly value: string }[];
+}
+
+/** `fill form` and its rows — the repeated-row shape the request editor's headers already have.
+ *  Each value is parsed as a **value**, `buildFill`'s rule and for its reason. */
+export function buildFillForm(spec: FillFormSpec): BuildResult<FillFormStmt> {
+  if (spec.rows.length === 0) return bad('a `fill form` needs at least one field to fill');
+  const rows: FillFormRow[] = [];
+  for (const row of spec.rows) {
+    if (row.field.trim() === '') return bad('every `fill form` row names a field');
+    const value = parseValueText(row.value);
+    if (!value.ok) return bad(`\`${row.field.trim()}\`: ${value.reason}`);
+    rows.push({ type: 'FillFormRow', field: stringLit(row.field.trim()), value: value.node, span: SYNTHETIC });
+  }
+  return { ok: true, node: { type: 'FillFormStmt', rows, span: SYNTHETIC } };
+}
+
+export interface StubSpec {
+  readonly method: HttpMethod;
+  readonly urlPattern: string;
+  readonly status: string;
+  /** The stubbed document, as typed — an object or a top-level array (`D639`), or blank for none. */
+  readonly body: string;
+}
+
+/** `stub <METHOD> "<url pattern>" with <status> [body …]`. */
+export function buildStub(spec: StubSpec): BuildResult<StubStmt> {
+  if (spec.urlPattern.trim() === '') return bad('`stub` needs a URL pattern — the requests it stands in for');
+  const status = Number(spec.status.trim());
+  if (spec.status.trim() === '' || !Number.isInteger(status) || status < 100 || status > 599) {
+    return bad('`stub` answers with an HTTP status — a whole number between 100 and 599');
+  }
+  let body: ObjectLit | ArrayLit | null = null;
+  if (spec.body.trim() !== '') {
+    const parsed = parseValueText(spec.body);
+    if (!parsed.ok) return bad(parsed.reason);
+    if (parsed.node.type !== 'ObjectLit' && parsed.node.type !== 'ArrayLit') {
+      return bad('a stubbed body is a JSON object or a top-level array');
+    }
+    body = parsed.node;
+  }
+  return {
+    ok: true,
+    node: {
+      type: 'StubStmt',
+      method: spec.method,
+      urlPattern: stringLit(spec.urlPattern.trim()),
+      status: { type: 'NumberLit', value: status, raw: String(status), span: SYNTHETIC } as NumberLit,
+      body,
+      span: SYNTHETIC,
+    },
+  };
+}
+
+export interface WaitUntilUiSpec {
+  /** The condition, built through `buildExpect` so there is one assertion builder and not two. */
+  readonly expect: ExpectSpec;
+  /** `for <duration>` — how long it must hold continuously. Blank for the original semantics. */
+  readonly hold: string;
+  /** `timeout wait <duration>` — this step's own poll budget. Blank for the env's. */
+  readonly wait: string;
+}
+
+/**
+ * `wait until <pollable subject> …` — `M219` `C`.
+ *
+ * **It goes through `buildExpect`**, which is what keeps the browser's polling assertion and the
+ * ordinary one spelling a subject and a matcher the same way. What this adds is the two clauses an
+ * `expect` has no room for, and the one refusal that is its own: `pollable()` is the parser's own
+ * predicate, so a subject this accepts is a subject the file will parse back.
+ */
+export function buildWaitUntilUi(spec: WaitUntilUiSpec): BuildResult<WaitUntilUiStmt> {
+  const built = buildExpect(spec.expect);
+  if (!built.ok) return built;
+  if (!pollable(built.node.subject)) {
+    return bad('`wait until` re-reads its subject until it comes true, so it needs one that can change — an element, the page, a network request, or a response’s status, header or body');
+  }
+  const ms = (text: string, what: string): number | null | string => {
+    if (text.trim() === '') return null;
+    const parsed = parseValueText(text);
+    if (!parsed.ok) return parsed.reason;
+    if (parsed.node.type !== 'DurationLit') return `\`${what}\` is a length of time — write it as \`500ms\`, \`2s\` or \`1m\``;
+    return parsed.node.ms;
+  };
+  const holdMs = ms(spec.hold, 'for');
+  if (typeof holdMs === 'string') return bad(holdMs);
+  const waitMs = ms(spec.wait, 'timeout wait');
+  if (typeof waitMs === 'string') return bad(waitMs);
+  /* `TF055`'s two operands are now both in the file, which is the whole reason `timeout wait` was
+     added to this step — so the refusal can be made here rather than left to a run. */
+  if (holdMs !== null && waitMs !== null && holdMs >= waitMs) {
+    return bad('the hold has to fit inside the budget — `for` must be shorter than `timeout wait`');
+  }
+  return {
+    ok: true,
+    node: { type: 'WaitUntilUiStmt', subject: built.node.subject, matcher: built.node.matcher, holdMs, waitMs, span: SYNTHETIC },
+  };
+}
+
 function buildSubject(spec: SubjectSpec): BuildResult<Subject> {
   switch (spec.kind) {
     case 'status':
@@ -930,6 +1158,25 @@ function buildSubject(spec: SubjectSpec): BuildResult<Subject> {
       if (!locator.ok) return locator;
       return { ok: true, node: { type: 'LocatorSubject', locator: locator.node, span: SYNTHETIC } };
     }
+    case 'networkRequest':
+      if (spec.urlPattern.trim().length === 0) return bad('a network-request subject needs a URL pattern — it is matched as a substring of the request’s full URL');
+      return {
+        ok: true,
+        node: {
+          type: 'NetworkRequestSubject',
+          ref: {
+            type: 'NetworkRequestRef',
+            urlPattern: stringLit(spec.urlPattern.trim()),
+            method: spec.method.trim() === '' ? null : stringLit(spec.method.trim().toUpperCase()),
+            span: SYNTHETIC,
+          },
+          span: SYNTHETIC,
+        },
+      };
+    case 'dialogMessage':
+      return { ok: true, node: { type: 'DialogMessageSubject', span: SYNTHETIC } };
+    case 'dialogType':
+      return { ok: true, node: { type: 'DialogTypeSubject', span: SYNTHETIC } };
     case 'value': {
       const path = bodyPath(spec.ref);
       if (typeof path === 'string') return bad(path);

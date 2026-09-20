@@ -40,7 +40,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, relative, dirname, extname, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes } from 'node:crypto';
-import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
+import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, pageOpening, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
 import { parseBaseline, resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 import { importersOf, planDelete, planMove, resolveSpecifier, type RefactorPlan } from './ui-refactor.js';
@@ -165,6 +165,34 @@ export interface ProjectFile {
    * not something this explorer can reason about or repair.
    */
   readonly imports: readonly string[];
+  /**
+   * Every `action` this file declares, and **whether calling it puts a page on screen** — `M219`
+   * `B` (`D1161`).
+   *
+   * The BROWSER door's Compose groups a body by **session**, and a session starts at an `open` or
+   * at a `call` to an action that reaches one. That question cannot be answered from the file the
+   * call is written in: 17 of the corpus's 258 browser tests have no `open` at all and every one
+   * of them reaches its page through a `call`, usually to an action declared somewhere else.
+   *
+   * **So it is computed here, once, where every other index fact is computed** — from the same
+   * parse, over every file in the project, to a fixpoint (an action that calls an action that
+   * opens, opens). The page asks the index; it does not re-derive. The alternative the measurement
+   * offered — *any `call` starts a session* — is right in all 167 calls inside browser-bearing
+   * tests **by luck**: 18 of the 22 declared actions are api-only and are simply never called from
+   * a browser test. One seeding helper called from a browser test breaks it silently.
+   *
+   * An action in a file this index could not parse is absent rather than `false`, which is the
+   * same distinction `tests` already carries after a recovery.
+   */
+  readonly actions: readonly ProjectAction[];
+}
+
+/** An `action` declaration, as the index sees it (`M219` `B`). */
+export interface ProjectAction {
+  readonly name: string;
+  readonly line: number;
+  /** See `ProjectFile.actions`. */
+  readonly opensPage: boolean;
 }
 
 export interface ProjectView {
@@ -464,9 +492,32 @@ export async function readProject(root: string): Promise<ProjectView> {
   const env = selectEnv(parsed.config, { envVar: process.env.TFLW_ENV });
   const resolved = resolveConfig(parsed.config, env); // the page reads `exclude`/`report dir` only — a URL override does not change either
   const files: ProjectFile[] = [];
+  /**
+   * **`opensPage`, folded across the whole project** — `M219` `B` (`D1161`).
+   *
+   * Gathered while the files are read and resolved afterwards, because the answer is transitive
+   * and an action's callee is usually in another file: `pageOpening` says *this body has an `open`*
+   * and *this body calls these names*, and the fixpoint below turns the pair into one boolean per
+   * action. Names are project-wide, which is how a `use "actions.tflw"` reaches one — an over-wide
+   * resolution rather than a per-file one, and over-wide is the direction `D1076` tolerates.
+   *
+   * **The loop terminates because the set only grows**: each pass adds at least one name or stops,
+   * and there are finitely many names. `checkActionCycles` already refuses a cyclic action, so the
+   * cycle case is one the checker has red before this runs — but this does not depend on that, and
+   * deliberately: an index that hung on a file the checker rejects would be a page that never
+   * loads for the author trying to fix it.
+   */
+  const declared: { name: string; opens: boolean; calls: readonly string[] }[] = [];
+  const perFile = new Map<string, { name: string; line: number }[]>();
   for (const file of await discoverTests(root, resolved.exclude, resolved.reportDir)) {
     const source = await readFile(file, 'utf8');
     const { program, diagnostics } = parseSource(source);
+    const path = relative(root, file).split(sep).join('/');
+    perFile.set(path, program.actions.map((a) => ({ name: a.name, line: a.span.start.line })));
+    for (const a of program.actions) {
+      const { opens, calls } = pageOpening(a.body);
+      declared.push({ name: a.name, opens, calls });
+    }
     files.push({
       path: relative(root, file).split(sep).join('/'),
       tests: program.tests.map((t) => ({
@@ -487,8 +538,21 @@ export async function readProject(root: string): Promise<ProjectView> {
       diagnostics: diagnostics.length,
       errors: diagnostics.filter((d) => d.severity === 'error').length,
       warnings: diagnostics.filter((d) => d.severity === 'warning').length,
+      actions: [],
     });
   }
+  const opensPage = new Set(declared.filter((a) => a.opens).map((a) => a.name));
+  for (;;) {
+    const before = opensPage.size;
+    for (const a of declared) {
+      if (!opensPage.has(a.name) && a.calls.some((c) => opensPage.has(c))) opensPage.add(a.name);
+    }
+    if (opensPage.size === before) break;
+  }
+  const indexed: ProjectFile[] = files.map((f) => ({
+    ...f,
+    actions: (perFile.get(f.path) ?? []).map((a) => ({ ...a, opensPage: opensPage.has(a.name) })),
+  }));
   const authorization = {
     envName: resolved.envName,
     targets: locateTargets(resolved.authorizedTargets, parsed.config, env),
@@ -496,7 +560,7 @@ export async function readProject(root: string): Promise<ProjectView> {
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
     sessions: sessionViews(parsed.config, resolved),
   };
-  return { root, envs, reportDir: resolved.reportDir, files, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
+  return { root, envs, reportDir: resolved.reportDir, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
 }
 
 /**

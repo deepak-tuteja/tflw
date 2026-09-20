@@ -43,6 +43,9 @@ import type {
   ThresholdDecl,
   UseDecl,
   WaitUntilApiStmt,
+  WithinBlock,
+  SwitchToNewTabBlock,
+  DownloadBlock,
   Workload,
 } from '@tflw/lang';
 
@@ -81,10 +84,51 @@ export interface OutlineStatement {
    *  nested one counted there would make the two sides disagree by construction. */
   readonly nested: boolean;
   /** Where this statement is, as `replaceInSource` names it (`M210` `S2`) — an index pair, stable
-   *  under formatting where a line is not. `null` for a nested row: a `wait until api`'s expects
-   *  are inside its block, not in the body's own list, so the pair cannot address them. */
+   *  under formatting where a line is not. `null` for a nested row that has no owning block: a
+   *  `wait until api`'s expects are inside its block, not in the body's own list, so the pair
+   *  cannot address them. For a row inside a **scoping block** this is the BLOCK's address, and
+   *  `inner` says which of its statements this is (`M219` `D`). */
   readonly stepPath: StepPath | null;
+  /**
+   * **This row's index inside the block that holds it** — `M219` `D` (`D1163`), `null` for a step
+   * of the body's own list.
+   *
+   * An edit to a scoped statement is an edit to **the block**: build the new inner node, put it
+   * back in the block's body at this index, rebuild the block through `buildWithin` (or its two
+   * siblings) and replace the body step. That needs no new address grammar and no change to
+   * `insert.ts` — the address is still one index pair, and `inner` is the second half of *which
+   * statement*, held on the row rather than derived by the reader.
+   */
+  readonly inner: number | null;
+  /**
+   * **The statements this row scopes** — `M219` `D`, `null` for a row that is not a block.
+   *
+   * Measured: `within` is the **third-commonest browser construct** (433 across the two corpora)
+   * and **397 of its 405 blocks wrap exactly one statement**; `switch to new tab` and `download`
+   * are single-statement in every one of their 3 occurrences. So the language calls it a block and
+   * the corpus writes it as *a scope on one gesture, spread over two lines* — and before this
+   * round `outline.ts` never walked a body at all, so **430 statements corpus-wide were not rows**:
+   * one unaddressable row whose text happened to contain the inner gesture.
+   *
+   * It is not cosmetic. `review-submission.tflw:29` carries a comment explaining that unscoped,
+   * the assertion read a string the test had just typed into the very field it was checking had
+   * cleared. **A scope that is invisible in the sequence is a correctness hazard.**
+   *
+   * Each row here is `nested` and carries `inner`; the block itself stays one step of the body,
+   * placed once, which is what keeps `outline.test.ts`'s per-kind equality green.
+   */
+  readonly body: readonly OutlineStatement[] | null;
+  /** The block this row is inside, when `inner` is set — the node an edit rebuilds. `null` for a
+   *  step of the body's own list (`M219` `D`). */
+  readonly owner: WithinBlock | SwitchToNewTabBlock | DownloadBlock | null;
   readonly node: Step;
+}
+
+/** The three block-shaped steps whose bodies this module walks (`M219` `D`). `wait until api` is
+ *  deliberately not among them: its nested rows are `expect`s inside a polling request and are
+ *  the request's attachments, which `request()` already produces. */
+export function isScopingBlock(step: Step): step is WithinBlock | SwitchToNewTabBlock | DownloadBlock {
+  return step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock';
 }
 
 /** A request and everything that belongs to it — the unit `D1073` puts on screen. */
@@ -116,6 +160,43 @@ export interface OutlineRequest {
 export interface OutlineBody {
   readonly preamble: readonly OutlineStatement[];
   readonly requests: readonly OutlineRequest[];
+  /**
+   * **The sessions this body opens** — `M219` `B` (`D1160`), and the part of the fold that is not
+   * about requests at all.
+   *
+   * `preamble` and `requests` are the **setup** phase: everything above the first session start,
+   * grouped exactly as they always were. From the session start down, a session owns what follows
+   * it, and the next session start ends it.
+   *
+   * **This is not a per-door projection and deliberately so.** A session is a fact about the file —
+   * a page is on screen from the `open` until another one replaces it — so it is folded once, here,
+   * and both doors draw the same picture. `D1160` asked for a browser arm; two folds of one body,
+   * chosen by which door is looking, is the two-implementations failure this module's own header
+   * refuses, and the measurement that forced the fold (**1455 of 1927 browser steps drawn as
+   * readers of an `api` response, 75.5%**) was taken on the API door's grouping. Recorded as an
+   * amendment in `PLAN_M219_BROWSER_DOOR.md` §3 rather than done quietly.
+   */
+  readonly sessions: readonly OutlineSession[];
+}
+
+/**
+ * A page, and every statement made against it — `M219` `B` (`D1160`, `D1161`).
+ *
+ * **The group's head is a statement and not a new kind of thing.** An `open` is an ordinary step
+ * with an ordinary address, so it stays one: it is selectable, editable and removable exactly as
+ * it was, and what changed is only that the rows under it are drawn beneath it. A `session` kind
+ * in `selectedAt` would have been a second answer to *what is this row*.
+ *
+ * `body` is a whole `OutlineBody` because **an `api` request can stand inside a session** — 18 of
+ * them across 14 declarations in the two corpora — and the request fold is what makes an `expect
+ * status equals 200` under one read as that request's rather than as the page's. A session never
+ * contains a session: a second page start ends the first one, which is what `groupBody` does and
+ * why the recursion is exactly one level deep.
+ */
+export interface OutlineSession {
+  /** The `open` — or the `call` the project index says opens a page (`D1161`). */
+  readonly head: OutlineStatement;
+  readonly body: OutlineBody;
 }
 
 export interface OutlineHook {
@@ -170,9 +251,24 @@ export interface FileOutline {
   readonly diagnostics: readonly Diagnostic[];
 }
 
-/** Every statement in a body, in the order they were placed — what the completeness floor counts. */
+/** Every statement in a body, in the order they were placed — what the completeness floor counts.
+ *  A session's head is one of them (`M219` `B`): it is an ordinary step of the body's own list, so
+ *  a fold that dropped it here would make the equality `outline.test.ts` asserts per kind fail on
+ *  every `open` in both corpora, which is the direction that gate is pointed. */
 export function statementsOf(body: OutlineBody): OutlineStatement[] {
-  return [...body.preamble, ...body.requests.flatMap((r) => r.attached)];
+  /* A block's rows come out beside it, `nested`, so the per-kind equality `outline.test.ts`
+     asserts still counts the block once and skips what is inside it (`M219` `D`). */
+  const withBody = (s: OutlineStatement): OutlineStatement[] => [s, ...(s.body ?? [])];
+  return [
+    ...body.preamble.flatMap(withBody),
+    ...body.requests.flatMap((r) => r.attached.flatMap(withBody)),
+    ...body.sessions.flatMap((s) => [...withBody(s.head), ...statementsOf(s.body)]),
+  ];
+}
+
+/** Every request in a body, the sessions' own included (`M219` `B`). */
+export function requestsOf(body: OutlineBody): OutlineRequest[] {
+  return [...body.requests, ...body.sessions.flatMap((s) => requestsOf(s.body))];
 }
 
 /** Whether a statement is this door's to edit (`D1078`). Neutral vocabulary is everybody's. */
@@ -270,15 +366,32 @@ function isRequest(step: Step): step is ApiStep | WaitUntilApiStmt {
   return step.type === 'ApiStep' || step.type === 'WaitUntilApiStmt';
 }
 
-function statement(step: Step, notes: FileNotes, stepPath: StepPath | null, nested = false): OutlineStatement {
+function statement(
+  step: Step,
+  notes: FileNotes,
+  stepPath: StepPath | null,
+  nested = false,
+  inner: number | null = null,
+  owner: WithinBlock | SwitchToNewTabBlock | DownloadBlock | null = null,
+): OutlineStatement {
   return {
     nested,
     stepPath,
+    inner,
     kind: step.type,
     line: step.span.start.line,
     lens: STEP_LENS[step.type],
-    text: render(step),
+    /* **A block's own text is its head line and nothing else** (`M219` `D`). `print()` renders a
+       block with its body, which is what a reader wants of a file and exactly not what a row wants
+       of a scope: every caller took `.split('\n')[0]` off it, in four places. The rows the body
+       became are next door in `body`. */
+    text: isScopingBlock(step) ? (render(step).split('\n')[0] ?? '') : render(step),
     note: notes.byOwner.get(step.span.start.line) ?? null,
+    /* The body's rows carry the BLOCK's address and their own index in it — see `inner`. */
+    body: isScopingBlock(step) && stepPath !== null
+      ? step.body.map((s, i) => statement(s, notes, stepPath, true, i, step))
+      : null,
+    owner,
     node: step,
   };
 }
@@ -308,28 +421,122 @@ function request(step: ApiStep | WaitUntilApiStmt, notes: FileNotes, stepPath: S
 }
 
 /**
- * A body, grouped by request.
+ * **Does this step put a page on screen** — the session boundary (`M219` `B`, `D1161`).
  *
- * The rule is one sentence: a statement belongs to the last request above it, or to the preamble
- * if there is none. That is what the corpus's own shape says — `test → [let preamble] → request →
- * [its expects, captures, logs] → request → …` — and it is why this is a fold rather than three
- * filters.
+ * An `open` always does. A `call` does when the project index says the action it names does, which
+ * is a question this module cannot answer on its own: the action is usually declared in another
+ * file. `opensPage` is the index's answer, passed in; an empty set is the honest degradation —
+ * every `open` still starts a session and no `call` does, which is what the page showed before the
+ * index carried the field and is visibly a smaller claim rather than a wrong one.
  */
-export function groupBody(steps: readonly Step[], notes: FileNotes, decl = 0): OutlineBody {
-  const preamble: OutlineStatement[] = [];
-  const requests: { head: Omit<OutlineRequest, 'attached'>; attached: OutlineStatement[] }[] = [];
+function startsSession(step: Step, opensPage: ReadonlySet<string>): boolean {
+  if (step.type === 'OpenStmt') return true;
+  return step.type === 'CallStmt' && opensPage.has(step.call.name);
+}
+
+/** The request fold, as a mutable accumulator — one of these per phase (`M219` `B`). */
+interface Fold {
+  readonly preamble: OutlineStatement[];
+  readonly requests: { head: Omit<OutlineRequest, 'attached'>; attached: OutlineStatement[] }[];
+}
+
+const emptyFold = (): Fold => ({ preamble: [], requests: [] });
+
+const sealFold = (f: Fold, sessions: OutlineSession[] = []): OutlineBody => ({
+  preamble: f.preamble,
+  requests: f.requests.map((r) => ({ ...r.head, attached: r.attached })),
+  sessions,
+});
+
+/**
+ * A body, grouped — by request within a phase, and by **session** across them (`M219` `B`).
+ *
+ * The request rule is one sentence and is unchanged: a statement belongs to the last request above
+ * it, or to the preamble if there is none. That is what the corpus's own shape says — `test → [let
+ * preamble] → request → [its expects, captures, logs] → request → …` — and it is why this is a
+ * fold rather than three filters.
+ *
+ * **The session rule is the second sentence, and it exists because the first one is wrong about a
+ * browser test.** Measured over both corpora: 338 declarations carry a browser step, **161 have no
+ * `api` request at all**, and in the 177 mixed ones **1455 of 1927 browser steps (75.5%) were
+ * drawn as attachments to an `api` request** — a `click` rendered as a reader of a login response.
+ * So: everything above the first session start folds by request as before, and from a session
+ * start down, the session owns what follows until the next one. A session's own contents fold by
+ * request too, because 18 `api` requests across 14 declarations stand inside one.
+ *
+ * Grouping by page visit is **not** a spine on its own and this does not claim it is: 208 of 258
+ * browser tests have exactly one `open`, so 81% of them get one session group. What the fold buys
+ * is the 75.5% above, and a **phase** for every row — which is what makes the assertion subject
+ * offer right (`D1166`).
+ */
+export function groupBody(
+  steps: readonly Step[],
+  notes: FileNotes,
+  decl = 0,
+  opensPage: ReadonlySet<string> = NO_ACTIONS,
+): OutlineBody {
+  const setup = emptyFold();
+  const sessions: { head: OutlineStatement; fold: Fold }[] = [];
+  const into = (): Fold => sessions[sessions.length - 1]?.fold ?? setup;
   for (const [index, step] of steps.entries()) {
-    if (isRequest(step)) {
-      const { request: head, own } = request(step, notes, { decl, step: index });
-      requests.push({ head, attached: own });
+    const path: StepPath = { decl, step: index };
+    if (startsSession(step, opensPage)) {
+      sessions.push({ head: statement(step, notes, path), fold: emptyFold() });
       continue;
     }
-    const row = statement(step, notes, { decl, step: index });
-    if (requests.length === 0) preamble.push(row);
-    else requests[requests.length - 1]!.attached.push(row);
+    const f = into();
+    if (isRequest(step)) {
+      const { request: head, own } = request(step, notes, path);
+      f.requests.push({ head, attached: own });
+      continue;
+    }
+    const row = statement(step, notes, path);
+    if (f.requests.length === 0) f.preamble.push(row);
+    else f.requests[f.requests.length - 1]!.attached.push(row);
   }
-  return { preamble, requests: requests.map((r) => ({ ...r.head, attached: r.attached })) };
+  return sealFold(setup, sessions.map((s) => ({ head: s.head, body: sealFold(s.fold) })));
 }
+
+/**
+ * The project index's `opensPage` flags, flattened to the set `groupBody` asks for (`M219` `B`).
+ *
+ * **One derivation, two callers.** `App` builds the outline the page draws and `ComposeDoor`
+ * rebuilds it after every edit to find where a statement moved to; a set computed twice is a set
+ * that can disagree with itself, which is the shape this module's own header refuses. Names rather
+ * than paths, because a `call` names an action and an action reached through a `use` is declared
+ * in the file it came from.
+ */
+export function pageOpeners(
+  files: readonly { readonly actions: readonly { readonly name: string; readonly opensPage: boolean }[] }[],
+): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const f of files) for (const a of f.actions) if (a.opensPage) names.add(a.name);
+  return names;
+}
+
+/**
+ * **Which phase of a body a line is in** — `M219` `G` (`D1166`).
+ *
+ * `setup` is everything above the first session start; `session` is a session's head and
+ * everything under it. It is asked by line rather than by identity because the callers have a
+ * selection, and a selection is a line (`D1045`).
+ *
+ * A body with no session is all setup, which is every API test in both corpora and is the answer
+ * that keeps `D1167` true without a special case: on a door whose files open no page, the phase is
+ * constant and the offer it produces is the flat one.
+ */
+export function phaseOf(body: OutlineBody, line: number): 'setup' | 'session' {
+  for (const session of body.sessions) {
+    if (line === session.head.line) return 'session';
+    if (statementsOf(session.body).some((s) => s.line === line)) return 'session';
+    if (requestsOf(session.body).some((r) => r.line === line)) return 'session';
+    for (const row of session.head.body ?? []) if (row.line === line) return 'session';
+  }
+  return 'setup';
+}
+
+/** No project index — every `open` starts a session and no `call` does. See `startsSession`. */
+const NO_ACTIONS: ReadonlySet<string> = new Set<string>();
 
 /**
  * The whole file, read.
@@ -362,7 +569,7 @@ export function anchorAfter(request: OutlineRequest): StepPath {
   return request.attached.filter((a) => a.stepPath !== null).at(-1)?.stepPath ?? request.stepPath;
 }
 
-export function fileOutline(path: string, source: string): FileOutline {
+export function fileOutline(path: string, source: string, opensPage: ReadonlySet<string> = NO_ACTIONS): FileOutline {
   const { program, diagnostics } = parseSource(source);
   const notes = readNotes(source);
   /**
@@ -384,7 +591,7 @@ export function fileOutline(path: string, source: string): FileOutline {
           line: d.span.start.line,
           label: `${d.when} ${d.scope}`,
           note: notes.byOwner.get(d.span.start.line) ?? null,
-          body: groupBody(d.body, notes, decl),
+          body: groupBody(d.body, notes, decl, opensPage),
         }
       : {
           kind: 'test',
@@ -399,7 +606,7 @@ export function fileOutline(path: string, source: string): FileOutline {
           workload: (d as TestDecl).workload,
           thresholds: (d as TestDecl).thresholds,
           note: notes.byOwner.get(d.span.start.line) ?? null,
-          body: groupBody((d as TestDecl).body, notes, decl),
+          body: groupBody((d as TestDecl).body, notes, decl, opensPage),
         },
   );
   return {

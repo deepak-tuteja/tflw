@@ -3607,23 +3607,47 @@ const REGISTRY = [
     find: '  if (/&&|\\|\\||;|\\|/.test(testScript)) return null;',
     replace: '  if (false) return null;',
   },
-  {
-    id: 'the-file-facts-go-back-in-the-test-card',
-    milestone: 'm212',
-    pkg: 'tflw',
-    file: 'packages/ui/src/ComposePane.tsx',
-    what: "`D1085` undone: the file's comment, imports, uses and actions are drawn inside `.test-band` again, so a card headed `TEST health check` ends with four file-scoped facts — `D956`'s family, a claim about one artifact beside a different one",
-    find: '          <FileStrip outline={outline} editing={editing} />',
-    replace: '          <div className="test-band"><FileStrip outline={outline} editing={editing} /></div>',
-  },
+  /**
+   * **`the-file-facts-go-back-in-the-test-card` is gone, and `M219` `A` is why** — the same
+   * retirement `the-other-requests-are-not-drawn` got below, for the same kind of reason.
+   *
+   * It defended `D1085` by pinning `FileStrip` **outside** `.test-band`: a card headed `TEST
+   * health check` must not end with the file's comment, imports, uses and actions, which is
+   * `D956`'s family — a claim about one artifact drawn beside a different one. The mutation put
+   * the strip back inside the band.
+   *
+   * There is no band to put it in. `M214` `D1113` made *what is selected is what the editor draws*
+   * — file, test, request or statement, one rule and one region — and `M219` `A` deleted the pane
+   * that still had a card with a strip above it. The file's facts are now drawn **because the
+   * address names the file**, in the region the test would otherwise occupy, so drawing them
+   * beside a test is not a thing the pane can do rather than a thing it is stopped from doing.
+   * `FileStrip` itself went with `ComposePane`, `BodySequence`, `RequestCard`, `StatementRow` and
+   * `RequestLine`.
+   *
+   * **A mutation defending a branch that no longer exists is not retired for convenience; it is
+   * retired because its subject is.** Its sibling `the-head-names-the-file-again` survives and is
+   * re-quoted above, because that head is still a head.
+   */
   {
     id: 'the-head-names-the-file-again',
     milestone: 'm212',
     pkg: 'tflw',
     file: 'packages/ui/src/ComposePane.tsx',
     what: '`D1085` undone at the head: the selected declaration is named as the file, so the sentence a reader looks at first describes a different artifact from the body under it',
-    find: '                <code data-compose-subject-what>{at.decl.kind === \'test\' ? `test ${at.decl.name}` : at.decl.label}</code> · line{\' \'}',
-    replace: '                <code data-compose-subject-what>{path}</code> · line{\' \'}',
+    /* Re-quoted twice since it was written, and both moves are the same move: `M216` painted the
+       head's roles (the keyword as a keyword, the name as the string the file writes) and `M219`
+       `A` deleted the pane that held the copy this quoted. The claim is untouched. */
+    find:
+      '              <code data-compose-subject-what>\n' +
+      '                {at.decl.kind === \'test\' ? (\n' +
+      '                  <>\n' +
+      '                    <span className="t-kw">test</span> <span className="t-str">&quot;{at.decl.name}&quot;</span>\n' +
+      '                  </>\n' +
+      '                ) : (\n' +
+      '                  <span className="t-kw">{at.decl.label}</span>\n' +
+      '                )}\n' +
+      '              </code>',
+    replace: '              <code data-compose-subject-what>{path}</code>',
   },
   /**
    * **`the-other-requests-are-not-drawn` is gone, and `M214` §3 is where its argument is.**
@@ -3644,10 +3668,14 @@ const REGISTRY = [
     id: 'the-sequence-drops-the-statements-between-requests',
     milestone: 'm214',
     pkg: 'tflw',
-    file: 'packages/ui/src/ApiComposePane.tsx',
+    file: 'packages/ui/src/ComposePane.tsx',
     what: "`D1112` undone: the sequence column draws only the requests, so the 101 `let`/`wait until` statements that sit BETWEEN two requests across the corpus vanish — and with them the chaining that is the whole reason this pane is a sequence and not a list of independent requests (617 of 760 bindings are read downstream)",
-    find: '              : statements.map((s) => (',
-    replace: '              : [].map((s) => (',
+    /* Re-quoted at `M219` `B`, where the row's eleven lines became `statementRow` because the
+       sequence draws statements in four places now (a body's preamble, a request's attachments, a
+       session's preamble, and a request's attachments inside a session). Same subject, same
+       branch, one call site instead of two. */
+    find: "            {decl === null ? null : statements.map((s) => statementRow(s, 'pre'))}",
+    replace: "            {decl === null ? null : [].map((s) => statementRow(s, 'pre'))}",
   },
   {
     id: 'every-clause-is-a-field-again',
@@ -3655,12 +3683,18 @@ const REGISTRY = [
     pkg: 'tflw',
     file: 'packages/ui/src/ComposePane.tsx',
     what: '`D1084` undone on the request: every clause is drawn whether the file writes it or not, which is the scaffold at 34 fields with 18 of them empty or showing a default',
+    /* Re-quoted at `M219` `A`. The second line was `RequestCard`'s `add`, and `RequestCard` is one
+       of the six components the round deleted: one pane serves both doors now, so the request
+       editor that survives is the one `M214` built. The subject, the branch and the undoing are
+       unchanged — what moved is which file holds them. The anchor is the line AFTER `shows`
+       because two components read a `shows` of the same shape (this one and the test band), and a
+       one-line quote would match both. */
     find:
       '  const shows = (clause: string): boolean => states(clause) || added.includes(clause);\n' +
-      "  const add = (k: string): void => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]));",
+      '  const counts: Record<EditorTab, number> = {',
     replace:
       '  const shows = (_clause: string): boolean => true;\n' +
-      "  const add = (k: string): void => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]));",
+      '  const counts: Record<EditorTab, number> = {',
   },
   /**
    * **`the-add-menu-hides-what-it-cannot-add` is gone, and what it was defending is now impossible
@@ -3682,7 +3716,7 @@ const REGISTRY = [
     id: 'the-rare-clauses-are-unreachable-again',
     milestone: 'm214',
     pkg: 'tflw',
-    file: 'packages/ui/src/ApiComposePane.tsx',
+    file: 'packages/ui/src/ComposePane.tsx',
     what: "`D1115` undone: the More tab's menu offers only the clauses this request already writes, so `timeout`, `redirects` and `retry after` are reachable on the five requests in a thousand that use them and on no others — the vocabulary SHRINKS instead of costing one word at rest, which is the failure `D1076` was written against and is what `A2` widened `ApiStepSpec` to end",
     find: "              ].map((c) => ({ ...c, state: shows(c.key) ? ('present' as const) : ('addable' as const) }))",
     replace: "              ].filter((c) => shows(c.key)).map((c) => ({ ...c, state: 'present' as const }))",
@@ -3697,7 +3731,7 @@ const REGISTRY = [
     id: 'a-removal-does-not-check-who-is-holding-it',
     milestone: 'm214',
     pkg: 'tflw',
-    file: 'packages/ui/src/ApiComposePane.tsx',
+    file: 'packages/ui/src/ComposePane.tsx',
     what: '`D1117` undone: the dependency scan is never consulted, so deleting a `capture` or a `let` that a later statement interpolates writes the bytes and leaves a file that parses and cannot run — on 81% of the corpus\'s bindings',
     find: '      const held = holds(decl.body, target.lines);',
     replace: '      const held = null;',
@@ -3794,7 +3828,7 @@ const REGISTRY = [
     id: 'a-broken-body-says-nothing-until-the-write',
     milestone: 'm215',
     pkg: 'tflw',
-    file: 'packages/ui/src/ApiComposePane.tsx',
+    file: 'packages/ui/src/ComposePane.tsx',
     what: '`D1122` undone: the body field never asks the language anything, so a mistake is invisible while it is being made and arrives later as a refusal with no position — which is the state `M215` found the tab in',
     find: '  const problem = useMemo(() => bodyProblem(text), [text]);',
     replace: '  const problem = useMemo(() => null, [text]);',
@@ -3803,7 +3837,7 @@ const REGISTRY = [
     id: 'a-spent-rare-clause-is-hidden-behind-the-disclosure',
     milestone: 'm214',
     pkg: 'tflw',
-    file: 'packages/ui/src/ApiComposePane.tsx',
+    file: 'packages/ui/src/ComposePane.tsx',
     what: "`D1114` undone: an assertion that already spells `check`, `any`/`all` or `not` draws the same three controls as one that does not — so a written word is behind a disclosure and the row is a lie about what it says",
     find: "  const spent = v.soft || v.quantifier !== '' || v.negated;",
     replace: '  const spent = false;',
