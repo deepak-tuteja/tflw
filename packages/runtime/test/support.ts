@@ -137,6 +137,7 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     // field to stay a complete `ResolvedConfig` and nothing here can observe it.
     baselinePath: null,
     evidenceLevel: 'full',
+    keepTrace: false,
     // `D781`/`M157d` — the shipped default, stated rather than inherited. `interpreter.ts`'s
     // predicate is written so an *absent* value still runs teardown, but a fixture config claiming
     // to be a complete `ResolvedConfig` should carry every field it has, and a harness that quietly

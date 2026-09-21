@@ -40,10 +40,20 @@ export interface Session {
   readonly into: string | null;
 }
 
-export function SessionPanel({ session, onKeep, onKeepAll, onDrop, onStop, onStart, canStart, why }: {
+export function SessionPanel({ session, onKeep, onKeepAll, onPlay, playing, onDrop, onStop, onStart, canStart, why }: {
   readonly session: Session | null;
   readonly onKeep: (line: SessionLine) => void;
   readonly onKeepAll: () => void;
+  /**
+   * **▶ — run the test with these lines in it, without keeping them** (`M221` `C`, `D1185`).
+   *
+   * `null` on a door that does not play and on a `pick`, which has no `into` to splice toward:
+   * a pick suggests a locator for a row that already exists, so there is no declaration the
+   * suggestion would be *added to* and nothing for a run to be about (`D1082` — the control is
+   * absent rather than drawn dead, because its subject is absent).
+   */
+  readonly onPlay: (() => void) | null;
+  readonly playing: boolean;
   readonly onDrop: (id: number) => void;
   readonly onStop: () => void;
   readonly onStart: (() => void) | null;
@@ -83,6 +93,16 @@ export function SessionPanel({ session, onKeep, onKeepAll, onDrop, onStop, onSta
           {' — '}
           {session.lines.length} line{session.lines.length === 1 ? '' : 's'}
         </span>
+        {session.kind === 'record' && steps.length > 0 && onPlay !== null && session.into !== null ? (
+          /* **It sits BEFORE `keep all`, and the order is the argument.** These are the two things
+             you can do with a reviewed list, and the safe one comes first: ▶ changes nothing and
+             tells you whether keeping would be a good idea; `keep all` is the commitment. A
+             control that commits sitting to the left of the one that checks would be offering
+             them in the wrong order to read. */
+          <button onClick={playing ? undefined : onPlay} disabled={playing} data-session-play data-session-play-held={playing ? 'running' : undefined} data-tip={playing ? 'a run is already going' : `run ${session.into} with these ${steps.length} line${steps.length === 1 ? '' : 's'} in it — nothing is written and nothing is kept`}>
+            ▶ try {steps.length}
+          </button>
+        ) : null}
         {session.kind === 'record' && steps.length > 0 ? (
           <button onClick={onKeepAll} data-session-keep-all data-tip="splice every line below into the test, in order">
             keep all {steps.length}

@@ -24,6 +24,9 @@ export interface RunStripProps {
    *  nothing at all, and a half-typed `1` must not become a request. `request()` is what decides. */
   readonly workers: string;
   readonly onWorkers: (workers: string) => void;
+  /** **`--headed`** (`M220` `D`, `D1173`) — run-level, like the two above it. */
+  readonly headed: boolean;
+  readonly onHeaded: (headed: boolean) => void;
   /** The narrowing, for the label only — it lives with the control that edits it. */
   readonly selection: readonly string[];
   readonly query: string;
@@ -34,7 +37,7 @@ export interface RunStripProps {
   readonly request: () => RunRequest;
 }
 
-export function RunStrip({ project, env, onEnv, workers, onWorkers, selection, query, running, onRun, onCancel, request }: RunStripProps) {
+export function RunStrip({ project, env, onEnv, workers, onWorkers, headed, onHeaded, selection, query, running, onRun, onCancel, request }: RunStripProps) {
   /**
    * The button is the request read back (`M205` Q13, `D1064`). Three narrowings in one sentence,
    * in the order that decides them: an explicit selection wins, then a query, then the project.
@@ -82,6 +85,15 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, selection, q
         <label data-tip="how many processes fork to generate load — for workload-bearing tests only, and a no-op on a test with no `workload`. How many FILES run at once is `tflw.config`'s own `workers N`.">
           workers
           <input type="number" min={1} placeholder="default" value={workers} onChange={(e) => onWorkers(e.target.value)} data-workers disabled={running} />
+        </label>
+        {/* **`--headed`** — `M220` `D` (`D1173`). It belongs on this strip and not beside ▶ for the
+            reason the header gives: this strip faces *the run*, and `--headed` is a run-level flag.
+            The tip says what it is for rather than what it does, because *shows the browser* is
+            already on the label — what a reader needs is that the trace is the better answer and
+            this is here for the two engines that cannot have one. */}
+        <label className="check" data-tip="opens a real browser window instead of running headless. The trace `▶` keeps is usually the better way to see what happened — this is for watching it move, and it is the only answer on firefox and webkit.">
+          <input type="checkbox" checked={headed} onChange={(e) => onHeaded(e.target.checked)} data-headed disabled={running} />
+          headed
         </label>
       </div>
       {running ? (

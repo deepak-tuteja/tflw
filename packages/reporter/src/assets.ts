@@ -42,6 +42,19 @@ function assetHash(base64: string): string {
   return createHash('sha1').update(base64).digest('hex').slice(0, 16);
 }
 
+/**
+ * Where a trace's bytes land, as one expression — `M220` `B` (`D1171`).
+ *
+ * **`writeResultsJson` is the second caller, and the reason this is a function.** It writes the
+ * archive's *path* into `results.json` in place of its base64, and that path has to be the file
+ * `resolveReportAssets` writes, byte for byte, or the report would name an archive that is not
+ * there. One expression, two callers, no second table — the same arrangement the language's own
+ * `hostMatchesAllowPattern` and `classifyAddress` are exported under.
+ */
+export function traceRelPath(base64: string): string {
+  return `assets/traces/${assetHash(base64)}.zip`;
+}
+
 function byteLength(base64: string): number {
   // Exact decoded size without materializing the buffer twice — same formula `Buffer.from(...).length`
   // would give, computed straight from the base64 string's own length/padding.
@@ -68,7 +81,7 @@ export function resolveReportAssets(report: RunReport, inlineBudgetBytes: number
     const hash = assetHash(base64);
     if (seen.has(hash)) return;
     seen.add(hash);
-    const relPath = `assets/traces/${hash}.zip`;
+    const relPath = traceRelPath(base64);
     hrefs.set(hash, relPath);
     files.push({ relPath, base64 });
   };
@@ -92,13 +105,13 @@ export function resolveReportAssets(report: RunReport, inlineBudgetBytes: number
       if (step.screenshot) addScreenshot(step.screenshot.base64);
       addSnapshotStep(step);
     }
-    if (test.trace) addTrace(test.trace.base64);
+    if (test.trace?.base64) addTrace(test.trace.base64);
     for (const attempt of test.attempts ?? []) {
       for (const step of attempt.steps) {
         if (step.screenshot) addScreenshot(step.screenshot.base64);
         addSnapshotStep(step);
       }
-      if (attempt.trace) addTrace(attempt.trace.base64);
+      if (attempt.trace?.base64) addTrace(attempt.trace.base64);
     }
   }
 

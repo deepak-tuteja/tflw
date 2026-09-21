@@ -24,9 +24,10 @@
 // extra field, and the test fields are shared — a guided start is worth more to a newcomer than an
 // empty shell, which is what `D1087` chose over an in-place *add a declaration* gesture.
 import { useEffect, useRef, useState } from 'react';
-import { buildApiStep, buildExpect, buildTest, insertIntoSource, type ApiStepSpec } from '@tflw/lang';
+import { buildApiStep, buildExpect, buildOpen, buildTest, insertIntoSource, type ApiStepSpec, type Lens } from '@tflw/lang';
 import { putFile } from './api';
 import { SourceText } from './Source';
+import { VOCABULARY, type Scaffold } from './vocabulary';
 
 export type NewMode = 'test' | 'file';
 
@@ -34,15 +35,43 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as 
 
 /** What the dialog would write, or why it cannot — recomputed on every keystroke, so the preview
  *  and the bytes cannot differ. Exported because every interesting case here is a refusal, and a
- *  refusal is cheaper to gate as a function than as a dialog. */
+ *  refusal is cheaper to gate as a function than as a dialog.
+ *
+ *  **`scaffold` is the door's, read off `VOCABULARY`** (`M222`, `D1189`). It used to take `mode`,
+ *  which it never read: the only thing `mode` decided was the caller's `into`, and *what gets
+ *  built* was the same two statements on all four doors. `D1042` said since `M200` `A0-3` that
+ *  the door decides this, and this is where it now does. */
 export function newSource(input: {
-  readonly mode: NewMode;
+  readonly scaffold: Scaffold;
   readonly name: string;
   readonly method: string;
   readonly path: string;
   readonly into: string;
 }): { ok: true; text: string } | { ok: false; reason: string } {
   if (input.name.trim() === '') return { ok: false, reason: 'the test needs a name — it is how a run reports it' };
+  const body = scaffoldBody(input);
+  if (!body.ok) return body;
+  const test = buildTest({ name: input.name.trim(), tags: [], workload: null, thresholds: [], body: body.nodes });
+  if (!test.ok) return { ok: false, reason: test.reason };
+  const result = insertIntoSource(input.into, { kind: 'test', node: test.node });
+  return result.ok ? { ok: true, text: result.text } : { ok: false, reason: result.reason };
+}
+
+/** The opening statements this door's scaffold writes — `D1189`'s whole branch, and the only place
+ *  the three answers differ. Every arm goes through the same builders the pane's own controls call
+ *  (`D1087`); what the door chooses is which. */
+function scaffoldBody(
+  input: { readonly scaffold: Scaffold; readonly method: string; readonly path: string },
+): { ok: true; nodes: Parameters<typeof buildTest>[0]['body'] } | { ok: false; reason: string } {
+  if (input.scaffold === 'open') {
+    if (input.path.trim() === '') return { ok: false, reason: 'the test needs a path to open — the page it works against' };
+    const open = buildOpen(input.path.trim());
+    /* **And nothing under it** — `D1192`. Not an omission: the language has no url or title
+       matcher to derive an assertion from (`PageSubject` carries only `hasNoA11yViolations`), and
+       what text is on the page is the one thing the author has not seen yet. 58.3% of the
+       corpora's visible `open`s are followed by a gesture rather than an assertion. */
+    return open.ok ? { ok: true, nodes: [open.node] } : { ok: false, reason: open.reason };
+  }
   if (input.path.trim() === '') return { ok: false, reason: 'the request needs a path' };
   const step = buildApiStep({
     method: input.method as ApiStepSpec['method'],
@@ -59,10 +88,7 @@ export function newSource(input: {
   // requests already carry.
   const expect = buildExpect({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' });
   if (!expect.ok) return { ok: false, reason: expect.reason };
-  const test = buildTest({ name: input.name.trim(), tags: [], workload: null, thresholds: [], body: [step.node, expect.node] });
-  if (!test.ok) return { ok: false, reason: test.reason };
-  const result = insertIntoSource(input.into, { kind: 'test', node: test.node });
-  return result.ok ? { ok: true, text: result.text } : { ok: false, reason: result.reason };
+  return { ok: true, nodes: [step.node, expect.node] };
 }
 
 /** A `.tflw` path the server will take, or why it will not. Checked here rather than left to the
@@ -77,8 +103,17 @@ export function newPathProblem(path: string, existing: readonly string[]): strin
   return null;
 }
 
-export function NewThing({ mode, openPath, openText, existing, onStage, onDone, onCancel, inDir }: {
+export function NewThing({ mode, door, openPath, openText, existing, onStage, onDone, onCancel, inDir }: {
   readonly mode: NewMode;
+  /**
+   * **The door that asked** — `M222` (`D1189`), and the half of `D1042` that was never built.
+   *
+   * It decides `VOCABULARY[door].scaffold`, and through it both what gets written and which
+   * fields the dialog draws. It is the *door*, not a selection inside the dialog: `#/browser` has
+   * already answered which kind of test this is, and asking again would put a control in front of
+   * every create on every door to serve a choice nobody makes twice.
+   */
+  readonly door: Lens;
   /** The directory a `file` create was opened from, or `null` for the foot's own `+ new file`
    *  (`M218` `B`, `D1159`). It seeds the path field and nothing else — this is still the one
    *  dialog and still the only place a new file is built (`D1087`). */
@@ -125,8 +160,9 @@ export function NewThing({ mode, openPath, openText, existing, onStage, onDone, 
     first.current?.focus();
   }, []);
 
+  const scaffold = VOCABULARY[door].scaffold;
   const pathProblem = mode === 'file' ? newPathProblem(file, existing) : null;
-  const built = newSource({ mode, name, method, path, into: mode === 'file' ? '' : openText });
+  const built = newSource({ scaffold, name, method, path, into: mode === 'file' ? '' : openText });
   const problem = pathProblem ?? (built.ok ? null : built.reason);
 
   const create = async (): Promise<void> => {
@@ -171,18 +207,30 @@ export function NewThing({ mode, openPath, openText, existing, onStage, onDone, 
             placeholder="it answers"
           />
         </label>
-        <div className="row">
+        {/* **The fields follow the scaffold** (`D1191`), which is the whole of the user's *"make
+            this dialog more dynamic"* — and it makes it **shorter**, not longer. API keeps the
+            pair it was built for; BROWSER draws the one field its `open` takes. The path input
+            keeps its one spelling across doors — it is the same field asking for the same thing,
+            and a gate naming `[data-new-path]` should not have to know which door it is on. */}
+        <div className="row" data-new-fields={scaffold}>
+          {scaffold === 'api' ? (
+            <label className="field">
+              method
+              <select value={method} onChange={(e) => setMethod(e.target.value)} data-new-method aria-label="method">
+                {METHODS.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="field">
-            method
-            <select value={method} onChange={(e) => setMethod(e.target.value)} data-new-method aria-label="method">
-              {METHODS.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            path
-            <input value={path} onChange={(e) => setPath(e.target.value)} data-new-path aria-label="request path" />
+            {scaffold === 'open' ? 'open' : 'path'}
+            <input
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              data-new-path
+              aria-label={scaffold === 'open' ? 'the page to open' : 'request path'}
+            />
           </label>
         </div>
 

@@ -288,6 +288,57 @@ function Remove({ what, onGo, refusal, onClear }: {
 }
 
 /**
+ * **▶ — run this declaration** (`M220` `A`, `D1168`, `D1176`).
+ *
+ * It sits beside the `✕` for the reason the `+` two functions down sits there: a gesture that
+ * belongs to one row and acts on the thing the row **is**. The plan's `A` said *"the foot and the
+ * sequence head"*, and two places for one gesture is the two-implementations shape this pane keeps
+ * removing — so it is here and not there. The foot is where **creation** lives (`D1118`), and a
+ * play creates nothing; the head is the declaration itself.
+ *
+ * **It is refused while the buffer is unsaved, and it says why** (`D1177`). A play is
+ * `tflw run --only "<name>" <file>` — it reads the *file*, so with a pending edit the thing that
+ * runs is not the thing on screen. `send` has no such problem because it writes its own scratch
+ * first; `--only` names a test inside its own file and there is nowhere for a scratch to stand. So
+ * the refusal is stated on the control rather than discovered in a report, and — `Remove`'s own
+ * rule, one function up — a disabled control that does not say why is the pattern this pane
+ * exists to remove, which is why the reason is the tip rather than nothing.
+ */
+/**
+ * **▶ — run this declaration and nothing else.**
+ *
+ * **`dirty` is gone from the held set** — `M221` `B` (`D1183`, overturning `D1177`). It used to
+ * refuse an unsaved buffer and say *write this file first — a play runs what is on disk*, which
+ * was true of the mechanism and wrong as a rule: a pane is dirty from the first step you add,
+ * which is most of the time anyone wants to press this. ▶ now runs the buffer through a scratch
+ * beside the file, so there is nothing left for the refusal to protect.
+ *
+ * `running` stays, and it is also `D1188`: one play at a time is what keeps two presses from
+ * racing for one directory's scratch.
+ */
+function Play({ what, running, onGo }: {
+  readonly what: string;
+  readonly running: boolean;
+  readonly onGo: () => void;
+}) {
+  const why = running ? 'a run is already going' : `run this ${what} — and nothing else in the file`;
+  return (
+    <button
+      type="button"
+      className={`seq-play${running ? ' held' : ''}`}
+      onClick={running ? undefined : onGo}
+      disabled={running}
+      data-seq-play={what}
+      data-seq-play-held={running ? 'running' : undefined}
+      data-tip={why}
+      aria-label={why}
+    >
+      ▶
+    </button>
+  );
+}
+
+/**
  * **`+` — a new request after this one** (`M217` `B`, `D1137`, `D1138`).
  *
  * It sits beside the `✕` because it is the same kind of thing: a gesture that belongs to one row
@@ -533,6 +584,11 @@ export interface ComposePaneProps {
    *  never calls this while anything is holding one of them. */
   readonly onRemoveSteps: ((decl: OutlineHook | OutlineTest, steps: readonly number[]) => void) | null;
   readonly onRemoveDecl: ((decl: OutlineHook | OutlineTest) => void) | null;
+  /** **▶ on the declaration head** — `M220` `A` (`D1168`). `null` on a door whose `vocabulary.ts`
+   *  row says it does not play, and on a hook, which `--only` cannot name. */
+  readonly onPlay: ((decl: OutlineTest) => void) | null;
+  /** Whether a run is in flight anywhere — ▶ holds while one is (`D1177`). */
+  readonly playing: boolean;
   /** **`✕` on a statement inside a scoping block** — `M219` `D` (`D1163`). A second removal rather
    *  than a case of the first: `onRemoveSteps` takes indices into a body, and a statement inside a
    *  `within` is not one of them. */
@@ -548,6 +604,9 @@ export interface ComposePaneProps {
   readonly session: Session | null;
   readonly onKeepLine: (line: SessionLine) => void;
   readonly onKeepAll: () => void;
+  /** `M221` `C` (`D1185`) — run the test with the pending lines in it, keeping none of them.
+   *  `null` on a door that does not play. */
+  readonly onPlaySession: (() => void) | null;
   readonly onDropLine: (id: number) => void;
   readonly onStopSession: () => void;
   /**
@@ -591,7 +650,7 @@ function readSplit(): number {
 }
 
 export function ComposePane(props: ComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, tab, onEditorTab: setTab } = props;
+  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, tab, onEditorTab: setTab } = props;
 
   /** One call per sequence row kind — `M218` `F`. `{}` when the door wired no menu, so the rows
    *  behave exactly as they did before this round. */
@@ -993,17 +1052,26 @@ export function ComposePane(props: ComposePaneProps) {
                 text={decl.kind === 'test' ? decl.name : ''}
                 refusal={refusalFor(decl.line)}
                 trailing={
-                  onRemoveDecl === null ? null : (
-                    <Remove
-                      what="test"
-                      onGo={() => {
-                        setRefused(null);
-                        onRemoveDecl(decl);
-                      }}
-                      refusal={refusalFor(decl.line)}
-                      onClear={clearRefusal}
-                    />
-                  )
+                  <>
+                    {/* **▶ before ✕** (`M220` `A`) — the two gestures the declaration row owns, in
+                        the order a reader reaches for them: run it, then, much less often, remove
+                        it. A hook is skipped rather than drawn held, because `--only` names a test
+                        by name and a hook has none — the same fact the foot says in words. */}
+                    {onPlay === null || decl.kind !== 'test' ? null : (
+                      <Play what="test" running={playing} onGo={() => onPlay(decl)} />
+                    )}
+                    {onRemoveDecl === null ? null : (
+                      <Remove
+                        what="test"
+                        onGo={() => {
+                          setRefused(null);
+                          onRemoveDecl(decl);
+                        }}
+                        refusal={refusalFor(decl.line)}
+                        onClear={clearRefusal}
+                      />
+                    )}
+                  </>
                 }
               />
             )}
@@ -1203,6 +1271,8 @@ export function ComposePane(props: ComposePaneProps) {
                 session={session}
                 onKeep={onKeepLine}
                 onKeepAll={onKeepAll}
+                onPlay={onPlaySession}
+                playing={playing}
                 onDrop={onDropLine}
                 onStop={onStopSession}
                 onStart={decl !== null && decl.kind === 'test' && onAdd !== null ? () => onAdd(decl, 'record') : null}

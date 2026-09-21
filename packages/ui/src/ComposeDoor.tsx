@@ -66,11 +66,12 @@ import {
   buildTest,
   insertIntoSource,
 } from '@tflw/lang';
-import { pickLocators, recordActions, putFile, dropScratch, startRun, subscribe, getReports, getResults, type FileView } from './api';
+import { pickLocators, recordActions, putFile, getFile, dropScratch, startRun, subscribe, getReports, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
-import { indexFromReport, indexFromSend, sameFile, REPORT_LOOKBACK } from './ran';
+import { indexFromReport, indexFromSend, belongsTo, playScratchOf, REPORT_LOOKBACK } from './ran';
 import { VOCABULARY } from './vocabulary';
 import { TabStrip } from './TabStrip';
+import { Stage, traceOf } from './Stage';
 import {
   editOf,
   specOf,
@@ -94,7 +95,7 @@ import { addressed, anchorAfter, fileOutline, pageOpeners, requestsOf, statement
   prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
-import type { EndEvent, ProjectView, RunReport, StepResult } from './contract';
+import type { EndEvent, ProjectView, RunReport, RunRequest, StepResult } from './contract';
 import type { FileOutline } from './outline';
 
 /**
@@ -204,6 +205,33 @@ export interface ComposeDoorProps {
   /** Why Run has something to say while you are composing — the shell knows about live runs and
    *  this form does not. */
   readonly runMark?: string;
+  /**
+   * **Start a run the shell's way** — `M220` `A` (`D1168`).
+   *
+   * ▶ on a declaration is a run like any other, so it goes through the shell's own `onRun`: the
+   * record is selected, the stream is watched, and the end lands where every run's end lands.
+   * `sendPrefix` below calls `startRun` directly *because a send is not a run* — it grades one
+   * request against a scratch and paints the answer on a row — and that difference is exactly
+   * `D1168`: a play must not grow a second execution path beside the one the page already has.
+   */
+  readonly onRun: (request: RunRequest) => void;
+  /** Whether a run is in flight, so ▶ can hold rather than queue (`D1177`). */
+  readonly running: boolean;
+  /**
+   * **A stamp that moves whenever the report list does** — `M220` `C` (`D1180`).
+   *
+   * The report lookback below is an effect over `[path, project]`, and **neither of those changes
+   * when a run ends**: `refreshLists` replaces `runs` and `reports` and leaves `project` alone. So
+   * before this the pane picked up a new run's verdicts *on the next reload*, which was tolerable
+   * while a run was something you started from the strip and read in the Run tab, and is not
+   * tolerable now that ▶ is a gesture inside the pane whose whole answer `D1172` puts on these
+   * rows. Found by pressing ▶ on the served page and measuring: the run completed, the report was
+   * written, and the pane was unchanged.
+   *
+   * A stamp rather than the list itself, because the effect wants *something moved* and an array
+   * identity from `getReports()` is new on every poll whether or not anything happened.
+   */
+  readonly reportsStamp: string;
 }
 
 /**
@@ -247,7 +275,7 @@ function reblock(
   return buildDownload({ name: owner.name, body });
 }
 
-export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, authPanel, configPanel, configMark }: ComposeDoorProps) {
+export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, onRun, running, reportsStamp, authPanel, configPanel, configMark }: ComposeDoorProps) {
   /** **Which actions open a page** (`M219` `B`, `D1161`) — the index's own answer, flattened by
    *  the one function `App` flattens it with. Every `fileOutline` in this component re-reads the
    *  file after an edit to find where a statement moved to, and a re-read that folded sessions
@@ -272,6 +300,30 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * it: what reaches a row is a verdict that is still about the text on that row.
    */
   const [reportRan, setReportRan] = useState<{ report: RunReport; reportId: string } | null>(null);
+  /**
+   * **The declaration the last ▶ in this pane was pressed on** (`M221` `A`, `D1182`).
+   *
+   * The stage is scoped to *this* gesture and not to "whatever the newest report holds": a
+   * whole-suite run from the Run tab writes traces for every browser test it touched, and drawing
+   * one of them under an editor nobody played would be the stage answering a question that was not
+   * asked. Run's own viewer (`D1179`) is where that report is read.
+   */
+  const [played, setPlayed] = useState<string | null>(null);
+
+  /**
+   * The play scratch's hash, carried forward from each write's own response.
+   *
+   * A **ref** and not state: nothing renders from it, and a re-render between the press and the
+   * `PUT` would otherwise be able to send a stale one. `null` means *this file should not exist
+   * yet*, which is how the first play in a directory creates it; `writeScratch` below is what
+   * recovers when that guess is wrong.
+   */
+  const playEtag = useRef<string | null>(null);
+
+  /** A scratch in one directory says nothing about the next one. */
+  useEffect(() => {
+    playEtag.current = null;
+  }, [path]);
   const [sentRan, setSentRan] = useState<{ line: number; steps: readonly StepResult[]; startedAt: string } | null>(null);
   /** `D1136` — bumped every time a create gesture lands, so the pane can focus what opened. */
   const [made, setMade] = useState(0);
@@ -1385,6 +1437,76 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
     setSession((current) => (current === null ? current : { ...current, lines: current.lines.filter((l) => l.kind !== 'step') }));
   }, [file, settle, session]);
 
+  /**
+   * Write the play scratch, recovering **once** from a hash nobody here could have known.
+   *
+   * The scratch is written by this pane and read by nothing else, so the ordinary path is one
+   * `PUT` under the hash the last one returned. A `409` means the file on disk is not what this
+   * page last left there — the first play after a reload (the ref starts `null` and the file is
+   * already there from a previous session), or another tab having played the same directory. In
+   * both cases the correct answer is the same and it is not to refuse: **this file is a scratch,
+   * its whole contract is that it is overwritten**, so the current hash is read and the write is
+   * repeated under it.
+   *
+   * **Once, and not a loop.** A second `409` is a directory under active contention by something
+   * that is not this page, and retrying forever would turn that into a spin. It surfaces as a
+   * problem with a sentence, which is the same shape every other write failure on this pane has.
+   */
+  const writeScratch = useCallback(
+    async (target: string, text: string, etag: string | null): Promise<{ ok: true; etag: string } | { ok: false; error: string }> => {
+      const first = await putFile(target, text, etag);
+      if (first.ok) return first;
+      if (first.status !== 409) return { ok: false, error: first.code ? `${first.code} at line ${first.line}: ${first.error}` : first.error };
+      const current = await getFile(target).catch(() => null);
+      if (current === null) return { ok: false, error: `${first.error} — and the scratch could not be re-read` };
+      const second = await putFile(target, text, current.etag);
+      if (second.ok) return second;
+      return { ok: false, error: `${second.error} — ${target} is being written by something else` };
+    },
+    [],
+  );
+
+  /**
+   * **▶ on the session panel — run the test WITH the pending lines in it** (`M221` `C`, `D1185`).
+   *
+   * **Not the lines alone**, and that is the whole design of this gesture. A recording is *into* a
+   * declaration — the panel's own header says `recording into <name>` — and the state those lines
+   * assume was built by the steps above them. Four lines lifted out and run on their own error on
+   * the first locator that needs a page nobody opened. What the author is actually asking is *would
+   * this test still work if I kept these?*, and the only run that answers it is the test as it
+   * would be.
+   *
+   * **And it keeps nothing** (`D1186`). The splice lands in the scratch text and nowhere else:
+   * `textRef` is not written, `settle` is not called, the session keeps every line, and the file on
+   * disk does not move. `D1165` is the rule this protects — *ticking is what writes it* — and a ▶
+   * that quietly committed the lines in order to run them would take that away, which is the one
+   * thing the session panel exists to prevent.
+   *
+   * The splice is `keepAll`'s own call with a different destination: `insertIntoSource` and the
+   * recorder's already-parsed nodes, which is `D1087`'s one construction path and no template
+   * string.
+   */
+  const playSession = useCallback(async () => {
+    if (!file || session === null || session.into === null) return;
+    const nodes = session.lines.flatMap((l) => (l.kind === 'step' ? [l.node] : []));
+    if (nodes.length === 0) return;
+    const out = insertIntoSource(textRef.current, { kind: 'steps', testName: session.into, nodes });
+    if (!out.ok) {
+      setEditProblem(out.reason);
+      return;
+    }
+    setPlayed(session.into);
+    setProblem(null);
+    const target = playScratchOf(path, project.playScratch);
+    const put = await writeScratch(target, out.text, playEtag.current);
+    if (!put.ok) {
+      setProblem(put.error);
+      return;
+    }
+    playEtag.current = put.etag;
+    onRun({ files: [target], only: session.into, evidence: 'full', trace: true });
+  }, [file, session, path, project.playScratch, writeScratch, onRun]);
+
   const dropLine = useCallback((id: number) => {
     setSession((current) => (current === null ? current : { ...current, lines: current.lines.filter((l) => l.id !== id) }));
   }, []);
@@ -1720,7 +1842,10 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           if (!entry.files.includes('results.json')) continue;
           const report = await getResults(entry.id);
           if (!live) return;
-          if (report.tests.some((t) => 'file' in t && sameFile(t.file, path))) {
+          /* `M221` `B` — a play's report carries the SCRATCH's name, so the lookback that finds
+             "the last run that touched this file" has to know the two are the same subject. The
+             verdicts still join on `(line, source)` because the scratch is the buffer verbatim. */
+          if (report.tests.some((t) => 'file' in t && belongsTo(t.file, path, project.playScratch))) {
             setReportRan({ report, reportId: entry.id });
             return;
           }
@@ -1733,10 +1858,14 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     return () => {
       live = false;
     };
-  }, [path, project]);
+  }, [path, project, reportsStamp]);
 
   /** A send is about one request; opening another one does not make it about that one. */
   useEffect(() => setSentRan(null), [path]);
+
+  /** And a play is about one file. `M221` gate 3: opening another file empties the stage rather
+   *  than leaving the previous file's trace under a sequence it is not about. */
+  useEffect(() => setPlayed(null), [path]);
 
   /**
    * **The join, re-derived from the buffer on every keystroke** (`D1093`, `D1108`).
@@ -1750,13 +1879,25 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
   const ranIndex = useMemo((): RanIndex => {
     const text = draft ?? file?.text ?? '';
     if (text === '') return new Map();
-    const base = reportRan === null ? new Map<number, Ran>() : new Map(indexFromReport(reportRan.report, path, text));
+    const base = reportRan === null ? new Map<number, Ran>() : new Map(indexFromReport(reportRan.report, path, text, project.playScratch));
     if (sentRan !== null) {
       const one = indexFromSend({ steps: sentRan.steps, requestLine: sentRan.line, bufferText: text, startedAt: sentRan.startedAt });
       if (one !== null) base.set(sentRan.line, one);
     }
     return base;
-  }, [reportRan, sentRan, draft, file, path]);
+  }, [reportRan, sentRan, draft, file, path, project.playScratch]);
+
+  /**
+   * **What the stage is showing** (`M221` `A`).
+   *
+   * Derived, never stored — the same shape as `ranIndex` above and for the same reason. The
+   * report is refetched when the report list moves (`D1180`), so a play's trace arrives here on
+   * its own, and the stage cannot hold a frame for a report that has been superseded.
+   */
+  const stageTrace = useMemo(
+    () => (played === null || reportRan === null ? null : traceOf(reportRan.report, played, reportRan.reportId)),
+    [played, reportRan],
+  );
 
   const sendPrefix = useCallback(async () => {
     if (!prefixText.ok || !at?.request) return;
@@ -1822,6 +1963,57 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     }
     setSending(false);
   }, [prefixText, at, project.scratchPath, scratchEtag, onTab]);
+
+  /**
+   * **▶ — run this declaration and nothing else** (`M220` `A`, `D1168`).
+   *
+   * Four lines, and that is the claim rather than an apology for it: `--only "<name>"` has named a
+   * single test since decision 94, `--evidence full` is the level at which a step record carries
+   * what it did, and `trace: true` is `D1170`'s third reason to keep one. **Nothing about execution
+   * is new** — a play is the argv a terminal would type, sent through the shell's own `onRun` so
+   * the record is selected and watched exactly as every other run's is.
+   *
+   * **`--only` matches by NAME, not by line**, which is worth stating because it is the one way
+   * this gesture can surprise: two tests in one file sharing a name are both played. That is the
+   * language's own rule (`cli.ts`'s `keep` compares `d.name.value`) and not something a page should
+   * quietly correct — a file with two tests of one name has a problem `tflw check` should be
+   * saying, and inventing a line-scoped narrowing here would be a second selector beside `--only`.
+   */
+  /**
+   * **▶ runs the BUFFER** — `M221` `B` (`D1183`), which overturns `D1177`.
+   *
+   * `D1177` refused ▶ while the pane was dirty, and its premise was right: `tflw run --only …
+   * <file>` reads the *file*, so with a pending edit the thing that runs is not the thing on
+   * screen. The wrong half was kept. The repair is to make the thing that runs BE the thing on
+   * screen, and `D1177` named the mechanism in its own next sentence — *"`send` has no such
+   * problem because it writes its own scratch first"* — before concluding a scratch had nowhere to
+   * stand. It has: beside the file (`D1184`).
+   *
+   * **The scratch is the buffer VERBATIM**, not a printed program and not a cut prefix. That is
+   * what lets `indexFromReport` join the verdicts with nothing special: `ran.ts`'s key is
+   * `(line, source)` where `source` is the line's **own text**, so an identical copy has identical
+   * line numbers and identical text and every row matches. `sendPrefix` below had to invent a
+   * positional match precisely because its scratch is reprinted.
+   */
+  const play = useCallback(
+    async (decl: { readonly kind: 'test'; readonly name: string }) => {
+      if (!file) return;
+      /* `M221` `A` — the press names the stage's subject before the run is started, so the region
+         says *a run is going* about the right declaration rather than staying blank. */
+      setPlayed(decl.name);
+      setProblem(null);
+      const target = playScratchOf(path, project.playScratch);
+      const text = draft ?? file.text;
+      const put = await writeScratch(target, text, playEtag.current);
+      if (!put.ok) {
+        setProblem(put.error);
+        return;
+      }
+      playEtag.current = put.etag;
+      onRun({ files: [target], only: decl.name, evidence: 'full', trace: true });
+    },
+    [onRun, path, file, draft, project.playScratch, writeScratch],
+  );
 
   /**
    * `[Discard]` — the scratch file is removed and *then* the pane goes.
@@ -1962,6 +2154,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
            The fork is **deleted rather than narrowed**. A narrowed fork is still two
            implementations of one picture, which is the failure `vocabulary.ts` exists to record.
            What is per-door is the table it reads, and nothing else. */
+        <>
         <ComposePane
           path={path}
           outline={outline}
@@ -2004,12 +2197,17 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           made={made}
           onRemoveSteps={removeSteps}
           onRemoveDecl={removeDecl}
+          /* `D1176` — ▶ is a vocabulary row, so the door asks the table rather than its own name. */
+          onPlay={VOCABULARY[door].plays ? (d) => void play(d) : null}
+          playing={running}
           onRemoveScoped={removeScoped}
           onUnscope={unscope}
           onScope={scope}
           session={VOCABULARY[door].sends ? null : session}
           onKeepLine={keepLine}
           onKeepAll={keepAll}
+          /* `D1185` — offered on the door that plays, and the panel itself refuses a `pick`. */
+          onPlaySession={VOCABULARY[door].plays ? () => void playSession() : null}
           onDropLine={dropLine}
           onStopSession={() => (recording !== null ? stopRecording() : endPick())}
           tab={editorTab}
@@ -2021,6 +2219,18 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setNoting(null); setEditProblem(null); }}
           door={door}
         />
+        {/* **The third region** (`D1181`) — below both columns, full width of `main`, which is
+            1114 px at 1440 against the viewer's 606 px floor. `Stage` is always rendered and says
+            which of its four states it is in; it is never conditionally absent (`D1187`). */}
+        <Stage
+          trace={stageTrace}
+          played={played}
+          running={running}
+          recording={recording !== null}
+          viewer={project.traceViewer}
+          unignored={project.playIgnored ? null : project.playScratch}
+        />
+        </>
       )}
       {/* **`+ step…`'s dialog** — `M219` `E` (`D1164`). It sits beside the pane rather than inside
           it for the reason `NewThing` does: a modal is the shell's, and a pane that owned one

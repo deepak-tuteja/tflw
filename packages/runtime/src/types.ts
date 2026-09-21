@@ -152,6 +152,20 @@ export interface ResolvedConfig {
    * report-only trace (SPEC §13, PLAN decision 101c). Override semantics (env wins), default
    * `'full'` (today's unchanged behavior). `--evidence` overrides this again for one run. */
   readonly evidenceLevel: EvidenceLevel;
+  /**
+   * `--trace` — keep this run's browser trace even when every attempt passed (`M220` `B`, `D1170`).
+   *
+   * **There is no config key and there should not be.** Like `allowPublicTargets`, the only source
+   * is the command line: a trace is evidence you want *for the run you are looking at now*, and a
+   * project that kept one on every green CI run would be `M205-07` by default. `D1169` is what
+   * needs it — ▶ in the page is a passing run whose whole point is the trace afterwards.
+   *
+   * It only widens `finish`'s existing question. Tracing has always been *started* at
+   * `evidence full` and stopped-and-discarded on a clean first-attempt pass, so this changes what
+   * is kept and never what is captured; below `evidence full` nothing was captured and this flag
+   * has nothing to keep (`capturesBinaryEvidence`, FS-01).
+   */
+  readonly keepTrace: boolean;
   /** `teardown always|on success|never` (`M157d`, `D783`) — when a **workload** iteration's `after`
    * hooks run. Override semantics (env wins), default `'always'` (`D781`). `--teardown` overrides
    * this again for one run. Functional tests ignore it entirely (`D784`): the key is for forensic
@@ -307,11 +321,32 @@ export interface ScreenshotAsset {
   readonly base64: string;
 }
 
-/** A Playwright trace archive (M3c, D12) — a `.zip` (time-travel DOM + network + console), raw
- * bytes base64-encoded. Always written out as a `report/assets/` file by the reporter, never
- * inlined into `report.html` (too large/binary to usefully embed). */
+/**
+ * A Playwright trace archive (M3c, D12) — a `.zip` (time-travel DOM + network + console).
+ *
+ * **Two shapes, and which one you are holding depends on where you read it from** — `M220` `B`
+ * (`D1171`). In memory, and on the ndjson stream, it is `base64`: the runtime has bytes and
+ * nothing else, and `resolveReportAssets` needs them to write the file. In `results.json` it is
+ * `path` — `assets/traces/<hash>.zip`, relative to the report directory, naming the file the
+ * reporter has *already written* from those same bytes.
+ *
+ * **The base64 in `results.json` was a second copy of a file that was always on disk.** This type's
+ * own previous sentence said so without noticing: *"always written out as a `report/assets/` file
+ * by the reporter, never inlined into `report.html`"*. So `report.html` never needed it, and the
+ * one reader that did — `ReportView`'s trace link — used it only to **re-hash bytes in order to
+ * recover the name of a file it then fetched by path**. Measured on a six-action session: 501 KB
+ * on disk and 668 KB of base64 beside it, in a repository whose `M205-07` is a 55–61 MB report.
+ * `D1170` makes a kept trace the *normal* case rather than the failure case, so the duplicate
+ * stops being tolerable the moment ▶ exists.
+ *
+ * Both are optional because a reader must say which world it is in rather than assume; nothing
+ * ever carries neither, and `writeResultsJson` is the one place that swaps one for the other.
+ */
 export interface TraceAsset {
-  readonly base64: string;
+  /** The archive's bytes. Present everywhere except `results.json`. */
+  readonly base64?: string;
+  /** `assets/traces/<hash>.zip`, relative to the report directory. `results.json` only. */
+  readonly path?: string;
 }
 
 export interface StepResult {

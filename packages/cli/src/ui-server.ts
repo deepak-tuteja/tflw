@@ -215,6 +215,15 @@ export interface ProjectView {
    * read route for a line of advice. */
   readonly scratchPath: string;
   readonly scratchIgnored: boolean;
+  /** `PLAY_SCRATCH` — a **basename**, joined to the directory of whichever file is played
+   *  (`M221` `B`, `D1184`). Sent rather than hardcoded in the page for the reason every other
+   *  filename here is: a name spelled in two places is how the send scratch's own rename went
+   *  half-applied. */
+  readonly playScratch: string;
+  /** Whether `.gitignore` carries `PLAY_SCRATCH` as a line of its own. Same exact-line test as
+   *  `scratchIgnored`, and a truer one here: the entry has no slash, so git matches it at any
+   *  depth — which is exactly what a per-directory scratch needs. */
+  readonly playIgnored: boolean;
   /**
    * The scratch file's current hash, or `null` when there is no scratch file (`M205` S3, closing
    * `M205-05`).
@@ -355,6 +364,28 @@ export interface ProjectView {
 export const SCRATCH_PATH = '.scratch.tflw';
 
 /**
+ * **Where ▶ writes, and it is a BASENAME rather than a path** — `M221` `B` (`D1184`).
+ *
+ * `SCRATCH_PATH` above is a path because there is one send scratch and it can live anywhere. This
+ * one cannot: `imports.ts` resolves a `use "…"` against **`dirname(filePath)`** — in its own
+ * words, *"`resolve(dirname(filePath), literal)` is not a choice — it is what `buildRegistry`, the
+ * checker and the CLI all do"* — so a test in `tests/ui/storefront/` played from a scratch at the
+ * project root resolves every relative import four directories from where it is written. The
+ * scratch therefore goes **beside the file it copies**, and what is named once is the basename.
+ *
+ * `send` never met this because its scratch is a cut prefix of one API request; a whole browser
+ * test carrying imports is a different animal.
+ *
+ * **The leading dot is load-bearing here for the same reason it is above, and for free.**
+ * `project.ts`'s walk skips every dot-prefixed entry **at any depth**, not only at the root
+ * (`if (e.name.startsWith('.') || e.name === 'node_modules') continue;`), so a `.play.tflw` in any
+ * directory is invisible to discovery in every project, old and new, with no `exclude` key to
+ * scaffold. `extname` is still `.tflw`, so `resolveWritablePath` accepts it unchanged and `D1049`'s
+ * one write call site is untouched.
+ */
+export const PLAY_SCRATCH = '.play.tflw';
+
+/**
  * Every file `tflw init` can write, under any flag — what `runInit` reports as `created`.
  *
  * A door's scaffold belongs here the day the CLI learns to write it; `A2-4` added `--scan` and
@@ -388,6 +419,23 @@ export interface RunRequest {
    *  `runCommand` against `EVIDENCE_LEVELS` exactly as a terminal's `--evidence` is: the page
    *  cannot ask for a level a terminal could not. */
   readonly evidence?: string;
+  /**
+   * `--trace` (`M220` `B`, `D1170`) — keep the browser trace even on a pass.
+   *
+   * **▶ is the only caller, and that is `D1169` in one field**: a play is a run you expect to
+   * pass, and the thing you press it to see is the trace afterwards. It maps to the flag a
+   * terminal has, like every other field here — the page still cannot ask `tflw run` for anything
+   * a terminal could not.
+   */
+  readonly trace?: boolean;
+  /**
+   * `--headed` (`M220` `D`, `D1173`) — a real browser window instead of a headless one.
+   *
+   * **The escape hatch, and the only answer for firefox and webkit.** `tflw run` has documented it
+   * since M3c and `tflw watch` already uses it; it was unreachable from the page for the cost of
+   * this one field. It is run-level, exactly as the flag is.
+   */
+  readonly headed?: boolean;
 }
 
 export type RunStatus = 'running' | 'done' | 'cancelled';
@@ -423,6 +471,10 @@ export function runArgv(req: RunRequest): string[] {
   if (req.tags && req.tags.length > 0) argv.push('--tag', req.tags.join(','));
   if (req.only) argv.push('--only', req.only);
   if (req.evidence) argv.push('--evidence', req.evidence);
+  // A boolean flag, so it is pushed on `true` alone — `false` and absent are the same request,
+  // which is what keeps an ordinary run's argv byte-identical to what it was before `M220`.
+  if (req.trace) argv.push('--trace');
+  if (req.headed) argv.push('--headed');
   for (const f of req.files ?? []) argv.push(f);
   return argv;
 }
@@ -560,7 +612,7 @@ export async function readProject(root: string): Promise<ProjectView> {
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
     sessions: sessionViews(parsed.config, resolved),
   };
-  return { root, envs, reportDir: resolved.reportDir, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: scratchIsIgnored(root), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
+  return { root, envs, reportDir: resolved.reportDir, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: isIgnored(root, SCRATCH_PATH), playScratch: PLAY_SCRATCH, playIgnored: isIgnored(root, PLAY_SCRATCH), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
 }
 
 /**
@@ -639,7 +691,13 @@ function sessionViews(config: ConfigFile, resolved: ResolvedConfig): ProjectView
 }
 
 /**
- * Whether `.gitignore` carries the scratch path as a line of its own (`A1-5`).
+ * Whether `.gitignore` carries an entry as a line of its own (`A1-5`, generalised by `M221` `B`).
+ *
+ * **It took the scratch path and now takes the entry**, because `M221` added a second scratch and
+ * a second copy of a six-line function is how the first one's rename went half-applied. The play
+ * scratch is a **basename** (`PLAY_SCRATCH`), and this test is *more* accurate for it than for the
+ * path: a `.gitignore` line with no slash is git's own match-at-any-depth pattern, so the exact
+ * line `\`.play.tflw\`` really does ignore every one of them.
  *
  * The same exact-line test `tflw init`'s own `ensureGitignore` writes with, and deliberately no
  * more: a project whose rule is `*.tflw` or a directory pattern gets a **false negative**, which
@@ -647,10 +705,10 @@ function sessionViews(config: ConfigFile, resolved: ResolvedConfig): ProjectView
  * behind a read route to render one line of advice is a worse trade than being wrong quietly in
  * the safe direction.
  */
-function scratchIsIgnored(root: string): boolean {
+function isIgnored(root: string, entry: string): boolean {
   try {
     const text = readFileSync(join(root, '.gitignore'), 'utf8');
-    return text.split('\n').some((line) => line.trim() === SCRATCH_PATH);
+    return text.split('\n').some((line) => line.trim() === entry);
   } catch {
     return false;
   }

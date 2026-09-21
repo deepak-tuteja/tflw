@@ -32,6 +32,42 @@ export interface AddGesture {
   readonly title: string;
 }
 
+/**
+ * **What `+ new test` writes on this door** — `M222` (`D1189`, implementing `D1042`).
+ *
+ * `D1042` has read *"a door decides where you land and **what the new-test button scaffolds**, and
+ * nothing else"* since `M200` `A0-3`, and the bold half was never built: `newSource` hardcoded
+ * `buildApiStep` + `buildExpect(status equals 200)` for every door. On BROWSER that created a test
+ * whose only step is an `ApiStep` — **not in this table's own `browser.constructs`** — so the
+ * create gesture drew its own output as a dead code line with `data-stmt-editable="no"`, which is
+ * exactly the 650 statements `M219` `C` spent a slice removing.
+ *
+ * A **tag, not a builder**: `newSource` still calls the same `build*` functions and
+ * `insertIntoSource`, so `D1087`'s one construction path is untouched. What this row decides is
+ * which of them.
+ *
+ * **THERE IS NO `null`, AND `D1190` SAID THERE WOULD BE.** That decision read *"a door that
+ * constructs nothing scaffolds nothing"* — LOAD and SCAN would create a named test with an empty
+ * body. Two measurements taken while building killed it, and both are facts about the language
+ * rather than about this table:
+ *
+ *  1. **An empty body is a parse error.** `test "a new one"` with nothing under it is `TF015`,
+ *     *this `test` has no steps*. The scoping probe reported it clean because it read
+ *     `parsed.errors`, a property `ParsedSource` does not have, so `?? []` made every file legal
+ *     — the probe was vacuous in the one direction it was written to check.
+ *  2. **SCAN's own shape cannot be built at all.** A scan is a `crawl` declaration; there is no
+ *     `buildCrawl`, and `insertIntoSource` splices a `test` and nothing else. Scaffolding one is
+ *     a builder and an insertion member, which is a different round.
+ *
+ * So LOAD and SCAN keep `'api'` — **unchanged from before this round** — and that is not a
+ * fallback: a workload-bearing test *is* an `api` step under a `ramp` with `threshold`s, so the
+ * request the dialog writes is the thing `LoadForm` then attaches a workload to. What `D1190` was
+ * protecting against — a door drawing its own create gesture's output dead — cannot happen on
+ * these two, because **neither renders a Compose pane at all** (`App.tsx` gives them `LoadForm`
+ * and `ScanForm`; `D1103`). Their `constructs` describes a pane that is not on the screen.
+ */
+export type Scaffold = 'api' | 'open';
+
 export interface DoorVocabulary {
   /**
    * The kinds this door can **construct**, which is the only per-door fact this table holds about
@@ -62,6 +98,21 @@ export interface DoorVocabulary {
    */
   readonly sends: boolean;
   /**
+   * Whether this door's Compose offers **▶ on a declaration** — a play (`M220` `A`, `D1168`).
+   *
+   * **A play is a run, not a new mechanism**: ▶ runs *that test* through the same interpreter,
+   * the same browser and the same report a terminal would, narrowed by `--only <name>` and the
+   * file it is declared in. What is new is a gesture scoped to one declaration and a place to look
+   * afterwards — `D1169`'s trace.
+   *
+   * **It is a table entry rather than `door === 'browser'` for the reason the header gives**, and
+   * it is `false` on the other three this round rather than absent: LOAD and SCAN construct
+   * nothing here yet (`D1103`), and the API door's answer to *run just this* is `send`, which is a
+   * different question — a prefix of a test cut off after one request, against a whole declaration.
+   * Offering both on one door would be two gestures that look alike and mean different things.
+   */
+  readonly plays: boolean;
+  /**
    * **The assertion subjects this door offers** — `M214` `A3` (`D1114`).
    *
    * The API door's subject select carried `an element` and `page`, which are BROWSER subjects, on
@@ -79,6 +130,19 @@ export interface DoorVocabulary {
    * offered only when it is already what the row says.
    */
   readonly dropsSubjects: ReadonlySet<string>;
+  /**
+   * **The opening statement `+ new test` scaffolds on this door** (`D1189`, `D1190` as amended).
+   *
+   * The invariant this row exists to keep is one line long and holds for every future door by
+   * construction: **a door that draws a Compose sequence scaffolds only what that sequence can
+   * construct.** A create gesture that writes a statement its own pane cannot edit is a pane half
+   * live and silent about which half — `D1082` — and it is how this round started.
+   *
+   * The qualifier is load-bearing and is `adds.length > 0`, this table's own way of saying *this
+   * door has a Compose sequence*. LOAD and SCAN have `adds: []` and render their own forms
+   * instead, so their `constructs` is not a claim about anything drawn.
+   */
+  readonly scaffold: Scaffold;
 }
 
 /** The neutral kinds every door's Compose can already edit — `statementEditOf`'s own list. */
@@ -95,12 +159,16 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
       { key: 'wait', label: '+ wait until', title: '`wait until api …` — re-issues a request until the assertions under it pass, instead of sleeping and hoping' },
     ],
     sends: true,
+    plays: false,
     /* `an element` and `page` are things a browser has. An `api` request fetches bytes — and so
        are the three `M219` `G` added to the language's offer (`D1166`): a network request the page
        made, and the two subjects a native dialog has. `D1167` keeps this door's offer flat this
        round; keeping it flat is not the same as letting it widen, so they join the drop list under
        `D1114`'s own rule rather than appearing here by default. */
     dropsSubjects: new Set(['locator', 'page', 'networkRequest', 'dialogMessage', 'dialogType']),
+    /* `ApiStep` + `expect status equals 200` — byte-identical to what every door got before
+       `M222`, because this is the door that entry was written for. */
+    scaffold: 'api',
   },
   browser: {
     /* **ALL TWENTY-TWO, FROM `M219` `C`** (`D1162`) — and the comment this replaces is worth
@@ -145,7 +213,18 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
       { key: 'record', label: '+ record', title: 'open the page and use it — every action becomes a step in this test. Expectations are yours to add afterwards' },
     ],
     sends: false,
+    plays: true,
     dropsSubjects: new Set(),
+    /* **`open` alone, and the absence of an assertion is `D1192` rather than an omission.** The
+       API scaffold's `expect status equals 200` costs the author nothing because every response
+       has a status and 200 is what a working one returns. A page's assertion has no universal:
+       what is on the page is precisely what the author has not seen yet, and the language has no
+       url or title matcher to fall back on — `PageSubject` carries only `hasNoA11yViolations`.
+       Measured over what `discoverTests` can see, 58.3% of the corpora's `open`s and 66.7% of
+       the ones that lead a test are followed by a *gesture*, not an assertion. A scaffold that
+       guessed one would be `D1087`'s receipt again: the legacy form offering *"the orders
+       endpoint answers"* for whatever file happened to be open. */
+    scaffold: 'open',
   },
   /**
    * LOAD and SCAN keep their own forms this round (`D1103` rebuilds LOAD's in `S6`), so their
@@ -153,6 +232,8 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
    * nothing from Compose beyond the neutral vocabulary, and offer no `+` gestures there. **A table entry that lied here would be worse than no entry**, because the
    * pane reads it to decide what to draw as editable.
    */
-  load: { constructs: new Set(NEUTRAL_CONSTRUCTS), adds: [], sends: false, dropsSubjects: new Set() },
-  scan: { constructs: new Set(NEUTRAL_CONSTRUCTS), adds: [], sends: false, dropsSubjects: new Set() },
+  /* `scaffold: 'api'` on both — see `Scaffold`'s docblock. It is what they wrote before this
+     round, and `D1190`'s `null` is refuted there rather than quietly dropped. */
+  load: { constructs: new Set(NEUTRAL_CONSTRUCTS), adds: [], sends: false, plays: false, dropsSubjects: new Set(), scaffold: 'api' },
+  scan: { constructs: new Set(NEUTRAL_CONSTRUCTS), adds: [], sends: false, plays: false, dropsSubjects: new Set(), scaffold: 'api' },
 };

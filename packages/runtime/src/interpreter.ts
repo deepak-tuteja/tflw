@@ -2828,7 +2828,14 @@ async function runTestAttempt(
     // captures one; a retry attempt does even if it ultimately passes (the flaky path is exactly
     // the evidence worth keeping). Below `evidence full` (FS-01) tracing was never started, so
     // `finish` returns `undefined` here whatever this argument says.
-    const trace = await browserPageState.finish(!isFirstAttempt || !result.ok);
+    //
+    // **`config.keepTrace` is the third reason, and it is `--trace`'s whole implementation**
+    // (`M220` `B`, `D1170`). It is a *widening* and deliberately not a replacement: an ordinary
+    // run keeps exactly what it kept before, so the failure-only policy this line has had since
+    // M3c is still what a run with no flag does. `D1169` is the caller — ▶ in the page plays a
+    // test that is expected to pass, and a trace discarded on success is a playback with nothing
+    // to play.
+    const trace = await browserPageState.finish(config.keepTrace || !isFirstAttempt || !result.ok);
     // `D801`/`D802` — drained here, at the one site every body exit path funnels through, so a
     // `TF080` survives a test that *failed* after the dialog fired. Attaching at the body's
     // happy-path return instead would report the warning only on the runs least likely to need it,

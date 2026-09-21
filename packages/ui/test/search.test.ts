@@ -32,7 +32,7 @@ const project = (files: ProjectView['files']): ProjectView => ({
   files,
   traceViewer: false,
   scratchPath: '.scratch.tflw',
-  scratchIgnored: true,
+  scratchIgnored: true, playScratch: '.play.tflw', playIgnored: true,
   scratchEtag: null,
   authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [], sessions: [] },
   webBaseUrl: null,

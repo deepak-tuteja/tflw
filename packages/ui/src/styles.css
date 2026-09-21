@@ -244,6 +244,11 @@ body:has(.col-grip.dragging) { cursor: col-resize; user-select: none; }
    because it is a free-text field; the select takes what its longest option needs. */
 .controls input { width: 140px; }
 .controls select { min-width: 140px; }
+/* `M220` `D` — the checkbox is not a free-text field, so the 140 px above is wrong for it: that
+   width is a guess about a typeface and a box has no text in it at all. The label reads
+   left-to-right like the two beside it, box first. */
+.controls label.check { gap: 6px; }
+.controls label.check input { width: auto; }
 button { font: inherit; cursor: pointer; }
 /* The one PRIMARY button in the vocabulary — `run`, `save`, `create`. Filled, so the page has
    exactly one thing that looks pressable before anything else does. `--on-accent` rather than a
@@ -946,6 +951,15 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .seq-plus { background: none; border: 0; color: var(--muted); padding: 0 calc(var(--unit) * 0.7); font-size: 14px; line-height: 1; border-radius: var(--ctl-radius); flex: none; }
 .seq-plus:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .seq-x.refused { color: var(--warn); }
+/* `M220` `A` (`D1176`) — ▶, the declaration row's other gesture. Same slot and same weight as the
+   `✕` and the `+` above it: this is the third thing a row can say about itself, so it is drawn the
+   way the other two are rather than as a button with a border of its own.
+   `.held` is the refusal (`D1177`) — a dirty buffer, or a run already going. It keeps the control
+   visible and legible rather than fading it to the point where a reader cannot find the thing the
+   tooltip is about; `Remove`'s own docstring is the rule, and the tip on it is why. */
+.seq-play { align-self: stretch; display: flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--muted); padding: 0 calc(var(--unit) * 0.7); font-size: 11px; line-height: 1; border-radius: var(--ctl-radius); flex: none; }
+.seq-play:hover:not(:disabled) { color: var(--pass); background: var(--pass-bg); }
+.seq-play.held { opacity: 0.45; cursor: not-allowed; }
 .seq-refusal { margin: 2px 0 4px calc(var(--unit) * 3); font-size: 11px; }
 .linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; }
 .seq-empty { padding: calc(var(--unit) * 1.5); font-size: 12px; }
@@ -1240,3 +1254,24 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .plan-edits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .plan-edits li { color: var(--muted); font-size: 11px; }
 .plan-edits code { color: var(--fg); }
+
+/* ── `M220` `C` — the trace viewer, in the Run pane (`D1179`) ─────────────────────────────────
+   The viewer is a three-pane application with a measured floor of 606 px; this pane is the main
+   area, which is above it at every width `COMPOSE`'s grip can produce. It is given the height
+   rather than asked for one: an iframe has no intrinsic height, so without this it collapses to
+   the 150 px the HTML default gives it and the reader sees a letterbox. */
+.trace-pane { display: flex; flex-direction: column; min-height: 0; gap: calc(var(--unit) * 1); }
+.trace-pane-bar { display: flex; align-items: center; gap: calc(var(--unit) * 1.5); margin: 0; font-size: 12px; flex-wrap: wrap; }
+.trace-frame { width: 100%; min-height: 70vh; flex: 1 1 auto; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
+
+/* **The stage** — `M221` `A` (`D1181`). A region of the Compose tab, under both columns, taking
+   the full width of `main`: measured 1114 px at 1440, against the viewer's 606 px floor. Unlike
+   `.trace-frame` above it does NOT take `70vh` of a pane it shares — the columns are above it and
+   the page scrolls to it, because 349 px of leftover height (measured) shows a timeline and no
+   snapshot. `min-height` is stated in `px` and not `vh` so the frame is the same size whatever the
+   window is, which is what the viewer's own floor is expressed in. */
+.stage { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); margin-top: calc(var(--unit) * 2); }
+.stage-bar { display: flex; align-items: baseline; gap: calc(var(--unit) * 1.5); margin: 0; font-size: 12px; flex-wrap: wrap; }
+.stage-title { text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; color: var(--muted); }
+.stage-hint { margin: 0; padding: calc(var(--unit) * 3); border: var(--border) dashed var(--line); border-radius: var(--radius); max-width: 70ch; }
+.stage-frame { width: 100%; min-height: 620px; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
