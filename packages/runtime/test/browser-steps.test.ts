@@ -1319,7 +1319,7 @@ test('a failing test captures a real Playwright trace archive', async () => {
   const { report } = await runProgram(program, shortWaitConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   assert.ok(asEntry(report.tests[0], 'functional').trace, 'expected a trace on the failing attempt');
-  assert.ok(Buffer.from(asEntry(report.tests[0], 'functional').trace!.base64, 'base64').subarray(0, 2).equals(ZIP_MAGIC));
+  assert.ok(Buffer.from(asEntry(report.tests[0], 'functional').trace!.base64!, 'base64').subarray(0, 2).equals(ZIP_MAGIC));
 });
 
 test('a `retry` test that fails then passes captures a trace on both attempts (D12: failure + every retry)', async () => {

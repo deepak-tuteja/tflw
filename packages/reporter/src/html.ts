@@ -392,9 +392,13 @@ ${attempt.steps.map((s) => renderStep(s, assetHrefs, logLevelThreshold)).join('\
  * inlines one), so this only renders anything when `assetHrefs` actually has it; a report built
  * directly from a `RunReport` with a `.trace` but no matching `assetHrefs` entry (e.g. a unit test
  * exercising `renderReportHtml` in isolation) degrades to no link rather than a broken `href`. */
-function renderTraceLink(trace: { readonly base64: string } | undefined, assetHrefs: ReadonlyMap<string, string>): string {
+function renderTraceLink(trace: { readonly base64?: string; readonly path?: string } | undefined, assetHrefs: ReadonlyMap<string, string>): string {
   if (!trace) return '';
-  const href = assetHrefs.get(assetHash(trace.base64));
+  /* `M220` `B` (`D1171`) — a trace read back out of `results.json` carries its `path` and no bytes,
+     so it is already the href this function would otherwise have hashed its way to. `report.html`
+     is written from the in-memory report and therefore takes the first branch every time; the
+     second exists for anything that renders HTML from a report it read off disk. */
+  const href = trace.path ?? (trace.base64 !== undefined ? assetHrefs.get(assetHash(trace.base64)) : undefined);
   if (!href) return '';
   return `<p class="trace-link">🔍 <a href="${esc(href)}" download>trace.zip</a> — open with <code>npx playwright show-trace ${esc(href)}</code></p>`;
 }

@@ -9,8 +9,8 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import type { LogLevel, RunReport } from '@tflw/runtime';
-import { resolveReportAssets } from './assets.js';
+import { exhaustiveEntry, type LogLevel, type ReportEntry, type RunReport, type TraceAsset } from '@tflw/runtime';
+import { resolveReportAssets, traceRelPath } from './assets.js';
 import { renderReportHtml } from './html.js';
 import { renderJunitXml } from './junit.js';
 
@@ -45,7 +45,7 @@ export { buildSarifLog, writeSarif, runScanned, sarifUri, SARIF_FILE, SARIF_SCHE
 // boundary. Nothing inside this monorepo needs it from here; the emitter imports it directly.
 export { ARTIFACT_CONTRACT, type ArtifactContract } from './artifact-contract.js';
 export { RUN_OWNED_CONDITIONAL_MEMBERS, clearRunOwnedMembers } from './report-dir.js';
-export { resolveReportAssets, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
+export { resolveReportAssets, traceRelPath, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 
 /** Write report.html into `dir` (created if needed), plus any `assets/` files (M3c, D12) it links
  * to — a screenshot over the inline budget, or a Playwright trace archive (always external).
@@ -75,13 +75,69 @@ export async function writeJunitXml(report: RunReport, dir: string): Promise<str
   return path;
 }
 
-/** Write results.json into `dir` (created if needed) — the exact same redacted `RunReport` that
- * already feeds report.html, always written alongside it (no flag, PLAN decision 111/M17), so CI
- * can read a run's outcome from a file instead of scraping stdout. */
+/**
+ * Write results.json into `dir` (created if needed) — the same redacted `RunReport` that already
+ * feeds report.html, always written alongside it (no flag, PLAN decision 111/M17), so CI can read
+ * a run's outcome from a file instead of scraping stdout.
+ *
+ * **With one substitution: a trace is written as its `path`, never as its bytes** (`M220` `B`,
+ * `D1171`). `writeReport` has already written `assets/traces/<hash>.zip` from those bytes — that
+ * is what `TraceAsset`'s own docstring has said since M3c — so the base64 here was a second copy
+ * of a file this same directory already holds. Measured at 668 KB per six-action session against
+ * a 501 KB archive, in a repository whose `M205-07` is a 55–61 MB report; and `D1170` has just
+ * made a *kept* trace the ordinary outcome of pressing ▶ rather than the mark of a failure.
+ *
+ * **`writeReport` must run first, and the ordering is `cli.ts`'s to keep** — it does, and has
+ * since M17. This function does not write the archive and must not: one writer, and a path here
+ * that named a file nobody wrote would be worse than the duplicate it replaces. `traceRelPath` is
+ * shared with the writer for exactly that reason.
+ */
 export async function writeResultsJson(report: RunReport, dir: string): Promise<string> {
   const outDir = resolve(dir);
   await mkdir(outDir, { recursive: true });
   const path = join(outDir, 'results.json');
-  await writeFile(path, JSON.stringify(report, null, 2) + '\n', 'utf8');
+  await writeFile(path, JSON.stringify(withTracePaths(report), null, 2) + '\n', 'utf8');
   return path;
+}
+
+/**
+ * `RunReport` → the same report with every `trace` reduced to the archive's relative path.
+ *
+ * Pure, and **exhaustive by construction**: the `switch` below is the shape `entry-kind.ts`'s
+ * header argues for — when `ReportEntry` gains a kind, `exhaustiveEntry` stops compiling and
+ * somebody decides whether the new kind carries a trace, instead of an `!== 'functional'` test
+ * continuing to compile and quietly answering *no*. `stepBearing` itself is not the instrument
+ * here because that function answers *does this have a timeline to walk*, and this one has to
+ * **rebuild** the entry it was given; a read-only view cannot be reassembled.
+ */
+function withTracePaths(report: RunReport): RunReport {
+  return { ...report, tests: report.tests.map(retraceEntry) };
+}
+
+/** A trace as `results.json` carries it: the path, and never the bytes (`D1171`). A trace that
+ *  already has no bytes — a report read back off disk and written out again — is returned
+ *  untouched rather than losing its path to an undefined hash. */
+const movedTrace = (t: TraceAsset): TraceAsset => (t.base64 === undefined ? t : { path: traceRelPath(t.base64) });
+
+function retraceEntry(entry: ReportEntry): ReportEntry {
+  switch (entry.kind) {
+    case 'workload':
+      // `D24a` — a load iteration's body executes silently. No steps, no attempts, no trace.
+      return entry;
+    case 'crawl':
+      // **A crawl has no `trace` field at all**, and `StepBearing`'s own docstring says why: a
+      // crawl opens no browser, and `TraceAsset` is a Playwright archive. Written out rather than
+      // folded into the arm above because the two are true for different reasons — one kind has
+      // no timeline, this one has a timeline and no browser behind it.
+      return entry;
+    case 'functional': {
+      // **Both places a trace hangs**, and the same two `assets.ts` walks: a test's own, and one
+      // per earlier attempt of a retried test.
+      const attempts = entry.attempts?.map((a) => (a.trace ? { ...a, trace: movedTrace(a.trace) } : a));
+      const withAttempts = attempts ? { ...entry, attempts } : entry;
+      return withAttempts.trace ? { ...withAttempts, trace: movedTrace(withAttempts.trace) } : withAttempts;
+    }
+    default:
+      return exhaustiveEntry(entry);
+  }
 }

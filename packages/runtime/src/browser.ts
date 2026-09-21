@@ -1576,13 +1576,45 @@ function installRecordCapture(marker: string): void {
   // **Only the keys that are gestures.** Every printable character arrives as an `input` event and
   // becomes part of a `fill`; recording it as a `press` too would write the same typing twice, once
   // per letter. What is left is the keys that *do* something a fill cannot say — submitting a form,
-  // moving focus, dismissing — and anything with a modifier, which is by definition a command.
+  // moving focus, dismissing — and the accelerators, which are commands.
+  //
+  // **THIS RULE USED TO SAY *anything with a modifier is by definition a command*, AND THAT
+  // SENTENCE WAS FALSE TWICE** — `M220` `E` (`D1175`, closing `M219-02`). Dogfooded against the
+  // live storefront on 2026-09-20, typing `admin@example.com` into a field recorded:
+  //
+  //     fill  field "Email"   "admin"              ← a partial value
+  //     press field "Email"   "Shift+@"
+  //     fill  css   "#email"  "admin@example.com"
+  //     press field "Password" "Meta+v"            ← and no fill at all
+  //
+  // Both faults are one mistake about what a modifier means:
+  //
+  //  1. **`Shift` is a TYPING modifier.** Holding it is how `@` and `A` are produced at all, so
+  //     `Shift+2` is not a command — it is the character. Every such keystroke split the fill it
+  //     was part of into two statements, one of them carrying a *partial* value that the replay
+  //     would type and submit.
+  //  2. **The editing accelerators produce text, and the text arrives as `input`.** `Meta+v` is
+  //     the worst of them: recorded as a `press`, the replay reads the **clipboard of whatever
+  //     machine runs the test**, which is a test whose input is a fact about the runner. The
+  //     pasted characters are already in the `input` event that follows, so dropping the keystroke
+  //     loses nothing and keeping it loses the test.
+  //
+  // `D1169` is why this stopped being cosmetic: in a review panel that output is untidy, and
+  // behind a ▶ it is executable.
   document.addEventListener('keydown', (event) => {
     if (!(event.target instanceof Element)) return;
+    // Shift is deliberately absent from this test and present in the spelling below: it does not
+    // make a keystroke a command, but it is part of the key's name once something else has.
+    const command = event.ctrlKey || event.metaKey || event.altKey;
     const mods = [event.ctrlKey ? 'Control' : '', event.metaKey ? 'Meta' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : ''].filter((m) => m !== '');
     const bare = ['Enter', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown'].includes(event.key);
-    if (mods.length === 0 && !bare) return;
-    if (mods.length > 0 && event.key.length > 1 && !bare) return;
+    // Paste, cut, copy, select-all, undo, redo. Narrow on purpose — `Meta+k` is a command in
+    // plenty of pages and stays one — and Shift-free on purpose, so `Control+Shift+A` is still
+    // recorded as the command it usually is rather than swallowed as a select-all.
+    const editing = command && !event.altKey && !event.shiftKey && ['v', 'x', 'c', 'a', 'z', 'y'].includes(event.key);
+    if (editing) return;
+    if (!command && !bare) return;
+    if (command && event.key.length > 1 && !bare) return;
     (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null) => void }).__tflwRecordSend(
       'press',
       event.target,
@@ -1676,12 +1708,38 @@ export function wirePickSession(page: PWPage, onPick: (picked: PickedLocator) =>
  */
 export class RecordCoalescer {
   private pending: { readonly cssPath: string; readonly raw: RawPickInfo; value: string } | null = null;
+  /**
+   * **What has already been written for each element** — `M220` `E` (`D1175`, closing the second
+   * half of `M219-02`).
+   *
+   * Pressing `Enter` in a form recorded the same `fill` twice. The order is why, and it is nobody's
+   * bug in particular: the keystroke flushes the pending fill *before* the `press` — which is
+   * `emitPending`'s whole job and correct — and then the browser fires `change` on the field,
+   * because Enter commits it. The `change` branch below has always treated a `change` as the
+   * authoritative final value, so it wrote the same string again.
+   *
+   * A `change` carrying a value already written, with nothing typed since, says nothing new. That
+   * is the test, and it is deliberately *"nothing typed since"* rather than *"same value"* alone:
+   * clearing a field and retyping the identical string is a real second fill, and it necessarily
+   * arrives with `input` events that make `pending` non-null for that element.
+   */
+  private readonly written = new Map<string, string>();
 
-  /** What a `change`/`click`/`press` must emit before itself. `null` when nothing is pending. */
+  /**
+   * What a `change`/`click`/`press` must emit before itself. `null` when nothing is pending.
+   *
+   * **Recording what it hands out is part of handing it out** (`D1175`) — both callers emit a
+   * `fill` from the result, so the bookkeeping belongs where the value leaves rather than at each
+   * of them. The `<select>` branch below calls this to *discard* a pending value rather than to
+   * emit one; that leaves a stale entry for a `<select>`'s own path, which is harmless because a
+   * `<select>` never reaches the text-`change` branch that reads this map.
+   */
   flush(): { readonly raw: RawPickInfo; readonly value: string } | null {
     const out = this.pending;
     this.pending = null;
-    return out === null ? null : { raw: out.raw, value: out.value };
+    if (out === null) return null;
+    this.written.set(out.cssPath, out.value);
+    return { raw: out.raw, value: out.value };
   }
 
   /**
@@ -1725,6 +1783,13 @@ export class RecordCoalescer {
       // A text field: the `change` is the authoritative final value, replacing whatever the
       // keystrokes left pending for the same element.
       if (this.pending !== null && this.pending.cssPath !== event.raw.cssPath) await emitPending();
+      /* **…unless it is the value that has just been written** (`D1175`). A `press` flushed the
+         pending fill a moment ago and the browser then fired this `change` because `Enter` commits
+         the field — so without this the same statement is written twice, and a replay types the
+         value, submits, and types it again. `this.pending === null` is the *nothing typed since*
+         half: an author who cleared the field and retyped the identical string produced `input`
+         events on the way, and those are a real second fill. */
+      if (this.pending === null && this.written.get(event.raw.cssPath) === (event.value ?? '')) return out;
       this.pending = { cssPath: event.raw.cssPath, raw: event.raw, value: event.value ?? '' };
       await emitPending();
       return out;

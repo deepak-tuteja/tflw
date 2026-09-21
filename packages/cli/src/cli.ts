@@ -15,7 +15,7 @@ import { watch as fsWatch, existsSync, readFileSync, statSync, mkdirSync, openSy
 import { createRequire } from 'node:module';
 import { join, resolve, relative, dirname, basename } from 'node:path';
 import { discoverTests } from './project.js';
-import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH } from './ui-server.js';
+import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH, PLAY_SCRATCH } from './ui-server.js';
 import { recordedLine } from './record.js';
 import {
   parseSource,
@@ -987,6 +987,19 @@ interface RunArgs {
   /** `--headed` (M3c) — headless by default; this opts into a visible browser window (only
    * meaningful locally, never in CI). */
   readonly headed: boolean;
+  /**
+   * `--trace` (`M220` `B`, `D1170`) — keep this run's browser trace even when everything passed.
+   *
+   * **It changes what is kept and never what is captured.** At `evidence full` the context has
+   * always been traced from the first browser step (`browser.ts`'s `ensurePage`); the archive is
+   * simply discarded on a clean first-attempt pass. Below `evidence full` nothing is captured and
+   * this flag has nothing to keep — stated rather than guarded, because `finish` already returns
+   * `undefined` there whatever it is asked.
+   *
+   * No config key, deliberately (`ResolvedConfig.keepTrace`): a trace you want is a trace you want
+   * *now*, and a project that kept one on every green CI run is `M205-07` by default.
+   */
+  readonly trace: boolean;
   /** `--update-snapshots` (M4b, D15) — writes/overwrites `matches snapshot` baselines instead of
    * just comparing against them. Off by default, same as every prior milestone's behavior. */
   readonly updateSnapshots: boolean;
@@ -1062,6 +1075,7 @@ function parseRunArgs(argv: string[]): RunArgs {
   let logFile: string | undefined;
   let browserRaw: string | undefined;
   let headed = false;
+  let trace = false;
   let updateSnapshots = false;
   let logOutputRaw: string | undefined;
   let logLevelRaw: string | undefined;
@@ -1108,6 +1122,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
     else if (a === '--headed') headed = true;
+    else if (a === '--trace') trace = true;
     else if (a === '--update-snapshots') updateSnapshots = true;
     else if (a === '--log-output') logOutputRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--log-output=')) logOutputRaw = inlineFlagValue(a, '--log-output');
@@ -1162,6 +1177,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     logFile,
     browserRaw,
     headed,
+    trace,
     updateSnapshots,
     logOutputRaw,
     logLevelRaw,
@@ -1659,6 +1675,10 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     // `[]` because its input is a file; the affirmation has to arrive from the command line or the
     // control it implements does not exist.
     allowPublicTargets: args.allowPublicTargets,
+    // `M220` `B` (`D1170`) — unconditional like `allowPublicTargets` above it and unlike the four
+    // overrides below: those replace a key a config file may have set, and there is no
+    // `keep trace` key for this to override. The command line is the only source there is.
+    keepTrace: args.trace,
     ...(evidenceArg !== undefined ? { evidenceLevel: evidenceArg } : {}),
     ...(teardownArg !== undefined ? { teardown: teardownArg } : {}),
     ...(logOutputArg !== undefined ? { logDestination: logOutputArg } : {}),
@@ -3889,7 +3909,10 @@ async function ensureGitignore(cwd: string): Promise<boolean> {
   // are one fact, and when the name gained its leading dot a second literal here would have
   // ignored a file that no longer exists while leaving the real one committable. A duplicated
   // string is the drift this repository files more often than any other.
-  const required = ['.env', 'report/', SCRATCH_PATH];
+  // `PLAY_SCRATCH` joins it for `M221` `B`: ▶ writes the buffer beside the test it runs, so a
+  // project `init` makes is right about both scratches from the start. Same rule, same source of
+  // truth — a basename, which git matches at any depth.
+  const required = ['.env', 'report/', SCRATCH_PATH, PLAY_SCRATCH];
   let existing = '';
   try {
     existing = await readFile(gitignorePath, 'utf8');
@@ -4072,7 +4095,7 @@ function printUsage(): void {
       '',
       'usage:',
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
-      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--update-snapshots]',
+      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots]',
       '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
       '            [--teardown always|on-success|never]',
       '            [--log-output console|html|both|none]',
@@ -4092,6 +4115,7 @@ function printUsage(): void {
       '                                                      --log-file <path> duplicates console output to a file (plain text)',
       '                                                      --browser switches every browser step to one engine (default chromium)',
       '                                                      --headed shows the browser window instead of running headless',
+      '                                                      --trace keeps the browser trace even when everything passed (needs --evidence full; open it with `npx playwright show-trace`)',
       '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines (SPEC §9.9)',
       '                                                      --forbid-insecure refuses to run at all if `insecure true` is active for this env (a CI policy gate)',
       '                                                      --evidence <level> how much request/response detail the report keeps: full (default), headers-only, none',

@@ -239,6 +239,9 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
     // overlays the real values.
     allowPublicTargets: [],
     evidenceLevel,
+    /* `M220` `B` (`D1170`) — CLI-only, like `allowPublicTargets` two lines up: this function's
+       input is a file, and a file has no `--trace`. `cli.ts` is the one place it goes true. */
+    keepTrace: false,
     teardown,
     redactPatterns,
     viewport,

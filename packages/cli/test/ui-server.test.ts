@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseConfigSource } from '@tflw/lang';
 import { resolveConfig, selectEnv } from '@tflw/runtime';
-import { UiServer, blockForEnv, readProject, runArgv, initArgv, pickArgv, recordArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, blockForEnv, readProject, runArgv, initArgv, pickArgv, recordArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, PLAY_SCRATCH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
 import { readdir } from 'node:fs/promises';
 
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
@@ -144,6 +144,45 @@ test('the project view names the scratch file and says whether git will ignore i
     // than left to be discovered, because it is the cost of not shelling out to `git`.
     await writeFile(join(dir, '.gitignore'), '*.tflw\n', 'utf8');
     assert.equal((await readProject(dir)).scratchIgnored, false, 'the documented false negative');
+
+    /**
+     * **And the same question about `M221`'s play scratch** (`D1184`).
+     *
+     * `PLAY_SCRATCH` is a **basename**, not a path, because ▶ writes it beside whichever file it
+     * runs — `imports.ts` resolves a relative `use` against `dirname(filePath)`, so a root scratch
+     * would change what a nested test imports. The exact-line test is *truer* for a basename than
+     * for a path: a `.gitignore` entry with no slash is git's own match-at-any-depth pattern, so
+     * one line really does cover every directory.
+     */
+    await writeFile(join(dir, '.gitignore'), `.env\nreport/\n${SCRATCH_PATH}\n`, 'utf8');
+    const onlySend = await readProject(dir);
+    assert.equal(onlySend.playScratch, PLAY_SCRATCH);
+    assert.equal(onlySend.playIgnored, false, 'the send scratch being listed says nothing about the play scratch');
+    await writeFile(join(dir, '.gitignore'), `.env\nreport/\n${SCRATCH_PATH}\n${PLAY_SCRATCH}\n`, 'utf8');
+    const both = await readProject(dir);
+    assert.equal(both.playIgnored, true);
+    assert.equal(both.scratchIgnored, true, 'and the two answers are independent, not one field read twice');
+
+    /**
+     * **And it is invisible to discovery at DEPTH, which is the half `M205` Q15 only needed at the
+     * root** (`M221` gate 7).
+     *
+     * `project.ts`'s walk skips every dot-prefixed entry at every level, so the leading dot is the
+     * whole mechanism and there is no `exclude` key to scaffold. This is asserted rather than
+     * assumed because it is what stands between ▶ and `M205-04`'s defect one directory down: a
+     * sidebar reading `2 files` for one the author wrote, and a bare `tflw run` executing the same
+     * test twice.
+     */
+    await mkdir(join(dir, 'tests'), { recursive: true });
+    await writeFile(join(dir, 'tests', 'a.tflw'), 'test "one"\n  api GET "/"\n  expect status equals 200\n', 'utf8');
+    const before = await readProject(dir);
+    assert.deepEqual(before.files.map((f) => f.path), ['tests/a.tflw']);
+    await writeFile(join(dir, 'tests', PLAY_SCRATCH), 'test "one"\n  api GET "/"\n  expect status equals 200\n', 'utf8');
+    assert.deepEqual((await readProject(dir)).files.map((f) => f.path), ['tests/a.tflw'], 'the play scratch is in the tree');
+    // NEGATIVE CONTROL: the same bytes under a name WITHOUT the dot are discovered, so the line
+    // above is about the leading dot and not about the walk missing the directory.
+    await writeFile(join(dir, 'tests', 'play.tflw'), 'test "one"\n  api GET "/"\n  expect status equals 200\n', 'utf8');
+    assert.equal((await readProject(dir)).files.length, 2, 'the walk never reached tests/ at all');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -98,6 +98,23 @@ export function App() {
   const [envPick, setEnvPick] = useState<string | null>(null);
   const [workers, setWorkers] = useState('');
   /**
+   * **`--headed` — show the browser instead of running it headless** (`M220` `D`, `D1173`).
+   *
+   * Run-level and not per-gesture, because that is what the flag is: `tflw run --headed` is about
+   * the run, so a per-▶ variant would be a narrower control than the thing it maps to. Kept in
+   * this component's state and not in the URL — `D1045` puts *where you are* in the address, and
+   * this is not a place, it is how the next run is done.
+   */
+  const [headed, setHeaded] = useState(false);
+  /**
+   * **The trace the Run pane is showing, when it is showing one** — `M220` `C` (`D1179`).
+   *
+   * Not in the URL, and that is `D1045` applied rather than skirted: a trace is evidence of one
+   * run in one report directory, and a hash naming it would outlive the directory the next run
+   * clears. What *is* in the URL — the door, the file, the tab — still is.
+   */
+  const [traceOpen, setTraceOpen] = useState<{ readonly id: string; readonly path: string } | null>(null);
+  /**
    * The selection — the explorer's own gesture (`M209` `S4`, `M205` Q13) and, since `D1066`, part
    * of the address. It is an ORDER and not a set on the wire, because the address has to be stable:
    * a link that reorders its own files every time somebody clicks is a link that never compares
@@ -602,19 +619,8 @@ export function App() {
     [refreshLists],
   );
 
-  const onRun = useCallback(
-    async (request: RunRequest) => {
-      try {
-        const record = await startRun(request);
-        setSelected({ kind: 'run', id: record.id });
-        await refreshLists();
-        watch(record.id);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [refreshLists, watch],
-  );
+  /* A viewer is about one report; choosing another run is leaving it (`D1179`). */
+  useEffect(() => setTraceOpen(null), [selected]);
 
   // Selecting a run row that is still in flight (re)attaches to its stream — the server replays
   // every line first, so a page opened mid-run sees the whole of it.
@@ -630,11 +636,49 @@ export function App() {
 
   const defaultEnv = project?.envs.find((e) => e.isDefault)?.name ?? project?.envs[0]?.name ?? '';
   const env = envPick ?? defaultEnv;
-  /** The request exactly as `tflw run` takes it — a field is present only when it narrows. */
-  const request = useCallback((): RunRequest => {
+  /**
+   * **The facts every run carries, whatever narrowed it** — `M220` `D` (`D1178`).
+   *
+   * Extracted from `request()` below when ▶ arrived, because ▶ builds its own narrowing — one
+   * file, one `--only` — and would otherwise have run against the **default** env while the strip
+   * two rows above it said another one. That is a page with two answers to *what is about to run*,
+   * which is the one thing this strip's own header says it exists to prevent. So the run-level
+   * half lives here and `onRun` applies it to every request that reaches it, from either gesture.
+   */
+  const runLevel = useCallback((): RunRequest => {
     const req: { -readonly [K in keyof RunRequest]: RunRequest[K] } = {};
     if (env) req.env = env;
     if (/^\d+$/.test(workers)) req.workers = Number(workers);
+    /* `--headed` (`M220` `D`, `D1173`) — the escape hatch, and the only answer for firefox and
+       webkit, which CDP cannot serve at all. Deliberately not the headline: a window that steals
+       focus mid-run is a poor default, and `D1169`'s trace is the thing you actually read. */
+    if (headed) req.headed = true;
+    return req;
+  }, [env, workers, headed]);
+
+  const onRun = useCallback(
+    async (request: RunRequest) => {
+      try {
+        /* **One funnel, and the run-level facts land here** (`D1178`). The strip's own request has
+           already spread them and re-spreading identical values changes nothing; ▶'s has not, and
+           this is what gives it the env, the workers and `--headed` the reader is looking at.
+           **It sits below `runLevel` rather than above it** — this callback used to be the first
+           thing after `watch`, and moving it four statements down was cheaper than a ref kept
+           current by an effect. Nothing between the two positions calls it. */
+        const record = await startRun({ ...runLevel(), ...request });
+        setSelected({ kind: 'run', id: record.id });
+        await refreshLists();
+        watch(record.id);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [refreshLists, watch, runLevel],
+  );
+
+  /** The request exactly as `tflw run` takes it — a field is present only when it narrows. */
+  const request = useCallback((): RunRequest => {
+    const req: { -readonly [K in keyof RunRequest]: RunRequest[K] } = { ...runLevel() };
     // `D1064` — the two kinds of query narrow a run by different mechanisms, and only one of them
     // is exact. `--tag` is the language's own narrowing, so a tag query runs *the tests carrying
     // the tag*; a name has no flag, so a text query can only run the files it lit up, whole. On the
@@ -644,7 +688,7 @@ export function App() {
     const chosen = selection.length > 0 ? new Set(selection) : parsed.kind === 'text' && project ? matchingFiles(project, parsed)! : null;
     if (chosen !== null && chosen.size > 0 && project) req.files = project.files.map((f) => f.path).filter((p) => chosen.has(p));
     return req;
-  }, [env, workers, query, selection, project]);
+  }, [runLevel, query, selection, project]);
 
 
   /**
@@ -880,7 +924,41 @@ export function App() {
         </p>
       ) : null}
       {selected?.kind === 'run' && live && live.id === selected.id ? <LivePane live={live} /> : null}
-      {selected?.kind === 'report' && report && report.id === selected.id ? (
+      {/* **The trace viewer, in the page** — `M220` `C` (`D1179`).
+          It is an `<iframe>` and that is *not* §2.1's refused idea: the viewer is served by this
+          same server under `/trace/`, so it is **same-origin**, and the thing §2.1 measured as
+          unreachable was an iframe of the application *under test*, on another port.
+          Measured: the viewer compresses to a floor of **606 px** and fits without overflow at
+          704. This pane is the main area — ~1100 px at 1440 — and, unlike the editor column
+          (460–860 px depending on where the reader has dragged `COMPOSE`'s grip), it is above that
+          floor at every width the grip can produce. That measurement is what chose this placement
+          over the column beside the sequence, and over a sixth tab, which `doors.ts`'s own rule
+          refuses: a tab is a stage of one file's life, and Run is already that stage. */}
+      {traceOpen && selected?.kind === 'report' && selected.id === traceOpen.id ? (
+        <section className="trace-pane" data-trace-pane={traceOpen.path}>
+          <p className="trace-pane-bar">
+            <button type="button" className="linkish" onClick={() => setTraceOpen(null)} data-trace-close>
+              ← back to the report
+            </button>
+            <a href={reportFileUrl(traceOpen.id, traceOpen.path)} download data-trace-download-pane>
+              trace.zip
+            </a>
+            <code className="muted">{traceOpen.path}</code>
+          </p>
+          {/* **The viewer cannot be deep-linked to a step, measured.** Its bundle reads exactly
+              four query parameters — `trace`, `ws`, `isUnderTest`, `configuration`; the
+              `pointX`/`pointY`/`name`/`route` ones belong to the snapshot renderer and its service
+              worker, not to the top-level page. `M220` §4 `C` named this the round's one
+              unverified assumption and stated the fallback in advance: it opens at the top. */}
+          <iframe
+            className="trace-frame"
+            data-trace-frame
+            title="Playwright trace viewer"
+            src={`/trace/index.html?trace=${encodeURIComponent(new URL(reportFileUrl(traceOpen.id, traceOpen.path), window.location.origin).toString())}`}
+          />
+        </section>
+      ) : null}
+      {selected?.kind === 'report' && report && report.id === selected.id && !traceOpen ? (
         <article className="report" data-report={report.id}>
           <ReportHeader report={report.data} />
           {exitNote && exitNote.id === report.id ? (
@@ -919,7 +997,7 @@ export function App() {
               ))}
           </p>
           <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} onAccept={door === null ? null : (f) => void acceptFinding(f)} />
-          <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null }} />
+          <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null, onOpenTrace: (p) => setTraceOpen({ id: report.id, path: p }) }} />
         </article>
       ) : null}
       {selected === null && !error ? <p className="muted empty">select a run</p> : null}
@@ -1023,6 +1101,10 @@ export function App() {
       {creating === null || project === null || (creating === 'test' && !fileReady) ? null : (
         <NewThing
           mode={creating}
+          /* **The door decides what it scaffolds** (`M222`, `D1189`) — `D1042`'s own second
+             clause, live for the first time. `door` is non-null here: the landing returns above
+             whenever it is not. */
+          door={door}
           inDir={creatingIn}
           openPath={path}
           /* **The file as the author has it** (`M217` `C`, `D1141`). This read `openFileView.text`
@@ -1069,6 +1151,8 @@ export function App() {
             onEnv={setEnvPick}
             workers={workers}
             onWorkers={setWorkers}
+            headed={headed}
+            onHeaded={setHeaded}
             selection={selection}
             query={query}
             running={running}
@@ -1128,6 +1212,13 @@ export function App() {
             configMark={configMark}
             runPane={runPane}
             runMark={live && !live.end ? 'a run is going' : undefined}
+            /* `M220` `A` — ▶ on a declaration is a run, so it goes through the shell's own
+               `onRun` (`D1168`): selected, watched, and landing where every run's end lands. */
+            onRun={(r: RunRequest) => void onRun(r)}
+            running={running}
+            /* `D1180` — the newest report's identity and its time. Either moving is a new run to
+               read; neither moves when nothing has run, so the effect behind it stays quiet. */
+            reportsStamp={`${reports.length}:${reports[0]?.id ?? ''}:${reports[0]?.at ?? ''}`}
           />
         ) : null}
         {project && door === 'scan' ? (

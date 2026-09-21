@@ -8,7 +8,7 @@ export type { ProjectView, ProjectFile, ProjectTest, ProjectCrawl, RunRecord, Ru
 // `Lens` is the language's own (`D1043`): the page derives a lens with the same function the
 // server does, so the type has to be the same type too.
 export type { Lens } from '@tflw/lang';
-export type { RunReport, ReportEntry, TestResult, WorkloadTestResult, CrawlResult, StepResult, AttemptResult, RunEvent, LoadMetrics, LoadThresholdResult, LoadWorkloadReport, ScanFinding, ScanRuleCensus } from '@tflw/runtime';
+export type { RunReport, ReportEntry, TestResult, WorkloadTestResult, CrawlResult, StepResult, AttemptResult, TraceAsset, RunEvent, LoadMetrics, LoadThresholdResult, LoadWorkloadReport, ScanFinding, ScanRuleCensus } from '@tflw/runtime';
 
 /** The server's own `event: end` on a run's stream — not a `RunEvent`, the run is over. */
 export interface EndEvent {

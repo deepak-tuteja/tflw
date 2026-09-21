@@ -401,19 +401,43 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
   // The link resolves to the archive the reporter wrote — the page's hash is the reporter's.
   const zip = await fetch(`${baseUrl}${await line.locator('[data-trace-download]').getAttribute('href')}`);
   assert.equal(zip.status, 200);
-  assert.equal(Number(zip.headers.get('content-length')), Buffer.from(traced[0]!.trace!.base64, 'base64').length);
+  assert.equal(Number(zip.headers.get('content-length')), Buffer.from(traced[0]!.trace!.base64!, 'base64').length);
   assert.equal(await line.locator('code').textContent(), `npx playwright show-trace ${path}`);
-  // *open trace*: Playwright's own viewer, served by tflw ui, reading the archive from the same origin.
-  const viewerHref = (await line.locator('[data-open-trace]').getAttribute('href'))!;
-  assert.match(viewerHref, /^\/trace\/index\.html\?trace=/);
-  const viewer = await browser.newPage();
-  try {
-    await viewer.goto(`${baseUrl}${viewerHref}`);
-    // The trace's own content, rendered by the viewer: the page the test opened.
-    await viewer.getByText('127.0.0.1:4717', { exact: false }).first().waitFor({ timeout: 60_000 });
-  } finally {
-    await viewer.close();
-  }
+  /**
+   * ***open trace* opens the viewer IN THIS PAGE** — `M220` `C` (`D1179`).
+   *
+   * This used to read an `<a>`'s `href` and open the viewer in a second browser page, which is
+   * what the control did: it answered the question by leaving the application. That was the right
+   * shape while a trace was a failure artefact you took away to study, and `D1170` has just made
+   * a kept trace the ordinary outcome of pressing ▶. So the control is a button, the viewer is an
+   * iframe in the Run pane — **same-origin, which is exactly what `M220` §2.1 measured an iframe
+   * of the application *under test* is not** — and this asserts the frame, not a link.
+   *
+   * The fixture corpus is deliberately **not** regenerated for this round, so its `results.json`
+   * still carries `trace.base64` rather than `D1171`'s `trace.path`. That makes this gate the
+   * cover for `TraceLink`'s legacy branch — a report written before `M220`, whose bytes are
+   * hashed to recover the archive's name — and the live `--trace` run in `examples/storefront`
+   * is where the new shape is read.
+   */
+  assert.equal(await line.locator('[data-open-trace]').evaluate((el) => el.tagName), 'BUTTON', 'the control opens the viewer here, it does not link away');
+  await line.locator('[data-open-trace]').click();
+  const frame = page.locator('[data-trace-frame]');
+  await frame.waitFor();
+  const src = (await frame.getAttribute('src'))!;
+  assert.match(src, /^\/trace\/index\.html\?trace=/);
+  // The archive the viewer is pointed at is the one the reporter wrote, named **absolutely** —
+  // the viewer's own service worker fetches it, and a relative path would resolve against
+  // `/trace/` rather than against this page.
+  const pointedAt = decodeURIComponent(src.slice(src.indexOf('trace=') + 'trace='.length));
+  assert.match(pointedAt, /^https?:\/\//, 'the viewer is handed an absolute URL');
+  assert.ok(pointedAt.endsWith(`/api/reports/full/${path}`), `the viewer is pointed at the archive the reporter wrote — got ${pointedAt}`);
+  assert.equal((await fetch(pointedAt)).status, 200, 'and that URL serves');
+  // The trace's own content, rendered by the viewer inside the pane: the page the test opened.
+  await page.frameLocator('[data-trace-frame]').getByText('127.0.0.1:4717', { exact: false }).first().waitFor({ timeout: 60_000 });
+  // …and back, because a pane you cannot leave is a tab with extra steps.
+  await page.locator('[data-trace-close]').click();
+  await page.locator('[data-report]').first().waitFor();
+  assert.equal(await page.locator('[data-trace-frame]').count(), 0);
   assert.equal(await page.locator('[data-evidence-withheld]').count(), 0);
 });
 
@@ -901,6 +925,8 @@ interface DeclRow { name: string | null; line: string | null; lenses: string | n
  *  index is graded on lines, tags and the workload flag as well as on names. */
 interface FullProject {
   files: { path: string; tests: { name: string; line: number; tags: string[]; workload: boolean; lenses: string[] }[]; crawls: { name: string; line: number; lenses: string[] }[] }[];
+  /** `M221` `B` — the basename ▶ writes beside whichever file it plays (`D1184`). */
+  playScratch: string;
 }
 const fullProject = async (): Promise<FullProject> => (await (await fetch(`${baseUrl}/api/project`)).json()) as FullProject;
 
@@ -2855,6 +2881,130 @@ test('`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the ro
   await writeFile(join(root, target), before, 'utf8');
 });
 
+test('`M221` `A`+`B`: the stage is under the columns with room for the viewer, and ▶ no longer refuses an unsaved buffer', async () => {
+  /**
+   * **THE STAGE** — `M221` `A` (`D1181`), which amends `D1179`.
+   *
+   * `M220` put the viewer in the Run tab and argued the placement from one number: the viewer
+   * compresses to a floor of **606 px** and the editor column is 460–860 px depending on where
+   * `COMPOSE`'s grip has been dragged. That is true of the column and false of the region under
+   * it — measured on the live page at 1440x900, `main` is 1114 px and `elementFromPoint` below the
+   * columns returned `main` itself, i.e. nothing was there. So the width claim is the one this
+   * gate holds, because it is the claim the placement was overturned on.
+   */
+  await page.goto(`${baseUrl}#/browser`);
+  await page.reload();
+  await page.locator('[data-door-form="browser"]').waitFor();
+  const target = 'tests/shop.tflw';
+  await page.locator(`[data-file-row="${target}"]`).click();
+  await page.locator('[data-compose-summary]').waitFor();
+  const before = await readFile(join(root, target), 'utf8');
+  try {
+    const stage = page.locator('[data-stage]');
+    await stage.waitFor();
+    assert.equal(await stage.getAttribute('data-stage'), 'empty', 'nothing has been played, so there is no trace to draw');
+    /* `D1187` — the region says which of its states it is in rather than being absent. A stage
+       that rendered `null` before the first play would grow the page by 700 px on the press. */
+    assert.equal(await page.locator('[data-stage-hint]').count(), 1, 'the stage is drawn dead');
+    assert.match((await page.locator('[data-stage-hint]').textContent())!, /press ▶/, 'the hint does not say what would fill it');
+    assert.equal(await page.locator('[data-stage-frame]').count(), 0, 'a frame with no trace behind it');
+
+    /**
+     * The measurement the amendment rests on. `606` is the viewer's own floor, measured in `M220`.
+     *
+     * **BOTH RECTANGLES COME OUT OF ONE `evaluate`, and that is not tidiness.** The first draft
+     * took two `boundingBox()` calls and read *stage y 242, foot y 469* — a later sibling above
+     * its own predecessor, which no layout can produce. The two calls are two round trips and
+     * therefore two moments, and the sequence column is still growing as the outline arrives
+     * between them: the stage's y was stale by the height the column had yet to gain. It passed
+     * when the test ran alone, because alone the page had settled first — which is the worst
+     * shape a gate can have, since the green run is the one that tells you nothing.
+     *
+     * So the wait is for a row of the sequence to exist (the thing whose arrival moves everything
+     * below it), and the measurement is one synchronous pass over both elements.
+     */
+    /* **THE PANE COMES BACK BLANK AFTER IT HAS ALREADY DRAWN, SO A `waitFor` IS NOT ENOUGH.**
+       `M221` waited on `[data-seq-row]` — the element whose arrival moves everything below it —
+       and that is a proxy that *disappears again*. Measured over the whole file rather than this
+       test alone: `{stage y 241.9, foot null, editor null, rows 0}`, with `[data-compose-pane]`
+       and `[data-compose-state]` present and `[data-compose-summary]`/`[data-seq]` gone — the
+       pane back in its placeholder **after** the summary this test already waited for had
+       rendered. Clicking the file row appends `?files=tests/shop.tflw` to the hash a beat later,
+       the file-read effect runs a second time, and the pane blanks for that fetch. Waiting on
+       `[data-seq-foot]` and `[data-editor]` first does not help: they are true, then false.
+
+       So the wait is on **the measurement itself being coherent**, which is the only condition
+       that cannot be true one moment and false the next in a way this gate cares about. Bounded,
+       and the last reading is what the refusal prints — a timeout here is a real failure with its
+       own diagnosis rather than a hang.
+
+       The callback going INTO the page stays anonymous and binds no arrow to a variable
+       (`M222-01`): tsx's keep-names transform wraps any function expression with an inferred name
+       in a call to `__name`, which exists in the test process and not in the browser. `read`
+       below is Node-side and therefore free of it, and `root.ownerDocument` carries the DOM types
+       `tsconfig.test.json` does not have (`types: ["node"]`, no DOM lib — the same reason the two
+       focus checks in this file ask a `:focus` locator instead of `document.activeElement`).
+
+       Still ONE round trip per reading, which is the point `M221` established: `boundingBox()`
+       twice is two moments, and a sequence column still gaining height between them is what made
+       this gate read a stage 227 px above its own predecessor and pass when run alone. */
+    const read = () =>
+      page.locator('body').evaluate((root) => {
+        const [stage, foot, editor] = ['[data-stage]', '[data-seq-foot]', '[data-editor]'].map((sel) => {
+          const el = root.querySelector(sel);
+          if (el === null) return null;
+          const b = el.getBoundingClientRect();
+          return { x: b.x, y: b.y, w: b.width, h: b.height };
+        });
+        return {
+          stage: stage ?? null,
+          foot: foot ?? null,
+          editor: editor ?? null,
+          at: {
+            hash: root.ownerDocument.location.hash,
+            rows: root.querySelectorAll('[data-seq-row]').length,
+            state: root.querySelector('[data-compose-summary]') === null ? 'placeholder' : 'drawn',
+          },
+        };
+      });
+    let geom = await read();
+    for (let i = 0; i < 50 && (geom.stage === null || geom.foot === null || geom.editor === null); i++) {
+      await page.waitForTimeout(100);
+      geom = await read();
+    }
+    const { stage: stageBox, foot: footBox, editor: editorBox } = geom;
+    assert.ok(stageBox !== null && footBox !== null, `the stage or the sequence foot is not on the page at all — ${JSON.stringify(geom)}`);
+    assert.ok(stageBox.w >= 606, `the stage is ${Math.round(stageBox.w)} px — below the trace viewer's 606 px floor, which is the number D1179 refused this placement on`);
+    // …and it is BELOW both columns, not beside them, which is what buys that width.
+    assert.ok(stageBox.y >= footBox.y, `the stage is not under the sequence column — ${JSON.stringify(geom)}`);
+    // The claim `D1181` is actually made of: wider than the editor column it was refused from.
+    assert.ok(editorBox !== null && stageBox.w > editorBox.w, `the stage (${Math.round(stageBox.w)}) is no wider than the editor column (${Math.round(editorBox?.w ?? 0)}), so it buys nothing`);
+
+    /**
+     * **▶ RUNS THE BUFFER** — `M221` `B` (`D1183`), overturning `D1177`.
+     *
+     * `D1177` held ▶ while the pane was dirty and said *write this file first — a play runs what
+     * is on disk*. The premise was right and the wrong half was kept: a pane is dirty from the
+     * first step you add, which is most of the time anyone wants to press this. The gate is the
+     * held attribute, asserted **after** an edit — before the edit it would pass against the old
+     * rule too, which is exactly the vacuity `M220`'s gate 6 shipped with.
+     */
+    const play = page.locator('[data-seq-play="test"]').first();
+    await play.waitFor();
+    assert.equal(await play.getAttribute('data-seq-play-held'), null, 'held at rest, before anything was even typed');
+
+    await page.locator('[data-seq-add="click"]').first().click();
+    await page.locator('[data-script="click"]').waitFor();
+    await page.locator('[data-compose-dirty]').waitFor();
+    assert.equal(await page.locator('[data-seq-play="test"]').first().getAttribute('data-seq-play-held'), null, '▶ still refuses an unsaved buffer — D1177 was not actually lifted');
+    assert.equal(await page.locator('[data-seq-play="test"]').first().isDisabled(), false);
+    /* And the reason it may: the scratch it will write is named, beside the file. */
+    assert.equal((await fullProject()).playScratch, '.play.tflw');
+  } finally {
+    await writeFile(join(root, target), before, 'utf8');
+  }
+});
+
 test('`M213` `S4`: adding a gesture to a test that already opened a page writes no second `open`', async () => {
   // A browser test navigates once — 270 `open`s across 244 browser tests — so adding steps to an
   // existing one must NOT re-open. A second `open` would reload the page out from under whatever
@@ -3407,6 +3557,51 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
       assert.ok(after.includes('fill field "Email" with "alice@example.com"'), `the kept line is in the buffer:\n${after}`);
       assert.equal(after.includes('click button "Sign in"'), false, 'and only the kept line — the other two are still evidence');
       assert.equal(after.includes('tick field "Remember me"'), false);
+
+      /**
+       * **`M221` `C` — ▶ on the panel runs the test WITH the pending lines, and keeps none of
+       * them** (`D1185`, `D1186`).
+       *
+       * The two claims are separable and both are here, because each passes alone against a
+       * different wrong build: *the lines are in what runs* is green for a ▶ that simply called
+       * `keepAll` first, and *the file did not change* is green for a ▶ that ran the saved test
+       * and ignored the session entirely. Together they are the gesture.
+       *
+       * The run itself goes to the stub, which is not a `tflw` and writes no report — deliberately.
+       * What this gate is about is **what gets written before the run**, and that is a file on
+       * disk this test can read. Whether a report comes back and lands in the stage is `A`'s claim
+       * and is held where a real run happens.
+       */
+      await fresh.locator('[data-tab="compose"]').click();
+      await fresh.locator('[data-tabstrip="compose"]').waitFor();
+      const tryIt = fresh.locator('[data-session-play]');
+      await tryIt.waitFor();
+      /* Two lines are still pending — the keep above took the middle one — so the control counts
+         what is left rather than what the session started with. */
+      assert.match((await tryIt.textContent())!, /▶ try 2/, 'the control does not count the lines still pending');
+      const onDisk = await readFile(join(dir, 'web.tflw'), 'utf8');
+      await tryIt.click();
+
+      /* The scratch is beside the file, and `web.tflw` is at this fixture's root — so `D1184`'s
+         join produces the root basename here, which is the one case where it agrees with `send`. */
+      const scratch = join(dir, '.play.tflw');
+      let played = '';
+      for (let i = 0; i < 60 && played === ''; i += 1) {
+        played = await readFile(scratch, 'utf8').catch(() => '');
+        if (played === '') await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.notEqual(played, '', 'no scratch was written beside the file — ▶ ran the disk');
+      /* `D1185` — the whole test, with the pending lines spliced into it. Both of them: the one
+         `keep` already wrote is in the buffer, and the two still pending are added on top. */
+      assert.ok(played.includes('open "/checkout"'), `the test's own steps are in what ran:\n${played}`);
+      assert.ok(played.includes('click button "Sign in"'), `a pending line is in what ran:\n${played}`);
+      assert.ok(played.includes('tick field "Remember me"'), `and the other one:\n${played}`);
+      assert.ok(played.includes('fill field "Email"'), 'the kept line is there too — the scratch is the BUFFER, not the disk');
+
+      /* `D1186` — and nothing was kept. The file has not moved and the session still holds every
+         line it held, so the tick is still the only thing that writes (`D1165`). */
+      assert.equal(await readFile(join(dir, 'web.tflw'), 'utf8'), onDisk, 'a play wrote to the file — playing is not keeping');
+      assert.equal(await fresh.locator('[data-session-line][data-session-line-kind="step"]').count(), 2, 'the play consumed the lines it ran');
 
       assert.deepEqual(pageErrors, [], 'classifying a line must not throw — a dropped line and a crashed handler are otherwise indistinguishable');
     } finally {
@@ -5023,6 +5218,125 @@ test('a new .tflw file can be made from the page, and the page then opens it', a
     assert.match(new URL(fresh.url()).hash, /compose\/tests\/second\.tflw/, 'and the page is now on the file it just made');
     await fresh.locator('[data-compose-subject-what]').waitFor();
     assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test "it also answers"');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`M222`: the create dialog reads the door — BROWSER scaffolds `open`, and the test it makes is one BROWSER can edit', async () => {
+  /**
+   * **`D1042`'s second clause, live for the first time** — *"a door decides where you land and
+   * **what the new-test button scaffolds**, and nothing else"*, quoted in `ui-server.ts` since
+   * `M200` `A0-3` with only the first half implemented.
+   *
+   * The defect this grades is not cosmetic and it is not about fields. `newSource` hardcoded
+   * `buildApiStep` + `buildExpect(status equals 200)` for every door, and `ApiStep` is not in
+   * `vocabulary.ts`'s `browser.constructs` — so pressing `+ new test` on BROWSER produced a test
+   * whose only step the BROWSER pane draws as a plain code line with `data-stmt-editable="no"`,
+   * no control and no reason. That is the pane `D1082` refuses, and it is a fresh instance of
+   * exactly what `M219` `C` spent a slice removing across 650 statements.
+   *
+   * So the assertion that carries the round is the LAST one here: the pane the create gesture
+   * returns you to can edit what the create gesture just wrote. The field count is the visible
+   * half; editability is the half that was broken.
+   */
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m222-door-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      ['env local default', '  api "http://127.0.0.1:4799"', '  web "http://127.0.0.1:4799"', ''].join('\n'),
+    );
+    await writeFile(join(dir, 'one.tflw'), ['test "the first"', '  open "/"', '  expect text "hi" is visible', ''].join('\n'));
+    const port = await ui.listen(0);
+
+    // **The API door first, unchanged**, so the comparison below is between two doors in one run
+    // rather than against a remembered number.
+    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/one.tflw`);
+    await fresh.locator('[data-compose-new-test]').click();
+    await fresh.locator('[data-new-thing="test"]').waitFor();
+    assert.equal(await fresh.locator('[data-new-fields]').getAttribute('data-new-fields'), 'api');
+    assert.equal(await fresh.locator('[data-new-method]').count(), 1, 'the API door lost its method select');
+    await fresh.locator('[data-new-cancel]').click();
+    await fresh.locator('[data-new-thing]').waitFor({ state: 'detached' });
+
+    // **BROWSER: the dialog is SHORTER, which is the round's answer to *make it more dynamic*.**
+    // The option has already been chosen — it is the door — so asking again inside the dialog
+    // would put a control in front of every create on every door to serve a choice nobody makes
+    // twice. `method` is the field that goes; `path` stays and says what it opens.
+    await fresh.goto(`http://127.0.0.1:${port}/#/browser/compose/one.tflw`);
+    await fresh.locator('[data-compose-new-test]').click();
+    await fresh.locator('[data-new-thing="test"]').waitFor();
+    assert.equal(await fresh.locator('[data-new-fields]').getAttribute('data-new-fields'), 'open');
+    assert.equal(await fresh.locator('[data-new-method]').count(), 0, 'the BROWSER door still draws a method select — it issues no request');
+    assert.equal(await fresh.locator('[data-new-path]').count(), 1, 'the BROWSER door draws no path field at all');
+    assert.equal(await fresh.locator('[data-new-path]').getAttribute('aria-label'), 'the page to open');
+
+    await fresh.locator('[data-new-name]').fill('the second');
+    await fresh.locator('[data-new-path]').fill('/checkout');
+
+    // **The preview is the proof** (`D1191`) — the same value `create` writes, so it cannot
+    // describe a different file from the one that lands. Two lines, and the absence of a third is
+    // `D1192`: the language has no url or title matcher to derive an assertion from, and what
+    // text is on the page is the one thing the author has not seen yet.
+    const preview = (await fresh.locator('[data-new-preview]').textContent())!;
+    assert.match(preview, /^ {2}open "\/checkout"$/m);
+    assert.doesNotMatch(preview, /\bapi\b/, 'the BROWSER preview contains an api step');
+    assert.doesNotMatch(preview, /expect status/, 'the BROWSER preview carries the API door’s companion assertion');
+
+    await fresh.locator('[data-new-create]').click();
+    await fresh.locator('[data-new-thing="test"]').waitFor({ state: 'detached' });
+    await fresh.locator('[data-compose-write]').click();
+    await fresh.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+
+    const onDisk = await readFile(join(dir, 'one.tflw'), 'utf8');
+    assert.match(onDisk, /^test "the first"$/m, 'the file was spliced, not rewritten');
+    assert.match(onDisk, /^test "the second"$/m);
+    assert.match(onDisk, /^ {2}open "\/checkout"$/m);
+    assert.doesNotMatch(onDisk, /^ {2}api /m, 'the BROWSER door wrote an api step to disk');
+
+    /* **THE ASSERTION THE ROUND EXISTS FOR.** Back on the door that created it, the step the
+       create gesture wrote is editable — `data-stmt-editable` is the pane's own word for whether
+       a row has a control behind it, and `"no"` is what every `ApiStep` on this door renders as.
+       Before `M222` this read `no` for a test one press old. */
+    const declLine = onDisk.split('\n').findIndex((l) => l.startsWith('test "the second"')) + 1;
+    await fresh.goto(`http://127.0.0.1:${port}/#/browser/compose/one.tflw/L${declLine}`);
+    await fresh.locator('[data-compose-subject-what]').waitFor();
+    assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test "the second"');
+    /* **A `count() === 0` is the shape that passes when nothing rendered**, so the selector is
+       made to say something first. Two controls, both on this same page: the rows exist at all,
+       and the same selector returns NON-ZERO on the API door — where `open` is foreign and every
+       statement in this file draws dead. Without the second, "no dead rows" could be a claim
+       about a selector that never matches anything. */
+    /* **The attribute lives on the EDITOR BODY and appears only once a row is picked** — measured
+       on this page rather than assumed: with nothing selected both doors report zero of it, which
+       is the reading that would have made a bare `count() === 0` pass for the wrong reason. The
+       plan's §1.3 said *"renders its only step as a plain code line"*, meaning the sequence row;
+       the sequence row carries no such attribute at all (`deadInRows` is 0 on every door), and the
+       claim is true of the editor. */
+    await fresh.locator('[data-seq-row]').last().locator('[data-seq-pick]').click();
+    await fresh.locator('[data-editor-statement]').waitFor();
+    assert.equal(
+      await fresh.locator('[data-editor-statement]').getAttribute('data-stmt-editable'),
+      'yes',
+      'the BROWSER door cannot edit the step its own create gesture just wrote — the `M219` `C` defect, manufactured by `+ new test`',
+    );
+
+    /* **The control that makes the line above a claim.** The same statement, picked the same way,
+       on the API door — where an `open` is foreign — answers `no`. Without it, `yes` could be an
+       attribute that is always `yes`. */
+    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/one.tflw/L${declLine}`);
+    await fresh.locator('[data-compose-subject-what]').waitFor();
+    await fresh.locator('[data-seq-row]').last().locator('[data-seq-pick]').click();
+    await fresh.locator('[data-editor-statement]').waitFor();
+    assert.equal(
+      await fresh.locator('[data-editor-statement]').getAttribute('data-stmt-editable'),
+      'no',
+      'an `open` reads as editable on the API door too, so `data-stmt-editable` says nothing and the assertion above proves nothing',
+    );
   } finally {
     await fresh.close();
     await ui.close();

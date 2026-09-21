@@ -66,3 +66,6 @@ shard-*.json
 # exact-line check against the *project's* `.gitignore`, so the page goes on saying so — truthfully —
 # while `git status` here stays clean for every example, not just the one with a send pressed on it.
 .scratch.tflw
+# And `M221`'s play scratch (`PLAY_SCRATCH`): ▶ copies the buffer beside the test it runs, so
+# this one is a basename and git matches it at any depth.
+.play.tflw

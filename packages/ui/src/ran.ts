@@ -80,6 +80,34 @@ export function sameFile(entryFile: string | undefined, path: string): boolean {
 }
 
 /**
+ * The play scratch for a file — `M221` `B` (`D1184`). The file's own directory, the given
+ * basename. A path with no directory (a test at the project root) gets the basename alone.
+ */
+export function playScratchOf(path: string, basename: string): string {
+  const cut = path.lastIndexOf('/');
+  return cut === -1 ? basename : `${path.slice(0, cut + 1)}${basename}`;
+}
+
+/**
+ * **Whether a report entry is about this file** — either because it IS this file, or because it is
+ * the scratch a ▶ copied this file into (`M221` `B`).
+ *
+ * The second case is not a widening of `sameFile`, which means what it says and is used elsewhere
+ * to mean it. It is the pane's own question: `D1183` runs the buffer from a scratch beside the
+ * file, so the newest run that is *about* what the author is looking at has the scratch's name on
+ * it. The verdicts still join safely because the scratch is the buffer **verbatim** — identical
+ * line numbers, identical line text — and `stillReads` compares the line's own source, never its
+ * path.
+ *
+ * With no `playScratch` this is `sameFile` exactly, which is what every caller predating `M221`
+ * gets.
+ */
+export function belongsTo(entryFile: string | undefined, path: string, playScratch?: string): boolean {
+  if (sameFile(entryFile, path)) return true;
+  return playScratch !== undefined && sameFile(entryFile, playScratchOf(path, playScratch));
+}
+
+/**
  * Every request's last verdicts and response, read off a report already on disk — `D1099`'s
  * default scope, which costs one fetch for a whole file and no run at all.
  *
@@ -93,12 +121,12 @@ export function sameFile(entryFile: string | undefined, path: string): boolean {
  * inside its block and carry no step of their own in the report, so such a group is a response
  * with no verdicts under it. That is the truth about it, not a gap.
  */
-export function indexFromReport(report: RunReport, path: string, bufferText: string): RanIndex {
+export function indexFromReport(report: RunReport, path: string, bufferText: string, playScratch?: string): RanIndex {
   const lines = linesOf(bufferText);
   const out = new Map<number, Ran>();
   for (const entry of report.tests) {
     if (entry.kind !== 'functional' && entry.kind !== 'crawl') continue;
-    if (!sameFile(entry.file, path)) continue;
+    if (!belongsTo(entry.file, path, playScratch)) continue;
     let open: { step: StepResult; verdicts: Map<number, Verdict> } | null = null;
     const close = (): void => {
       if (open === null) return;
