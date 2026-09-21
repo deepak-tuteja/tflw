@@ -1646,4 +1646,8 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
    wraps at a narrow window rather than being clipped, and it is the reason the region is 18 px
    before a run instead of 183. */
 .stage-line { min-width: 0; }
+/* `M227` `E` (`D1236`) — the scratch notice closes the region instead of leading it, so it takes
+   the bar's size and the bar's zero margin: a `<p>`'s default margins are not collapsed inside a
+   flex column, and the region already spaces its children with `gap`. */
+.stage-foot { margin: 0; font-size: 12px; }
 .stage-frame { width: 100%; min-height: 620px; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
