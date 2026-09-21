@@ -10165,9 +10165,17 @@ test('`M225` `H`: region 2 never nests one scroller inside another, in any of it
 
     /* **The body really is longer than its window** — without this the claim above is a claim
        about a `pre` that fits, which every arrangement satisfies. This is the unmutated control
-       `M224` cost us for not having. */
+       `M224` cost us for not having.
+
+       **The margin is absolute and was a ratio** (`M227` `E`). `scroll > client * 2` is a claim
+       about the page's total height, not about this `pre`: the fixture's body is a fixed 350 px
+       and the window is whatever `1fr` leaves, so the control's strength moved every time anything
+       else on the page changed size. `D1236` took the notice out of an empty stage, the region
+       shrank 73 -> 17, region 2 gained those 56 px, the window went 175 -> 180 and the ratio fell
+       through 2.0 with the body unchanged. What the control needs to assert is that the `pre`
+       overflows by enough rows to be worth scrolling — which is a distance, and does not move. */
     const body = await p.locator('[data-compose-response-body]').evaluate((pre) => ({ client: pre.clientHeight, scroll: pre.scrollHeight }));
-    assert.ok(body.scroll > body.client * 2, `the body is ${body.scroll} over ${body.client} — a gate on a body that fits proves nothing`);
+    assert.ok(body.scroll > body.client + 120, `the body is ${body.scroll} over ${body.client} — a gate on a body that fits proves nothing`);
 
     /* **And the divider now changes how much of it you see.** Before `D1224` it did not: dragging
        gave the box more height while `.preview` stayed pinned at `40vh`, so the drag grew a frame
@@ -10558,7 +10566,14 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
     await p.waitForTimeout(250);
     const empty = await geom();
     assert.equal(empty.tall, 'no', 'the response segment with nothing sent is the empty tenant (`D1229`)');
-    assert.ok(empty.boxH < 200, `so the footer is back on the short floor — ${empty.boxH} px`);
+    /* **240 is the constant, and 200 was a margin** (`M227` `E`). The claim is *the floor did not
+       become unconditionally `RESPONSE_MIN`*, and `RESPONSE_MIN` is 240; the region's actual height
+       above that floor is whatever `1fr` hands down, which is not this gate's subject and moved
+       when `D1236` gave the empty stage's 56 px back to the columns (219 px here, was under 200).
+       A number chosen for headroom rather than from the rule is a number that goes red for a
+       reason the rule does not care about. **The `tall` line above is what the mutation dies on**
+       — measured, `'yes' !== 'no'` — and this one reads the rendered consequence beside it. */
+    assert.ok(empty.boxH < 240, `so the footer is back on the short floor — ${empty.boxH} px against RESPONSE_MIN's 240`);
 
     // ── GATE 4 — the plot is the region's height, and the drag is what says so ───────────────
     await p.locator('[data-compose-region2-tab="plan"]').click();
@@ -10599,7 +10614,7 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
 // you press ▶ on a browser test and false on BROWSER until you do — so this gate PLAYS one, with
 // the same declaration selected before and after. A door-keyed rule would be green under every
 // mutation that made it state-keyed, and the other way round.
-test('`M227` `D`: a trace in the playback region takes the page\'s floor back from the footer (`D1235`)', async () => {
+test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D1235`), and the scratch notice closes the region rather than leading it (`D1236`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m227d-'));
   const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
   const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -10633,16 +10648,29 @@ test('`M227` `D`: a trace in the playback region takes the page\'s floor back fr
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
 
-    const read = async (): Promise<{ footer: string | null; boxW: number; stageW: number; stage: string | null }> =>
+    /* `noticeTop` and `frameBottom` carry `E`. `dir` has no `.gitignore` at all, so `playIgnored`
+       is false and the sentence is live for the whole run — which is what makes its ABSENCE before
+       the play a reading rather than a vacancy, and its presence after is that control's proof. */
+    const read = async (): Promise<{
+      footer: string | null; boxW: number; stageW: number; stage: string | null;
+      notices: number; noticeTop: number | null; frameBottom: number | null; barBottom: number | null;
+    }> =>
       fresh.locator('.doorpane').evaluate((pane) => {
         const grid = pane.querySelector('.compose-pane-grid');
         const box = pane.querySelector('.responsebox');
         const st = pane.querySelector('[data-stage]');
+        const note = pane.querySelector('[data-stage-unignored]');
+        const frame = pane.querySelector('[data-stage-frame]');
+        const bar = pane.querySelector('.stage-bar');
         return {
           footer: grid === null ? null : grid.getAttribute('data-compose-footer'),
           boxW: box === null ? 0 : Math.round(box.getBoundingClientRect().width),
           stageW: st === null ? 0 : Math.round(st.getBoundingClientRect().width),
           stage: st === null ? null : st.getAttribute('data-stage'),
+          notices: pane.querySelectorAll('[data-stage-unignored]').length,
+          noticeTop: note === null ? null : Math.round(note.getBoundingClientRect().top),
+          frameBottom: frame === null ? null : Math.round(frame.getBoundingClientRect().bottom),
+          barBottom: bar === null ? null : Math.round(bar.getBoundingClientRect().bottom),
         };
       });
 
@@ -10654,6 +10682,11 @@ test('`M227` `D`: a trace in the playback region takes the page\'s floor back fr
     assert.equal(before.stage, 'empty', 'nothing has been played yet, which is what makes this the control');
     assert.equal(before.footer, 'yes', 'with an empty playback region the workload declaration still earns the footer (`D1225`)');
     assert.ok(before.boxW > before.stageW - 20, `and it really is the page's width — region 2 ${before.boxW}, stage ${before.stageW}`);
+    /* `E`, first half — the OCCASION. Nothing has been played, so nothing has written the scratch,
+       and the sentence about it is not drawn. It led the region in all four stage states before
+       this slice, including this one, where the hint directly above it reads *press ▶ on a test to
+       run it and watch it here*. */
+    assert.equal(before.notices, 0, `an empty stage has written no scratch and says nothing about one — found ${before.notices}`);
 
     // ── Play the browser test, in the same file, so `played` survives the trip back ────────────
     await fresh.goto(`${base}/#/browser/compose/d.tflw/L2`);
@@ -10676,6 +10709,19 @@ test('`M227` `D`: a trace in the playback region takes the page\'s floor back fr
     assert.ok(
       after.boxW < after.stageW - 200,
       `region 2 is the column's width again, not the page's — ${after.boxW} against the stage's ${after.stageW} (was ${before.boxW})`,
+    );
+
+    /* `E`, second half — the POSITION, and it is taken on the FAR edge for `M227` `A`'s reason: a
+       rule reading `noticeTop > barBottom` is true of the shipped defect too, since the notice led
+       the region from directly under the bar. The frame's BOTTOM is the only edge the two
+       arrangements disagree about. `notices === 1` is the pair's own control: the project does not
+       ignore `.play.tflw`, so a sentence that never appears at all would pass a position rule
+       vacuously. */
+    assert.equal(after.notices, 1, 'the play wrote the scratch, so the sentence is drawn once (`D1076`)');
+    assert.ok(after.frameBottom !== null, 'a trace is up, so there is a frame to be below');
+    assert.ok(
+      after.noticeTop !== null && after.frameBottom !== null && after.noticeTop >= after.frameBottom - 1,
+      `the notice closes the region instead of leading it — top ${after.noticeTop} against the frame's bottom ${after.frameBottom} and the bar's ${after.barBottom} (\`D1236\`)`,
     );
   } finally {
     await fresh.close();

@@ -60,7 +60,8 @@ export function Stage({ trace, played, running, recording, viewer, unignored }: 
   /** The play scratch's name when this project's `.gitignore` does not list it, `null` otherwise.
    *  A ▶ writes a file beside the test; a project that would commit it deserves the sentence, and
    *  this is the region where a play's consequences are visible. `D1076` — over-offering beats
-   *  silent omission. */
+   *  silent omission. Drawn **after** the frame and only once `played` is set (`D1236`) — see the
+   *  block itself. */
   readonly unignored: string | null;
   /** Whether `playwright-core` resolves from the project — `readProject`'s `traceViewer`. With no
    *  viewer to serve there is nothing to put in the frame, and the hint says what to run instead
@@ -111,11 +112,6 @@ export function Stage({ trace, played, running, recording, viewer, unignored }: 
           </span>
         )}
       </header>
-      {unignored === null ? null : (
-        <p className="muted" data-stage-unignored={unignored}>
-          ▶ writes <code>{unignored}</code> beside the test it runs, and this project&rsquo;s <code>.gitignore</code> does not list it — add that line.
-        </p>
-      )}
       {/* `src === null` is redundant with `hint !== null` and is written anyway: it is what tells
           the checker the frame's `src` is a string, and an assertion in its place would be a claim
           about the ternary above rather than a fact the compiler can hold. */}
@@ -124,6 +120,32 @@ export function Stage({ trace, played, running, recording, viewer, unignored }: 
            by THIS server under `/trace/`. `M220` §2.1's refused iframe was of the application
            *under test*, on another port, which is a different claim entirely. */
         <iframe className="stage-frame" data-stage-frame title={`trace of ${played ?? 'the last play'}`} src={src} />
+      )}
+
+      {/* **The scratch notice is the region's LAST line, and it waits for a press** (`M227` `E`,
+          `D1236`).
+
+          It led the region until this slice — first child after the bar, pushing the trace down a
+          row — while the API door's identical sentence (`ComposePane.tsx`, `data-api-scratch-
+          unignored`) is the *last* child of the block it belongs to, under the buttons, the
+          sentence and the request list. Measured on the live page at 1440x900: the send notice at
+          y560 closing a `.prefix` that ends at y589, this one at y852 opening a `.stage` that
+          starts at y813. One sentence, one voice, one subject — a scratch file `.gitignore` does
+          not carry — in opposite places on two doors.
+
+          **And the occasion was wrong in the same way.** The send notice is nested inside
+          `sendPrefix !== null && onSend !== null`: it appears where the control that writes the
+          file is. This one was gated on nothing but the project's `.gitignore`, so it rendered in
+          all four stage states — including `empty`, spending 20 px of a 73 px region warning about
+          a file nothing had written yet, directly under a hint reading *press ▶ on a test to run
+          it and watch it here*. `played !== null` is the press: `play` (and the session's own
+          ▶) name the stage's subject before starting the run, so the sentence arrives with the
+          write rather than ahead of it, and `D1082` is unbothered — a line appearing at the bottom
+          of a region that just grew by 700 px moves nothing the reader was reading. */}
+      {unignored === null || played === null ? null : (
+        <p className="muted stage-foot" data-stage-unignored={unignored}>
+          ▶ writes <code>{unignored}</code> beside the test it runs, and this project&rsquo;s <code>.gitignore</code> does not list it — add that line.
+        </p>
       )}
     </section>
   );
