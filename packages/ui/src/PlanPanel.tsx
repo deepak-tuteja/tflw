@@ -79,6 +79,72 @@ export function useLastWorkloadRun(path: string, name: string | null): LastWorkl
 }
 
 /**
+ * **How the work divides between the users** — `M227` `C` (`D1234`).
+ *
+ * `run 40 iterations across 4 users` is four shares of ten; `run 10 iterations per user across 4`
+ * is four shares of ten that happen to total forty. The remainder is *shown* rather than rounded
+ * away — `41 across 4` is 11/10/10/10, and a picture that drew four equal bars would be asserting
+ * something the language does not say.
+ */
+export function sharesOf(perUser: boolean, count: number, vus: number): readonly number[] {
+  if (!Number.isFinite(count) || !Number.isFinite(vus) || vus <= 0 || count < 0) return [];
+  const n = Math.round(vus);
+  if (perUser) return Array.from({ length: n }, () => Math.round(count));
+  const each = Math.floor(Math.round(count) / n);
+  const over = Math.round(count) % n;
+  return Array.from({ length: n }, (_, i) => each + (i < over ? 1 : 0));
+}
+
+/** No more rows than a reader can take in at once; `examples/storefront` declares 20 users and the
+ *  corpus's own rungs declare 4, so the cap is about the shape of the picture rather than about
+ *  this corpus. */
+const SHARE_ROWS = 12;
+
+/**
+ * **An iteration plan draws its work, and it is not a chart** — `M227` `C` (`D1234`).
+ *
+ * It has no time axis and `plannedCurve` correctly returns `null` for it (`D1212` — *`null` is not
+ * "unknown"*), so there is no series and nothing to hang an x-axis on. uPlot exists here to plot a
+ * series against an axis; four rectangles would import the whole time-plot apparatus and then have
+ * to invent the one axis the shape does not have.
+ *
+ * **The right-hand edge is open on purpose.** The bar's length is iterations, and the dashed run
+ * past it is the sentence beside it drawn: the work is known and how long it takes is the thing
+ * being measured.
+ */
+function ShareBars({ perUser, count, vus }: { readonly perUser: boolean; readonly count: number; readonly vus: number }) {
+  const shares = sharesOf(perUser, count, vus);
+  if (shares.length === 0) return null;
+  const most = Math.max(...shares, 1);
+  const total = shares.reduce((a, b) => a + b, 0);
+  const shown = shares.slice(0, SHARE_ROWS);
+  return (
+    <div className="share-bars" data-share-bars={shares.length} data-share-total={total}>
+      <ol>
+        {shown.map((n, i) => (
+          <li key={i} data-share-user={i + 1} data-share-count={n}>
+            <span className="share-who">user {i + 1}</span>
+            <span className="share-track">
+              <span className="share-bar" style={{ width: `${(n / most) * 100}%` }} />
+            </span>
+            <span className="share-n">{n}</span>
+          </li>
+        ))}
+      </ol>
+      {shares.length > shown.length ? (
+        <p className="plan-prose muted" data-share-more={shares.length - shown.length}>
+          and {shares.length - shown.length} more users, the same share each.
+        </p>
+      ) : null}
+      <p className="plan-prose muted" data-share-line>
+        {perUser ? `${count} iterations each` : `${total} iterations, shared out`} · {total} total ·{' '}
+        <span className="share-open-key">the length past the bar is the duration nobody has yet</span>
+      </p>
+    </div>
+  );
+}
+
+/**
  * **One chart, two series, and the second is only there when the two mean the same thing.**
  *
  * `TimelinePoint` records `count`, `rps`, `errorRate` and the duration percentiles for each second
@@ -104,14 +170,26 @@ export function PlanPanel({ path, name, workload }: {
     () => (lastRun === null || lastRun === undefined ? null : lastRun.entry.metrics.timeline.map((p) => ({ at: p.offsetSeconds, rps: p.rps }))),
     [lastRun],
   );
-  const input = useMemo(() => planInputOf(workloadEditOf(workload)), [workload]);
+  const edit = useMemo(() => workloadEditOf(workload), [workload]);
+  const input = useMemo(() => planInputOf(edit), [edit]);
   const series = useMemo(() => plannedSeries(input), [input]);
   const unit = input.unit;
 
+  /* ── `M227` `B` (`D1231`) — the picture left, the prose right ───────────────────────────────
+     `M226` bought this panel 1042 px of width. The plot cannot use it (a constant 180 px height
+     turned 4.0:1 into 5.8:1 for free) and the prose is harmed by it (measured 90 characters to
+     the line, against a comfortable 65-75). So the width is spent rather than fought, and
+     **both** shapes enter the same frame — an iteration plan draws its work (`D1234`) rather
+     than sitting as one paragraph where every other shape has a figure. */
   if (series === null) {
     return (
       <div className="plan-panel" data-compose-plan="no-clock">
-        <p className="muted" data-load-plot-none data-load-plot-prose="iterations">{planProse(input.shape, input.unit)}</p>
+        <div className="plan-figure">
+          <ShareBars perUser={input.shape === 'iterations-per-user'} count={Number(edit.count)} vus={Number(edit.vus)} />
+        </div>
+        <div className="plan-words">
+          <p className="plan-prose muted" data-load-plot-none data-load-plot-prose="iterations">{planProse(input.shape, input.unit)}</p>
+        </div>
       </div>
     );
   }
@@ -127,37 +205,52 @@ export function PlanPanel({ path, name, workload }: {
 
   return (
     <div className="plan-panel workload-plot" data-compose-plan={unit} data-load-plot={unit} data-load-plot-overlay={comparable ? 'yes' : 'no'}>
-      <Chart
-        id="planned"
-        title="the work this test asks for"
-        unit={unit}
-        x={x}
-        kind="line"
-        xName="at"
-        xLabel={(v) => `${v}s`}
-        yLabel={(v) => `${v}`}
-        series={[
-          { label: `planned ${unit}`, color: planned!, values: x.map((second) => (second <= (series.x[series.x.length - 1] ?? 0) ? series.y[second] ?? null : null)) },
-          ...(comparable ? [{ label: 'achieved rps', color: slow!, values: x.map((second) => byAt.get(second) ?? null), dashed: true }] : []),
-        ]}
-      />
+      <div className="plan-figure">
+        <Chart
+          id="planned"
+          title="the work this test asks for"
+          unit={unit}
+          x={x}
+          kind="line"
+          xName="at"
+          xLabel={(v) => `${v}s`}
+          yLabel={(v) => `${v}`}
+          /* `D1230` — the plot is the region's height, not a constant, so the divider the reader
+             already has means something for the picture. `D1233` — the height is a declared
+             quantity, so it is drawn from zero; a `hold` plan was an 8-px hairline without it. */
+          height="fill"
+          zeroBased
+          series={[
+            { label: `planned ${unit}`, color: planned!, values: x.map((second) => (second <= (series.x[series.x.length - 1] ?? 0) ? series.y[second] ?? null : null)) },
+            ...(comparable ? [{ label: 'achieved rps', color: slow!, values: x.map((second) => byAt.get(second) ?? null), dashed: true }] : []),
+          ]}
+        />
+      </div>
       {/* ── `M225` `F` (`D1222`) — the segment explains its own axis ────────────────────────
           The two sentences the grid cannot fit, and they go here rather than in the composer
           because the plot is the thing being explained and because region 1 is the constrained
           region (§1.11) while this one has the space. They differ by axis, which is gate 17: a
-          `users` plan and an `rps` plan are not one picture with a different label on it. */}
-      <p className="plan-prose muted" data-load-plot-prose={unit}>{planProse(input.shape, unit)}</p>
-      {overlayIsComparable(unit) ? (
-        achieved === null || achieved.length === 0 ? (
-          <p className="muted" data-load-plot-why="no-run">nothing has run this file yet, so there is no achieved curve to draw over the plan.</p>
-        ) : null
-      ) : (
-        <p className="muted" data-load-plot-why="not-comparable">
-          a run records <strong>arrivals</strong>, not concurrency — so there is no achieved curve
-          that means the same thing as a <code>users</code> plan. Switch the unit to{' '}
-          <code>rps</code>, or read the run&rsquo;s own charts in Run.
-        </p>
-      )}
+          `users` plan and an `rps` plan are not one picture with a different label on it.
+
+          ── `M227` `B` (`D1232`) — and they say it in the footer's own voice. `planProse()` used
+          to render at 11 px under a chart and at 14 px without one, because the no-clock branch
+          returned before `.plan-prose` existed: one function, one sentence, two sizes, decided by
+          nothing. Every explanatory line in region 2 is 12 px now — the size the segment tabs and
+          `.response-none` already used. */}
+      <div className="plan-words">
+        <p className="plan-prose muted" data-load-plot-prose={unit}>{planProse(input.shape, unit)}</p>
+        {overlayIsComparable(unit) ? (
+          achieved === null || achieved.length === 0 ? (
+            <p className="plan-prose muted" data-load-plot-why="no-run">nothing has run this file yet, so there is no achieved curve to draw over the plan.</p>
+          ) : null
+        ) : (
+          <p className="plan-prose muted" data-load-plot-why="not-comparable">
+            a run records <strong>arrivals</strong>, not concurrency — so there is no achieved curve
+            that means the same thing as a <code>users</code> plan. Switch the unit to{' '}
+            <code>rps</code>, or read the run&rsquo;s own charts in Run.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

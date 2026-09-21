@@ -957,11 +957,61 @@ export function ComposePane(props: ComposePaneProps) {
     if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.select();
   }, [made]);
 
+  /**
+   * **Which of region 2's two tenants is showing** (`D1209`) — and it is declared **here**,
+   * above the early return below, because that is the hook rule rather than a preference: a
+   * `useState` written under a conditional `return` changes the hook count between two renders.
+   * The first draft of this had it beside `decl`, thirty lines down, and the whole page went
+   * white with React #310 the moment the outline arrived — the same trap `App.tsx` records on
+   * `configPanel`'s `useMemo`, which timed out every door test at once.
+   *
+   * **`null` is *the reader has not chosen*, and the default follows the selection.** A plain
+   * `'plan'` default was written first and it took the region away from the gesture it was built
+   * for: `D1116` put the response under the editor so ticking a value writes into the Assert tab
+   * directly above it, and on a workload-bearing test every request row lost its `send` prefix to
+   * a chart. A plain `'response'` default is the same mistake mirrored — a declaration selected on
+   * the LOAD door would open on *pick a request to see what came back*, which is the one thing
+   * that door is not about.
+   *
+   * So: a **request** selected opens the response, and a declaration opens the plan. Once the
+   * reader picks, the pick stands — a segment that re-decided on every navigation would be
+   * undoing them.
+   *
+   * **`at.request` is the wrong instrument for that and the run said so.** `addressed()` falls
+   * back to a declaration's *first* request whenever the line is above all of them (`D1080`), so
+   * `at.request` is non-null for an address that names the `test` line — it answers *which request
+   * is in scope*, never *what did the reader point at*. `selectedAt` answers the second question
+   * and is already computed above; `'test'` is the declaration's own run of lines, header and all.
+   */
+  const [region2Pick, setRegion2Pick] = useState<'plan' | 'response' | null>(null);
+  const region2: 'plan' | 'response' = region2Pick ?? (selected.kind === 'request' || selected.kind === 'statement' ? 'response' : 'plan');
+
+  /**
+   * **The floor under region 2 follows the TENANT** — `M227` `A` (`D1229`).
+   *
+   * `D1228` said `D1223`'s floor follows the region rather than the column, which was right and
+   * one step short: the region holds three different things and the floor was keyed on only one
+   * of them (`shown?.response`). Measured on the served page, `rate-shapes.tflw` `L13`: the plan
+   * panel is **312 px of content in a 62 px window**, with the whole x-axis, the legend and both
+   * sentences below the footer's own bottom edge — because a plan is not a response and so fell
+   * through to the empty floor.
+   *
+   * A plan gets the response's **240** rather than a third number, because 240 is exactly what it
+   * needs once the plot fills the region (`D1230`) and the prose moves beside it (`D1231`). One
+   * number doing two jobs, not a coincidence written up as a rule.
+   *
+   * `footer` and `planWorkload !== null` are the same predicate (`:888` against the derivation
+   * below), so `footer && region2 === 'plan'` is exactly *the plan panel is what is in there* —
+   * and in the column layout it is constantly false, which is why the column sites can read this
+   * same value without a branch of their own.
+   */
+  const region2Min = (footer && region2 === 'plan') || shown?.response ? RESPONSE_MIN : LOWER_MIN;
+
   const dragging = useRef(false);
   /** The floor under the divider, as a ref so the window `pointermove` above reads the CURRENT
    *  one rather than the one that was true when the listener was installed (`D1223`). */
   const lowerMin = useRef(LOWER_MIN);
-  lowerMin.current = shown?.response ? RESPONSE_MIN : LOWER_MIN;
+  lowerMin.current = region2Min;
   /** The same fact as `dragging`, in the DOM, because the stylesheet needs it: while this divider
    *  is being dragged the trace frame must stop taking pointer events, or the drag dies at its top
    *  edge (`styles.css`, `M223` `E`). A ref cannot be seen by `:has()`. */
@@ -1002,35 +1052,6 @@ export function ComposePane(props: ComposePaneProps) {
       window.removeEventListener('pointerup', up);
     };
   }, [editorPx, footer, splitKey]);
-
-  /**
-   * **Which of region 2's two tenants is showing** (`D1209`) — and it is declared **here**,
-   * above the early return below, because that is the hook rule rather than a preference: a
-   * `useState` written under a conditional `return` changes the hook count between two renders.
-   * The first draft of this had it beside `decl`, thirty lines down, and the whole page went
-   * white with React #310 the moment the outline arrived — the same trap `App.tsx` records on
-   * `configPanel`'s `useMemo`, which timed out every door test at once.
-   *
-   * **`null` is *the reader has not chosen*, and the default follows the selection.** A plain
-   * `'plan'` default was written first and it took the region away from the gesture it was built
-   * for: `D1116` put the response under the editor so ticking a value writes into the Assert tab
-   * directly above it, and on a workload-bearing test every request row lost its `send` prefix to
-   * a chart. A plain `'response'` default is the same mistake mirrored — a declaration selected on
-   * the LOAD door would open on *pick a request to see what came back*, which is the one thing
-   * that door is not about.
-   *
-   * So: a **request** selected opens the response, and a declaration opens the plan. Once the
-   * reader picks, the pick stands — a segment that re-decided on every navigation would be
-   * undoing them.
-   *
-   * **`at.request` is the wrong instrument for that and the run said so.** `addressed()` falls
-   * back to a declaration's *first* request whenever the line is above all of them (`D1080`), so
-   * `at.request` is non-null for an address that names the `test` line — it answers *which request
-   * is in scope*, never *what did the reader point at*. `selectedAt` answers the second question
-   * and is already computed above; `'test'` is the declaration's own run of lines, header and all.
-   */
-  const [region2Pick, setRegion2Pick] = useState<'plan' | 'response' | null>(null);
-  const region2: 'plan' | 'response' = region2Pick ?? (selected.kind === 'request' || selected.kind === 'statement' ? 'response' : 'plan');
 
   if (outline === null) {
     return (
@@ -1329,12 +1350,14 @@ export function ComposePane(props: ComposePaneProps) {
         data-compose-footer={footer ? 'yes' : 'no'}
         /* `D1228` — `D1223`'s 240 px floor is about what region 2 holds, so it travels with the
            region; this is the same fact `.editor-col[data-editor-response]` carries in the column
-           layout, read by the grid that owns the tracks here. */
-        data-compose-footer-response={shown?.response ? 'yes' : 'no'}
+           layout, read by the grid that owns the tracks here. **`D1229` renamed it**: it said
+           `-response` while the plan needs the same floor and was getting 112, so the attribute
+           now says what it controls rather than which tenant used to earn it. */
+        data-compose-footer-tall={region2Min === RESPONSE_MIN ? 'yes' : 'no'}
         style={{
           ['--seq-w' as string]: `${seqWidth}px`,
           ...(footer && editorPx !== null
-            ? { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${shown?.response ? RESPONSE_MIN : LOWER_MIN}px, 1fr) auto` }
+            ? { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${region2Min}px, 1fr) auto` }
             : {}),
         }}
       >
@@ -1467,7 +1490,7 @@ export function ComposePane(props: ComposePaneProps) {
           data-editor-response={shown?.response ? 'yes' : 'no'}
           /* `D1225` — in the footer layout this element generates no box at all, so an override
              written here would style nothing; the grid above carries it instead. */
-          style={footer || editorPx === null ? undefined : { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${shown?.response ? RESPONSE_MIN : LOWER_MIN}px, 1fr)` }}
+          style={footer || editorPx === null ? undefined : { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${region2Min}px, 1fr)` }}
         >
           <div className="editor" data-editor={selected.kind}>
             {selected.kind === 'file' ? (
@@ -1547,7 +1570,7 @@ export function ComposePane(props: ComposePaneProps) {
               // The nudge starts from where the divider IS, which while the track is content-sized
               // is a fact about the editor's box and not about any state this component holds.
               const from = editorPx ?? editor.getBoundingClientRect().height;
-              const next = fitEditor(from + (e.key === 'ArrowDown' ? 16 : -16), col.getBoundingClientRect().height, shown?.response ? RESPONSE_MIN : LOWER_MIN);
+              const next = fitEditor(from + (e.key === 'ArrowDown' ? 16 : -16), col.getBoundingClientRect().height, region2Min);
               setEditorPx(next);
               try {
                 window.localStorage.setItem(splitKey, String(next));
