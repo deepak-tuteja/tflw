@@ -713,6 +713,16 @@ export interface ComposePaneProps {
  * exactly the readers who have used this pane the behaviour the round exists to remove.
  */
 const EDITOR_KEY = 'tflw.compose.editor';
+/**
+ * **The footer layout's own key** — `M226` `A` (`D1227`).
+ *
+ * One divider, two containers, and **not the same number**: in the column layout the stored value
+ * is how tall the editor is, in the footer layout it is how tall the whole grid above the divider
+ * is — the sequence column included. A single key holding both would mis-restore the instant a
+ * reader moved between a workload test and a functional one in the same file, which in the
+ * `load-door` corpus is one click.
+ */
+const FOOTER_KEY = 'tflw.compose.footer';
 /** `D1116`'s key, named here only so it can be removed from the readers who have one. */
 const RATIO_KEY = 'tflw.compose.split';
 /** The editor's own floor: its head and one field. */
@@ -731,10 +741,10 @@ const LOWER_MIN = 112;
  */
 const RESPONSE_MIN = 240;
 
-function readEditorPx(): number | null {
+function readEditorPx(key: string): number | null {
   try {
     window.localStorage.removeItem(RATIO_KEY);
-    const raw = window.localStorage.getItem(EDITOR_KEY);
+    const raw = window.localStorage.getItem(key);
     if (raw === null) return null;
     const n = Number(raw);
     return Number.isFinite(n) && n >= EDITOR_MIN ? n : null;
@@ -852,15 +862,54 @@ export function ComposePane(props: ComposePaneProps) {
   const refusalFor = (line: number): { name: string; line: number; text: string } | null => (refused !== null && refused.line === line ? refused.held : null);
   const clearRefusal = useCallback(() => setRefused(null), []);
 
+  /**
+   * **Region 2 goes to the foot when the declaration carries a workload** — `M226` `A` (`D1225`).
+   *
+   * Measured at 1440x900 on the `load-door` corpus: the response body's longest line wants **871
+   * px** and has **699** under the editor column, so it scrolls sideways; and `.editor` on a
+   * workload declaration wants **537–568 px** and gets **471–493**, so the composer is squeezed on
+   * every LOAD file while **no other door is squeezed at all**.
+   *
+   * **The move answers the first and not the second, and the second is what chose the axis.** A
+   * footer is still a row, so the editor's track is `613 − 6 − 112 = 495` either way — measured at
+   * 495 after against 493 before. What the squeeze establishes is that the composer is the tallest
+   * editor on the page and only this construct has one; what the footer pays out is width.
+   *
+   * **The construct, not the door** (`D1044`, and `D1209`'s axis one round earlier), because the
+   * construct is what predicts the need: a workload-bearing declaration has the tallest editor on
+   * the page and, being a rung, the shortest sequence beside it. It reads the same expression
+   * `D1209` branches on, so the segment and the placement cannot disagree about what a workload
+   * test is — and the gate is taken on **API**, where the door and the construct do not agree.
+   *
+   * It is computed here rather than beside `planWorkload` below only because the state under it
+   * has to read the right key on its FIRST render; a footer that adopts the column's stored height
+   * for one frame and then corrects itself is a visible jump.
+   */
+  const footer = at?.decl != null && at.decl.kind === 'test' && at.decl.workload !== null;
+
   /** `null` — the editor is as tall as what it holds (`D1195`). A number is the reader's own
    *  override in pixels (`D1196`); `Home` on the divider returns it to `null`. */
-  const [editorPx, setEditorPx] = useState<number | null>(readEditorPx);
+  const [editorPx, setEditorPx] = useState<number | null>(() => readEditorPx(footer ? FOOTER_KEY : EDITOR_KEY));
+  /** The divider's own key follows the layout (`D1227`), and so does what it measures. */
+  const splitKey = footer ? FOOTER_KEY : EDITOR_KEY;
+  /** **The layout changing re-reads the height**, because the two keys hold different quantities.
+   *  Guarded on the value rather than run on every `footer` render, so a reader dragging inside one
+   *  layout is not overwritten by the value they started from. */
+  const wasFooter = useRef(footer);
+  useEffect(() => {
+    if (wasFooter.current === footer) return;
+    wasFooter.current = footer;
+    setEditorPx(readEditorPx(footer ? FOOTER_KEY : EDITOR_KEY));
+  }, [footer]);
   /** The sequence column's width (`D1135`) — a fixed number of pixels the reader chose, where the
    *  grid used to hold a builder's `minmax(220px, 300px)`. Separate from `split` above, which is
    *  the horizontal divider inside the editor column and a FRACTION rather than a width, for the
    *  reason recorded there: a remembered 620 px on a 700 px window is a response with no editor. */
   const [seqWidth, setSeqWidth] = useState<number>(() => storedSize(COMPOSE));
   const column = useRef<HTMLDivElement | null>(null);
+  /** The footer layout's container: the pane grid, which owns the rows when `.editor-col` has been
+   *  flattened into it. `fitEditor` clamps against whichever of the two is live (`D1227`). */
+  const stack = useRef<HTMLDivElement | null>(null);
 
   /**
    * **The cursor lands in the first field of whatever a create gesture opened** — `M217` `A`
@@ -923,8 +972,12 @@ export function ComposePane(props: ComposePaneProps) {
    *  about a marquee and the reason the handle captures nothing. */
   useEffect(() => {
     const move = (e: PointerEvent): void => {
-      if (!dragging.current || column.current === null) return;
-      const box = column.current.getBoundingClientRect();
+      /* `D1227` — the container is the one that owns the tracks, which in the footer layout is the
+         pane grid and not `.editor-col` (flattened by `display: contents`, so its own rect is
+         zero-sized and would make every drag a no-op). */
+      const host = footer ? stack.current : column.current;
+      if (!dragging.current || host === null) return;
+      const box = host.getBoundingClientRect();
       if (box.height <= 0) return;
       // Where the pointer is, not how far it has moved: the divider goes under the pointer, and
       // the clamp is against the column as it is right now rather than as it was on the press.
@@ -935,8 +988,8 @@ export function ComposePane(props: ComposePaneProps) {
       dragging.current = false;
       setSplitting(false);
       try {
-        if (editorPx === null) window.localStorage.removeItem(EDITOR_KEY);
-        else window.localStorage.setItem(EDITOR_KEY, String(editorPx));
+        if (editorPx === null) window.localStorage.removeItem(splitKey);
+        else window.localStorage.setItem(splitKey, String(editorPx));
       } catch {
         // Nothing to do and nothing to say: a remembered height is a convenience, and a browser
         // that refuses to store one still draws the page.
@@ -948,7 +1001,7 @@ export function ComposePane(props: ComposePaneProps) {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
-  }, [editorPx]);
+  }, [editorPx, footer, splitKey]);
 
   /**
    * **Which of region 2's two tenants is showing** (`D1209`) — and it is declared **here**,
@@ -1263,7 +1316,28 @@ export function ComposePane(props: ComposePaneProps) {
           long assertions and a file of `GET /a` want different ones. The mechanism is `A2`'s grip
           used a second time and not a second implementation of it, which is why the clamp, the
           keyboard handling and the per-project persistence come for free. */}
-      <div className="compose-pane-grid" style={{ ['--seq-w' as string]: `${seqWidth}px` }}>
+      {/* **`D1225` — the same grid, with `.editor-col` flattened into it when the declaration
+          carries a workload.** The DOM does not change shape: `display: contents` promotes the
+          editor column's children to items of THIS grid, so the divider, region 2 and the send row
+          become full-pane rows under a top row that still holds the sequence, its grip and the
+          editor. Nothing is re-parented, so every gate and every selector that reads
+          `[data-seq-open] …` keeps reading what it read — `display: contents` removes a box, not
+          a node. */}
+      <div
+        className="compose-pane-grid"
+        ref={stack}
+        data-compose-footer={footer ? 'yes' : 'no'}
+        /* `D1228` — `D1223`'s 240 px floor is about what region 2 holds, so it travels with the
+           region; this is the same fact `.editor-col[data-editor-response]` carries in the column
+           layout, read by the grid that owns the tracks here. */
+        data-compose-footer-response={shown?.response ? 'yes' : 'no'}
+        style={{
+          ['--seq-w' as string]: `${seqWidth}px`,
+          ...(footer && editorPx !== null
+            ? { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${shown?.response ? RESPONSE_MIN : LOWER_MIN}px, 1fr) auto` }
+            : {}),
+        }}
+      >
         {/* ── region 2: the sequence (`D1112`) ─────────────────────────────────────────── */}
         <div className="seq-col" data-seq-col={decl === null ? 0 : requestsOf(decl.body).length}>
           <ol className="seq" data-body-sequence={decl === null ? 0 : requestsOf(decl.body).length} data-seq-rows={rowCount} data-seq-sessions={decl === null ? 0 : decl.body.sessions.length}>
@@ -1391,7 +1465,9 @@ export function ComposePane(props: ComposePaneProps) {
           /* `D1223` — the floor under the divider is what region 2 holds, so the attribute the
              stylesheet reads and the number a drag is clamped against are the same fact. */
           data-editor-response={shown?.response ? 'yes' : 'no'}
-          style={editorPx === null ? undefined : { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${shown?.response ? RESPONSE_MIN : LOWER_MIN}px, 1fr)` }}
+          /* `D1225` — in the footer layout this element generates no box at all, so an override
+             written here would style nothing; the grid above carries it instead. */
+          style={footer || editorPx === null ? undefined : { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${shown?.response ? RESPONSE_MIN : LOWER_MIN}px, 1fr)` }}
         >
           <div className="editor" data-editor={selected.kind}>
             {selected.kind === 'file' ? (
@@ -1457,7 +1533,7 @@ export function ComposePane(props: ComposePaneProps) {
                 e.preventDefault();
                 setEditorPx(null);
                 try {
-                  window.localStorage.removeItem(EDITOR_KEY);
+                  window.localStorage.removeItem(splitKey);
                 } catch {
                   /* see the drag handler */
                 }
@@ -1465,7 +1541,7 @@ export function ComposePane(props: ComposePaneProps) {
               }
               if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
               e.preventDefault();
-              const col = column.current;
+              const col = footer ? stack.current : column.current;
               const editor = col === null ? null : col.querySelector('.editor');
               if (col === null || editor === null) return;
               // The nudge starts from where the divider IS, which while the track is content-sized
@@ -1474,7 +1550,7 @@ export function ComposePane(props: ComposePaneProps) {
               const next = fitEditor(from + (e.key === 'ArrowDown' ? 16 : -16), col.getBoundingClientRect().height, shown?.response ? RESPONSE_MIN : LOWER_MIN);
               setEditorPx(next);
               try {
-                window.localStorage.setItem(EDITOR_KEY, String(next));
+                window.localStorage.setItem(splitKey, String(next));
               } catch {
                 /* see the drag handler */
               }

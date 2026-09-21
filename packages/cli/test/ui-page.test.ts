@@ -10034,3 +10034,284 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// ── `M225` `H` — no scroller in region 2 sits inside another one (`D1224`) ────────────────────
+//
+// The user's report, driving the LOAD corpus on the served page: *"this double scroll pane I
+// mean — it can lead to a messy scroll situation"*, with the suggestion that moving the region to
+// a footer would settle it.
+//
+// It would not, and measuring said why. `.responsebox` scrolled, and so did both things it can
+// hold: `.preview` caps itself at `40vh` and `.ticks` at `30vh`, each with its own `overflow:
+// auto`. On the live page at 1440x900 with a 100-item catalogue response the box was 399 px of
+// viewport over **585 px** of content and the `pre` inside it 380 px over **30 732 px** — two
+// bars, and which one a wheel moved depended on where the pointer happened to be.
+//
+// **The outer 186 px of overflow was manufactured by the inner cap.** The `pre`'s 360 px frame
+// was laid out with no knowledge of how much of the box was left — the box ran y 359 → 759, the
+// `pre` y 542 → 924 — so the box had to scroll to reach the bottom edge of a thing that was
+// itself scrolling. That is a containment relationship, which is why the footer would not have
+// touched it and why a TALLER region makes it worse: the box grows, the cap does not, and what
+// opens up between them is dead space.
+//
+// So this gate is about nesting and not about counting. Two scrollers side by side are legible —
+// the pointer is unambiguously in one of them. A scroller inside a scroller is the defect, and
+// the property has a name: **nothing in region 2 has a scrolling ancestor.**
+//
+// It is taken in all four states the region has tenants for, because a rule checked in the state
+// that motivated it is the vacuity `M223` `F` recorded: `.session-panel` already had the right
+// shape of its own (`.session-lines` is its own scroller) and was nested inside this box's the
+// whole time, which is the same defect on the BROWSER door with nobody to report it.
+test('`M225` `H`: region 2 never nests one scroller inside another, in any of its four states', async () => {
+  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
+  const target = await fixtureServer.startFixtureServer(fixturePort);
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m225h-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
+    await writeFile(
+      join(dir, 'm225h.tflw'),
+      [
+        // A workload so region 2 is segmented (`D1209`) and the `plan` tenant is reachable, and a
+        // body long enough that the `pre` really overflows — a gate whose subject fits is green
+        // under every mutation, which is `M224`'s control lesson in one line.
+        'test "the long one"',
+        '  run 2 iterations across 1 users',
+        '  api GET /items',
+        '  expect status equals 200',
+        '  threshold p95 duration is less than 5000ms',
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    /* One reading, taken four times.
+       **`M222-01`, fifth occurrence in this file, and it nearly landed again**: every callback
+       below is passed inline as an argument and none is bound to a `const`, because `tsx
+       --keepNames` wraps a `const`-bound arrow in `__name(...)` and the page has no such
+       function. The first draft of this gate hoisted the *does it scroll* test into a
+       `const scrolls = (el) => …` at the top of the `evaluate`, which is the identical shape
+       that broke `M225`'s own measuring probe. And the test tsconfig carries `types: ["node"]`
+       with no DOM lib, so nothing here names a DOM type and the window is reached through the
+       element (`box.ownerDocument.defaultView`). */
+    const scan = async (): Promise<{ nested: string[]; boxScrolls: boolean; clipped: string[]; scrollers: number }> =>
+      p.locator('.responsebox').evaluate((box) => {
+        const win = box.ownerDocument.defaultView!;
+        const scrolling = [box, ...box.querySelectorAll('*')].filter((el) => {
+          const cs = win.getComputedStyle(el);
+          return (cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1;
+        });
+        const nested = scrolling.flatMap((el) => {
+          for (let up = el.parentElement; up !== null && up !== box.parentElement; up = up.parentElement) {
+            if (scrolling.some((other) => other === up)) return [`${String(el.className)} inside ${String(up.className)}`];
+          }
+          return [];
+        });
+        /* Clipped by the box and NOT inside a scroller of its own — i.e. genuinely unreachable,
+           as opposed to merely scrolled out of view, which is what the body's own syntax tokens
+           are. Without that second half this reads the response's every highlighted span. */
+        const edge = box.getBoundingClientRect().bottom;
+        const clipped = [...box.querySelectorAll('*')].filter((el) => {
+          if (el.getBoundingClientRect().bottom <= edge + 1) return false;
+          for (let up = el.parentElement; up !== null && up !== box.parentElement; up = up.parentElement) {
+            if (scrolling.some((other) => other === up)) return false;
+          }
+          return true;
+        }).map((el) => String(el.className)).slice(0, 4);
+        return { nested, boxScrolls: scrolling.some((el) => el === box), clipped, scrollers: scrolling.length };
+      });
+
+    // ── state 1: the empty state, before anything has been sent ──────────────────────────────
+    await p.goto(`${base}/#/load/compose/m225h.tflw/L3`);
+    await p.locator('[data-prefix]').waitFor();
+    let seen = await scan();
+    assert.deepEqual(seen.nested, [], 'the empty state nests nothing');
+    assert.deepEqual(seen.clipped, [], 'and reaches everything it draws');
+
+    // ── state 2: the plan segment ────────────────────────────────────────────────────────────
+    await p.locator('[data-compose-region2-tab="plan"]').click();
+    await p.locator('[data-compose-plan]').waitFor();
+    seen = await scan();
+    assert.deepEqual(seen.nested, [], 'the plan nests nothing');
+    assert.deepEqual(seen.clipped, [], 'and the plot is not clipped by a box that cannot scroll');
+
+    // ── state 3: a real response, which is the state the user reported ───────────────────────
+    await p.locator('[data-compose-region2-tab="response"]').click();
+    await p.locator('[data-compose-send="this"]').click();
+    await p.locator('[data-compose-response-body]').waitFor();
+    seen = await scan();
+    assert.equal(seen.boxScrolls, false, 'region 2 lays its tenant out; it does not scroll it');
+    assert.deepEqual(seen.nested, [], 'and the body scrolls with no scrolling ancestor above it');
+    assert.deepEqual(seen.clipped, [], 'nothing outside the body is cut off by the box');
+
+    /* **The body really is longer than its window** — without this the claim above is a claim
+       about a `pre` that fits, which every arrangement satisfies. This is the unmutated control
+       `M224` cost us for not having. */
+    const body = await p.locator('[data-compose-response-body]').evaluate((pre) => ({ client: pre.clientHeight, scroll: pre.scrollHeight }));
+    assert.ok(body.scroll > body.client * 2, `the body is ${body.scroll} over ${body.client} — a gate on a body that fits proves nothing`);
+
+    /* **And the divider now changes how much of it you see.** Before `D1224` it did not: dragging
+       gave the box more height while `.preview` stayed pinned at `40vh`, so the drag grew a frame
+       around a porthole. This asserts the fix's *point*, not just the absence of the defect. */
+    const before = body.client;
+    const split = p.locator('.split');
+    const at = (await split.boundingBox())!;
+    await p.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(at.x + at.width / 2, at.y - 120, { steps: 10 });
+    await p.mouse.up();
+    await p.locator('[data-compose-response-body]').waitFor();
+    const after = await p.locator('[data-compose-response-body]').evaluate((pre) => pre.clientHeight);
+    assert.ok(after > before + 40, `dragging the divider up gave the body ${after} px, from ${before} — the drag must move the body, not a frame around it`);
+    assert.deepEqual((await scan()).nested, [], 'and it is still one scroller after the drag');
+  } finally {
+    await p.close();
+    await ui.close();
+    await new Promise<void>((resolve) => target.close(() => resolve()));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ── `M226` `A` — region 2 goes to the foot when the declaration carries a workload (`D1225`) ──
+//
+// The other half of the user's original suggestion. `M225` `H` settled how many scrollbars are in
+// region 2 and said, correctly, that moving the region would not have fixed that. This is the part
+// moving it DOES fix, and it is a width: the response body's longest line wants **871 px** and had
+// **699** under the editor column, so it scrolled sideways as well as down.
+//
+// **The axis is the construct and not the door** (`D1044`, and `D1209`'s axis one round earlier),
+// because the measurement is what chose it: `.editor` on a workload declaration wants 537–568 px
+// and gets 471–493, and **no other door is squeezed at all** — so a declaration carrying a workload
+// is a different shape of thing, with the tallest editor on the page and, being a rung, three rows
+// of sequence beside it in every corpus file.
+//
+// So gate 2 is taken **on the API door**, on one file, comparing a workload declaration with a
+// functional one four lines away. On LOAD the door and the construct agree and every mutation that
+// made this door-granted would pass; here they disagree, which is the only place the claim is
+// falsifiable. That is `M223` `F`'s vacuity lesson, and `D1209` is where this round learned it.
+test('`M226` `A`: a workload declaration puts region 2 at the foot of the pane, and the construct is what decides', async () => {
+  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
+  const target = await fixtureServer.startFixtureServer(fixturePort);
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m226-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
+    /* **Both declarations in ONE file, on the API door.** Two files would let a mutation keyed on
+       the file pass, and two doors would let one keyed on the door pass. */
+    await writeFile(
+      join(dir, 'm226.tflw'),
+      [
+        'test "carries a workload"',
+        '  run 2 iterations across 1 users',
+        '  api GET /items',
+        '  expect status equals 200',
+        '  threshold p95 duration is less than 5000ms',
+        '',
+        'test "carries none"',
+        '  api GET /items',
+        '  expect status equals 200',
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    const layout = async (): Promise<{ footer: string | null; region2W: number; editorW: number; editorH: number; editorWants: number; nested: number }> =>
+      p.locator('.compose-pane-grid').evaluate((grid) => {
+        const win = grid.ownerDocument.defaultView!;
+        const box = grid.querySelector('.responsebox')!;
+        const ed = grid.querySelector('.editor')!;
+        const inner = [...box.querySelectorAll('*')].filter((el) => {
+          const cs = win.getComputedStyle(el);
+          if (!((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1)) return false;
+          for (let up = el.parentElement; up !== null && up !== box.parentElement; up = up.parentElement) {
+            const pc = win.getComputedStyle(up);
+            if ((pc.overflowY === 'auto' || pc.overflowY === 'scroll') && up.scrollHeight > up.clientHeight + 1) return true;
+          }
+          return false;
+        });
+        return {
+          footer: grid.getAttribute('data-compose-footer'),
+          region2W: Math.round(box.getBoundingClientRect().width),
+          editorW: Math.round(ed.getBoundingClientRect().width),
+          editorH: Math.round(ed.getBoundingClientRect().height),
+          editorWants: ed.scrollHeight,
+          nested: inner.length,
+        };
+      });
+
+    // ── GATES 1 + 2 — the workload declaration, on the API door ──────────────────────────────
+    await p.goto(`${base}/#/api/compose/m226.tflw/L1`);
+    await p.locator('[data-compose-footer]').waitFor();
+    const withLoad = await layout();
+    assert.equal(withLoad.footer, 'yes', 'a declaration carrying a workload draws region 2 at the foot');
+    assert.ok(
+      withLoad.region2W > withLoad.editorW + 100,
+      `region 2 is ${withLoad.region2W} px against an editor of ${withLoad.editorW} — the point of the move is that it is WIDER than the column it left`,
+    );
+
+    // ── GATE 3 — the functional declaration, SAME FILE, SAME DOOR ────────────────────────────
+    /* This is the assertion the round exists to make falsifiable. A branch reading `door === 'load'`
+       satisfies every other line in this test and fails here, because here the door says LOAD-ish
+       nothing and only the declaration differs. */
+    await p.goto(`${base}/#/api/compose/m226.tflw/L7`);
+    await p.reload();
+    await p.locator('[data-compose-footer]').waitFor();
+    const without = await layout();
+    assert.equal(without.footer, 'no', 'a declaration with no workload keeps region 2 in the editor column — four lines away, same file, same door');
+    assert.equal(without.region2W, without.editorW, 'and there it is exactly as wide as the editor above it');
+
+    // ── GATE 4 — the move costs the editor no height ─────────────────────────────────────────
+    /* The plan claimed the footer would give the editor its full content height. **It does not** —
+       a footer is still a row, so the top track is the same arithmetic either way — and the gate
+       says what is true instead: moving region 2 takes nothing from the editor. Asserted as a
+       comparison between the two layouts in one run rather than against a constant, which is the
+       only form that survives a theme, a font or a viewport changing. */
+    assert.ok(
+      Math.abs(withLoad.editorH - without.editorH) <= 4 || withLoad.editorH >= without.editorH,
+      `the editor is ${withLoad.editorH} px in the footer layout against ${without.editorH} in the column layout — the move must not cost it height`,
+    );
+
+    // ── GATES 5 + 6 — a real send, in the footer layout ──────────────────────────────────────
+    await p.goto(`${base}/#/api/compose/m226.tflw/L3`);
+    await p.reload();
+    await p.locator('[data-compose-send]').first().click();
+    await p.locator('[data-compose-response-body]').waitFor();
+    const sent = await layout();
+    assert.equal(sent.footer, 'yes', 'the request inside a workload test is still the workload test');
+    assert.equal(sent.nested, 0, '`D1224` holds in the footer: nothing in region 2 has a scrolling ancestor');
+    const body = await p.locator('[data-compose-response-body]').evaluate((pre) => ({
+      w: Math.round(pre.getBoundingClientRect().width),
+      scrollW: pre.scrollWidth,
+      col: Math.round(pre.closest('.responsebox')!.getBoundingClientRect().width),
+    }));
+    assert.ok(body.w > 900, `the body is ${body.w} px wide — the footer's whole payout is width, and under the column it was 699`);
+
+    // ── GATE 7 — the divider drags here, and remembers under its OWN key ─────────────────────
+    /* Two keys because they hold different quantities: above the divider in this layout is the
+       sequence column as well. One key would mis-restore on the first click between the two
+       declarations above, which is a gesture this very test performs. */
+    const split = p.locator('.split');
+    const at = (await split.boundingBox())!;
+    assert.ok(at.width > withLoad.editorW + 100, `the divider spans the pane (${Math.round(at.width)} px), because what it moves is the pane's split`);
+    await p.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(at.x + at.width / 2, at.y - 110, { steps: 10 });
+    await p.mouse.up();
+    await p.locator('[data-compose-response-body]').waitFor();
+    const keys = await p.locator('body').evaluate((el) => {
+      const win = el.ownerDocument.defaultView!;
+      return { footer: win.localStorage.getItem('tflw.compose.footer'), editor: win.localStorage.getItem('tflw.compose.editor') };
+    });
+    assert.ok(keys.footer !== null, 'the drag wrote the footer layout\'s own height');
+    assert.equal(keys.editor, null, 'and left the column layout\'s key alone — they are different quantities');
+  } finally {
+    await p.close();
+    await ui.close();
+    await new Promise<void>((resolve) => target.close(() => resolve()));
+    await rm(dir, { recursive: true, force: true });
+  }
+});

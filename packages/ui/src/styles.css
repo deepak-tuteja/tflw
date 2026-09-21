@@ -1191,6 +1191,45 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
    at this viewport. It can — `overflow: auto` — and the response could not. */
 .editor-col[data-editor-response='yes'] { grid-template-rows: minmax(0, auto) 6px minmax(240px, 1fr); }
 .editor { overflow: auto; min-height: 0; padding: calc(var(--unit) * 1.6) calc(var(--unit) * 2); }
+
+/* ── `M226` `A` (`D1225`) — region 2 at the foot of the PANE, not of the editor column ────────
+   Measured at 1440x900 on the `load-door` corpus, which is what chose the axis. The response
+   body's longest line wants **871 px** and has **699** under the editor column, so it scrolls
+   sideways as well as down; and `.editor` on a workload declaration wants **537–568** and gets
+   **471–493**, because `D1223` holds 112 px back for region 2 and the composer is the tallest
+   editor on the page.
+
+   **What this pays out is width, and only width.** A footer is still a row, so the editor's track
+   is `613 - 6 - 112 = 495` in both layouts — measured at 495 after against 493 before, which is
+   the move costing nothing rather than fixing anything. The squeeze is here because it is what
+   identifies the construct: no other door is squeezed at all, so the declaration that carries a
+   workload is a different SHAPE of thing, with the tallest editor on the page and — being a rung
+   — three rows of sequence beside it in every file. That is why the width is cheap to take HERE
+   and expensive anywhere else, and why the key is the construct and not LOAD.
+
+   **`display: contents` rather than a second tree.** `.editor-col` stops generating a box and its
+   children become items of this grid, so the divider, region 2 and the send row land on full-pane
+   rows while the DOM keeps exactly the shape every gate and selector already reads. The border
+   and ground `.editor-col` was drawing move onto the two panels that are now separate objects. */
+.compose-pane-grid[data-compose-footer='yes'] { grid-template-rows: minmax(0, auto) 6px minmax(112px, 1fr) auto; min-height: 0; }
+.compose-pane-grid[data-compose-footer='yes'] > .seq-col { grid-column: 1; grid-row: 1; }
+.compose-pane-grid[data-compose-footer='yes'] > .col-grip { grid-column: 2; grid-row: 1; }
+.compose-pane-grid[data-compose-footer='yes'] > .editor-col { display: contents; }
+.compose-pane-grid[data-compose-footer='yes'] > .editor-col > .editor {
+  grid-column: 3; grid-row: 1; min-height: 0;
+  border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel);
+}
+/* The divider spans the pane because what it moves is the pane's own split, and a handle that
+   reached only across the editor would be pointing at the wrong boundary (`D1227`). */
+.compose-pane-grid[data-compose-footer='yes'] > .editor-col > .split { grid-column: 1 / -1; grid-row: 2; border-radius: var(--radius); }
+.compose-pane-grid[data-compose-footer='yes'] > .editor-col > .responsebox {
+  grid-column: 1 / -1; grid-row: 3; min-height: 0;
+  border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel);
+}
+/* `D1228` — the floor is a property of what region 2 HOLDS, so it follows the region into the
+   footer rather than staying behind on the column it used to live in. */
+.compose-pane-grid[data-compose-footer='yes'][data-compose-footer-response='yes'] { grid-template-rows: minmax(0, auto) 6px minmax(240px, 1fr) auto; }
+.compose-pane-grid[data-compose-footer='yes'] > .editor-col > .editor-send { grid-column: 1 / -1; grid-row: 4; border-top: 0; }
 .editor-body { display: flex; flex-direction: column; gap: calc(var(--unit) * 1.2); }
 .editor-head { display: flex; align-items: center; gap: calc(var(--unit) * 1); flex-wrap: wrap; }
 /* The one field the fifth complaint was about. It has the width of the sentence it holds now,
@@ -1233,7 +1272,57 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .split:hover::before, .split:focus-visible::before { background: var(--accent); }
 .split:hover, .split:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); outline: none; }
 .split:focus-visible::before { width: 100%; }
-.responsebox { overflow: auto; min-height: 0; padding: calc(var(--unit) * 1.4) calc(var(--unit) * 2); border-top: 1px solid var(--line); }
+/* **NO SCROLLER IN REGION 2 SITS INSIDE ANOTHER ONE** — `M225` `H` (`D1224`).
+   This box scrolled, and so did the two things it holds: `.preview` caps itself at `40vh` and
+   `.ticks` at `30vh`, each with its own `overflow: auto`. Measured on the live page at 1440x900
+   with a 100-item catalogue response: `.responsebox` was 399 px of viewport over **585 px** of
+   content, and the `pre` inside it 380 px over **30 732 px** — two bars, and which one a wheel
+   moved depended on where the pointer was.
+   The outer 186 px of overflow was **manufactured by the inner cap**: the `pre`'s 360 px frame was
+   laid out with no knowledge of how much of the box was left (the box started at y 359 and ended
+   at 759; the `pre` started at 542 and claimed to 924), so the box had to scroll to reach the
+   bottom edge of a thing that was itself scrolling. Raising the region's height does not fix that
+   and makes it worse — the box grows, the cap does not, and the gap between them becomes dead
+   space. The nesting is a containment relationship, so **moving the region does not touch it**;
+   that was asked (*"move it to the footer"*) and is answered here instead.
+   So the box lays out and does not scroll, and whichever tenant it holds fills the height and does
+   its own scrolling inside itself. The `.split` above it is what sizes that, which is the first
+   time dragging it changes how much response you can see — before this it grew a box whose
+   contents were pinned at 360 px however far you pulled.
+   The tenants are the four things `ComposePane` puts here: a response, the session panel on a door
+   with no `send` (`D1165`), the empty state with the prefix list, and the plan (`D1209`). */
+.responsebox { display: flex; flex-direction: column; overflow: hidden; min-height: 0; padding: calc(var(--unit) * 1.4) calc(var(--unit) * 2); border-top: 1px solid var(--line); }
+/* The head, the segment and the strip are what the box says about itself — they keep their
+   height and never scroll away, which is the second half of the fix: the status line and the
+   press it came from used to leave the top of the box as soon as you read the body. */
+.responsebox > .seg, .responsebox > .sendstrip, .responsebox > .response-head-bar { flex: none; }
+.responsebox > .response, .responsebox > .session-panel, .responsebox > .response-none, .responsebox > .plan-panel { flex: 1 1 auto; min-height: 0; }
+/* `.session-panel` already had the right shape (`.session-lines` is its own scroller); it was
+   nested inside this box's, which is the same defect on the BROWSER door and nobody reported it. */
+.responsebox > .response-none, .responsebox > .plan-panel { overflow: auto; }
+.responsebox > .response { display: flex; flex-direction: column; margin-top: 0; }
+/* Preamble is charged to the body, so it is charged honestly. At rest the box is ~400 px and the
+   url line, the tick-or-explain line and two default `<p>` margins were taking **140** of it,
+   leaving the body 162 — the box cannot scroll now, so every pixel spent above the `pre` is a
+   pixel of response nobody sees. The head bar above already names the request, so these are
+   captions, not headings, and they are spaced as captions. */
+.responsebox > .response > p { margin: calc(var(--unit) * 0.6) 0 0; }
+.responsebox > .response > p:first-child { margin-top: 0; }
+.responsebox > .response > .preview { margin-top: calc(var(--unit) * 1); }
+/* **Lifting the cap is the whole rule, and the mutation sweep is what cut it down to that.**
+   The first draft read `flex: 1 1 auto; min-height: 0; max-height: none`, and removing the first
+   two left every assertion green: a flex item already has `flex-shrink: 1`, and a scroll
+   container's `min-height: auto` already resolves to 0, so both were restating the default at
+   the reader. What is load-bearing is the cap, and it is scoped HERE rather than lifted from
+   `.preview` itself, which has three other call sites (`AddStep`, `NewThing`, `ScanForm`) that
+   sit in dialogs the PAGE scrolls — there 40vh is what stops a generated program making the
+   dialog unbounded, and removing it would be a defect in three places to fix one. */
+.responsebox > .response > .preview { max-height: none; }
+/* The ticks stay a scroller and become a SIBLING of the body rather than a box above it inside a
+   third one. `30vh` is 270 px of a 400 px region, which would leave the body 130 — so in here the
+   cap is a share of what there is, and the body gets the rest. */
+.responsebox > .response > .ticks { flex: 0 1 auto; max-height: 40%; }
+.responsebox > .response > .response-url, .responsebox > .response > p.muted { flex: none; }
 .response-none { font-size: 12px; }
 /* **The strip** — `M225` `B` (`D1217`). One entry per request the press issued, drawn only when
    there was more than one. It is a list of presses and not a navigation: choosing an entry moves
