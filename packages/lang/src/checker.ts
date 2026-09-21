@@ -2096,6 +2096,36 @@ const SUBJECT_KINDS = {
   NetworkRequestSubject: 'network-request',
 } satisfies Record<Subject['type'], SubjectKind>;
 
+/**
+ * **The kind axis, published** — `M228` `D` (`D1243`).
+ *
+ * The page's matcher select offered all 23 matchers on every subject, because `D1114` dropped
+ * *subjects* per door and nothing ever filtered *matchers* per subject. What it needs is exactly
+ * what `checkOneMatcherSubject` judges `TF042` with, so it is exported rather than re-derived:
+ * a second table in the UI could disagree with this one, and would, the first time a matcher is
+ * added.
+ */
+export const subjectKindOf = (type: Subject['type']): SubjectKind => SUBJECT_KINDS[type];
+
+/**
+ * **Why `TF042` would refuse this pairing, or `null`** — `M228` `D` (`D1243`).
+ *
+ * The same two lines the diagnostic is built from, so the disabled option's explanation and the
+ * error an author would get in a terminal are the same sentence by construction.
+ *
+ * **`ValueSubject` abstains, exactly as the check does**, and that is not a courtesy: `TF041`
+ * owns that pairing and says it better, so a page that greyed a matcher out here would be
+ * reporting one mistake twice — once as an unreachable control and once as a diagnostic.
+ */
+export function matcherSubjectRefusal(matcher: MatcherName, subject: Subject['type']): string | null {
+  if (subject === 'ValueSubject') return null;
+  const row = MATCHER_ROWS.get(MATCHER_ROW_BY_NAME[matcher] ?? '');
+  if (!row) return null;
+  const kind = SUBJECT_KINDS[subject];
+  if ((row.subjects as readonly SubjectKind[]).includes(kind)) return null;
+  return `${row.syntax} can't be used on ${KIND_LABELS[kind]} — it applies to ${row.appliesTo} (TF042)`;
+}
+
 /** How to say each kind in a diagnostic, in the words SPEC §6.2's table uses. */
 const KIND_LABELS: Readonly<Record<SubjectKind, string>> = {
   value: 'a value',
@@ -4351,6 +4381,30 @@ function scannableOrigins(declared: EnvAuthorizedTargets): { readonly label: str
   add('the default `api` base', declared.apiBaseUrl);
   for (const s of declared.services) add(`service \`@${s.name}\``, s.url);
   return out;
+}
+
+/**
+ * **Where a scan in this env can reach, and which declaration authorizes each** — `M228` `A`
+ * (`D1239`).
+ *
+ * The page needs to say *what will my next scan assertion hit, and is it authorized* before the
+ * author writes one, and `TF060` only answers that after the fact and only as a refusal. This is
+ * the same two functions the rule itself is built from — `scannableOrigins` and
+ * `targetCoversBaseUrl` — returned instead of being turned into a message, so the page's answer
+ * and the checker's verdict cannot disagree. A second implementation of this in the UI is the
+ * defect class this repository files findings about; there is no second implementation.
+ *
+ * `covered: null` is `TF060`'s own condition, one origin at a time: `checkAuthorizedTargets`
+ * flags every scan assertion in the program the moment ANY row here is uncovered, which is why
+ * the page shows the rows rather than a yes/no.
+ */
+export function scanCoverage(
+  declared: EnvAuthorizedTargets,
+): readonly { readonly label: string; readonly url: string; readonly origin: string | null; readonly covered: string | null }[] {
+  return scannableOrigins(declared).map((s) => ({
+    ...s,
+    covered: declared.targets.find((t) => targetCoversBaseUrl(t.target, s.url))?.target ?? null,
+  }));
 }
 
 /** The scans `TF060` gates, and what to call each one in its message (M128b D291; M130b D315). A

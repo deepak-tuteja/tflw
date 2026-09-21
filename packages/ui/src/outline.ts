@@ -35,6 +35,7 @@ import type {
   ApiBody,
   ApiRequestSpec,
   ApiStep,
+  CrawlDecl,
   DataTable,
   Diagnostic,
   HookDecl,
@@ -231,6 +232,47 @@ export interface OutlineTest {
   readonly body: OutlineBody;
 }
 
+/**
+ * **A `crawl`, drawn and not built** — `M228` `C` (`D1238`).
+ *
+ * `outline.ts` said in as many words until this round that *`crawl` declarations are the SCANS
+ * door's own root and are not here*, and what that cost was measured rather than argued: on
+ * `examples/storefront/tests/scan.tflw` the sidebar badge read **1** and the tree drew **2** rows,
+ * because `Sidebar.tsx:424` counts `f.crawls` while `:363` maps `o.declarations`. So one row
+ * disagreed with itself, and only on this door — a crawl is the only construct that reaches SCANS
+ * without also reaching API, which makes the door's exclusive content exactly the thing it could
+ * not show.
+ *
+ * **`index` is `-1` and every statement's `stepPath` is `null`, both on purpose.** `index` is
+ * `replaceInSource`'s own index over hooks-and-tests sorted by line, and a crawl folded into that
+ * numbering would shift every declaration below it — silently rewriting the wrong test. `-1` is a
+ * value that function cannot resolve, and the null step paths are what make that unreachable
+ * rather than merely unlikely: the pane's editable test is `stepPath !== null`, so a crawl's rows
+ * take the read-only branch by the same rule a nested row does.
+ *
+ * **Drawn read-only, saying why**, which is this table's own written rule rather than a
+ * compromise — `DoorVocabulary.constructs`: *"A kind this door owns and cannot construct is drawn,
+ * disabled, saying why; a pane that is half live and silent about which half is what `D1082`
+ * refuses."* Making a crawl first-class needs `buildCrawl` (three seed kinds, sessions, body), an
+ * `Insertion` member, `Edit` members for the header and each seed, and it touches every consumer
+ * of `declarations` — a language round and a UI round in one, for **14 real crawls in the whole
+ * corpus**. `D1190`'s deferral stands, now with a reason rather than an absence.
+ */
+export interface OutlineCrawl {
+  readonly kind: 'crawl';
+  /** Always `-1` — see the docblock. A crawl is outside `replaceInSource`'s numbering. */
+  readonly index: -1;
+  readonly node: CrawlDecl;
+  readonly name: string;
+  readonly line: number;
+  readonly tags: readonly string[];
+  readonly sessions: readonly string[];
+  readonly seeds: CrawlDecl['seeds'];
+  readonly excludes: CrawlDecl['excludes'];
+  readonly note: Note | null;
+  readonly body: OutlineBody;
+}
+
 /** The declarations above the tests — one pinned row (`D1074`). */
 export interface OutlineFileRow {
   readonly imports: readonly ImportDecl[];
@@ -245,9 +287,9 @@ export interface OutlineFileRow {
 export interface FileOutline {
   readonly path: string;
   readonly file: OutlineFileRow;
-  /** Hooks and tests in line order — a file does not sort its declarations by kind, and neither
-   *  does the outline. `crawl` declarations are the SCANS door's own root and are not here. */
-  readonly declarations: readonly (OutlineHook | OutlineTest)[];
+  /** Hooks, tests and — since `M228` `C` (`D1238`) — crawls, in line order. A file does not sort
+   *  its declarations by kind, and neither does the outline. */
+  readonly declarations: readonly (OutlineHook | OutlineTest | OutlineCrawl)[];
   readonly diagnostics: readonly Diagnostic[];
 }
 
@@ -580,7 +622,7 @@ export function fileOutline(path: string, source: string, opensPage: ReadonlySet
    * that breaks on the first file where a hook comes after a test.
    */
   const declared = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
-  const declarations = declared.map((d, decl): OutlineHook | OutlineTest =>
+  const indexed = declared.map((d, decl): OutlineHook | OutlineTest =>
     d.type === 'HookDecl'
       ? {
           kind: 'hook',
@@ -609,6 +651,29 @@ export function fileOutline(path: string, source: string, opensPage: ReadonlySet
           body: groupBody((d as TestDecl).body, notes, decl, opensPage),
         },
   );
+  /**
+   * **The crawls are folded in AFTER the indexing, never into it** — `M228` `C` (`D1238`).
+   *
+   * `indexed` is `replaceInSource`'s numbering and the sort above is that function's own, so a
+   * crawl taking a position in it would renumber every declaration below it and send an edit to
+   * the wrong test. They join the list by **line** and carry `index: -1`, which is a value
+   * `replaceInSource` cannot resolve; and every statement under one is stripped of its
+   * `stepPath`, which is what turns *cannot be addressed* from a convention into a property.
+   */
+  const crawls: OutlineCrawl[] = (program.crawls ?? []).map((c) => ({
+    kind: 'crawl',
+    index: -1,
+    node: c,
+    name: c.name.value,
+    line: c.span.start.line,
+    tags: c.tags,
+    sessions: c.sessions,
+    seeds: c.seeds,
+    excludes: c.excludes,
+    note: notes.byOwner.get(c.span.start.line) ?? null,
+    body: unaddressable(groupBody(c.body, notes, -1, opensPage)),
+  }));
+  const declarations = [...indexed, ...crawls].sort((a, b) => a.line - b.line);
   return {
     path,
     file: { imports: program.imports, uses: program.uses, actions: program.actions, header: notes.header, tail: notes.tail },
@@ -617,9 +682,28 @@ export function fileOutline(path: string, source: string, opensPage: ReadonlySet
   };
 }
 
+/** Every statement in a body with its address removed — the other half of `D1238`'s *drawn, not
+ *  built*. One walk over the same three lists `statementsOf` knows about, so a fourth place a
+ *  statement can hide would break this and that function together rather than only this one. */
+function unaddressable(body: OutlineBody): OutlineBody {
+  const strip = (s: OutlineStatement): OutlineStatement => ({
+    ...s,
+    stepPath: null,
+    body: s.body === null ? null : s.body.map(strip),
+  });
+  return {
+    ...body,
+    preamble: body.preamble.map(strip),
+    requests: body.requests.map((r) => ({ ...r, stepPath: r.stepPath, attached: r.attached.map(strip) })),
+    sessions: body.sessions.map((sn) => ({ head: strip(sn.head), body: unaddressable(sn.body) })),
+  };
+}
+
 /** What an address resolves to (`D1080`) — the declaration it names, and the request inside it. */
 export interface Addressed {
-  readonly decl: OutlineHook | OutlineTest;
+  /** `M228` `C` (`D1238`) — a crawl is a declaration an address can name, like the other two. The
+   *  pane draws it read-only; nothing else about resolving an address changes. */
+  readonly decl: OutlineHook | OutlineTest | OutlineCrawl;
   /** `null` for a declaration that issues no request — a browser test seen from the API door. */
   readonly request: OutlineRequest | null;
 }
@@ -749,7 +833,7 @@ export function prefixOf(outline: FileOutline, at: Addressed, form: SendForm = '
   const lines: number[] = [];
   for (const r of own) {
     if (r.stepPath.step > last.stepPath.step) break;
-    requests.push({ where: decl.kind === 'test' ? decl.name : decl.label, method: r.method, path: r.path });
+    requests.push({ where: decl.kind === 'hook' ? decl.label : decl.name, method: r.method, path: r.path });
     lines.push(r.line);
   }
   return { form, decl: decl.index, upTo, requests, lines };

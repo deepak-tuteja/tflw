@@ -2666,7 +2666,9 @@ test('SCANS adopts the strip, and with it no door renders its runs inline any mo
   // last one.
   await page.goto(`${baseUrl}#/scan`);
   await page.reload();
-  await page.locator('[data-scan-form]').waitFor();
+  /* `M228` `B` (`D1237`) — this waited on `[data-scan-form]`, and there is no scan form any more.
+     The door draws the standard pane like the other three, so the wait is the pane's own grid. */
+  await page.locator('.compose-pane-grid').waitFor();
   assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip SCANS link stopped opening the door');
 
   for (const tab of ['source', 'run', 'auth', 'config'] as const) {
@@ -2677,10 +2679,10 @@ test('SCANS adopts the strip, and with it no door renders its runs inline any mo
   await openTab('compose');
   assert.equal(new URL(page.url()).hash, '#/scan', 'the default tab stopped writing the bare door hash');
 
-  assert.equal(await page.locator('.main > .runs').count(), 0, 'the run pane is still inline under the SCANS form');
+  assert.equal(await page.locator('.main > .runs').count(), 0, 'the run pane is still inline under the SCANS door');
   await openTab('run');
-  await page.locator('[data-scan-run-tab]').waitFor();
-  assert.ok((await page.locator('[data-scan-run-tab] .runs').count()) > 0, 'Run does not hold the run pane it was given');
+  await page.locator('[data-door-run-tab="scan"]').waitFor();
+  assert.ok((await page.locator('[data-door-run-tab="scan"] .runs').count()) > 0, 'Run does not hold the run pane it was given');
 
   // **THE UNIVERSAL CLAIM, WHICH NO EARLIER SLICE COULD MAKE.** Every door, not this one: after
   // `S2` the inline placement does not exist for any value of `door`, so it is checked by walking
@@ -2693,26 +2695,16 @@ test('SCANS adopts the strip, and with it no door renders its runs inline any mo
     assert.equal(await page.locator('.main > .runs').count(), 0, `${door} still renders its runs inline`);
   }
 
-  // The state claim, across a real unmount, as on the other two doors — and this door needs a
-  // wider one than they did. `data-scan-name` does not exist until the mode is `new`, because
-  // SCANS opens on `existing`: its measured common act is grading a response a test already
-  // fetched (102 matchers across 51 files against 11 crawls in 4). So the field is reachable only
-  // through a piece of state that must ALSO survive, and the assertion covers both — a mode that
-  // reset would take the field with it and a name-only check would time out rather than fail
-  // clearly.
-  await page.goto(`${baseUrl}#/scan`);
-  await page.reload();
-  await page.locator('[data-scan-form]').waitFor();
-  assert.equal(await page.locator('[data-scan-mode]').inputValue(), 'existing', 'SCANS stopped opening on the act its census says is the common one');
-  await page.locator('[data-scan-mode]').selectOption('new');
-  await page.locator('[data-scan-name]').fill('typed before leaving');
-  await page.locator('[data-scan-family]').selectOption('hasNoAuthzViolations');
-  await openTab('source');
-  assert.equal(await page.locator('[data-scan-compose]').count(), 0, 'Compose did not unmount, so surviving it proves nothing');
-  await openTab('compose');
-  assert.equal(await page.locator('[data-scan-mode]').inputValue(), 'new', 'the mode reset, so the field below it was never the thing at risk');
-  assert.equal(await page.locator('[data-scan-name]').inputValue(), 'typed before leaving');
-  assert.equal(await page.locator('[data-scan-family]').inputValue(), 'hasNoAuthzViolations');
+  /* **The state claim this test used to make is gone with the form it was about** — `M228` `B`
+     (`D1237`). It drove `data-scan-mode` / `data-scan-name` / `data-scan-family` across a tab
+     unmount, and those three controls were `ScanForm`'s: the `<select>` asking which test to
+     append to, the name of a test it would create, and the family it would write. The pane the
+     door draws now has no such fields, and the equivalent claim — the editor's own tab selection
+     is held ABOVE the pane so a glance at Source does not lose a half-typed header — is `M205`
+     `S5a`'s rule and is gated on the pane itself rather than per door.
+
+     Deleted rather than re-pointed, because a re-pointed version would be a fifth copy of a claim
+     three doors already make about one component. */
 });
 
 test('SCANS’ Compose predicts and Auth enumerates — one tflw.config, two claims, neither listed twice', async () => {
@@ -2732,24 +2724,37 @@ test('SCANS’ Compose predicts and Auth enumerates — one tflw.config, two cla
     const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      await fresh.goto(`${base}#/scan`);
-      await fresh.locator('[data-scan-unauthorized]').waitFor();
+      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
+      await fresh.locator('[data-compose-scan-unauthorized]').waitFor();
 
       // `tflw init --scan` leaves the line commented out on purpose (`D291`), so this project is
       // the unauthorized state — which is the only state the notice renders in today, and the
       // reason `S5` exists at all.
-      const notice = (await fresh.locator('[data-scan-unauthorized]').textContent()) ?? '';
+      const notice = (await fresh.locator('[data-compose-scan-unauthorized]').textContent()) ?? '';
       assert.match(notice, /TF060/, 'the notice stopped naming what the write will get');
 
-      // COMPOSE DOES NOT ENUMERATE. Asserted against the element Auth uses to list them, so this
-      // cannot pass by the list merely being spelled differently.
-      assert.equal(await fresh.locator('[data-scan-compose] [data-auth-targets]').count(), 0, 'Compose grew its own copy of the target list');
+      /* **COMPOSE DOES NOT ENUMERATE, AND `M228` `A` NEARLY BROKE THIS.** `D1239` was scoped as
+         *the targets in force with their reasons* — an inventory, which is precisely what `Q1`
+         reserves to Auth. The panel shows the other axis instead: one row per origin a scan in
+         this env can REACH, and whether a declaration covers it. So the two assertions here are
+         now a pair rather than one, because this gate could have gone on passing against a second
+         copy of Auth's list spelled with different attributes. */
+      assert.equal(await fresh.locator('[data-compose-scan] [data-auth-targets]').count(), 0, 'Compose grew its own copy of the target list');
+      assert.equal(
+        await fresh.locator('[data-compose-scan] [data-auth-target]').count(),
+        0,
+        'Compose is listing target DECLARATIONS, which is what Auth is for — it may only say what a scan here reaches',
+      );
+      assert.ok(
+        (await fresh.locator('[data-compose-scan-reach-url]').count()) > 0,
+        'and it does say that much — a panel naming no origin at all predicts nothing',
+      );
 
       // The link goes to Auth — the address, not just the panel, because the tab living in the URL
       // and nowhere else is `D1045` and is what makes this shareable rather than a callback.
-      await fresh.locator('[data-scan-auth-link]').click();
+      await fresh.locator('[data-compose-scan-auth-link]').click();
       await fresh.locator('[data-tabstrip="auth"]').waitFor();
-      assert.equal(new URL(fresh.url()).hash, '#/scan/auth', 'the link did not put the tab in the address');
+      assert.equal(new URL(fresh.url()).hash, '#/scan/auth/scan.tflw', 'the link did not put the tab in the address');
       await fresh.locator('[data-auth-targets]').waitFor();
     } finally {
       await ui.close();
@@ -3956,51 +3961,59 @@ test('`M213` `S4`: `pick` fixes the locator on the row it is pressed on, from a 
 // `tflw init --scan` just made does not, so it exercises the one thing no other door has to show.
 // ---------------------------------------------------------------------------
 
-test('the SCANS form grades a response a test already fetches, and writes the assertion into that test', async () => {
+test('the SCANS door grades a response a test already fetches, and the three independent words all land', async () => {
+  /* **Re-pointed to the pane by `M228` `B` (`D1237`).** This drove `ScanForm` — a `<select>` of
+     which test to append to, a family, a floor, a `soft` box and a Save. The door draws the
+     standard pane now, so the gesture is the one every other door already has: edit the row.
+     The claim is unchanged and is the one worth keeping — **`check`/`expect`, the family and the
+     severity floor are three independent positions in the grammar**, so a gate carrying only one
+     of them could not tell a printer that dropped another. */
   await page.goto(`${baseUrl}#/scan`);
   await page.reload();
-  await page.locator('[data-scan-form]').waitFor();
-
-  // The fixture declares `authorized target "http://127.0.0.1:4717"`, so the notice is ABSENT —
-  // which is the control that keeps the other test's assertion about the declaration rather than
-  // about a banner that is always there.
-  assert.equal(await page.locator('[data-scan-unauthorized]').count(), 0);
+  await page.locator('.compose-pane-grid').waitFor();
 
   const target = 'tests/orders.tflw';
-  await page.locator(`[data-file-row="${target}"]`).click();
   const before = await readFile(join(root, target), 'utf8');
-  const testName = await page.locator('[data-scan-test] option:nth-child(2)').getAttribute('value');
-  assert.ok(testName, 'the fixture file must hold a test to grade');
-  await page.locator('[data-scan-test]').selectOption(testName);
-  await page.locator('[data-scan-family]').selectOption('hasNoInputHandlingViolations');
-  await page.locator('[data-scan-floor]').selectOption('serious');
-  await page.locator('[data-scan-soft]').check();
+  const line = before.split('\n').findIndex((l) => l.trim() === 'expect status equals 200') + 1;
+  assert.ok(line > 0, `the fixture file must hold a plain status assertion to widen:\n${before}`);
+  await page.goto(`${baseUrl}#/scan/compose/${target}/L${line}`);
+  await page.locator('[data-expect-matcher]').first().waitFor();
 
-  // Every field is in the line, in the grammar's order — and `check`/`expect`, the family and the
-  // floor are three independent positions, so a preview carrying only one of them could not tell a
-  // printer that dropped another.
-  const preview = (await page.locator('[data-scan-preview]').textContent()) ?? '';
-  assert.match(preview, /check response has no serious input handling violations/);
+  /* **The subject first, and `M228` `D` is why.** This was written matcher-first and timed out on
+     `option being selected is not enabled`: a scan family is refused on a `status` subject by
+     `TF042`, so the select now greys it out (`D1243`). That is the feature catching the gate, and
+     the order it forces is the order the grammar reads in anyway. */
+  await page.locator(`[data-assert-line="${line}"] [data-expect-subject]`).selectOption('response');
+  await page.locator(`[data-assert-line="${line}"] [data-expect-matcher]`).selectOption('hasNoInputHandlingViolations');
+  await page.locator(`[data-assert-line="${line}"] [data-expect-severity]`).selectOption('serious');
+  await page.locator(`[data-assert-line="${line}"] [data-assert-more]`).click();
+  await page.locator(`[data-assert-line="${line}"] [data-expect-kind]`).selectOption('check');
 
-  await page.locator('[data-scan-save]').click();
-  await page.locator('[data-scan-wrote]').waitFor();
+  // What is shown is what is written — the claim every door in this arc makes, and here the
+  // showing surface is Source rather than a form's own preview box.
+  await openTab('source');
+  const shown = (await page.locator('.doorpane pre').textContent()) ?? '';
+  assert.match(shown, /check response has no serious input handling violations/, `the three words did not all reach the draft:\n${shown}`);
 
-  // The bytes on disk are the bytes previewed — the claim every door in this arc makes.
+  await openTab('compose');
+  await page.locator('[data-compose-write]').click();
+  await page.waitForTimeout(600);
+
   const after = await readFile(join(root, target), 'utf8');
-  assert.equal(after, preview, 'what was shown is what was written');
-  assert.notEqual(after, before);
-  assert.match(after, /check response has no serious input handling violations/);
-
-  // …and it landed INSIDE the test that was picked, not at the end of the file.
-  const lines = after.split('\n');
-  const header = lines.findIndex((l) => l.includes(`test "${testName}"`));
-  const assertionLine = lines.findIndex((l) => l.includes('has no serious input handling violations'));
-  assert.ok(header >= 0 && assertionLine > header, `the assertion must sit under its test:\n${after}`);
-
-  await writeFile(join(root, target), before, 'utf8');
+  try {
+    assert.equal(after, shown, 'what was shown is what was written');
+    assert.notEqual(after, before);
+    // …and it is still INSIDE the test it belongs to, which is the half an append could get wrong.
+    const lines = after.split('\n');
+    const header = lines.findIndex((l) => l.startsWith('test '));
+    const assertionLine = lines.findIndex((l) => l.includes('has no serious input handling violations'));
+    assert.ok(header >= 0 && assertionLine > header, `the assertion must sit under its test:\n${after}`);
+  } finally {
+    await writeFile(join(root, target), before, 'utf8');
+  }
 });
 
-test('a project with no `authorized target`: the SCANS form says so, shows the TF060 it will get, and writes anyway', async () => {
+test('a project with no `authorized target`: the SCANS door says so, shows the TF060 it will get, and writes anyway', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-door-'));
   const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
   const fresh = await browser.newPage();
@@ -4013,7 +4026,7 @@ test('a project with no `authorized target`: the SCANS form says so, shows the T
     await fresh.locator('[data-landing]').waitFor();
     assert.equal(await fresh.locator('[data-door="scan"] [data-door-state]').getAttribute('data-door-state'), 'create');
     await fresh.locator('[data-door="scan"]').click();
-    await fresh.locator('[data-scan-form]').waitFor();
+    await fresh.locator('.compose-pane-grid').waitFor();
 
     // 2. What `tflw init --scan` wrote is what a terminal writes, byte for byte — the claim
     //    `A0-5` makes about `--load`, now made about the flag `D1053` added.
@@ -4028,24 +4041,42 @@ test('a project with no `authorized target`: the SCANS form says so, shows the T
     );
     await rm(fromTerminal, { recursive: true, force: true });
 
-    // 3. **THE NOTICE.** The declaration is commented out, so the env authorizes nothing, and this
-    //    door says it in the one place the author is about to act — naming the file it lives in,
-    //    which this page deliberately cannot write (`D1049`/`D291`).
-    const notice = (await fresh.locator('[data-scan-unauthorized]').textContent()) ?? '';
+    // 3. **THE NOTICE**, which is now region 2's `scan` segment rather than a banner on a form
+    //    (`M228` `A`, `D1239`). The declaration is commented out, so the env authorizes nothing,
+    //    and the door says it in the one place the author is about to act — naming the file it
+    //    lives in, which this page deliberately cannot write (`D1049`/`D291`).
+    //
+    //    **It is reached by opening the declaration**, and that is the segment's own rule rather
+    //    than an inconvenience: it is earned by a construct, so it appears where a scan assertion
+    //    is, not wherever this door happens to be.
+    await fresh.locator('[data-file-row="scan.tflw"]').click();
+    await fresh.locator('[data-compose-scan]').waitFor();
+    const notice = (await fresh.locator('[data-compose-scan-unauthorized]').textContent()) ?? '';
     assert.match(notice, /declares no/);
     assert.match(notice, /TF060/);
     assert.match(notice, /tflw\.config/);
+    // And the coverage table says where a scan here would reach and that nothing covers it —
+    // `TF060`'s own condition, one origin at a time.
+    assert.equal(await fresh.locator('[data-compose-scan-covered="yes"]').count(), 0, 'nothing is authorized, so no origin may read as covered');
+    assert.ok((await fresh.locator('[data-compose-scan-covered="no"]').count()) > 0, 'and the origins a scan can reach are named rather than left implicit');
 
     // 4. **AND THE DIAGNOSTIC, WHICH IS THE WIRING THIS SLICE EXISTS FOR.** `diagnose` ran
     //    `checkProgram` with NO options until `A2-3`, and `TF060` needs the env's declarations —
     //    so this panel would have shown a clean file and the author would have met the error in a
     //    terminal. That is exactly the surprise `D1052` exists to prevent, on the one door where
     //    it is guaranteed rather than possible.
-    await fresh.locator(`[data-file-row="scan.tflw"]`).click();
-    await fresh.locator('[data-scan-mode]').selectOption('new');
-    await fresh.locator('[data-scan-name]').fill('the page can ask for a scan');
-    await fresh.locator('[data-scan-path]').fill('/health');
-    await fresh.locator('[data-scan-diagnostics]').waitFor();
+    /* `M228` `B` — the pane's own `+ new test` writes the scan, `D1244`'s scaffold. It is the
+       gesture `ScanForm`'s mode/name/path fields were, and it goes through `newSource` and the
+       builders like every other door's. */
+    await fresh.locator('[data-file-row="scan.tflw"]').click();
+    await fresh.locator('[data-compose-new-test]').click();
+    await fresh.locator('[data-new-thing]').waitFor();
+    await fresh.locator('[data-new-name]').fill('the page can ask for a scan');
+    await fresh.locator('[data-new-path]').fill('/health');
+    await fresh.locator('[data-new-create]').click();
+    await fresh.locator('[data-new-thing]').waitFor({ state: 'detached' });
+    await fresh.locator('[data-tab="source"]').click();
+    await fresh.locator('[data-diagnostics]').waitFor();
     // TWO of them, and the second one is the point: the panel judges the whole file the PUT will
     // carry, so the scaffold's own `scan.tflw` assertion is refused alongside the one being added.
     // A test that took `.first()` without saying how many there are would have passed just as well
@@ -4054,29 +4085,32 @@ test('a project with no `authorized target`: the SCANS form says so, shows the T
     assert.equal(await tf060s.count(), 2, 'the scaffolded assertion and the new one are both TF060');
     const tf060 = await tf060s.first().textContent();
     assert.ok(tf060?.includes('authorized target'), tf060 ?? 'the panel must carry TF060');
+    await fresh.locator('[data-tab="compose"]').click();
 
     // 5. It never blocks. `D1052`: a half-written test is a legitimate intermediate state.
     //
     // **And what it writes is READ BACK, not just counted.** The first draft asserted the test name
-    // appeared and stopped, so two mutations survived: one that wrote the assertion with no request
-    // for it to grade, and one that dropped `as <session>`. A scan grades the LAST response, so a
-    // test that asserts one without fetching anything is a file `tflw check` rejects; and an
-    // authorization scan re-issues the request under other principals, so a test with no owner
-    // gives it nothing to compare against. Both are this door's whole subject, and neither was
+    // appeared and stopped, so a mutation survived that wrote the assertion with no request for it
+    // to grade. A scan grades the LAST response, so a test that asserts one without fetching
+    // anything is a file `tflw check` rejects — that is this door's whole subject, and it was not
     // covered by a test that only checked something had been written.
-    await fresh.locator('[data-scan-session]').fill('shopper');
-    await fresh.locator('[data-scan-family]').selectOption('hasNoAuthzViolations');
-    assert.equal(await fresh.locator('[data-scan-save]').isDisabled(), false);
-    await fresh.locator('[data-scan-save]').click();
-    await fresh.locator('[data-scan-wrote]').waitFor();
+    //
+    // **`M228` `B` (`D1244`) — the three lines are the SCAFFOLD's now, not a form's fields.** The
+    // `as <session>` half went with `ScanForm` and is not re-pointed: `D1244` deliberately does
+    // not scaffold a principal, because the scaffold writes a **security** assertion, which reads
+    // a response the test already asked for and needs no owner. `as` is `AuthPanel`'s subject and
+    // the sequence's own `more` tab, both gated elsewhere.
+    await fresh.locator('[data-compose-write]').click();
+    await fresh.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
 
     const written = await readFile(join(dir, 'scan.tflw'), 'utf8');
     const body = written.slice(written.indexOf('test "the page can ask for a scan"'));
-    assert.match(body, /^test "the page can ask for a scan" as shopper$/m, 'the principal the scan compares against');
+    assert.match(body, /^test "the page can ask for a scan"$/m, 'the test the scaffold names');
     assert.match(body, /^ {2}api GET \/health$/m, 'the request the assertion grades');
-    assert.match(body, /^ {2}expect response has no authorization violations$/m);
+    assert.match(body, /^ {2}expect status equals 200$/m, 'and the assertion that says the request worked');
+    assert.match(body, /^ {2}expect response has no critical security violations$/m, 'the line that puts this test behind SCANS');
     // …and in that order: the request has to precede the assertion that reads its response.
-    assert.ok(body.indexOf('api GET /health') < body.indexOf('has no authorization violations'), body);
+    assert.ok(body.indexOf('api GET /health') < body.indexOf('has no critical security violations'), body);
 
     // 6. And the notice is not a decoration: uncommenting the declaration — the one act the
     //    scaffold asks for — takes both it and the diagnostic away. Without this the assertions
@@ -4097,8 +4131,9 @@ test('a project with no `authorized target`: the SCANS form says so, shows the T
       'utf8',
     );
     await fresh.reload();
-    await fresh.locator('[data-scan-form]').waitFor();
-    assert.equal(await fresh.locator('[data-scan-unauthorized]').count(), 0, 'the notice must read the config, not be permanent');
+    await fresh.locator('[data-compose-scan]').waitFor();
+    assert.equal(await fresh.locator('[data-compose-scan-unauthorized]').count(), 0, 'the notice must read the config, not be permanent');
+    assert.ok((await fresh.locator('[data-compose-scan-covered="yes"]').count()) > 0, 'and the origin the scan reaches is covered now');
   } finally {
     await fresh.close();
     await ui.close();
@@ -4675,7 +4710,7 @@ test('no step carries the LOAD lens, so the wire no longer ships a bucket that c
   }
 });
 
-test('the affirmation this form refuses to make is one the author can make on this page (M207-02)', async () => {
+test('the affirmation this door refuses to make is one the author can make on this page (M207-02)', async () => {
   // `M207` `S4`, repairing `M207-02`. The notice gave two reasons — the target lives in a file
   // *"this page does not write (`D1049`) and must not (`D291`)"* — and `M205` `Q5` had made the
   // first half false the day before: `ConfigPanel` writes `tflw.config` through `PUT /api/config`,
@@ -4697,22 +4732,22 @@ test('the affirmation this form refuses to make is one the author can make on th
     const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      await fresh.goto(`${base}#/scan`);
-      await fresh.locator('[data-scan-unauthorized]').waitFor();
+      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
+      await fresh.locator('[data-compose-scan-unauthorized]').waitFor();
 
       // 1. THE PROSE, both halves. `D291` is named as the standing reason, and the claim that the
       //    page cannot write `tflw.config` is gone — asserted as an absence, because the repair of a
       //    two-reason sentence that lost one reason is not complete while the false half survives.
-      const notice = (await fresh.locator('[data-scan-unauthorized]').textContent()) ?? '';
+      const notice = (await fresh.locator('[data-compose-scan-unauthorized]').textContent()) ?? '';
       assert.match(notice, /D291/, 'the standing reason is not named');
       assert.doesNotMatch(notice, /D1049/, 'the half `M205` `Q5` falsified is still stated');
       assert.doesNotMatch(notice, /does not write|cannot write/i, 'the notice still claims this page cannot write tflw.config');
       assert.match(notice, /Config/, 'the notice does not say where the affirmation is made');
 
       // 2. THE LINK GOES THERE, and the address carries it (`D1045`).
-      await fresh.locator('[data-scan-config-link]').click();
+      await fresh.locator('[data-compose-scan-config-link]').click();
       await fresh.locator('[data-tabstrip="config"]').waitFor();
-      assert.equal(new URL(fresh.url()).hash, '#/scan/config', 'the link did not put the tab in the address');
+      assert.equal(new URL(fresh.url()).hash, '#/scan/config/scan.tflw', 'the link did not put the tab in the address');
 
       // 3. **THE AFFIRMATION, MADE HERE.** `tflw init --scan` leaves the line commented out on
       //    purpose, so uncommenting it in this textarea is precisely the act `D291` reserves to the
@@ -4750,10 +4785,10 @@ test('the affirmation this form refuses to make is one the author can make on th
       //    `TF060`, named where to fix it, and the fix taken from this page makes the form stop
       //    saying it. Read after a reload, so the assertion is about `tflw.config` on disk and not
       //    about a value this page is still holding.
-      await fresh.goto(`${base}#/scan`);
+      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
       await fresh.reload();
-      await fresh.locator('[data-scan-form]').waitFor();
-      assert.equal(await fresh.locator('[data-scan-unauthorized]').count(), 0, 'the notice survives the affirmation it asked for');
+      await fresh.locator('[data-compose-scan]').waitFor();
+      assert.equal(await fresh.locator('[data-compose-scan-unauthorized]').count(), 0, 'the notice survives the affirmation it asked for');
 
       // …and the file says so too, with no page involved — the only reading that proves the page
       // wrote a real `authorized target` rather than merely hiding its own warning.
@@ -4796,10 +4831,16 @@ test('the reason for authorized targets lives on the door that owns it, in both 
 
       // 1. STATE ONE — nothing authorized. This is the state `tflw init --scan` leaves, and the
       //    only state the old notice rendered in.
-      await fresh.goto(`${base}#/scan`);
-      await fresh.locator('[data-scan-why]').waitFor();
-      assert.equal(await fresh.locator('[data-scan-why]').getAttribute('data-scan-why-targets'), '0');
-      assert.match((await fresh.locator('[data-scan-why]').textContent()) ?? '', reason, 'the reason is not on the door with nothing authorized');
+      //
+      //    `M228` `A` (`D1239`) moved this from `ScanForm`'s banner to region 2's `scan` segment,
+      //    which is earned by the construct — so the address names the declaration rather than the
+      //    door. The sentence itself is carried **verbatim**: a gate matching a regex against
+      //    prose that was reworded in transit stops being about the same claim, and this one's
+      //    whole point is that the sentence exists in both states.
+      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
+      await fresh.locator('[data-compose-scan-why]').waitFor();
+      assert.equal(await fresh.locator('[data-compose-scan-why]').getAttribute('data-compose-scan-why-targets'), '0');
+      assert.match((await fresh.locator('[data-compose-scan-why]').textContent()) ?? '', reason, 'the reason is not on the door with nothing authorized');
 
       // 2. Authorize one, from this page, the way `S4` established.
       const config = await readFile(join(dir, 'tflw.config'), 'utf8');
@@ -4812,12 +4853,12 @@ test('the reason for authorized targets lives on the door that owns it, in both 
       // 3. STATE TWO — something authorized, which is **every project measured for this round** and
       //    the state the old prose would have lost the explanation in. The reason is still here, and
       //    the affirmative half names the count.
-      await fresh.goto(`${base}#/scan`);
+      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
       await fresh.reload();
-      await fresh.locator('[data-scan-why]').waitFor();
-      assert.equal(await fresh.locator('[data-scan-unauthorized]').count(), 0, 'the fixture is not in the authorized state, so this half proves nothing');
-      assert.equal(await fresh.locator('[data-scan-why]').getAttribute('data-scan-why-targets'), '1');
-      const why = (await fresh.locator('[data-scan-why]').textContent()) ?? '';
+      await fresh.locator('[data-compose-scan-why]').waitFor();
+      assert.equal(await fresh.locator('[data-compose-scan-unauthorized]').count(), 0, 'the fixture is not in the authorized state, so this half proves nothing');
+      assert.equal(await fresh.locator('[data-compose-scan-why]').getAttribute('data-compose-scan-why-targets'), '1');
+      const why = (await fresh.locator('[data-compose-scan-why]').textContent()) ?? '';
       assert.match(why, reason, 'the reason vanished in exactly the state every measured project is in');
       assert.match(why, /1 authorized target is in force/, 'the affirmative half does not say what is in force');
 
@@ -10723,6 +10764,451 @@ test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D12
       after.noticeTop !== null && after.frameBottom !== null && after.noticeTop >= after.frameBottom - 1,
       `the notice closes the region instead of leading it — top ${after.noticeTop} against the frame's bottom ${after.frameBottom} and the bar's ${after.barBottom} (\`D1236\`)`,
     );
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/* ── `M228` `A` — the authorization segment, and `TF060` in the pane's own diagnostics ─────────
+   Four readings and two of them are controls, which is what `M224` cost us the hard way.
+
+   **Every one is taken on the API door on purpose.** Both rules in this slice are keyed on the
+   construct — a declaration carrying a severity matcher earns the segment and the diagnostic
+   wherever it is opened — and a gate taken on SCANS would be green under every mutation that made
+   them door-granted, because there the door and the construct agree. That is `M223` `F`'s vacuity
+   lesson, and it is why 25 of the corpus's 96 scan assertions living in files nobody calls a scan
+   file is a fact about the product rather than about the corpus. */
+test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (`D1239`), and `TF060` reaches the pane (`D1240`)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m228a-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const target = `http://127.0.0.1:${fixturePort}`;
+  const config = (authorized: boolean): string =>
+    [
+      'env local default',
+      `  api "${target}"`,
+      ...(authorized ? [`  authorized target "${target}" reason "the fixture server, named so this test is not TF060"`] : []),
+      '',
+    ].join('\n');
+  try {
+    await writeFile(join(dir, 'tflw.config'), config(true));
+    /* **One file, two declarations, and the only difference between them is the matcher.** Same
+       door, same file, same request — so a segment that appeared on both would be the *file*
+       talking and not the construct, and a reading that found it on neither would be the door. */
+    await writeFile(
+      join(dir, 'd.tflw'),
+      [
+        'test "grades what came back"',                        // L1
+        '  api GET /items',                                    // L2
+        '  expect status equals 200',                          // L3
+        '  expect response has no serious security violations', // L4
+        '',                                                    // L5
+        'test "asks for nothing but a status"',                // L6
+        '  api GET /items',                                    // L7
+        '  expect status equals 200',                          // L8
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    /* `openTab` drives the module-level page; this gate has its own, so the two lines it needs
+       are written here rather than by widening a helper eleven other tests share. */
+    const tabOn = async (tab: string): Promise<void> => {
+      await fresh.locator(`[data-tab="${tab}"]`).click();
+      await fresh.locator(`[data-tabstrip="${tab}"]`).waitFor();
+    };
+
+    const read = async (): Promise<{
+      tabs: string[]; showing: string | null; panel: string | null; targets: string | null;
+      families: string[]; probesNone: number; reason: string | null;
+    }> =>
+      fresh.locator('.doorpane').evaluate((pane) => {
+        const p = pane.querySelector('[data-compose-scan]');
+        return {
+          tabs: [...pane.querySelectorAll('[data-compose-region2-tab]')].map((x) => x.getAttribute('data-compose-region2-tab') ?? ''),
+          showing: pane.querySelector('[data-compose-region2]')?.getAttribute('data-compose-region2') ?? null,
+          panel: p === null ? null : p.getAttribute('data-compose-scan'),
+          targets: p === null ? null : p.getAttribute('data-compose-scan-targets'),
+          families: [...pane.querySelectorAll('[data-compose-scan-family]')].map((x) => x.getAttribute('data-compose-scan-family') ?? ''),
+          probesNone: pane.querySelectorAll('[data-compose-scan-probes-none]').length,
+          reason: pane.querySelector('.scan-reason')?.textContent ?? null,
+        };
+      });
+
+    // ── Gate 1 — the scan-bearing declaration, on API ────────────────────────────────────────
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L1`);
+    await fresh.locator('.compose-pane-grid').waitFor();
+    await fresh.waitForTimeout(400);
+    const scanning = await read();
+    assert.deepEqual(scanning.tabs, ['scan', 'response'], `the declaration earns a second tenant on the API door — got ${JSON.stringify(scanning.tabs)}`);
+    assert.equal(scanning.showing, 'scan', 'and a declaration opens the richest thing it has earned (`D1209`)');
+    assert.equal(scanning.panel, 'authorized', 'this env declares a target, so the panel is in its healthy state');
+    assert.equal(scanning.targets, '1', `one target in force — got ${scanning.targets}`);
+    assert.deepEqual(scanning.families, ['hasNoSecurityViolations'], 'and the panel names the family this declaration actually claims');
+    assert.ok(
+      scanning.reason !== null && scanning.reason.includes('named so this test is not TF060'),
+      `the reason travels from the config into the panel, which is the half of \`D291\` that makes the claim auditable — got ${scanning.reason}`,
+    );
+    /* The opt-ins said out loud in their absence. `probe oversized`/`probe traversal` occur **0
+       times** in any `.tflw` file in either repository because they are not written there, so
+       `has no input-handling violations` reports *not probed* rather than sending anything — and
+       a reader who has never met the clause cannot learn that from a passing run. */
+    assert.equal(scanning.probesNone, 1, 'no `probe` opt-in is declared, and the panel says so rather than leaving it blank');
+
+    // ── Gate 2 — the unmutated control: same door, same file, no severity matcher ─────────────
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L6`);
+    await fresh.waitForTimeout(400);
+    const plain = await read();
+    assert.deepEqual(plain.tabs, [], `a declaration with no scan assertion earns no segment at all — got ${JSON.stringify(plain.tabs)}`);
+    assert.equal(plain.panel, null, 'and no panel; a segment drawn unconditionally dies here');
+
+    // ── Gate 4 — the authorized control for gate 3, taken FIRST so that the mutation is the ───
+    //    config and nothing else. The draft has to differ from the file for the preview list to
+    //    be drawn at all (`SourcePanel`), so the edit is made once and both readings share it.
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.locator('[data-expect-severity]').waitFor();
+    await fresh.locator('[data-expect-severity]').selectOption('critical');
+    await tabOn('source');
+    await fresh.waitForTimeout(400);
+    const codes = async (): Promise<string[]> =>
+      fresh.locator('.doorpane').evaluate((pane) => [...pane.querySelectorAll('[data-diagnostic-code]')].map((x) => x.getAttribute('data-diagnostic-code') ?? ''));
+    const gated = await codes();
+    assert.deepEqual(gated, [], `the env authorizes this target, so the same bytes are clean — got ${JSON.stringify(gated)}`);
+
+    // ── Gate 3 — the same bytes with the declaration taken out of `tflw.config` ───────────────
+    /* **`reload`, not `goto`.** The first draft of this gate navigated to the same URL with a
+       different hash, which is not a navigation at all — the SPA moved its route and never asked
+       `/api/project` again, so the page went on holding the authorized config it had read at
+       load and the reading came back empty. It is also what makes the pair above honest rather
+       than vacuous: an instrument that never draws the list would pass gate 4 by saying nothing,
+       and gate 3 is the proof that these exact bytes on this exact page can produce a row. */
+    await writeFile(join(dir, 'tflw.config'), config(false));
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.reload();
+    await fresh.locator('[data-expect-severity]').waitFor();
+    await fresh.locator('[data-expect-severity]').selectOption('critical');
+    await tabOn('source');
+    await fresh.waitForTimeout(400);
+    const ungated = await codes();
+    assert.ok(
+      ungated.includes('TF060'),
+      `an ungated scan assertion is \`TF060\` and the pane says so before the terminal does (\`D1240\`) — got ${JSON.stringify(ungated)}`,
+    );
+    /* And the panel is in its other state on the same reload — `M207` `S5`'s warning, which every
+       project on this machine is too healthy to render. */
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L1`);
+    await fresh.waitForTimeout(400);
+    const unauthorized = await read();
+    assert.deepEqual(unauthorized.tabs, ['scan', 'response'], 'the segment is earned by the construct, so losing the target does not remove it');
+    assert.equal(unauthorized.panel, 'none', 'with no target declared the panel carries `D291`’s warning instead of the healthy sentence');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/* ── `M228` `B` — the SCANS door joins the pane ────────────────────────────────────────────────
+   Four readings, and the last two are what make the vocabulary row a decision rather than a copy
+   of API's. `sends`/`plays` are the pair `D1241` argues in both directions: ▶ is offered and
+   priced, `send` is refused on `D1119`'s own grounds, and a table that copied API's row wholesale
+   would fail the fourth reading while passing the first three. */
+test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, scaffolds a scan (`D1244`), and plays without sending (`D1241`)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m228b-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      [
+        'env local default',
+        `  api "http://127.0.0.1:${fixturePort}"`,
+        `  authorized target "http://127.0.0.1:${fixturePort}" reason "the fixture server, named so this test is not TF060"`,
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      join(dir, 'd.tflw'),
+      ['test "grades what came back"', '  api GET /items', '  expect status equals 200', '  expect response has no serious security violations', ''].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    // ── Gate 5 — the door renders the pane and no form ───────────────────────────────────────
+    await fresh.goto(`${base}/#/scan`);
+    await fresh.locator('.compose-pane-grid').waitFor();
+    assert.equal(await fresh.locator('[data-scan-form]').count(), 0, '`ScanForm` is still on the screen, so the fork was narrowed rather than deleted');
+    await fresh.locator(`[data-file-row="d.tflw"]`).click();
+    await fresh.locator('[data-seq-foot]').waitFor();
+    assert.deepEqual(
+      (await fresh.locator('[data-seq-foot]').getAttribute('data-seq-adds'))?.split(','),
+      ['request', 'let', 'wait'],
+      'the sequence offers nothing to add, so `adds` is still empty and `composes` is still false on this door',
+    );
+
+    /* ── Gate 6 — the 270 px ─────────────────────────────────────────────────────────────────
+       Measured 1440x900 on `examples/storefront` while this plan was scoped: `.doorpane` bottom
+       **630** against `main`'s **900**. It was outside `main-fill` because `M223` `D1193` /
+       `M224` `D1210` key that predicate on `adds.length > 0`, which is right and which SCAN was
+       simply on the other side of. BROWSER lost **278 px** the same way before `D1193` and LOAD
+       **190** before `D1210`; this is the third and last occurrence, and it closes because the
+       door joined the pane rather than because the predicate moved. */
+    const box = async (): Promise<{ pane: number; main: number }> =>
+      fresh.evaluate(() => {
+        const pane = document.querySelector('.doorpane');
+        const main = document.querySelector('main');
+        return {
+          pane: pane === null ? 0 : Math.round(pane.getBoundingClientRect().bottom),
+          main: main === null ? 0 : Math.round(main.getBoundingClientRect().bottom),
+        };
+      });
+    const fills = await box();
+    assert.ok(
+      fills.main - fills.pane <= 20,
+      `the SCANS pane still leaves the window unclaimed — pane bottom ${fills.pane} against main's ${fills.main} (was 270 px short)`,
+    );
+
+    /* ── Gate 8 — ▶ is offered and priced; `send` is refused ─────────────────────────────────
+       **Addressed at the REQUEST, and the first draft of this named the declaration and was
+       vacuous.** `D1215` gives a declaration address no `prefix` — there is no *this* to send —
+       so `[data-compose-send]` is absent there whatever the table says, and the `sends: true`
+       mutation left this gate green. The control beside it is the same line on the API door,
+       without which *absent* is satisfied by a send row that has stopped rendering anywhere. */
+    await fresh.goto(`${base}/#/scan/compose/d.tflw/L2`);
+    await fresh.locator('[data-seq-play="test"]').first().waitFor();
+    await fresh.waitForTimeout(300);
+    assert.equal(
+      await fresh.locator('[data-compose-send]').count(),
+      0,
+      '`send` is on the SCANS door, and `D1241` refuses it: it strips the assertions this door exists for (`D1119`)',
+    );
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L2`);
+    await fresh.locator('[data-compose-send]').first().waitFor();
+    assert.ok(
+      (await fresh.locator('[data-compose-send]').count()) > 0,
+      'the same request on the API door has no send either, so the SCANS reading above is about nothing',
+    );
+
+    await fresh.goto(`${base}/#/scan/compose/d.tflw/L1`);
+    await fresh.locator('[data-seq-play="test"]').first().waitFor();
+    const price = (await fresh.locator('[data-seq-play="test"]').first().getAttribute('data-tip')) ?? '';
+    assert.ok(price.length > 0, '▶ states no price at all on the door where the press is most consequential (`D1212`)');
+
+    // ── Gate 7 — `+ new test` writes a scan, and every line it writes is editable here ────────
+    await fresh.locator('[data-compose-new-test]').click();
+    await fresh.locator('[data-new-name]').fill('what the door scaffolds');
+    await fresh.locator('[data-new-path]').fill('/health');
+    await fresh.locator('[data-new-create]').click();
+    await fresh.locator('[data-new-thing]').waitFor({ state: 'detached' });
+    await fresh.locator('[data-compose-write]').click();
+    await fresh.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+
+    const written = await readFile(join(dir, 'd.tflw'), 'utf8');
+    const body = written.slice(written.indexOf('test "what the door scaffolds"'));
+    assert.match(body, /^ {2}api GET \/health$/m, 'the request the scan assertion grades');
+    assert.match(body, /^ {2}expect status equals 200$/m, 'and the assertion saying the request worked');
+    assert.match(body, /^ {2}expect response has no critical security violations$/m, 'the line that puts the scaffold behind its own door (`D1244`)');
+
+    /* **And `D1189`'s invariant, read off the screen rather than off the table.** A scaffold that
+       writes a kind its own pane cannot edit draws it dead — `data-stmt-editable="no"` with no
+       control and no reason — which is the 650 statements `M219` `C` spent a slice removing and
+       the defect `M222` was scoped from. Asserted on the rows the create gesture just made, so
+       it is about what landed rather than about what the vocabulary claims. */
+    const line = written.split('\n').findIndex((l) => l.includes('what the door scaffolds')) + 1;
+    await fresh.goto(`${base}/#/scan/compose/d.tflw/L${line}`);
+    await fresh.locator('[data-seq-foot]').waitFor();
+    const dead = await fresh.locator('[data-stmt-editable="no"]').count();
+    assert.equal(dead, 0, `the SCANS scaffold wrote ${dead} row(s) its own pane draws dead (\`D1082\`, \`D1189\`)`);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/* ── `M228` `C` — a `crawl` is drawn, and not built (`D1238`) ──────────────────────────────────
+   **THE PLAN'S OWN GATE HERE WAS WRONG, AND MEASURING IT IS WHAT SAID SO.** It asked for *the
+   sidebar badge equals the number of declaration rows drawn under it, on every door*, off a
+   reading of `scan.tflw` as badge **1** / rows **2** on SCANS against **2** / **2** on API. The
+   equality on API was a coincidence of that file: the badge counts what is behind THIS DOOR and
+   the tree draws every declaration in the file, because `D1063` settled that *the door is a count,
+   never a filter*. Any file holding a declaration behind another door breaks the equality while
+   nothing at all is wrong.
+
+   What §1.5 actually measured is narrower and is a real contradiction: **the badge counted a
+   construct the tree could not draw at all.** `Sidebar.tsx:424` adds `f.crawls`; `:363` maps
+   `o.declarations`, which `outline.ts:249` said in as many words could not hold one. So the rule
+   is that the tree draws every declaration the FILE has — which the badge's own inputs are a
+   subset of — and it is taken on both doors, because a crawl is the only construct that reaches
+   SCANS without also reaching API. */
+test('`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and saying why (`D1238`)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m228c-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      [
+        'env local default',
+        `  api "http://127.0.0.1:${fixturePort}"`,
+        `  authorized target "http://127.0.0.1:${fixturePort}" reason "the fixture server, named so this test is not TF060"`,
+        '',
+      ].join('\n'),
+    );
+    /* One test and one crawl, so the two halves of `M228`'s measurement are both present in one
+       file: the test reaches API and SCANS, the crawl reaches SCANS alone. */
+    await writeFile(
+      join(dir, 'c.tflw'),
+      [
+        'test "the surface the crawl will walk"', // L1
+        '  api GET /items',                       // L2
+        '  expect status equals 200',             // L3
+        '',                                       // L4
+        'crawl "walked again as a stranger"',     // L5
+        '  seed traffic',                         // L6
+        '  expect response has no serious security violations', // L7
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    const view = (await (await fetch(`${base}/api/project`)).json()) as { files: { path: string; tests: unknown[]; crawls: unknown[] }[] };
+    const entry = view.files.find((f) => f.path === 'c.tflw')!;
+    const declared = entry.tests.length + entry.crawls.length;
+    assert.equal(declared, 2, 'the fixture must hold a test and a crawl for either half of this to mean anything');
+
+    // ── Gate 9 — every declaration the file has is drawn, on every door ──────────────────────
+    for (const door of ['scan', 'api'] as const) {
+      await fresh.goto(`${base}/#/${door}/compose/c.tflw`);
+      await fresh.locator('[data-outline]').waitFor();
+      await fresh.waitForTimeout(300);
+      const drawn = await fresh.locator('[data-outline-decl]').count();
+      assert.equal(
+        drawn,
+        declared,
+        `the ${door} tree draws ${drawn} of the file's ${declared} declarations — a crawl the badge counts and the tree cannot show is §1.5's contradiction`,
+      );
+      assert.equal(await fresh.locator('[data-outline-decl="crawl"]').count(), 1, `the crawl is missing from the ${door} tree`);
+    }
+
+    // ── Gate 10 — read-only, and the reason is the crawl's own rather than the block's ───────
+    await fresh.goto(`${base}/#/scan/compose/c.tflw/L5`);
+    await fresh.locator('[data-band-kind="crawl"]').waitFor();
+    assert.equal(await fresh.locator('[data-crawl-name]').textContent(), 'walked again as a stranger');
+    assert.deepEqual(
+      await fresh.locator('[data-crawl-seed]').evaluateAll((els) => els.map((e) => e.getAttribute('data-crawl-seed'))),
+      ['TrafficSeed'],
+      'the seeds are the whole of where a crawl’s requests come from, and were invisible in the product before this slice',
+    );
+    /* **`isVisible`, not `textContent`.** The first draft read the text and the `hidden` mutation
+       survived it: an element the reader cannot see still carries every word it was written with.
+       `M224` `G` (`D1214`) filed exactly this once already — `hidden` on a block that was fully
+       visible and interactive — and the mirror of it is a gate that cannot tell the two apart. */
+    assert.ok(await fresh.locator('[data-crawl-why]').isVisible(), 'a disabled declaration with no visible explanation is the pane `D1082` refuses');
+    const why = (await fresh.locator('[data-crawl-why]').textContent()) ?? '';
+    assert.match(why, /crawl/, `the reason does not say what it is about — got ${why}`);
+
+    /* **No control that does nothing.** ▶ needs `--only <name>` against a test, and `✕` and every
+       step removal name a declaration by `replaceInSource`'s index — which a crawl deliberately
+       does not have. Drawn-and-inert is worse than absent, and is the same failure as a disabled
+       row with no reason. */
+    assert.equal(await fresh.locator('[data-seq-play]').count(), 0, '▶ is offered on a crawl and could only ever refuse');
+    assert.equal(await fresh.locator('[data-seq-remove]').count(), 0, '`✕` is offered on a crawl and `onRemoveDecl` cannot address one');
+    assert.equal(await fresh.locator('[data-seq-foot]').getAttribute('data-seq-adds'), '', 'the foot offers `+` gestures that would splice into a crawl');
+
+    await fresh.goto(`${base}/#/scan/compose/c.tflw/L7`);
+    await fresh.locator('[data-stmt-editable]').first().waitFor();
+    assert.equal(await fresh.locator('[data-stmt-editable="yes"]').count(), 0, "a crawl's own assertion is live, so its address is reachable after all");
+    const reason = (await fresh.locator('.editor-body .stmt-line p').textContent()) ?? '';
+    assert.match(reason, /crawl/, `the row gives the nested-block reason about a crawl, which is a true-shaped sentence about the wrong thing — got ${reason}`);
+
+    /* **The control**, and it is the one `M224` cost us: the same pane, the same door, one file
+       away, still fully live. Without it every assertion above is satisfied by a pane that has
+       stopped editing anything. */
+    await fresh.goto(`${base}/#/scan/compose/c.tflw/L3`);
+    await fresh.locator('[data-expect-matcher]').first().waitFor();
+    assert.equal(await fresh.locator('[data-seq-play]').count(), 1, 'the test beside the crawl lost ▶, so the crawl rule is keyed too wide');
+    assert.equal(await fresh.locator('[data-seq-foot]').getAttribute('data-seq-adds'), 'request,let,wait', 'and its `+` gestures with it');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/* ── `M228` `D` — the matcher select stops offering 23 on every subject (`D1243`) ──────────────
+   The rendering half. `packages/ui/test/matcherOffer.test.ts` holds the table half, and neither
+   substitutes: a select that read the rule correctly and forgot to pass `disabled` passes that
+   file, and one that hard-coded four ids passes this against today's corpus.
+
+   **`D1242` IS NOT HERE, AND THE PLAN WAS WRONG ABOUT IT.** §1.4 read `[data-expect-not]` **0**
+   and `[data-expect-severity]` **0** and concluded the severity floor and `not` had no control.
+   Both have had one since `M210` `S3` — measured live on `examples/storefront/tests/signin.tflw`
+   `L19`, the severity select reads `serious` off the file and `not` is drawn by the row's own
+   `⋯`, open already on any row that uses it. The scoping measurement was taken through a
+   URL-encoded path segment the address grammar does not use, so the page silently fell back to
+   another file and answered about a row with neither. `M210` `S3`'s own gates cover both. */
+test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` refuses are disabled and say so (`D1243`)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m228d-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
+    await writeFile(
+      join(dir, 'd.tflw'),
+      ['test "three subjects, one file"', '  api GET /items', '  expect status equals 200', '  expect response has no serious security violations', ''].join('\n'),
+    );
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+
+    const options = async (line: number): Promise<{ total: number; refused: string[]; tip: string | null }> =>
+      fresh.locator(`[data-assert-line="${line}"] [data-expect-matcher]`).evaluate((el) => {
+        const opts = [...(el as unknown as { options: { value: string; disabled: boolean; title: string }[] }).options];
+        return {
+          total: opts.length,
+          refused: opts.filter((o) => o.disabled).map((o) => o.value),
+          tip: opts.find((o) => o.disabled)?.title ?? null,
+        };
+      });
+
+    // ── Gate 13 — a `status` subject: everything drawn, the ones that need a page or a response
+    //    greyed, and the sentence is the checker's own.
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L3`);
+    await fresh.locator('[data-expect-matcher]').first().waitFor();
+    const onStatus = await options(3);
+    assert.equal(onStatus.total, 23, `the select filtered instead of disabling — ${onStatus.total} options against the language's 23 (\`D1076\`)`);
+    for (const m of ['hasNoA11yViolations', 'hasNoSecurityViolations', 'visible', 'wasMade']) {
+      assert.ok(onStatus.refused.includes(m), `\`${m}\` is offered live on a \`status\` subject`);
+    }
+    // The control — a select that greyed all 23 would satisfy every line above.
+    for (const m of ['equals', 'contains', 'greaterThan']) {
+      assert.ok(!onStatus.refused.includes(m), `\`${m}\` is greyed out on \`status\`, which is the subject it exists for`);
+    }
+    assert.ok(
+      onStatus.tip !== null && onStatus.tip.includes('TF042'),
+      `a greyed option carries no explanation — a control that is drawn, disabled and silent about which half is what \`D1082\` refuses (got ${onStatus.tip})`,
+    );
+
+    // …and the mirror: on `response` the scan families are the live ones.
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.locator('[data-expect-matcher]').first().waitFor();
+    const onResponse = await options(4);
+    assert.equal(onResponse.total, 23);
+    assert.ok(!onResponse.refused.includes('hasNoSecurityViolations'), 'a security scan is refused on `response`, the only subject it takes');
+    assert.ok(onResponse.refused.includes('equals'), '`equals` is live on `response`, which carries no value to compare');
+
+    /* ── Gate 14 — `{value}` abstains entirely ───────────────────────────────────────────────
+       `checkOneMatcherSubject` skips `ValueSubject` because `TF041` owns that pairing and says it
+       better. A select that greyed anything out here would report one mistake twice — once as an
+       unreachable control and once as a diagnostic the author cannot act on from the row. */
+    await fresh.locator(`[data-assert-line="4"] [data-expect-subject]`).selectOption('value');
+    await fresh.waitForTimeout(300);
+    const onValue = await options(4);
+    assert.equal(onValue.total, 23);
+    assert.deepEqual(onValue.refused, [], `\`{value}\` greys out ${JSON.stringify(onValue.refused)} — \`TF041\` owns that pairing (\`D1243\`)`);
   } finally {
     await fresh.close();
     await ui.close();

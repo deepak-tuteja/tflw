@@ -13,7 +13,7 @@
 // defect stated as a property, and it holds for a door nobody has written yet.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, type Lens } from '@tflw/lang';
+import { lensesOfTest, parseSource, type Lens } from '@tflw/lang';
 
 import { VOCABULARY } from '../src/vocabulary.ts';
 import { newSource } from '../src/NewThing.tsx';
@@ -61,16 +61,16 @@ test('`M222` `A`: the BROWSER door scaffolds `open`, with no `api` step anywhere
 // **Mutation: scaffold an `ApiStep` on BROWSER — `scaffold: 'api'` on that row reddens it.**
 test('`M222` `A`: a door scaffolds only statements it can edit — the defect `M219` `C` removed, stated as a rule', () => {
   /* **Qualified by `adds.length > 0`, and the qualifier is not a let-out.** `constructs` describes
-     what a door's Compose *sequence* can build; SCAN draws no sequence (`adds: []` — `App.tsx`
-     hands it `ScanForm`), so its entry is not a claim about anything on the screen and holding a
-     scaffold to it would be holding it to a pane that is not rendered. For every door that does
-     draw one, the rule is absolute.
+     what a door's Compose *sequence* can build, so holding a scaffold to it only means something
+     for a door that draws one.
 
-     **LOAD joined this set in `M224` `D`** (`D1210`/`D1211`), which is exactly what this gate was
-     written to notice: the set is read off the table rather than listed, so a door that starts
-     drawing a sequence is held to the rule from the moment its row says so. */
+     **LOAD joined this set in `M224` `D`** (`D1210`/`D1211`) **and SCAN in `M228` `B`**
+     (`D1237`), which is exactly what this gate was written to notice: the set is read off the
+     table rather than listed, so a door that starts drawing a sequence is held to the rule from
+     the moment its row says so — and all four are now in it, which is what makes the rule
+     absolute rather than conditional. */
   const withASequence = DOORS.filter((d) => VOCABULARY[d].adds.length > 0);
-  assert.deepEqual(withASequence, ['api', 'browser', 'load'], 'the set of doors with a Compose sequence moved — this gate ranges over it');
+  assert.deepEqual(withASequence, ['api', 'browser', 'load', 'scan'], 'the set of doors with a Compose sequence moved — this gate ranges over it');
   for (const door of withASequence) {
     const parsed = parseSource(INTO + wrote(door, { path: '/x' }));
     assert.equal(parsed.diagnostics.length, 0, `${door}'s scaffold does not parse`);
@@ -90,16 +90,26 @@ test('`M222` `A`: a door scaffolds only statements it can edit — the defect `M
 // and SCAN would scaffold nothing: a named test with an empty body. The language does not allow
 // it — `test "x"` with nothing under it is `TF015`, *this `test` has no steps* — and the scoping
 // probe that reported it legal was reading `parsed.errors`, a property `ParsedSource` does not
-// have, so `?? []` made every file clean. There is also no `buildCrawl` and no crawl member on
-// `insertIntoSource`, so SCAN's own shape cannot go through the one construction path at all.
+// have, so `?? []` made every file clean.
 //
-// SCAN keeps `'api'`, and this gate pins the two facts that decided it rather than the preference.
-// **Mutation: make it scaffold nothing — the `TF015` assertion below reddens.**
-test('`M222` `A`: SCANS keeps the API scaffold, because the language refuses the empty test `D1190` asked for', () => {
-  for (const door of ['scan'] as const) {
-    assert.equal(VOCABULARY[door].scaffold, 'api', `${door}'s scaffold moved — see \`Scaffold\`'s docblock for why it is 'api'`);
-    assert.equal(wrote(door), '\ntest "a new one"\n  api GET /orders\n  expect status equals 200\n');
-  }
+// **`M228` `B` (`D1244`) gave SCAN its own**, and the second fact that once pinned `'api'` here —
+// there is no `buildCrawl`, so a crawl cannot go through the one construction path — is now the
+// argument for what this scaffold is **not**, rather than for SCAN having none of its own. It
+// writes an ordinary test, because across both corpora the assertion is the common act (96 scan
+// assertions in 29 files) and the crawl is the specialist (14 in 5).
+// **Mutation: make it scaffold nothing — the `TF015` assertion below reddens. Give it `'api'` —
+// the severity line goes missing and the door's own subject with it.**
+test('`M222` `A`/`M228` `B`: SCANS scaffolds a test that is behind SCANS, and the language still refuses the empty one `D1190` asked for', () => {
+  assert.equal(VOCABULARY.scan.scaffold, 'scan', "SCAN's scaffold moved — see `Scaffold`'s docblock");
+  assert.equal(
+    wrote('scan'),
+    '\ntest "a new one"\n  api GET /orders\n  expect status equals 200\n  expect response has no critical security violations\n',
+  );
+  /* **And the scaffold really does reach this door**, asserted through the language's own rule
+     rather than by reading the string above: a gate that only matched the text would pass against
+     a printer that emitted the words in an order `lensesOfTest` does not recognise. */
+  const made = parseSource(INTO + wrote('scan')).program.tests.at(-1)!;
+  assert.ok(lensesOfTest(made).includes('scan'), 'the SCANS scaffold writes a test that is not behind SCANS');
   // The refutation itself, so a later round cannot re-take `D1190` without meeting this first.
   const empty = parseSource(INTO + '\ntest "a new one"\n');
   assert.equal(empty.diagnostics.length, 1, 'an empty-bodied test now parses — `D1190` may be worth re-taking');
@@ -124,7 +134,12 @@ test('`M222` `B`: an empty path refuses in the scaffold’s own words', () => {
   assert.match((browser as { reason: string }).reason, /path to open/);
 
   // The name is asked for on every door, because every door's test is reported by it.
-  for (const scaffold of ['api', 'open'] as const) {
+  // `'scan'` and `'workload'` both fall through to the `api` body, so they refuse in its words.
+  const scan = newSource({ scaffold: 'scan', name: 'n', method: 'GET', path: '  ', into: INTO });
+  assert.equal(scan.ok, false);
+  assert.match((scan as { reason: string }).reason, /request needs a path/);
+
+  for (const scaffold of ['api', 'open', 'scan'] as const) {
     const out = newSource({ scaffold, name: '   ', method: 'GET', path: '/x', into: INTO });
     assert.equal(out.ok, false, `a nameless test was accepted with scaffold ${scaffold}`);
   }

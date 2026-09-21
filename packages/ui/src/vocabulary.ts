@@ -67,10 +67,19 @@ export interface AddGesture {
  * lines carrying **eight distinct values** from 50 ms to 100 000 ms and is the one number only the
  * author knows.
  *
- * SCAN keeps `'api'`, and that entry is still describing a pane that is not on the screen —
- * `App.tsx` gives it `ScanForm`. `M224` is LOAD's round, door by door; SCAN is the named next one.
+ * **`M228` `B` (`D1244`) gives SCAN its own**, and it is the last door to get one. It mirrors
+ * `tflw init --scan`'s `SCAFFOLD_SCAN` — one ordinary `test`, an `api` step, `expect status equals
+ * 200`, and `expect response has no critical security violations` — rather than being a fourth
+ * invention, because the CLI already answers *what does a scan project start from* and two answers
+ * to one question is what this file exists to prevent.
+ *
+ * **Not a `crawl`**, on `D1053`'s own measured grounds: across both corpora the assertion is the
+ * common act (96 scan assertions in 29 files) and the crawl is the specialist (14 real ones in 5),
+ * so a scaffold leading with the crawl would teach the rarer half first. It is also the half this
+ * pane cannot construct at all (`D1238`), and `D1189`'s invariant forbids a scaffold writing what
+ * the sequence cannot edit.
  */
-export type Scaffold = 'api' | 'open' | 'workload';
+export type Scaffold = 'api' | 'open' | 'workload' | 'scan';
 
 export interface DoorVocabulary {
   /**
@@ -145,8 +154,9 @@ export interface DoorVocabulary {
    * The qualifier is load-bearing and is `adds.length > 0`, this table's own way of saying *this
    * door has a Compose sequence* — and since `M224` `D` (`D1210`) it is no longer only a comment:
    * `App.tsx`'s dispatch and `M223`'s `main-fill` predicate both read it, so **no call site names a
-   * door**. SCAN has `adds: []` and renders its own form instead, so its `constructs` is not a
-   * claim about anything drawn.
+   * door**. Since `M228` `B` (`D1237`) every one of the four satisfies it, so the qualifier is
+   * today vacuously true — and it stays, because what it guards is the next door rather than these
+   * four.
    */
   readonly scaffold: Scaffold;
 }
@@ -260,13 +270,40 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     scaffold: 'workload',
   },
   /**
-   * SCAN keeps its own form this round (`ScanForm`), so its entry says what is true today rather
-   * than what a future slice will make true: it constructs nothing from Compose beyond the neutral
-   * vocabulary, and offers no `+` gestures there. **A table entry that lied here would be worse
-   * than no entry**, because the pane reads it to decide what to draw as editable.
+   * **SCAN, since `M228` `B` (`D1237`)** — the fourth and last door to stop describing a pane that
+   * is not on the screen. The confession this replaces was three rounds old and got more specific
+   * each time: *"SCAN keeps its own form this round … a table entry that lied here would be worse
+   * than no entry."*
    *
-   * `scaffold: 'api'` — see `Scaffold`'s docblock, where `D1190`'s `null` is refuted rather than
-   * quietly dropped.
+   * `constructs` is API's set, and like LOAD's that is a fact about the **language** rather than a
+   * copy: a scan assertion grades *the last response*, so the body of a scan-bearing test is `api`
+   * steps and the neutral kinds. The other route to a severity matcher is a `crawl`, whose body
+   * cannot hold an `api` step at all (`TF070`) and which this pane draws read-only (`D1238`).
+   * `adds` follows from `constructs` by `D1189`'s invariant.
+   *
+   * **`plays: true`, priced** (`D1212`, `D1241`) — and ▶ on a scan test is the most consequential
+   * press in the product, which is why the control names the families before it fires rather than
+   * afterwards.
+   *
+   * **`sends: false`, refused on `D1119`'s own grounds rather than left empty.** `send` filters the
+   * assertions out of the scratch — *"a body with its assertions taken out — what send actually
+   * runs"* — so a send on a scan-bearing test issues the request, shows a 200, and displays no scan
+   * verdict at all. On API that is exactly right and is the whole point of the gesture. Here it is
+   * a control that looks like it answers this door's question and structurally cannot, which is
+   * `D1082`'s refusal in its purest form. Amending `D1119` for one matcher family was considered
+   * and refused: a send that grades one family and not the others is a gesture whose meaning
+   * depends on what is under the cursor.
    */
-  scan: { constructs: new Set(NEUTRAL_CONSTRUCTS), adds: [], sends: false, plays: false, dropsSubjects: new Set(), scaffold: 'api' },
+  scan: {
+    constructs: new Set<Step['type']>([...NEUTRAL_CONSTRUCTS, 'ApiStep', 'WaitUntilApiStmt']),
+    adds: [
+      { key: 'request', label: '+ request', title: 'an `api` step and the assertion that reads it, at the end of this test' },
+      { key: 'let', label: '+ let', title: '`let name = value` — a binding the requests below can interpolate; it goes at the top of the body, where 97 of the corpus’ 100 preamble statements are' },
+      { key: 'wait', label: '+ wait until', title: '`wait until api …` — re-issues a request until the assertions under it pass, instead of sleeping and hoping' },
+    ],
+    sends: false,
+    plays: true,
+    dropsSubjects: new Set(['locator', 'page', 'networkRequest', 'dialogMessage', 'dialogType']),
+    scaffold: 'scan',
+  },
 };

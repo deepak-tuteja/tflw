@@ -1304,10 +1304,10 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
    height and never scroll away, which is the second half of the fix: the status line and the
    press it came from used to leave the top of the box as soon as you read the body. */
 .responsebox > .seg, .responsebox > .sendstrip, .responsebox > .response-head-bar { flex: none; }
-.responsebox > .response, .responsebox > .session-panel, .responsebox > .response-none, .responsebox > .plan-panel { flex: 1 1 auto; min-height: 0; }
+.responsebox > .response, .responsebox > .session-panel, .responsebox > .response-none, .responsebox > .plan-panel, .responsebox > .scan-panel { flex: 1 1 auto; min-height: 0; }
 /* `.session-panel` already had the right shape (`.session-lines` is its own scroller); it was
    nested inside this box's, which is the same defect on the BROWSER door and nobody reported it. */
-.responsebox > .response-none, .responsebox > .plan-panel { overflow: auto; }
+.responsebox > .response-none, .responsebox > .plan-panel, .responsebox > .scan-panel { overflow: auto; }
 .responsebox > .response { display: flex; flex-direction: column; margin-top: 0; }
 /* Preamble is charged to the body, so it is charged honestly. At rest the box is ~400 px and the
    url line, the tick-or-explain line and two default `<p>` margins were taking **140** of it,
@@ -1365,6 +1365,29 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 @media (max-width: 900px) { .plan-panel { grid-template-columns: minmax(0, 1fr); } }
 
 .plan-prose { margin: calc(var(--unit) * 1) 0 0; font-size: 12px; line-height: 1.45; }
+
+/* ── `M228` `A` (`D1239`) — the `scan` segment ──────────────────────────────────────────────────
+   It sits in the same slot `.plan-panel` and `.response` do, so it takes the same two rules they
+   do below: a flex item that may grow, with its own scroller. A prose panel rather than a figure,
+   so it keeps a reading measure (`M227` `B` measured 90 characters to the line at this width and
+   called it harmful) and the rows below it run the full width, because a target is a URL and a
+   reason is a sentence.
+   `.scan-probes` mirrors `.auth-probes` deliberately — the opt-ins are the same four permissions
+   said in the same words one tab away, and two typographies for one sentence is how a reader
+   stops recognising it. */
+.scan-panel { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); min-height: 0; font-size: 13px; }
+.scan-panel > p { margin: 0; max-width: 78ch; }
+.scan-claims { line-height: 1.45; }
+.scan-targets { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.scan-targets > li { border-left: 2px solid var(--line); padding-left: 10px; }
+/* `.row` is a plain class with no global rule — it is styled per block throughout this file,
+   and a target line that inherited nothing ran the URL into its block name with no space. */
+.scan-targets > li > .row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.scan-block { font-size: 12px; }
+.scan-reason { margin: 2px 0 0; font-size: 12px; color: var(--muted); max-width: 78ch; }
+.scan-probes { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+.scan-probes li::before { content: '✓ '; color: var(--accent); }
+p.scan-probes::before { content: ''; }
 
 /* ── `M227` `C` (`D1234`) — an iteration plan draws its work ──────────────────────────────────
    No time axis, so no chart: the bar's length is that user's share of the iterations, and the

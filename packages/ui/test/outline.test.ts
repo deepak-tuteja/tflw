@@ -56,7 +56,16 @@ function corpus(root: string): string[] {
  *  nested steps are inside the block's own printed row, so the unit here is the body's own list. */
 function topLevelSteps(source: string): Step[] {
   const { program } = parseSource(source);
-  return [...program.hooks.flatMap((h) => h.body), ...program.tests.flatMap((t) => t.body)];
+  /* **Crawls joined this in `M228` `C` (`D1238`)**, and the equality below is what said so: the
+     outline started placing their bodies and this side did not count them, so the claim went red
+     on the one file in each corpus that has one. It is the gate working — *every step of every
+     body lands in exactly one row* is a statement about the bodies the outline draws, and a crawl
+     is now one of them. Counting them strengthens the claim rather than repairing it. */
+  return [
+    ...program.hooks.flatMap((h) => h.body),
+    ...program.tests.flatMap((t) => t.body),
+    ...(program.crawls ?? []).flatMap((c) => c.body),
+  ];
 }
 
 test('every step of every body lands in exactly one row, by kind', () => {
