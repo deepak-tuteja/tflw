@@ -23,7 +23,6 @@ import { ComposeDoor } from './ComposeDoor';
 import { VOCABULARY } from './vocabulary';
 import { AuthPanel } from './AuthPanel';
 import { ConfigPanel, documentsOf } from './ConfigPanel';
-import { ScanForm } from './ScanForm';
 import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
 import { exitExplained, reportIdOf } from './format';
 import { LiveBody, ReportBody, ReportHeader } from './ReportView';
@@ -1178,10 +1177,11 @@ export function App() {
             request={request}
           />
         ) : null}
-        {/* **API, BROWSER and — since `M224` `D` — LOAD are one pane** (`M213` `S4`, `D1094`;
-            `D1210`). `vocabulary.ts` is the whole of the difference between them, and `LoadForm`
-            has gone the way `BrowserForm` did: both were the `<select>` that asked which test to
-            append to. SCAN keeps its own form, door by door.
+        {/* **All four doors are one pane** (`M213` `S4`, `D1094`; `D1210`; `M228` `B`, `D1237`).
+            `vocabulary.ts` is the whole of the difference between them, and `ScanForm` has gone
+            the way `BrowserForm` and `LoadForm` did: all three were the `<select>` that asked
+            which test to append to. Four rounds, one door each, and the fork is now gone rather
+            than narrowed — a narrowed fork is still two implementations of one picture.
 
             **The dispatch names no door**, which is the point rather than a tidy-up: `D1042` says
             a door decides where you land and what `+ new test` scaffolds, and a list of doors here
@@ -1218,23 +1218,6 @@ export function App() {
             /* `D1180` — the newest report's identity and its time. Either moving is a new run to
                read; neither moves when nothing has run, so the effect behind it stays quiet. */
             reportsStamp={`${reports.length}:${reports[0]?.id ?? ''}:${reports[0]?.at ?? ''}`}
-          />
-        ) : null}
-        {project && door === 'scan' ? (
-          <ScanForm
-            project={project}
-            onWritten={() => void readProjectView()}
-            filePath={path}
-            file={openFileView}
-            fileProblem={fileProblem}
-            onFileWritten={setOpenFileView}
-            tab={tab}
-            onTab={setTab}
-            runPane={runPane}
-            runMark={live && !live.end ? 'a run is going' : undefined}
-            authPanel={authPanel}
-            configPanel={configPanel}
-            configMark={configMark}
           />
         ) : null}
       </main>

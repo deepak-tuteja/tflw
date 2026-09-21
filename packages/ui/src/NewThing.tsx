@@ -108,8 +108,9 @@ function scaffoldBody(
        corpora's visible `open`s are followed by a gesture rather than an assertion. */
     return open.ok ? { ok: true, nodes: [open.node] } : { ok: false, reason: open.reason };
   }
-  /* `'workload'` falls through to the `api` body, and `D1189`'s invariant holds by construction:
-     every kind written here is in `load.constructs`, which is API's set for `TF033`'s reason. */
+  /* `'workload'` and `'scan'` both fall through to the `api` body, and `D1189`'s invariant holds
+     by construction: every kind written here is in their own `constructs`, which is API's set for
+     `TF033`'s reason on one and for the last-response rule on the other. */
   if (input.path.trim() === '') return { ok: false, reason: 'the request needs a path' };
   const step = buildApiStep({
     method: input.method as ApiStepSpec['method'],
@@ -126,7 +127,31 @@ function scaffoldBody(
   // requests already carry.
   const expect = buildExpect({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '200' });
   if (!expect.ok) return { ok: false, reason: expect.reason };
-  return { ok: true, nodes: [step.node, expect.node] };
+  if (input.scaffold !== 'scan') return { ok: true, nodes: [step.node, expect.node] };
+  /**
+   * **And the assertion that puts it behind SCANS** — `M228` `B` (`D1244`).
+   *
+   * The status assertion above stays, because it is not decoration here either: a scan matcher
+   * grades the LAST response, so a scaffold with nothing but the severity line would be a test
+   * that never says whether the request it is grading worked. The two lines together are exactly
+   * `tflw init --scan`'s `SCAFFOLD_SCAN`, which is why this is a third arm of one branch rather
+   * than a second answer to *what does a scan start from*.
+   *
+   * `critical` is the floor `SCAFFOLD_SCAN` writes, and it is the right one to start from for the
+   * reason severity floors exist: a first scan that reports every `minor` finding on a real host
+   * is a wall of text the author has no way to act on. 31 of the corpus's 112 severity matchers
+   * name `critical`, the largest of the five answers.
+   */
+  const scan = buildExpect({
+    soft: false,
+    quantifier: null,
+    subject: { kind: 'response' },
+    matcher: 'hasNoSecurityViolations',
+    operand: null,
+    severityFloor: 'critical',
+  });
+  if (!scan.ok) return { ok: false, reason: scan.reason };
+  return { ok: true, nodes: [step.node, expect.node, scan.node] };
 }
 
 /** A `.tflw` path the server will take, or why it will not. Checked here rather than left to the

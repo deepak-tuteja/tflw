@@ -69,7 +69,7 @@ import { menuTrigger, type MenuItem, type MenuRequest } from './ContextMenu';
 import type { Lens, ProjectFile, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
 import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
-import type { FileOutline, OutlineHook, OutlineTest } from './outline';
+import type { FileOutline, OutlineCrawl, OutlineHook, OutlineTest } from './outline';
 
 /**
  * **`+` on a row of the explorer** — `M217` `D` (`D1139`, `D1140`).
@@ -360,7 +360,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
    */
   const renderOutline = (o: FileOutline): ReactElement => (
     <ul className="tree outline" data-outline={o.declarations.length}>
-      {o.declarations.map((decl: OutlineHook | OutlineTest) => (
+      {o.declarations.map((decl: OutlineHook | OutlineTest | OutlineCrawl) => (
         <li key={`${decl.kind}-${decl.line}`} data-outline-decl={decl.kind} data-outline-line={decl.line}>
           <div className="row-pair">
           <button
@@ -380,8 +380,11 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
                 a reader scans for was the only row with no shape. It is the SAME `seq-kind` class
                 the Compose sequence already draws, deliberately: three surfaces now show a
                 declaration and a fourth spelling of the same idea is how they drift apart. */}
-            <span className="seq-kind">{decl.kind === 'test' ? 'test' : decl.label}</span>
-            {decl.kind === 'test' ? <span className="outline-name" data-tip-text>{decl.name}</span> : <em className="outline-name" />}
+            {/* `M228` `C` (`D1238`) — a crawl is a declaration this tree draws now. It had been
+                counted by the badge above and drawn by nothing, so `scan.tflw` read **1** and
+                listed **2**, and only on the door the crawl is the whole point of. */}
+            <span className="seq-kind">{decl.kind === 'hook' ? decl.label : decl.kind}</span>
+            {decl.kind === 'hook' ? <em className="outline-name" /> : <span className="outline-name" data-tip-text>{decl.name}</span>}
           </button>
           {/* **A hook gets none, and that is the language rather than a gap** (`D1144`). The splice
               addresses a test BY NAME and a hook has none — the sequence column already says so

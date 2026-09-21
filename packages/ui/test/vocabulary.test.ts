@@ -186,13 +186,30 @@ test('the doors that send are the doors that issue requests, and the table is wh
   // (`ComposeDoor`), which is *issue this request once, without load, before committing to run it
   // at a rate*.
   //
-  // The claim is the **predicate**, not the list: a door sends iff its `constructs` holds
-  // `ApiStep`. A list would go stale silently; this reddens the day a row disagrees with itself.
+  /* **THE BICONDITIONAL WAS REFUTED BY `M228` `B` (`D1241`), AND THIS GATE IS WHERE IT SHOWED.**
+     It read *a door sends **iff** its `constructs` holds `ApiStep`*, which was true of three doors
+     and is false of the fourth: SCAN constructs `ApiStep` — a scan assertion grades *the last
+     response*, so the body of a scan-bearing test is `api` steps — and does **not** send.
+     `D1119` is the reason and it is structural rather than a preference: `send` filters the
+     assertions out of the scratch, so a send on a scan-bearing test issues the request, shows a
+     200 and displays no scan verdict at all. On API that is exactly the gesture; here it is a
+     control that looks like it answers the door's question and cannot.
+
+     So the surviving half is the implication, and it is the half that was ever load-bearing:
+     **a door that sends must be able to construct what `send` cuts a prefix of.** The converse is
+     now a decision per door, and the list below is what records those four decisions — kept
+     deliberately as a list, because after this refutation there is no predicate to derive it
+     from, and a list is honest about being four separate arguments. */
   for (const [door, v] of Object.entries(VOCABULARY)) {
-    assert.equal(v.sends, v.constructs.has('ApiStep'), `${door} sends ${v.sends} and constructs ApiStep ${v.constructs.has('ApiStep')}`);
+    if (!v.sends) continue;
+    assert.ok(v.constructs.has('ApiStep'), `${door} sends but cannot construct an \`ApiStep\`, so there is no prefix for \`send\` to cut`);
   }
   assert.deepEqual(
     Object.entries(VOCABULARY).filter(([, v]) => v.sends).map(([d]) => d),
     ['api', 'load'],
+    'a door gained or lost `send` — which is a decision with an argument, not a derivation (`D1119`, `D1241`)',
   );
+  // …and the refutation itself, pinned, so the biconditional cannot be quietly re-taken.
+  assert.ok(VOCABULARY.scan.constructs.has('ApiStep'), 'SCAN stopped constructing `ApiStep`, which is what made `D1241` a decision rather than a consequence');
+  assert.equal(VOCABULARY.scan.sends, false, '`send` on a scan-bearing test strips the assertions this door exists for (`D1119`/`D1241`)');
 });

@@ -49,6 +49,7 @@ import { DEFAULT_WORKLOAD, THRESHOLD_WHY, WORKLOAD_CELL_WHY, WORKLOAD_FIELD_WHY,
 import type { WorkloadEdit, WorkloadStageEdit } from './workloadEdit';
 import type { ReactNode } from 'react';
 import type { ApiBodySpec, ApiStepSpec, CaptureSpec, ExpectSpec, SubjectSpec } from '@tflw/lang';
+import { matcherSubjectRefusal } from '@tflw/lang';
 import {
   LOCATOR_KINDS,
   buildExpect,
@@ -80,7 +81,7 @@ import {
 } from '@tflw/lang';
 import { LEAF_CAP, captureName, captureSpecs, leaves, verifySpec } from './response';
 import { laidOut } from './jsonview';
-import type { FileOutline, Note, OutlineHook, OutlineRequest, OutlineStatement, OutlineTest } from './outline';
+import type { FileOutline, Note, OutlineCrawl, OutlineHook, OutlineRequest, OutlineStatement, OutlineTest } from './outline';
 import { BodyText } from './Source';
 
 /**
@@ -648,7 +649,7 @@ const BAND_CLAUSES: readonly { key: string; label: string; title: string }[] = [
   { key: 'thresholds', label: 'thresholds', title: 'a bound the whole run is graded against, after it finishes' },
 ];
 
-const MATCHER_LABEL: Record<MatcherName, string> = {
+export const MATCHER_LABEL: Record<MatcherName, string> = {
   equals: 'equals',
   contains: 'contains',
   matches: 'matches (regex)',
@@ -797,6 +798,35 @@ function pathText(segments: readonly PathSegment[]): string {
   }
   return out;
 }
+
+/**
+ * **The AST subject type each of the select's options writes** — `M228` `D` (`D1243`).
+ *
+ * The inverse of `subjectKindOf` below, and the one table this file adds: the page needs to ask
+ * the language *would `TF042` refuse this matcher on this subject* before the spec exists, and
+ * that question is keyed on the node type. `'carried'` has no entry and cannot: it is not a
+ * subject, it is *the one already written*, so the row asks about whatever the file holds.
+ *
+ * `subjectSpellings.test.ts` holds this in step with `subjectKindOf` by round-tripping every
+ * option — a table written twice in one file is exactly the drift this repository files findings
+ * about, so it is written once and checked rather than trusted.
+ */
+export const SUBJECT_NODE: Readonly<Record<string, Subject['type']>> = {
+  status: 'StatusSubject',
+  duration: 'DurationSubject',
+  request: 'RequestSubject',
+  header: 'HeaderSubject',
+  body: 'BodySubject',
+  bodyText: 'BodyTextSubject',
+  bodyBytes: 'BodyBytesSubject',
+  value: 'ValueSubject',
+  response: 'ResponseSubject',
+  locator: 'LocatorSubject',
+  page: 'PageSubject',
+  networkRequest: 'NetworkRequestSubject',
+  dialogMessage: 'DialogMessageSubject',
+  dialogType: 'DialogTypeSubject',
+};
 
 function subjectKindOf(subject: Subject): ExpectSubjectKind {
   switch (subject.type) {
@@ -1794,15 +1824,25 @@ export function ScriptRow({ statement, edit, onEdit, trailing, pick, phase }: {
         {line}
       </div>
       <div className="row">
+        {/* The same rule as the assertion row's own select — `M228` `D` (`D1243`). A
+            `wait until` reads a subject exactly as an `expect` does, so a matcher `TF042` refuses
+            there is refused here, and a select that offered all 23 on one of the two would be the
+            two-implementations shape this file already warns about. */}
         <select
           value={edit.expect.matcher}
           onChange={(e) => onEdit({ ...edit, expect: { ...edit.expect, matcher: e.target.value as MatcherName } })}
           data-expect-matcher
           aria-label="matcher"
         >
-          {MATCHERS.map(([name, label]) => (
-            <option key={name} value={name}>{label}</option>
-          ))}
+          {MATCHERS.map(([name, label]) => {
+            const node = SUBJECT_NODE[edit.expect.subject];
+            const refusal = node === undefined ? null : matcherSubjectRefusal(name, node);
+            return (
+              <option key={name} value={name} disabled={refusal !== null} title={refusal ?? undefined} data-matcher-refused={refusal === null ? undefined : 'yes'}>
+                {label}
+              </option>
+            );
+          })}
         </select>
         {VALUE_MATCHERS.has(edit.expect.matcher) ? (
           <input
@@ -2109,14 +2149,80 @@ export function bodyText(body: ApiBody): string {
  * what was being counted was the default value. A band that renders a default as a fact makes the
  * same mistake on screen, every time.
  */
+/**
+ * **A `crawl`, drawn and not built** — `M228` `C` (`D1238`).
+ *
+ * Read-only **and saying why**, which is `DoorVocabulary.constructs`' own written rule rather than
+ * a compromise: *a kind this door owns and cannot construct is drawn, disabled, saying why; a pane
+ * that is half live and silent about which half is what `D1082` refuses.* The cost of the
+ * alternative is written down in `outline.ts` beside `OutlineCrawl` — a builder, an `Insertion`
+ * member, `Edit` members for the header and each seed, and every consumer of `declarations` — for
+ * **14 real crawls in the whole corpus**.
+ *
+ * What it draws is what the declaration says and nothing derived: the name, the principals, the
+ * seeds in the words the language spells them with, and the excludes. A crawl's seeds are the
+ * whole of *where its requests come from*, and they were invisible in the product until this
+ * round.
+ */
+function CrawlBand({ decl }: { readonly decl: OutlineCrawl }) {
+  return (
+    <div className="test-band crawl-band" data-band-kind="crawl" data-band-line={decl.line} data-crawl-readonly>
+      {decl.note === null ? null : <NoteBlock note={decl.note} what={`crawl ${decl.name}`} />}
+      <header className="band-head">
+        <span className="t-kw">crawl</span>
+        <span className="t-name" data-crawl-name>{decl.name}</span>
+        {decl.sessions.length === 0 ? null : (
+          <span className="muted" data-crawl-sessions={decl.sessions.length}>
+            as <code>{decl.sessions.join(', ')}</code>
+          </span>
+        )}
+      </header>
+      <ul className="crawl-clauses">
+        {decl.seeds.map((seed, i) => (
+          <li key={i} data-crawl-seed={seed.type}>
+            <code>{SEED_WORD[seed.type] ?? 'seed'}</code>
+          </li>
+        ))}
+        {decl.excludes.map((x, i) => (
+          <li key={`x${i}`} data-crawl-exclude={x.value}>
+            <code>exclude &ldquo;{x.value}&rdquo;</code>
+          </li>
+        ))}
+      </ul>
+      {/* **The reason, which is the half `D1082` is about.** A disabled row with no explanation is
+          the pane it refuses; a reader who cannot edit this needs to know it is a decision and
+          where the edit lives instead. */}
+      <p className="muted" data-crawl-why>
+        A <code>crawl</code> is drawn here and edited in the file. Its requests are ones nobody wrote, so it is built from{' '}
+        <code>seed</code> lines rather than from steps, and this pane has no builder for one — <code>tflw fmt</code> and your editor
+        are where a crawl is changed.
+      </p>
+    </div>
+  );
+}
+
+/** The word each seed kind is written with, so the band spells them the way the file does rather
+ *  than printing a node type at the reader. */
+const SEED_WORD: Partial<Record<string, string>> = {
+  OpenApiSeed: 'seed openapi',
+  TrafficSeed: 'seed traffic',
+  SpiderSeed: 'seed spider',
+};
+
 export function TestBand({ decl, door, editing, lastRun }: {
-  readonly decl: OutlineHook | OutlineTest;
+  readonly decl: OutlineHook | OutlineTest | OutlineCrawl;
   readonly door: Lens;
   readonly editing: RowEditing;
   /** `D1221`'s citation, looked up by the door. `undefined` while nobody has answered yet, `null`
    *  when the answer is *never run here*. */
   readonly lastRun?: { readonly iterations: number; readonly p95Ms: number; readonly inconclusive: boolean } | null;
 }) {
+  /* **A crawl takes its own band and returns before any of this** — `M228` `C` (`D1238`).
+     Everything below writes: `headerEditOf` builds an edit, `editing.onHeader` sends it to
+     `replaceInSource` by `decl.index`, and a crawl's index is `-1`. So it is not a matter of
+     disabling controls one at a time — the band's whole mechanism is addressed by a number this
+     declaration deliberately does not have. */
+  if (decl.kind === 'crawl') return <CrawlBand decl={decl} />;
   const test: OutlineTest | null = decl.kind === 'test' ? decl : null;
   const key = `decl:${decl.index}`;
   const live = editing.onHeader !== null;

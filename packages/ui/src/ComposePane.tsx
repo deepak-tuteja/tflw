@@ -53,6 +53,7 @@ import type { CaptureSpec, ExpectSpec, Lens, MatcherName, Workload } from '@tflw
 import { requestRefusal, requestWithout } from './clauses';
 import { COMPOSE, Grip, storedSize } from './Grip';
 import type { ExpectStmt } from '@tflw/lang';
+import { MATCHER_LENS, lensesOfTest, matcherSubjectRefusal } from '@tflw/lang';
 import {
   AddClause,
   CLAUSE_MATCHER,
@@ -64,6 +65,7 @@ import {
   NoteOpen,
   ResponsePanel,
   SCAN_MATCHERS,
+  SUBJECT_NODE,
   SEVERITIES,
   ScriptRow,
   SubjectFields,
@@ -87,11 +89,12 @@ import {
 import { DOOR_BY_ID } from './doors';
 import { SessionPanel, type Session, type SessionLine } from './SessionPanel';
 import { holds, requestRemoval, statementRemoval } from './depends';
-import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type OutlineHook, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
+import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type OutlineCrawl, type OutlineHook, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
 import type { Prefix, SendForm } from './outline';
 import { VOCABULARY, type AddGesture } from './vocabulary';
 import { bodyProblem, laidOut } from './jsonview';
 import { BodyText } from './Source';
+import { ScanPanel, type Authorization } from './ScanPanel';
 
 /**
  * **What the address is pointing at** (`D1113`).
@@ -101,11 +104,16 @@ import { BodyText } from './Source';
  * line that names none of those — the middle of a multi-line body, say — falls back to whatever
  * `addressed()` resolved, which is the behaviour every link written before this round relied on.
  */
+/** The declaration an address can land on — `M228` `C` (`D1238`) added the third. `'test'` is
+ *  still the name of the *position* (the declaration's own run of lines, header and all) rather
+ *  than of the kind under it, which is what it has always meant here. */
+export type SelectedDecl = OutlineHook | OutlineTest | OutlineCrawl;
+
 export type Selected =
   | { readonly kind: 'file' }
-  | { readonly kind: 'test'; readonly decl: OutlineHook | OutlineTest }
-  | { readonly kind: 'request'; readonly decl: OutlineHook | OutlineTest; readonly request: OutlineRequest }
-  | { readonly kind: 'statement'; readonly decl: OutlineHook | OutlineTest; readonly statement: OutlineStatement };
+  | { readonly kind: 'test'; readonly decl: SelectedDecl }
+  | { readonly kind: 'request'; readonly decl: SelectedDecl; readonly request: OutlineRequest }
+  | { readonly kind: 'statement'; readonly decl: SelectedDecl; readonly statement: OutlineStatement };
 
 export function selectedAt(at: Addressed | null, line: number | null): Selected {
   if (at === null || line === null) return { kind: 'file' };
@@ -479,10 +487,30 @@ function AssertRow({ statement, edit, onEdit, verdict, trailing, onRemove, refus
           {v.soft ? 'check' : 'expect'}
         </span>
         <SubjectFields subject={v.subject} argument={v.argument} locatorKind={v.locatorKind} carried={subjectSpelling(node.subject)} onChange={change} drops={drops} phase={phase} />
+        {/* **Every matcher is drawn, and the ones `TF042` would refuse are disabled** — `M228`
+            `D` (`D1243`).
+
+            **Disabling rather than filtering is `D1076` held rather than traded**: *over-offering
+            beats silent omission — a word that should not be here is visible and wrong, and a word
+            that is missing is invisible and wrong.* An author hunting for `has no security
+            violations` on a `status` row finds it, greyed, carrying `TF042`'s own sentence, and
+            learns that it wants a `response`. Filtered away, they learn nothing and conclude the
+            language cannot do it.
+
+            The rule is `matcherSubjectRefusal`, which is the two lines `checkOneMatcherSubject`
+            builds the diagnostic from — so this is not a second list that can disagree with the
+            checker, and `ValueSubject` abstains here because the check does (`TF041` owns that
+            pairing and would otherwise report one mistake twice). */}
         <select value={v.matcher} onChange={(e) => change({ matcher: e.target.value as MatcherName })} data-expect-matcher={v.matcher} aria-label="matcher">
-          {MATCHERS.map(([id, text]) => (
-            <option key={id} value={id}>{text}</option>
-          ))}
+          {MATCHERS.map(([id, text]) => {
+            const node = SUBJECT_NODE[v.subject];
+            const refusal = node === undefined ? null : matcherSubjectRefusal(id, node);
+            return (
+              <option key={id} value={id} disabled={refusal !== null} title={refusal ?? undefined} data-matcher-refused={refusal === null ? undefined : 'yes'}>
+                {text}
+              </option>
+            );
+          })}
         </select>
         {takesValue ? (
           <input className="assert-value" value={v.operand} onChange={(e) => change({ operand: e.target.value })} data-expect-operand aria-label="operand" placeholder={v.matcher === 'fails' ? '(any failure)' : '200'} />
@@ -685,6 +713,18 @@ export interface ComposePaneProps {
    * derivation below.
    */
   readonly stage: boolean;
+  /**
+   * **The env's authorization facts, straight off `ProjectView`** — `M228` `A` (`D1239`).
+   *
+   * The same object `ComposeDoor` hands `diagnose` (`D1240`), so the segment below and the
+   * diagnostics list above it cannot disagree about what is in force. Not narrowed on the way in:
+   * a second shape here is where a second account of `tflw.config` would start, which is the
+   * thing `ui-server.ts` says out loud about this block.
+   */
+  readonly authorization: Authorization;
+  /** The two project-fact tabs the `scan` segment links to (`M207` `Q1`). Region 2 does not own
+   *  the tab strip, so it asks — the same shape `ComposeDoor` already uses for `onEditorTab`. */
+  readonly onProjectTab: (tab: 'auth' | 'config') => void;
 }
 
 /**
@@ -738,6 +778,35 @@ const EDITOR_MIN = 88;
 /** What the pane under the editor needs to draw its empty state whole — the BROWSER door's session
  *  panel, measured at 112 px. The stylesheet states the same number as the track's own minimum;
  *  this one is what keeps a DRAG from writing a height that violates it. */
+/**
+ * **Region 2's tenants** — `D1209` named two and `M228` `A` (`D1239`) adds the third.
+ *
+ * `response` is the one that is always there; the other two are earned by the construct, never
+ * granted by the door (`D1044`).
+ */
+type Region2 = 'plan' | 'response' | 'scan';
+
+/** The selected declaration's workload, or `null` — `D1209`'s own predicate, as a function
+ *  because the tenant list is derived above where `decl` is unpacked. One expression, two
+ *  readers, so the segment and the footer placement cannot disagree about what a workload test
+ *  is (`D1225`). */
+const planWorkloadOf = (at: Addressed | null): Workload | null =>
+  at?.decl != null && at.decl.kind === 'test' ? at.decl.workload : null;
+
+/**
+ * **Why a row cannot be edited, when its address is missing** — `M228` `C` (`D1238`).
+ *
+ * Two populations have no `stepPath`, and until this round there was one, so the sentence was a
+ * constant. `nested` tells them apart and is already on the row rather than derived: an `expect`
+ * inside a `wait until api` block is not a step of the body's own list, and a crawl's statements
+ * are a whole declaration outside `replaceInSource`'s numbering. Saying the block's sentence about
+ * a crawl would be a true-shaped sentence about the wrong thing, which is worse than none.
+ */
+const unaddressableWhy = (nested: boolean): string =>
+  nested
+    ? 'inside the block above — an index pair names a step of a body, and this is not one'
+    : 'part of a `crawl` — drawn here, edited in the file (`D1238`)';
+
 const LOWER_MIN = 112;
 /**
  * **And what it needs once there is a response in it** — `M225` `G` (`D1223`).
@@ -770,7 +839,7 @@ const fitEditor = (px: number, column: number, lower: number = LOWER_MIN): numbe
   Math.max(EDITOR_MIN, Math.min(Math.round(px), Math.max(EDITOR_MIN, column - 6 - lower)));
 
 export function ComposePane(props: ComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, stage, tab, onEditorTab: setTab } = props;
+  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, stage, authorization, onProjectTab, tab, onEditorTab: setTab } = props;
 
   /** One call per sequence row kind — `M218` `F`. `{}` when the door wired no menu, so the rows
    *  behave exactly as they did before this round. */
@@ -855,8 +924,12 @@ export function ComposePane(props: ComposePaneProps) {
   useEffect(() => setRefused(null), [path]);
 
   const remove = useCallback(
-    (decl: OutlineHook | OutlineTest, at_line: number, target: { lines: number[]; steps: number[] } | null): void => {
-      if (target === null || onRemoveSteps === null) return;
+    (decl: SelectedDecl, at_line: number, target: { lines: number[]; steps: number[] } | null): void => {
+      /* **A crawl's steps cannot be removed, because they cannot be addressed** — `M228` `C`
+         (`D1238`). `onRemoveSteps` names a declaration by `replaceInSource`'s index and a crawl
+         carries `-1`, so this is the same refusal the null `stepPath`s make on the row: stated
+         once here rather than left to every call site to remember. */
+      if (decl.kind === 'crawl' || target === null || onRemoveSteps === null) return;
       const held = holds(decl.body, target.lines);
       if (held !== null) {
         setRefused({ line: at_line, held });
@@ -867,6 +940,11 @@ export function ComposePane(props: ComposePaneProps) {
     },
     [onRemoveSteps],
   );
+  /** **Whether this declaration's steps can be removed at all** — `M228` `C` (`D1238`). A crawl's
+   *  cannot: `onRemoveSteps` names a declaration by `replaceInSource`'s index and a crawl carries
+   *  `-1`. Named once rather than repeated at each `✕`, because a control that is drawn and does
+   *  nothing is the shape `D1082` refuses and the miss would be silent. */
+  const removable = onRemoveSteps === null || at?.decl.kind === 'crawl' ? null : onRemoveSteps;
   const refusalFor = (line: number): { name: string; line: number; text: string } | null => (refused !== null && refused.line === line ? refused.held : null);
   const clearRefusal = useCallback(() => setRefused(null), []);
 
@@ -1017,8 +1095,67 @@ export function ComposePane(props: ComposePaneProps) {
    * is in scope*, never *what did the reader point at*. `selectedAt` answers the second question
    * and is already computed above; `'test'` is the declaration's own run of lines, header and all.
    */
-  const [region2Pick, setRegion2Pick] = useState<'plan' | 'response' | null>(null);
-  const region2: 'plan' | 'response' = region2Pick ?? (selected.kind === 'request' || selected.kind === 'statement' ? 'response' : 'plan');
+  const [region2Pick, setRegion2Pick] = useState<Region2 | null>(null);
+
+  /**
+   * ── `M228` `A` (`D1239`) — **the third tenant, and what earns it** ──────────────────────────
+   *
+   * Every scan matcher this declaration carries, in source order. `statementsOf` is the outline's
+   * own flattener, so a `has no security violations` inside a `within` is counted here and
+   * **nothing walks the body a second time** — a second traversal beside the one the outline
+   * already does is the drift class `lenses.ts` states its own rule against.
+   *
+   * **The predicate is the language's, read off `MATCHER_LENS`.** `parts.tsx`'s `SCAN_MATCHERS`
+   * is the wrong table for it and would have been the easy mistake: it holds four, because it
+   * answers *does this matcher take a severity floor*, and `has no a11y violations` takes one
+   * while being a **browser** assertion — it stands against `page`, a crawl body cannot hold it,
+   * and a11y is not a fifth door. `MATCHER_LENS` is the table `lensesOfTest` decides the door
+   * with, so a family that earns this segment without putting the test behind SCANS is impossible
+   * by construction rather than by a test.
+   *
+   * A hook is excluded because `lensesOfTest` takes a `TestDecl`; a hook that grades a response
+   * is a shape the corpus does not hold and the language's own door rule has no opinion about.
+   */
+  const scanMatchers = useMemo<readonly MatcherName[]>(() => {
+    const decl = at?.decl ?? null;
+    if (decl === null || decl.kind !== 'test') return [];
+    return statementsOf(decl.body)
+      .filter((st) => st.node.type === 'ExpectStmt')
+      .map((st) => (st.node as ExpectStmt).matcher.name)
+      .filter((name) => MATCHER_LENS[name] === 'scan');
+  }, [at]);
+  /** The same fact the door rule states, asserted the same way — a cross-check that costs one
+   *  call and would catch the day `MATCHER_LENS` and `lensesOfTest` stop agreeing. */
+  const scanning = scanMatchers.length > 0 && at?.decl != null && at.decl.kind === 'test' && lensesOfTest(at.decl.node).includes('scan');
+
+  /**
+   * **Which tenants region 2 has, and which one is showing.**
+   *
+   * `D1209` wrote this as two, and two was the whole vocabulary then. The list is derived rather
+   * than spelled because that is what keeps the nav and the body from disagreeing: the segment
+   * draws `region2Tenants` and each panel below renders on `region2 === <its own name>`, so a
+   * tenant that is offered and draws nothing is not expressible.
+   *
+   * **The default follows the selection and then the construct**, which is `D1209`'s rule with
+   * one more case rather than a new one: a **request** or a statement opens the response, because
+   * `D1116` put it under the editor for the tick-to-assert gesture; a declaration opens the
+   * richest thing it has earned. A workload outranks a scan when a declaration has both — the
+   * plan is a picture of the whole rung and the scan panel is about assertions the sequence is
+   * already showing.
+   *
+   * The nav appears only when there is a choice to make. On a plain API test that is one tenant
+   * and no strip, which is what every door but LOAD looked like before this round.
+   */
+  const region2Tenants = useMemo<readonly Region2[]>(
+    () => [...(planWorkloadOf(at) !== null ? (['plan'] as const) : []), ...(scanning ? (['scan'] as const) : []), 'response'],
+    [at, scanning],
+  );
+  const region2Default: Region2 =
+    selected.kind === 'request' || selected.kind === 'statement' ? 'response' : (region2Tenants[0] ?? 'response');
+  /** A pick that the current declaration does not offer is **not** a pick — the reader chose
+   *  `plan` on a workload test and then opened a functional one, and an unfiltered `region2Pick`
+   *  would leave the region showing nothing at all with the strip gone. */
+  const region2: Region2 = region2Pick !== null && region2Tenants.includes(region2Pick) ? region2Pick : region2Default;
 
   /**
    * **The floor under region 2 follows the TENANT** — `M227` `A` (`D1229`).
@@ -1039,7 +1176,7 @@ export function ComposePane(props: ComposePaneProps) {
    * and in the column layout it is constantly false, which is why the column sites can read this
    * same value without a branch of their own.
    */
-  const region2Min = (footer && region2 === 'plan') || shown?.response ? RESPONSE_MIN : LOWER_MIN;
+  const region2Min = (footer && region2 === 'plan') || region2 === 'scan' || shown?.response ? RESPONSE_MIN : LOWER_MIN;
 
   const dragging = useRef(false);
   /** The floor under the divider, as a ref so the window `pointermove` above reads the CURRENT
@@ -1099,7 +1236,7 @@ export function ComposePane(props: ComposePaneProps) {
 
   const decl = at?.decl ?? null;
   /** The selected declaration's workload, or `null` — the one fact `D1209`'s segment turns on. */
-  const planWorkload = decl !== null && decl.kind === 'test' ? decl.workload : null;
+  const planWorkload = planWorkloadOf(at);
   const statements = decl === null ? [] : decl.body.preamble;
 
   /**
@@ -1235,7 +1372,7 @@ export function ComposePane(props: ComposePaneProps) {
             )
           }
           trailing={
-            onRemoveSteps === null ? null : (
+            removable === null ? null : (
               <Remove what="request" onGo={() => remove(decl, r.line, requestRemoval(r))} refusal={refusalFor(r.line)} onClear={clearRefusal} />
             )
           }
@@ -1338,7 +1475,7 @@ export function ComposePane(props: ComposePaneProps) {
                     <span className="t-kw">test</span> <span className="t-str">&quot;{at.decl.name}&quot;</span>
                   </>
                 ) : (
-                  <span className="t-kw">{at.decl.label}</span>
+                  <span className="t-kw">{at.decl.kind === 'crawl' ? 'crawl' : at.decl.label}</span>
                 )}
               </code> · line {at.decl.line} ·{' '}
               {at.decl.body.requests.length} request{at.decl.body.requests.length === 1 ? '' : 's'} —{' '}
@@ -1406,8 +1543,8 @@ export function ComposePane(props: ComposePaneProps) {
                 {...(decl.kind === 'test' ? { menu: seqMenu({ kind: 'test', decl, line: decl.line }, decl.name) } : {})}
                 selected={selected.kind === 'test'}
                 onLine={onLine}
-                lead={<span className="seq-kind">{decl.kind === 'test' ? 'test' : decl.label}</span>}
-                text={decl.kind === 'test' ? decl.name : ''}
+                lead={<span className="seq-kind">{decl.kind === 'test' ? 'test' : decl.kind === 'crawl' ? 'crawl' : decl.label}</span>}
+                text={decl.kind === 'hook' ? '' : decl.name}
                 refusal={refusalFor(decl.line)}
                 trailing={
                   <>
@@ -1418,7 +1555,12 @@ export function ComposePane(props: ComposePaneProps) {
                     {onPlay === null || decl.kind !== 'test' ? null : (
                       <Play what="test" running={playing} onGo={() => onPlay(decl)} price={playPrice(decl.workload)} />
                     )}
-                    {onRemoveDecl === null ? null : (
+                    {/* **A crawl is skipped for the same reason a hook skips ▶** — `M228` `C`
+                        (`D1238`). `onRemoveDecl` addresses a declaration by `replaceInSource`'s
+                        index and a crawl carries `-1`, so a `✕` here could only ever be a control
+                        that does nothing — which is worse than its absence, and is the shape
+                        `D1082` refuses. The band below says why in words. */}
+                    {onRemoveDecl === null || decl.kind === 'crawl' ? null : (
                       <Remove
                         what="test"
                         onGo={() => {
@@ -1546,7 +1688,7 @@ export function ComposePane(props: ComposePaneProps) {
             ) : selected.kind === 'test' ? (
               <TestBand decl={selected.decl} door={door} editing={editing} lastRun={lastRun} />
             ) : selected.kind === 'statement' ? (
-              <StatementEditor statement={selected.statement} door={door} editing={editing} ran={rowRan} onLine={onLine} onRemove={onRemoveSteps === null ? null : () => remove(selected.decl, selected.statement.line, statementRemoval(selected.statement))} refusal={refusalFor(selected.statement.line)} onClearRefusal={clearRefusal} phase={phaseFor(selected.statement.line)} />
+              <StatementEditor statement={selected.statement} door={door} editing={editing} ran={rowRan} onLine={onLine} onRemove={removable === null ? null : () => remove(selected.decl, selected.statement.line, statementRemoval(selected.statement))} refusal={refusalFor(selected.statement.line)} onClearRefusal={clearRefusal} phase={phaseFor(selected.statement.line)} />
             ) : (
               <RequestEditor
                 phase={phaseFor(selected.request.line)}
@@ -1559,7 +1701,7 @@ export function ComposePane(props: ComposePaneProps) {
                 editing={editing}
                 ran={rowRan}
                 onLine={onLine}
-                onRemoveStatement={onRemoveSteps === null ? null : (s) => remove(selected.decl, s.line, statementRemoval(s))}
+                onRemoveStatement={removable === null ? null : (s) => remove(selected.decl, s.line, statementRemoval(s))}
                 refusalFor={refusalFor}
                 onClearRefusal={clearRefusal}
               />
@@ -1629,9 +1771,9 @@ export function ComposePane(props: ComposePaneProps) {
                 `send` is unaffected and stays on for LOAD: it strips the workload and the
                 thresholds by design, which on that door is the point rather than a caveat —
                 *issue this request once, without load, before committing to run it at a rate.* */}
-            {planWorkload !== null ? (
+            {region2Tenants.length > 1 ? (
               <nav className="seg" data-compose-region2={region2}>
-                {(['plan', 'response'] as const).map((which) => (
+                {region2Tenants.map((which) => (
                   <button
                     key={which}
                     type="button"
@@ -1646,10 +1788,21 @@ export function ComposePane(props: ComposePaneProps) {
               </nav>
             ) : null}
             {planWorkload !== null && region2 === 'plan' ? <PlanPanel path={path} name={decl !== null && decl.kind === 'test' ? decl.name : null} workload={planWorkload} /> : null}
+            {/* **What this declaration's scan assertions are gated by** — `M228` `A` (`D1239`).
+                Earned by the construct, so it is here on the API door the moment a test carries a
+                severity matcher, which is where its gate is taken. See `ScanPanel.tsx`. */}
+            {region2 === 'scan' ? (
+              <ScanPanel
+                authorization={authorization}
+                matchers={scanMatchers}
+                onAuth={() => onProjectTab('auth')}
+                onConfig={() => onProjectTab('config')}
+              />
+            ) : null}
             {/* **Ticking a value writes into the Assert tab directly above it** (`D1116`), which is
                 the whole reason the response is in this column rather than beside it: `M213` `S2`'s
                 tick-to-assert put the value and the assertion it produces on two different screens. */}
-            {planWorkload !== null && region2 === 'plan' ? null : shown !== null && shown.response !== null && shownRequest !== null ? (
+            {region2 !== 'response' ? null : shown !== null && shown.response !== null && shownRequest !== null ? (
               <>
                 {/* ── The strip — `M225` `B` (`D1217`) ────────────────────────────────────────
                     **Only when a press issued more than one request.** With one it is one entry
@@ -2069,9 +2222,7 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
         <div className="stmt-line">
           <code className="stmt-text">{statement.text}</code>
           <p className="muted">
-            {foreign
-              ? 'this statement belongs to another door — open that door to edit it'
-              : 'this one is inside the block above; an index pair names a step of a body, and this is not one'}
+            {foreign ? 'this statement belongs to another door — open that door to edit it' : unaddressableWhy(statement.nested)}
           </p>
         </div>
       )}
@@ -2336,8 +2487,8 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
                               list. They are drawn in position and say why, which is `D1078`'s rule
                               one level down: a reader may always see what a reader may not edit. */}
                           {s.stepPath === null && editing.onRow !== null ? (
-                            <span className="muted" data-stmt-unaddressable>
-                              inside the block above — an index pair names a step of a body, and this is not one
+                            <span className="muted" data-stmt-unaddressable={s.nested ? 'nested' : 'crawl'}>
+                              {unaddressableWhy(s.nested)}
                             </span>
                           ) : null}
                         </>

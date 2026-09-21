@@ -2177,7 +2177,24 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
    *  judged cannot be two different files. */
   // `pending` left with the retired form (`M212` `S4b`): the draft is now the only pending
   // bytes this pane has, which is `D1079`'s one buffer with nothing beside it.
-  const diagnostics = useMemo(() => (draft !== null ? diagnose(draft) : []), [draft]);
+  /**
+   * **And with the env's `authorized target` declarations** — `M228` `A` (`D1240`).
+   *
+   * One argument, and without it `D1052`'s promise is false on the one door where the commonest
+   * fault is invisible: `checkProgram` cannot raise `TF060` without the env's declarations and
+   * its `api` base, because neither lives in the file being written. `ScanForm` was the only
+   * caller that passed them, so every scan assertion authored in this pane previewed clean and
+   * failed in a terminal — the exact surprise `D1052` exists to prevent.
+   *
+   * **It is not keyed on the door**, and that is the point rather than a detail: 25 of the
+   * corpus's 96 scan assertions sit in files nobody would call a scan file, and every one of them
+   * is judged here now. `project.authorization` is handed through unchanged, so the page never
+   * assembles a second account of what the config says.
+   */
+  const diagnostics = useMemo(
+    () => (draft !== null ? diagnose(draft, { envAuthorizedTargets: project.authorization }) : []),
+    [draft, project.authorization],
+  );
 
   /**
    * Write the buffer — `D1049` unchanged: one real `PUT` of the whole file under the etag it was
@@ -2299,6 +2316,8 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
         <>
         <ComposePane
           path={path}
+          authorization={project.authorization}
+          onProjectTab={(which) => onTab(which)}
           outline={outline}
           at={at}
           focusLine={focusLine}
