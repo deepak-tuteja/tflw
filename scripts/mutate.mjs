@@ -3769,9 +3769,9 @@ const REGISTRY = [
     milestone: 'm215',
     pkg: 'tflw',
     file: 'packages/ui/src/outline.ts',
-    what: '`D1119` undone at the cut: the send prefix runs to the last statement attached to the request instead of stopping at the request, so pressing send on `api POST /orders` in `examples/storefront` also runs the `open "/"` below it — a browser launched to answer a question about an HTTP response, on the API door',
-    find: '  const upTo = last.stepPath.step;',
-    replace: "  const attachedSteps = last.attached.filter((s) => s.stepPath !== null);\n  const upTo = attachedSteps.length === 0 ? last.stepPath.step : attachedSteps[attachedSteps.length - 1].stepPath.step;",
+    what: '`D1119` undone at the cut: the send prefix runs to the last statement attached to the request instead of stopping at the request, so pressing send on `api POST /orders` in `examples/storefront` also runs the `open "/"` below it — a browser launched to answer a question about an HTTP response, on the API door. **Re-anchored in `M225`** (`D1215`), which gave `upTo` a second branch for `send all`: the claim is unchanged and is about the `this` form, which is the only one `D1119` was ever about.',
+    find: '    : last.stepPath.step;',
+    replace: "    : (last.attached.filter((s) => s.stepPath !== null).at(-1)?.stepPath?.step ?? last.stepPath.step);",
   },
   /**
    * **`M215` `B1` (`D1120`): the one value a person pastes.** A body carrying a newline used to be

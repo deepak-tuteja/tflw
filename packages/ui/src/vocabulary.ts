@@ -59,14 +59,18 @@ export interface AddGesture {
  *     `buildCrawl`, and `insertIntoSource` splices a `test` and nothing else. Scaffolding one is
  *     a builder and an insertion member, which is a different round.
  *
- * So LOAD and SCAN keep `'api'` — **unchanged from before this round** — and that is not a
- * fallback: a workload-bearing test *is* an `api` step under a `ramp` with `threshold`s, so the
- * request the dialog writes is the thing `LoadForm` then attaches a workload to. What `D1190` was
- * protecting against — a door drawing its own create gesture's output dead — cannot happen on
- * these two, because **neither renders a Compose pane at all** (`App.tsx` gives them `LoadForm`
- * and `ScanForm`; `D1103`). Their `constructs` describes a pane that is not on the screen.
+ * **`M224` `F` (`D1213`) gives LOAD its own**, and the argument above is why it is a third tag
+ * rather than `'api'` with a workload bolted on: what the LOAD door creates is a test that is
+ * *judged*, and `TF033` says a workload-bearing test with no threshold can never fail. So the
+ * scaffold writes four lines — the workload, the near-universal error-rate threshold, a request
+ * and its assertion — and deliberately refuses a `p95 duration` bound, which is about 25 corpus
+ * lines carrying **eight distinct values** from 50 ms to 100 000 ms and is the one number only the
+ * author knows.
+ *
+ * SCAN keeps `'api'`, and that entry is still describing a pane that is not on the screen —
+ * `App.tsx` gives it `ScanForm`. `M224` is LOAD's round, door by door; SCAN is the named next one.
  */
-export type Scaffold = 'api' | 'open';
+export type Scaffold = 'api' | 'open' | 'workload';
 
 export interface DoorVocabulary {
   /**
@@ -139,8 +143,10 @@ export interface DoorVocabulary {
    * live and silent about which half — `D1082` — and it is how this round started.
    *
    * The qualifier is load-bearing and is `adds.length > 0`, this table's own way of saying *this
-   * door has a Compose sequence*. LOAD and SCAN have `adds: []` and render their own forms
-   * instead, so their `constructs` is not a claim about anything drawn.
+   * door has a Compose sequence* — and since `M224` `D` (`D1210`) it is no longer only a comment:
+   * `App.tsx`'s dispatch and `M223`'s `main-fill` predicate both read it, so **no call site names a
+   * door**. SCAN has `adds: []` and renders its own form instead, so its `constructs` is not a
+   * claim about anything drawn.
    */
   readonly scaffold: Scaffold;
 }
@@ -227,13 +233,40 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     scaffold: 'open',
   },
   /**
-   * LOAD and SCAN keep their own forms this round (`D1103` rebuilds LOAD's in `S6`), so their
-   * entries say what is true today rather than what a future slice will make true: they construct
-   * nothing from Compose beyond the neutral vocabulary, and offer no `+` gestures there. **A table entry that lied here would be worse than no entry**, because the
-   * pane reads it to decide what to draw as editable.
+   * **LOAD, since `M224` `D` (`D1211`)** — the entry that stopped being the lie its own docblock
+   * admitted to (*"their `constructs` describes a pane that is not on the screen"*).
+   *
+   * `constructs` is API's set, and that is `TF033`'s doing rather than a copy: a workload may not
+   * sit beside a browser step, so the body of a workload-bearing test is `api` steps and the
+   * neutral kinds and there is nothing else it could be. `adds` follows from `constructs` by
+   * `D1189`'s invariant.
+   *
+   * `sends: true` because a request is a request — *issue this one once, without load, before
+   * committing to run it at a rate* is the gesture, and `send` already strips the workload and the
+   * thresholds by design. `plays: true` is `D1212`, and the control **states its cost** on this
+   * door precisely because `send` sits beside it: one gesture is priced and one is not, which is a
+   * difference a reader can see before pressing rather than after.
    */
-  /* `scaffold: 'api'` on both — see `Scaffold`'s docblock. It is what they wrote before this
-     round, and `D1190`'s `null` is refuted there rather than quietly dropped. */
-  load: { constructs: new Set(NEUTRAL_CONSTRUCTS), adds: [], sends: false, plays: false, dropsSubjects: new Set(), scaffold: 'api' },
+  load: {
+    constructs: new Set<Step['type']>([...NEUTRAL_CONSTRUCTS, 'ApiStep', 'WaitUntilApiStmt']),
+    adds: [
+      { key: 'request', label: '+ request', title: 'an `api` step and the assertion that reads it, at the end of this test' },
+      { key: 'let', label: '+ let', title: '`let name = value` — a binding the requests below can interpolate; it goes at the top of the body, where 97 of the corpus’ 100 preamble statements are' },
+      { key: 'wait', label: '+ wait until', title: '`wait until api …` — re-issues a request until the assertions under it pass, instead of sleeping and hoping' },
+    ],
+    sends: true,
+    plays: true,
+    dropsSubjects: new Set(['locator', 'page', 'networkRequest', 'dialogMessage', 'dialogType']),
+    scaffold: 'workload',
+  },
+  /**
+   * SCAN keeps its own form this round (`ScanForm`), so its entry says what is true today rather
+   * than what a future slice will make true: it constructs nothing from Compose beyond the neutral
+   * vocabulary, and offers no `+` gestures there. **A table entry that lied here would be worse
+   * than no entry**, because the pane reads it to decide what to draw as editable.
+   *
+   * `scaffold: 'api'` — see `Scaffold`'s docblock, where `D1190`'s `null` is refuted rather than
+   * quietly dropped.
+   */
   scan: { constructs: new Set(NEUTRAL_CONSTRUCTS), adds: [], sends: false, plays: false, dropsSubjects: new Set(), scaffold: 'api' },
 };

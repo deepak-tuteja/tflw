@@ -505,3 +505,79 @@ test('a declaration with no request has no prefix, because there is nothing to s
   assert.equal(at.request, null);
   assert.equal(prefixOf(outline, at), null);
 });
+
+// ── `M225` `A` — `send all` (`D1215`, gates 1, 3 and 4) ───────────────────────────────────────
+//
+// **The defect this closes is that a declaration address and its first request's were
+// indistinguishable.** `addressed()` resolves a line above every request to `requests[0]`
+// (`D1080`), which is right for navigation and was deciding what a press fired: on a rung that
+// goes lookup → capture → `POST /orders`, pressing send under the test's own name sent the
+// lookup and never the checkout.
+
+test('`send all` runs every request in the declaration and `send this` still runs the prefix — `M225` gates 1 and 3', () => {
+  // Checked over the corpus rather than a fixture, because what makes the two forms differ is
+  // *having more than one request*, and a hand-written pair proves nothing about the shapes the
+  // repository actually holds (a hook with two requests, a request inside a `within`).
+  let manyRequest = 0;
+  for (const path of corpus(repoRoot)) {
+    const outline = fileOutline(path, readFileSync(path, 'utf8'));
+    if (outline.diagnostics.some((d) => d.severity === 'error')) continue;
+    const hookRequests = outline.declarations.filter((d) => d.kind === 'hook').flatMap((d) => d.body.requests);
+    for (const decl of outline.declarations) {
+      const own = decl.body.requests;
+      if (own.length === 0) continue;
+      const first = own[0]!;
+      const at = addressed(outline, first.line);
+      assert.ok(at);
+
+      const all = prefixOf(outline, at, 'all');
+      assert.ok(all, `${path}: a declaration with a request has a whole-declaration prefix`);
+      assert.equal(all.form, 'all');
+      assert.equal(all.requests.length, hookRequests.length + own.length, `${path}: every request in the declaration, hooks first`);
+      assert.deepEqual(all.lines, own.map((r) => r.line), `${path}: and it names the lines it will light`);
+      assert.equal(all.requests[all.requests.length - 1]!.path, own[own.length - 1]!.path, `${path}: it ends on the LAST request, not the first`);
+
+      // GATE 3 — the single form is untouched by this round. Addressed at the first request it is
+      // still the first request's prefix, whatever `send all` would have fired.
+      const one = prefixOf(outline, at, 'this');
+      assert.ok(one);
+      assert.equal(one.form, 'this');
+      assert.deepEqual(one.lines, [first.line]);
+      assert.equal(one.upTo, first.stepPath.step);
+
+      if (own.length > 1) {
+        manyRequest += 1;
+        assert.ok(all.upTo > one.upTo, `${path}: with more than one request the two forms are not the same press`);
+      }
+    }
+  }
+  assert.ok(manyRequest > 5, `the two forms only differ where a declaration has several requests; ${manyRequest} is not a population`);
+});
+
+test('`send all` runs to the END of the body, not to the last request — one iteration', () => {
+  // A capture after the final request is part of what a virtual user does. `withoutAssertions`
+  // takes the `expect`s out; what this widening keeps is everything that is not graded.
+  const outline = fileOutline('t.tflw', [
+    'test "a"',
+    '  api GET /products',
+    '  expect status equals 200',
+    '  api GET /health',
+    '  capture body.up as up',
+    '',
+  ].join('\n'));
+  const at = addressed(outline, 1);
+  assert.ok(at);
+  const all = prefixOf(outline, at, 'all');
+  assert.ok(all);
+  assert.equal(all.upTo, 3, 'the `capture` is step 3 and is inside the cut');
+  const one = prefixOf(outline, at, 'this');
+  assert.equal(one!.upTo, 0, 'and `send this` on the first request still stops at it');
+});
+
+test('a declaration with no request offers neither form — `M225` gate 4', () => {
+  const outline = fileOutline('t.tflw', 'test "a"\n  open "/catalogue"\n  click button "Buy"\n');
+  const at = addressed(outline, null);
+  assert.ok(at);
+  assert.equal(prefixOf(outline, at, 'this'), null);
+  assert.equal(prefixOf(outline, at, 'all'), null, 'an empty prefix is not a cheaper send');
+});

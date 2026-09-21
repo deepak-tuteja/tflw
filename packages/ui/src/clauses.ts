@@ -31,9 +31,14 @@
 // level up from the rows it was built for. A disabled control that does not say why is the pattern
 // this round exists to remove; it is pressed, it answers, and the answer is a sentence.
 //
-// `workload` refuses for a different reason and keeps `D1042` intact: a workload is a shape of
-// work with stages in it and the LOAD door is the one built around that shape. The band has said
-// so with a link since `M212`, and *remove* is a change to a workload like any other.
+// **`workload` USED TO REFUSE HERE AND NO LONGER DOES** — `M224` `B` (`D1205`). The sentence it
+// said was *"a workload is the LOAD door's to shape — including removing it. The link on this row
+// opens it there."*, and it was true about `D1042` and false about the product: the door it sent
+// you to listed all three of `examples/storefront/tests/load.tflw`'s tests as *(already a workload
+// test)* with the arming checkbox disabled, and the `+ workload` menu entry drew a row with zero
+// controls. A door-granted panel failed in both directions at once, which is `D1044`'s argument by
+// demonstration. A workload is a value, not a container, so it has no per-part `✕` and the menu is
+// where its removal lives — the second half of the one rule above, unchanged.
 import type { HeaderEdit, RequestEdit } from './parts';
 import type { OutlineTest } from './outline';
 
@@ -58,14 +63,11 @@ export function requestParts(key: string, v: RequestEdit): number | null {
 
 /** The sentence a refused removal says, or `null` when it goes through. */
 export function bandRefusal(key: string, v: HeaderEdit, test: OutlineTest): string | null {
-  if (key === 'workload') {
-    return 'a workload is the LOAD door’s to shape — including removing it. The link on this row opens it there.';
-  }
   // `TF033`. The check is *does this test carry a workload*, not *is this the last threshold*,
   // because a workload-bearing test with no thresholds is the state the rule forbids however it
   // is arrived at.
   if (key === 'thresholds' && test.workload !== null) {
-    return 'TF033 — a test that carries a `workload` must carry a threshold, so this one cannot be the last thing removed. Take the workload off first, in the LOAD door.';
+    return 'TF033 — a test that carries a `workload` must carry a threshold, so this one cannot be the last thing removed. Take the workload off first — the row above.';
   }
   const parts = bandParts(key, v, test);
   if (parts !== null && parts > 0) {

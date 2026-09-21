@@ -44,6 +44,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { bandRefusal, bandWithout } from './clauses';
+import { DEFAULT_WORKLOAD, THRESHOLD_WHY, WORKLOAD_CELL_WHY, WORKLOAD_FIELD_WHY, WORKLOAD_ITERATION_SHAPES, WORKLOAD_PROFILES, WORKLOAD_UNITS,
+  workloadCitation, workloadEditOf, workloadSentenceOf, workloadWords } from './workloadEdit';
+import type { WorkloadEdit, WorkloadStageEdit } from './workloadEdit';
 import type { ReactNode } from 'react';
 import type { ApiBodySpec, ApiStepSpec, CaptureSpec, ExpectSpec, SubjectSpec } from '@tflw/lang';
 import {
@@ -286,6 +289,18 @@ export interface RowEditing {
   /** One threshold of a test, by its own index. `null` as the value removes it. */
   readonly threshold: { readonly key: string; readonly values: ThresholdEdit } | null;
   readonly onThreshold: ((decl: OutlineTest, index: number, next: ThresholdEdit | null) => void) | null;
+  /**
+   * **A test's one workload, as a clause rather than a door's property** — `M224` `B` (`D1205`).
+   *
+   * `null` as the value removes it, which is the gesture that did not exist anywhere in the
+   * product until this round: the band linked to the LOAD door, and the LOAD door listed every
+   * workload-bearing test as *(already a workload test)* with its arming checkbox disabled.
+   *
+   * There is no index beside it because a test carries at most one — the parser enforces that, so
+   * this is `onThreshold` with the list taken out.
+   */
+  readonly workload: { readonly key: string; readonly values: WorkloadEdit } | null;
+  readonly onWorkload: ((decl: OutlineTest, next: WorkloadEdit | null) => void) | null;
   /** One `import` or `use` line of the file. `null` as the path removes it. */
   readonly onFileDecl: ((what: 'import' | 'use', index: number, path: string | null) => void) | null;
   /**
@@ -629,7 +644,7 @@ const BAND_CLAUSES: readonly { key: string; label: string; title: string }[] = [
   { key: 'sessions', label: 'as', title: '`as “…”` — the session this test runs under' },
   { key: 'retry', label: 'retry / parallel', title: '`retry N` and `parallel` — how the runner treats this test’s cases' },
   { key: 'table', label: 'with each', title: '`with each` — run this test once per row of a table' },
-  { key: 'workload', label: 'workload', title: 'a shape of work over time — the LOAD door shapes one' },
+  { key: 'workload', label: 'workload', title: '`ramp`/`hold`/`step`/`spike`/`run` — a shape of work over time' },
   { key: 'thresholds', label: 'thresholds', title: 'a bound the whole run is graded against, after it finishes' },
 ];
 
@@ -2094,10 +2109,13 @@ export function bodyText(body: ApiBody): string {
  * what was being counted was the default value. A band that renders a default as a fact makes the
  * same mistake on screen, every time.
  */
-export function TestBand({ decl, door, editing }: {
+export function TestBand({ decl, door, editing, lastRun }: {
   readonly decl: OutlineHook | OutlineTest;
   readonly door: Lens;
   readonly editing: RowEditing;
+  /** `D1221`'s citation, looked up by the door. `undefined` while nobody has answered yet, `null`
+   *  when the answer is *never run here*. */
+  readonly lastRun?: { readonly iterations: number; readonly p95Ms: number; readonly inconclusive: boolean } | null;
 }) {
   const test: OutlineTest | null = decl.kind === 'test' ? decl : null;
   const key = `decl:${decl.index}`;
@@ -2141,6 +2159,11 @@ export function TestBand({ decl, door, editing }: {
     }
   };
   const shows = (clause: string): boolean => states(clause) || added.includes(clause);
+  /** `D1205`'s one condition, read once: this pane can write, and `TF033` allows a workload here. */
+  const workloadLive = live && editing.onWorkload !== null && test !== null && door !== 'browser';
+  const workloadValues = editing.workload !== null && editing.workload.key === key
+    ? editing.workload.values
+    : workloadEditOf(test?.workload ?? null);
   return (
     <div className="test-band" data-band-kind={decl.kind} data-band-line={decl.line} data-band-drawn={BAND_CLAUSES.filter((c) => shows(c.key)).length}>
       {writingNote ? (
@@ -2259,19 +2282,32 @@ export function TestBand({ decl, door, editing }: {
             {test.workload === null ? (
               <span className="muted">none — a functional test</span>
             ) : (
-              <>
-                {test.workload.type.replace(/Workload$/, '')}{' '}
-                {/* **The one band fact this door does not edit, and it is a decision rather than a
-                    gap** (`D1042`). A workload is a shape of work with stages in it, and the door
-                    whose form is built around that shape is LOAD — the same argument `D1078` makes
-                    one level down for a step belonging to another door, made here for a
-                    declaration's. The cost is stated where it lands: changing one is two clicks
-                    away, through a link that says so. */}
-                <a className="badge also" href="#/load" data-band-workload-door data-tip="a workload is the LOAD door's to shape — open it there">
-                  LOAD
-                </a>
-              </>
+              /* **The language's own spelling, not the node's type name** — `M225` `D` (`D1220`).
+                 This read `test.workload.type.replace(/Workload$/, '')`, which put `SpikeUsers` on
+                 screen and the stylesheet lowercased it to `spikeusers`. The file it describes
+                 says `spike users`. */
+              <span className="seq-kind" data-band-workload-words>
+                {(() => { const e = workloadEditOf(test.workload); return workloadWords(e.shape, e.unit); })()}
+              </span>
             )}
+            {/* **`D1205` — a workload is an ordinary clause, and it is edited where it is stated.**
+                Until `M224` this row drew a link to the LOAD door instead of a control, on `D1042`'s
+                authority. The grant failed in both directions at once and the measurement is why
+                the link is gone: the door it pointed at listed all three of `load.tflw`'s tests as
+                *(already a workload test)* with the arming checkbox disabled, and the menu entry
+                that would create one drew a label with zero controls.
+
+                **It is not offered on BROWSER**, and that is `TF033` rather than a door rule — a
+                workload may not sit beside a browser step, so there is no browser test this could
+                be true about. What the file states is still drawn there, locked, which is `D1078`'s
+                rule for a construct belonging to another door. */}
+            {workloadLive ? (
+              <WorkloadEditor
+                edit={workloadValues}
+                onChange={(next) => editing.onWorkload?.(test!, next)}
+                lastRun={lastRun}
+              />
+            ) : null}
           </li>
           ) : null}
           {shows('thresholds') ? (
@@ -2317,14 +2353,23 @@ export function TestBand({ decl, door, editing }: {
             <li className="band-add">
               <AddClause
                 what="test"
-                options={BAND_CLAUSES.map((c) => ({
+                options={BAND_CLAUSES.filter((c) => c.key !== 'workload' || door !== 'browser').map((c) => ({
                   key: c.key,
                   label: c.label,
                   title: c.title,
                   state: shows(c.key) ? ('present' as const) : ('addable' as const),
                 }))}
-                onAdd={(k) => setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]))}
+                onAdd={(k) => {
+                  /* **`+ workload` writes a line, the way `+ threshold` does.** Every other clause
+                     here is a field of the header that the editor below can be typed into before
+                     anything is written; a workload is a statement in the body, so revealing an
+                     empty editor would be the `[]`-controls row again under a different cause. The
+                     default is `D1213`'s own first line, so the clause and the scaffold agree. */
+                  if (k === 'workload') { editing.onWorkload?.(test, DEFAULT_WORKLOAD); return; }
+                  setAdded((prev) => (prev.includes(k) ? prev : [...prev, k]));
+                }}
                 onRemove={(k) => {
+                  if (k === 'workload') { editing.onWorkload?.(test, null); return; }
                   setAdded((prev) => prev.filter((x) => x !== k));
                   if (states(k)) change(bandWithout(k));
                 }}
@@ -2392,6 +2437,137 @@ function TableEditor({ edit, onChange }: {
   );
 }
 
+/**
+ * A workload, as controls — `M224` `B` (`D1205`, `D1208`).
+ *
+ * **`D1103`'S GRID, MOVED RATHER THAN REDRAWN.** The language's ten workload shapes are not ten
+ * things: they are four profiles × two units, plus two iteration shapes that have no time axis at
+ * all. A `<select>` spelled them as a flat list of ten sentences, which is the one arrangement that
+ * hides the fact a reader most needs — that `ramp` and `hold` differ in where they start, and that
+ * `users` and `rps` are a *closed* and an *open* model of arrival rather than two spellings of
+ * "how much".
+ *
+ * **It is a band clause and not a `.seq-row`, and that is the model rather than the picture.** A
+ * row is addressed by a `StepPath` of declaration index plus step index, and `lenses.ts` says in
+ * the type that LOAD is carried by no statement at all — `StepLens = Exclude<Lens, 'load'>`, and
+ * `stepLensCounts(...).load` was deleted because it was structurally incapable of being non-zero.
+ * Drawing the workload as a row means a row that is not a step, and `StepPath`, `isForeign`,
+ * `+ after` and the `send` prefix each grow a case for it.
+ *
+ * **The `hidden` attribute the grid used to carry is gone with the move** (`D1214`'s instance). It
+ * was written as `hidden={mode === 'existing' && !alsoWorkload}` and had no effect at all, because
+ * `.shape-grid { display: grid }` outranks it and the stylesheet had no `[hidden]` rule — measured
+ * live, 29 interactive controls in a block declaring itself absent. The clause is rendered when it
+ * is open and not rendered when it is not: a component that is not there cannot be half-alive.
+ */
+function WorkloadEditor({ edit, onChange, lastRun }: {
+  readonly edit: WorkloadEdit;
+  readonly onChange: (next: WorkloadEdit) => void;
+  /** This declaration's last run, for `D1221`'s citation. `undefined` where nobody has looked it
+   *  up — the scaffold's preview, and every unit gate that renders the editor alone. */
+  readonly lastRun?: { readonly iterations: number; readonly p95Ms: number; readonly inconclusive: boolean } | null;
+}) {
+  const timed = edit.shape !== 'iterations' && edit.shape !== 'iterations-per-user';
+  const staged = edit.shape === 'step' || edit.shape === 'spike';
+  const setStage = (i: number, patch: Partial<WorkloadStageEdit>): void =>
+    onChange({ ...edit, stages: edit.stages.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+  return (
+    <div className="workload-edit" data-band-workload-edit={edit.shape} data-band-workload-unit={timed ? edit.unit : ''}>
+      <div className="shape-grid">
+        <div className="shape-cols">
+          <span />
+          {WORKLOAD_UNITS.map(([u, label, why]) => (
+            <button key={u} type="button" className={edit.unit === u ? 'unit on' : 'unit'} onClick={() => onChange({ ...edit, unit: u })} data-shape-unit={u} aria-pressed={edit.unit === u} data-tip={why}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {WORKLOAD_PROFILES.map(([profile, label, why]) => (
+          <div className="shape-row" key={profile}>
+            <button type="button" className={edit.shape === profile ? 'profile on' : 'profile'} onClick={() => onChange({ ...edit, shape: profile })} data-shape-profile={profile} aria-pressed={edit.shape === profile} data-tip={why}>
+              {label}
+            </button>
+            {WORKLOAD_UNITS.map(([u]) => (
+              <button key={u} type="button" className={edit.shape === profile && edit.unit === u ? 'cell on' : 'cell'} onClick={() => onChange({ ...edit, shape: profile, unit: u })} data-shape-cell={`${profile}:${u}`} aria-pressed={edit.shape === profile && edit.unit === u} aria-label={`${label} ${u}`} data-tip={WORKLOAD_CELL_WHY[`${profile}:${u}`]}>
+                {edit.shape === profile && edit.unit === u ? '●' : '·'}
+              </button>
+            ))}
+          </div>
+        ))}
+        {/* **The two that are not in the grid, and are not an eleventh column either.** An
+            iteration shape names an amount of work, not a rate: the run ends when the iterations
+            are done, and how long that takes is the thing being measured. It has no unit axis to
+            sit on, so it sits beside the grid rather than inside it. */}
+        <div className="shape-row shape-aside">
+          {WORKLOAD_ITERATION_SHAPES.map(([profile, label, why]) => (
+            <button key={profile} type="button" className={edit.shape === profile ? 'profile on' : 'profile'} onClick={() => onChange({ ...edit, shape: profile })} data-shape-profile={profile} aria-pressed={edit.shape === profile} data-tip={why}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!timed ? (
+        <div className="row">
+          <label className="not" data-tip={edit.shape === 'iterations-per-user' ? WORKLOAD_FIELD_WHY.countPerUser : WORKLOAD_FIELD_WHY.count}><span className="seq-kind">iterations</span> <input className="narrow" value={edit.count} onChange={(e) => onChange({ ...edit, count: e.target.value })} data-workload-count aria-label="iterations" /></label>
+          <label className="not" data-tip={WORKLOAD_FIELD_WHY.vus}><span className="seq-kind">users</span> <input className="narrow" value={edit.vus} onChange={(e) => onChange({ ...edit, vus: e.target.value })} data-workload-vus aria-label="users" /></label>
+        </div>
+      ) : null}
+
+      {edit.shape === 'ramp' || edit.shape === 'hold' ? (
+        <div className="row">
+          <label className="not" data-tip={WORKLOAD_FIELD_WHY.target}><span className="seq-kind">target</span> <input className="narrow" value={edit.target} onChange={(e) => onChange({ ...edit, target: e.target.value })} data-workload-target aria-label="target" /></label>
+          <label className="not" data-tip={WORKLOAD_FIELD_WHY.seconds}><span className="seq-kind">seconds</span> <input className="narrow" value={edit.seconds} onChange={(e) => onChange({ ...edit, seconds: e.target.value })} data-workload-seconds aria-label="seconds" /></label>
+        </div>
+      ) : null}
+
+      {/* ── The sentence — `M225` `D` (`D1220`) ──────────────────────────────────────────────
+          **Always visible, and derived from the EDIT rather than from the saved node**, so it
+          moves as the author types. The same rule `planInputOf` follows and for `D985`'s reason:
+          one reading of the values, so the picture and the bytes cannot disagree. The plot, this
+          line and the printed clause are one fact stated three ways, and a mutation to any of
+          them reddens a gate that reads the other two. */}
+      <p className="workload-says muted" data-workload-says>{workloadSentenceOf(edit)}</p>
+      {/* **And what it did** — `M225` `E` (`D1221`). A citation, never a prediction, and it says
+          *not run here yet* rather than going blank, because an absent line reads as a page that
+          forgot rather than as a fact. */}
+      {lastRun === undefined ? null : (
+        <p className="workload-did muted" data-workload-did={lastRun === null ? 'never' : lastRun.inconclusive ? 'inconclusive' : 'ran'}>
+          {workloadCitation(lastRun)}
+        </p>
+      )}
+
+      {staged ? (
+        <div className="stages" data-workload-stages={edit.stages.length}>
+          {edit.stages.map((stage, i) => (
+            <div className="stage-row" key={i}>
+              {edit.shape === 'spike' ? (
+                <select value={stage.mode} onChange={(e) => setStage(i, { mode: e.target.value as 'jump' | 'ramp' })} data-stage-mode={i} aria-label="stage mode" data-tip={WORKLOAD_FIELD_WHY.stageMode}>
+                  <option value="jump">hold at</option>
+                  <option value="ramp">ramp to</option>
+                </select>
+              ) : (
+                // A `step` block has no spelling for a ramp, so the form does not offer one —
+                // `buildWorkload` refuses it, and an option that is always refused is a trap.
+                <span className="seq-kind">to</span>
+              )}
+              <input className="narrow" value={stage.target} onChange={(e) => setStage(i, { target: e.target.value })} data-stage-target={i} aria-label="stage target" data-tip={edit.shape === 'step' ? WORKLOAD_FIELD_WHY.stageTargetStep : WORKLOAD_FIELD_WHY.stageTargetSpike} />
+              <input className="narrow" value={stage.seconds} onChange={(e) => setStage(i, { seconds: e.target.value })} data-stage-seconds={i} aria-label="stage seconds" data-tip={edit.shape === 'step' ? WORKLOAD_FIELD_WHY.stageSecondsStep : WORKLOAD_FIELD_WHY.stageSecondsSpike} />
+              <span className="seq-kind">s</span>
+              <button onClick={() => onChange({ ...edit, stages: edit.stages.filter((_, j) => j !== i) })} data-stage-remove={i} disabled={edit.stages.length === 1} aria-label="remove this stage" data-tip={WORKLOAD_FIELD_WHY.stageRemove}>
+                −
+              </button>
+            </div>
+          ))}
+          <button onClick={() => onChange({ ...edit, stages: [...edit.stages, { mode: 'jump', target: '10', seconds: '5' }] })} data-stage-add data-tip={WORKLOAD_FIELD_WHY.stageAdd}>
+            + stage
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** One `threshold` line, as controls. */
 function ThresholdRow({ index, edit, onEdit }: {
   readonly index: number;
@@ -2400,23 +2576,23 @@ function ThresholdRow({ index, edit, onEdit }: {
 }) {
   return (
     <div className="row" data-threshold={index}>
-      <select value={edit.metric} onChange={(e) => onEdit({ ...edit, metric: e.target.value as ThresholdEdit['metric'] })} data-threshold-metric={index} aria-label="metric">
+      <select value={edit.metric} onChange={(e) => onEdit({ ...edit, metric: e.target.value as ThresholdEdit['metric'] })} data-threshold-metric={index} aria-label="metric" data-tip={THRESHOLD_WHY.metric}>
         <option value="duration">duration</option>
         <option value="errorRate">error rate</option>
       </select>
       {edit.metric === 'duration' ? (
-        <input className="narrow" value={edit.percentile} onChange={(e) => onEdit({ ...edit, percentile: e.target.value })} data-threshold-percentile={index} aria-label="percentile" />
+        <input className="narrow" value={edit.percentile} onChange={(e) => onEdit({ ...edit, percentile: e.target.value })} data-threshold-percentile={index} aria-label="percentile" data-tip={THRESHOLD_WHY.percentile} />
       ) : null}
       {edit.metric === 'duration' ? (
-        <input value={edit.scope} onChange={(e) => onEdit({ ...edit, scope: e.target.value })} data-threshold-scope={index} aria-label="scope" placeholder="(the whole test)" />
+        <input value={edit.scope} onChange={(e) => onEdit({ ...edit, scope: e.target.value })} data-threshold-scope={index} aria-label="scope" placeholder="(the whole test)" data-tip={THRESHOLD_WHY.scope} />
       ) : null}
-      <select value={edit.op} onChange={(e) => onEdit({ ...edit, op: e.target.value as ThresholdOp })} data-threshold-op={index} aria-label="comparison">
+      <select value={edit.op} onChange={(e) => onEdit({ ...edit, op: e.target.value as ThresholdOp })} data-threshold-op={index} aria-label="comparison" data-tip={THRESHOLD_WHY.op}>
         <option value="lessThan">is less than</option>
         <option value="greaterThan">is greater than</option>
       </select>
-      <input className="narrow" value={edit.bound} onChange={(e) => onEdit({ ...edit, bound: e.target.value })} data-threshold-bound={index} aria-label="bound" />
+      <input className="narrow" value={edit.bound} onChange={(e) => onEdit({ ...edit, bound: e.target.value })} data-threshold-bound={index} aria-label="bound" data-tip={THRESHOLD_WHY.bound} />
       <span className="muted">{edit.metric === 'duration' ? 'ms' : '%'}</span>
-      <button onClick={() => onEdit(null)} data-threshold-remove={index}>
+      <button onClick={() => onEdit(null)} data-threshold-remove={index} data-tip={THRESHOLD_WHY.remove}>
         remove
       </button>
     </div>

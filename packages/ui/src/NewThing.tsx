@@ -24,7 +24,7 @@
 // extra field, and the test fields are shared — a guided start is worth more to a newcomer than an
 // empty shell, which is what `D1087` chose over an in-place *add a declaration* gesture.
 import { useEffect, useRef, useState } from 'react';
-import { buildApiStep, buildExpect, buildOpen, buildTest, insertIntoSource, type ApiStepSpec, type Lens } from '@tflw/lang';
+import { buildApiStep, buildExpect, buildOpen, buildTest, buildThreshold, buildWorkload, insertIntoSource, type ApiStepSpec, type Lens, type ThresholdDecl, type Workload } from '@tflw/lang';
 import { putFile } from './api';
 import { SourceText } from './Source';
 import { VOCABULARY, type Scaffold } from './vocabulary';
@@ -51,7 +51,35 @@ export function newSource(input: {
   if (input.name.trim() === '') return { ok: false, reason: 'the test needs a name — it is how a run reports it' };
   const body = scaffoldBody(input);
   if (!body.ok) return body;
-  const test = buildTest({ name: input.name.trim(), tags: [], workload: null, thresholds: [], body: body.nodes });
+  /**
+   * **What a LOAD test is, beside what it does** — `M224` `F` (`D1213`).
+   *
+   * The two lines the other doors have no use for, and both are forced rather than chosen:
+   *
+   * - **The workload**, because it is the whole of what makes a test workload-bearing (`D99`).
+   *   `ramp` is the plurality shape — **35 of the corpora's 85 workload lines**, against today's
+   *   `iterations` default — and `to 5 users over 2s` is small enough to run while you read it.
+   * - **A threshold**, because `TF033` says a workload-bearing test must carry one: a workload
+   *   test's verdict comes *only* from its thresholds, so one with none generates real load,
+   *   reports real numbers and passes unconditionally. `error rate is less than 1%` is **61 of the
+   *   88 threshold lines** in the two corpora — near-universal, and the one bound that is about
+   *   the run rather than about this endpoint.
+   *
+   * **A `p95 duration` bound is deliberately refused.** About 25 corpus lines carry **eight
+   * distinct values**, from 50 ms to 100 000 ms; it is the number only the author knows, and
+   * writing one would be `D1087`'s receipt again — the legacy form offering *"the orders endpoint
+   * answers"* for whatever file happened to be open. The band draws `+ threshold` beside the one
+   * that is here, which is where a second is added.
+   */
+  const load = input.scaffold === 'workload' ? loadLines() : null;
+  if (load !== null && !load.ok) return { ok: false, reason: load.reason };
+  const test = buildTest({
+    name: input.name.trim(),
+    tags: [],
+    workload: load?.ok ? load.workload : null,
+    thresholds: load?.ok ? [load.threshold] : [],
+    body: body.nodes,
+  });
   if (!test.ok) return { ok: false, reason: test.reason };
   const result = insertIntoSource(input.into, { kind: 'test', node: test.node });
   return result.ok ? { ok: true, text: result.text } : { ok: false, reason: result.reason };
@@ -60,6 +88,14 @@ export function newSource(input: {
 /** The opening statements this door's scaffold writes — `D1189`'s whole branch, and the only place
  *  the three answers differ. Every arm goes through the same builders the pane's own controls call
  *  (`D1087`); what the door chooses is which. */
+function loadLines(): { ok: true; workload: Workload; threshold: ThresholdDecl } | { ok: false; reason: string } {
+  const workload = buildWorkload({ kind: 'ramp', unit: 'users', target: 5, overMs: 2000 });
+  if (!workload.ok) return { ok: false, reason: workload.reason };
+  const threshold = buildThreshold({ metric: { kind: 'errorRate' }, op: 'lessThan', bound: 1, scope: null });
+  if (!threshold.ok) return { ok: false, reason: threshold.reason };
+  return { ok: true, workload: workload.node, threshold: threshold.node };
+}
+
 function scaffoldBody(
   input: { readonly scaffold: Scaffold; readonly method: string; readonly path: string },
 ): { ok: true; nodes: Parameters<typeof buildTest>[0]['body'] } | { ok: false; reason: string } {
@@ -72,6 +108,8 @@ function scaffoldBody(
        corpora's visible `open`s are followed by a gesture rather than an assertion. */
     return open.ok ? { ok: true, nodes: [open.node] } : { ok: false, reason: open.reason };
   }
+  /* `'workload'` falls through to the `api` body, and `D1189`'s invariant holds by construction:
+     every kind written here is in `load.constructs`, which is API's set for `TF033`'s reason. */
   if (input.path.trim() === '') return { ok: false, reason: 'the request needs a path' };
   const step = buildApiStep({
     method: input.method as ApiStepSpec['method'],
@@ -213,7 +251,9 @@ export function NewThing({ mode, door, openPath, openText, existing, onStage, on
             keeps its one spelling across doors — it is the same field asking for the same thing,
             and a gate naming `[data-new-path]` should not have to know which door it is on. */}
         <div className="row" data-new-fields={scaffold}>
-          {scaffold === 'api' ? (
+          {/* `'workload'` writes an `api` step too (`D1213`), so the method field follows the
+              *body* the scaffold writes rather than the door's name. */}
+          {scaffold !== 'open' ? (
             <label className="field">
               method
               <select value={method} onChange={(e) => setMethod(e.target.value)} data-new-method aria-label="method">

@@ -170,52 +170,70 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
 }
 
 /**
- * One request's **response** from a scoped send — `D1099`'s second scope, narrowed by `M215` `A1`.
+ * A send's responses, joined to the buffer — `D1099`'s second scope, widened by `M225` `A`
+ * (`D1216`).
  *
- * **The send runs a printed scratch, so its line numbers are not this file's** and `indexFromReport`
- * cannot be pointed at it. What holds the two together is the order: the scratch is this
- * declaration cut off after the selected request, so its last `api` step is that request.
+ * **A send indexes every request it issued, not one.** It used to take the *last* `api` step in
+ * the report and record it against the one line the pane was pointing at, which was true of the
+ * one press that existed: `send this` shows one response. It is false of `send all`, and it was
+ * already lossy for `send this`, whose prefix issues more than one request and only ever recorded
+ * the last.
  *
- * The scratch carries no assertions any more, so there is nothing after that step to grade and
- * this returns a `Ran` with an empty verdict map — see the note on `steps` below.
+ * **THE JOIN IS BY THE SCRATCH'S OWN LINE, NOT BY POSITION IN THE REPORT**, and that is the half
+ * worth stating. The plan said *by position from the first*, and position from either end is
+ * wrong for a reason the runtime settles: a `before each` hook's steps are inside the test's own
+ * step list (`interpreter.ts`'s `runTestAttemptBody` pushes them there) and an `after each`'s are
+ * after them, so neither end of the list is reliably the declaration's. What is reliable is that
+ * the caller PRINTED the scratch and can parse it back: `lines` maps the scratch line a request
+ * was printed on to the buffer line it came from, and a step whose line is not a key is a hook's
+ * and is skipped rather than mis-attributed. Amended in `PLAN_M225_SEND_AND_COMPOSER.md` §3
+ * rather than done quietly.
+ *
+ * The scratch carries no assertions, so each `Ran` has an empty verdict map — see the note below.
  */
 export function indexFromSend(args: {
   readonly steps: readonly StepResult[];
-  readonly requestLine: number;
+  /** Scratch line → buffer line, for the declaration's own requests. */
+  readonly lines: ReadonlyMap<number, number>;
   readonly bufferText: string;
   readonly startedAt: string;
-}): Ran | null {
+}): RanIndex {
   const lines = linesOf(args.bufferText);
-  let from = -1;
-  for (const [i, step] of args.steps.entries()) if (step.kind === 'api') from = i;
-  if (from < 0) return null;
-  const request = args.steps[from]!;
-  return {
-    line: args.requestLine,
-    source: lines[args.requestLine - 1] ?? '',
-    scope: 'send',
-    at: args.startedAt,
-    /**
-     * **A send carries no verdicts, because it ran no assertions** (`M215` `A1`, amending `D1108`).
-     *
-     * This used to map the report's steps after the request onto the buffer's attached lines by
-     * position and show a ✓ or a ✗ beside each. It cannot any more and should not: `withoutAssertions`
-     * takes every `expect` out of the scratch, so the steps that follow a request are its captures,
-     * and pairing those with assertion rows by position would put a mark on a row nothing graded.
-     *
-     * `D1108`'s rule — *a verdict is shown where the buffer's line still reads what ran on it* —
-     * is unchanged and still governs the other scope. What changed is which scopes produce a
-     * verdict at all: a run does, a send does not. The response is the send's whole answer.
-     */
-    steps: new Map(),
-    response:
-      request.response === undefined
-        ? null
-        : {
-            status: request.response.status,
-            url: request.request?.url ?? '',
-            method: request.request?.method ?? '',
-            bodyText: request.response.bodyText,
-          },
-  };
+  const out = new Map<number, Ran>();
+  for (const step of args.steps) {
+    if (step.kind !== 'api') continue;
+    const at = args.lines.get(step.line);
+    if (at === undefined) continue;
+    out.set(at, {
+      line: at,
+      source: lines[at - 1] ?? '',
+      scope: 'send',
+      at: args.startedAt,
+      /**
+       * **A send carries no verdicts, because it ran no assertions** (`M215` `A1`, amending
+       * `D1108`).
+       *
+       * This used to map the report's steps after the request onto the buffer's attached lines by
+       * position and show a ✓ or a ✗ beside each. It cannot any more and should not:
+       * `withoutAssertions` takes every `expect` out of the scratch, so the steps that follow a
+       * request are its captures, and pairing those with assertion rows by position would put a
+       * mark on a row nothing graded.
+       *
+       * `D1108`'s rule — *a verdict is shown where the buffer's line still reads what ran on it* —
+       * is unchanged and still governs the other scope. What changed is which scopes produce a
+       * verdict at all: a run does, a send does not. The response is the send's whole answer.
+       */
+      steps: new Map(),
+      response:
+        step.response === undefined
+          ? null
+          : {
+              status: step.response.status,
+              url: step.request?.url ?? '',
+              method: step.request?.method ?? '',
+              bodyText: step.response.bodyText,
+            },
+    });
+  }
+  return out;
 }

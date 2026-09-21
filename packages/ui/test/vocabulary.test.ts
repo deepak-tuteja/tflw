@@ -175,11 +175,24 @@ test('the BROWSER door constructs every browser kind the language has — `D1162
   assert.deepEqual(missing, [], `the BROWSER door cannot construct: ${missing.join(', ')}`);
 });
 
-test('only API sends, and the table is where that is decided', () => {
+test('the doors that send are the doors that issue requests, and the table is where that is decided', () => {
   // `send` prints a scratch cut off after the selected request and runs it; a browser test's unit
   // is a session, so there is no prefix that can be cut at a statement and still mean anything.
+  //
+  // **LOAD joined in `M224` `D`** (`D1211`), and the argument is the one above read forwards: a
+  // workload-bearing test's body is `api` steps — `TF033` forbids a browser step beside a workload
+  // — so a prefix cut at a statement means exactly what it means on API. What `send` does there is
+  // the point rather than a caveat: it strips the workload and the thresholds by design
+  // (`ComposeDoor`), which is *issue this request once, without load, before committing to run it
+  // at a rate*.
+  //
+  // The claim is the **predicate**, not the list: a door sends iff its `constructs` holds
+  // `ApiStep`. A list would go stale silently; this reddens the day a row disagrees with itself.
+  for (const [door, v] of Object.entries(VOCABULARY)) {
+    assert.equal(v.sends, v.constructs.has('ApiStep'), `${door} sends ${v.sends} and constructs ApiStep ${v.constructs.has('ApiStep')}`);
+  }
   assert.deepEqual(
     Object.entries(VOCABULARY).filter(([, v]) => v.sends).map(([d]) => d),
-    ['api'],
+    ['api', 'load'],
   );
 });

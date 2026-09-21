@@ -46,10 +46,12 @@
 // I*.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { PlanPanel } from './PlanPanel';
+import { workloadEditOf, workloadSeconds } from './workloadEdit';
 import { menuTrigger, type MenuItem, type MenuRequest, type MenuTrigger } from './ContextMenu';
-import type { CaptureSpec, ExpectSpec, Lens, MatcherName } from '@tflw/lang';
+import type { CaptureSpec, ExpectSpec, Lens, MatcherName, Workload } from '@tflw/lang';
 import { requestRefusal, requestWithout } from './clauses';
-import { COMPOSE, Grip, storedWidth } from './Grip';
+import { COMPOSE, Grip, storedSize } from './Grip';
 import type { ExpectStmt } from '@tflw/lang';
 import {
   AddClause,
@@ -86,7 +88,7 @@ import { DOOR_BY_ID } from './doors';
 import { SessionPanel, type Session, type SessionLine } from './SessionPanel';
 import { holds, requestRemoval, statementRemoval } from './depends';
 import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type OutlineHook, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
-import type { Prefix } from './outline';
+import type { Prefix, SendForm } from './outline';
 import { VOCABULARY, type AddGesture } from './vocabulary';
 import { bodyProblem, laidOut } from './jsonview';
 import { BodyText } from './Source';
@@ -316,12 +318,25 @@ function Remove({ what, onGo, refusal, onClear }: {
  * `running` stays, and it is also `D1188`: one play at a time is what keeps two presses from
  * racing for one directory's scratch.
  */
-function Play({ what, running, onGo }: {
+function Play({ what, running, onGo, price }: {
   readonly what: string;
   readonly running: boolean;
   readonly onGo: () => void;
+  /**
+   * **What pressing this costs, when it costs something measurable** — `M224` `E` (`D1212`).
+   *
+   * `D1168` gave ▶ to BROWSER and warned in the same docblock that *"offering both on one door
+   * would be two gestures that look alike and mean different things"*. On LOAD `send` and ▶ sit on
+   * the same pane and mean things that are very different: one issues the request once, the other
+   * commits to a workload. So the one that costs says so, and `send` — which carries no price and
+   * needs none — is the one that does not. **One gesture is priced and one is not**, which is a
+   * difference a reader can see before pressing rather than after.
+   */
+  readonly price?: string;
 }) {
-  const why = running ? 'a run is already going' : `run this ${what} — and nothing else in the file`;
+  const why = running
+    ? 'a run is already going'
+    : `run this ${what} — and nothing else in the file${price === undefined ? '' : `, which is ${price}`}`;
   return (
     <button
       type="button"
@@ -330,12 +345,32 @@ function Play({ what, running, onGo }: {
       disabled={running}
       data-seq-play={what}
       data-seq-play-held={running ? 'running' : undefined}
+      data-seq-play-price={price}
       data-tip={why}
       aria-label={why}
     >
-      ▶
+      ▶{price === undefined ? null : <span className="seq-kind"> · {price}</span>}
     </button>
   );
+}
+
+/**
+ * **A workload's own duration, in the control's words** — `M224` `E` (`D1212`).
+ *
+ * `undefined` on a test with no workload: there is nothing to price, and ▶ there means what it has
+ * meant since `M220`. `no clock` on the two iteration shapes — **29 of the corpus's 85 workload
+ * lines** — because they say *run N iterations across M users*, so the run ends when the work is
+ * done and how long that takes is the property being measured. That is the existing form's own
+ * wording, kept.
+ *
+ * It sums the stages rather than asking the reporter: `describeWorkload` says what a workload
+ * **is**, not how long it takes, and a second reader of the same node computing a different
+ * quantity would be `D1094`'s two-implementations shape for the sake of one string.
+ */
+function playPrice(workload: Workload | null): string | undefined {
+  if (workload === null) return undefined;
+  const total = workloadSeconds(workloadEditOf(workload));
+  return total === null ? 'no clock' : `~${Math.round(total * 10) / 10}s`;
 }
 
 /**
@@ -554,9 +589,23 @@ export interface ComposePaneProps {
   readonly edit: RequestEdit | null;
   readonly onEdit: ((next: RequestEdit) => void) | null;
   readonly editing: RowEditing;
+  /** `send this` — the prefix up to the selected request. `null` on a declaration address, where
+   *  there is no *this* (`D1215`). */
   readonly prefix: Prefix | null;
-  readonly onSend: (() => void) | null;
+  /** `send all` — every request in the declaration, one iteration (`D1215`). */
+  readonly prefixAll: Prefix | null;
+  readonly onSend: ((form: SendForm) => void) | null;
   readonly sending: boolean;
+  /**
+   * **The last send, and every request it issued** (`M225` `B`, `D1217`).
+   *
+   * `lines` are this file's own lines, so the pane can ask *which of this declaration's requests
+   * did that press touch* without knowing anything about the scratch it ran. `null` before any
+   * send, which is also what `path` changing restores.
+   */
+  readonly sent: { readonly lines: readonly number[]; readonly form: SendForm; readonly at: string } | null;
+  /** `D1221` — the selected declaration's last run, for the composer's citation line. */
+  readonly lastRun?: { readonly iterations: number; readonly p95Ms: number; readonly inconclusive: boolean } | null;
   readonly ran: RanIndex;
   readonly onVerify: ((request: OutlineRequest, spec: ExpectSpec) => void) | null;
   readonly onCapture: ((request: OutlineRequest, specs: readonly CaptureSpec[]) => void) | null;
@@ -630,27 +679,80 @@ export interface ComposePaneProps {
   readonly door: Lens;
 }
 
-/** Where the divider sat last (`D1116`). A fraction rather than a pixel count, because the window
- *  is not the same height on the next visit, and a remembered 620 px on a 700 px window is a
- *  response with no editor above it. */
-const SPLIT_KEY = 'tflw.compose.split';
-const SPLIT_MIN = 0.25;
-const SPLIT_MAX = 0.9;
+/**
+ * **The editor track is sized by what it holds, and the reader can still override it** — `M223`
+ * `B` (`D1195`, `D1196`).
+ *
+ * This was `SPLIT_KEY = 'tflw.compose.split'`, a FRACTION of the column (`D1116`), and the
+ * fraction is the defect this round was scoped from. Measured on the live page at 1440x900 with an
+ * `open` selected on the BROWSER door: the column is 239 px, and `62%` hands the editor **147 px
+ * for 99 px of content** while the session panel under it gets 85 px for the **112 px** its own
+ * button-and-paragraph needs. 48 px wasted and 27 px clipped **at the same instant**, with 22 px
+ * still spare in the column — the two halves of the same defect, which is why the user reported
+ * them as two complaints.
+ *
+ * **The API door has it worse and nobody reported it**: the same ratio wastes **208 px** under an
+ * `expect` selection there and clips nothing, because the response pane happens to be tall enough.
+ * `.editor-col` is one component shared by both doors since `M214`, so this is not a BROWSER
+ * defect and does not get a BROWSER fix (`D1198`).
+ *
+ * So the default is not a number at all — `grid-template-rows: minmax(0, auto) 6px minmax(112px,
+ * 1fr)` in the stylesheet, where `auto` is *what the editor holds*. **The accepted cost is that
+ * the boundary moves as the reader clicks different rows** — 99 px under an `open`, 237 under an
+ * API request. That was put to the user as the option's own cost and chosen with it.
+ *
+ * **The override is an absolute height and not a ratio**, because a ratio of a content-sized row
+ * is not a thing. `D1116`'s objection to pixels — *a remembered 620 px on a 700 px window is a
+ * response with no editor above it* — is answered rather than ignored, twice: `fitEditor` clamps
+ * against the column's LIVE height every time the value is written, and the track itself is
+ * `minmax(0, Npx)`, so a stored height larger than the window can spare shrinks instead of
+ * evicting the pane below it.
+ *
+ * **`tflw.compose.split` is dropped rather than migrated, and deleted on read.** A remembered
+ * `0.62` is a reader's answer to a question this round stops asking, and honouring it would hand
+ * exactly the readers who have used this pane the behaviour the round exists to remove.
+ */
+const EDITOR_KEY = 'tflw.compose.editor';
+/** `D1116`'s key, named here only so it can be removed from the readers who have one. */
+const RATIO_KEY = 'tflw.compose.split';
+/** The editor's own floor: its head and one field. */
+const EDITOR_MIN = 88;
+/** What the pane under the editor needs to draw its empty state whole — the BROWSER door's session
+ *  panel, measured at 112 px. The stylesheet states the same number as the track's own minimum;
+ *  this one is what keeps a DRAG from writing a height that violates it. */
+const LOWER_MIN = 112;
+/**
+ * **And what it needs once there is a response in it** — `M225` `G` (`D1223`).
+ *
+ * Measured at 1440x900 with the strip on screen: the seg nav, the strip and the response's own
+ * header consume **all 112 px**, leaving **0 px** of the body visible. This is that chrome plus
+ * `D1223`'s stated 120 px of body, rounded up — the stylesheet carries the same number for the
+ * default track and this one stops a drag writing under it.
+ */
+const RESPONSE_MIN = 240;
 
-function readSplit(): number {
+function readEditorPx(): number | null {
   try {
-    const raw = window.localStorage.getItem(SPLIT_KEY);
-    const n = raw === null ? Number.NaN : Number(raw);
-    return Number.isFinite(n) && n >= SPLIT_MIN && n <= SPLIT_MAX ? n : 0.62;
+    window.localStorage.removeItem(RATIO_KEY);
+    const raw = window.localStorage.getItem(EDITOR_KEY);
+    if (raw === null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= EDITOR_MIN ? n : null;
   } catch {
     // A private window, or site data blocked. The accessor itself throws in some browsers, which
     // is why this is a try and not a null check.
-    return 0.62;
+    return null;
   }
 }
 
+/** The override, clamped to a column this tall: never under the editor's floor, never over what
+ *  leaves the pane below it `LOWER_MIN`. A column too short for both gives the editor its floor
+ *  and lets the grid shrink it from there. */
+const fitEditor = (px: number, column: number, lower: number = LOWER_MIN): number =>
+  Math.max(EDITOR_MIN, Math.min(Math.round(px), Math.max(EDITOR_MIN, column - 6 - lower)));
+
 export function ComposePane(props: ComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, onSend, sending, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, tab, onEditorTab: setTab } = props;
+  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, tab, onEditorTab: setTab } = props;
 
   /** One call per sequence row kind — `M218` `F`. `{}` when the door wired no menu, so the rows
    *  behave exactly as they did before this round. */
@@ -666,6 +768,69 @@ export function ComposePane(props: ComposePaneProps) {
     : selected.kind === 'statement' ? (at === null ? null : requestsOf(at.decl.body).find((r) => r.attached.some((s) => s.line === selected.statement.line)) ?? null)
     : null;
   const rowRan: Ran | null = forRequest === null ? null : (ran.get(forRequest.line) ?? null);
+
+  /** The prefix whose request list is drawn — what the press the reader is most likely to take
+   *  will fire. On a declaration address that is `send all`, because there is no *this*. */
+  const sendPrefix: Prefix | null = prefix ?? prefixAll;
+
+  /**
+   * **What the last send left in this declaration** — `M225` `B` (`D1217`).
+   *
+   * One entry per request the press issued *in the declaration on screen*, in file order. A hook's
+   * request is not here for the same reason it is not a row: nothing in this file is drawn on it.
+   * The `scope` check is what keeps a run's verdict out — `ran` holds both, and a send wins over a
+   * report only for the lines it is about (`D1099`).
+   */
+  const sentHere = useMemo(() => {
+    if (sent === null || at === null) return [];
+    return requestsOf(at.decl.body)
+      .filter((r) => sent.lines.includes(r.line))
+      .map((r) => ({ request: r, ran: ran.get(r.line) ?? null }))
+      .filter((e): e is { request: OutlineRequest; ran: Ran } => e.ran !== null && e.ran.scope === 'send' && e.ran.response !== null);
+  }, [sent, at, ran]);
+
+  /**
+   * **Which entry's body is in the box.** `null` means *the default*, which is the first entry —
+   * §2.3, decided against the last: a rung's final POST is the request the test exists to measure
+   * and is also the one whose meaning depends on everything above it, so an iteration is read in
+   * the order it ran.
+   *
+   * Cleared by a new send and by moving the selection, because both of those change what the box
+   * is about. Not cleared by a keystroke: `ran` is re-derived from the buffer on every one of
+   * them (`D1093`), and a pick that survives is the same request it was.
+   */
+  const [pick, setPick] = useState<number | null>(null);
+  useEffect(() => setPick(null), [path, sent?.at, forRequest?.line]);
+
+  /**
+   * **The response the box is showing, and the request it came from — ONE reading, not two.**
+   *
+   * `M225` §1.2 is this value's whole reason: a send from a declaration address recorded its
+   * verdict against a request line while the selected row was the `test` line, so `rowRan` stayed
+   * `null` and region 2 went on saying *nothing has run this request* — the exact sentence the
+   * press had just falsified. The row still wins when it has a response, so every gesture that
+   * worked before this round works unchanged; what is new is the fallback to the send's own first
+   * entry when the row has nothing.
+   *
+   * **The pair is derived together because the build caught them disagreeing** (`D1094`, the
+   * failure this project keeps recording). The first draft computed the `Ran` and the
+   * `OutlineRequest` in two expressions with the same three branches written twice, and a write
+   * that moved the file's lines left a `pick` whose line still resolved in `ran` and no longer
+   * resolved in `sentHere` — so the box had a response and no request, which renders the empty
+   * state *and* the send row at the same instant. Two `send all` buttons on one screen, found by
+   * Playwright's strict-mode resolving two elements for one selector.
+   */
+  const shownEntry = useMemo(() => {
+    const picked = pick === null ? null : sentHere.find((e) => e.request.line === pick) ?? null;
+    if (picked !== null) return { ran: picked.ran, request: picked.request };
+    if (rowRan !== null && rowRan.response !== null && forRequest !== null) return { ran: rowRan, request: forRequest };
+    const first = sentHere[0];
+    return first === undefined ? null : { ran: first.ran, request: first.request };
+  }, [pick, sentHere, rowRan, forRequest]);
+  const shown: Ran | null = shownEntry?.ran ?? null;
+  /** The request whose response is in the box — what `D1218`'s solid badge marks, and what a tick
+   *  writes an assertion against. */
+  const shownRequest: OutlineRequest | null = shownEntry?.request ?? null;
 
   /** The refusal a `✕` produced, keyed by the line it was pressed on (`D1117`). */
   const [refused, setRefused] = useState<{ line: number; held: { name: string; line: number; text: string } } | null>(null);
@@ -687,12 +852,14 @@ export function ComposePane(props: ComposePaneProps) {
   const refusalFor = (line: number): { name: string; line: number; text: string } | null => (refused !== null && refused.line === line ? refused.held : null);
   const clearRefusal = useCallback(() => setRefused(null), []);
 
-  const [split, setSplit] = useState<number>(readSplit);
+  /** `null` — the editor is as tall as what it holds (`D1195`). A number is the reader's own
+   *  override in pixels (`D1196`); `Home` on the divider returns it to `null`. */
+  const [editorPx, setEditorPx] = useState<number | null>(readEditorPx);
   /** The sequence column's width (`D1135`) — a fixed number of pixels the reader chose, where the
    *  grid used to hold a builder's `minmax(220px, 300px)`. Separate from `split` above, which is
    *  the horizontal divider inside the editor column and a FRACTION rather than a width, for the
    *  reason recorded there: a remembered 620 px on a 700 px window is a response with no editor. */
-  const [seqWidth, setSeqWidth] = useState<number>(() => storedWidth(COMPOSE));
+  const [seqWidth, setSeqWidth] = useState<number>(() => storedSize(COMPOSE));
   const column = useRef<HTMLDivElement | null>(null);
 
   /**
@@ -742,6 +909,14 @@ export function ComposePane(props: ComposePaneProps) {
   }, [made]);
 
   const dragging = useRef(false);
+  /** The floor under the divider, as a ref so the window `pointermove` above reads the CURRENT
+   *  one rather than the one that was true when the listener was installed (`D1223`). */
+  const lowerMin = useRef(LOWER_MIN);
+  lowerMin.current = shown?.response ? RESPONSE_MIN : LOWER_MIN;
+  /** The same fact as `dragging`, in the DOM, because the stylesheet needs it: while this divider
+   *  is being dragged the trace frame must stop taking pointer events, or the drag dies at its top
+   *  edge (`styles.css`, `M223` `E`). A ref cannot be seen by `:has()`. */
+  const [splitting, setSplitting] = useState(false);
 
   /** The divider. `pointermove` on the window rather than on the handle, because a pointer that
    *  leaves a 6 px strip mid-drag has not stopped dragging — the same finding `jamForge` filed
@@ -751,17 +926,20 @@ export function ComposePane(props: ComposePaneProps) {
       if (!dragging.current || column.current === null) return;
       const box = column.current.getBoundingClientRect();
       if (box.height <= 0) return;
-      const next = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, (e.clientY - box.top) / box.height));
-      setSplit(next);
+      // Where the pointer is, not how far it has moved: the divider goes under the pointer, and
+      // the clamp is against the column as it is right now rather than as it was on the press.
+      setEditorPx(fitEditor(e.clientY - box.top, box.height, lowerMin.current));
     };
     const up = (): void => {
       if (!dragging.current) return;
       dragging.current = false;
+      setSplitting(false);
       try {
-        window.localStorage.setItem(SPLIT_KEY, String(split));
+        if (editorPx === null) window.localStorage.removeItem(EDITOR_KEY);
+        else window.localStorage.setItem(EDITOR_KEY, String(editorPx));
       } catch {
-        // Nothing to do and nothing to say: a remembered split is a convenience, and a browser that
-        // refuses to store one still draws the page.
+        // Nothing to do and nothing to say: a remembered height is a convenience, and a browser
+        // that refuses to store one still draws the page.
       }
     };
     window.addEventListener('pointermove', move);
@@ -770,7 +948,36 @@ export function ComposePane(props: ComposePaneProps) {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
-  }, [split]);
+  }, [editorPx]);
+
+  /**
+   * **Which of region 2's two tenants is showing** (`D1209`) — and it is declared **here**,
+   * above the early return below, because that is the hook rule rather than a preference: a
+   * `useState` written under a conditional `return` changes the hook count between two renders.
+   * The first draft of this had it beside `decl`, thirty lines down, and the whole page went
+   * white with React #310 the moment the outline arrived — the same trap `App.tsx` records on
+   * `configPanel`'s `useMemo`, which timed out every door test at once.
+   *
+   * **`null` is *the reader has not chosen*, and the default follows the selection.** A plain
+   * `'plan'` default was written first and it took the region away from the gesture it was built
+   * for: `D1116` put the response under the editor so ticking a value writes into the Assert tab
+   * directly above it, and on a workload-bearing test every request row lost its `send` prefix to
+   * a chart. A plain `'response'` default is the same mistake mirrored — a declaration selected on
+   * the LOAD door would open on *pick a request to see what came back*, which is the one thing
+   * that door is not about.
+   *
+   * So: a **request** selected opens the response, and a declaration opens the plan. Once the
+   * reader picks, the pick stands — a segment that re-decided on every navigation would be
+   * undoing them.
+   *
+   * **`at.request` is the wrong instrument for that and the run said so.** `addressed()` falls
+   * back to a declaration's *first* request whenever the line is above all of them (`D1080`), so
+   * `at.request` is non-null for an address that names the `test` line — it answers *which request
+   * is in scope*, never *what did the reader point at*. `selectedAt` answers the second question
+   * and is already computed above; `'test'` is the declaration's own run of lines, header and all.
+   */
+  const [region2Pick, setRegion2Pick] = useState<'plan' | 'response' | null>(null);
+  const region2: 'plan' | 'response' = region2Pick ?? (selected.kind === 'request' || selected.kind === 'statement' ? 'response' : 'plan');
 
   if (outline === null) {
     return (
@@ -783,6 +990,8 @@ export function ComposePane(props: ComposePaneProps) {
   }
 
   const decl = at?.decl ?? null;
+  /** The selected declaration's workload, or `null` — the one fact `D1209`'s segment turns on. */
+  const planWorkload = decl !== null && decl.kind === 'test' ? decl.workload : null;
   const statements = decl === null ? [] : decl.body.preamble;
 
   /**
@@ -892,7 +1101,19 @@ export function ComposePane(props: ComposePaneProps) {
             <>
               <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span>
               {rr === null || rr.response === null ? null : (
-                <span className={`status-code ${statusTone(rr.response.status)}`} data-seq-status={rr.response.status} data-tip={`${rr.scope === 'send' ? 'from a send' : 'from the last run'} — ${rr.at}`}>
+                /* **The row whose response is in region 2 wears a SOLID badge** — `M225` `B`
+                   (`D1218`). A third state, and it must not look like the second: on a
+                   declaration address the selection is deliberately still the `test` row so the
+                   composer stays in region 1, and a shared tone would make clicking a strip entry
+                   look like a move that did not happen. It is not in the gutter either — `D1200`
+                   closed a measured collision of two accent marks 4.9 px apart in an 18 px gutter
+                   with *in this gutter the accent is the selection's alone*. */
+                <span
+                  className={`status-code ${statusTone(rr.response.status)}`}
+                  data-seq-status={rr.response.status}
+                  data-seq-showing={shownRequest !== null && shownRequest.line === r.line ? 'yes' : 'no'}
+                  data-tip={`${rr.scope === 'send' ? 'from a send' : 'from the last run'} — ${rr.at}${shownRequest !== null && shownRequest.line === r.line ? ' — this is the response below' : ''}`}
+                >
                   {rr.response.status}
                 </span>
               )}
@@ -941,7 +1162,13 @@ export function ComposePane(props: ComposePaneProps) {
           kind="session"
           selected={selected.kind === 'statement' && selected.statement.line === s.line}
           onLine={onLine}
-          lead={<span className="seq-kind">{seqLead(s.kind)}</span>}
+          /* **The keyword says what the group is** — `M223` `F` (`D1201`). The rail beside it and
+             the accent on this word make the head legible as *different* and not as *what*, which
+             is the question a reader asks the first time they meet one. It rides `.seq-kind` and
+             not `.seq-pick` on purpose: `D1127` makes a row's hover DERIVED — the part the
+             ellipsis took, at whatever width the grip is at — so an authored tip there would
+             reopen that decision, while every chip and control beside it already carries one. */
+          lead={<span className="seq-kind" data-tip="everything below happens on this page — a new `open` starts the next one">{seqLead(s.kind)}</span>}
           text={afterLead(seqLead(s.kind), s.text.split('\n')[0] ?? '')}
           statement={s}
           menu={seqMenu({ kind: 'step', statement: s, line: s.line }, s.text.split('\n')[0] ?? s.kind)}
@@ -1058,7 +1285,7 @@ export function ComposePane(props: ComposePaneProps) {
                         it. A hook is skipped rather than drawn held, because `--only` names a test
                         by name and a hook has none — the same fact the foot says in words. */}
                     {onPlay === null || decl.kind !== 'test' ? null : (
-                      <Play what="test" running={playing} onGo={() => onPlay(decl)} />
+                      <Play what="test" running={playing} onGo={() => onPlay(decl)} price={playPrice(decl.workload)} />
                     )}
                     {onRemoveDecl === null ? null : (
                       <Remove
@@ -1145,7 +1372,7 @@ export function ComposePane(props: ComposePaneProps) {
         </div>
 
         {/* ── region 3: the editor, and the response under it (`D1113`, `D1116`) ───────── */}
-        <Grip spec={COMPOSE} width={seqWidth} onWidth={setSeqWidth} />
+        <Grip spec={COMPOSE} size={seqWidth} onSize={setSeqWidth} />
 
         {/* **`data-seq-open` is still the open request's line**, and that it survived the rebuild is
             the point rather than a convenience: *which request is open* is a real fact about the
@@ -1157,7 +1384,14 @@ export function ComposePane(props: ComposePaneProps) {
           ref={column}
           data-editor-col={selected.kind}
           data-seq-open={selected.kind === 'request' ? selected.request.line : undefined}
-          style={{ gridTemplateRows: `${(split * 100).toFixed(2)}% 6px 1fr` }}
+          /* No inline rows at rest — the stylesheet's `minmax(0, auto) 6px minmax(112px, 1fr)` is
+             the default, and an inline copy of it would be the same rule written twice. An
+             override is `minmax(0, Npx)` rather than `Npx` so that a height stored on a taller
+             window shrinks here instead of evicting the pane below it (`D1196`). */
+          /* `D1223` — the floor under the divider is what region 2 holds, so the attribute the
+             stylesheet reads and the number a drag is clamped against are the same fact. */
+          data-editor-response={shown?.response ? 'yes' : 'no'}
+          style={editorPx === null ? undefined : { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${shown?.response ? RESPONSE_MIN : LOWER_MIN}px, 1fr)` }}
         >
           <div className="editor" data-editor={selected.kind}>
             {selected.kind === 'file' ? (
@@ -1177,7 +1411,7 @@ export function ComposePane(props: ComposePaneProps) {
                 </p>
               </div>
             ) : selected.kind === 'test' ? (
-              <TestBand decl={selected.decl} door={door} editing={editing} />
+              <TestBand decl={selected.decl} door={door} editing={editing} lastRun={lastRun} />
             ) : selected.kind === 'statement' ? (
               <StatementEditor statement={selected.statement} door={door} editing={editing} ran={rowRan} onLine={onLine} onRemove={onRemoveSteps === null ? null : () => remove(selected.decl, selected.statement.line, statementRemoval(selected.statement))} refusal={refusalFor(selected.statement.line)} onClearRefusal={clearRefusal} phase={phaseFor(selected.statement.line)} />
             ) : (
@@ -1202,34 +1436,122 @@ export function ComposePane(props: ComposePaneProps) {
           {/* The divider (`D1116`). A `separator` with an `aria-orientation`, because it is a real
               control: the keyboard moves it too, which a `<div>` with a pointer handler cannot. */}
           <div
-            className="split"
+            className={`split${splitting ? ' dragging' : ''}`}
             role="separator"
             aria-orientation="horizontal"
-            aria-label="how much of this column the response gets"
+            aria-label="how tall the editor above this line is"
             tabIndex={0}
-            data-compose-split={split.toFixed(2)}
+            /* `auto` is not a missing value — it is the state `D1195` makes the default, and a
+               reader (or a gate) asking this attribute is asking *who decided this height*. */
+            data-compose-split={editorPx === null ? 'auto' : String(editorPx)}
+            data-tip="drag to resize · arrow keys to nudge · Home to fit the editor to what it holds"
             onPointerDown={() => {
               dragging.current = true;
+              setSplitting(true);
             }}
             onKeyDown={(e) => {
+              /* `Home` is the same gesture the column grip already has (`D1135`), and here it
+                 returns the track to `D1195`'s content sizing rather than to a builder's number —
+                 there is no longer a number to return to. */
+              if (e.key === 'Home') {
+                e.preventDefault();
+                setEditorPx(null);
+                try {
+                  window.localStorage.removeItem(EDITOR_KEY);
+                } catch {
+                  /* see the drag handler */
+                }
+                return;
+              }
               if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
               e.preventDefault();
-              const next = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, split + (e.key === 'ArrowDown' ? 0.05 : -0.05)));
-              setSplit(next);
+              const col = column.current;
+              const editor = col === null ? null : col.querySelector('.editor');
+              if (col === null || editor === null) return;
+              // The nudge starts from where the divider IS, which while the track is content-sized
+              // is a fact about the editor's box and not about any state this component holds.
+              const from = editorPx ?? editor.getBoundingClientRect().height;
+              const next = fitEditor(from + (e.key === 'ArrowDown' ? 16 : -16), col.getBoundingClientRect().height, shown?.response ? RESPONSE_MIN : LOWER_MIN);
+              setEditorPx(next);
               try {
-                window.localStorage.setItem(SPLIT_KEY, String(next));
+                window.localStorage.setItem(EDITOR_KEY, String(next));
               } catch {
                 /* see the drag handler */
               }
             }}
           />
 
-          <div className="responsebox" data-compose-responsebox={rowRan?.response ? 'yes' : 'no'}>
+          <div className="responsebox" data-compose-responsebox={shown?.response ? 'yes' : 'no'}>
+            {/* ── `D1209` — region 2's two tenants, on a workload-bearing declaration ────────
+                A workload-bearing test earns a **plan** panel here: the planned curve with the
+                achieved run overlaid when one is comparable, which is `D1103`'s *planned with
+                achieved overlaid in one frame is the picture a load tool exists to show*.
+
+                **The segment follows the construct, not the door** (`D1044`). It is here on the
+                API door when a workload test is open, and it is never here on a functional test —
+                which is also how its gate is taken, on API, so that it cannot pass for a door's
+                reason. A segment asserted only on LOAD would be green under every mutation that
+                made it door-granted (`M223` `F`'s vacuity lesson).
+
+                `send` is unaffected and stays on for LOAD: it strips the workload and the
+                thresholds by design, which on that door is the point rather than a caveat —
+                *issue this request once, without load, before committing to run it at a rate.* */}
+            {planWorkload !== null ? (
+              <nav className="seg" data-compose-region2={region2}>
+                {(['plan', 'response'] as const).map((which) => (
+                  <button
+                    key={which}
+                    type="button"
+                    className={region2 === which ? 'seg-on' : ''}
+                    aria-pressed={region2 === which}
+                    onClick={() => setRegion2Pick(which)}
+                    data-compose-region2-tab={which}
+                  >
+                    {which}
+                  </button>
+                ))}
+              </nav>
+            ) : null}
+            {planWorkload !== null && region2 === 'plan' ? <PlanPanel path={path} name={decl !== null && decl.kind === 'test' ? decl.name : null} workload={planWorkload} /> : null}
             {/* **Ticking a value writes into the Assert tab directly above it** (`D1116`), which is
                 the whole reason the response is in this column rather than beside it: `M213` `S2`'s
                 tick-to-assert put the value and the assertion it produces on two different screens. */}
-            {rowRan !== null && rowRan.response !== null && forRequest !== null ? (
+            {planWorkload !== null && region2 === 'plan' ? null : shown !== null && shown.response !== null && shownRequest !== null ? (
               <>
+                {/* ── The strip — `M225` `B` (`D1217`) ────────────────────────────────────────
+                    **Only when a press issued more than one request.** With one it is one entry
+                    and the panel is exactly what it was, which is the whole LOAD corpus but one
+                    test and every functional test in the sibling: the ordinary path must not grow
+                    a control.
+
+                    The header names the press and its age, so the box states its own provenance
+                    instead of leaving a reader to work it out from a status code. */}
+                {sentHere.length > 1 ? (
+                  <div className="sendstrip" data-compose-sendstrip={sentHere.length}>
+                    <header className="muted" data-compose-sendstrip-head>
+                      send {sent!.form} · {sentHere.length} requests · {ago(sent!.at, Date.now())}
+                    </header>
+                    <ol>
+                      {sentHere.map((e, i) => (
+                        <li key={e.request.line}>
+                          <button
+                            type="button"
+                            className={e.request.line === shownRequest.line ? 'on' : ''}
+                            aria-pressed={e.request.line === shownRequest.line}
+                            data-compose-sendstrip-entry={i}
+                            data-compose-sendstrip-line={e.request.line}
+                            onClick={() => setPick(e.request.line)}
+                            data-tip={`what came back from ${e.request.method} ${e.request.path}`}
+                          >
+                            <span className={`method m-${e.request.method.toLowerCase()}`}>{e.request.method}</span>{' '}
+                            <code>{e.request.path}</code>{' '}
+                            <span className={`status-code ${statusTone(e.ran.response!.status)}`}>{e.ran.response!.status}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
                 {/* **`D1109`'s chip is retired and its sentence is not.** The chip existed because a
                     response drawn open on every request put the old pane over its height bar — a
                     problem the three regions do not have, since the response has a region of its
@@ -1238,29 +1560,30 @@ export function ComposePane(props: ComposePaneProps) {
                     apart, rather than both being rendered as "the response". */}
                 <header
                   className="response-head-bar"
-                  data-compose-response={rowRan.response.status}
-                  data-compose-response-scope={rowRan.scope}
-                  data-tip={`${rowRan.response.method} ${rowRan.response.url} — ${rowRan.at}`}
+                  data-compose-response={shown.response.status}
+                  data-compose-response-scope={shown.scope}
+                  data-compose-response-line={shownRequest.line}
+                  data-tip={`${shown.response.method} ${shown.response.url} — ${shown.at}`}
                 >
-                  <span className={`status-code ${statusTone(rowRan.response.status)}`} data-compose-response-status={rowRan.response.status}>
-                    {rowRan.response.status}
+                  <span className={`status-code ${statusTone(shown.response.status)}`} data-compose-response-status={shown.response.status}>
+                    {shown.response.status}
                   </span>{' '}
                   <span className="muted" data-compose-response-when>
-                    {rowRan.scope === 'send' ? 'from this send' : 'from the last run'}, {ago(rowRan.at, Date.now())}
+                    {shown.scope === 'send' ? 'from this send' : 'from the last run'}, {ago(shown.at, Date.now())}
                   </span>
                 </header>
               <ResponsePanel
-                ran={rowRan}
+                ran={shown}
                 open
                 onVerify={
                   onVerify === null
                     ? null
                     : (spec) => {
                         setTab('assert');
-                        onVerify(forRequest, spec);
+                        onVerify(shownRequest, spec);
                       }
                 }
-                onCapture={onCapture === null ? null : (specs) => onCapture(forRequest, specs)}
+                onCapture={onCapture === null ? null : (specs) => onCapture(shownRequest, specs)}
               />
               </>
             ) : !VOCABULARY[door].sends ? (
@@ -1285,18 +1608,18 @@ export function ComposePane(props: ComposePaneProps) {
               />
             ) : (
               <div className="response-none">
-                {prefix !== null && onSend !== null ? (
-                  <div className="prefix" data-prefix={prefix.requests.length}>
-                    <button className="run" onClick={onSend} disabled={sending || busy} data-compose-send data-tip="issues this request and the ones above it that feed it, and shows what came back — nothing is graded and nothing is kept. The assertions under it are read by run, next door.">
-                      {sending ? 'sending…' : `send — ${prefix.requests.length} request${prefix.requests.length === 1 ? '' : 's'}`}
-                    </button>
+                {sendPrefix !== null && onSend !== null ? (
+                  <div className="prefix" data-prefix={sendPrefix.requests.length}>
+                    <div className="prefix-buttons">
+                      <SendButtons prefix={prefix} prefixAll={prefixAll} onSend={onSend} sending={sending} busy={busy} compact={false} />
+                    </div>
                     <p className="muted">
                       nothing has run this request. Send fires these for real, in this order, against the env the strip names — the last one
                       is the request above. <strong>It does not check the assertions</strong>: it shows you what came back. Run the test from
                       the Run tab to grade it.
                     </p>
                     <ol className="prefix-list">
-                      {prefix.requests.map((r, i) => (
+                      {sendPrefix.requests.map((r, i) => (
                         <li key={i} data-prefix-request={i}>
                           <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span> <code>{r.path}</code> <span className="muted">{r.where}</span>
                         </li>
@@ -1324,17 +1647,81 @@ export function ComposePane(props: ComposePaneProps) {
               editor so ticking a value writes into the Assert tab directly above it, which makes
               Assert the tab whose workflow needs a send most — and a control that appears and
               vanishes as the tab changes is the flicker the three regions were built to remove. */}
-          {rowRan?.response && prefix !== null && onSend !== null ? (
+          {shown?.response && sendPrefix !== null && onSend !== null ? (
             <div className="editor-send" data-compose-send-row>
-              <button className="run" onClick={onSend} disabled={sending || busy} data-compose-send data-tip="issues this request and the ones above it that feed it, and shows what came back — nothing is graded and nothing is kept. The assertions under it are read by run, next door.">
-                {sending ? 'sending…' : `send — ${prefix.requests.length} request${prefix.requests.length === 1 ? '' : 's'}`}
-              </button>
-              <span className="muted">{prefix.requests.map((r) => `${r.method} ${r.path}`).join(' → ')} — no assertions checked</span>
+              <SendButtons prefix={prefix} prefixAll={prefixAll} onSend={onSend} sending={sending} busy={busy} compact />
+              <span className="muted">{sendPrefix.requests.map((r) => `${r.method} ${r.path}`).join(' → ')} — no assertions checked</span>
             </div>
           ) : null}
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * **The send controls** — `M225` `A` (`D1215`).
+ *
+ * Two presses, and the address chooses which are offered. `send this` is `D1075`'s send verbatim:
+ * the prefix up to the request the reader is pointing at, because four requests in five read a
+ * binding made earlier and cannot run alone. `send all` issues the declaration's every request,
+ * in order, hooks first — one iteration, the unit a workload multiplies.
+ *
+ * **Neither is a run**, and the tips say so rather than leaving it to be inferred: both drop the
+ * workload and the thresholds (`D1211`) and strip the assertions (`D1119`). ▶ is the run and it
+ * states its price (`D1212`).
+ *
+ * **`send all` is suppressed when it would fire exactly what `send this` fires**, which is every
+ * one-request test and the last request of every other — the ordinary path must not grow a
+ * control for a press that is already on screen. (`D1217` says the same thing about the strip;
+ * this is that rule applied one region up. Recorded as an amendment to `D1215`, whose text offers
+ * both forms at a request address unconditionally.)
+ */
+function SendButtons(props: {
+  readonly prefix: Prefix | null;
+  readonly prefixAll: Prefix | null;
+  readonly onSend: (form: SendForm) => void;
+  readonly sending: boolean;
+  readonly busy: boolean;
+  readonly compact: boolean;
+}) {
+  const { prefix, prefixAll, onSend, sending, busy, compact } = props;
+  /**
+   * **The comparison is the REQUESTS the two presses issue, not where they cut.**
+   *
+   * `upTo` was the first draft's test and the run caught it: `send all` runs to the end of the
+   * body while `send this` stops at the request, so on a one-request test whose last line is an
+   * `expect` the two cuts differ by one step and issue exactly the same request. Two buttons, one
+   * press. The ordinary path must not grow a control (`D1217`'s rule, one region up).
+   */
+  const both = prefix !== null && prefixAll !== null && prefixAll.lines.length > prefix.lines.length;
+  const offered: { form: SendForm; p: Prefix }[] = [];
+  if (prefix !== null) offered.push({ form: 'this', p: prefix });
+  if (prefixAll !== null && (both || prefix === null)) offered.push({ form: 'all', p: prefixAll });
+  if (offered.length === 0) return null;
+  return (
+    <>
+      {offered.map(({ form, p }) => {
+        const n = p.requests.length;
+        const name = offered.length === 1 && form === 'this' ? 'send' : `send ${form}`;
+        return (
+          <button
+            key={form}
+            className="run"
+            onClick={() => onSend(form)}
+            disabled={sending || busy}
+            data-compose-send={form}
+            data-tip={
+              form === 'this'
+                ? 'issues this request and the ones above it that feed it, and shows what came back — nothing is graded and nothing is kept. The assertions under it are read by run, next door.'
+                : 'issues every request in this test once, in order — one iteration, which is what a single virtual user does. Nothing is graded and nothing is kept, and the workload and the thresholds are dropped: ▶ next door is the run.'
+            }
+          >
+            {sending ? 'sending…' : compact ? `${name} · ${n}` : `${name} — ${n} request${n === 1 ? '' : 's'}`}
+          </button>
+        );
+      })}
+    </>
   );
 }
 

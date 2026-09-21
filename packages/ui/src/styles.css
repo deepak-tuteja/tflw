@@ -217,11 +217,55 @@ input[type='checkbox'], input[type='radio'] { all: revert; flex: none; accent-co
 .col-grip {
   cursor: col-resize; background: transparent; border: 0; padding: 0;
   /* Invisible at rest and only as wide as the column: a permanent vertical rule between two panes
-     is one more line on a page that already has a border here. */
-  border-left: var(--border) solid transparent;
+     is one more line on a page that already has a border here.
+
+     **AMENDED BY `M223` `C` (`D1197`), IN PLACE, BECAUSE IT WAS RIGHT ABOUT THE INK AND WRONG
+     ABOUT THE TRADE.** What it bought was measured: at rest this element computed to
+     `rgba(0, 0, 0, 0)` — wholly transparent — so the control `D1135` calls *the reader's own
+     width* could only be found by sweeping the pointer along the seam. The user's own report is
+     the falsification: they asked for the middle separation to be made resizable, and it had been
+     for five days. A permanent RULE is still refused; what is drawn instead is a short centred
+     handle, which is a grab point rather than a line, and the note's own objection — *one more
+     line on a page that already has a border here* — does not reach it. */
+  position: relative;
 }
-.col-grip:hover, .col-grip.dragging, .col-grip:focus-visible { background: var(--accent); outline: none; }
-.col-grip:focus-visible { border-left-color: var(--accent); }
+/* **`M223` `E` (`D1199`) — the same grip lying down.** `Grip` picks the class off `spec.axis`, so
+   this is a cursor and a handle rotated ninety degrees and nothing else: same drag, same clamp,
+   same storage, same keyboard. A second implementation would have been a second place for a clamp
+   to be wrong in, which is the argument `D1135` generalised this component on. */
+.row-grip { cursor: row-resize; background: transparent; border: 0; padding: 0; position: relative; flex: none; height: 6px; }
+
+/* One glyph, three dividers, three states (`D1197`, `D1199`). `--muted` measures **4.34:1** on the
+   panel against `--line`'s **1.20:1**, which is the whole difference between a control and a seam. */
+.col-grip::before, .row-grip::before, .split::before {
+  content: ''; position: absolute; background: var(--muted); border-radius: 2px; pointer-events: none;
+}
+.col-grip::before { top: 50%; left: 50%; width: 2px; height: 26px; transform: translate(-50%, -50%); }
+.row-grip::before { left: 50%; top: 50%; width: 26px; height: 2px; transform: translate(-50%, -50%); }
+.col-grip:hover::before, .col-grip.dragging::before, .col-grip:focus-visible::before,
+.row-grip:hover::before, .row-grip.dragging::before, .row-grip:focus-visible::before { background: var(--accent); }
+.col-grip:hover, .col-grip.dragging, .col-grip:focus-visible,
+.row-grip:hover, .row-grip.dragging, .row-grip:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); outline: none; }
+.col-grip:focus-visible::before { height: 100%; }
+.row-grip:focus-visible::before { width: 100%; }
+body:has(.row-grip.dragging) { cursor: row-resize; user-select: none; }
+
+/**
+ * **A drag dies at the edge of an iframe, and this is the only thing that stops it** — `M223` `E`.
+ *
+ * Measured on the live page with a real trace: a 300 px drag on the playback grip moved the frame
+ * **90 px** and stopped — exactly the distance from the grip to the frame's own top edge. Every
+ * grip listens for `pointermove` on the WINDOW precisely because a pointer leaving a 6 px strip is
+ * the normal case, and that reasoning is right up to a same-origin `<iframe>`: from there on the
+ * events belong to the frame's document and the page never hears another one. The handler is not
+ * wrong and no amount of capture fixes it — the pointer has to stop being over the frame at all.
+ *
+ * `.split` is in this list too. Its drag reads an absolute pointer position rather than a delta,
+ * so it fails the same way, and only because the trace is usually far below it has nobody seen it.
+ */
+body:has(.col-grip.dragging) .stage-frame,
+body:has(.row-grip.dragging) .stage-frame,
+body:has(.split.dragging) .stage-frame { pointer-events: none; }
 /* While a drag is live the pointer owns the window, so nothing under it should select or receive a
    hover — without this the file tree highlights row by row as the pane is widened. */
 body:has(.col-grip.dragging) { cursor: col-resize; user-select: none; }
@@ -649,6 +693,16 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .status-code { font-family: var(--mono); font-weight: 600; }
 .status-code.pass { color: var(--pass); }
 .status-code.warn { color: var(--warn); }
+/* **`M225` `B` (`D1218`) — the third state a sequence row can be in.**
+   *Selected* is the gutter's accent rail and *ran* is this badge; *its response is the one
+   showing* is neither, and it is drawn by filling the badge that already exists rather than by
+   adding geometry the gutter has no room for. The outline is what makes the fill legible as a
+   change of state and not as a second colour — measured in `ui-appearance.test.ts` rather than
+   assumed, because `M223` `G` is this project's record of a token that named a state being spent
+   as a tone. */
+.seq-row [data-seq-status] { border: 1px solid; border-radius: 3px; padding: 0 3px; }
+.seq-row [data-seq-status][data-seq-showing='yes'].pass { background: var(--pass); color: var(--bg); }
+.seq-row [data-seq-status][data-seq-showing='yes'].warn { background: var(--warn); color: var(--bg); }
 .ticks { list-style: none; margin: calc(var(--unit) * 1.5) 0 0; padding: 0; display: grid; gap: calc(var(--unit) * 0.5); max-height: 30vh; overflow: auto; }
 .tick label { display: flex; align-items: center; gap: calc(var(--unit) * 1); cursor: pointer; }
 .tick-path { color: var(--muted); }
@@ -672,6 +726,47 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 /* The plot is the preview, so it gets the space the `<pre>` had and none of its scrollbars. */
 .workload-plot { margin-top: calc(var(--unit) * 1.5); }
 .workload-plot p { margin: calc(var(--unit) * 0.5) 0 0; }
+
+/* **The workload, as a band clause** — `M224` `B`/`G` (`D1205`, `D1208`). It unfolds under its own
+   row, inside `.band-facts`, the way `with each`'s table does; the row above it is the fact and
+   this is the control. The grid's natural size is 248x205 and the editor region is content-sized
+   with a measured floor since `D1195`, so it grows to hold it rather than clipping it. */
+.workload-edit { grid-column: 1 / -1; width: 100%; display: grid; gap: calc(var(--unit) * 0.75); margin-top: calc(var(--unit) * 0.5); }
+.workload-edit .row { display: flex; align-items: center; gap: calc(var(--unit) * 1.5); flex-wrap: wrap; }
+/* The field's own word takes `.seq-kind`'s ink rather than a second spelling of it — `M223` `G`
+   measured that declaration at **9.68:1** and made it one declaration for what is now a fourth
+   surface. `--muted` is the `:disabled` token and is not available to say *quieter*. */
+.workload-edit label.not { display: inline-flex; align-items: center; gap: 4px; }
+/* **The sentence** — `M225` `D` (`D1220`). Two lines at the composer's width, and `D1223` is why
+   the size is stated here rather than inherited: region 1 and region 2 are flex-sized against one
+   column, so a line added up here is a line taken off the response body down there. */
+.workload-says { margin: 0; font-size: 11px; line-height: 1.45; }
+/* `M225` `E` (`D1221`) — what it DID, under what it IS. The inconclusive case is the one worth
+   the line, so it is the one that is not grey. */
+.workload-did { margin: 0; font-size: 11px; line-height: 1.45; }
+.workload-did[data-workload-did='inconclusive'] { color: var(--warn); }
+.workload-edit input { max-width: 90px; }
+
+/* `M224` `C` (`D1209`) — region 2's two tenants on a workload-bearing declaration. A segment and
+   not a tab strip: the region already scrolls inside itself, and this names which of two things is
+   in it rather than which page you are on. */
+.seg { display: flex; gap: 2px; margin-bottom: calc(var(--unit) * 0.75); }
+.seg button { font-size: 12px; padding: 2px 10px; }
+.seg .seg-on { color: var(--accent); border-color: var(--accent); }
+.plan-panel { margin-top: 0; }
+
+/* **`hidden` MEANS HIDDEN** — `M224` `G` (`D1214`).
+
+   `.shape-grid` was written `hidden={mode === 'existing' && !alsoWorkload}` and was **fully visible
+   and interactive**: measured live, 29 controls in a block declaring itself absent, about twenty of
+   them unable to write anything because the checkbox that would arm them was disabled. The
+   attribute lost on specificity to `.shape-grid { display: grid }`, and there was no `[hidden]`
+   rule anywhere in this file.
+
+   The attribute is the page's way of saying *not now*, and a component's own `display` must not
+   outrank it. One rule, written once, because the next instance will not be found by measurement
+   either — nothing about a `hidden` element that renders looks wrong in the source. */
+[hidden] { display: none !important; }
 
 /* `M213` `S4` — `pick` beside the locator it fixes (`D1106`). The suggestions are buttons in the
    row rather than a panel, because one click on a page can be described several ways and choosing
@@ -785,6 +880,8 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
  * against which env. */
 .prefix { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; justify-items: start; }
 .prefix-list { list-style: decimal; margin: 0; padding-left: 22px; font-size: 12px; display: grid; gap: 2px; }
+/* `M225` `A` — the two presses sit on one line, and wrap rather than clip on a narrow pane. */
+.prefix-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .prefix-list code { font-size: 12px; }
 /* A verdict sits at the end of the row it belongs to and says the run's own sentence.
  * **`.verdict` was taken** — the report pane has used it since `M172` for a whole run's outcome,
@@ -854,8 +951,43 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 
 /* The shell stops being a scroll container for this one door and tab, so the regions below can own
    their own overflow. Every other door and every other tab keeps `.main` exactly as it was. */
-.main-fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: calc(var(--unit) * 2); }
-.main-fill > .doorpane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* **`M223` `A` (`D1193`) — the authoring grid claims the window; the stage takes what it needs.**
+
+   This was `overflow: hidden` with `flex: 1; min-height: 0` on the pane, which held `D1110` (no
+   vertical overflow at any height) by crushing everything into the window. That is right while the
+   stage is a bar and wrong the moment a trace lands: the viewer has a measured **606 px floor**
+   (`M221`) and one squeezed into what is left over shows a timeline and no snapshot.
+
+   So the shape is stated once instead of switched on state. The pane's flex-basis is **0**, not
+   `auto` — with `auto` a thirteen-request sequence contributes its own content height to the
+   column and the page scrolls on a file that fits perfectly well, which is exactly the gate
+   `D1110` is held by. A basis of 0 makes the pane take *what is left*, and its `min-height` is the
+   floor it will not go under. The stage is `flex: none`, so it is a bar before a run (`D1194`) and
+   its own height once there is a trace in it — and when that pushes past the window, `overflow:
+   auto` means the page scrolls **to the viewer**, which is what `M221` built and what `D1193`
+   means by *takes what it needs and no more*. */
+.main-fill { display: flex; flex-direction: column; overflow: auto; padding-bottom: calc(var(--unit) * 2); }
+.main-fill > .doorpane { display: flex; flex-direction: column; flex: 1 0 auto; min-height: 0; }
+.main-fill > .doorpane > .compose-pane { flex: 1 1 0; min-height: 320px; }
+.main-fill > .doorpane > .stage { flex: none; }
+
+/* **`M223` `E` (`D1199`) — once the reader has set a playback height, the two regions share the
+   window instead of queueing down a scroll.**
+
+   The default above is `M221`'s and stays it: the frame keeps its 620 px floor, the pane keeps its
+   320, and at 900 px that is 994 px of want, so the page scrolls to the viewer. The user's own
+   report is what that costs — with a trace up you cannot see the lines you recorded and the
+   playback of them at the same time, at any size. A drag says what the share is, and from then on
+   the frame is sized rather than floored, the section stops being content-sized, and the pane
+   takes what is left down to its own floor.
+
+   **It is ONE rule, and the first draft was three.** The other two — `overflow: hidden` on the
+   doorpane and a shrinkable `.stage` — were both measured wrong on the live page: the pane is
+   already `flex: 1 1 0` against a doorpane that grows to fill, so it takes the remainder on its
+   own the moment the frame stops demanding 620, and the two extra rules only removed the scroll
+   that catches a frame taller than the window. Dropping the frame's floor is the whole change;
+   everything else was already arranged to do this. */
+.main-fill > .doorpane[data-stage-fit]:not([data-stage-fit="auto"]) .stage-frame { height: var(--stage-h); min-height: 0; flex: none; }
 
 .compose-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: calc(var(--unit) * 1.2); }
 .compose-pane.reading { padding: calc(var(--unit) * 2) 0; }
@@ -877,10 +1009,32 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .seq-group { list-style: none; }
 /* **A session is a group with a page at its head** — `M219` `B` (`D1160`). It is marked rather
    than merely indented because the statements under it are *against that page*, and a reader who
-   cannot tell where one page ends and the next begins is reading the sequence wrong. The rule is
-   the same device `.seq-row.on` uses, at rest weight: a hairline down the left of everything the
-   session owns. */
-.seq-group.session > .seq { border-left: var(--border) solid color-mix(in srgb, var(--accent) 34%, var(--line)); margin-left: calc(var(--unit) * 0.7); padding-left: calc(var(--unit) * 0.7); }
+   cannot tell where one page ends and the next begins is reading the sequence wrong.
+
+   **This note used to end *the rule is the same device `.seq-row.on` uses, at rest weight*, and
+   that sentence is what `M223` `F` came back for** (`D1200`). It was true and it was the defect:
+   measured at 1440x900 with a row inside a session selected, this rail sits at x 357.1 and
+   `.seq-row.on`'s 2 px inset mark at x 363 — **4.9 px apart in an 18 px gutter, both accent-hued**
+   — so two unrelated facts read as one stripe that changes brightness. In this gutter the accent
+   is the selection's alone.
+
+   **The mix keeps the luminance and drops the hue, which is not the same as going quiet.**
+   `.seq-group.scoped` below uses `dashed var(--line)` and matching it looks tidy, but `--line`
+   measures **1.20:1** on `--panel` against this rail's **2.73:1**: a 1 px hairline at 1.2:1 is an
+   absent mark, and that repair would have removed the collision by deleting one of the two things
+   colliding. `--muted` at 65% computes to **2.77:1**, hue-neutral, in tokens so it follows all
+   four themes. The head's keyword below keeps the accent — it is 21 px clear of the gutter, in the
+   text column, where no other accent lives.
+
+   **`M223` `G` widened the selector and changed nothing else about this rule** (`D1204`). It read
+   `.seq-group.session > .seq`, so the SESSION group had a rail and the REQUEST group never did —
+   on the API door an `expect` was held to its request by a 10 px indent and nothing else, while
+   the identical statement under an `open` had a rail beside it. `.attached` is the class both
+   groups give their body, so one selector serves both and no door is named (`D1198`). The indent
+   does not move: a request group's body already took `calc(var(--unit) * 1.4)` from `.seq .seq`
+   above, and `0.7 + 0.7` is the same 9.8 px — what lands is the rail and the 1 px it stands in. A
+   request inside a session draws a rail inside a rail, which is what the nesting is. */
+.seq-group > .seq.attached { border-left: var(--border) solid color-mix(in srgb, var(--muted) 65%, var(--line)); margin-left: calc(var(--unit) * 0.7); padding-left: calc(var(--unit) * 0.7); }
 .seq-group.session > .seq-row > .seq-pick .seq-kind { color: var(--accent); }
 /* **A scope, drawn on the row it scopes** — `M219` `D` (`D1163`). It is a chip and not part of the
    statement's text because it is a different fact: `within list "Backordered items"` says *where*,
@@ -931,8 +1085,48 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 /* One line high, always. A row that wraps is a list that stops being scannable at the third
    entry, and the full text is on the row's `title` and in the editor next door. */
 .seq-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; font-family: var(--mono); font-size: 12px; }
-.seq-kind { color: var(--muted); font-size: 11px; text-transform: var(--label-transform); letter-spacing: var(--label-spacing); flex: none; }
-.seq-row.under .seq-text { color: var(--muted); }
+/* **A step of your test was painted the disabled colour, and that is not a figure of speech** —
+   `M223` `G` (`D1202`). `button:disabled` at `:172` and `input:disabled` at `:180` are
+   `color: var(--muted)`, and so were this keyword and `.seq-row.under .seq-text` below it: one
+   token said *greyed out* and *this is a step of your test* at once, and the step lost. Measured on
+   the live pane at 1440x900, a step's argument read **4.34:1** — the only body text on this column
+   under the 4.5:1 AA floor for 12 px — while the head three pixels above it read **12.91:1**.
+
+   The ink moves for every `.seq-kind` and not just the ones in this column, deliberately: `M216`
+   put this same class on three surfaces (here, `.outline-row` in the sidebar, `.index-rows` in
+   Source) and wrote down why — *a fourth spelling of the same idea is how they drift apart*. A
+   census on the live page says 7 here, 3 in the sidebar, 3 in the index, every one of the six
+   outside this column the word `test` beside an `--fg` name. One declaration moves all three to
+   **9.68:1**, and the name beside it still leads at 12.91. */
+.seq-kind { color: color-mix(in srgb, var(--fg) 70%, var(--muted)); font-size: 11px; text-transform: var(--label-transform); letter-spacing: var(--label-spacing); flex: none; }
+/* **The keyword says *label* by SHAPE, so nothing has to be dimmed to say it** (`D1203`). The chip
+   is scoped to `.under` on purpose and that scope IS its meaning: *a step's keyword*. Only this
+   column has step rows, so the class still renders one way everywhere else it appears and `M216`'s
+   rule holds. Put it on the declaration row and the chip means *any keyword*, at which point the
+   sidebar's `test` and the index's `test` are the same thing drawn two ways — and `M217` measured
+   5 of 5 outline names already ellipsised at 182 px, which is where a chip would actually bite.
+
+   **The ground is a LIFT, not a colour.** `--panel2` is the obvious ground and is wrong twice: it
+   measures **1.04:1** against `--panel` here — a rectangle nobody can see — and it is *lighter*
+   than the panel in one of the four themes and darker in the other three, so one rule would draw a
+   raised tile in Terminal and a recessed hole in the rest. An alpha ground composites over whatever
+   is behind it, which is what holds it steady when the row is selected: measured **1.46:1 at rest
+   and 1.17:1 on `.seq-row.on`** with an opaque ground, against **1.462 and 1.488** with this one.
+   `.seq-scope` above is the same device, already in this file.
+
+   **It spends 2 px of `.seq-text`, and the first estimate was 14.** Six candidate stylesheets swept
+   against the running DOM: `padding: 1px 5px` spends **10 px** and moves the ellipsised count *not
+   at all* (API 2 of 6, BROWSER 3 of 4, before and after), and the negative margin spends the chip's
+   ground into the gap `.seq-pick` already has. `0.57` and `0.43` of `--unit` net **2 px** while
+   still drawing 8 px wider than the bare word, and stay unit-relative so the clearance to the line
+   number is the same fraction of that gap in all four themes. */
+.seq-row.under .seq-kind {
+  background: color-mix(in srgb, var(--muted) 34%, transparent);
+  padding: 1px calc(var(--unit) * 0.57); margin-inline: calc(var(--unit) * -0.43);
+  border-radius: var(--ctl-radius);
+}
+/* `.seq-row.under .seq-text { color: var(--muted); }` stood here, and its REMOVAL is `D1202`: a
+   step's own words now inherit `--fg` from `body` like every other row's, at **12.91:1**. */
 
 /* The `✕` (`D1117`). It is never disabled: it is pressed, and if something is holding the thing it
    answers on the row. A disabled control that does not say why is the pattern this round removes. */
@@ -970,7 +1164,32 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .explorer-new { margin-top: calc(var(--unit) * 1.5); padding-top: calc(var(--unit) * 1.2); border-top: 1px solid var(--line); }
 
 /* ── region 3: the editor, and the response under it (`D1113`, `D1116`) ────────────────────── */
-.editor-col { display: grid; min-height: 0; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
+/* **`M223` `B` (`D1195`, `D1198`) — the editor track is what the editor holds.**
+
+   It was `<n>% 6px 1fr`, set inline from a remembered fraction. A fraction hands the editor a
+   share of whatever the column has, which on the BROWSER door meant **48 px of slack above a pane
+   clipping by 27** — simultaneously, with 22 px spare — and on the API door **208 px of slack**
+   under an `expect`, wasted in silence. One rule for both, because `.editor-col` is one component
+   and a `door` conditional would be a second implementation of the same clamp (`D1198`).
+
+   `minmax(0, auto)`: `auto` is the editor's max-content, `0` is what lets the grid shrink it when
+   the column cannot afford that — and `.editor` scrolls inside itself, so shrinking it clips
+   nothing. `minmax(112px, 1fr)`: **112 px is measured**, not chosen — the height the BROWSER
+   door's empty session panel needs to draw its button and its sentence whole (`ComposePane`'s
+   `LOWER_MIN` states the same number for the drag). The lower pane is never clipped by an editor
+   that does not want the room. */
+.editor-col { display: grid; grid-template-rows: minmax(0, auto) 6px minmax(112px, 1fr); min-height: 0; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
+/* **`M225` `G` (`D1223`) — region 2's floor is what region 2 HOLDS, and a response is not a
+   session panel.** `M223`'s 112 px was measured on the BROWSER door's empty session panel and was
+   right for it. Measured again at 1440x900 with this round's strip in the box: the seg nav, the
+   strip and the response's own header fill **all 112 px and leave 0 px of the body visible** —
+   a panel that answers a question by showing none of the answer. 240 px is that chrome plus
+   `D1223`'s stated 120 px floor, rounded up, and it is claimed **only when a response is in the
+   box**: an empty region 2 keeps its 112 and the composer keeps its full content height, which is
+   `D1195`'s own rule (the track is sized by what it holds) applied to the other track. The cost is
+   stated rather than discovered: with a response showing, the composer scrolls inside `.editor`
+   at this viewport. It can — `overflow: auto` — and the response could not. */
+.editor-col[data-editor-response='yes'] { grid-template-rows: minmax(0, auto) 6px minmax(240px, 1fr); }
 .editor { overflow: auto; min-height: 0; padding: calc(var(--unit) * 1.6) calc(var(--unit) * 2); }
 .editor-body { display: flex; flex-direction: column; gap: calc(var(--unit) * 1.2); }
 .editor-head { display: flex; align-items: center; gap: calc(var(--unit) * 1); flex-wrap: wrap; }
@@ -1006,10 +1225,28 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .assert-rare { display: flex; align-items: center; gap: calc(var(--unit) * 1); flex-wrap: wrap; margin-left: calc(var(--unit) * 3); font-size: 12px; }
 
 /* The divider (`D1116`) — a real control, so it takes focus and the arrow keys move it. */
-.split { background: var(--line); cursor: row-resize; border: 0; }
-.split:hover, .split:focus-visible { background: var(--accent); outline: none; }
+/* `M223` `C` (`D1197`) — the horizontal divider's twin of the rule above. This one was never
+   invisible; it was painted `var(--line)`, i.e. **exactly like every other border on the page**
+   (1.20:1), which is why the user read it as one. The handle is what says *I move*. */
+.split { background: var(--line); cursor: row-resize; border: 0; position: relative; }
+.split::before { left: 50%; top: 50%; width: 26px; height: 2px; transform: translate(-50%, -50%); }
+.split:hover::before, .split:focus-visible::before { background: var(--accent); }
+.split:hover, .split:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); outline: none; }
+.split:focus-visible::before { width: 100%; }
 .responsebox { overflow: auto; min-height: 0; padding: calc(var(--unit) * 1.4) calc(var(--unit) * 2); border-top: 1px solid var(--line); }
 .response-none { font-size: 12px; }
+/* **The strip** — `M225` `B` (`D1217`). One entry per request the press issued, drawn only when
+   there was more than one. It is a list of presses and not a navigation: choosing an entry moves
+   what is in the box below and moves nothing in region 1, which is what keeps the composer on
+   screen while a LOAD test's endpoints are checked one after another. */
+.sendstrip { display: grid; gap: calc(var(--unit) * 0.6); margin-bottom: calc(var(--unit) * 1.2); }
+.sendstrip > header { font-size: 11px; }
+.sendstrip ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: calc(var(--unit) * 0.6); }
+.sendstrip button { font: inherit; font-size: 11px; display: inline-flex; align-items: baseline; gap: calc(var(--unit) * 0.6); padding: 2px calc(var(--unit) * 0.9); border: 1px solid var(--line); border-radius: 4px; background: var(--panel2); color: inherit; cursor: pointer; }
+.sendstrip button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.sendstrip button code { font-size: 11px; }
+/* `M225` `F` (`D1222`) — the plan segment's own two sentences, under the plot they explain. */
+.plan-prose { margin: calc(var(--unit) * 1) 0 0; font-size: 11px; line-height: 1.45; }
 .editor-send { display: flex; align-items: center; gap: calc(var(--unit) * 1.2); padding: calc(var(--unit) * 0.8) calc(var(--unit) * 2); border-top: 1px solid var(--line); font-size: 11px; }
 .editor-send .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
@@ -1273,5 +1510,8 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .stage { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); margin-top: calc(var(--unit) * 2); }
 .stage-bar { display: flex; align-items: baseline; gap: calc(var(--unit) * 1.5); margin: 0; font-size: 12px; flex-wrap: wrap; }
 .stage-title { text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; color: var(--muted); }
-.stage-hint { margin: 0; padding: calc(var(--unit) * 3); border: var(--border) dashed var(--line); border-radius: var(--radius); max-width: 70ch; }
+/* `M223` `A` (`D1194`) — what `.stage-hint`'s dashed 105 px box became: a member of the bar. It
+   wraps at a narrow window rather than being clipped, and it is the reason the region is 18 px
+   before a run instead of 183. */
+.stage-line { min-width: 0; }
 .stage-frame { width: 100%; min-height: 620px; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }

@@ -61,12 +61,16 @@ test('`M222` `A`: the BROWSER door scaffolds `open`, with no `api` step anywhere
 // **Mutation: scaffold an `ApiStep` on BROWSER — `scaffold: 'api'` on that row reddens it.**
 test('`M222` `A`: a door scaffolds only statements it can edit — the defect `M219` `C` removed, stated as a rule', () => {
   /* **Qualified by `adds.length > 0`, and the qualifier is not a let-out.** `constructs` describes
-     what a door's Compose *sequence* can build; LOAD and SCAN draw no sequence (`adds: []`,
-     `D1103` — `App.tsx` hands them `LoadForm`/`ScanForm`), so their entry is not a claim about
-     anything on the screen and holding a scaffold to it would be holding it to a pane that is not
-     rendered. For every door that does draw one, the rule is absolute. */
+     what a door's Compose *sequence* can build; SCAN draws no sequence (`adds: []` — `App.tsx`
+     hands it `ScanForm`), so its entry is not a claim about anything on the screen and holding a
+     scaffold to it would be holding it to a pane that is not rendered. For every door that does
+     draw one, the rule is absolute.
+
+     **LOAD joined this set in `M224` `D`** (`D1210`/`D1211`), which is exactly what this gate was
+     written to notice: the set is read off the table rather than listed, so a door that starts
+     drawing a sequence is held to the rule from the moment its row says so. */
   const withASequence = DOORS.filter((d) => VOCABULARY[d].adds.length > 0);
-  assert.deepEqual(withASequence, ['api', 'browser'], 'the set of doors with a Compose sequence moved — this gate ranges over it');
+  assert.deepEqual(withASequence, ['api', 'browser', 'load'], 'the set of doors with a Compose sequence moved — this gate ranges over it');
   for (const door of withASequence) {
     const parsed = parseSource(INTO + wrote(door, { path: '/x' }));
     assert.equal(parsed.diagnostics.length, 0, `${door}'s scaffold does not parse`);
@@ -89,11 +93,10 @@ test('`M222` `A`: a door scaffolds only statements it can edit — the defect `M
 // have, so `?? []` made every file clean. There is also no `buildCrawl` and no crawl member on
 // `insertIntoSource`, so SCAN's own shape cannot go through the one construction path at all.
 //
-// So they keep `'api'`, which is what they wrote before this round, and this gate pins the two
-// facts that decided it rather than the preference. **Mutation: make either one scaffold nothing
-// — the `TF015` assertion below reddens.**
-test('`M222` `A`: LOAD and SCANS keep the API scaffold, because the language refuses the empty test `D1190` asked for', () => {
-  for (const door of ['load', 'scan'] as const) {
+// SCAN keeps `'api'`, and this gate pins the two facts that decided it rather than the preference.
+// **Mutation: make it scaffold nothing — the `TF015` assertion below reddens.**
+test('`M222` `A`: SCANS keeps the API scaffold, because the language refuses the empty test `D1190` asked for', () => {
+  for (const door of ['scan'] as const) {
     assert.equal(VOCABULARY[door].scaffold, 'api', `${door}'s scaffold moved — see \`Scaffold\`'s docblock for why it is 'api'`);
     assert.equal(wrote(door), '\ntest "a new one"\n  api GET /orders\n  expect status equals 200\n');
   }
@@ -125,4 +128,51 @@ test('`M222` `B`: an empty path refuses in the scaffold’s own words', () => {
     const out = newSource({ scaffold, name: '   ', method: 'GET', path: '/x', into: INTO });
     assert.equal(out.ok, false, `a nameless test was accepted with scaffold ${scaffold}`);
   }
+});
+
+// ---- `M224` `F` — the LOAD scaffold (`D1213`) -------------------------------------------------
+
+// GATE 14 — **four statements, and every one of them is accounted for.** `TF015` forces a body,
+// `TF033` forces a threshold, and the two values are measured rather than chosen: `ramp` is 35 of
+// the corpora's 85 workload lines (against the old form's `iterations` default), and
+// `error rate is less than 1%` is 61 of 88 threshold lines.
+// **Mutation: drop the threshold → `TF033`; drop the step → `TF015`.**
+test('`M224` `F`: the LOAD door scaffolds a workload, a threshold, a request and its assertion', () => {
+  assert.equal(VOCABULARY.load.scaffold, 'workload');
+  /* **The threshold lands at the foot of the body, which is `printTest`'s order and not the
+     plan's.** `D1213` wrote the four lines in the order `examples/storefront` uses — workload,
+     threshold, request, assertion — and both orders are format-stable, because `format` is not a
+     reprint and leaves an author's position alone. What a *printed* test says is the printer's,
+     and `D1087` means the scaffold goes through it rather than around it. Amended in place in the
+     plan; pinned here as bytes. */
+  assert.equal(
+    wrote('load', { path: '/' }),
+    '\ntest "a new one"\n  ramp to 5 users over 2s\n  api GET /\n  expect status equals 200\n  threshold error rate is less than 1%\n',
+  );
+  // It is a load test by derivation and not by anything anyone wrote down — the workload line is
+  // the whole of what makes it one (`D99`), and the tag list is empty.
+  const made = parseSource(INTO + wrote('load', { path: '/' })).program.tests.at(-1)!;
+  assert.ok(made.workload !== null, 'the scaffold writes no workload, so the LOAD door creates a functional test');
+  assert.equal(made.thresholds.length, 1, '`TF033` — a workload-bearing test with no threshold can never fail');
+  assert.deepEqual(made.tags, []);
+});
+
+// GATE 15 — **the bound it refuses.** About 25 corpus lines carry a `p95 duration` threshold, with
+// **eight distinct values** from 50 ms to 100 000 ms: it is the number only the author knows, and a
+// guessed one is `D1087`'s receipt again — the legacy form offering *"the orders endpoint answers"*
+// for whatever file happened to be open. **Mutation: add one → this reddens.**
+test('`M224` `F`: the LOAD scaffold writes no `duration` bound, because nobody can guess it', () => {
+  const text = wrote('load', { path: '/' });
+  assert.ok(!/duration/.test(text), `the scaffold guessed a duration bound: ${JSON.stringify(text)}`);
+  const made = parseSource(INTO + text).program.tests.at(-1)!;
+  assert.deepEqual(made.thresholds.map((t) => t.metric.kind), ['errorRate']);
+});
+
+// And the dialog's refusals are still the scaffold's own: a `'workload'` test issues a request, so
+// it asks for a path and says so in the same words `'api'` does. The control beside it is the
+// BROWSER refusal above, which names a page rather than a request.
+test('`M224` `F`: the LOAD scaffold refuses an empty path in the request’s words', () => {
+  const out = newSource({ scaffold: 'workload', name: 'n', method: 'GET', path: '  ', into: INTO });
+  assert.equal(out.ok, false);
+  assert.match((out as { reason: string }).reason, /request needs a path/);
 });

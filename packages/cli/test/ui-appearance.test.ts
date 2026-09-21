@@ -573,7 +573,14 @@ test('a door’s Compose is measured in every theme, because its height is theme
   // scrolls as one document, and *how many screens does this ask for* is still the right question
   // about it. Removing its bar because API's went would be dropping a live gate for a reason that
   // is not about the thing it gates.
-  const BAR: Record<string, number> = { browser: 1.5, load: 1.0, scan: 1.1 };
+  /* **LOAD LEFT THIS TABLE IN `M224` `D`** (`D1210`), for the same reason API left it in `M214`
+     `A1`: it renders `ComposePane` now, which is three regions that each scroll inside themselves,
+     and *how many screens does this ask for* is only a question you can ask of a document that
+     scrolls as one. Its 1.0 bar would still pass — `main-fill` pins `.main` to the window, so the
+     ratio is 1.0 by construction and the gate would be green whatever the pane did. It is
+     **replaced and not deleted**: the property test below now runs its three clauses on this door
+     as well, which is checkable on the thirteen-request file the bar never was. */
+  const BAR: Record<string, number> = { browser: 1.5, scan: 1.1 };
   const over: string[] = [];
   const table: string[] = [];
   for (const door of DOORS) {
@@ -622,7 +629,7 @@ test('a door’s Compose is measured in every theme, because its height is theme
  * Clause 3 is the denominator this file's other gates all carry, and it is what makes this
  * stronger than the bar rather than merely different: a bar passes when the pane renders nothing.
  */
-test('no region of API’s Compose overflows the window, on a thirteen-request file', async () => {
+test('no region of the Compose pane overflows the window, on a thirteen-request file, on either door that draws it', async () => {
   // Thirteen requests, each with two assertions and a capture between two of them — the shape the
   // corpus census found (2.49 requests per test, 101 interleaved statements, 81% of bindings read
   // downstream), at the size `D1086` measured.
@@ -643,8 +650,12 @@ test('no region of API’s Compose overflows the window, on a thirteen-request f
   try {
     const over: string[] = [];
     const table: string[] = [];
-    for (const theme of THEMES) {
-      await page.goto(`${baseUrl}#/api/compose/tests/thirteen.tflw`);
+    /* **Both doors that draw this pane, since `M224` `D`.** The file is functional and that is not
+       a problem on LOAD: `D1063` — the door is a count, never a filter — so the explorer lists
+       every file behind every door and this one opens there like any other. What is being held is
+       the layout, which is `vocabulary.ts`'s to differ about and not `ComposePane`'s. */
+    for (const [door, theme] of DOORS.filter((d) => d === 'api' || d === 'load').flatMap((d) => THEMES.map((t) => [d, t] as const))) {
+      await page.goto(`${baseUrl}#/${door}/compose/tests/thirteen.tflw`);
       await page.reload();
       await page.locator('[data-seq-col]').waitFor();
       // A file the parser only RECOVERED draws fewer rows than it has statements, and a height gate
@@ -676,22 +687,22 @@ test('no region of API’s Compose overflows the window, on a thirteen-request f
         };
       });
 
-      table.push(`${theme}: page ${seen.page} / window ${seen.window}, ${seen.rows} rows`);
+      table.push(`${door}/${theme}: page ${seen.page} / window ${seen.window}, ${seen.rows} rows`);
       // 1 px of slack, and no more: a sub-pixel layout rounds, a region hanging off the bottom does
       // not round to within a pixel of the fold.
-      if (seen.page > seen.window + 1) over.push(`${theme}: the document scrolls — ${seen.page}px in a ${seen.window}px window`);
+      if (seen.page > seen.window + 1) over.push(`${door}/${theme}: the document scrolls — ${seen.page}px in a ${seen.window}px window`);
       for (const [name, r] of [['sequence', seen.frame], ['editor', seen.editor], ['response', seen.response]] as const) {
         if (r === null) {
-          over.push(`${theme}: there is no ${name} region on the page at all`);
+          over.push(`${door}/${theme}: there is no ${name} region on the page at all`);
           continue;
         }
-        if (r.bottom > seen.window + 1) over.push(`${theme}: the ${name} region ends ${Math.round(r.bottom - seen.window)}px below the fold`);
+        if (r.bottom > seen.window + 1) over.push(`${door}/${theme}: the ${name} region ends ${Math.round(r.bottom - seen.window)}px below the fold`);
       }
       // Clause 3 — the denominator. Thirteen requests and the test's own row.
       assert.equal(seen.rows >= 14, true, `the gate is reading ${seen.rows} sequence rows, not a thirteen-request file`);
-      assert.equal(seen.seq !== null && seen.seq.scroll > seen.seq.client, true, `${theme}: the sequence column is not overflowing its own box, so clause 1 proves nothing`);
+      assert.equal(seen.seq !== null && seen.seq.scroll > seen.seq.client, true, `${door}/${theme}: the sequence column is not overflowing its own box, so clause 1 proves nothing`);
     }
-    assert.deepEqual(over, [], `a region of API's Compose runs off the window\n${table.join('\n')}`);
+    assert.deepEqual(over, [], `a region of the Compose pane runs off the window\n${table.join('\n')}`);
   } finally {
     await rm(wide, { force: true });
   }
