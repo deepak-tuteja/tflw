@@ -39,6 +39,13 @@ PLAN_*.md
 # are internal working notes — every row is an unfixed defect with a reproduction — and stay local.
 REVIEW_*.md
 
+# `UI_STRUCTURE.md` — the UI's lock document, written when the composer arc closed: what the page
+# is made of, which decision covers which surface, and the passes a review of it runs. It stays
+# local for the same reason the ledger above does, and for one of its own: its last section names
+# the open defect rows by id, so publishing it publishes the shape of an unfixed-defect list to a
+# public repository. The architecture half is reproducible from the tree; the id list is not.
+UI_STRUCTURE.md
+
 # M123 — `scripts/mutate.mjs`'s crash journal, for the case where there is no `.git` to put it in
 # (a tarball or a vendored copy; the normal location is `<git-dir>/tflw-mutate-journal.json`, which
 # cannot be committed at all). It holds the pre-mutation contents of a tracked source and exists
