@@ -449,6 +449,14 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .chart { margin: 0; min-width: 0; }
 .chart figcaption { font-size: 0.9rem; margin-bottom: 0.25rem; }
 .chart-host { width: 100%; }
+
+/* ── `M227` `A` (`D1230`) — a chart that is the region's height ────────────────────────────────
+   The host has to be a flex item whose height is *imposed* rather than grown, or `clientHeight`
+   would read back the plot uPlot just drew into it and the reading would be circular. `flex: 1 1
+   0` plus `min-height: 0` is what makes the measurement mean *what is available*. Only a
+   `height="fill"` chart opts in; the report's four keep the constant they have always had. */
+.chart[data-chart-fill] { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.chart[data-chart-fill] > .chart-host { flex: 1 1 0; min-height: 0; }
 .uplot { font-family: inherit; }
 .u-legend { font-size: 0.8rem; }
 /* `M213` `S1` — uPlot's vendored stylesheet carries three colours of its own, and every one of them
@@ -1228,7 +1236,7 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 }
 /* `D1228` — the floor is a property of what region 2 HOLDS, so it follows the region into the
    footer rather than staying behind on the column it used to live in. */
-.compose-pane-grid[data-compose-footer='yes'][data-compose-footer-response='yes'] { grid-template-rows: minmax(0, auto) 6px minmax(240px, 1fr) auto; }
+.compose-pane-grid[data-compose-footer='yes'][data-compose-footer-tall='yes'] { grid-template-rows: minmax(0, auto) 6px minmax(240px, 1fr) auto; }
 .compose-pane-grid[data-compose-footer='yes'] > .editor-col > .editor-send { grid-column: 1 / -1; grid-row: 4; border-top: 0; }
 .editor-body { display: flex; flex-direction: column; gap: calc(var(--unit) * 1.2); }
 .editor-head { display: flex; align-items: center; gap: calc(var(--unit) * 1); flex-wrap: wrap; }
@@ -1335,7 +1343,42 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .sendstrip button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .sendstrip button code { font-size: 11px; }
 /* `M225` `F` (`D1222`) — the plan segment's own two sentences, under the plot they explain. */
-.plan-prose { margin: calc(var(--unit) * 1) 0 0; font-size: 11px; line-height: 1.45; }
+/* ── `M227` `B` — the plan panel, and the footer's one voice ─────────────────────────────────
+   `D1231` — the picture left, the prose right. `M226` bought this panel 1042 px of width and
+   neither tenant could use it: a plot with a constant 180 px height went 4.0:1 -> 5.8:1, and the
+   prose ran ~90 characters to the line. Above 900 px the width is split; below it the page's own
+   breakpoint collapses this the same way it collapses `.app` and `.trace`, rather than inventing
+   a second one.
+
+   `D1232` — every explanatory line in region 2 is 12 px, which is the size `.seg button` and
+   `.response-none` already used. `.plan-prose` was 11 and the two notes inherited 14, so one
+   sentence written by one function rendered at two sizes depending on whether a chart happened
+   to be above it. Data keeps its own sizes: a response body, `pre.preview` and the headers table
+   are what the page SHOWS you, not what it SAYS. */
+.plan-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); gap: calc(var(--unit) * 2); align-items: stretch; min-height: 0; }
+.plan-figure { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* The figure is what imposes a height on a `height="fill"` chart (`D1230`), so its one child has
+   to be a flex item sized by the box rather than by its own content. */
+.plan-figure > .chart, .plan-figure > .share-bars { flex: 1 1 0; min-height: 0; }
+.plan-words { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); min-width: 0; max-width: 68ch; }
+.plan-words > p { margin: 0; }
+@media (max-width: 900px) { .plan-panel { grid-template-columns: minmax(0, 1fr); } }
+
+.plan-prose { margin: calc(var(--unit) * 1) 0 0; font-size: 12px; line-height: 1.45; }
+
+/* ── `M227` `C` (`D1234`) — an iteration plan draws its work ──────────────────────────────────
+   No time axis, so no chart: the bar's length is that user's share of the iterations, and the
+   dashed run past it is the sentence beside it drawn — the work is known and how long it takes
+   is the thing being measured. `.share-track` is the open edge; `.share-bar` is the share. */
+.share-bars { display: flex; flex-direction: column; gap: calc(var(--unit) * 0.5); min-height: 0; overflow: auto; }
+.share-bars > ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.share-bars > ol > li { display: flex; align-items: center; gap: calc(var(--unit) * 1); font-size: 12px; color: var(--muted); }
+.share-who { flex: none; min-width: 5.5em; font-family: var(--mono); }
+.share-track { flex: 1 1 auto; min-width: 0; height: 10px; border-radius: var(--ctl-radius); background-image: repeating-linear-gradient(to right, var(--line) 0 4px, transparent 4px 8px); background-position: left center; background-repeat: repeat-x; background-size: 100% 2px; }
+.share-bar { display: block; height: 10px; border-radius: var(--ctl-radius); background: var(--accent); min-width: 2px; }
+.share-n { flex: none; min-width: 2.5em; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.share-open-key { font-style: italic; }
+.share-bars .plan-prose { margin: 0; }
 .editor-send { display: flex; align-items: center; gap: calc(var(--unit) * 1.2); padding: calc(var(--unit) * 0.8) calc(var(--unit) * 2); border-top: 1px solid var(--line); font-size: 11px; }
 .editor-send .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 

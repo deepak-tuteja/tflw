@@ -575,6 +575,23 @@ test('the workload view: the shape, every stat, every threshold and every endpoi
   assert.deepEqual(await section.locator('[data-endpoint]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-endpoint'))), [...byP95].reverse());
 });
 
+// **The report's charts keep their constant height** — `M227` `A` (`D1230`).
+//
+// `height="fill"` is the plan panel's alone, and this is the gate that says so. The four charts
+// here live in a *scrolling report*, where "fill the region" has no meaning: there is no region,
+// there is a column of sections as long as the run was. A constant is the right contract for
+// them and the wrong one for a sized, resizable footer, which is the whole of `D1230`.
+//
+// It is taken on the shared report fixture rather than on a run, because a chart's height is a
+// property of how it was mounted and not of what it plotted.
+test('`M227` `A`: the report\'s charts are 180 px, and none of them opted into filling a region (`D1230`)', async () => {
+  await openReport('full');
+  const heights = await page.locator('[data-chart] canvas').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+  assert.ok(heights.length >= 4, `the report drew charts to measure (${heights.length})`);
+  assert.deepEqual([...new Set(heights)].sort(), [180], `every report chart keeps the constant: ${[...new Set(heights)].join(', ')}`);
+  assert.equal(await page.locator('[data-chart-fill]').count(), 0, 'and none of them carries the fill contract');
+});
+
 test('the charts are the report\'s timeline and histogram: painted, one point per second, and the legend reads the report\'s numbers under the cursor', async () => {
   const report = oracle.full!;
   const loads = workloads(report);
@@ -10308,6 +10325,255 @@ test('`M226` `A`: a workload declaration puts region 2 at the foot of the pane, 
     });
     assert.ok(keys.footer !== null, 'the drag wrote the footer layout\'s own height');
     assert.equal(keys.editor, null, 'and left the column layout\'s key alone — they are different quantities');
+  } finally {
+    await p.close();
+    await ui.close();
+    await new Promise<void>((resolve) => target.close(() => resolve()));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ── `M227` — the footer earns its height, and speaks with one voice ──────────────────────────
+//
+// `M226` moved region 2 to the foot of the pane and measured the move as costing the editor
+// nothing. It did not measure what the footer then HELD. Driving the served LOAD corpus at
+// 1440x900 found the consequence, on `rate-shapes.tflw` `L13`:
+//
+//   `.responsebox`  112 px        — the EMPTY floor
+//   `.plan-panel`   62 px of window for **312 px of content**
+//   **18 elements entirely below the footer's own bottom edge** — the x-axis, the legend, both
+//   sentences
+//
+// `D1223` gave region 2 two floors, 240 holding a response and 112 empty. A plan is a third
+// tenant and was never given a number, so it fell through to 112. `D1229` keys the floor on the
+// TENANT instead. Three more decisions follow from what the space is then used for: the plot is
+// the region's height rather than a constant (`D1230`), the panel is two columns so `M226`'s
+// width is spent rather than fought (`D1231`), the footer speaks at one size (`D1232`), the plan
+// is drawn from zero because its height is a quantity somebody declared (`D1233`), and an
+// iteration shape draws its work rather than sitting as one paragraph where every other shape has
+// a figure (`D1234`).
+//
+// **Taken on the API door**, on one file, across four workload shapes and a functional control —
+// `D1209`'s axis. On LOAD the door and the construct agree and every mutation that made this
+// door-granted would pass; here they disagree, which is the only place the claim is falsifiable.
+// That is `M223` `F`'s vacuity lesson.
+//
+// Every callback inside `page.evaluate` is passed INLINE. `tsx --keepNames` wraps a `const`-bound
+// arrow in `__name(...)`, which the browser has no definition for — `M222-01`, and this is its
+// fifth recurrence in this file's history.
+test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, and says it once', async () => {
+  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
+  const target = await fixtureServer.startFixtureServer(fixturePort);
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m227-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
+    /* One file, five declarations, on the API door. **`41 across 4` is deliberate**: it divides
+       11/10/10/10, so gate 10 can tell a picture that shows the remainder from one that rounds it
+       away. Four equal bars would have been green under both. */
+    await writeFile(
+      join(dir, 'm227.tflw'),
+      [
+        'test "a ramp"',                                  // L1
+        '  ramp to 8 users over 4s',
+        '  api GET /items',
+        '  expect status equals 200',
+        '  threshold error rate is less than 5%',
+        '',
+        'test "a steady hold"',                           // L7
+        '  hold 4 users for 2s',
+        '  api GET /items',
+        '  expect status equals 200',
+        '  threshold error rate is less than 5%',
+        '',
+        'test "work shared out"',                         // L13
+        '  run 41 iterations across 4 users',
+        '  api GET /items',
+        '  expect status equals 200',
+        '  threshold error rate is less than 5%',
+        '',
+        'test "work per user"',                           // L19
+        '  run 10 iterations per user across 4 users',
+        '  api GET /items',
+        '  expect status equals 200',
+        '  threshold error rate is less than 5%',
+        '',
+        'test "carries no workload"',                     // L25
+        '  api GET /items',
+        '  expect status equals 200',
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    /* One read of the whole footer. No `const`-bound arrow crosses into the page (`M222-01`), and
+       no DOM type name appears — `packages/cli/tsconfig.test.json` carries `types: ["node"]` and
+       no DOM lib, so every annotation here would be `TS2304`. Inference through the chains does
+       the work instead. */
+    const geom = async (): Promise<{
+      footer: string | null; tall: string | null; boxH: number; belowN: number; below: string[];
+      cols: number; proseSizes: string[]; canvasH: number; canvasW: number; axes: number;
+      shares: number[]; figW: number; wordsW: number;
+    }> =>
+      p.locator('.compose-pane-grid').evaluate((grid) => {
+        const win = grid.ownerDocument.defaultView!;
+        const box = grid.querySelector('.responsebox')!;
+        const r = box.getBoundingClientRect();
+        const panel = box.querySelector('.plan-panel');
+        const cv = box.querySelector('canvas');
+        const fig = box.querySelector('.plan-figure');
+        const words = box.querySelector('.plan-words');
+        /* **`bottom`, not `top`.** The first draft of this asked whether an element STARTED below
+           the edge, which is how the defect was found (18 elements wholly below it) and is blind
+           to the more common shape: something that starts inside the footer and ends past it. It
+           reported a clean zero on a build whose uPlot legend hung 18 px over — see `Chart.tsx`'s
+           `fit`. A clipping gate has to ask about the far edge. */
+        const below = [...box.querySelectorAll('*')].filter((el) => el.getBoundingClientRect().bottom > r.bottom + 1).map((el) => String(el.className || el.tagName));
+        let cols = 0;
+        if (panel !== null) cols = win.getComputedStyle(panel).gridTemplateColumns.trim().split(/\s+/).length;
+        return {
+          footer: grid.getAttribute('data-compose-footer'),
+          tall: grid.getAttribute('data-compose-footer-tall'),
+          boxH: Math.round(r.height),
+          belowN: below.length,
+          below: below.slice(0, 6),
+          cols,
+          /* `D1232` is about what the page SAYS, so the sample is the prose and the notes — a
+             response body and `pre.preview` are what it SHOWS and keep their own sizes. */
+          proseSizes: [...box.querySelectorAll('.plan-panel p, .response-none > p')].map((el) => win.getComputedStyle(el).fontSize),
+          canvasH: cv === null ? 0 : Math.round(cv.getBoundingClientRect().height),
+          canvasW: cv === null ? 0 : Math.round(cv.getBoundingClientRect().width),
+          axes: box.querySelectorAll('.u-axis').length,
+          shares: [...box.querySelectorAll('[data-share-count]')].map((el) => Number(el.getAttribute('data-share-count'))),
+          figW: fig === null ? 0 : Math.round(fig.getBoundingClientRect().width),
+          wordsW: words === null ? 0 : Math.round(words.getBoundingClientRect().width),
+        };
+      });
+
+    /** Where the drawn curve sits in its own canvas, as a fraction from the top. The stroke is the
+     *  only thing on this canvas — uPlot puts its axis values in the DOM — so the ink IS the
+     *  series. */
+    const ink = async (): Promise<{ top: number; bottom: number; rows: number }> =>
+      p.locator('.responsebox canvas').evaluate((cv) => {
+        const ctx = (cv as unknown as { getContext: (k: string) => { getImageData: (a: number, b: number, c: number, d: number) => { data: Uint8ClampedArray } } }).getContext('2d');
+        const w = (cv as unknown as { width: number }).width;
+        const h = (cv as unknown as { height: number }).height;
+        const d = ctx.getImageData(0, 0, w, h).data;
+        let minY = h;
+        let maxY = -1;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            if (d[i + 3]! < 8) continue;
+            if (Math.abs(d[i]! - d[0]!) + Math.abs(d[i + 1]! - d[1]!) + Math.abs(d[i + 2]! - d[2]!) < 24) continue;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+        return { top: minY / h, bottom: maxY / h, rows: maxY - minY + 1 };
+      });
+
+    const open = async (line: number, plan: string): Promise<void> => {
+      await p.goto(`${base}/#/api/compose/m227.tflw/L${line}`);
+      await p.locator('[data-compose-footer]').waitFor();
+      if (plan !== '') await p.locator(`[data-compose-plan="${plan}"]`).waitFor();
+      await p.waitForTimeout(250);
+    };
+
+    // ── GATE 1 — a plan-bearing footer opens at the tall floor, not the empty one ────────────
+    await open(1, 'users');
+    const ramp = await geom();
+    assert.equal(ramp.footer, 'yes', 'a workload declaration is in the footer layout (`D1225`)');
+    assert.equal(ramp.tall, 'yes', 'and the plan earns the tall floor (`D1229`)');
+    assert.ok(ramp.boxH >= 240, `the footer opens at the plan's floor, not the empty one — ${ramp.boxH} px, was 112`);
+
+    // ── GATE 2 — nothing in the plan panel is below the footer's own bottom edge ─────────────
+    /* This is the user's defect stated as an assertion. It measured **18** before the round: the
+       whole x-axis, the legend and both sentences, 250 px down a 62 px scroller. */
+    assert.equal(ramp.belowN, 0, `nothing hangs below the footer's edge — found ${ramp.belowN}: ${ramp.below.join(', ')}`);
+
+    // ── GATE 9a — the width is split, and the prose is the narrower half ─────────────────────
+    assert.equal(ramp.cols, 2, `the plan panel is two columns at 1440 (\`D1231\`) — got ${ramp.cols}`);
+    assert.ok(ramp.wordsW > 0 && ramp.wordsW < ramp.figW, `the prose column is the narrower one (${ramp.wordsW} against ${ramp.figW})`);
+    assert.ok(ramp.canvasW > 400 && ramp.canvasW < 900, `and the plot stops spanning the pane — ${ramp.canvasW} px, was 1042`);
+
+    // ── GATE 7 — every explanatory line in region 2 computes to 12 px ────────────────────────
+    assert.ok(ramp.proseSizes.length >= 2, `there are sentences to measure (${ramp.proseSizes.length})`);
+    assert.deepEqual([...new Set(ramp.proseSizes)], ['12px'], `one voice (\`D1232\`) — got ${[...new Set(ramp.proseSizes)].join(', ')}`);
+
+    // ── GATE 9b — and it collapses at the page's own breakpoint, not a second one ────────────
+    await p.setViewportSize({ width: 800, height: 900 });
+    await p.waitForTimeout(250);
+    assert.equal((await geom()).cols, 1, 'below 900 px the panel is one column, the same breakpoint `.app` and `.trace` already use');
+    await p.setViewportSize({ width: 1440, height: 900 });
+    await p.waitForTimeout(250);
+
+    // ── GATE 6 — a constant workload is drawn from zero ──────────────────────────────────────
+    /* `hold 4 users for 2s` measured **8 ink rows of 180 at y 71-78** before the round — a
+       hairline floating mid-panel against an axis reading about 3.9 to 4.1, which no amount of
+       height fixes. Against a zero baseline the plan's own value IS the maximum, so the line sits
+       near the top of its own plot. */
+    await open(7, 'users');
+    const hold = await ink();
+    assert.ok(hold.top < 0.25, `the hold's line sits against its maximum, so the axis starts at zero (\`D1233\`) — ${(hold.top * 100).toFixed(1)}% down, was 41%`);
+
+    // ── GATE 8 — the same sentence is the same size in both branches ─────────────────────────
+    const sizeOfProse = async (): Promise<string> =>
+      p.locator('[data-load-plot-prose]').first().evaluate((el) => el.ownerDocument.defaultView!.getComputedStyle(el).fontSize);
+    await open(1, 'users');
+    const rateSize = await sizeOfProse();
+    await open(13, 'no-clock');
+    const iterSize = await sizeOfProse();
+    assert.equal(rateSize, iterSize, `planProse() is one function and renders at one size — rate ${rateSize}, iterations ${iterSize} (was 11px against 14px)`);
+    assert.equal(iterSize, '12px');
+
+    // ── GATES 10 + 11 — an iteration shape draws its work, and it is not a chart ─────────────
+    const shared = await geom();
+    assert.deepEqual(shared.shares, [11, 10, 10, 10], `41 shared across 4 shows the remainder, not four equal bars (\`D1234\`) — got ${shared.shares.join('/')}`);
+    assert.equal(shared.canvasH, 0, 'it draws no canvas — there is no series and no axis to hang one on');
+    assert.equal(shared.axes, 0, 'and no time axis, which is the fact `plannedCurve` returns `null` for');
+    assert.equal(shared.cols, 2, 'and it enters the same two-column frame as every other shape');
+    assert.equal(shared.belowN, 0, 'with nothing below the footer\'s edge');
+
+    await open(19, 'no-clock');
+    assert.deepEqual((await geom()).shares, [10, 10, 10, 10], '`10 per user across 4` is four equal shares — the other half of the pair');
+
+    // ── GATE 2, THE UNMUTATED CONTROL — a functional declaration, clipping nothing ───────────
+    /* A scan that returns zero for the wrong reason is `M224`'s coin. Here region 2 has no plan
+       at all and must report zero for a different reason, which is what makes gate 2's zero mean
+       something. */
+    await open(25, '');
+    const plain = await geom();
+    assert.equal(plain.footer, 'no', 'a declaration with no workload is not in the footer layout at all (`D1225`)');
+    assert.equal(plain.belowN, 0, 'and clips nothing either — the control beside gate 2');
+
+    // ── GATE 3 — the EMPTY floor did not just go up ──────────────────────────────────────────
+    /* The floor follows the tenant, so a workload declaration showing its RESPONSE segment with
+       nothing sent is still the empty case. A mutation that made the floor unconditionally 240
+       passes every gate above and dies here. */
+    await open(1, 'users');
+    await p.locator('[data-compose-region2-tab="response"]').click();
+    await p.waitForTimeout(250);
+    const empty = await geom();
+    assert.equal(empty.tall, 'no', 'the response segment with nothing sent is the empty tenant (`D1229`)');
+    assert.ok(empty.boxH < 200, `so the footer is back on the short floor — ${empty.boxH} px`);
+
+    // ── GATE 4 — the plot is the region's height, and the drag is what says so ───────────────
+    await p.locator('[data-compose-region2-tab="plan"]').click();
+    await p.locator('[data-compose-plan="users"]').waitFor();
+    await p.waitForTimeout(250);
+    const before = (await geom()).canvasH;
+    const split = p.locator('.split');
+    const at = (await split.boundingBox())!;
+    await p.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(at.x + at.width / 2, at.y - 180, { steps: 10 });
+    await p.mouse.up();
+    await p.waitForTimeout(300);
+    const after = (await geom()).canvasH;
+    assert.ok(after > before + 100, `the plot grew into the height the reader dragged for (\`D1230\`) — ${before} to ${after}, a constant would have stayed put`);
   } finally {
     await p.close();
     await ui.close();
