@@ -105,6 +105,22 @@ export function ScanPanel({ authorization, matchers, onAuth, onConfig }: {
         {families.length === 1 ? ' — and that is what puts it behind SCANS.' : ' — and those are what put it behind SCANS.'}
       </p>
 
+      {/* **The env's half, said to be the env's** — `M228` `F` (`D1247`).
+          Everything below this line is identical for every declaration in the project, because
+          `TF060` is a per-env gate and the coverage table is `scanCoverage` over the env's
+          declarations. Only the claims line above it moves with the cursor. The user read the
+          whole panel as boilerplate for exactly that reason — *"i see this same text for all
+          tests"* — and the information was right; what was missing was the sentence saying which
+          half is about the env rather than about their test.
+
+          **A heading and not a fold.** The paragraph is what a reader who has never met `TF060`
+          needs, and `M207` `S5`'s measurement is that every project on this machine renders only
+          the healthy branch — folding it away by default would trade `D1076` for tidiness against
+          the one reader it is written for. */}
+      <h3 className="scan-env" data-compose-scan-env={authorization.envName}>
+        env <code>{authorization.envName}</code>
+      </h3>
+
       {/* **`M207` `S5`'s reason, IN BOTH STATES, and the wording is the form's moved verbatim.**
           Not a paraphrase, and the first draft of this panel made it one — which would have been
           the very loss `S5` was written to prevent, since its measurement is that all three

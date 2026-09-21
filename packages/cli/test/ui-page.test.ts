@@ -10956,10 +10956,15 @@ test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, sca
        simply on the other side of. BROWSER lost **278 px** the same way before `D1193` and LOAD
        **190** before `D1210`; this is the third and last occurrence, and it closes because the
        door joined the pane rather than because the predicate moved. */
+    /* **Through a locator, not `document`** — this package's tsconfig carries no `dom` lib, so a
+       bare `page.evaluate` closure has no `document` to typecheck against. Every other reading in
+       this file already goes through an element for that reason; this one did not, and `npm run
+       typecheck` is where that shows up rather than `npm test`, which is why it shipped in
+       `M228` `A`-`E`. */
     const box = async (): Promise<{ pane: number; main: number }> =>
-      fresh.evaluate(() => {
-        const pane = document.querySelector('.doorpane');
-        const main = document.querySelector('main');
+      fresh.locator('body').evaluate((body) => {
+        const pane = body.querySelector('.doorpane');
+        const main = body.querySelector('main');
         return {
           pane: pane === null ? 0 : Math.round(pane.getBoundingClientRect().bottom),
           main: main === null ? 0 : Math.round(main.getBoundingClientRect().bottom),
@@ -11209,6 +11214,263 @@ test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` 
     const onValue = await options(4);
     assert.equal(onValue.total, 23);
     assert.deepEqual(onValue.refused, [], `\`{value}\` greys out ${JSON.stringify(onValue.refused)} — \`TF041\` owns that pairing (\`D1243\`)`);
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/* ── `M228` `F` — the segments say what they are, and the recorder belongs to the door that ────
+   records.
+
+   Three readings and two of them are controls. The subject is a rule that was keyed on a PROXY —
+   `!VOCABULARY[door].sends` standing in for *is this BROWSER* — so the only reading that can
+   defend it is one taken on a door where the proxy and the truth DISAGREE. SCANS is that door by
+   construction (`D1241`), and BROWSER is the control: a gate that read SCANS alone would pass on
+   a build that had simply removed the session panel everywhere. */
+test('`M228` `F`: SCANS offers no recorder and BROWSER still does (`D1245`), every segment says what it is (`D1246`), and the env half is labelled (`D1247`)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m228f-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const target = `http://127.0.0.1:${fixturePort}`;
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      [
+        'env local default',
+        `  api "${target}"`,
+        // `web` is what makes the browser test legal at all (`TF051`), and the control needs to be
+        // a real browser test rather than a near-miss the door would refuse.
+        `  web "${target}"`,
+        `  authorized target "${target}" reason "the fixture server, named so this gate is not TF060"`,
+        '',
+      ].join('\n'),
+    );
+    /* **One file, two declarations, both on doors with no `send`.** That is the whole design of
+       this gate: `sends` is false for each, so any rule reading `sends` answers the same for both,
+       and only a rule reading `records` can tell them apart. */
+    await writeFile(
+      join(dir, 'd.tflw'),
+      [
+        'test "a scan, which does not send and does not record"',  // L1
+        '  api GET /items',                                        // L2
+        '  expect status equals 200',                              // L3
+        '  expect response has no serious security violations',    // L4
+        '',                                                        // L5
+        'test "a session, which does not send and DOES record"',   // L6
+        '  open "/"',                                              // L7
+        '  expect text "hello" is visible',                        // L8
+        '',                                                        // L9
+        /* **The three-tenant declaration**, which is the only place `plan`'s tip is observable:
+           a workload earns `plan`, the severity matcher earns `scan`, and `response` is always
+           there. `TF033` is why the threshold is not optional — a workload-bearing test must
+           carry one, so a fixture without it would be refused before the page ever drew a nav. */
+        'test "a workload that also makes a security claim"',      // L10
+        '  run 4 iterations across 2 users',                       // L11
+        '  api GET /items',                                        // L12
+        '  expect status equals 200',                              // L13
+        '  expect response has no serious security violations',    // L14
+        '  threshold p95 duration is less than 5s',                // L15
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    const read = async (): Promise<{
+      tabs: string[]; untipped: string[]; session: string | null; startBtn: number;
+      envLabel: string | null; order: string | null;
+    }> =>
+      fresh.locator('.doorpane').evaluate((pane) => {
+        const tabs = [...pane.querySelectorAll('[data-compose-region2-tab]')];
+        const claims = pane.querySelector('[data-compose-scan-families]');
+        const env = pane.querySelector('[data-compose-scan-env]');
+        const why = pane.querySelector('[data-compose-scan-why]');
+        /* The heading's POSITION is the decision, not its presence: `D1247` is that the env half
+           is labelled as the env's, and a heading rendered above the claims line would label the
+           declaration's own sentence as belonging to the env — the opposite claim, with the same
+           element present. */
+        const between =
+          claims === null || env === null || why === null
+            ? null
+            /* `4` is `Node.DOCUMENT_POSITION_FOLLOWING`, written as its value because the `Node`
+               global is not in this package's `lib` either — see the note on `box()` above. */
+            : (claims.compareDocumentPosition(env) & 4) !== 0 &&
+              (env.compareDocumentPosition(why) & 4) !== 0
+              ? 'claims < env < why'
+              : 'out of order';
+        return {
+          tabs: tabs.map((x) => x.getAttribute('data-compose-region2-tab') ?? ''),
+          untipped: tabs.filter((x) => (x.getAttribute('data-tip') ?? '') === '').map((x) => x.getAttribute('data-compose-region2-tab') ?? ''),
+          session: pane.querySelector('[data-session]')?.getAttribute('data-session') ?? null,
+          startBtn: pane.querySelectorAll('[data-session-start]').length,
+          envLabel: env === null ? null : env.getAttribute('data-compose-scan-env'),
+          order: between,
+        };
+      });
+
+    const toResponse = async (): Promise<void> => {
+      await fresh.locator('[data-compose-region2-tab="response"]').click();
+      await fresh.waitForTimeout(250);
+    };
+
+    // ── Gate 1 — the scan declaration on SCANS: no recorder anywhere in the region ────────────
+    await fresh.goto(`${base}/#/scan/compose/d.tflw/L1`);
+    await fresh.locator('.compose-pane-grid').waitFor();
+    await fresh.waitForTimeout(400);
+    const scanArrival = await read();
+    assert.deepEqual(scanArrival.tabs, ['scan', 'response'], `the scan declaration earns both tenants — got ${JSON.stringify(scanArrival.tabs)}`);
+
+    /* **Every tab, not a sample** (`M223` `G`). A gate that read one tab's tip is green on a build
+       that tipped that one and forgot the others, which is exactly how this shipped: the nav has
+       always had two or three tenants and carried a tip on none of them. */
+    assert.deepEqual(scanArrival.untipped, [], `a region-2 segment carries no tip — got ${JSON.stringify(scanArrival.untipped)}`);
+
+    // `D1247` — the heading, and its position, which is the actual claim.
+    assert.equal(scanArrival.envLabel, 'local', `the env half names the env it is about — got ${scanArrival.envLabel}`);
+    assert.equal(scanArrival.order, 'claims < env < why', 'the heading sits between the declaration’s own line and the env’s block, which is the whole of `D1247`');
+
+    await toResponse();
+    const scanResponse = await read();
+    /* **Absent, not disabled** (`D1082`): the recorder's subject does not exist on this door, and
+       `D1082` forbids drawing a dead control rather than requiring one. */
+    assert.equal(scanResponse.session, null, 'the SCANS door draws no session region at all — it does not send AND it does not record (`D1245`)');
+    assert.equal(scanResponse.startBtn, 0, '`record a session` is offered on SCANS, which would splice steps this door’s vocabulary cannot construct');
+
+    // ── Gate 2 — the control: same file, same `sends: false`, BROWSER ────────────────────────
+    await fresh.goto(`${base}/#/browser/compose/d.tflw/L6`);
+    await fresh.waitForTimeout(400);
+    const browserPane = await read();
+    /* This declaration earns ONE tenant, so there is no nav here and no tip to read — asserted
+       rather than left implicit, because `untipped` would come back `[]` from a page with no tabs
+       at all and a reading that celebrated it would be vacuous. The tips are gated below, where
+       three tenants are actually drawn. */
+    assert.deepEqual(browserPane.tabs, [], 'a browser test with no workload and no scan matcher earns one tenant, so the nav is not drawn (`D1209`)');
+    assert.equal(browserPane.session, 'none', 'BROWSER lost the recorder — a live session is this door’s evidence (`D1165`)');
+    assert.equal(browserPane.startBtn, 1, 'and the press that starts one is offered');
+
+    // ── Gate 3 — all three tenants at once, which is where `D1246` is observable ─────────────
+    await fresh.goto(`${base}/#/load/compose/d.tflw/L10`);
+    await fresh.waitForTimeout(400);
+    const three = await read();
+    assert.deepEqual(three.tabs, ['plan', 'scan', 'response'], `a workload-bearing test with a severity matcher earns all three — got ${JSON.stringify(three.tabs)}`);
+    assert.deepEqual(three.untipped, [], `a region-2 segment carries no tip — got ${JSON.stringify(three.untipped)}`);
+    /* And the recorder is absent here too, on a THIRD door, which is the reading that separates
+       `records` from every other predicate in the table: LOAD sends, BROWSER records, SCANS does
+       neither — three doors, three answers, one field. */
+    assert.equal(three.session, null, 'LOAD draws no session region — it sends, and the recorder is not its evidence');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/* ── `M228` `F4` — the pane predicts against the env the strip is pointing at ──────────────────
+   Two readings and they are a PAIR, deliberately: `D1248` can be got half-right in two
+   independent ways — the coverage table following the pick while `diagnose` keeps the default, or
+   the reverse — and each is invisible to the gate that catches the other. `M227` `A`'s rule, a
+   third time: both ways to get a floor wrong need their own mutation.
+
+   The fixture is two envs over ONE api base. That matters: if the envs differed in their base URL
+   the rows would move for a reason unrelated to authorization, and a build that ignored `?env=`
+   entirely could still look like it had changed something. Here the only difference between the
+   two envs is the `authorized target` line, so the rows can only move if the server resolved the
+   env the page asked for. */
+test('`M228` `F4`: the `scan` segment and the pane’s `TF060` preview both follow the env picker (`D1248`)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m228f4-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const target = `http://127.0.0.1:${fixturePort}`;
+  try {
+    await writeFile(
+      join(dir, 'tflw.config'),
+      [
+        'env local default',
+        `  api "${target}"`,
+        `  authorized target "${target}" reason "the fixture server, named so this env is clean"`,
+        '',
+        'env staging',
+        `  api "${target}"`,
+        // …and no `authorized target`. Same bytes in the test file, different verdict.
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      join(dir, 'd.tflw'),
+      [
+        'test "grades what came back"',                         // L1
+        '  api GET /items',                                     // L2
+        '  expect status equals 200',                           // L3
+        '  expect response has no serious security violations', // L4
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    const tabOn = async (tab: string): Promise<void> => {
+      await fresh.locator(`[data-tab="${tab}"]`).click();
+      await fresh.locator(`[data-tabstrip="${tab}"]`).waitFor();
+    };
+    const codes = async (): Promise<string[]> =>
+      fresh.locator('.doorpane').evaluate((pane) => [...pane.querySelectorAll('[data-diagnostic-code]')].map((x) => x.getAttribute('data-diagnostic-code') ?? ''));
+    const scan = async (): Promise<{ state: string | null; env: string | null; reach: string[] }> =>
+      fresh.locator('.doorpane').evaluate((pane) => ({
+        state: pane.querySelector('[data-compose-scan]')?.getAttribute('data-compose-scan') ?? null,
+        env: pane.querySelector('[data-compose-scan-env]')?.getAttribute('data-compose-scan-env') ?? null,
+        reach: [...pane.querySelectorAll('[data-compose-scan-reach-url]')].map(
+          (x) => `${x.getAttribute('data-compose-scan-reach-url')}=${x.getAttribute('data-compose-scan-covered')}`,
+        ),
+      }));
+
+    // ── The control: the default env, which authorizes the target ────────────────────────────
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L1`);
+    await fresh.locator('.compose-pane-grid').waitFor();
+    await fresh.waitForTimeout(400);
+    const clean = await scan();
+    assert.equal(clean.env, 'local', `the panel opens on the config's default env — got ${clean.env}`);
+    assert.equal(clean.state, 'authorized', 'which declares a target');
+    assert.deepEqual(clean.reach, [`${target}=yes`], `one scannable origin, covered — got ${JSON.stringify(clean.reach)}`);
+
+    /* The diagnostics half of the control. The preview only renders while the draft differs from
+       the file (`SourcePanel`, `D1052` — it is a preview of what you are about to WRITE), so the
+       edit is what makes the list drawable at all; `deepEqual([])` rather than `!includes`,
+       because a negative on an empty list is the vacuity `M228` `A`'s gate 4 was rewritten for. */
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.locator('[data-expect-severity]').waitFor();
+    await fresh.locator('[data-expect-severity]').selectOption('critical');
+    await tabOn('source');
+    await fresh.waitForTimeout(400);
+    assert.deepEqual(await codes(), [], 'env `local` authorizes this target, so the same bytes preview clean');
+
+    // ── The move: the strip's own control, and nothing else ──────────────────────────────────
+    /* **The env is changed by driving the select the reader drives**, not by rewriting the config
+       — which is the whole point of the reading. A config rewrite would prove the server reads a
+       file, and the defect was that the PAGE could not ask it a question. */
+    await tabOn('compose');
+    await fresh.locator('[data-env-select]').selectOption('staging');
+    await fresh.waitForTimeout(500);
+
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L1`);
+    await fresh.waitForTimeout(400);
+    const gap = await scan();
+    assert.equal(gap.env, 'staging', `the panel followed the pick — got ${gap.env}`);
+    assert.equal(gap.state, 'none', 'env `staging` declares no `authorized target`, and the panel is in its other state');
+    assert.deepEqual(gap.reach, [`${target}=no`], `the same origin, now uncovered — got ${JSON.stringify(gap.reach)}`);
+
+    // ── …and the preview, which is the half that contradicted `D1052` ────────────────────────
+    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.locator('[data-expect-severity]').waitFor();
+    await fresh.locator('[data-expect-severity]').selectOption('critical');
+    await tabOn('source');
+    await fresh.waitForTimeout(400);
+    const gated = await codes();
+    assert.ok(
+      gated.includes('TF060'),
+      `the pane previews the env the run will use, not the config's default (\`D1240\`, \`D1248\`) — got ${JSON.stringify(gated)}`,
+    );
   } finally {
     await fresh.close();
     await ui.close();

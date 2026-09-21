@@ -10,8 +10,12 @@ async function getJson<T>(url: string): Promise<T> {
 
 /** `null` when this directory holds no `tflw.config` — which the landing offers to fix, and which
  *  is a different answer from a project that does not read (`M200` `A0-5`). */
-export async function getProject(): Promise<ProjectView | null> {
-  const res = await fetch('/api/project', { cache: 'no-store' });
+export async function getProject(env?: string | null): Promise<ProjectView | null> {
+  /* **`?env=` — `M228` `F` (`D1248`).** `authorization` is a per-env fact and the pane hands it to
+     the checker (`D1240`), so a page whose env select moved while this route ignored the pick was
+     predicting `TF060` against a different env than the one it was about to run. `null` means
+     *whatever the config calls default*, which is what the page sends until somebody picks. */
+  const res = await fetch(env == null ? '/api/project' : `/api/project?env=${encodeURIComponent(env)}`, { cache: 'no-store' });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`/api/project: ${res.status} ${(await res.json() as { error?: string }).error ?? ''}`);
   return (await res.json()) as ProjectView;

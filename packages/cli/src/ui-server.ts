@@ -535,14 +535,35 @@ export function initArgv(door: Lens): string[] {
 }
 
 /** The project as the page sees it: config envs, the discovered files, the tests in each. */
-export async function readProject(root: string): Promise<ProjectView> {
+export async function readProject(root: string, envName?: string | null): Promise<ProjectView> {
   const configText = await readFile(join(root, CONFIG_PATH), 'utf8');
   const parsed = parseConfigSource(configText);
   const envs = parsed.config.envs.map((e) => ({ name: e.name, isDefault: e.isDefault }));
-  // The default env's view of `exclude` and `report dir` — both are `defaults`-only keys, so any
-  // env gives the same answer; the default is the one a bare `tflw run` would take.
-  const env = selectEnv(parsed.config, { envVar: process.env.TFLW_ENV });
-  const resolved = resolveConfig(parsed.config, env); // the page reads `exclude`/`report dir` only — a URL override does not change either
+  /**
+   * **The env the page is pointing at** — `M228` `F` (`D1248`).
+   *
+   * This took no argument until now, and the comment that stood here said the env did not matter:
+   * *"the page reads `exclude`/`report dir` only — a URL override does not change either"*. That
+   * was true when it was written and stopped being true at `A2-3`, which added `authorization` —
+   * a **per-env** fact — and again at `M228` `A` (`D1240`), which hands that object to `diagnose`
+   * so the pane can preview `TF060`.
+   *
+   * The consequence was a live contradiction of `D1052`. `RunStrip`'s `env` select changed what
+   * `tflw run --env` graded and changed nothing about what the pane predicted, so an env with
+   * different `authorized target` declarations produced exactly the surprise this function's own
+   * docblock says the option exists to prevent: *the SCANS door would have previewed a clean file
+   * and written one that fails in a terminal.* Same surprise, reached by a different route.
+   *
+   * **An unknown name falls back to the default rather than throwing.** The page's select is
+   * populated from `envs` below, so it cannot offer a name the config does not hold; a mismatch
+   * means the config changed under the page, and the page re-reads on every config write. Raising
+   * here would take `GET /api/project` down for a stale dropdown value — the same failure mode
+   * `ConfigPanel`'s header warns about, where a page allowed to write the config can lock itself
+   * out of reading it.
+   */
+  const asked = envName != null && parsed.config.envs.some((e) => e.name === envName) ? envName : undefined;
+  const env = selectEnv(parsed.config, asked === undefined ? { envVar: process.env.TFLW_ENV } : { flag: asked });
+  const resolved = resolveConfig(parsed.config, env);
   const files: ProjectFile[] = [];
   /**
    * **`opensPage`, folded across the whole project** — `M219` `B` (`D1161`).
@@ -1460,7 +1481,9 @@ export class UiServer {
         return json(res, 404, { error: 'no tflw.config here — this directory is not a tflw project yet', noProject: true, root: this.opts.root });
       }
       try {
-        return json(res, 200, await readProject(this.opts.root));
+        // `?env=` — `D1248`. Absent means *whatever the config calls default*, which is what every
+        // caller before `M228` `F` got and what the page sends until somebody picks one.
+        return json(res, 200, await readProject(this.opts.root, url.searchParams.get('env')));
       } catch (e) {
         return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
       }

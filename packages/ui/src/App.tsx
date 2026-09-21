@@ -363,14 +363,31 @@ export function App() {
    */
   const [creating, setCreating] = useState<NewMode | null>(null);
 
+  /**
+   * **It reads the env the strip is pointing at** — `M228` `F` (`D1248`).
+   *
+   * `envPick` is in the dependency list, so every existing caller — a config write, a file write,
+   * the landing's create — re-reads against the current pick without being told to, and the effect
+   * below turns a change of pick into a re-read on its own. That is the whole wiring: there is no
+   * second fetch path and no copy of `authorization` to keep in step.
+   */
   const readProjectView = useCallback(() => {
-    return getProject()
+    return getProject(envPick)
       .then((p) => {
         setProject(p);
         setNoProject(p === null);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  }, []);
+  }, [envPick]);
+
+  /* Changing the env changes what the pane PREDICTS, not only what the next run grades — so the
+     pick is a reason to re-read the project, the same way a config write is. `envPick` starts
+     `null` and the mount effect already reads once, so this fires on a real change and not on
+     arrival. */
+  useEffect(() => {
+    if (envPick === null) return;
+    void readProjectView();
+  }, [envPick, readProjectView]);
 
   /**
    * The Config tab's editor state — **held in the shell**, which is `S5a`'s finding applied a
