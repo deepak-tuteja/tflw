@@ -677,6 +677,14 @@ export interface ComposePaneProps {
   readonly onWrite: () => void;
   readonly onDiscard: () => void;
   readonly door: Lens;
+  /**
+   * **Is the playback region carrying a trace** — `M227` `D` (`D1235`).
+   *
+   * Not *which* trace and not the Stage itself: the one bit this pane needs is whether the page
+   * already has a full-width band below it with something in it. See `D1235` on the `footer`
+   * derivation below.
+   */
+  readonly stage: boolean;
 }
 
 /**
@@ -762,7 +770,7 @@ const fitEditor = (px: number, column: number, lower: number = LOWER_MIN): numbe
   Math.max(EDITOR_MIN, Math.min(Math.round(px), Math.max(EDITOR_MIN, column - 6 - lower)));
 
 export function ComposePane(props: ComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, tab, onEditorTab: setTab } = props;
+  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, stage, tab, onEditorTab: setTab } = props;
 
   /** One call per sequence row kind — `M218` `F`. `{}` when the door wired no menu, so the rows
    *  behave exactly as they did before this round. */
@@ -885,7 +893,33 @@ export function ComposePane(props: ComposePaneProps) {
    * has to read the right key on its FIRST render; a footer that adopts the column's stored height
    * for one frame and then corrects itself is a visible jump.
    */
-  const footer = at?.decl != null && at.decl.kind === 'test' && at.decl.workload !== null;
+  /**
+   * ── `M227` `D` (`D1235`) — **and it yields to a live playback region** ──────────────────────
+   *
+   * `D1181` puts the Stage below both columns on every door, three rounds before `M226`, and
+   * `M226` did not reorder anything. What it did was make region 2 **the same width as the
+   * Stage** — measured on the BROWSER door, `.responsebox` 753 -> 1072 with `.stage` already at
+   * 1072 — so two identical full-width bands stack and the upper one reads as the page's floor
+   * while the lower one is. The user found it by eye on a populated playback and was right about
+   * the picture while the ordering was untouched.
+   *
+   * The floor is not a matter of taste here. With a trace up the Stage is **620 px**
+   * (`STAGE.fallback`), and on BROWSER the plan took **371** rather than its 240 floor because
+   * that door's editor wants only 237 and `1fr` hands the slack downward — so a third of the pane
+   * was a chart sitting between the author and the thing that door exists for.
+   *
+   * **`M226`'s own measurement is the argument.** The footer was earned by a squeeze: the
+   * workload editor wants 537-568 px and gets 471-493, and *API and BROWSER are not squeezed at
+   * all — gets == wants*. Where nothing is squeezed the footer buys nothing, and beside a live
+   * Stage it costs the page its only floor.
+   *
+   * **Keyed on the state, not the door** (`D1044`, and `D1225`'s whole point): *this pane has
+   * playback up* is true on LOAD the moment you press ▶ on a browser test, and false on BROWSER
+   * until you do. A door-keyed version of this rule would be green under every mutation that made
+   * it state-keyed and vice versa, which is why the gate plays a real test rather than asserting
+   * a door.
+   */
+  const footer = at?.decl != null && at.decl.kind === 'test' && at.decl.workload !== null && !stage;
 
   /** `null` — the editor is as tall as what it holds (`D1195`). A number is the reader's own
    *  override in pixels (`D1196`); `Home` on the divider returns it to `null`. */
