@@ -674,18 +674,51 @@ export function addressed(outline: FileOutline, line: number | null): Addressed 
  * thing the author is looking at.
  */
 export interface Prefix {
+  /** Which press this is (`D1215`). */
+  readonly form: SendForm;
   /** The declaration this runs, and the index of the last step that runs in it. */
   readonly decl: number;
   readonly upTo: number;
   /** Every request that will be sent, in order, hooks first — what the pane lists before the
    *  press, because pressing it writes rows in somebody's database. */
   readonly requests: readonly { readonly where: string; readonly method: string; readonly path: string }[];
+  /**
+   * **The declaration's OWN requests, as lines in the buffer, in order** (`M225` `A`, `D1216`).
+   *
+   * The hooks' requests are in `requests` above because the press fires them and the reader is
+   * owed that; they are not here because nothing on screen is drawn on a hook's line while this
+   * file is open. What this is for is the join: a send used to record one verdict for one line,
+   * and `D1216` makes it record one per request it issued.
+   */
+  readonly lines: readonly number[];
 }
 
-export function prefixOf(outline: FileOutline, at: Addressed): Prefix | null {
-  if (at.request === null) return null;
+/**
+ * **The two presses** (`M225`, `D1215`).
+ *
+ * `this` is `D1075`'s send, unchanged: the prefix up to the selected request, because four
+ * requests in five cannot run alone. `all` is every request in the declaration — one iteration,
+ * which is precisely what one virtual user does and therefore the unit a workload multiplies.
+ *
+ * Neither is a run. Both drop the workload and the thresholds (`D1211`) and strip the assertions
+ * (`D1119`); ▶ is the run and it states its price (`D1212`).
+ */
+export type SendForm = 'this' | 'all';
+
+export function prefixOf(outline: FileOutline, at: Addressed, form: SendForm = 'this'): Prefix | null {
   const decl = at.decl;
-  const last = at.request;
+  /**
+   * **`send all` is addressed at the declaration and not at a request**, which is the whole of
+   * `M225` §1.1: `addressed()` falls back to `requests[0]` for a line above every request
+   * (`D1080`), so the declaration address and the first request's were indistinguishable — and
+   * nobody chose that, it was a navigation fallback leaking into a run semantic. A test whose
+   * rung is `lookup → capture → POST /orders` sent the lookup when the reader pressed send under
+   * the test's own name.
+   */
+  const own = decl.body.requests;
+  if (own.length === 0) return null;
+  const last = form === 'all' ? own[own.length - 1]! : at.request;
+  if (last === null) return null;
   /**
    * **The cut is the request itself** — `M215` `A1` (`D1119`), narrowed from `M210` `S6`.
    *
@@ -698,15 +731,26 @@ export function prefixOf(outline: FileOutline, at: Addressed): Prefix | null {
    *
    * Nothing after the request contributes to the request. The prefix is what has to happen *first*.
    */
-  const upTo = last.stepPath.step;
+  /**
+   * **`all` runs to the end of the body, not to the last request.** One iteration is the whole
+   * declaration — a `capture` after the final request is part of what a virtual user does, and a
+   * cut that dropped it would make `send all` a prefix of an iteration rather than one.
+   * `withoutAssertions` still takes the `expect`s out, so what this widens is the captures, the
+   * `let`s and the logs, none of which grade anything.
+   */
+  const upTo = form === 'all'
+    ? Math.max(...[...statementsOf(decl.body), ...requestsOf(decl.body)].map((x) => x.stepPath?.step ?? -1))
+    : last.stepPath.step;
   const requests: { where: string; method: string; path: string }[] = [];
   for (const hook of outline.declarations) {
     if (hook.kind !== 'hook') continue;
     for (const r of hook.body.requests) requests.push({ where: hook.label, method: r.method, path: r.path });
   }
-  for (const r of decl.body.requests) {
+  const lines: number[] = [];
+  for (const r of own) {
     if (r.stepPath.step > last.stepPath.step) break;
     requests.push({ where: decl.kind === 'test' ? decl.name : decl.label, method: r.method, path: r.path });
+    lines.push(r.line);
   }
-  return { decl: decl.index, upTo, requests };
+  return { form, decl: decl.index, upTo, requests, lines };
 }

@@ -11,16 +11,19 @@
 // everything below is one implementation serving both. A component named for one door while
 // serving two is the same defect one level up — the class `M213-19` filed about a field name.
 //
-// IT IS `LoadForm`'s SHAPE AND NOT ITS COPY. Both hold field values and nothing else: the nodes
-// come from `@tflw/lang`'s builders, the splice and the format from `insertIntoSource`, the write
-// from `putFile` under the etag the source was read at. All of it runs in this browser, because
-// the language package has no dependencies and no Node builtins — so there is no second
-// implementation here for the CLI's to drift from.
+// IT HOLDS FIELD VALUES AND NOTHING ELSE: the nodes come from `@tflw/lang`'s builders, the splice
+// and the format from `insertIntoSource`, the write from `putFile` under the etag the source was
+// read at. All of it runs in this browser, because the language package has no dependencies and no
+// Node builtins — so there is no second implementation here for the CLI's to drift from.
 //
-// WHAT IT ADDS TO THE LOAD FORM IS THE `steps` INSERTION. A LOAD form can only ever write a
-// policy — a workload line, a threshold — because `api` steps are this door's vocabulary, which
-// is the gap `A0-5`'s green-condition test had to work around and said so where it did. This is
-// `D1044` from the writing side: a door adds the work it knows how to describe, to a test any
+// **AND SINCE `M224` `D` IT SERVES THREE DOORS** (`D1210`). `LoadForm` is deleted; the dispatch
+// that used to name API and BROWSER now reads `VOCABULARY[door].adds.length > 0`, so no call site
+// names a door at all. What this pane added to that form was the `steps` insertion — *a LOAD form
+// can only ever write a policy, a workload line or a threshold, because `api` steps are the API
+// door's vocabulary*, the gap `A0-5`'s green-condition test had to work around and said so where
+// it did. `TF033` is why that gap was never real: a workload may not sit beside a browser step, so
+// a workload-bearing test's body IS api steps, and `VOCABULARY.load.constructs` says so now. This
+// is `D1044` from the writing side: a door adds the work it knows how to describe, to a test any
 // door may have started.
 //
 // A REQUEST AND ITS ASSERTIONS ARE ONE EDIT. They are built together and spliced together,
@@ -51,6 +54,7 @@ import {
   buildDataTable,
   buildLet,
   buildThreshold,
+  buildWorkload,
   type CaptureSpec,
   type LocatorSpec,
   type Lens,
@@ -72,6 +76,7 @@ import { indexFromReport, indexFromSend, belongsTo, playScratchOf, REPORT_LOOKBA
 import { VOCABULARY } from './vocabulary';
 import { TabStrip } from './TabStrip';
 import { Stage, traceOf } from './Stage';
+import { Grip, STAGE, storedSize } from './Grip';
 import {
   editOf,
   specOf,
@@ -85,14 +90,17 @@ import {
   type Ran,
   type RanIndex,
 } from './parts';
-import { ComposePane, type EditorTab, type SeqTarget } from './ComposePane';
+import { workloadSpecOf, type WorkloadEdit } from './workloadEdit';
+import { ComposePane, selectedAt, type EditorTab, type SeqTarget } from './ComposePane';
+import { useLastWorkloadRun } from './PlanPanel';
 import { buildStatement } from './statements';
 import { AddStep, stepCatalogue } from './AddStep';
 import type { Session, SessionLine } from './SessionPanel';
 import type { MenuItem, MenuRequest } from './ContextMenu';
 import type { NewMode } from './NewThing';
 import { addressed, anchorAfter, fileOutline, pageOpeners, requestsOf, statementsOf,
-  prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
+  prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest,
+  type Prefix, type SendForm } from './outline';
 import { SourcePanel } from './SourcePanel';
 import type { TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, RunRequest, StepResult } from './contract';
@@ -311,6 +319,29 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   const [played, setPlayed] = useState<string | null>(null);
 
   /**
+   * **How tall the playback frame is** — `M223` `E` (`D1199`).
+   *
+   * `null` is `M221`'s own answer — the stage takes the height it needs (`.stage-frame`'s 620 px
+   * floor) and the page scrolls to it. A number is the reader's, at which point the two regions
+   * share the window instead of queueing down a scroll.
+   *
+   * It lives HERE rather than in `ComposePane` because the boundary it moves is between two
+   * siblings this component owns, and a pane that reached out to size the region under it would
+   * be a pane that knows what is under it. `storedSize` is read lazily and compared to the
+   * fallback afterwards: `Grip` has no null in its vocabulary — it is a number and a clamp — so
+   * *never dragged* is expressed by the absence of the key and not by a sentinel it would have to
+   * carry through every clamp.
+   */
+  const [stageH, setStageH] = useState<number | null>(() => {
+    try {
+      return window.localStorage.getItem(STAGE.key) === null ? null : storedSize(STAGE);
+    } catch {
+      // A private window, or site data blocked — the accessor itself throws. `M221`'s layout.
+      return null;
+    }
+  });
+
+  /**
    * The play scratch's hash, carried forward from each write's own response.
    *
    * A **ref** and not state: nothing renders from it, and a re-render between the press and the
@@ -324,7 +355,10 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   useEffect(() => {
     playEtag.current = null;
   }, [path]);
-  const [sentRan, setSentRan] = useState<{ line: number; steps: readonly StepResult[]; startedAt: string } | null>(null);
+  /** **A send is a list now, not a line** (`M225` `A`, `D1216`) — `lines` is the scratch's own
+   *  request lines mapped back to the buffer's, which is how every request the press issued
+   *  gets a verdict instead of only the last. */
+  const [sentRan, setSentRan] = useState<{ lines: ReadonlyMap<number, number>; steps: readonly StepResult[]; startedAt: string; form: SendForm } | null>(null);
   /** `D1136` — bumped every time a create gesture lands, so the pane can focus what opened. */
   const [made, setMade] = useState(0);
 
@@ -615,6 +649,39 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         return;
       }
       const out = replaceInSource(draft ?? file.text, { kind: 'threshold', decl: decl.index, index, node: built === null ? null : built.node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **A test's one workload, all the way to bytes** — `M224` `B` (`D1205`, `D1206`).
+   *
+   * `applyThreshold` with the index taken out, because a test carries at most one. `null` removes
+   * it and **leaves the thresholds behind**, which is legal (`D1044`) and is what keeps the test on
+   * the door it was removed from: the `load` lens comes from `workload !== null || thresholds.length
+   * > 0`, so the row does not vanish out from under the gesture that made it.
+   *
+   * It goes through `buildWorkload` and `replaceInSource` like everything else on this pane —
+   * `D1087`, one construction path, no template strings. The old form built the same node and then
+   * printed a whole test around it; this replaces one line of a file the author already has.
+   */
+  const [workload, setWorkload] = useState<{ key: string; values: WorkloadEdit } | null>(null);
+  const applyWorkload = useCallback(
+    (decl: OutlineTest, next: WorkloadEdit | null) => {
+      if (!file) return;
+      setWorkload(next === null ? null : { key: `decl:${decl.index}`, values: next });
+      const built = next === null ? null : buildWorkload(workloadSpecOf(next));
+      if (built !== null && !built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'workload', decl: decl.index, node: built === null ? null : built.node });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -1772,8 +1839,57 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
   return out;
 }
 
-  const prefix = useMemo(() => (outline === null || at === null ? null : prefixOf(outline, at)), [outline, at]);
-  const prefixText = useMemo((): { ok: true; text: string } | { ok: false; reason: string } => {
+  /**
+   * **The two presses, and which of them the address offers** (`M225` `A`, `D1215`).
+   *
+   * `send this` needs a *this*, and on a declaration address there is none: `addressed()` resolves
+   * a line above every request to `requests[0]` (`D1080`), which is right for navigation and was
+   * silently deciding what a press fired. So the pane is handed `this` only where the reader is
+   * actually pointing at a request, and `all` everywhere there is a request to issue.
+   */
+  const onDecl = useMemo(() => selectedAt(at, focusLine).kind === 'test', [at, focusLine]);
+
+  /**
+   * **`D1221`'s citation, looked up once by the door** — the composer is a form and has no
+   * business opening reports. `null` for the name means *do not look*: a declaration with no
+   * workload has nothing to cite, and walking three reports on every file the reader opens is a
+   * cost with no reader.
+   */
+  const workloadName = at !== null && at.decl.kind === 'test' && at.decl.workload !== null ? at.decl.name : null;
+  const workloadRun = useLastWorkloadRun(path, workloadName);
+  const bandLastRun = useMemo(
+    () =>
+      workloadName === null || workloadRun === undefined
+        ? undefined
+        : workloadRun === null
+          ? null
+          : {
+              iterations: workloadRun.entry.metrics.iterations,
+              /* The SUCCESSFUL population, because that is what a `pNN duration` threshold reads
+                 (`D-M89-0`) — a failing request is usually fast, and mixing failures in pulls the
+                 percentile down until a latency bar passes *because* the target is broken. */
+              p95Ms: workloadRun.entry.metrics.successful.durations.p95,
+              inconclusive: workloadRun.inconclusive,
+            },
+    [workloadName, workloadRun],
+  );
+  const prefixThis = useMemo(
+    () => (outline === null || at === null || onDecl ? null : prefixOf(outline, at, 'this')),
+    [outline, at, onDecl],
+  );
+  const prefixAll = useMemo(() => (outline === null || at === null ? null : prefixOf(outline, at, 'all')), [outline, at]);
+
+  /**
+   * **The scratch a press writes, and the map that reads its report back** (`D1216`).
+   *
+   * The second return value is the half `M225` added: the scratch is a *printed* program, so its
+   * line numbers are not this file's — and the join used to cope with that by taking the last
+   * `api` step and calling it the selected request. Parsing what we just printed costs one parse
+   * and answers exactly: the kept test's requests, in order, are this declaration's requests in
+   * order, so scratch line `n` is buffer line `lines[i]`. A step on any other line belongs to a
+   * hook and is skipped rather than attributed to a row it is not about.
+   */
+  const scratchFor = useCallback((prefix: Prefix | null): { ok: true; text: string; lines: ReadonlyMap<number, number> } | { ok: false; reason: string } => {
     if (!file || prefix === null) return { ok: false, reason: 'pick a request first — send runs the file up to one' };
     const source = draft ?? file.text;
     const { program, diagnostics } = parseSource(source);
@@ -1783,6 +1899,10 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     const decl = declarations[prefix.decl];
     if (!decl) return { ok: false, reason: 'that declaration is no longer in the file' };
     const body = withoutAssertions(decl.body.slice(0, prefix.upTo + 1));
+    /* **The workload and the thresholds are dropped, and on the LOAD door that is the point rather
+       than a caveat** (`M224` `D1211`). `send` means *issue this request once and show me what came
+       back*; a send that ran the workload would be a run, and there is one of those beside it with
+       its own price on it (`D1212`). */
     const kept: TestDecl = decl.type === 'TestDecl'
       ? { ...decl, name: stringLit(SCRATCH_TEST), workload: null, thresholds: [], body }
       : { type: 'TestDecl', name: stringLit(SCRATCH_TEST), tags: [], sessions: [], retry: 0, table: null, workload: null, thresholds: [], concurrency: 'sequential', body, span: SYNTHETIC };
@@ -1807,8 +1927,17 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     };
     const printed = print(scratch);
     if (!printed.ok) return { ok: false, reason: printed.reason ?? 'this file cannot be written back' };
-    return { ok: true, text: printed.text.endsWith('\n') ? printed.text : printed.text + '\n' };
-  }, [file, draft, prefix]);
+    const text = printed.text.endsWith('\n') ? printed.text : printed.text + '\n';
+    /* The scratch read back as an outline, which is the same fold this file's own rows come from —
+       so `requests[i]` there and `prefix.lines[i]` here are the same request by construction. */
+    const back = fileOutline(project.scratchPath, text).declarations.find((d) => d.kind === 'test' && d.name === SCRATCH_TEST);
+    const map = new Map<number, number>();
+    if (back) for (const [i, r] of back.body.requests.entries()) {
+      const to = prefix.lines[i];
+      if (to !== undefined) map.set(r.line, to);
+    }
+    return { ok: true, text, lines: map };
+  }, [file, draft, project.scratchPath]);
 
   /**
    * **The last run that touched this file** (`D1099`).
@@ -1881,8 +2010,9 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     if (text === '') return new Map();
     const base = reportRan === null ? new Map<number, Ran>() : new Map(indexFromReport(reportRan.report, path, text, project.playScratch));
     if (sentRan !== null) {
-      const one = indexFromSend({ steps: sentRan.steps, requestLine: sentRan.line, bufferText: text, startedAt: sentRan.startedAt });
-      if (one !== null) base.set(sentRan.line, one);
+      /* Every request the press issued, not the last one (`D1216`). The send still wins over the
+         report for the lines it is about and leaves every other request's verdict alone. */
+      for (const [line, ran] of indexFromSend({ steps: sentRan.steps, lines: sentRan.lines, bufferText: text, startedAt: sentRan.startedAt })) base.set(line, ran);
     }
     return base;
   }, [reportRan, sentRan, draft, file, path, project.playScratch]);
@@ -1899,13 +2029,15 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     [played, reportRan],
   );
 
-  const sendPrefix = useCallback(async () => {
-    if (!prefixText.ok || !at?.request) return;
+  const sendPrefix = useCallback(async (form: SendForm) => {
+    const prefix = form === 'all' ? prefixAll : prefixThis;
+    const scratch = scratchFor(prefix);
+    if (!scratch.ok || prefix === null) return;
     setSending(true);
     setProblem(null);
     setSentRan(null);
     try {
-      const put = await putFile(project.scratchPath, prefixText.text, scratchEtag);
+      const put = await putFile(project.scratchPath, scratch.text, scratchEtag);
       if (!put.ok) {
         setProblem(put.code ? `${put.code} at line ${put.line}: ${put.error}` : put.error);
         setSending(false);
@@ -1947,9 +2079,10 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
        * this one, on every render, from the buffer as it then is.
        */
       setSentRan({
-        line: at.request.line,
+        lines: scratch.lines,
         steps,
         startedAt: report.startedAt,
+        form,
       });
       /**
        * **And the pane stays where it is.** The legacy Send goes to Run because that is where its
@@ -1962,7 +2095,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
       setProblem(e instanceof Error ? e.message : String(e));
     }
     setSending(false);
-  }, [prefixText, at, project.scratchPath, scratchEtag, onTab]);
+  }, [prefixThis, prefixAll, scratchFor, project.scratchPath, scratchEtag, onTab]);
 
   /**
    * **▶ — run this declaration and nothing else** (`M220` `A`, `D1168`).
@@ -2117,7 +2250,16 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     /* `data-door-form` rather than `data-api-form` since `M213` `S4`: one pane serves two doors,
        and an attribute named for one of them is the defect `M213-19` filed about a field name. The
        door is the attribute's value, so a gate can still say which one it is looking at. */
-    <section className="doorpane" data-door-form={door}>
+    <section
+      className="doorpane"
+      data-door-form={door}
+      /* `M223` `E` (`D1199`) — the reader's own playback height, on the element that owns both
+         regions. It is a custom property rather than an inline height on the frame because the
+         rules it feeds are in the stylesheet beside the ones they override, and `auto` is a state
+         a gate can read rather than the absence of an attribute. */
+      data-stage-fit={stageH === null ? 'auto' : String(stageH)}
+      style={stageH === null ? undefined : { ['--stage-h' as string]: `${stageH}px` }}
+    >
       <TabStrip tab={tab} onTab={onTab} marked={marks} />
 
       {tab === 'source' ? <SourcePanel file={file} pending={sourcePending} diagnostics={diagnostics} project={project} door={door} /> : null}
@@ -2175,6 +2317,8 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
             onHeader: applyHeader,
             threshold,
             onThreshold: applyThreshold,
+            workload,
+            onWorkload: applyWorkload,
             onFileDecl: applyFileDecl,
             /* **`pick` reaches the door whose rows carry locators** (`D1106`), which since `M219`
                `A` is decided by the vocabulary rather than by which branch of a fork we are in.
@@ -2184,8 +2328,11 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
               ? { row: picking, found: picked, onStart: startPick, onStop: endPick }
               : null,
           }}
-          prefix={VOCABULARY[door].sends ? prefix : null}
-          onSend={VOCABULARY[door].sends ? () => void sendPrefix() : null}
+          prefix={VOCABULARY[door].sends ? prefixThis : null}
+          prefixAll={VOCABULARY[door].sends ? prefixAll : null}
+          onSend={VOCABULARY[door].sends ? (form) => void sendPrefix(form) : null}
+          lastRun={bandLastRun}
+          sent={sentRan === null ? null : { lines: [...sentRan.lines.values()], form: sentRan.form, at: sentRan.startedAt }}
           sending={sending}
           ran={ranIndex}
           onVerify={verify}
@@ -2222,6 +2369,12 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
         {/* **The third region** (`D1181`) — below both columns, full width of `main`, which is
             1114 px at 1440 against the viewer's 606 px floor. `Stage` is always rendered and says
             which of its four states it is in; it is never conditionally absent (`D1187`). */}
+        {/* **The third grip** — `M223` `E` (`D1199`), and it is drawn only when there is something
+            to share. With no trace the stage is a 17 px bar and a control that resizes a bar is a
+            control that does nothing, which is what `D1082` refuses; with one, this is the
+            boundary the user pointed at, where 14 px of `margin-top` had been reading as a seam
+            because the two columns' bottom borders run across the width right above it. */}
+        {stageTrace === null ? null : <Grip spec={STAGE} size={stageH ?? STAGE.fallback} onSize={setStageH} />}
         <Stage
           trace={stageTrace}
           played={played}

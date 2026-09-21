@@ -13,14 +13,14 @@ import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
 import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
-import { Grip, SIDEBAR, storedWidth } from './Grip';
+import { Grip, SIDEBAR, storedSize } from './Grip';
 import { TooltipLayer } from './Tooltip';
 import { ContextMenuLayer, type MenuItem, type MenuRequest } from './ContextMenu';
 import { FileAction, type FileActionKind } from './FileAction';
 import { ThemePick } from './ThemePick';
 import { DoorBar } from './DoorBar';
-import { LoadForm } from './LoadForm';
 import { ComposeDoor } from './ComposeDoor';
+import { VOCABULARY } from './vocabulary';
 import { AuthPanel } from './AuthPanel';
 import { ConfigPanel, documentsOf } from './ConfigPanel';
 import { ScanForm } from './ScanForm';
@@ -80,7 +80,7 @@ export function App() {
   const [doc, setDocState] = useState<string | null>(() => docFromHash(window.location.hash));
   /** The project pane's width (`M216`). Read once from `localStorage` — it is the reader's, per
    *  served project, and belongs in neither the hash nor the server (`D1045`'s same argument). */
-  const [sidebarWidth, setSidebarWidth] = useState<number>(() => storedWidth(SIDEBAR));
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => storedSize(SIDEBAR));
   const [project, setProject] = useState<ProjectView | null>(null);
   /**
    * The run request, held by the shell since `M209` `S1`.
@@ -708,6 +708,11 @@ export function App() {
   const filePaths = project?.files.map((f) => f.path) ?? [];
   const path = file !== null && filePaths.includes(file) ? file : (filePaths[0] ?? '');
 
+  /** **Does this door draw a Compose sequence** — `M224` `D` (`D1210`), read once and spent twice:
+   *  the dispatch below and `main-fill`. `vocabulary.ts`'s `adds.length > 0` is the table's own way
+   *  of saying so (`D1189`), so neither call site names a door. */
+  const composes = door !== null && VOCABULARY[door].adds.length > 0;
+
   // ── `M218` `B` — what a right-clicked row can do ───────────────────────────────────────────────
   //
   // Built here and not in `Sidebar`, which is `D1148`: the explorer describes its row, the shell
@@ -1062,7 +1067,7 @@ export function App() {
           onAddRequest={(declIndex) => setAddIntent((prev) => ({ path, declIndex, n: (prev?.n ?? 0) + 1 }))}
           focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={(m) => startCreating(m)}
           menuFor={menuFor} onMenu={setMenu} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
-      <Grip spec={SIDEBAR} width={sidebarWidth} onWidth={setSidebarWidth} />
+      <Grip spec={SIDEBAR} size={sidebarWidth} onSize={setSidebarWidth} />
       {/* One layer for the whole page (`M216` `B1`). It draws nothing until something is hovered
           or focused, and it is here rather than inside a pane because the shell's own chrome asks
           for a tooltip too — one of the three screenshots that started this round is a door bar. */}
@@ -1131,10 +1136,22 @@ export function App() {
           }}
         />
       )}
-      {/* `M214` `A1` (`D1110`) — the API door's Compose is three regions that each scroll inside
-          themselves, so this column stops scrolling as one document and the page has no vertical
-          overflow at any height. Every other door and every other tab is unchanged. */}
-      <main className={`main${door === 'api' && tab === 'compose' ? ' main-fill' : ''}`}>
+      {/* `M214` `A1` (`D1110`) — Compose is three regions that each scroll inside themselves, so
+          this column stops scrolling as one document and the page has no vertical overflow at any
+          height. Every other tab is unchanged.
+
+          **`M223` `A` (`D1193`) — the predicate is *where this pane is*, not which door.** It read
+          `door === 'api'` from `M214` until that round, which is why the BROWSER door laid out by
+          content and left **278 px of the window unclaimed below the stage** (measured, 1440x900)
+          while the same pane on API filled.
+
+          **`M224` `D` (`D1210`) — and now neither half names a door at all.** `M223` fixed the
+          predicate by *listing the two doors that render `ComposeDoor`*, which put the same fact
+          in two places and cost LOAD **190 px** the moment it became the third. The condition is
+          *does this door draw a Compose sequence*, and `vocabulary.ts` already answers it —
+          `adds.length > 0`, the qualifier `D1189`'s docblock calls this table's own way of saying
+          so. `D1198`, one rule, no door conditional, held twice. */}
+      <main className={`main${composes && tab === 'compose' ? ' main-fill' : ''}`}>
         {/* The theme is a fact about the reader and not about the project, so it is reachable from
             every door, from the landing, and from the pane that says the project could not be read
             (`M213` `S0`). It rides IN the doorbar rather than above it, because a row of its own
@@ -1161,34 +1178,16 @@ export function App() {
             request={request}
           />
         ) : null}
-        {/* `D1042`: the door decides what the "new test" surface is, and nothing else. LOAD's is
-            `A0-4`'s form and API's is `A1-4`'s; BROWSER and SCANS have theirs in `A2`–`A3`. */}
-        {project && door === 'load' ? (
-          <LoadForm
-            project={project}
-            onWritten={() => {
-              // The page is a projection of the file (`D985`), so after a write the projection is
-              // re-read rather than patched — the server is what says what the file now holds.
-              void readProjectView();
-            }}
-            filePath={path}
-            file={openFileView}
-            fileProblem={fileProblem}
-            onFileWritten={setOpenFileView}
-            tab={tab}
-            onTab={setTab}
-            runPane={runPane}
-            runMark={live && !live.end ? 'a run is going' : undefined}
-            authPanel={authPanel}
-            configPanel={configPanel}
-            configMark={configMark}
-          />
-        ) : null}
-        {/* **API and BROWSER are one pane** since `M213` `S4` (`D1094`) — `vocabulary.ts` is the
-            whole of the difference, and `BrowserForm` is gone with the `<select>` that asked which
-            test to append to. LOAD and SCAN keep their own forms this round; `D1103` rebuilds
-            LOAD's in `S6`. */}
-        {project && (door === 'api' || door === 'browser') ? (
+        {/* **API, BROWSER and — since `M224` `D` — LOAD are one pane** (`M213` `S4`, `D1094`;
+            `D1210`). `vocabulary.ts` is the whole of the difference between them, and `LoadForm`
+            has gone the way `BrowserForm` did: both were the `<select>` that asked which test to
+            append to. SCAN keeps its own form, door by door.
+
+            **The dispatch names no door**, which is the point rather than a tidy-up: `D1042` says
+            a door decides where you land and what `+ new test` scaffolds, and a list of doors here
+            is a second place that decision can be made — the one that left LOAD behind when the
+            pane was rebuilt three times around it. */}
+        {project && composes ? (
           <ComposeDoor
             door={door}
             project={project}

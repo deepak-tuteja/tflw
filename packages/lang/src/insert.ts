@@ -220,20 +220,6 @@ function afterLineContaining(source: string, offset: number): number {
 }
 
 /**
- * Just past the last character this test actually wrote — which is neither of the two offsets
- * that look like it, both measured:
- *
- * - **The furthest span of any child node** stops short of a *comment*, because a comment is not
- *   an AST node. A trailing `# TODO: assert the body too` would end up below the inserted line
- *   and read as a note about it, when it was written about the step above.
- * - **`test.span.end`** overshoots. A declaration's span runs to the dedent that closes it, so on
- *   a test followed by a blank line and another test it points at **the next declaration's first
- *   character** (measured: offset 23, the `t` of `test "u"`).
- *
- * So: start at the declaration's end and walk back over whitespace. That lands just past the last
- * non-blank character inside the test, comment or not, and never inside what follows.
- */
-/**
  * Where a new step goes: after everything in the test that is already a step, and before
  * everything that is not.
  *
@@ -331,10 +317,68 @@ function backOverWhitespace(source: string, offset: number): number {
   return i;
 }
 
+/**
+ * **The last line a declaration's own text occupies** — `M224` `A` (`D1207`), and the anchor both
+ * of this module's append paths hang off.
+ *
+ * Three offsets look like it and none of them is it:
+ *
+ * - **The furthest span of any child node** stops short of a *comment*, because a comment is not
+ *   an AST node. A trailing `# TODO: assert the body too` would end up below the inserted line and
+ *   read as a note about it, when it was written about the step above.
+ * - **`decl.span.end`** overshoots. A declaration's span runs to the dedent that closes it, so on
+ *   a test followed by another test it points at **the next declaration's first character**
+ *   (measured: offset 23, the `t` of `test "u"`).
+ * - **`decl.span.end` walked back over whitespace** — what both callers did until `M224` — lands
+ *   on the last non-blank character *in the span*, which on the commonest file shape there is
+ *   belongs to the **next** declaration. A comment block introducing the next test sits inside
+ *   this test's span, so the anchor landed below it and the new line was written outside the test.
+ *   Measured over `examples/storefront`: **`+ threshold` failed on 8 of 13 tests** with `TF010`,
+ *   and `insertIntoSource({kind:'threshold'})` refused 2 of 3 through `settleSplice`. Two messages,
+ *   one cause.
+ *
+ * So the walk goes back over blank lines **and over a run of comment lines that belongs to what
+ * follows rather than to this declaration**. The two cases are told apart by the two facts that
+ * distinguish them in the file, and it takes both:
+ *
+ * - **Something follows the run.** A run with nothing under it introduces nothing, so it is this
+ *   declaration's own trailing note and the walk stops below it — the case the old docblock was
+ *   careful about, preserved.
+ * - **A blank line sits above the run.** A comment written directly under a statement of this test
+ *   is a note about that statement. `D1077` gives a note to the next line of code with blanks
+ *   crossed, so a *detached* run above the next declaration is that declaration's note and never
+ *   this one's text.
+ *
+ * The lexer classifies the lines rather than a `#` test on the trimmed text, because a line inside
+ * a multi-line value can start with one and is not a comment.
+ */
+function lastLineOfDecl(text: string, decl: TestDecl | HookDecl): { line: number; offset: number } {
+  const records = lex(text).lines;
+  const byLine = new Map(records.map((r) => [r.line, r]));
+  const total = records.length === 0 ? 1 : records[records.length - 1]!.line;
+  const kind = (n: number): 'blank' | 'comment' | 'code' => byLine.get(n)?.kind ?? 'blank';
+  const floor = decl.span.start.line;
+
+  let line = Math.min(lineAt(text, Math.max(backOverWhitespace(text, decl.span.end.offset) - 1, 0)), total);
+  for (;;) {
+    while (line > floor && kind(line) === 'blank') line -= 1;
+    if (line <= floor || kind(line) !== 'comment') break;
+    let top = line;
+    while (top > floor && kind(top - 1) === 'comment') top -= 1;
+    let below = line + 1;
+    while (below <= total && kind(below) === 'blank') below += 1;
+    if (below > total) break;                                   // nothing follows: this test's own note
+    if (top - 1 <= floor || kind(top - 1) !== 'blank') break;    // attached to a statement of this test
+    line = top - 1;
+  }
+  return { line, offset: byLine.get(line)?.offset ?? 0 };
+}
+
+/** Just past the last character this test actually wrote. See `lastLineOfDecl`: an offset on that
+ *  line is all `afterLineContaining` needs, and the line's own start is the one offset on it that
+ *  cannot be inside anything else. */
 function endOfTestText(source: string, test: TestDecl): number {
-  let i = Math.min(test.span.end.offset, source.length);
-  while (i > 0 && /\s/.test(source[i - 1]!)) i -= 1;
-  return i;
+  return lastLineOfDecl(source, test).offset;
 }
 
 /**
@@ -379,6 +423,25 @@ export type Replacement =
   | { readonly kind: 'header'; readonly decl: number; readonly node: TestDecl | HookDecl }
   /** One `threshold` line of a test. `index` at the end of the list appends; `null` removes. */
   | { readonly kind: 'threshold'; readonly decl: number; readonly index: number; readonly node: ThresholdDecl | null }
+  /**
+   * A test's **`workload` line** — `M224` `A` (`D1206`).
+   *
+   * `replaceThreshold` with the index dropped: a test carries **at most one** workload, which the
+   * parser enforces, so the member takes no index. A node where there is none writes one under the
+   * header; `null` removes the one that is there.
+   *
+   * **It is a replacement and not a second `Insertion` member**, and both halves of that were
+   * forced. `Insertion` addresses a test **by name** and the page addresses a declaration by index
+   * once a file is open — two tests of one name are legal to parse and `insertInTest` refuses
+   * them, which is a refusal the band has no way to act on. And `null` — *remove this workload* —
+   * has nowhere to live in a type whose whole job is putting something in.
+   *
+   * Removing a workload **leaves the thresholds behind**, which is legal and already documented at
+   * this file's `threshold` insertion: `D1044`'s case, a threshold on a test whose workload line is
+   * not written. The test keeps the `load` lens through `thresholds.length > 0`, so it does not
+   * vanish from the door it was removed on.
+   */
+  | { readonly kind: 'workload'; readonly decl: number; readonly node: Workload | null }
   /** One `import` or `use` line of the file. `index` at the end of the list appends; `null`
    *  removes. A file with none gets its first one above the first line of code, which is where the
    *  grammar wants it and below the file's own header comment, which is where a reader wants it. */
@@ -453,6 +516,7 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
   // whole lines and then goes through the same format-and-parse gate as the rest of this module.
   if (replacement.kind === 'header') return replaceHeader(text, declarations, replacement.decl, replacement.node);
   if (replacement.kind === 'threshold') return replaceThreshold(text, declarations, replacement);
+  if (replacement.kind === 'workload') return replaceWorkload(text, declarations, replacement);
   if (replacement.kind === 'file') return replaceFileDecl(text, program, replacement);
   if (replacement.kind === 'note') return replaceNote(text, declarations, replacement.owner, replacement.lines);
   if (replacement.kind === 'remove') return removeSteps(text, declarations, replacement.decl, replacement.steps);
@@ -624,17 +688,41 @@ function replaceThreshold(text: string, declarations: readonly (TestDecl | HookD
   // Appended after the last one, or — for a test with none — at the end of its body, which is where
   // `printTest` puts thresholds and therefore where `format` would move it anyway.
   const last = held[held.length - 1];
-  const after = last ? last.span.end.line : endLineOf(text, decl);
+  const after = last ? last.span.end.line : lastLineOfDecl(text, decl).line;
   return spliceLines(text, after + 1, after + 1, printed.lines);
 }
 
-/** The last line a declaration's text occupies — its own span's end, trimmed back over the blank
- *  lines a span runs through on its way to whatever follows it. */
-function endLineOf(text: string, decl: TestDecl | HookDecl): number {
-  const lines = text.split('\n');
-  let line = Math.min(decl.span.end.line, lines.length);
-  while (line > decl.span.start.line && (lines[line - 1] ?? '').trim() === '') line -= 1;
-  return line;
+/**
+ * Rewrite, write or remove a test's one workload line — `M224` `A` (`D1206`).
+ *
+ * `replaceThreshold`'s shape, with the one difference the language forces: there is no index,
+ * because there is no list. The end of an existing workload is read off its **offsets** and not
+ * its `span.end.line`, because a `step`/`spike` block's span runs into the indentation of whatever
+ * follows it — the same correction `replaceInSource`'s step branch carries, which a one-line
+ * workload would never have shown.
+ */
+function replaceWorkload(text: string, declarations: readonly (TestDecl | HookDecl)[], replacement: { readonly decl: number; readonly node: Workload | null }): InsertResult {
+  const decl = declarations[replacement.decl];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.decl}` };
+  if (decl.type !== 'TestDecl') return { ok: false, reason: 'a hook carries no workload' };
+  const level = Math.round((decl.span.start.column - 1) / INDENT.length) + 1;
+  const printed = ((): { ok: true; lines: string[] } | { ok: false; reason: string } => {
+    if (replacement.node === null) return { ok: true, lines: [] };
+    const out = print(replacement.node, { indent: level });
+    return out.ok ? { ok: true, lines: out.text.split('\n') } : { ok: false, reason: out.reason ?? 'the printer refused this workload' };
+  })();
+  if (!printed.ok) return printed;
+  const held = decl.workload;
+  if (held) {
+    const end = backOverWhitespace(text, held.span.end.offset);
+    const last = lineAt(text, Math.max(end - 1, held.span.start.offset));
+    return spliceLines(text, held.span.start.line, last + 1, printed.lines);
+  }
+  if (replacement.node === null) return { ok: false, reason: 'that test has no workload line' };
+  // Directly under the header and above the steps — `insertInTest`'s workload branch's own place,
+  // and where `printTest` emits it, so this is the one position `format` would not move it from.
+  const at = decl.name.span.end.line + 1;
+  return spliceLines(text, at, at, printed.lines);
 }
 
 function replaceFileDecl(text: string, program: Program, replacement: { readonly what: 'import' | 'use'; readonly index: number; readonly node: ImportDecl | UseDecl | null }): InsertResult {

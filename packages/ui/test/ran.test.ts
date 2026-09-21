@@ -132,7 +132,7 @@ test('a suffix match cannot let a short name claim a long one’s verdicts', () 
 });
 
 test('a send brings back the response and no verdict at all — `M215` `A1`', () => {
-  const ran = indexFromSend({
+  const index = indexFromSend({
     steps: [
       step({ kind: 'api', source: 'api GET /health', line: 99 }),
       step({ kind: 'api', source: 'api POST /orders', line: 101, response: { status: 201, bodyText: '{}' } as never }),
@@ -140,39 +140,68 @@ test('a send brings back the response and no verdict at all — `M215` `A1`', ()
       // `withoutAssertions` took every one of them out before the file was written.
       step({ kind: 'capture', source: 'capture body.total as total', line: 102, detail: 'total = 2550' }),
     ],
-    requestLine: 4,
+    lines: new Map([[101, 4]]),
     bufferText: BUFFER,
     startedAt: '2026-09-19T11:00:00.000Z',
   });
-  assert.ok(ran !== null);
+  const ran = index.get(4);
+  assert.ok(ran !== undefined);
   assert.equal(ran.scope, 'send');
   assert.equal(ran.line, 4, 'the scratch ran it on line 101 and this file has it on line 4');
   assert.equal(ran.response!.status, 201);
   assert.equal(ran.steps.size, 0, 'a send grades nothing — a verdict comes from a run');
 });
 
-test('the LAST api step is the one the send was about', () => {
-  const ran = indexFromSend({
+// ── `M225` `A` — a send indexes every request it issued (`D1216`) ─────────────────────────────
+//
+// GATE 2 of `PLAN_M225_SEND_AND_COMPOSER.md` §5, and the mutation that reddens it is *index only
+// the last step* — which is precisely what this function did before this round, so the negative
+// control is the shipped behaviour of the previous milestone.
+
+test('a two-request send writes an entry per request, not one — `M225` gate 2', () => {
+  const index = indexFromSend({
     steps: [
-      step({ kind: 'api', source: 'api GET /health', line: 99, response: { status: 200, bodyText: '"first"' } as never }),
-      step({ kind: 'api', source: 'api POST /orders', line: 101, response: { status: 201, bodyText: '"last"' } as never }),
+      step({ kind: 'api', source: 'api GET /products', line: 99, response: { status: 200, bodyText: '"first"' } as never }),
+      step({ kind: 'api', source: 'api GET /health', line: 101, response: { status: 204, bodyText: '"last"' } as never }),
     ],
-    requestLine: 4,
+    lines: new Map([[99, 2], [101, 4]]),
     bufferText: BUFFER,
     startedAt: '2026-09-19T11:00:00.000Z',
   });
-  assert.equal(ran!.response!.bodyText, '"last"', 'the prefix fires several requests and the pane is showing the last');
+  assert.equal(index.size, 2);
+  assert.equal(index.get(2)!.response!.bodyText, '"first"');
+  assert.equal(index.get(2)!.response!.status, 200);
+  assert.equal(index.get(4)!.response!.bodyText, '"last"');
+  assert.equal(index.get(4)!.response!.status, 204);
 });
 
-test('a run with no api step in it is not a send result at all', () => {
+// **A hook's request is in the same step list and must not claim a row.** `before each` runs
+// inside the test's own steps (`interpreter.ts`'s `runTestAttemptBody`) and `after each` runs
+// after them, which is why the join is by the scratch's own line rather than by position from
+// either end — the plan said *position from the first* and the runtime says that cannot work.
+test('a step the scratch printed outside the kept test is skipped, not attributed', () => {
+  const index = indexFromSend({
+    steps: [
+      step({ kind: 'api', source: 'api POST /login', line: 12, response: { status: 200, bodyText: '"hook"' } as never }),
+      step({ kind: 'api', source: 'api GET /products', line: 99, response: { status: 200, bodyText: '"mine"' } as never }),
+    ],
+    lines: new Map([[99, 2]]),
+    bufferText: BUFFER,
+    startedAt: '2026-09-19T11:00:00.000Z',
+  });
+  assert.equal(index.size, 1, 'the hook ran and is not a row in this file');
+  assert.equal(index.get(2)!.response!.bodyText, '"mine"');
+});
+
+test('a run with no api step in it indexes nothing', () => {
   assert.equal(
     indexFromSend({
       steps: [step({ kind: 'expect', source: 'expect status equals 200', line: 3 })],
-      requestLine: 4,
+      lines: new Map([[99, 4]]),
       bufferText: BUFFER,
       startedAt: '2026-09-19T11:00:00.000Z',
-    }),
-    null,
+    }).size,
+    0,
   );
 });
 

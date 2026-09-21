@@ -10,6 +10,9 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildApiStep, buildWaitUntilApi, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildDataTable, buildGive, buildLet, buildLog, buildPause, SYNTHETIC, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit, type TestDecl } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
@@ -1218,4 +1221,105 @@ test('`M213` `S3`: a request the builder refuses is refused by the wait that wra
     waitMs: null,
   });
   assert.equal(out.ok, false, 'the request half is not validated a second time here, it is validated once');
+});
+
+// ---- `M224` `A` — the anchor, and the workload replacement (`D1206`, `D1207`) ----------------
+
+test('`M224` `D1207`: every test in the example project accepts a threshold, by both paths', () => {
+  // **The gate that names the defect.** `endOfTestText`/`endLineOf` walked back over whitespace
+  // only, so on a test followed by a comment block introducing the next one they anchored *after
+  // that comment* and the line was written outside the test. Measured before the repair: 8 of
+  // these 13 refused with `TF010`, and the insertion path refused 2 of 3 in `load.tflw` through
+  // `settleSplice` — two messages from one cause.
+  //
+  // It runs over `examples/storefront` rather than a fixture because that is where the shape came
+  // from: a comment block between every declaration is how the runnable example is written, and no
+  // fixture in this repository had one. The count is an equality, not a floor — a corpus that
+  // shrank to one test would satisfy "none failed" and assert nothing (`M201`).
+  const EXAMPLE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'examples', 'storefront', 'tests');
+  const refused: string[] = [];
+  let seen = 0;
+  for (const entry of readdirSync(EXAMPLE)) {
+    if (!entry.endsWith('.tflw')) continue;
+    const f = format(readFileSync(join(EXAMPLE, entry), 'utf8'));
+    assert.equal(f.ok, true, entry);
+    const text = f.formatted;
+    const { program } = parseSource(text);
+    const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+    declarations.forEach((decl, index) => {
+      if (decl.type !== 'TestDecl') return;
+      seen += 1;
+      const node = threshold({ metric: { kind: 'errorRate' }, op: 'lessThan', bound: 1, scope: null });
+      const replaced = replaceInSource(text, { kind: 'threshold', decl: index, index: decl.thresholds.length, node });
+      if (!replaced.ok) refused.push(`replace ${entry} "${decl.name.value}": ${replaced.reason}`);
+      const inserted = insertIntoSource(text, { kind: 'threshold', testName: decl.name.value, node });
+      if (!inserted.ok) refused.push(`insert ${entry} "${decl.name.value}": ${inserted.reason}`);
+    });
+  }
+  assert.deepEqual(refused, []);
+  assert.equal(seen, 16, 'the example project declares 16 tests — if it grew, move this number');
+});
+
+test('`M224` `D1207`: a trailing note inside a test keeps the new line below it', () => {
+  // The other direction, and the reason the walk-back cannot simply skip every comment run. A
+  // comment written directly under a statement of this test is a note about that statement; the
+  // inserted line goes **below** it, or the note silently becomes a note about the insertion.
+  const source = 'test "the catalog answers"\n  api GET /catalog\n  # TODO: assert the body too\n';
+  const out = insert(source, {
+    kind: 'threshold',
+    testName: 'the catalog answers',
+    node: threshold({ metric: { kind: 'errorRate' }, op: 'lessThan', bound: 1, scope: null }),
+  });
+  assert.equal(out, 'test "the catalog answers"\n  api GET /catalog\n  # TODO: assert the body too\n  threshold error rate is less than 1%\n');
+});
+
+test('`M224` `D1206`: a workload is rewritten in place, and removing it leaves the thresholds', () => {
+  const source = 'test "holds up"\n  ramp to 4 users over 2s\n  threshold error rate is less than 1%\n  api GET /items\n  expect status equals 200\n';
+  const rewritten = replaceInSource(source, {
+    kind: 'workload',
+    decl: 0,
+    node: workload({ kind: 'hold', unit: 'rps', target: 30, forMs: 5000 }),
+  });
+  assert.ok(rewritten.ok, rewritten.ok ? '' : rewritten.reason);
+  assert.equal(rewritten.text, 'test "holds up"\n  hold 30 rps for 5s\n  threshold error rate is less than 1%\n  api GET /items\n  expect status equals 200\n');
+
+  const removed = replaceInSource(source, { kind: 'workload', decl: 0, node: null });
+  assert.ok(removed.ok, removed.ok ? '' : removed.reason);
+  assert.equal(removed.text, 'test "holds up"\n  threshold error rate is less than 1%\n  api GET /items\n  expect status equals 200\n');
+  // `D1044`'s case, and why removal is not refused: the threshold outlives the workload, and the
+  // test keeps the `load` lens through it rather than disappearing from the door it was edited on.
+  const after = parseSource(removed.text).program.tests[0]!;
+  assert.equal(after.workload, null);
+  assert.equal(after.thresholds.length, 1);
+});
+
+test('`M224` `D1206`: a workload written onto a test that has none lands under the header', () => {
+  const out = replaceInSource(FUNCTIONAL, {
+    kind: 'workload',
+    decl: 0,
+    node: workload({ kind: 'ramp', unit: 'users', target: 5, overMs: 2000 }),
+  });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  assert.equal(out.text, 'test "the catalog answers"\n  ramp to 5 users over 2s\n  api GET /catalog\n  expect status equals 200\n');
+  // Anchored at the body's foot instead, `printTest` would move it back up here and `format` would
+  // no longer be a fixpoint — the refusal `settleSplice` exists to make, arriving as a diff.
+  acceptable(out.text, 'the result');
+
+  // A test with no workload cannot have one removed, and says so rather than writing nothing.
+  const nothing = replaceInSource(FUNCTIONAL, { kind: 'workload', decl: 0, node: null });
+  assert.equal(nothing.ok, false);
+  if (!nothing.ok) assert.match(nothing.reason, /no workload/);
+});
+
+test('`M224` `D1206`: a multi-line workload is replaced whole, not just its first line', () => {
+  // A `step` block's span runs into the indentation of whatever follows it, which a one-line
+  // workload would never show — the same correction `replaceInSource`'s step branch carries.
+  const source = 'test "holds up"\n  step users\n    to 2 for 1s\n    to 4 for 1s\n  threshold error rate is less than 1%\n  api GET /items\n';
+  const out = replaceInSource(source, {
+    kind: 'workload',
+    decl: 0,
+    node: workload({ kind: 'ramp', unit: 'users', target: 9, overMs: 3000 }),
+  });
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  assert.equal(out.text, 'test "holds up"\n  ramp to 9 users over 3s\n  threshold error rate is less than 1%\n  api GET /items\n');
 });

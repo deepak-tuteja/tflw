@@ -68,6 +68,27 @@ export function Stage({ trace, played, running, recording, viewer, unignored }: 
   readonly viewer: boolean;
 }) {
   const src = trace === null ? null : `/trace/index.html?trace=${encodeURIComponent(new URL(reportFileUrl(trace.reportId, trace.path), window.location.origin).toString())}`;
+  /**
+   * **Before a run the stage is one line, and the line says what ▶ does** — `M223` `A` (`D1194`).
+   *
+   * This was a `<p class="stage-hint">` in a dashed box of its own: **105 px of paragraph inside a
+   * 183 px region** on a page whose authoring columns had 239 px to share (measured, 1440x900,
+   * `PLAN_M223` §1.1). `D1076` — over-offering beats silent omission — is satisfied by the
+   * sentence; what `D1082` retires is the frame drawn around it, which is chrome for a region
+   * holding nothing yet.
+   *
+   * The `played === null` sentence loses its second clause — *every click, every navigation, every
+   * assertion, with the page as it was at each step* — **deliberately, and it is not relocated**: a
+   * sentence that sells a feature is worth one line, not four, and the feature sells itself the
+   * first time it runs. The other four say what they said, in a line each.
+   */
+  const hint: string | null =
+    src !== null && viewer ? null
+    : running ? 'a run is going — the trace lands here when it finishes'
+    : recording ? 'a recording is open — every gesture arrives in the panel above; press ▶ when you have lines worth running'
+    : !viewer ? 'no playwright-core in this project — npx playwright show-trace opens the trace written beside the report'
+    : played === null ? 'press ▶ on a test to run it and watch it here'
+    : 'that run kept no trace — a trace is written for a browser test at evidence full, which is what ▶ asks for';
   return (
     <section className="stage" data-stage={trace === null ? 'empty' : 'trace'} data-stage-played={played ?? undefined}>
       <header className="stage-bar">
@@ -82,25 +103,23 @@ export function Stage({ trace, played, running, recording, viewer, unignored }: 
             </a>
           </>
         )}
+        {/* `D1187` still holds and is now cheaper to hold: the region says which of its four states
+            it is in, in the bar it already had, rather than in a box below it. */}
+        {hint === null ? null : (
+          <span className="muted stage-line" data-stage-hint>
+            {hint}
+          </span>
+        )}
       </header>
       {unignored === null ? null : (
         <p className="muted" data-stage-unignored={unignored}>
           ▶ writes <code>{unignored}</code> beside the test it runs, and this project&rsquo;s <code>.gitignore</code> does not list it — add that line.
         </p>
       )}
-      {src === null || !viewer ? (
-        <p className="muted stage-hint" data-stage-hint>
-          {running
-            ? 'a run is going — the trace lands here when it finishes'
-            : recording
-              ? 'a recording is open in a real browser window; every gesture arrives in the panel above. Press ▶ when you have lines worth running, and the trace lands here.'
-              : !viewer
-                ? 'this project has no playwright-core to serve the viewer from — a trace is still written beside the report, and npx playwright show-trace opens it'
-                : played === null
-                  ? 'press ▶ on a test above to run it on its own and watch it here — every click, every navigation, every assertion, with the page as it was at each step'
-                  : 'that run kept no trace — a trace is written for a browser test at evidence full, which is what ▶ asks for'}
-        </p>
-      ) : (
+      {/* `src === null` is redundant with `hint !== null` and is written anyway: it is what tells
+          the checker the frame's `src` is a string, and an assertion in its place would be a claim
+          about the ternary above rather than a fact the compiler can hold. */}
+      {hint !== null || src === null ? null : (
         /* Same-origin, so the frame is admissible for the reason `D1179` gave: the viewer is served
            by THIS server under `/trace/`. `M220` §2.1's refused iframe was of the application
            *under test*, on another port, which is a different claim entirely. */
