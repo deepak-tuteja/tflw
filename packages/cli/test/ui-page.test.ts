@@ -10581,3 +10581,105 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// ── `M227` `D` (`D1235`) — the footer yields to a live playback region ───────────────────────
+//
+// Found by the user on a populated BROWSER playback, and the picture was right while the ordering
+// was untouched. `D1181` has put the Stage below both columns on **every** door since `M220`, and
+// `M226` reordered nothing. What it did was make region 2 the same width as the Stage — measured
+// on this door, `.responsebox` **753 -> 1072** with `.stage` already at 1072 — so two identical
+// full-width bands stack and the upper one reads as the page's floor while the lower one is.
+//
+// The cost is measured, not aesthetic: a trace is **620 px** (`STAGE.fallback`), and on BROWSER
+// the plan took **371** rather than its 240 floor, because that door's editor wants only 237 and
+// `1fr` hands the slack downward. A third of the pane was a chart between the author and the
+// thing the door exists for.
+//
+// **Keyed on the state, never the door.** *This pane has playback up* is true on LOAD the moment
+// you press ▶ on a browser test and false on BROWSER until you do — so this gate PLAYS one, with
+// the same declaration selected before and after. A door-keyed rule would be green under every
+// mutation that made it state-keyed, and the other way round.
+test('`M227` `D`: a trace in the playback region takes the page\'s floor back from the footer (`D1235`)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m227d-'));
+  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    /* The same arrangement `M223` `E` needs and for the same reason: with no `playwright-core`
+       resolvable from the project there is no viewer to serve and no trace to put in it, so
+       `readProject().traceViewer` is false and this gate would measure nothing. */
+    await symlink(join(here, '..', '..', '..', 'node_modules'), join(dir, 'node_modules'), 'dir');
+    await writeFile(
+      join(dir, 'tflw.config'),
+      ['env local default', `  web "http://127.0.0.1:${fixturePort}"`, `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'),
+    );
+    /* **One file, both declarations.** Two files would reset `played` — it is cleared on a change
+       of PATH and not of line — and the whole gate is that the same declaration reads differently
+       before and after a trace lands. */
+    await writeFile(
+      join(dir, 'd.tflw'),
+      [
+        '@ui',                                  // L1
+        'test "plays"',                         // L2
+        '  open "/"',                           // L3
+        '',                                     // L4
+        'test "carries a workload"',            // L5
+        '  ramp to 4 users over 2s',            // L6
+        '  api GET /items',                     // L7
+        '  expect status equals 200',           // L8
+        '  threshold error rate is less than 5%', // L9
+        '',
+      ].join('\n'),
+    );
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+
+    const read = async (): Promise<{ footer: string | null; boxW: number; stageW: number; stage: string | null }> =>
+      fresh.locator('.doorpane').evaluate((pane) => {
+        const grid = pane.querySelector('.compose-pane-grid');
+        const box = pane.querySelector('.responsebox');
+        const st = pane.querySelector('[data-stage]');
+        return {
+          footer: grid === null ? null : grid.getAttribute('data-compose-footer'),
+          boxW: box === null ? 0 : Math.round(box.getBoundingClientRect().width),
+          stageW: st === null ? 0 : Math.round(st.getBoundingClientRect().width),
+          stage: st === null ? null : st.getAttribute('data-stage'),
+        };
+      });
+
+    // ── BEFORE — nothing has been played, and the workload declaration takes the page's width ──
+    await fresh.goto(`${base}/#/browser/compose/d.tflw/L5`);
+    await fresh.locator('[data-compose-footer]').waitFor();
+    await fresh.waitForTimeout(400);
+    const before = await read();
+    assert.equal(before.stage, 'empty', 'nothing has been played yet, which is what makes this the control');
+    assert.equal(before.footer, 'yes', 'with an empty playback region the workload declaration still earns the footer (`D1225`)');
+    assert.ok(before.boxW > before.stageW - 20, `and it really is the page's width — region 2 ${before.boxW}, stage ${before.stageW}`);
+
+    // ── Play the browser test, in the same file, so `played` survives the trip back ────────────
+    await fresh.goto(`${base}/#/browser/compose/d.tflw/L2`);
+    await fresh.locator('[data-seq-play="test"]').first().waitFor();
+    await fresh.locator('[data-seq-play="test"]').first().click();
+    let m = await read();
+    for (let i = 0; i < 240 && m.stage !== 'trace'; i++) {
+      await fresh.waitForTimeout(500);
+      m = await read();
+    }
+    assert.equal(m.stage, 'trace', `no trace landed in two minutes, so this gate measured nothing — ${JSON.stringify(m)}`);
+
+    // ── AFTER — the same declaration, and the page has one full-width band again ───────────────
+    await fresh.goto(`${base}/#/browser/compose/d.tflw/L5`);
+    await fresh.locator('[data-compose-footer]').waitFor();
+    await fresh.waitForTimeout(400);
+    const after = await read();
+    assert.equal(after.stage, 'trace', 'the trace survived the trip back, so the two readings differ in one fact');
+    assert.equal(after.footer, 'no', 'with playback up the footer yields and region 2 goes back to the editor column (`D1235`)');
+    assert.ok(
+      after.boxW < after.stageW - 200,
+      `region 2 is the column's width again, not the page's — ${after.boxW} against the stage's ${after.stageW} (was ${before.boxW})`,
+    );
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

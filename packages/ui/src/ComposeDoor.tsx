@@ -2365,6 +2365,11 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onWrite={() => void writeDraft()}
           onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setNoting(null); setEditProblem(null); }}
           door={door}
+          /* `D1235` — the footer yields to a live playback region, and this is the one bit of the
+             Stage the pane is told about. It is the same `stageTrace` the `Grip` below turns on,
+             so the band that gets the page's width and the control that resizes it cannot
+             disagree about whether there is anything down there. */
+          stage={stageTrace !== null}
         />
         {/* **The third region** (`D1181`) — below both columns, full width of `main`, which is
             1114 px at 1440 against the viewer's 606 px floor. `Stage` is always rendered and says
