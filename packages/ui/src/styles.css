@@ -1377,6 +1377,10 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
    stops recognising it. */
 .scan-panel { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); min-height: 0; font-size: 13px; }
 .scan-panel > p { margin: 0; max-width: 78ch; }
+/* `M228` `F` (`D1247`) — the env half's heading. A heading and not a label, because what follows
+   it is a section the reader can skip once they have read it; sized to sit under the claims line
+   rather than to compete with the pane's own headers. */
+.scan-panel .scan-env { margin: calc(var(--unit) * 0.8) 0 calc(var(--unit) * 0.2); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .scan-claims { line-height: 1.45; }
 .scan-targets { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .scan-targets > li { border-left: 2px solid var(--line); padding-left: 10px; }

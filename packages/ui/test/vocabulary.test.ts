@@ -213,3 +213,30 @@ test('the doors that send are the doors that issue requests, and the table is wh
   assert.ok(VOCABULARY.scan.constructs.has('ApiStep'), 'SCAN stopped constructing `ApiStep`, which is what made `D1241` a decision rather than a consequence');
   assert.equal(VOCABULARY.scan.sends, false, '`send` on a scan-bearing test strips the assertions this door exists for (`D1119`/`D1241`)');
 });
+
+/**
+ * **`records` is its own axis, and the whole point is that it is NOT `!sends`** — `M228` `F`
+ * (`D1245`).
+ *
+ * The shipped rule was `!VOCABULARY[door].sends`, which is an accident of the table rather than an
+ * argument: it agreed with *is this BROWSER* only while BROWSER was the only door without a
+ * `send`. `D1241` made SCANS the second, and SCANS inherited the recorder — offering to splice
+ * `click`/`fill` steps into a declaration whose vocabulary constructs none of them.
+ *
+ * So the gate asserts the **disagreement** directly. A test that only listed the recording doors
+ * would stay green under a build that had gone back to keying on `sends`, because the list would
+ * still be right about BROWSER; what cannot survive that is a door where the two predicates
+ * differ, and SCANS is that door by construction.
+ */
+test('`records` is not `!sends`, and SCANS is the door that proves it', () => {
+  assert.deepEqual(
+    Object.entries(VOCABULARY).filter(([, v]) => v.records).map(([d]) => d),
+    ['browser'],
+    'a door gained or lost the recorder — a live session is BROWSER\'s evidence (`D1165`, `D1245`)',
+  );
+  // The refutation, pinned: two doors do not send, and exactly one of them records.
+  const silent = Object.entries(VOCABULARY).filter(([, v]) => !v.sends).map(([d]) => d);
+  assert.deepEqual(silent, ['browser', 'scan'], 'the set of doors with no `send` changed, which is what made `!sends` unsafe to key on');
+  assert.equal(VOCABULARY.scan.records, false, 'SCANS offers the recorder again — `!sends` is not `records` (`D1245`)');
+  assert.equal(VOCABULARY.browser.records, true, 'BROWSER lost the recorder, which is the one door whose evidence is a live session');
+});

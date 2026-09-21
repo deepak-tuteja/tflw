@@ -126,6 +126,25 @@ export interface DoorVocabulary {
    */
   readonly plays: boolean;
   /**
+   * Whether this door's Compose offers **the recorder** — a live session as this door's evidence
+   * (`M219` `F`, `D1165`, amended by `M228` `F`'s `D1245`).
+   *
+   * **`D1165` keyed this on `!sends` and that was a stand-in for `door === 'browser'`.** Its own
+   * argument says so: *"a browser test's unit is a session, so there is no prefix that can be cut
+   * at a statement and still mean anything"* — true of BROWSER, and an accident of the table when
+   * `D1241` made SCANS the second `sends: false` door. Measured before the repair: the SCANS
+   * door's `response` segment offered `record a session` on every scan test, under copy promising
+   * to splice the gestures into the declaration — and `VOCABULARY.scan.constructs` is
+   * `NEUTRAL_CONSTRUCTS + ApiStep + WaitUntilApiStmt`, so the panel offered to write steps this
+   * door's own vocabulary refuses to draw.
+   *
+   * **A named capability rather than a door literal**, for `M223` `F`'s reason: a door-keyed rule
+   * is green under every mutation that makes it capability-keyed, so the gate could not tell the
+   * two apart. `false` on SCANS is not *nothing goes here* — the region falls through to the
+   * ordinary response state, and `shown.response` is fed by the last **run** as well as by a send.
+   */
+  readonly records: boolean;
+  /**
    * **The assertion subjects this door offers** — `M214` `A3` (`D1114`).
    *
    * The API door's subject select carried `an element` and `page`, which are BROWSER subjects, on
@@ -176,6 +195,7 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     ],
     sends: true,
     plays: false,
+    records: false,
     /* `an element` and `page` are things a browser has. An `api` request fetches bytes — and so
        are the three `M219` `G` added to the language's offer (`D1166`): a network request the page
        made, and the two subjects a native dialog has. `D1167` keeps this door's offer flat this
@@ -230,6 +250,7 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     ],
     sends: false,
     plays: true,
+    records: true,
     dropsSubjects: new Set(),
     /* **`open` alone, and the absence of an assertion is `D1192` rather than an omission.** The
        API scaffold's `expect status equals 200` costs the author nothing because every response
@@ -266,6 +287,7 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     ],
     sends: true,
     plays: true,
+    records: false,
     dropsSubjects: new Set(['locator', 'page', 'networkRequest', 'dialogMessage', 'dialogType']),
     scaffold: 'workload',
   },
@@ -303,6 +325,7 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     ],
     sends: false,
     plays: true,
+    records: false,
     dropsSubjects: new Set(['locator', 'page', 'networkRequest', 'dialogMessage', 'dialogType']),
     scaffold: 'scan',
   },

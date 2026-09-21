@@ -786,6 +786,21 @@ const EDITOR_MIN = 88;
  */
 type Region2 = 'plan' | 'response' | 'scan';
 
+/**
+ * **What each region-2 segment is** — `M228` `F` (`D1246`).
+ *
+ * One sentence per tenant, in the reader's terms rather than the implementation's. `scan` names
+ * itself a view out loud, because that is the confusion that produced this decision: it is the
+ * default segment on a declaration, so it is pressed by someone who is already looking at it.
+ * `response` names BOTH of its sources, because `D956` is the distinction it exists to keep —
+ * *from the last run* and *from this send* are different evidence.
+ */
+const REGION2_TIP: Readonly<Record<Region2, string>> = {
+  plan: 'the workload this test declares, drawn to scale — what will run, for how long, and at what rate',
+  response: 'what came back — from the last run, or from the last `send` on this pane',
+  scan: 'where a scan in this env can reach, and what authorizes it — a view, and nothing here runs',
+};
+
 /** The selected declaration's workload, or `null` — `D1209`'s own predicate, as a function
  *  because the tenant list is derived above where `decl` is unpacked. One expression, two
  *  readers, so the segment and the footer placement cannot disagree about what a workload test
@@ -1771,6 +1786,16 @@ export function ComposePane(props: ComposePaneProps) {
                 `send` is unaffected and stays on for LOAD: it strips the workload and the
                 thresholds by design, which on that door is the point rather than a caveat —
                 *issue this request once, without load, before committing to run it at a rate.* */}
+            {/* **Every tenant says what it is** — `M228` `F` (`D1246`).
+                The nav shipped untipped while 61 other controls on the page carry one, and the
+                cost is not evenly spread: `scan` and `plan` are the DEFAULT segment on a
+                declaration address, so a reader arrives with one already selected, presses it, and
+                nothing happens — inches from `run selection`, which produces a whole run panel.
+                Nothing distinguished *a view you are already looking at* from *a dead button*.
+                Reported in exactly those words by the user driving `M228`'s own corpus.
+
+                They say what the segment IS, not what pressing it does, because two of the three
+                are views and the sentence has to be true of the one already open. */}
             {region2Tenants.length > 1 ? (
               <nav className="seg" data-compose-region2={region2}>
                 {region2Tenants.map((which) => (
@@ -1781,6 +1806,7 @@ export function ComposePane(props: ComposePaneProps) {
                     aria-pressed={region2 === which}
                     onClick={() => setRegion2Pick(which)}
                     data-compose-region2-tab={which}
+                    data-tip={REGION2_TIP[which]}
                   >
                     {which}
                   </button>
@@ -1872,10 +1898,19 @@ export function ComposePane(props: ComposePaneProps) {
                 onCapture={onCapture === null ? null : (specs) => onCapture(shownRequest, specs)}
               />
               </>
-            ) : !VOCABULARY[door].sends ? (
-              /* **The session panel** — `M219` `F` (`D1165`). A door with no `send` has no response
-                 to put here and is not therefore a door with nothing to put here: the live page is
-                 this door's evidence, and `D1102`'s rule is the same one. */
+            ) : VOCABULARY[door].records ? (
+              /* **The session panel** — `M219` `F` (`D1165`), re-keyed by `M228` `F` (`D1245`).
+                 A door that RECORDS puts a live session here: the page is its evidence, and
+                 `D1102`'s rule is the same one.
+
+                 **It read `!VOCABULARY[door].sends` until `M228` `F`, and that was a stand-in for
+                 `door === 'browser'`** — true while BROWSER was the only door with no `send`.
+                 `D1241` made SCANS the second one, and SCANS inherited the recorder: measured on
+                 the served corpus, every scan test offered `record a session` under copy promising
+                 to splice the gestures into the declaration, while `VOCABULARY.scan.constructs`
+                 holds none of the steps a recording produces. A rule keyed on a proxy for one
+                 tenant breaks the day the proxy gains a second, which is the third recurrence of
+                 that shape in this arc (`M227` `A`). */
               <SessionPanel
                 session={session}
                 onKeep={onKeepLine}
