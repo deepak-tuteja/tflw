@@ -9165,6 +9165,20 @@ spelling in the same round.** This is the decision `M213-18` named as owed and d
 alternative — widening `expect` alone — is refused for the reason `M169d5` records: *a rule spent
 in one implementation and not the other lets parity agree with itself.*
 
+### D1275
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+
+**`D1275` — the fmt gate's prose says what the walker does, because the walker cannot say what the prose does**
+
+`M215-01`, second half, and it is **settled by measurement rather than preference**.
+`verify-contributing.test.mjs:109` documents the gate as covering *"this repository's **tracked**
+`.tflw` files"*; `verify-fmt-roundtrip.mjs:50` walks the filesystem. The symmetric repair — make the
+walker git-aware — **cannot be taken**: `scripts/exec.mjs` rsyncs this tree to the box **without
+`.git/`** and `verify:fmt-roundtrip` runs there (green in `M230`'s own batch).
+`verify-corpora.mjs`'s `repoOrNull` docblock already states this: *"a corpus declared over the
+tracked set has to be skipped by name there, not resolved to zero."*
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -13075,6 +13089,16 @@ the grilling found wrong, for a reason recorded as `D1043` below.
 then deferred the work. `M207` built the strips and deferred it again, deliberately, because this
 is a language change and a new write path rather than a UI round.
 
+### M215
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M215_BODY_AND_SEND.md`</sub>
+
+**`M215` — the body, and what `send` means**
+
+**Scoped 2026-09-20 from the user's own reading of the `M214` pane.** Four asks, measured before
+any of them was answered. Three landed as asked; one was answered with a *no* and a reason, which
+the user accepted.
+
 ### M230
 
 <sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
@@ -13088,5 +13112,17 @@ be asserted on at all.** BUILT 2026-09-22. Four decisions, `D1261`–`D1264`: ax
 through the browser's debugging protocol rather than added to the page as a script, and a body path
 segment may be quoted — `body."content-type"`, `body."0"` — with `capture` and `{interpolation}`
 taking the same spelling in the same round.
+
+### M232
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+
+**`M230`–`M232` — the ledger to zero, before the site describes the page**
+
+- **`M230` BUILT and committed `bf31df1`** — `M228-01` and `M213-18` closed; ledger 12 → 10.
+- **`M231` BUILT and committed `7a03d6d`** — `M219-01`, `M219-03`, `M219-04`, `M220-01` closed;
+  ledger 10 → 6.
+- **`M232` BUILT** — `M213-06`, `M213-07`, `M213-19`, `M215-01`, `M220-02`, `M222-02` closed and
+  `M232-01` filed and closed in the round that found it; ledger **6 → 0**.
 
 <!-- GENERATED:decisions:end -->

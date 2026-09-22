@@ -11,10 +11,11 @@
 // and for the same reason.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { tflwFiles } from '../../../scripts/tflw-corpus.mjs';
 import { highlightLines, highlightFragment, type Piece } from '../src/highlight.ts';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -41,32 +42,15 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
  * project grows a new output directory. */
 const SOURCE_ROOTS = ['packages', 'examples'] as const;
 
-const tflwFiles = (): string[] => {
-  const out: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.git') continue;
-        walk(full);
-      } else if (entry.name.endsWith('.tflw') && !entry.name.startsWith('.')) {
-        // **A dot-prefixed `.tflw` is not part of the authored corpus** (`M215`, `M215-01`). `tflw
-        // ui`'s send writes `.scratch.tflw` into the project it serves, and `examples/storefront`
-        // is both a served project and a root of this walk. This is the **fifth** copy of the same
-        // traversal — `lenses.test.ts`, `print.test.ts`, `outline.test.ts` and
-        // `verify-fmt-roundtrip.mjs` are the others — which is `M215-01`'s open half.
-        out.push(full);
-      }
-    }
-  };
-  for (const root of SOURCE_ROOTS) walk(join(repoRoot, root));
-  return out.sort();
-};
+/* One walker for the two source roots (`M215-01`, `D1274`) — this was the fifth copy, and the one
+   whose guard had drifted: it skipped dot-prefixed *files* and descended into dot-prefixed
+   *directories*, which the other four refused. Measured to return the same set either way. */
+const corpusFiles = (): string[] => tflwFiles(SOURCE_ROOTS.map((r) => join(repoRoot, r)));
 
 const rejoin = (lines: readonly (readonly Piece[])[]): string => lines.map((l) => l.map((p) => p.text).join('')).join('\n');
 
 test('every `.tflw` file in this repository reassembles byte for byte, and the line count is the file’s own', () => {
-  const files = tflwFiles();
+  const files = corpusFiles();
   // The floor's job is not to pin the corpus — it grows, and pinning it would make every new
   // `.tflw` file a failing test. Its job is to catch the walk coming back empty, which is how a
   // gate over a corpus passes while reading zero files. **21 under `packages/` and `examples/` on

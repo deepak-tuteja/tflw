@@ -23,9 +23,10 @@
 // many it refused. A run that checks nothing fails.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tflwFiles } from '../../../scripts/tflw-corpus.mjs';
 import { parseSource, print, PRINTABLE, CONTEXT_BOUND, REFUSES_BY_CONSTRUCTION, format } from '../src/index.js';
 import { STEP_KEYWORDS } from '../src/spec-data.js';
 import { RETIRED_STATEMENT_KEYWORDS } from '../src/parser.js';
@@ -86,32 +87,11 @@ const extras = (): string[] =>
   process.env.TFLW_PRINT_EXTRAS === 'off' ? [] : corpus(siblingRoot);
 const allFiles = (): string[] => [...corpusFiles(), ...extras()];
 
-/** Directories that hold copies rather than sources: pulled run artefacts and scratch. */
-const SKIP_DIR = /^(node_modules|dist|\.git|runs|coverage)$|^\.m.*-scratch$/;
-
+/* One walker for the whole repository (`M215-01`, `D1274`). This was one of five copies, each
+   carrying its own skip list and its own dot-prefix guard; unifying them was measured to return
+   the same 22 files, set-identical, from every shape. */
 function corpus(root: string): string[] {
-  const out: string[] = [];
-  const walk = (dir: string): void => {
-    let entries: string[];
-    try { entries = readdirSync(dir); } catch { return; }
-    for (const entry of entries) {
-      // **A dot-prefixed `.tflw` is not part of the authored corpus** (`M215`). `tflw ui`'s send
-      // writes `.scratch.tflw` into the project it is serving — that is the whole point of the
-      // button — and every walker here reads *every* `.tflw` under the repository root, so a
-      // person driving the served page changed this census by pressing it. It cost three corpus
-      // failures and five `test:scripts` failures once already, repaired by deleting the file;
-      // deleting a file the product writes on purpose is not a repair. The same line is in
-      // `print.test.ts` and `verify-fmt-roundtrip.mjs`, which are the other two walks.
-      if (SKIP_DIR.test(entry) || entry.startsWith('.')) continue;
-      const p = join(dir, entry);
-      let st;
-      try { st = statSync(p); } catch { continue; }
-      if (st.isDirectory()) walk(p);
-      else if (entry.endsWith('.tflw')) out.push(p);
-    }
-  };
-  walk(root);
-  return out;
+  return tflwFiles(root);
 }
 
 /** The compare primitive `migrate.test.ts` already uses for "these two sources mean the same". */

@@ -19,7 +19,7 @@ import {
   buildDismissDialog, buildDownload, buildDrag, buildDropFile, buildExpect, buildFill, buildFillForm,
   buildGive, buildHover, buildLet, buildLog, buildOpen, buildPause, buildPress, buildScreenshot,
   buildScroll, buildSelect, buildStub, buildSwitchToNewTab, buildSwitchToTab, buildWaitUntilApi,
-  buildWaitUntilUi, buildWithin, STEP_LENS, type Step,
+  buildWaitUntilUi, buildWithin, print, stringLit, STEP_LENS, SYNTHETIC, type Step,
 } from '@tflw/lang';
 
 import { VOCABULARY } from '../src/vocabulary.ts';
@@ -122,6 +122,40 @@ test('…and the dispatcher refuses a key the table does not offer, rather than 
   // disagreement instead of a button silently going nowhere.
   assert.match(dispatcher, /default: return setEditProblem\(/);
   assert.match(dispatcher, /vocabulary\.ts\\` and this switch disagree/);
+});
+
+test('…and one the FILE can hold — the printer is asked, not just the row (`M232`, `D1272`)', () => {
+  /**
+   * **THIS GATE DID NOT EXIST AND THAT IS HOW `D1272` WAS TAKEN WRONG.**
+   *
+   * The test below asks whether a row draws the kind. It never asked whether anything could write
+   * one, and those are different questions: `M213-06`'s bar named `header` and `csrf`, `STEP_LENS`
+   * lenses both `api`, and the row counted them among the API door's thirteen. Building them found
+   * that the parser dispatches both from `parseSessionBody` only — a `session` block lives in
+   * `tflw.config` — and `print.ts` has **no case for either**. So a door could have claimed a
+   * construct the pane drew, built, and then failed to write, with every gate green and the
+   * failure arriving only under a user's finger.
+   *
+   * A lens says which door a test appears behind. It does not say the file can hold the construct.
+   */
+  for (const [door, vocab] of Object.entries(VOCABULARY)) {
+    for (const kind of vocab.constructs) {
+      const printed = print(SAMPLES[kind]!);
+      assert.ok(
+        printed.ok,
+        `${door} claims to construct \`${kind}\`, and \`print\` refuses it: ${printed.ok ? '' : printed.reason}\n` +
+          `  A pane that built one could never write it to the file. If the construct belongs to \`tflw.config\`, it is not this door's to offer.`,
+      );
+    }
+  }
+});
+
+test('the control: a kind the printer refuses IS caught, so the gate above is not asserting nothing', () => {
+  /* `HeaderStmt` is the specimen because it is the one that got through — a session-body statement
+     with no printer, which `insert.test.ts` pins from the language's side. Written by hand rather
+     than built, because `build.ts` has no builder for it and this round is why it does not. */
+  const header = { type: 'HeaderStmt', name: stringLit('Authorization'), value: stringLit('Bearer x'), span: SYNTHETIC } as unknown as Step;
+  assert.equal(print(header).ok, false, 'if this ever prints, the gate above stops being able to fail and the bar in `M213-06` can be revisited');
 });
 
 test('every kind a door claims to construct is one the pane can actually draw', () => {

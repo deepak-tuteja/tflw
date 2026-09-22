@@ -6,9 +6,10 @@
 // buying nothing. Everything else here could pass under an implementation that read the tags.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tflwFiles, tflwIn } from '../../../scripts/tflw-corpus.mjs';
 import { parseSource, lensesOfTest, lensesOfCrawl, checkProgram, STEP_LENS, SUBJECT_LENS } from '../src/index.js';
 import type { Step, Subject } from '../src/index.js';
 
@@ -127,27 +128,9 @@ test('the classification tables cover their unions, checked against ast.ts itsel
  * corpus, where it is **35.7%** and makes the argument without borrowing anything.
  */
 test('every test in the corpus classifies, and a third of them land in more than one lens', () => {
-  const SKIP = /^(node_modules|dist|\.git|runs|coverage)$|^\.m.*-scratch$/;
-  const walk = (dir: string, out: string[] = []): string[] => {
-    let entries: string[];
-    try { entries = readdirSync(dir); } catch { return out; }
-    for (const entry of entries) {
-      // **A dot-prefixed `.tflw` is not part of the authored corpus** (`M215`). `tflw ui`'s send
-      // writes `.scratch.tflw` into the project it is serving — that is the whole point of the
-      // button — and every walker here reads *every* `.tflw` under the repository root, so a
-      // person driving the served page changed this census by pressing it. It cost three corpus
-      // failures and five `test:scripts` failures once already, repaired by deleting the file;
-      // deleting a file the product writes on purpose is not a repair. The same line is in
-      // `print.test.ts` and `verify-fmt-roundtrip.mjs`, which are the other two walks.
-      if (SKIP.test(entry) || entry.startsWith('.')) continue;
-      const p = join(dir, entry);
-      let st;
-      try { st = statSync(p); } catch { continue; }
-      if (st.isDirectory()) walk(p, out);
-      else if (entry.endsWith('.tflw')) out.push(p);
-    }
-    return out;
-  };
+  /* One walker, shared by the five places this traversal used to be written out (`M215-01`,
+     `D1274`) — and a source gate in `scripts/corpus-walk.test.mjs` so a sixth cannot appear
+     without it, which is the half of the row a shared helper alone does not answer. */
   const root = resolve(here, '..', '..', '..');
 
   const census = (files: string[]): { total: number; multi: number; combos: Map<string, number> } => {
@@ -168,8 +151,8 @@ test('every test in the corpus classifies, and a third of them land in more than
     return { total, multi, combos };
   };
 
-  const mine = census(walk(root));
-  const theirs = census(walk(resolve(root, '..', 'testFlow-tests')));
+  const mine = census(tflwFiles(root));
+  const theirs = census(tflwFiles(resolve(root, '..', 'testFlow-tests')));
 
   console.log(`\n  lens census — ${mine.total} tests in this repository, ${mine.multi} in more than one lens` +
     (theirs.total > 0 ? `  (+ ${theirs.total} in the sibling, ${theirs.multi} multi-lens, pressure only)` : ''));
@@ -389,9 +372,8 @@ const REACHABLE = [
 
 test('the doors corpus carries every lens combination the language admits, and exactly those', () => {
   const found = new Map<string, string[]>();
-  for (const entry of readdirSync(DOORS_CORPUS)) {
-    if (!entry.endsWith('.tflw')) continue;
-    const file = join(DOORS_CORPUS, entry);
+  for (const file of tflwIn(DOORS_CORPUS)) {
+    const entry = file.slice(file.lastIndexOf('/') + 1);
     const { program, diagnostics } = parseSource(readFileSync(file, 'utf8'));
     assert.deepEqual(
       diagnostics.filter((d) => d.severity === 'error').map((d) => `${d.code} ${d.message}`), [],
@@ -426,9 +408,8 @@ test('the example project reaches every door — the artefact a reader opens, he
   // drops is the one a new reader never discovers.
   const EXAMPLE = join(here, '..', '..', '..', 'examples', 'storefront', 'tests');
   const found = new Set<string>();
-  for (const entry of readdirSync(EXAMPLE)) {
-    if (!entry.endsWith('.tflw')) continue;
-    const { program, diagnostics } = parseSource(readFileSync(join(EXAMPLE, entry), 'utf8'));
+  for (const entry of tflwIn(EXAMPLE)) {
+    const { program, diagnostics } = parseSource(readFileSync(entry, 'utf8'));
     assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), [], entry);
     for (const t of program.tests) found.add(lensesOfTest(t).join('+') || '(none)');
     for (const c of program.crawls ?? []) found.add(lensesOfCrawl(c).join('+'));

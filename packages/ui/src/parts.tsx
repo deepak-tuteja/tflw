@@ -371,10 +371,18 @@ export interface Verdict {
  * claim with no date on it.
  */
 export interface Ran {
-  /** The request this ran for. */
+  /**
+   * **The step this ran for** — a request, or since `M232` (`D1270`) any **action**.
+   *
+   * It said *the request this ran for*, and that sentence is exactly how the API-shaped assumption
+   * behind `M220-02` stayed invisible: `indexFromReport` opened a group only on `step.kind ===
+   * 'api'` and dropped every verdict while none was open, so a browser test's map was empty **by
+   * construction** — its assertions drew no marks while its status chip did. Amended in place
+   * rather than left, because a comment that has drifted from its code is invisible to every test.
+   */
   readonly line: number;
   /**
-   * **That request's line, exactly as it ran** (`D1108`).
+   * **That step's line, exactly as it ran** (`D1108`).
    *
    * The join key is `(line, source)` and not `line` alone, which is the whole of why this field
    * exists. A line number is the most fragile join key there is (`D1093`): insert one request and
@@ -399,6 +407,13 @@ export interface Ran {
    * are not this file's, so the caller maps its steps back onto the request it sent.
    */
   readonly steps: ReadonlyMap<number, Verdict>;
+  /**
+   * The response, for a group a **request** opened. `null` for a group an **action** opened, which
+   * is not a degenerate case and is not new: `indexFromSend` already produces groups with an empty
+   * verdict map, so both fields have always been allowed to be empty and the shape is unchanged.
+   *
+   * A browser action has no response by nature — what its assertions read is the page it left.
+   */
   readonly response: { readonly status: number; readonly url: string; readonly method: string; readonly bodyText: string } | null;
 }
 

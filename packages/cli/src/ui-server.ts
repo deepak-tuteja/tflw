@@ -458,7 +458,25 @@ export interface ReportEntry {
   readonly id: string;
   readonly path: string;
   readonly at: string;
-  readonly files: readonly string[];
+  /**
+   * **The ARTEFACTS in this report directory** — `results.json`, `report.html`, `junit.xml` — and
+   * it was called `files` until `M232` (`M213-19`, `D1271`).
+   *
+   * The carry is **a field name that is a category rather than a contract**. The first consumer to
+   * read it as *the `.tflw` files this run executed* matched nothing and said nothing: `files`
+   * is true of both sets and wrong about one of them, so the mistake was invisible at the call
+   * site and cost two walks that open report payloads to answer a question the server already had.
+   */
+  readonly artefacts: readonly string[];
+  /**
+   * **Which `.tflw` files this run executed** (`D1271`) — the question `files` looked like it
+   * answered.
+   *
+   * Measured free: `listReports` already reads and parses every directory's `results.json` to
+   * build `summary`, so this is one `.map()` over what is in hand and **zero extra I/O**. That is
+   * what turned the row's tentative *"consider a `tests` field"* into a decided one.
+   */
+  readonly tests: readonly string[];
   readonly summary: { ok: boolean; total: number; passed: number; failed: number } | null;
   /**
    * **This run is also `report/current`** — `M229` `E` (`D1254`).
@@ -1453,18 +1471,23 @@ export class UiServer {
       for (const m of REPORT_MEMBERS) if (existsSync(join(dir, m))) present.push(m);
       if (present.length === 0) return null;
       let summary: ReportEntry['summary'] = null;
+      let tests: string[] = [];
       let at = '';
       let results: string | null = null;
       try {
         const resultsPath = join(dir, 'results.json');
         at = (await stat(resultsPath)).mtime.toISOString();
         results = await readFile(resultsPath, 'utf8');
-        const r = JSON.parse(results) as { ok: boolean; total: number; passed: number; failed: number };
+        const r = JSON.parse(results) as { ok: boolean; total: number; passed: number; failed: number; tests?: readonly { file?: unknown }[] };
         summary = { ok: r.ok, total: r.total, passed: r.passed, failed: r.failed };
+        /* `D1271`, and the whole cost of it: the payload is already parsed for `summary` above.
+           Deduplicated because a file with four tests in it appears four times, and a caller
+           asking *did this run touch my file* wants the set. */
+        tests = [...new Set((r.tests ?? []).map((x) => x.file).filter((f): f is string => typeof f === 'string'))].sort();
       } catch {
         // A directory with a report.html and no results.json is still a report; it just has no summary.
       }
-      return { entry: { id, path: relative(this.opts.root, dir).split(sep).join('/'), at, files: present, summary }, results };
+      return { entry: { id, path: relative(this.opts.root, dir).split(sep).join('/'), at, artefacts: present, tests, summary }, results };
     };
     const current = await describe('current', reportDir);
     let kept: string[] = [];
@@ -1500,7 +1523,7 @@ export class UiServer {
     if (current !== null && current.results !== null) {
       for (const id of kept) {
         const e = await describe(id, join(reportDir, 'runs', id));
-        if (e !== null && e.results === current.results && sameMembers(e.entry.files, current.entry.files)) {
+        if (e !== null && e.results === current.results && sameMembers(e.entry.artefacts, current.entry.artefacts)) {
           foldedInto = id;
           break;
         }

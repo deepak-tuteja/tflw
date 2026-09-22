@@ -106,7 +106,7 @@ const CLASSIFIED = [
     cmd: 'npm run verify:fmt-roundtrip -- --check',
     class: 'gate',
     local: 'npm run verify:fmt-roundtrip -- --check',
-    why: "`M191`/`D997` — the formatter's own gate over this repository's tracked `.tflw` files: `format()` yields the same tokens in the same order with trivia excluded, every comment kept, and is idempotent; under `--check` the files are already formatted too, so the formatter's own corpus can never fail the check it asks of the sibling's. A `.checkonly/` fixture that is broken on purpose is refused by design and listed, not counted. Needs `packages/lang/dist` — the `build` step — and no network. Milliseconds",
+    why: "`M191`/`D997` — the formatter's own gate over this repository's `.tflw` files, found by walking the filesystem from the declared roots with dot-entries excluded (`M215-01`, `D1275`: it said *tracked* and never was, and the symmetric repair cannot be taken — `scripts/exec.mjs` rsyncs this tree to the box without `.git/` and this gate runs there, so a corpus declared over the tracked set has to be skipped by name rather than resolved to zero; the dot-entry exclusion is also what makes the `.scratch.tflw` the served page writes on purpose a non-event): `format()` yields the same tokens in the same order with trivia excluded, every comment kept, and is idempotent; under `--check` the files are already formatted too, so the formatter's own corpus can never fail the check it asks of the sibling's. A `.checkonly/` fixture that is broken on purpose is refused by design and listed, not counted. Needs `packages/lang/dist` — the `build` step — and no network. Milliseconds",
   },
   {
     wf: 'ci.yml',

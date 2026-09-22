@@ -187,6 +187,21 @@ const NEUTRAL_CONSTRUCTS: readonly Step['type'][] = [
 
 export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
   api: {
+    /* **`HeaderStmt` AND `CsrfStmt` ARE NOT HERE, AND `M213-06`'s BAR IS WRONG TO ASK FOR THEM** —
+       `M232` (`D1272`, amended by its own build).
+
+       The row counted 13 API-door statements off `ast.ts`'s `Step` union classified by lens, and
+       `STEP_LENS` does lens both of these `api`. But a lens says which door a test appears behind;
+       it does not say the construct can appear in the artefact this pane edits. Measured: the
+       parser dispatches `header` and `csrf` from `parseSessionBody` only — a `session` block lives
+       in `tflw.config`, and `csrf` written in a `.tflw` test body is deliberately an unknown step —
+       and `print.ts` has **no case for either kind**, so there is nothing that could write one.
+
+       So they were not missing a builder; they are missing a *file that can hold them*. Both were
+       written during this round and withdrawn when that was measured, because a builder whose
+       output nothing can print is an unreachable branch, and `insert.test.ts` had already said so
+       in prose with a test pinning it. The honest bar is **5 of 11**, not 7 of 13.
+    */
     constructs: new Set<Step['type']>([...NEUTRAL_CONSTRUCTS, 'ApiStep', 'WaitUntilApiStmt']),
     adds: [
       { key: 'request', label: '+ request', title: 'an `api` step and the assertion that reads it, at the end of this test' },

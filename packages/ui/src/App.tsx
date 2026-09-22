@@ -1113,7 +1113,7 @@ export function App() {
             ) : null}
             {reports
               .find((r) => r.id === report.id)
-              ?.files.map((f) => (
+              ?.artefacts.map((f) => (
                 <a key={f} href={reportFileUrl(report.id, f)} target="_blank" rel="noreferrer" data-report-file={f}>
                   {f}
                 </a>

@@ -8,16 +8,21 @@
 // is an rsync copy with no `.git` — and for the same reason the default root is `packages/`, where
 // every `.tflw` this repository tracks lives, rather than the repository root: the rsync carries
 // this machine's untracked scratch directories too, and a gate that walked them would grade files
-// the repository does not have. `node_modules/`, `.git/`, `dist/` and `report/` are skipped.
-// `.checkonly/` fixtures that are broken on purpose are expected to be refused and are listed as
-// such rather than counted against the gate — a file that does not lex is not formatted, and
-// those files exist to not lex.
+// the repository does not have. That walk is `scripts/tflw-corpus.mjs` since `M232` (`D1274`) —
+// it was written here and in four other places, each with its own skip list.
+//
+// **`.checkonly/` IS GONE FROM THIS DESCRIPTION BECAUSE IT WAS NEVER REACHABLE** (`M232-01`).
+// It said such fixtures are refused by design and listed rather than counted; no such directory
+// exists anywhere in this repository, and the dot-prefix rule the corpus walk applies would skip
+// one if it did. Two counters that could only ever print zero, one of them printing it in the
+// gate's own summary line for as long as the gate has existed.
 //
 //   node scripts/verify-fmt-roundtrip.mjs [--check] [root...]     default root: packages/
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format, roundTrip } from '../packages/lang/dist/index.js';
+import { tflwFiles } from './tflw-corpus.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -31,26 +36,7 @@ const roots = argv.filter((a) => a !== '--check');
 if (roots.length === 0) {
   roots.push(path.resolve(HERE, '..', 'packages'), path.resolve(HERE, '..', 'examples'));
 }
-const SKIP = new Set(['node_modules', '.git', 'dist', 'report']);
-
-const files = [];
-const walk = (dir) => {
-  for (const name of readdirSync(dir).sort()) {
-    // **A dot-prefixed `.tflw` is not part of the authored corpus** (`M215`). `tflw ui`'s send
-    // writes `.scratch.tflw` into the project it is serving — that is the whole point of the
-    // button — and every walker here reads *every* `.tflw` under the repository root, so a
-    // person driving the served page changed this census by pressing it. It cost three corpus
-    // failures and five `test:scripts` failures once already, repaired by deleting the file;
-    // deleting a file the product writes on purpose is not a repair. The same line is in
-    // `lenses.test.ts` and `print.test.ts`, which are the other two walks.
-    if (SKIP.has(name) || name.startsWith('.')) continue;
-    const p = path.join(dir, name);
-    const st = statSync(p);
-    if (st.isDirectory()) walk(p);
-    else if (name.endsWith('.tflw')) files.push(p);
-  }
-};
-for (const r of roots) walk(path.resolve(r));
+const files = tflwFiles(roots.map((r) => path.resolve(r)));
 
 let problems = 0;
 let unformatted = 0;
@@ -64,13 +50,18 @@ for (const f of files) {
   if (bad.length > 0) { problems += 1; console.error(`✗ ${rel}: ${bad.join('; ')}`); }
   if (CHECK && r.formatted !== src) { unformatted += 1; console.error(`✗ ${rel}: not formatted`); }
 }
-const deliberate = refused.filter((r) => /\.checkonly\//.test(r));
-const surprising = refused.filter((r) => !/\.checkonly\//.test(r));
-for (const r of surprising) console.error(`✗ refused outside .checkonly: ${r}`);
-console.log(`fmt round-trip: ${files.length} file(s) — ${files.length - refused.length - problems} round-trip${CHECK ? `, ${files.length - refused.length - unformatted} already formatted` : ''}, ${deliberate.length} refused by design (.checkonly), ${surprising.length} refused elsewhere`);
-const failures = problems + unformatted + surprising.length;
+/* **EVERY REFUSAL IS A FAILURE NOW** (`M232-01`). There was a `.checkonly/` exemption here — a
+   file that does not lex is not formatted, and those files existed to not lex — and it had two
+   independent reasons it could never fire: no such directory exists anywhere in this repository,
+   and `tflwFiles` skips dot-prefixed entries, so one would not be walked if it did. A gate's
+   summary line printed `0 refused by design` for its whole life, which reads like a measurement
+   and was a constant. The exemption can come back the day a fixture needs it, under a name the
+   corpus walk does not skip. */
+for (const r of refused) console.error(`✗ refused: ${r}`);
+console.log(`fmt round-trip: ${files.length} file(s) — ${files.length - refused.length - problems} round-trip${CHECK ? `, ${files.length - refused.length - unformatted} already formatted` : ''}, ${refused.length} refused`);
+const failures = problems + unformatted + refused.length;
 if (failures > 0) {
-  console.error(`✗ fmt round-trip: ${problems} round-trip problem(s), ${unformatted} unformatted file(s), ${surprising.length} unexpected refusal(s)`);
+  console.error(`✗ fmt round-trip: ${problems} round-trip problem(s), ${unformatted} unformatted file(s), ${refused.length} refusal(s)`);
   process.exit(1);
 }
 console.log(`✓ fmt round-trip holds${CHECK ? ' and the tree is formatted' : ''}`);

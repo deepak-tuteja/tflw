@@ -3611,10 +3611,24 @@ test('`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer fol
       const preview = (await fresh.locator('[data-add-step-preview]').textContent())!;
       assert.match(preview, /expect status equals 201/, `the preview is built from the text the author has:\n${preview}`);
 
-      // The tail is eighteen: 22 browser kinds − the three in the foot − `within`, which under
-      // `D1163` is a field on a row and leaves the `+` vocabulary entirely.
-      assert.equal(await fresh.locator('[data-add-step-count]').getAttribute('data-add-step-count'), '18');
+      /**
+       * **The tail is twenty-three, and it was eighteen until `M232`** — `M213-06` (`D1273`).
+       *
+       * 22 browser kinds − the three in the foot − `within`, which under `D1163` is a field on a
+       * row and leaves the `+` vocabulary entirely; **plus the five door-agnostic kinds**
+       * `capture`, `log`, `call`, `give` and `pause`, which are constructible on every door and
+       * were offered on none. `stepCatalogue`'s third clause read `STEP_LENS[kind] !== null` as
+       * *this door cannot build it* when it means *this construct does not choose a door*, and its
+       * own docblock justified it as the **first** clause's job.
+       *
+       * It filtered nothing on the day it was written, because every `CATALOGUE` row was a browser
+       * kind — so it was a trap rather than a defect, and the trap is that adding the five rows
+       * would have changed this number by zero and reddened nothing.
+       */
+      assert.equal(await fresh.locator('[data-add-step-count]').getAttribute('data-add-step-count'), '23');
       assert.equal(await fresh.locator('[data-add-step-kind="WithinBlock"]').count(), 0);
+      assert.equal(await fresh.locator('[data-add-step-kind="CaptureStmt"]').count(), 1, 'a door-agnostic kind is offered on the BROWSER door — it was offered nowhere');
+      assert.equal(await fresh.locator('[data-add-step-kind="LetStmt"]').count(), 0, 'and `let` is not, because every door already carries `+ let` in its foot');
       // It filters by typing, and the bytes it previews are the bytes that land.
       await fresh.locator('[data-add-step-filter]').fill('dialog');
       assert.equal(await fresh.locator('[data-add-step-count]').getAttribute('data-add-step-count'), '2');

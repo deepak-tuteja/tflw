@@ -253,7 +253,22 @@ test('a run from the API is a real tflw run: the stream arrives over SSE, the re
       assert.deepEqual(reports.map((r) => [r.id, r.current === true]), [[record.id, true]], 'one run, and it is the one `report/current` holds');
       for (const r of reports) {
         assert.deepEqual(r.summary, { ok: true, total: 1, passed: 1, failed: 0 });
-        assert.ok(r.files.includes('results.json') && r.files.includes('events.ndjson'), `${r.id} holds ${r.files.join(',')}`);
+        assert.ok(r.artefacts.includes('results.json') && r.artefacts.includes('events.ndjson'), `${r.id} holds ${r.artefacts.join(',')}`);
+        /**
+         * **`M232` (`M213-19`, `D1271`) — the two lists are different lists, and the field is now
+         * named for which one it is.**
+         *
+         * `artefacts` was called `files`, and `files` is true of both sets and wrong about one of
+         * them: the first consumer to read it as *the `.tflw` files this run executed* matched
+         * nothing and said nothing, because `'health.tflw'.includes` of an artefact name is simply
+         * false. The carry is **a field name that is a category rather than a contract**.
+         *
+         * This assertion is the one that could not be written before — and it is an equality on
+         * both sides, because a gate saying only *`tests` is non-empty* would pass on an
+         * implementation that put the artefacts in it.
+         */
+        assert.deepEqual(r.tests, ['health.tflw'], `${r.id} ran ${JSON.stringify(r.tests)}`);
+        assert.equal(r.tests.some((f) => r.artefacts.includes(f)), false, 'the two lists share no member — that is the whole reason for two fields');
       }
       assert.equal(reports[0]!.path, `report/runs/${record.id}`);
 
@@ -280,7 +295,7 @@ test('a run from the API is a real tflw run: the stream arrives over SSE, the re
       await writeFile(join(dir, 'report', 'findings.sarif'), '{"runs":[]}');
       const planted = (await (await fetch(`${base}/api/reports`)).json()) as ReportEntry[];
       assert.deepEqual(planted.map((r) => [r.id, r.current === true]), [['current', true], [record.id, false]], 'a `report/` carrying a member its copy does not is the same run and not the same evidence');
-      assert.ok(planted[0]!.files.includes('findings.sarif') && !planted[1]!.files.includes('findings.sarif'), 'the plant is visible on exactly one of the two rows');
+      assert.ok(planted[0]!.artefacts.includes('findings.sarif') && !planted[1]!.artefacts.includes('findings.sarif'), 'the plant is visible on exactly one of the two rows');
       await rm(join(dir, 'report', 'findings.sarif'));
       const swept = (await (await fetch(`${base}/api/reports`)).json()) as ReportEntry[];
       assert.deepEqual(swept.map((r) => r.id), [record.id], 'and they fold back together the moment the evidence matches again');
