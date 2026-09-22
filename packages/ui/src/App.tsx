@@ -371,13 +371,42 @@ export function App() {
    * below turns a change of pick into a re-read on its own. That is the whole wiring: there is no
    * second fetch path and no copy of `authorization` to keep in step.
    */
+  /**
+   * **Reads in flight** — `M229` `D` (`D1252`). A ref and not state, because nothing renders from
+   * it: the only reader is the address normalisation below, which re-runs when the read lands
+   * because the read lands by replacing `project`.
+   *
+   * What it buys is the one distinction that normalisation cannot make without it. An address
+   * naming a file this project does not have is either a **contradiction** — a stale link, a
+   * deleted file, `M228`'s `%2F` — or an address that is simply **ahead of a read already on its
+   * way**, which is what `+ new file` produces: `onDone` starts the re-read and moves the address
+   * in the same breath. Both look identical to a component that only knows the current project,
+   * and correcting the second one throws away the file the user just made. The box found it; this
+   * Mac had been winning the race.
+   */
+  const reading = useRef(0);
   const readProjectView = useCallback(() => {
-    return getProject(envPick)
-      .then((p) => {
+    reading.current += 1;
+    // **Cleared BEFORE the state update, not in a `finally` after it.** `setProject` is what
+    // re-renders, and the normalisation effect reads this counter during that render: a `finally`
+    // runs a microtask later, so the flag would still say *a read is on its way* on the one render
+    // where the answer has already arrived. That is harmless when the read delivered the file and
+    // wrong when it did not — the address would then keep naming a file nobody has, with no later
+    // render to correct it.
+    const settled = (): void => {
+      reading.current -= 1;
+    };
+    return getProject(envPick).then(
+      (p) => {
+        settled();
         setProject(p);
         setNoProject(p === null);
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      },
+      (e: unknown) => {
+        settled();
+        setError(e instanceof Error ? e.message : String(e));
+      },
+    );
   }, [envPick]);
 
   /* Changing the env changes what the pane PREDICTS, not only what the next run grades — so the
@@ -723,6 +752,79 @@ export function App() {
    */
   const filePaths = project?.files.map((f) => f.path) ?? [];
   const path = file !== null && filePaths.includes(file) ? file : (filePaths[0] ?? '');
+
+  /**
+   * **The address names what is drawn** — `M229` `D` (`D1252`).
+   *
+   * `doors.ts` answers an address it does not recognise by reporting a default and letting the
+   * caller fall back, and says so in three places: *"a hash naming a file that has been renamed or
+   * deleted is the same class as a hash naming a tab nobody has heard of"*. That tolerance is
+   * right — a hand-typed hash is not an error worth a message — and it left the other half undone.
+   * Measured: `#/api/bogus` draws **Compose** and the address bar goes on saying `#/api/bogus`,
+   * with no notice; so does `#/api/runs`, and so does a hash naming a file that is not there, which
+   * draws the project's first file instead. The address bar is this page's only shareable state
+   * (`D1045`), and a link that reproduces a different page from the one it was copied off is worse
+   * than a link that refuses.
+   *
+   * **This is `M228`'s own `%2F` lesson turned into a rule.** That round spent a whole measurement
+   * pass reading numbers off the wrong declaration because `tests%2Fsignin.tflw` named no file, the
+   * page fell back, and nothing said so. The carry was *a live-page measurement needs its own
+   * control that the page is showing what you asked for*; this is that control, built into the page
+   * rather than into each measurement.
+   *
+   * **Written with `hashForTab`, from the live hash — not from this component's state.** The
+   * writer is the same one every other navigation on this page goes through, so there is no second
+   * opinion about what an address means (`D1094`). The *input* is `window.location.hash` read at
+   * the moment the effect runs, and that is not a detail: the first draft composed the canonical
+   * out of `door`/`tab`/`file`, which lag the hash by one `hashchange`, and **it broke two standing
+   * gates** — `M213` `S4` and `M217` `D2`, both of which write a hash ending in `L<n>` and then
+   * read what the pane opened. An effect that renders between the assignment and the event composes
+   * an address out of the previous state and replaces the one just written. Reading the hash makes
+   * staleness impossible by construction: for an honest address the canonical is that address, so a
+   * mid-flight run is a no-op rather than a race.
+   *
+   * **AN ADDRESS MAY BE LESS SPECIFIC THAN WHAT IS DRAWN; IT MAY NOT BE DIFFERENT FROM IT.** An
+   * earlier draft wrote the whole drawn state back, which turned every `#/api` into
+   * `#/api/compose/one.tflw` the moment the project loaded — and `#/api` was never a lie. It is
+   * the bare door hash this page has written since `M200`, it draws the first file by design, and
+   * a reader who typed it gets what they asked for. So a **file the address does not name** stays
+   * unnamed, and only a file it names that the project does not have is replaced with the one on
+   * screen. Omission is not a contradiction.
+   *
+   * The query tail is carried across **verbatim** for the same reason: a selection and a search are
+   * the address's, this correction is about the path, and re-spelling them here would be a third
+   * writer for a string `paneTail` already owns.
+   *
+   * **`replaceState`, not an assignment.** `window.location.hash = …` pushes a history entry, so a
+   * normalisation would put the lying address behind the back button and a press would return you
+   * to it. It also fires `hashchange`, which this effect would then answer again.
+   *
+   * **After the project has been read, and it cannot be sooner for the file.** Whether a hash names
+   * a file this project has is a question only the project can answer, so the effect waits for one;
+   * before then the address is left exactly as typed. The door and the tab are decided by the
+   * grammar alone and are corrected on the same pass, which is the cheapest moment they are both
+   * known.
+   */
+  useEffect(() => {
+    if (project === null) return;
+    const hash = window.location.hash;
+    const at = doorFromHash(hash);
+    const addressed = fileFromHash(hash);
+    const known = project.files.map((f) => f.path);
+    // `reading.current > 0` is *a project read is on its way*, and while one is the address is left
+    // alone: it may be naming a file that read is about to deliver. The door and the tab are
+    // corrected either way — those are decided by the grammar and no read can change them.
+    const drawn = addressed === null || known.includes(addressed) || reading.current > 0 ? addressed : (known[0] ?? null);
+    const q = hash.indexOf('?');
+    const canonical = at === null ? '#' : hashForTab(at, tabFromHash(hash), drawn, focusFromHash(hash) ?? undefined, docFromHash(hash)) + (q < 0 ? '' : hash.slice(q));
+    // A URL with no fragment at all already names the landing; writing `#` onto it would be a
+    // change with nothing behind it.
+    if (hash === '' && canonical === '#') return;
+    if (hash === canonical) return;
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${canonical}`);
+    // The state below is already the hash's — `onHash` set it — so nothing is re-read here. A
+    // `replaceState` fires no `hashchange`, which is the other half of why this cannot loop.
+  }, [project, door, tab, file, focusLine, doc, selection, query]);
 
   /** **Does this door draw a Compose sequence** — `M224` `D` (`D1210`), read once and spent twice:
    *  the dispatch below and `main-fill`. `vocabulary.ts`'s `adds.length > 0` is the table's own way

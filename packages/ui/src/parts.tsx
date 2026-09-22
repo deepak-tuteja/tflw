@@ -127,6 +127,7 @@ export function NoteOpen({ note, what, onChange }: {
         onChange={(e) => onChange(e.target.value.split('\n'))}
         data-note-edit={what}
         aria-label="note"
+        data-tip="a `#` comment above this line in the file — written without the hashes, because the hash is how a comment is spelled and not something to retype"
       />
     </div>
   );
@@ -174,6 +175,7 @@ export function NoteBlock({ note, what, onNote }: {
           onChange={(e) => onNote(e.target.value.split('\n'))}
           data-note-edit={what}
           aria-label="note"
+          data-tip="a `#` comment above this line in the file — written without the hashes, because the hash is how a comment is spelled and not something to retype"
         />
       )}
     </details>
@@ -2298,8 +2300,22 @@ export function TestBand({ decl, door, editing, lastRun }: {
         ) : (
           <>
             <span className="band-what">test</span>
+            {/* `M229` `F` (`D1256`), `R1`. The name is what a run reports this test under and what
+                `--only` selects it by, and it is one of exactly two controls in region 1 that had no
+                tip — both of them the fields you type prose into. **The truncation tooltip `R2`
+                asked for is deliberately NOT here** (`D1260`, withdrawn): `D1127` reasoned about
+                rows, which a reader can only look at, and an input is text a reader is about to
+                edit — a tooltip over it competes with the caret. If the name proves unreadable in
+                use the repair is to widen the band. */}
             {live ? (
-              <input className="band-name" value={v.name} onChange={(e) => change({ name: e.target.value })} data-band-name={v.name} aria-label="test name" />
+              <input
+                className="band-name"
+                value={v.name}
+                onChange={(e) => change({ name: e.target.value })}
+                data-band-name={v.name}
+                aria-label="test name"
+                data-tip="what a run reports this test under, and what `--only` selects it by — so it is the one thing in the file another person reads out loud"
+              />
             ) : (
               <strong data-band-name={test!.name}>{test!.name}</strong>
             )}
@@ -2321,8 +2337,23 @@ export function TestBand({ decl, door, editing, lastRun }: {
               /* One field for all of them, because the file writes one line for all of them: 450
                  of the corpus's 682 tag lines carry more than one tag and none carries one per
                  line. A chip editor would be a second spelling of a list this language already
-                 spells with spaces. */
-              <input value={v.tags} onChange={(e) => change({ tags: e.target.value })} data-band-tags-edit aria-label="tags" placeholder="crud slow" />
+                 spells with spaces.
+
+                 **`M229` `F` (`D1257`) — and the field states that convention, because the
+                 placeholder cannot.** The file holds `@identity @functional` and this shows
+                 `identity functional`: the sigil is stripped on read and written back on save, and
+                 the only thing that ever said so was `placeholder="crud slow"`, which renders
+                 **only when the field is empty**. Every declaration in every corpus on this machine
+                 carries tags, so the one piece of syntax guidance rendered in exactly the state
+                 where nobody needs it. */
+              <input
+                value={v.tags}
+                onChange={(e) => change({ tags: e.target.value })}
+                data-band-tags-edit
+                aria-label="tags"
+                placeholder="crud slow"
+                data-tip="space-separated, and **no `@`** — the file writes the sigil for you. Tags are what `--tag` selects a run by and what the door badges count."
+              />
             ) : test.tags.length === 0 ? (
               <span className="muted">none</span>
             ) : (
@@ -2796,7 +2827,18 @@ function PathRows({ what, paths, onChange }: {
           aria-label={`${what} ${i + 1}`}
         />
       ))}
-      <button onClick={() => onChange(what, paths.length, what === 'import' ? './shared/helpers.tflw' : './helpers.ts')} data-file-path-add={what}>
+      {/* `M229` `F` (`D1256`). Two words that write two different constructs, and the difference
+          is not guessable from the words: `import` pulls another `.tflw` file's declarations into
+          this one, `use` names a JavaScript module this file's `action`s can call. */}
+      <button
+        onClick={() => onChange(what, paths.length, what === 'import' ? './shared/helpers.tflw' : './helpers.ts')}
+        data-file-path-add={what}
+        data-tip={
+          what === 'import'
+            ? 'another `.tflw` file whose declarations this one may use — actions, sessions and hooks written once and resolved here'
+            : 'a JavaScript module this file’s `action`s can call — the escape hatch, named so a reader can see what a test reaches for'
+        }
+      >
         + {what}
       </button>
     </span>

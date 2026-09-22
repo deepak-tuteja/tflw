@@ -296,7 +296,7 @@ function Finding({ f, count, other, otherId, onAccept }: { f: ScanFinding; count
         </span>
       )}
       {f.fingerprint && onAccept && !f.withheld ? (
-        <button className="linkish" onClick={() => onAccept(f)} data-accept-finding={f.fingerprint} title="stage this fingerprint into the baseline and open it — nothing is written until you save">
+        <button className="linkish" onClick={() => onAccept(f)} data-accept-finding={f.fingerprint} aria-label="accept this finding into the baseline" data-tip="stage this fingerprint into the baseline and open it — nothing is written until you save">
           [accept]
         </button>
       ) : null}

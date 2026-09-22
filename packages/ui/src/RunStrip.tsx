@@ -1,5 +1,5 @@
-// The run strip (`M205` Q12, cut into a slice at last by `M209` `S1`) — `env`, `workers` and the
-// button that starts a run, above the tabs and below the doorbar.
+// The run strip (`M205` Q12, cut into a slice at last by `M209` `S1`) — `env`, the button that
+// starts a run, and the two flags the run can bear, above the tabs and below the doorbar.
 //
 // IT FACES THE RUN, NOT THE FILE AND NOT THE PROJECT. `DoorBar` answers *what am I here to do*,
 // `TabStrip` answers *what am I doing with this file*, and this answers *what is about to run*.
@@ -7,13 +7,20 @@
 // sidebar was carrying two jobs, listing the project **and** assembling a command, and the second
 // one is the reason it could never become a file tree (`M209` §0).
 //
+// **AND IT RENDERS ONLY THE PART OF THAT VOCABULARY THIS RUN CAN SPEND** — `M229` `B` (`D1250`),
+// which closed `M216-01` and its unfiled twin. `--workers` is a no-op on a test with no `workload`
+// and `--headed` is a no-op on a test that opens no page, and both were drawn on every door, on
+// every project, always. They are now drawn when the narrowing in the label beside them would
+// actually reach a test that can spend them. The key is the **lens set of the run**, never the
+// door: this strip faces the run, and `run all` on the API door runs the LOAD tests too.
+//
 // It renders the request's own vocabulary and nothing else. `env`, `workers`, `--tag` and the file
 // list are exactly what `tflw run` takes, so the button's label is the command read back: *what
 // will run*, never *what is selected somewhere else*. The narrowing itself is still the sidebar's
 // gesture — this strip shows the total, which is what makes the two halves legible as one request.
 
 import type { ProjectView, RunRequest } from './contract';
-import { matchingFiles, parseQuery } from './search';
+import { lensesInRun, matchingFiles, parseQuery } from './search';
 
 export interface RunStripProps {
   readonly project: ProjectView;
@@ -48,6 +55,24 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, headed, onHe
    */
   const parsed = parseQuery(query, project);
   const matched = matchingFiles(project, parsed);
+  /**
+   * **What this run would actually contain** — `M229` `B` (`D1250`), closing `M216-01`.
+   *
+   * `workers` and `headed` each govern one kind of test, and both were drawn always. The subject of
+   * `workers` is a workload **in this run** and the subject of `headed` is a browser **in this
+   * run**, so `D1082` applies to both: a control whose subject is absent is absent, not drawn dead.
+   *
+   * Two readings and not one flag, and they are not the same set — `lensesInRun` is keyed on the
+   * lenses the narrowing reaches, so a selection of one API file hides both, a selection holding a
+   * load file shows `workers` **on every door including API**, and a project with no browser test
+   * never shows `headed` anywhere. A single `doorSpecific` flag is the proxy this arc has now
+   * mis-keyed three times (`M227` `A`, `M228` `F1`), and a door literal is the fourth: both are
+   * green under the mutation that matters, because the door you are standing behind does not narrow
+   * what `run all` runs.
+   */
+  const lenses = lensesInRun(project, selection, parsed);
+  const takesWorkers = lenses.has('load');
+  const takesHeaded = lenses.has('browser');
   const nothing = parsed.kind === 'tag' && parsed.tags.length === 0;
   const label = nothing
     ? `nothing matches ${parsed.typed}`
@@ -77,24 +102,30 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, headed, onHe
             ))}
           </select>
         </label>
-        {/* **What this control does is narrower than its label**, and the hover is where that gets
-            said: the page sends it as `--workers`, which forks load-generating processes for
-            workload-bearing tests and is a documented no-op on a test without a `workload` — so on
-            the API door it is inert. File concurrency is a different axis with a different name.
-            Recorded as `M216-01`; the hover states it rather than implying otherwise. */}
-        <label data-tip="how many processes fork to generate load — for workload-bearing tests only, and a no-op on a test with no `workload`. How many FILES run at once is `tflw.config`'s own `workers N`.">
-          workers
-          <input type="number" min={1} placeholder="default" value={workers} onChange={(e) => onWorkers(e.target.value)} data-workers disabled={running} />
-        </label>
+        {/* **`M216-01`, CLOSED by `M229` `B`.** `M216` `C` could only make the hover say that this
+            control is narrower than its label — *"forks load-generating processes for
+            workload-bearing tests, and is a documented no-op on a test without a `workload`"* — and
+            the row stayed open because saying so is not the repair. It is drawn now when the run
+            beside it holds a workload, which is `D1082` rather than a sentence. The tip keeps the
+            second half, which no condition can say: file concurrency is a different axis with a
+            different name, and it lives in `tflw.config`. */}
+        {takesWorkers ? (
+          <label data-tip="how many processes fork to generate load — for the workload-bearing tests in this run, and a no-op on a test with no `workload`. How many FILES run at once is `tflw.config`'s own `workers N`.">
+            workers
+            <input type="number" min={1} placeholder="default" value={workers} onChange={(e) => onWorkers(e.target.value)} data-workers disabled={running} />
+          </label>
+        ) : null}
         {/* **`--headed`** — `M220` `D` (`D1173`). It belongs on this strip and not beside ▶ for the
             reason the header gives: this strip faces *the run*, and `--headed` is a run-level flag.
             The tip says what it is for rather than what it does, because *shows the browser* is
             already on the label — what a reader needs is that the trace is the better answer and
             this is here for the two engines that cannot have one. */}
-        <label className="check" data-tip="opens a real browser window instead of running headless. The trace `▶` keeps is usually the better way to see what happened — this is for watching it move, and it is the only answer on firefox and webkit.">
-          <input type="checkbox" checked={headed} onChange={(e) => onHeaded(e.target.checked)} data-headed disabled={running} />
-          headed
-        </label>
+        {takesHeaded ? (
+          <label className="check" data-tip="opens a real browser window instead of running headless. The trace `▶` keeps is usually the better way to see what happened — this is for watching it move, and it is the only answer on firefox and webkit.">
+            <input type="checkbox" checked={headed} onChange={(e) => onHeaded(e.target.checked)} data-headed disabled={running} />
+            headed
+          </label>
+        ) : null}
       </div>
       {running ? (
         <button className="cancel" onClick={onCancel} data-cancel>

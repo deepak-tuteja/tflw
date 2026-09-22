@@ -545,6 +545,8 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           aria-label="search this project"
           list="tflw-tags"
           data-search
+          data-tip="narrows the project — and narrows the run button with it. A bare word lights up the FILES whose path or test name contains it and runs them whole; `@tag` runs the TESTS carrying that tag, wherever they live (`D1064`)."
+
         />
         <datalist id="tflw-tags">
           {allTags.map((t) => (

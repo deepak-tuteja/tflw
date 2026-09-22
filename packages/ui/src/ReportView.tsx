@@ -233,7 +233,7 @@ function TraceLink({ trace, context }: { trace: TraceAsset; context: ReportConte
           whether `playwright-core` resolves from the project at all: with no viewer to serve there
           is nothing to open, and the `show-trace` line below says what to run instead. */}
       {context.traceViewer ? (
-        <button type="button" className="linkish" onClick={() => context.onOpenTrace(path)} data-open-trace>
+        <button type="button" className="linkish" onClick={() => context.onOpenTrace(path)} data-open-trace data-tip="opens Playwright's own trace for this test, here in the page — every action, the DOM as it was at each one, and the network beside it">
           open trace
         </button>
       ) : null}

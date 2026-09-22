@@ -460,6 +460,21 @@ export interface ReportEntry {
   readonly at: string;
   readonly files: readonly string[];
   readonly summary: { ok: boolean; total: number; passed: number; failed: number } | null;
+  /**
+   * **This run is also `report/current`** — `M229` `E` (`D1254`).
+   *
+   * `keepReport` copies `report/` into `report/runs/<id>` entry by entry, so the newest kept run
+   * and `current` are the same bytes under two names — and the list drew both, with nothing on
+   * either row saying they were one run. Measured: *"current · 1/1 · 9/20/2026, 12:41:50 PM"* above
+   * *"2026-09-20T10-41-50-120Z · 1/1 · 9/20/2026, 12:41:50 PM"*.
+   *
+   * **`current` is a property of a run, not a run**, so it is a flag on the row rather than a row.
+   * And it stays a *separate row* in the one case where it is a separate run: `tflw run` in a
+   * terminal writes `report/` and nothing keeps it, so there is no `runs/<id>` to carry the flag.
+   * That is why this is decided by comparing the evidence rather than by taking the newest — the
+   * plan's own warning was that folding on position hides a run instead of a duplicate.
+   */
+  readonly current?: boolean;
 }
 
 /** The argv `tflw run` gets for a request — pure, so a test can hold the mapping still. */
@@ -1424,35 +1439,77 @@ export class UiServer {
   }
 
   private async listReports(): Promise<ReportEntry[]> {
+    /** Two report directories hold the same evidence — order-independent, because `readdir` is. */
+    const sameMembers = (a: readonly string[], b: readonly string[]): boolean => {
+      if (a.length !== b.length) return false;
+      const left = [...a].sort();
+      const right = [...b].sort();
+      return left.every((m, i) => m === right[i]);
+    };
     const reportDir = await this.reportDirFor();
     const entries: ReportEntry[] = [];
-    const describe = async (id: string, dir: string): Promise<ReportEntry | null> => {
+    const describe = async (id: string, dir: string): Promise<{ entry: ReportEntry; results: string | null } | null> => {
       const present: string[] = [];
       for (const m of REPORT_MEMBERS) if (existsSync(join(dir, m))) present.push(m);
       if (present.length === 0) return null;
       let summary: ReportEntry['summary'] = null;
       let at = '';
+      let results: string | null = null;
       try {
         const resultsPath = join(dir, 'results.json');
         at = (await stat(resultsPath)).mtime.toISOString();
-        const r = JSON.parse(await readFile(resultsPath, 'utf8')) as { ok: boolean; total: number; passed: number; failed: number };
+        results = await readFile(resultsPath, 'utf8');
+        const r = JSON.parse(results) as { ok: boolean; total: number; passed: number; failed: number };
         summary = { ok: r.ok, total: r.total, passed: r.passed, failed: r.failed };
       } catch {
         // A directory with a report.html and no results.json is still a report; it just has no summary.
       }
-      return { id, path: relative(this.opts.root, dir).split(sep).join('/'), at, files: present, summary };
+      return { entry: { id, path: relative(this.opts.root, dir).split(sep).join('/'), at, files: present, summary }, results };
     };
     const current = await describe('current', reportDir);
-    if (current) entries.push(current);
     let kept: string[] = [];
     try {
       kept = (await readdir(join(reportDir, 'runs'))).sort().reverse();
     } catch {
       // no runs kept yet
     }
+    /**
+     * **Which kept run IS `current`** — `M229` `E` (`D1254`).
+     *
+     * The evidence decides it, not the position: the same `results.json` **and** the same member
+     * list, because that is what `keepReport` copied — every entry of `report/` except `runs` — and
+     * both are already in hand, so the comparison costs nothing. A timestamp would have been the
+     * cheap answer and the wrong one (`cp` does not preserve mtimes, so the copy's is the copy's),
+     * and *the newest* would have been cheaper still and wrong in the case that matters: a
+     * `tflw run` in a terminal writes `report/` and keeps nothing, so `current` is then a run with
+     * no row of its own, and folding it into the newest would hide it behind an unrelated run.
+     *
+     * **THE MEMBER LIST IS THE HALF THE SIBLING'S SWEEP ADDED, AND IT FOUND IT BY BEING A
+     * CONSUMER.** `results.json` alone folds two directories that are the same *run* and not the
+     * same *evidence*: `testFlow-tests`' `verify-ui.mjs` plants a stale `findings.sarif` into
+     * `report/` and then reads `/api/reports` to watch it appear and go — which is `M192-03`'s own
+     * grader — and the fold closed the only window it had. That is not a gate to loosen. A
+     * `report/` carrying a member its kept copy does not is precisely the state `M192-03` filed,
+     * so it is a row of its own and the list is right to say so.
+     *
+     * A report with no `results.json` is never folded. It cannot be compared, and `D1076`'s
+     * direction is the safe one here: two rows for one run is a tidiness complaint, one row for two
+     * runs is a lost run.
+     */
+    let foldedInto: string | null = null;
+    if (current !== null && current.results !== null) {
+      for (const id of kept) {
+        const e = await describe(id, join(reportDir, 'runs', id));
+        if (e !== null && e.results === current.results && sameMembers(e.entry.files, current.entry.files)) {
+          foldedInto = id;
+          break;
+        }
+      }
+    }
+    if (current !== null && foldedInto === null) entries.push({ ...current.entry, current: true });
     for (const id of kept) {
       const e = await describe(id, join(reportDir, 'runs', id));
-      if (e) entries.push(e);
+      if (e) entries.push(id === foldedInto ? { ...e.entry, current: true } : e.entry);
     }
     return entries;
   }

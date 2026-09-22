@@ -144,7 +144,7 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
             onClick={() => onDoc(d.doc)}
             data-config-doc={d.doc ?? 'config'}
             aria-current={d.doc === doc ? 'true' : undefined}
-            title={d.declaredIn === null ? 'the project facts every file here resolves against' : `declared by \`baseline\` in ${d.declaredIn}`}
+            data-tip={d.declaredIn === null ? 'the project facts every file here resolves against' : `declared by \`baseline\` in ${d.declaredIn}`}
           >
             {d.label}
             {d.declaredIn === null ? null : <span className="muted"> · {d.declaredIn}</span>}
@@ -177,7 +177,8 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
           rows={20}
           data-api-config-text
           placeholder={'{\n  "version": 1,\n  "accepted": []\n}'}
-          title="the accepted-findings document — version 1, and an `accepted` array of fingerprints"
+          aria-label="the accepted-findings document"
+          data-tip="the accepted-findings document — version 1, and an `accepted` array of fingerprints"
         />
       </div>
     );
@@ -212,6 +213,11 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
         </p>
       </header>
 
+      {/* **The surface that can break every test in the project in one keystroke, and it had no
+          accessible name at all** — `M229` `F` (`D1256`). Its own tab already says what this file
+          is (*"the project facts every file here resolves against"*); the editor said nothing a
+          screen reader could use, and said the rest in the OS's voice after a one-second hover,
+          which is `M216` `B`'s whole finding on a surface that round did not reach. */}
       <textarea
         ref={area}
         className="config-text"
@@ -220,7 +226,8 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
         spellCheck={false}
         rows={20}
         data-api-config-text
-        title={
+        aria-label={doc === null ? 'tflw.config' : 'the accepted-findings document'}
+        data-tip={
           doc === null
             ? 'tflw.config — the declaration-only dialect; `tflw check` reads it the same way this page does'
             : 'the accepted-findings document — the match is on `fingerprint` alone, and `rule`/`endpoint` are there for you'
@@ -246,7 +253,7 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
           onClick={onSave}
           disabled={busy || !unsaved || errors.length > 0}
           data-api-config-save
-          title={`write ${current?.label ?? 'tflw.config'} back, under the version this page read`}
+          data-tip={`write ${current?.label ?? 'tflw.config'} back, under the version this page read — every file in this project resolves its bases, envs and timeouts against it, and the page re-reads it the moment this lands`}
         >
           save
         </button>
@@ -266,7 +273,7 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
       {problem ? (
         <p className="error" data-api-config-problem>
           {problem}{' '}
-          <button className="linkish" onClick={onReload} data-api-config-reload title="read tflw.config again — this discards what is on this page">
+          <button className="linkish" onClick={onReload} data-api-config-reload data-tip="read tflw.config again — this discards what is on this page">
             [re-read from disk]
           </button>
         </p>

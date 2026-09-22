@@ -20,7 +20,7 @@
 // Endpoints are deliberately absent (`D1065`), with the condition named in `PLAN_M209` §5: when
 // `readProject` stops discarding parsed request paths. They would need server work and could only
 // ever run whole files, which is the half of `D1064` that is already the accepted cost.
-import type { ProjectView } from './contract';
+import type { Lens, ProjectFile, ProjectView } from './contract';
 
 export type Query =
   | { readonly kind: 'none' }
@@ -71,4 +71,66 @@ export function taggedTestCount(project: ProjectView, query: Query): number {
   let n = 0;
   for (const f of project.files) for (const t of f.tests) if (t.tags.some((tag) => wanted.has(tag))) n += 1;
   return n;
+}
+
+/**
+ * **Every lens the run this page is about to start would actually reach** — `M229` `B` (`D1250`).
+ *
+ * `workers` and `headed` are run-level flags for one kind of test each: `--workers` forks load
+ * generators and is a documented no-op on a test with no `workload`, and `--headed` opens a window
+ * for a test that drives a browser. Both were drawn on every door, on every project, always —
+ * filed as `M216-01` for `workers` alone, with `headed` the same defect on a different door and
+ * unfiled.
+ *
+ * **AND THE DOOR IS NOT THE KEY, WHICH IS WHERE `PLAN_M229_UI_REVIEW.md`'s `D1250` WAS WRONG.**
+ * The plan's repair was two capabilities on `VOCABULARY` — `takesWorkers`, `takesHeaded` — read off
+ * the door. That would have removed a working control: this strip faces **the run** (`RunStrip`'s
+ * own header says so), and a run is not narrowed by the door. `run all` pressed on the API door
+ * has no `files` field and no `--tag`, so it runs the LOAD tests too — and `--workers` is exactly
+ * the flag that decides how. A door-keyed rule would have hidden the control that governs them.
+ *
+ * So the subject of `workers` is *a workload in this run*, which is `D1082` read correctly, and it
+ * is construct-keyed rather than door-keyed — `M223` `F`'s own lesson, which the plan reached for
+ * and then keyed on the wrong thing.
+ *
+ * **The narrowing is the same three-way fork the button's label uses**, in the same order, because
+ * a strip whose controls and whose label disagreed about what is about to run would be two answers
+ * to one question — the thing this strip exists to prevent.
+ *
+ * **A file that did not parse is INCLUDED here, and `countByDoor` excludes it.** The two are asking
+ * different questions and the honest answers differ: *how many tests are behind this door* has no
+ * answer for a file whose recovery dropped an unknown number, while *could this run contain a
+ * workload* has a safe direction — `D1076`, over-offering beats silent omission. A control drawn
+ * for a workload that turns out not to exist is visible and harmless; one hidden from a workload
+ * that does is `M216-01` with the sign flipped.
+ */
+export function lensesInRun(project: ProjectView, selection: readonly string[], query: Query): ReadonlySet<Lens> {
+  const out = new Set<Lens>();
+  const take = (f: ProjectFile): void => {
+    for (const t of f.tests) for (const lens of t.lenses) out.add(lens);
+    for (const c of f.crawls) for (const lens of c.lenses) out.add(lens);
+  };
+  if (selection.length > 0) {
+    const chosen = new Set(selection);
+    for (const f of project.files) if (chosen.has(f.path)) take(f);
+    return out;
+  }
+  if (query.kind === 'tag') {
+    // `--tag` narrows to TESTS, not to files — `D1064`'s gap, and the reason this branch cannot
+    // just call `matchingFiles` and take whole files the way the text branch does.
+    const wanted = new Set(query.tags);
+    for (const f of project.files) {
+      // Tests only: a `crawl` carries no tags at all (`ProjectCrawl` has no `tags` field, because
+      // the language does not let one be written), so `--tag` can never select one.
+      for (const t of f.tests) if (t.tags.some((tag) => wanted.has(tag))) for (const lens of t.lenses) out.add(lens);
+    }
+    return out;
+  }
+  if (query.kind === 'text') {
+    const lit = matchingFiles(project, query)!;
+    for (const f of project.files) if (lit.has(f.path)) take(f);
+    return out;
+  }
+  for (const f of project.files) take(f);
+  return out;
 }
