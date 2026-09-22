@@ -137,14 +137,21 @@ export default defineConfig({
 
     nav: [
       { text: 'Guide', link: '/guide/first-test' },
-      { text: 'Reference', link: '/reference/matchers' },
-      { text: 'Grammar', link: '/grammar' },
-      { text: 'Editor', link: '/editor' },
       // `tflw ui` is a surface, not a chapter — this nav names surfaces, which is why Editor and
       // Playground are here and `Assertions` is not. An authoring environment the size of the
       // language, filed under a sub-bullet of a guide chapter, would be the navigation asserting
       // something false.
-      { text: 'The page', link: '/page/' },
+      //
+      // **Named `The UI` here and `the page` inside it** (`M233` `I`, `D1293`). "The page" is the
+      // term `D1042`-`D1045` argue in and it stays the section's own voice; it fails *here*,
+      // where a reader scanning `Guide · Reference · Grammar · Editor · The page · Playground`
+      // has nothing telling them one of those is an application. Second in the nav rather than
+      // fifth, because it is a peer of the Guide and 80.7% of this site being prose about the
+      // language was the whole of the complaint that moved it.
+      { text: 'The UI', link: '/ui/' },
+      { text: 'Reference', link: '/reference/matchers' },
+      { text: 'Grammar', link: '/grammar' },
+      { text: 'Editor', link: '/editor' },
       { text: 'Playground', link: '/playground' },
       { text: 'Changelog', link: '/changelog' },
     ],
@@ -161,17 +168,26 @@ export default defineConfig({
       // home CTA, the README and the npm page all point at, to fix a left rail.
       '/guide/': GUIDE_SIDEBAR,
       '/getting-started': GUIDE_SIDEBAR,
-      // The page's own rail. Five entries, in the order a reader meets them: what it is, the
-      // shape every surface shares, the four doors, reading a run, and what it will not do.
-      '/page/': [
+      // The UI's own rail, in the order a reader meets the surface: what it is, the shape every
+      // surface shares, then one page per door, then reading a run and what it will not do.
+      //
+      // **The four doors are four pages, not one** (`D1294`). They were one page with one
+      // screenshot, and the screenshot was cut at a door its caption did not name. The doors are
+      // the axis this UI is organised on, and a reader who wants the LOAD door does not want the
+      // other three first.
+      '/ui/': [
         {
-          text: 'The page',
-          link: '/page/',
+          text: 'The UI',
+          link: '/ui/',
           items: [
-            { text: 'The spine', link: '/page/spine' },
-            { text: 'The four doors', link: '/page/doors' },
-            { text: 'Reading a run', link: '/page/a-run' },
-            { text: 'What it will not do', link: '/page/limits' },
+            { text: 'The spine', link: '/ui/spine' },
+            { text: 'The four doors', link: '/ui/doors' },
+            { text: 'The API door', link: '/ui/api' },
+            { text: 'The BROWSER door', link: '/ui/browser' },
+            { text: 'The LOAD door', link: '/ui/load' },
+            { text: 'The SCANS door', link: '/ui/scans' },
+            { text: 'Reading a run', link: '/ui/a-run' },
+            { text: 'What it will not do', link: '/ui/limits' },
           ],
         },
       ],

@@ -264,3 +264,57 @@
 .VPNavBarTitle .logo {
   height: 28px;
 }
+
+/* ---------- /ui: one screenshot per theme, not both ---------- */
+/* `M233` `I` (`D1291`). The UI section cuts every view twice — once on the page's `paper` theme and
+   once on `terminal` — and embeds the pair with `{.light-only}` and `{.dark-only}` so the reader
+   sees the one that matches the ground they are already on.
+
+   THOSE TWO CLASSES HAD NO RULE ANYWHERE, and had not since the shots landed. They reached the
+   built HTML intact and the cascade ignored them, so every page in the section rendered BOTH
+   pictures, the light one stacked above the dark one, whichever theme the reader was in. VitePress
+   ships this pattern only for its own `VPImage` component (`html:not(.dark) .VPImage.dark`), which
+   a markdown image never becomes — so the attribute looked supported and was not.
+
+   Keyed on `html.dark`, which is the same switch the site's code blocks and logo already use, so
+   the pair flips in the same frame as everything else rather than one paint later. `!important` is
+   not needed and is not used: nothing else in this file or in VitePress's theme sets `display` on
+   a `.vp-doc img`.
+
+   `verify-page-screenshots.test.mjs` now requires a rule for both selectors **in the built
+   stylesheet** — not in this file — because the defect was precisely a class that existed in the
+   markup and not in the cascade, and only the artifact can answer that. */
+html:not(.dark) .vp-doc img.dark-only,
+html.dark .vp-doc img.light-only {
+  display: none;
+}
+
+/* ---------- /ui: a screenshot is allowed to be wider than a paragraph ---------- */
+/* `M233` `I` (`D1292`, the half the crop alone could not buy).
+   The content column is 688px at a 1440px window and 624px at 1280. The UI's own surfaces are
+   1060-1440 css px wide, so even a tightly cropped Compose pane lands at 58% of life size and the
+   13px labels inside it arrive at 7.6px. Cropping removes what the caption does not name; it
+   cannot make what is left bigger than the column.
+
+   So the shots break out of the text column, and only where there is room to. Measured on this
+   site at 1440: `.VPDoc .container` is 1104px from x=304 and the outline rail starts at x=1184,
+   which leaves 880px between them — `calc(100% + 160px)` with a -80px pull takes 848 of it and
+   keeps a gutter on both sides. Below 1280 the rail is gone and the column is already most of the
+   window, so the rule simply does not apply and the images behave like any other.
+
+   Scoped by `pageClass: ui-shots` (the `/ui/` pages' frontmatter) rather than by a src pattern,
+   which is how `.grammar-page` already scopes the one other page-specific rule in this file. A
+   selector keyed on a path would silently widen any future page that happened to embed the same
+   picture. */
+.ui-shots .vp-doc img {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 4px;
+}
+
+@media (min-width: 1280px) {
+  .ui-shots .vp-doc img {
+    width: calc(100% + 160px);
+    max-width: none;
+    margin-left: -80px;
+  }
+}

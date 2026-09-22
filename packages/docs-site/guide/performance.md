@@ -74,4 +74,4 @@ Two consequences follow, and both are why the models were not split into separat
 A workload and its thresholds are a form in `tflw ui`, and a run read there draws planned against
 achieved on one plot — so a workload that did not reach its target is a picture rather than an
 inference. The language is unchanged: what the page writes is the two lines this pillar teaches.
-See [The page](/page/).
+See [The page](/ui/).

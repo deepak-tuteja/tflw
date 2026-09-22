@@ -33,7 +33,9 @@ import { fileURLToPath } from 'node:url';
 const here = fileURLToPath(new URL('.', import.meta.url));
 export const UI_ROOT = join(here, '..');
 export const REPO = join(UI_ROOT, '..', '..');
-export const DOCS_PAGE_DIR = join(REPO, 'packages', 'docs-site', 'public', 'page');
+/** Where the shots land. `public/ui/`, not `public/page/` — `D1293` moved the section, and
+ *  leaving its pictures behind would re-create the two-names problem one directory down. */
+export const DOCS_PAGE_DIR = join(REPO, 'packages', 'docs-site', 'public', 'ui');
 export const MANIFEST = join(DOCS_PAGE_DIR, 'manifest.json');
 
 /**
@@ -56,11 +58,36 @@ export const THEMES = /** @type {const} */ ([
  * `App.tsx`, and it stays `spine` if the component is renamed.
  */
 export const VIEWS = /** @type {const} */ ([
-  'landing', // page/index.md — the four doors, counted against a real project
-  'spine', //  page/spine.md — explorer, doorbar, tab strip, all at once
-  'doors', //  page/doors.md — the doorbar with its per-door counts
-  'compose', // page/doors.md — the authoring surface itself
-  'run', //    page/a-run.md — a run read in place
+  'landing', //         ui/index.md   — the four doors, counted against a real project
+  'spine', //           ui/spine.md   — explorer, doorbar, tab strip, all at once
+  'doors', //           ui/spine.md   — the doorbar with its per-door counts
+  'compose-api', //     ui/api.md     — an API test: request, assertions, response
+  'compose-browser', // ui/browser.md — a browser test: steps a person would take
+  'compose-load', //    ui/load.md    — a load test: the plan panel its workload earned
+  'compose-scan', //    ui/scans.md   — a scan test: the targets block its declaration earned
+  'run', //             ui/a-run.md   — a run read in place
+]);
+
+/**
+ * The file each door's Compose shot opens, and **the reason there is a map here at all** (`M233`
+ * `I`, `D1294` as amended).
+ *
+ * A door grants no panels — `D1044`, measured: `[data-compose]` reads `"request"` and the pane is
+ * 1072 × 705 in all four doors, whichever one you arrive through. What differs is the *file*: a
+ * workload line earns the plan panel, an authorized-target declaration earns the targets block,
+ * and both show up behind every door once the file carrying them is open. So "the LOAD door's
+ * Compose" is not a thing that can be photographed, and "a load test seen through the LOAD door"
+ * is.
+ *
+ * Fallbacks rather than one name each, so a fixture rename degrades to a neighbour instead of
+ * crashing the cut — the same reason `PREFERRED` exists, and the chosen file is printed for the
+ * same reason: a picture of a different file is a picture of a different thing.
+ */
+export const DOOR_FILES = /** @type {const} */ ([
+  ['api', ['tests/orders.tflw', 'tests/catalog.tflw']],
+  ['browser', ['tests/shop.tflw', 'tests/catalog.tflw']],
+  ['load', ['tests/load.tflw']],
+  ['scan', ['tests/security.tflw']],
 ]);
 
 /** Every shot, by file name: one per view per theme. */

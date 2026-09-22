@@ -1445,6 +1445,17 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .scan-reason { margin: 2px 0 0; font-size: 12px; color: var(--muted); max-width: 78ch; }
 .scan-probes { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
 .scan-probes li::before { content: '✓ '; color: var(--accent); }
+/* `M233` `I`. The class dresses two different elements — a `<ul>` of opt-ins, where the grid above
+   is right, and a `<p>` saying there are none, where it is not: a paragraph's `<code>` and `<em>`
+   become GRID ITEMS, so "no `probe` opt-in — an input scan here reports *not probed* rather than
+   sending anything" rendered as five stacked full-width rows, one word or phrase each.
+
+   The sharing was already noticed once — the line below cancels the list tick for the `<p>` — and
+   repaired for the bullet only, which is this codebase's most-filed shape: a rule keyed on
+   something two things have in common, fixed where it was first seen to hurt. Found by cropping
+   the SCANS door's Compose pane for the docs, because a shot of one pane is the first time anyone
+   had looked at this block on its own. */
+p.scan-probes { display: block; }
 p.scan-probes::before { content: ''; }
 
 /* ── `M227` `C` (`D1234`) — an iteration plan draws its work ──────────────────────────────────

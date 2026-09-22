@@ -1,0 +1,28 @@
+{
+  "inputs": "883789337b6306e3c351a8b201d4c592346fc938d34a7b3d3db37ea5c4c09ddb",
+  "inputCount": 90,
+  "shots": [
+    "landing-terminal.png",
+    "landing-paper.png",
+    "spine-terminal.png",
+    "spine-paper.png",
+    "doors-terminal.png",
+    "doors-paper.png",
+    "compose-api-terminal.png",
+    "compose-api-paper.png",
+    "compose-browser-terminal.png",
+    "compose-browser-paper.png",
+    "compose-load-terminal.png",
+    "compose-load-paper.png",
+    "compose-scan-terminal.png",
+    "compose-scan-paper.png",
+    "run-terminal.png",
+    "run-paper.png"
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "deviceScaleFactor": 2,
+  "cutAt": "2026-09-22T16:00:30.911Z"
+}

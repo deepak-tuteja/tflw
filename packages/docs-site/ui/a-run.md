@@ -1,11 +1,15 @@
+---
+pageClass: ui-shots
+---
+
 # Reading a run
 
 The **Run** tab shows what happened when this project last ran, read from the run directory on disk
 — the same `results.json` that `report.html` is rendered from. It is not a live console and it does
 not re-run anything by being looked at.
 
-![A run read in place: verdicts beside the file that produced them](/page/run-paper.png){.light-only}
-![A run read in place: verdicts beside the file that produced them](/page/run-terminal.png){.dark-only}
+![A run read in place: verdicts beside the file that produced them](/ui/run-paper.png){.light-only}
+![A run read in place: verdicts beside the file that produced them](/ui/run-terminal.png){.dark-only}
 
 ## What a run carries
 
