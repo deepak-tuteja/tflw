@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { indexFromReport, indexFromSend } from '../src/ran.ts';
+import { groupFor, indexFromReport, indexFromSend } from '../src/ran.ts';
 import type { RunReport, StepResult } from '../src/contract.ts';
 
 const step = (over: Partial<StepResult> & Pick<StepResult, 'kind' | 'source' | 'line'>): StepResult => ({
@@ -215,4 +215,128 @@ test('the report’s own duration reaches the row — `StepResult` has carried i
     BUFFER,
   );
   assert.equal(index.get(2)!.steps.get(3)!.durationMs, 417);
+});
+
+/* ── `M232` — a verdict group is the thing the assertions under it read (`M220-02`, `D1270`) ────
+ *
+ * The defect was not that browser verdicts grouped badly. Nothing opened a group in a browser test
+ * at all, so `open === null` skipped every step and the map came back **empty by construction** —
+ * the pane drew no marks beside assertions whose status chip said they had run.
+ */
+
+const BROWSER_BUFFER = [
+  'test "checkout"',
+  '  open "/cart"',
+  '  expect text "Cart" is visible',
+  '  click button "Checkout"',
+  '  expect text "Payment" is visible',
+  '  screenshot "paying"',
+  '  expect text "Total" is visible',
+  '',
+].join('\n');
+
+test('`M232` `A`: every action opens a group, and a browser test’s assertions finally draw marks (`D1270`)', () => {
+  const index = indexFromReport(
+    report([
+      step({ kind: 'open', source: 'open "/cart"', line: 2 }),
+      step({ kind: 'expect', source: 'expect text "Cart" is visible', line: 3, detail: 'visible' }),
+      step({ kind: 'click', source: 'click button "Checkout"', line: 4 }),
+      step({ kind: 'expect', source: 'expect text "Payment" is visible', line: 5, detail: 'visible' }),
+      step({ kind: 'screenshot', source: 'screenshot "paying"', line: 6 }),
+      step({ kind: 'expect', source: 'expect text "Total" is visible', line: 7, detail: 'visible' }),
+    ]),
+    'tests/checkout.tflw',
+    BROWSER_BUFFER,
+  );
+
+  /* **Two groups, not three.** `screenshot` changes nothing a later assertion reads, so opening one
+     on it would cut the click's group in half and strand line 7's mark under a step that did not
+     produce what it read. That is the whole of why `OPENS_GROUP` is a named set rather than
+     *anything that is not an `expect`*. */
+  assert.deepEqual([...index.keys()], [2, 4], `an action opens a group and a screenshot does not:\n${JSON.stringify([...index.keys()])}`);
+  assert.equal(index.get(2)!.steps.get(3)!.detail, 'visible', 'the assertion under `open` reads the page it left');
+  /* Lines 5, 6 and 7 — every step under the click, which is the shape a request's group has always
+     had: a `capture` sits in one the same way this `screenshot` does. What `OPENS_GROUP` decides is
+     what starts a group, never what a group is allowed to hold. */
+  assert.deepEqual([...index.get(4)!.steps.keys()], [5, 6, 7], 'the click keeps everything that reads the page IT left');
+
+  /* **A browser group has no response**, which is the truth about it rather than a gap: `Ran.response`
+     has always been `| null`, and `indexFromSend` already produced groups empty in the other
+     direction. */
+  assert.equal(index.get(2)!.response, null);
+  assert.equal(index.get(4)!.response, null);
+});
+
+test('`M232` `B`: editing one action drops only the marks under that action (`D1270`)', () => {
+  /* `stillReads` invalidates identically for an action and for a request, which is the half of
+     `D1270` that says *the API door's own rule, stated once instead of twice*. Retype the click and
+     its group goes; the `open` above it is untouched. */
+  const edited = BROWSER_BUFFER.replace('click button "Checkout"', 'click button "Pay now"');
+  const index = indexFromReport(
+    report([
+      step({ kind: 'open', source: 'open "/cart"', line: 2 }),
+      step({ kind: 'expect', source: 'expect text "Cart" is visible', line: 3, detail: 'visible' }),
+      step({ kind: 'click', source: 'click button "Checkout"', line: 4 }),
+      step({ kind: 'expect', source: 'expect text "Payment" is visible', line: 5, detail: 'visible' }),
+    ]),
+    'tests/checkout.tflw',
+    edited,
+  );
+  assert.deepEqual([...index.keys()], [2], 'the edited action loses its group; the one above it does not');
+  assert.equal(index.get(2)!.steps.get(3)!.detail, 'visible');
+});
+
+test('the control: the API grouping is byte-for-byte what it was', () => {
+  /* Every assertion in `A` is about marks appearing. An implementation that opened a group on
+     **every** step would satisfy them and destroy the API door, so the original claim is re-made
+     here against the same buffer: two groups, each holding its own assertion, each with a
+     response. */
+  const index = indexFromReport(
+    report([
+      step({ kind: 'api', source: 'api GET /health', line: 2, response: { status: 200, bodyText: '{}' } as never }),
+      step({ kind: 'capture', source: 'capture body.id as id', line: 3, detail: 'id = 1 (captured)' }),
+      step({ kind: 'expect', source: 'expect status equals 200', line: 4, detail: 'status = 200' }),
+    ]),
+    'tests/checkout.tflw',
+    'test "checkout"\n  api GET /health\n  capture body.id as id\n  expect status equals 200\n',
+  );
+  assert.deepEqual([...index.keys()], [2], 'a `capture` is inside the request’s group, never a group of its own');
+  assert.deepEqual([...index.get(2)!.steps.keys()], [3, 4]);
+  assert.equal(index.get(2)!.response!.status, 200);
+});
+
+test('`M232` `C`: a statement with no request above it finds the action’s group, bounded to its own declaration (`D1270`)', () => {
+  /**
+   * **The half `indexFromReport` alone does not fix.** `ComposePane` found a statement's verdicts
+   * by asking which **request** it is attached to — the right question on the API door and
+   * unanswerable on every other one, so a browser test's assertion got `null` and drew no mark.
+   * Populating the index and never reading it would have closed `M220-02` on paper.
+   */
+  const index = indexFromReport(
+    report([
+      step({ kind: 'open', source: 'open "/cart"', line: 2 }),
+      step({ kind: 'expect', source: 'expect text "Cart" is visible', line: 3, detail: 'visible' }),
+      step({ kind: 'click', source: 'click button "Checkout"', line: 4 }),
+      step({ kind: 'expect', source: 'expect text "Payment" is visible', line: 5, detail: 'visible' }),
+      step({ kind: 'screenshot', source: 'screenshot "paying"', line: 6 }),
+      step({ kind: 'expect', source: 'expect text "Total" is visible', line: 7, detail: 'visible' }),
+    ]),
+    'tests/checkout.tflw',
+    BROWSER_BUFFER,
+  );
+
+  assert.equal(groupFor(index, 1, 3)!.line, 2, 'the assertion under `open` reads the page `open` left');
+  assert.equal(groupFor(index, 1, 5)!.line, 4, 'and the one under the click reads the page the CLICK left');
+  assert.equal(groupFor(index, 1, 7)!.line, 4, 'a `screenshot` between them opens nothing, so line 7 still belongs to the click');
+  assert.equal(groupFor(index, 1, 2)!.line, 2, 'an action is in its own group — it is what the group is about');
+
+  /**
+   * **Bounded to the declaration, and this is the assertion that matters.** Without `declLine` a
+   * statement in a test with no action above it attaches to the last action of the *previous*
+   * declaration — a mark in exactly the place a mark belongs, about something else, which is the
+   * failure `D1093` exists to refuse.
+   */
+  assert.equal(groupFor(index, 4, 7)!.line, 4, 'a declaration starting AT a group keeps it — the bound is inclusive');
+  assert.equal(groupFor(index, 5, 7), null, 'a declaration starting below every group gets nothing, not the group above it');
+  assert.equal(groupFor(index, 1, 1), null, 'and nothing is found above the first action');
 });

@@ -22,6 +22,21 @@ import { VOCABULARY } from '../src/vocabulary.ts';
 /** Every browser kind the language has — asked of the language, never listed here. */
 const BROWSER = (Object.keys(STEP_LENS) as Step['type'][]).filter((k) => STEP_LENS[k] === 'browser');
 
+/**
+ * **The door-agnostic kinds** — `STEP_LENS[kind] === null` — asked of the language the same way.
+ *
+ * `null` there means *this construct does not decide which door a test lands behind*, which is the
+ * opposite of what `stepCatalogue` read it as until `M232` (`D1273`). `let` and `expect` are
+ * excluded here for the reason they are excluded from `CATALOGUE`: every door carries `+ let` in
+ * its foot, and an assertion is a row rather than a step you add.
+ */
+const AGNOSTIC = (Object.keys(STEP_LENS) as Step['type'][]).filter(
+  /* `MalformedStep` is the parser's error node and not a construct anybody authors — it has a
+     `null` lens because it has no lens, which is a third meaning of `null` in this table and the
+     reason `D1273` reads the door's own vocabulary rather than this one. */
+  (k) => STEP_LENS[k] === null && !['LetStmt', 'ExpectStmt', 'MalformedStep'].includes(k),
+);
+
 /** A block needs a body before it can be built at all — `AddStep`'s own seed, one gesture. */
 const seed = (kind: Step['type']): Step | null => {
   const click = buildStatement({ kind: 'click', locatorKind: 'button', locator: 'x', clickKind: 'single' }, null);
@@ -38,16 +53,24 @@ test('`+ step…` offers every browser kind the foot does not, and none it canno
   /* `within` is deliberately absent — `D1164`: a scope is a **field on a row** under `D1163`, so
      its 433 occurrences leave the `+` vocabulary entirely, and the `⤹` on a statement is how it
      stays constructible. That is most of why the tail is as small as it is. */
-  const expected = BROWSER.filter((k) => !['OpenStmt', 'ClickStmt', 'FillStmt', 'WithinBlock'].includes(k));
+  const expected = [...BROWSER.filter((k) => !['OpenStmt', 'ClickStmt', 'FillStmt', 'WithinBlock'].includes(k)), ...AGNOSTIC];
   assert.deepEqual([...listed].sort(), [...expected].sort());
-  assert.equal(offers.length, 18, 'the plan said seventeen; 22 − 3 in the foot − `within` is eighteen');
+  /* **23, and it was 18 until `M232` (`D1273`)** — `M213-06`. The five door-agnostic kinds are
+     constructible on every door and were offered on none: `buildStatement` has had a case for each
+     since `M214`, and `stepCatalogue`'s third clause read `STEP_LENS[kind] !== null` as *this door
+     cannot build it* when it means *this construct does not choose a door*. It filtered nothing on
+     the day it was written, because every `CATALOGUE` row was a browser kind — so it was a trap
+     rather than a defect, and the trap is that adding the five would have changed nothing and
+     reddened no gate. */
+  assert.equal(offers.length, 23, '22 browser kinds − 3 in the foot − `within`, plus the five door-agnostic kinds');
+  assert.equal(AGNOSTIC.length, 5, 'capture, log, call, give, pause — if the language gains a sixth it needs a CATALOGUE row and a seed');
   // And the list cannot claim a kind the door cannot construct, which is the direction that
   // matters: a chooser offering a kind with no builder is a control that refuses itself.
   for (const o of offers) assert.ok(VOCABULARY.browser.constructs.has(o.kind), `${o.label} is offered and not constructible`);
 });
 
-test('every browser kind builds from its own default, prints, and parses back as itself', () => {
-  for (const kind of BROWSER) {
+test('every offerable kind builds from its own default, prints, and parses back as itself', () => {
+  for (const kind of [...BROWSER, ...AGNOSTIC]) {
     if (kind === 'OpenStmt' || kind === 'ClickStmt' || kind === 'FillStmt' || kind === 'WithinBlock') continue;
     const edit = defaultEdit(kind);
     assert.ok(edit, `\`${kind}\` has no default in \`AddStep\` — \`+ step…\` would offer a kind with nothing to put in the fields`);

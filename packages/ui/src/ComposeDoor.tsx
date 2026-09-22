@@ -72,7 +72,7 @@ import {
 } from '@tflw/lang';
 import { pickLocators, recordActions, putFile, getFile, dropScratch, startRun, subscribe, getReports, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
-import { indexFromReport, indexFromSend, belongsTo, playScratchOf, REPORT_LOOKBACK } from './ran';
+import { indexFromReport, indexFromSend, belongsTo, playScratchOf } from './ran';
 import { VOCABULARY } from './vocabulary';
 import { TabStrip } from './TabStrip';
 import { Stage, traceOf } from './Stage';
@@ -2027,17 +2027,19 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
    * when a run finishes — so a run started from the Run tab lands here without this pane knowing
    * anything about it.
    *
-   * **IT HAS TO OPEN THE REPORTS TO FIND OUT, AND THAT IS WHY THERE IS A CAP.** `ReportEntry.files`
-   * looks like the answer and is not: it is the list of **artefacts** in the directory —
-   * `results.json`, `report.html`, `junit.xml` — not the `.tflw` files the run executed, and the
-   * first draft of this filtered on it and silently matched nothing at all (`M213-19`). Which
-   * tests a report holds is only in its own `results.json`, and those run to hundreds of kilobytes
-   * on a fixture project, so this walks the reports newest-first and stops at the first that
-   * carries a test for this file, opening at most `REPORT_LOOKBACK` of them.
+   * **IT USED TO OPEN THE REPORTS TO FIND OUT, AND THAT IS WHY THERE WAS A CAP** — `M232`
+   * (`M213-19`, `D1271`).
    *
-   * A file not found within that many runs shows no verdicts. That is a bound stated rather than a
-   * search that quietly grows with the report directory, and the failure it produces is the same
-   * as the ordinary one — a file nobody has run shows nothing — rather than a slow page.
+   * `ReportEntry.files` looked like the answer and was not: it was the **artefacts** in the
+   * directory — `results.json`, `report.html`, `junit.xml` — not the `.tflw` files the run
+   * executed, and the first draft of this filtered on it and silently matched nothing. So which
+   * tests a report held was only in its own `results.json`, which runs to hundreds of kilobytes on
+   * a fixture project, and this walked newest-first opening up to `REPORT_LOOKBACK` of them.
+   *
+   * The server already knew. `listReports` parses every `results.json` to build `summary`, so
+   * `ReportEntry.tests` costs it nothing — and with the question answered in the list, the walk is
+   * a **filter** and the cap goes with it. It was a bound on I/O; there is no I/O left to bound,
+   * and exactly one payload is fetched: the newest report that actually holds this file.
    *
    * A failure is silence, deliberately. There being no report for a file is the ordinary state of
    * a new file, and a page that said *could not read the last run* over every one of them would be
@@ -2048,19 +2050,17 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     void (async () => {
       try {
         const reports = (await getReports()).slice().sort((a, b) => b.at.localeCompare(a.at));
-        for (const entry of reports.slice(0, REPORT_LOOKBACK)) {
-          if (!entry.files.includes('results.json')) continue;
-          const report = await getResults(entry.id);
-          if (!live) return;
-          /* `M221` `B` — a play's report carries the SCRATCH's name, so the lookback that finds
-             "the last run that touched this file" has to know the two are the same subject. The
-             verdicts still join on `(line, source)` because the scratch is the buffer verbatim. */
-          if (report.tests.some((t) => 'file' in t && belongsTo(t.file, path, project.playScratch))) {
-            setReportRan({ report, reportId: entry.id });
-            return;
-          }
+        /* `M221` `B` — a play's report carries the SCRATCH's name, so *the last run that touched
+           this file* has to know the two are the same subject. The verdicts still join on
+           `(line, source)` because the scratch is the buffer verbatim. */
+        const mine = reports.find((entry) => entry.tests.some((f) => belongsTo(f, path, project.playScratch)));
+        if (mine === undefined) {
+          if (live) setReportRan(null);
+          return;
         }
-        if (live) setReportRan(null);
+        const report = await getResults(mine.id);
+        if (!live) return;
+        setReportRan({ report, reportId: mine.id });
       } catch {
         if (live) setReportRan(null);
       }

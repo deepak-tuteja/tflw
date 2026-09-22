@@ -47,18 +47,47 @@ const CATALOGUE: readonly { readonly kind: Step['type']; readonly label: string;
   { kind: 'DownloadBlock', label: 'download as', about: 'bind the file the gesture inside it downloads' },
   { kind: 'DragStmt', label: 'drag', about: 'drag one element onto another' },
   { kind: 'DropFileStmt', label: 'drop file', about: 'drop a file from disk onto an element' },
+  /* **The door-agnostic five** — `M213-06`, `M232` (`D1273`). Constructible on every door,
+     `buildStatement` has had a case for each since `M214`, and none of them was offered anywhere.
+     `let` is not among them because all four doors carry `+ let` in the foot, and `expect` because
+     an assertion is a row of its own rather than a step you add. */
+  { kind: 'CaptureStmt', label: 'capture', about: 'bind a value out of the last response, so a later step can use it' },
+  { kind: 'LogStmt', label: 'log', about: 'a line in the report — what this step saw, in the run’s own output' },
+  { kind: 'CallStmt', label: 'call', about: 'run an `action` declared elsewhere, without binding what it gives back' },
+  { kind: 'GiveStmt', label: 'give', about: 'hand a value back from an `action` to whoever called it' },
+  { kind: 'PauseStmt', label: 'pause', about: 'wait a fixed length of time — a last resort beside `wait until`' },
 ];
 
 /**
  * The kinds this dialog offers on a door — the vocabulary's own `constructs`, minus what the foot
- * already has and minus `within`.
+ * already has.
  *
  * **It is filtered from the table rather than listed again**, so a kind the language gains reaches
- * the dialog the day `STEP_LENS` and `CATALOGUE` agree about it — and a kind in `CATALOGUE` that
- * the door cannot construct is dropped rather than drawn dead.
+ * the dialog the day the door's vocabulary and `CATALOGUE` agree about it — and a kind in
+ * `CATALOGUE` that the door cannot construct is dropped rather than drawn dead.
+ *
+ * **THE THIRD CLAUSE IS GONE AND IT WAS KEYED ON A PROXY** — `M213-06`, `M232` (`D1273`).
+ *
+ * It read `STEP_LENS[c.kind] !== null`, and its own docblock justified it as *a kind the door
+ * cannot construct is dropped rather than drawn dead* — which is the **first** clause's job, and
+ * the first clause does it correctly by asking the door. `STEP_LENS[kind] === null` does not mean
+ * *no door*; it means **door-agnostic**, which is the opposite: `capture`, `let`, `log`, `give`,
+ * `call` and `pause` are constructible on every door there is.
+ *
+ * It filtered nothing on the day it was written, because every `CATALOGUE` entry was a browser
+ * kind — so it was not a live defect, it was a **trap**: the five rows added above would have been
+ * accepted into the table, drawn nowhere, and reported by no gate. That is the shape this arc has
+ * now met four times (`M225`–`M227` a rule keyed on one of three tenants, `M228` a proxy that
+ * gained a second member, `M229` `A` a gate asserting the wrong property), and the fourth is the
+ * only one that was harmless until somebody tried to use the thing it guarded.
+ *
+ * Refused, and named so it is not retried: giving the six a lens in `STEP_LENS` instead.
+ * `STEP_LENS` decides which door a whole **test** appears behind (`D1043`), so lensing `LetStmt`
+ * would move every test containing one and reshape the 4×5 landing grid. A page-local filter
+ * defect must not become a language-wide reclassification.
  */
 export function stepCatalogue(constructs: ReadonlySet<Step['type']>, inFoot: readonly string[]): typeof CATALOGUE {
-  return CATALOGUE.filter((c) => constructs.has(c.kind) && !inFoot.includes(c.label) && STEP_LENS[c.kind] !== null);
+  return CATALOGUE.filter((c) => constructs.has(c.kind) && !inFoot.includes(c.label));
 }
 
 /**
@@ -114,6 +143,24 @@ export function defaultEdit(kind: Step['type']): StatementEdit | null {
       return { kind: 'switchToNewTab' };
     case 'DownloadBlock':
       return { kind: 'download', name: 'file' };
+    /* **The door-agnostic five** (`D1273`). Each seed is the shape its construct most often takes
+       in the corpus, with `change me` wherever the author must choose — the same rule as above. */
+    case 'CaptureStmt':
+      /* `capture body.<path> as <name>` is what a capture almost always is: it exists to carry a
+         value from one response into the next request. */
+      /* `changeMe` and not `change me`: a body path is a path, and the builder refuses a name with
+         a space in it — so the seed has to be unfinished-looking AND buildable, which is the same
+         constraint `+ click`'s `change me` meets by sitting in a string. */
+      return { kind: 'capture', subject: 'body', argument: 'changeMe', locatorKind: 'button', name: 'changeMe' };
+    case 'LogStmt':
+      return { kind: 'log', level: 'info', message: 'change me', destination: '' };
+    case 'CallStmt':
+      return { kind: 'call', name: 'change me', args: [] };
+    case 'GiveStmt':
+      return { kind: 'give', value: '"change me"' };
+    case 'PauseStmt':
+      /* Blank upper bound is a fixed pause, which all four in the corpus are. */
+      return { kind: 'pause', min: '500ms', max: '' };
     default:
       return null;
   }

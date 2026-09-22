@@ -15,9 +15,10 @@
 // step kind silently lands nowhere. `placed === total` cannot.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tflwFiles } from '../../../scripts/tflw-corpus.mjs';
 import { buildApiStep, lex, parseSource, replaceInSource, STEP_LENS, type Step } from '@tflw/lang';
 import { addressed, fileOutline, groupBody, isForeign, pageOpeners, phaseOf, prefixOf, readNotes, requestsOf, statementsOf } from '../src/outline';
 
@@ -25,31 +26,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
 const siblingRoot = join(repoRoot, '..', 'testFlow-tests');
 
-/** Directories that hold copies rather than sources — `print.test.ts`'s own list. */
-const SKIP_DIR = /^(node_modules|dist|\.git|runs|coverage)$|^\.m.*-scratch$/;
-
+/* One walker for the whole repository (`M215-01`, `D1274`) — this was one of five copies. */
 function corpus(root: string): string[] {
-  const out: string[] = [];
-  const walk = (dir: string): void => {
-    let entries: string[];
-    try { entries = readdirSync(dir); } catch { return; }
-    for (const entry of entries) {
-      // **A dot-prefixed `.tflw` is not part of the authored corpus** (`M215`, `M215-01`). `tflw
-      // ui`'s send writes `.scratch.tflw` into the project it is serving — that is what the button
-      // is FOR — and this walk reads every `.tflw` under the repository root, so a person driving
-      // the served page changes what this test asserts over. The same line is in `lenses.test.ts`,
-      // `print.test.ts` and `verify-fmt-roundtrip.mjs`; this is the **fourth** copy of a walk that
-      // exists once in four places, which is the open half of `M215-01`.
-      if (SKIP_DIR.test(entry) || entry.startsWith('.')) continue;
-      const p = join(dir, entry);
-      let st;
-      try { st = statSync(p); } catch { continue; }
-      if (st.isDirectory()) walk(p);
-      else if (entry.endsWith('.tflw')) out.push(p);
-    }
-  };
-  walk(root);
-  return out;
+  return tflwFiles(root);
 }
 
 /** Every top-level step of every hook and test body — what the outline has to place. A block's

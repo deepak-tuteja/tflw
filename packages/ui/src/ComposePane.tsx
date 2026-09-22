@@ -92,6 +92,7 @@ import { holds, requestRemoval, statementRemoval } from './depends';
 import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type OutlineCrawl, type OutlineHook, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
 import type { Prefix, SendForm } from './outline';
 import { VOCABULARY, type AddGesture } from './vocabulary';
+import { groupFor } from './ran';
 import { bodyProblem, laidOut } from './jsonview';
 import { BodyText } from './Source';
 import { ScanPanel, type Authorization } from './ScanPanel';
@@ -869,7 +870,17 @@ export function ComposePane(props: ComposePaneProps) {
     selected.kind === 'request' ? selected.request
     : selected.kind === 'statement' ? (at === null ? null : requestsOf(at.decl.body).find((r) => r.attached.some((s) => s.line === selected.statement.line)) ?? null)
     : null;
-  const rowRan: Ran | null = forRequest === null ? null : (ran.get(forRequest.line) ?? null);
+  /**
+   * A statement's verdicts are its request's — **or, where there is no request, its action's**
+   * (`M220-02`, `D1270`). `groupFor` is the same rule `indexFromReport` groups by, read from the
+   * other end, and it is bounded to this declaration so a mark never attaches across one.
+   */
+  const rowRan: Ran | null =
+    forRequest !== null
+      ? (ran.get(forRequest.line) ?? null)
+      : selected.kind === 'statement' && at !== null
+        ? groupFor(ran, at.decl.line, selected.statement.line)
+        : null;
 
   /** The prefix whose request list is drawn — what the press the reader is most likely to take
    *  will fire. On a declaration address that is `send all`, because there is no *this*. */

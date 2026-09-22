@@ -10,7 +10,8 @@
 // could pass while the feature could not write a file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { tflwIn } from '../../../scripts/tflw-corpus.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApiStep, buildWaitUntilApi, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildDataTable, buildGive, buildLet, buildLog, buildPause, SYNTHETIC, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit, type TestDecl } from '../src/index.js';
@@ -1244,9 +1245,12 @@ test('`M224` `D1207`: every test in the example project accepts a threshold, by 
   const EXAMPLE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'examples', 'storefront', 'tests');
   const refused: string[] = [];
   let seen = 0;
-  for (const entry of readdirSync(EXAMPLE)) {
-    if (!entry.endsWith('.tflw')) continue;
-    const f = format(readFileSync(join(EXAMPLE, entry), 'utf8'));
+  /* `tflwIn` and not a bare `readdirSync` (`M215-01`, `D1274`): `playScratchOf` puts ▶'s
+     `.play.tflw` in the file's own directory, so pressing ▶ on an example test used to add a file
+     to this corpus — and the count below is an **equality**, which is the assertion that would
+     have failed. */
+  for (const entry of tflwIn(EXAMPLE)) {
+    const f = format(readFileSync(entry, 'utf8'));
     assert.equal(f.ok, true, entry);
     const text = f.formatted;
     const { program } = parseSource(text);

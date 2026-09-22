@@ -12,7 +12,7 @@ import { Chart } from './Chart';
 import { useTokenColors } from './theme';
 import { overlayIsComparable, plannedSeries } from './plan';
 import { getReports, getResults } from './api';
-import { REPORT_LOOKBACK, sameFile } from './ran';
+import { sameFile } from './ran';
 import type { WorkloadTestResult } from './contract';
 import { planInputOf, planProse, workloadEditOf } from './workloadEdit';
 
@@ -32,10 +32,12 @@ export interface LastWorkloadRun {
  * **The last run of THIS declaration in this file** — `M213` `S6` (`D1103`), narrowed by `M225`
  * `E` (`D1221`).
  *
- * The same walk `S2` gave the API door (`D1099`), and the same bound: `ReportEntry.files` is the
- * artefacts in a report directory, not the `.tflw` files a run executed (`M213-19`), so which
- * report holds this file is only in its own `results.json`. Newest first, `REPORT_LOOKBACK` deep,
- * stop at the first that carries this declaration's workload.
+ * The same filter `S2` gave the API door (`D1099`), and it is a **filter** since `M232` (`D1271`):
+ * `ReportEntry.files` was the artefacts in a report directory, not the `.tflw` files a run
+ * executed (`M213-19`), so which report held this file used to be readable only by opening its own
+ * `results.json` — newest first, `REPORT_LOOKBACK` deep. `ReportEntry.tests` answers it in the
+ * list the page already has, at no cost to the server, so the cap is gone with the walk it
+ * bounded and exactly one payload is fetched.
  *
  * **`name` is what `M225` added**, and it is not cosmetic: a file with three workload tests in it
  * had every one of them reading the first one's curve. `null` means *do not look* — a declaration
@@ -56,8 +58,12 @@ export function useLastWorkloadRun(path: string, name: string | null): LastWorkl
     void (async () => {
       try {
         const reports = (await getReports()).slice().sort((a, b) => b.at.localeCompare(a.at));
-        for (const entry of reports.slice(0, REPORT_LOOKBACK)) {
-          if (!entry.files.includes('results.json')) continue;
+        /* The list narrows it to the reports that ran this **file**; which of them holds a
+           *workload* named `name` is still only in the payload, so the walk survives over a set
+           that is now usually one long — and the fetch inside it is the reason the loop is still a
+           loop rather than a `find`. */
+        for (const entry of reports) {
+          if (!entry.tests.some((f) => sameFile(f, path))) continue;
           const report = await getResults(entry.id);
           if (!live) return;
           const mine = report.tests.find((t) => t.kind === 'workload' && sameFile(t.file, path) && t.name === name);

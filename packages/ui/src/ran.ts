@@ -24,20 +24,23 @@
 // still there when the file comes back — while every row below the insertion has moved, and every
 // one of those verdicts is correctly dropped rather than shifted by one.
 
-import type { RunReport, StepResult } from './contract';
+import type { RunReport, StepKind, StepResult } from './contract';
 import type { Ran, RanIndex, Verdict } from './parts';
 
-/**
- * How many reports are opened, newest first, looking for one that ran the open file.
+/* **`REPORT_LOOKBACK` IS GONE** — `M232` (`M213-19`, `D1271`).
  *
- * **A cap exists because `ReportEntry` cannot answer the question** (`M213-19`): its `files` field
- * is the artefacts in the directory, not the `.tflw` files the run executed, so which tests a
- * report holds is only in its own `results.json` — 412 KB on this repository's own fixture
- * project. Three is the depth at which *the last run, the one before it, and the one before that*
- * stops being a useful answer and starts being a search: a file that has not been run in three
- * runs is a file whose last verdict is not evidence about now anyway.
+ * It capped how many reports were opened, newest first, looking for one that ran the open file,
+ * and its own docblock said why it had to exist: *`ReportEntry` cannot answer the question* — its
+ * `files` field was the artefacts in the directory, not the `.tflw` files the run executed, so
+ * which tests a report held was only in its own `results.json`, 412 KB on this repository's own
+ * fixture project.
+ *
+ * `ReportEntry.tests` answers it now, for no extra I/O at all: `listReports` already parsed every
+ * `results.json` to build `summary`. So the two walks are filters, and a constant whose whole
+ * justification was the cost of a search outlives the search by exactly nothing. Three was also a
+ * **wrong answer** while it stood — a file not run in the last three runs showed no verdicts at
+ * all, which reads identically to a file nobody has ever run.
  */
-export const REPORT_LOOKBACK = 3;
 
 /** The buffer's lines, trimmed, 1-based — the shape `StepResult.source` is recorded in. */
 function linesOf(text: string): readonly string[] {
@@ -121,6 +124,65 @@ export function belongsTo(entryFile: string | undefined, path: string, playScrat
  * inside its block and carry no step of their own in the report, so such a group is a response
  * with no verdicts under it. That is the truth about it, not a gap.
  */
+/**
+ * **What opens a verdict group** — `M220-02`, `M232` (`D1270`).
+ *
+ * This was `step.kind === 'api'` written inline, and the consequence was not that browser verdicts
+ * were grouped badly: they were **dropped**. Nothing opened a group in a browser test, `open ===
+ * null` skipped every step, and the map came back empty *by construction* — so the pane drew no
+ * marks beside assertions whose status chip said they had run.
+ *
+ * The rule is the API door's own, stated once instead of twice: **a request groups the assertions
+ * that read its response; an action groups the assertions that read the page it left.** So every
+ * gesture that can change what the page says opens one.
+ *
+ * What is deliberately **not** here is as load-bearing as what is:
+ *
+ *  · `expect` and `check` are what a group *holds*, not what opens one.
+ *  · `screenshot`, `stub`, `pause`, `log`, `let`, `capture`, `give`, `call` change nothing a later
+ *    assertion reads, so opening a group on one would cut the previous action's group in half and
+ *    strand its marks under a step that did not produce them.
+ *  · `within` and `download` are blocks; the gesture inside them carries its own step.
+ *  · `header`, `csrf` and `seed` are not test-body steps at all.
+ *
+ * Two shapes were refused. *The test is one group* — every mark in the test vanishes when any
+ * character of the declaration line changes, and a mark stops saying which action produced what it
+ * read. *Only a navigation opens one* — one `open` and twenty clicks collapse to a single group,
+ * which is the shape `M220-02` is complaining about.
+ */
+export const OPENS_GROUP: ReadonlySet<StepKind> = new Set<StepKind>([
+  'api',
+  'open', 'click', 'fill', 'select', 'checkbox', 'uncheckbox', 'press',
+  'hover', 'scroll', 'drag', 'dropFile', 'dialog', 'switchTab', 'closeTab',
+]);
+
+/**
+ * **The group a statement's verdict lives in** — `M220-02`, `M232` (`D1270`).
+ *
+ * `ComposePane` found it by asking which **request** the statement is attached to, which is the
+ * right question on the API door and unanswerable on every other one: a browser test has no
+ * requests, so the lookup returned `null` and no mark was drawn — which is the half of `M220-02`
+ * that `indexFromReport` alone does not fix. Populating the index and never reading it would have
+ * closed the row on paper.
+ *
+ * So when there is no request, the group is the **nearest action at or above this statement**,
+ * which is `indexFromReport`'s own rule read from the other end: an action groups the assertions
+ * that read the page it left.
+ *
+ * **Bounded to the declaration**, because a group belongs to the test that produced it. Without
+ * `declLine` a statement in a browser test with nothing above it would attach to the last action
+ * of the *previous* declaration — a mark in exactly the place a mark belongs, about something
+ * else, which is the failure `D1093` exists to refuse.
+ */
+export function groupFor(index: RanIndex, declLine: number, statementLine: number): Ran | null {
+  let best: Ran | null = null;
+  for (const [line, ran] of index) {
+    if (line > statementLine || line < declLine) continue;
+    if (best === null || line > best.line) best = ran;
+  }
+  return best;
+}
+
 export function indexFromReport(report: RunReport, path: string, bufferText: string, playScratch?: string): RanIndex {
   const lines = linesOf(bufferText);
   const out = new Map<number, Ran>();
@@ -153,7 +215,7 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
       });
     };
     for (const step of entry.steps) {
-      if (step.kind === 'api') {
+      if (OPENS_GROUP.has(step.kind)) {
         close();
         open = { step, verdicts: new Map() };
         continue;

@@ -215,6 +215,29 @@ export function Workload({ test, other }: { test: WorkloadTestResult; other?: Co
         </tbody>
       </table>
 
+      {/**
+        * **THESE FOUR BELONG TO A RUN, AND THAT IS A DECISION** — `M213-07`, `M232` (`D1269`).
+        *
+        * They are imported by `ReportView` and by nothing else, which is exactly what the row
+        * reports and which reproduces literally today. It is not a gap.
+        *
+        * Latency over time, throughput, error rate and the response-time histogram answer *how did
+        * the system behave* — a question about a **run**. The composing pane's region 2 answers
+        * *what does this declaration ask for, and did it get it* — a question about a
+        * **construct** — and `D1044` earns a panel by the construct. `PlanPanel` draws the row's
+        * own prescribed repair, *planned-vs-achieved on one plot, explicitly not a JMeter-style
+        * tree*, in region 2 on every door.
+        *
+        * So the row was **repaired across `M224` `C`, `M225` `E`/`F` and `M227` `B`** (`D1209`,
+        * `D1221`, `D1222`, `D1230`, `D1232`, `D1233`) and nobody went back to close it. Six
+        * decisions across three milestones built its repair while the row stayed open, which is
+        * this arc's own finding about its ledger: a row is a claim made on a date.
+        *
+        * **The cost, stated rather than implied:** a reader composing a LOAD test cannot see its
+        * latency distribution without opening the report. The day that is the complaint, this is
+        * what gets reopened — and it names itself here so the reopening starts from an argument
+        * rather than from a rediscovery.
+        */}
       <div className="charts">
         <Chart id="latency" title="Latency over time" unit="ms" x={latency.x} series={latency.series} kind="line" xName="at" xLabel={secs} yLabel={dur} />
         <Chart id="throughput" title="Throughput" unit="req/s" x={throughput.x} series={throughput.series} kind="line" xName="at" xLabel={secs} yLabel={String} />

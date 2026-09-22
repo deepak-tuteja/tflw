@@ -171,7 +171,7 @@ Every tab the session opens is recorded, not just the one it started in. A click
 is written as the block that wraps it, because the runtime has to be listening before the click
 happens; coming back to a tab you left prints the switch that takes you there.
 
-```tflw
+```tflw fragment
 click button "Track parcel"
 switch to new tab
   click text "View receipt"
@@ -185,7 +185,7 @@ A page with twelve *Add to cart* buttons has no unambiguous name for any of them
 back to a selector naming the position the row happened to be in, the recorder scopes the
 statement to the nearest ancestor that narrows the name to one **and** has a name of its own:
 
-```tflw
+```tflw fragment
 within css "[aria-label=\"Product 2\"]"
   click button "Add to cart"
 ```

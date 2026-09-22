@@ -108,11 +108,15 @@ npm run verify:ledger                  # § never runs in CI, by decision
   synthetic and run identically in CI, while resolving each corpus against the design records needs
   files `.gitignore` excludes, so a runner does half and says which half. Static, seconds.
 - **`npm run verify:fmt-roundtrip -- --check`** — the formatter's own gate (`M191`, `D997`): every
-  tracked `.tflw` here round-trips through `format()` to the same tokens in the same order, the
-  same indent structure and the same comments, formats idempotently, and — under `--check` — is
-  already formatted, so the formatter's own corpus can never fail the check it asks of the
-  sibling's. A `.checkonly/` fixture that is broken on purpose is refused by design and listed,
-  not counted. Needs the build; milliseconds.
+  `.tflw` under `packages/` and `examples/` round-trips through `format()` to the same tokens in
+  the same order, the same indent structure and the same comments, formats idempotently, and —
+  under `--check` — is already formatted, so the formatter's own corpus can never fail the check it
+  asks of the sibling's. It walks the filesystem with dot-entries excluded, **not** the tracked
+  set (`M215-01`, `D1275`): this gate runs on the build box, where `scripts/exec.mjs` has rsynced
+  the tree without `.git/`, so a corpus declared over what git tracks would resolve to zero there.
+  The dot-entry rule is also what keeps the `.scratch.tflw` the served page writes on purpose out
+  of the census. Every refusal is a failure — the `.checkonly/` exemption this line used to
+  describe was unreachable twice over and is gone (`M232-01`). Needs the build; milliseconds.
 - **`npm run verify:check-coverage`** — the only gate in this list whose subject is the *other*
   repository's build. `testFlow-tests` demands a fixture for every check-phase `TF0xx` code the
   installed tflw assigns, and that rule is enforced one repository away from the change that breaks
