@@ -275,3 +275,33 @@ actually ships, not a stub.
 
 Full reference: [SPEC.md §12](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#12-cli-),
 [§13 (events/report)](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#13-events-report-ci-outputs-p45-p23-p30-).
+
+## Selecting what a pipeline runs — `@tag`
+
+A `test` or `crawl` can carry tags on their own lines above it — `@smoke @checkout` — and
+`tflw run --tag smoke` runs only the tests that carry one. Tags are OR across a comma-separated
+list, so `--tag smoke,checkout` runs anything carrying either.
+
+This is how one suite serves two pipelines: a pull request runs `--tag smoke` in a minute, and the
+nightly build runs everything. Tagging is a property of the test, so a test moved between files
+keeps the pipelines that select it.
+
+## What a run writes, and where — `report`
+
+The report key in `tflw.config` says where a run's artifacts land — `report "./report"` is the
+default, and any path works. The directory it names is what a pipeline archives: `report.html`,
+`junit.xml` and `results.json` all appear there, written from the same event stream.
+
+Whatever you choose, the artifacts fall out of the same event stream — there is no capture step to
+configure and no way for the report to disagree with the terminal, because neither is generated
+from the other.
+
+## The hosts a run may reach — `allow hosts`
+
+`allow hosts "api.example.com", "auth.example.com"` in `tflw.config` is the safety half of this
+chapter's title. A request to any host not on the list is refused **before it is issued** — not
+asserted against afterwards, refused — so a suite that has been pointed at the wrong environment
+fails loudly instead of quietly talking to production.
+
+It is worth setting even when it looks redundant. The failure it prevents is the one where a base
+URL is overridden by an environment variable in CI and nothing else notices.

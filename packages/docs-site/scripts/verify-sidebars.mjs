@@ -42,6 +42,11 @@ const EXPECTED = [
   // The step the funnel page leads into — unchanged by `FU-30`, and the reference point its
   // markup was compared against when the bug was measured.
   { page: 'guide/first-test.html', shows: 'Start here', hides: 'More' },
+  // The page's own surface. `The page` present is the new `/page/` key resolving; `More` absent is
+  // the proof it beat the `/` fallback rather than stacking beside it — which is the failure the
+  // `hides` half exists for, and the one a fifth rail makes easier to reach than a fourth did.
+  { page: 'page/index.html', shows: 'The page', hides: 'More' },
+  { page: 'page/doors.html', shows: 'The page', hides: 'More' },
 ];
 
 /** Each pillar overview is reachable from the rail, and it is the group's own title that reaches it.

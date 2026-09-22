@@ -68,3 +68,10 @@ Two consequences follow, and both are why the models were not split into separat
   test is a body plus two lines, and the body is the part this pillar does not teach.
 - **The other pillars:** [Functional testing](/guide/functional) and [Security
   testing](/guide/security).
+
+## The same work, in the page
+
+A workload and its thresholds are a form in `tflw ui`, and a run read there draws planned against
+achieved on one plot — so a workload that did not reach its target is a picture rather than an
+inference. The language is unchanged: what the page writes is the two lines this pillar teaches.
+See [The page](/page/).

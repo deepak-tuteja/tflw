@@ -119,3 +119,10 @@ in a month.
   surface](/guide/crawling).
 - **The other pillars:** [Functional testing](/guide/functional) and [Performance
   testing](/guide/performance).
+
+## The same work, in the page
+
+`tflw ui`'s SCANS door lists every finding a run produced, grouped by rule and by severity, with
+the baseline's verdict beside it — which is how a finding that was accepted last week and is
+gating now becomes visible. The authorized target declaration is still required and still written
+in the file: the page does not grant permission, it reads it. See [The page](/page/).

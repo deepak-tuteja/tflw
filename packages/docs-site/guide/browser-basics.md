@@ -212,3 +212,16 @@ every other matcher still hard-errors on ambiguity. "Zero elements" is itself a 
 non-erroring state for `is hidden`, `is not visible` and `has count 0`.
 
 Full reference: [SPEC.md §9](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#9-ui-steps-p89-p26-).
+
+## Waiting on purpose — `pause`
+
+`pause 500ms` waits a fixed duration and does nothing else. It is the blunt instrument, and it is
+here for completeness rather than as a recommendation: a wait that exists because the page is slow
+belongs in [`wait until`](/guide/retry-and-polling), which waits for the *condition* and stops as
+soon as it holds. A fixed pause that is long enough is slow on every run, and one that is short
+enough is flaky on a bad one.
+
+Where `pause` earns its place is as think-time — a deliberate gap between steps, standing in for a
+person reading the screen, which is why it also turns up in
+[load testing](/guide/load-testing). There the delay *is* the thing being modelled, so a fixed
+duration is exactly right.

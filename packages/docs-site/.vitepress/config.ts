@@ -140,6 +140,11 @@ export default defineConfig({
       { text: 'Reference', link: '/reference/matchers' },
       { text: 'Grammar', link: '/grammar' },
       { text: 'Editor', link: '/editor' },
+      // `tflw ui` is a surface, not a chapter — this nav names surfaces, which is why Editor and
+      // Playground are here and `Assertions` is not. An authoring environment the size of the
+      // language, filed under a sub-bullet of a guide chapter, would be the navigation asserting
+      // something false.
+      { text: 'The page', link: '/page/' },
       { text: 'Playground', link: '/playground' },
       { text: 'Changelog', link: '/changelog' },
     ],
@@ -156,6 +161,20 @@ export default defineConfig({
       // home CTA, the README and the npm page all point at, to fix a left rail.
       '/guide/': GUIDE_SIDEBAR,
       '/getting-started': GUIDE_SIDEBAR,
+      // The page's own rail. Five entries, in the order a reader meets them: what it is, the
+      // shape every surface shares, the four doors, reading a run, and what it will not do.
+      '/page/': [
+        {
+          text: 'The page',
+          link: '/page/',
+          items: [
+            { text: 'The spine', link: '/page/spine' },
+            { text: 'The four doors', link: '/page/doors' },
+            { text: 'Reading a run', link: '/page/a-run' },
+            { text: 'What it will not do', link: '/page/limits' },
+          ],
+        },
+      ],
       '/reference/': [
         {
           text: 'Reference',

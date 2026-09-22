@@ -88,3 +88,11 @@ Four things in that file are worth naming, each with a chapter behind it.
   do when one goes red.
 - **Ready for the other pillars:** [Performance testing](/guide/performance) and [Security
   testing](/guide/security).
+
+## The same work, in the page
+
+`tflw ui` reads a project of these tests back as a page, with a form per request and the assertions
+that read it beside the response they judge. It writes ordinary `.tflw` — the file it produces is
+the file this chapter teaches, and the Source tab shows you the bytes before they are written. It
+is the fastest way to see what a construct looks like without memorising it first. See
+[The page](/page/).

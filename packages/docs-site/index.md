@@ -33,6 +33,10 @@ features:
     details: A real Language Server Protocol implementation (tflw lsp) powers the VS Code extension — diagnostics, hover, go-to-definition, autocomplete, rename, signature help, and semantic highlighting, live as you type.
     link: /editor
     linkText: Editor support
+  - title: Your project, as a page
+    details: tflw ui reads a directory of .tflw files back as a page — what you have, what it is for, what happened when it last ran, and a form per door that writes the language for you. It is local, needs no account, and keeps no state of its own — it reads files from disk and writes files back to disk, so closing it leaves exactly what git sees.
+    link: /page/
+    linkText: The page
 ---
 
 ## Why tflw

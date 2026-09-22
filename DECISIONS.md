@@ -13066,9 +13066,24 @@ is not: the sweep was retired on 2026-09-15 (`M194`/`M195`) in favour of exactly
 test, and the hand kill proves per plant what the census would prove per roster, in two minutes
 and one browser instead of an hour and hundreds. The verdict table records the hand kill.
 
+### M199
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M199_IDENTIFIER_ARITY.md`</sub>
+
+**`M199` — the identifier arity: the bound nobody chose, and the gate that could not see it**
+
+`M198-01` records that every identifier pattern in the decision apparatus spells its number
+`\d{1,3}`, so the day the project passed `D999` its records, its citation grammar and both
+repositories' provenance gates went blind together — and stayed green, because the blindness is
+**symmetric**: with no four-digit id published, none is ever demanded either, so `conformance()`
+sees a corpus in which those decisions do not exist. `DECISIONS.md` cites `D1011` inside its own
+`M197` entry and that citation resolves to nothing, while `verify:decisions` reports every cited
+identifier resolving. This is `M166`'s family in the one instrument whose whole job is proving
+pointers resolve.
+
 ### M200
 
-<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
 
 **`M200` — the page learns to write: four modes over one language**
 
@@ -13078,9 +13093,61 @@ artefact holds. This arc is the other half: the page writes `.tflw` files. It re
 workload test plan / security triage"), which named four rounds by *kind of test* — a framing
 the grilling found wrong, for a reason recorded as `D1043` below.
 
+### M201
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M201_PRINTER_CORPUS.md`</sub>
+
+**`M201` — the printer's own corpus**
+
+**Status:** SCOPED 2026-09-16, off `M200-05`'s open half. Slices `S1`–`S5` in `§4`.
+
+### M203
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M203_DOORS_MEET_A_PROJECT.md`</sub>
+
+**`M203` — the doors meet a project**
+
+`M202` §7 measured why the LOAD and SCANS doors had never shown a test: not the page, not the
+corpus, but that **nine of ten openable projects had never been opened**. This round acts on that,
+in four steps agreed with the user, one of which had to be reordered for a reason `§2` records.
+
+### M205
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M205_API_DOOR_READABLE.md`</sub>
+
+**`M205` — the API door learns to be read: five tabs over one file**
+
+`M192` slice 1 made the page *read* a project; `M200` made it *write* one. Neither asked whether
+the result is legible. This round is that question, opened by the user with a screenshot of the API
+door and the observation that it should take its clarity cues from Bruno and Postman — **taking
+inspiration, not copying** — with tabs that say *what is being done*.
+
+### M206
+
+<sub>cited inside a range only · lifted from `PLAN_M206_STRIP_PROPAGATES.md`</sub>
+
+**`M206` — the strip meets the other three doors, and the rule stops being provisional**
+
+`M205` put a five-tab strip over one file on the **API** door and adopted its rule *provisionally*,
+with the reason written into `doors.ts`: *"a rule carrying exceptions from the start is a
+description."* This round puts BROWSER, LOAD and SCANS to that rule, builds **BROWSER**, and
+either retires the word *provisional* or amends the rule on complete evidence.
+
+### M207
+
+<sub>cited inside a range only · lifted from `PLAN_M207_STRIP_EVERY_DOOR.md`</sub>
+
+**`M207` — the strip reaches the last two doors, and Auth stops presuming a session**
+
+`M205` built the strip for API and adopted its rule provisionally. `M206` put the rule to all four
+doors, found it stood unamended, and built BROWSER. This round finishes the propagation: LOAD and
+SCANS adopt the strip, and the Auth block `S4` shipped one day earlier is reframed before two more
+doors inherit its presumption — including moving its justification paragraph to the door that owns
+it (`S5`).
+
 ### M208
 
-<sub>cited from SPEC.md · lifted from `PLAN_M208_SECURITY_TRIAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M208_SECURITY_TRIAGE.md`</sub>
 
 **`M208` — security triage gets a home, and the baseline becomes a project fact**
 
@@ -13088,6 +13155,65 @@ the grilling found wrong, for a reason recorded as `D1043` below.
 `M206` `Q6` confirmed the break is real and repaired it *in the language rather than in the rule*,
 then deferred the work. `M207` built the strips and deferred it again, deliberately, because this
 is a language change and a new write path rather than a UI round.
+
+### M209
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M209_THE_EXPLORER.md`</sub>
+
+**`M209` — the explorer: the sidebar becomes a file tree, and drops to one job**
+
+**Status: BUILT 2026-09-18. All five slices (§6), five commits on tflw `m209-the-explorer`.**
+**Scoped the same day by grilling.** Eight questions put, eight answered
+(`D1061`-`D1068`), plus two builder's calls and one process decision. Every number in §1 was
+measured from the live page at 1440x900 on the day of scoping, not carried over.
+
+### M210
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M210_COMPOSE_READS.md`</sub>
+
+**`M210` — Compose reads: the authoring pane becomes the file it writes to**
+
+**Status: `S1`–`S6` BUILT 2026-09-18** on `m210-compose-reads` (cut from `m209-the-explorer`, which is
+still unpushed). §7's close-out is what remains. Scoped the same day by grilling, from two screenshots of the
+served page. Successor to `M209`.
+
+### M211
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M211_LEDGER_DRAWDOWN.md`</sub>
+
+**`M211` — the ledger drawdown: six open rows, and what each one turns out to be**
+
+`M209` and `M210` merged on 2026-09-19 and the ledger stood at **534 rows — 6 open (S2 0 · S3 4 ·
+S4 2), 502 closed, 17 deferred, 9 withdrawn**. This round is not a feature: it is the six, taken one
+at a time, each re-measured before it is touched — because five of the six carry a stamp the
+verifier already flags as possibly stale, and a row is a claim about a tree that has moved.
+
+### M212
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M212_COMPOSE_LEGIBLE.md`</sub>
+
+**`M212` — the API Compose pane, made legible; creating from the page; and what a mutation costs**
+
+Successor to `M210`, which made Compose *read* the file. This round makes it **readable**.
+
+### M213
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M213_TFLW_UI.md`</sub>
+
+**M213 — the tflw UI: a theme, a base layer, and three doors that can compose**
+
+**Scoped 2026-09-19 by grilling.** `S0` was the only slice specified to build depth; `S1`–`S6`
+were specified to decision depth on purpose — see `D1105`.
+
+### M214
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M214_API_COMPOSE.md`</sub>
+
+**`M214` — the API door's Compose pane, rebuilt**
+
+**Scoped 2026-09-19 by grilling, on the live page.** Every number in §1 was measured this
+evening — the served page at 1440×900 on `examples/storefront`, or a census over all 97 `.tflw`
+files in both repositories. Nothing here is inferred from the source.
 
 ### M215
 
@@ -13099,9 +13225,99 @@ is a language change and a new write path rather than a UI round.
 any of them was answered. Three landed as asked; one was answered with a *no* and a reason, which
 the user accepted.
 
+### M216
+
+<sub>cited inside a range only · lifted from `PLAN_M216_REMOVE_AND_PRESENT.md`</sub>
+
+**`M216` — what the page can undo, and where it says things**
+
+Scoped by grilling 2026-09-20 (nine questions), after the user opened `tflw ui` on a freshly
+enriched `examples/storefront` and filed seven screenshots. Slice `A` was built during the
+grilling; `B0`–`F` were built and closed out the same day — build state is each slice's own
+heading, and `F` carries the close-out measurements.
+
+### M217
+
+<sub>cited inside a range only · lifted from `PLAN_M217_CREATE_GESTURES.md`</sub>
+
+**M217 — the create gestures: a `+` where the thing is, and a pending buffer you can trust**
+
+**Door:** API only, as every round since `M213`. Compose and the explorer; no other door is touched.
+
+### M218
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M218_EXPLORER_MENUS.md`</sub>
+
+**`M218` — the explorer grows a menu, and the page learns to move a file**
+
+> Scoped 2026-09-20 by grilling, on the round after `M217`. Seven questions asked, seven answered.
+> Successor to `PLAN_M217_CREATE_GESTURES.md`, which put `+` on the rows this round right-clicks.
+
+### M219
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M219_BROWSER_DOOR.md`</sub>
+
+**M219 — the BROWSER door**
+
+### M220
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M220_PLAYBACK.md`</sub>
+
+**`M220` — playback, and the recorder's own noise**
+
+*Scoped 2026-09-20, on tflw `m212-compose-legible` at `fef9404`, by dogfooding `M219`'s recorder
+against the live webV2 stack on this Mac. Every number below was measured on that stack the same
+evening; nothing here is inferred from reading.*
+
+### M221
+
+<sub>cited inside a range only · lifted from `PLAN_M221_PLAYBACK_IN_PLACE.md`</sub>
+
+**M221 — playback in place, and ▶ runs what you are looking at**
+
+Status: **SCOPED 2026-09-21; all three slices BUILT the same day — build state is §9.**
+
+### M222
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M222_NEW_TEST_BY_DOOR.md`</sub>
+
+**M222 — the create dialog reads the door**
+
+Status: **SCOPED 2026-09-21; §4 settled by measurement the same day; A/B/C BUILT.**
+
+### M224
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+
+**`M224` — the LOAD door stops being a form and starts being a door**
+
+The user, after accepting `M223` `G` on the live page: *"lets move to LOAD door now — updating its
+compose pane as per the standard we have generalised for API and BROWSER door."*
+
+### M228
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M228_SCANS_DOOR.md`</sub>
+
+**`M228` — the SCANS door stops being a form**
+
+> **Status:** BUILT 2026-09-21, slices `A`–`E`. Three things in this document were contradicted
+> by the build and are amended **in place**, each with the measurement that said so — §1.4,
+> §1.5/gate 9, and `D1239`'s content.
+> **Branch:** to be cut from `m212-compose-legible` (which carries `M223`–`M227`, five commits, unpushed).
+> Slices `A`–`E`. Decisions `D1237`–`D1244`.
+
+### M229
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M229_UI_REVIEW.md`</sub>
+
+**`M229` — what the six-pass review found, built**
+
+**Source:** `REVIEW_UI_PASSES.md`, sixteen findings taken on the live page across four doors and
+four projects. **Structure locked by:** `UI_STRUCTURE.md`. Both local-only.
+
 ### M230
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
 
 **§2 — `M230`, two holes in the language**
 
@@ -13113,9 +13329,20 @@ through the browser's debugging protocol rather than added to the page as a scri
 segment may be quoted — `body."content-type"`, `body."0"` — with `capture` and `{interpolation}`
 taking the same spelling in the same round.
 
+### M231
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+
+**§3 — `M231`, the recorder records what actually happened**
+
+Four rows, one file (`packages/runtime/src/browser.ts`), one subject. The round's claim is a single
+sentence: **a recording is either what the user did, or it is evidence of nothing** — and today it
+drops a tab wholesale, invents a click, names one element two ways, and cannot tell its own banner
+from a gesture the grammar refuses.
+
 ### M232
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
 
 **`M230`–`M232` — the ledger to zero, before the site describes the page**
 

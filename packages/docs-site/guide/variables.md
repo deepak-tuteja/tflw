@@ -76,6 +76,23 @@ Two generator families with opposite guarantees — see the
   one run clock (the real instant, or `--now <iso>` to pin it). Anything a retry needs to reuse
   identically across its own attempts must come from `random`, never `unique`.
 
+### Every form, and what each is for
+
+The reference table lists these; this is what each is actually good for.
+
+| form | use it when |
+|---|---|
+| `random string 12` | you need N characters and nothing about them matters |
+| `random uuid` | an identifier the service will store and hand back |
+| `random password 16` | a credential that has to satisfy an ordinary complexity rule |
+| `random of "red", "blue", "green"` | the field is an enum and the service rejects anything else |
+| `random like "SKU-####-??"` | the field has a *shape* — `#` is a digit, `?` a letter |
+| `random date in past` | a date that must be before now; `in future` and `between A and B` too |
+| `unique("Widget")` | a prefixed name you will search for later and must not collide |
+
+`unique("prefix")` is the general form of the `unique` family: everything after the prefix is the
+collision-free part, so `unique("Widget")` yields a name you can assert on and still run twice.
+
 **One sentence each, and they are opposites:** `random` moves with `--seed` and not with the run
 clock; `unique` moves with `--now` and not with the seed. That is what tells `unique like` and
 `random like` apart — they share a pattern language and differ in nothing else.
