@@ -534,7 +534,14 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
   max-width: calc(4 * var(--door-min) + 3 * var(--door-gap) + 40px);
   margin: 0 auto; padding: 48px 20px 40px;
 }
-.landing-head h1 { font-size: 28px; margin: 0 0 2px; letter-spacing: -0.01em; }
+/* `M233` `H` — the heading holds a picture now, not a word (`D1288`).
+   `display: flex` rather than leaving the `<svg>` inline, and that is the whole of the rule: an
+   inline replaced element sits on the text baseline, so the line box reserves descender space
+   under it and the heading grows by the leading it no longer has any text to use. Measured 40.6px
+   as text at 28px/700; flex gives the 40px mark a 40px box. `font-size`/`letter-spacing` are gone
+   because nothing here is type any more — a stale 28px on a flex container that holds one SVG is
+   the kind of line that outlives its subject and then gets copied. */
+.landing-head h1 { display: flex; margin: 0 0 2px; }
 .landing-head p { margin: 0 0 24px; max-width: 68ch; }
 .doors { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--door-min), 1fr)); gap: var(--door-gap); }
 .door {
@@ -550,6 +557,13 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 
 .doorbar { display: flex; align-items: center; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
 .doorbar-home {
+  /* `M233` `H` — the mark, at 18px, in place of the word (`D1288`). `color` is doing real work
+     here: `Wordmark`'s ink is `currentColor`, so these two rules are what paint it, and the hover
+     that used to lift the text now lifts the mark with no rule knowing it changed. `--accent` on
+     the rail comes from the theme and is not mentioned in either.
+     `display: flex` for the same reason the heading has it — an inline SVG would sit on a baseline
+     this button no longer has any text on, and pad the row by the descender it reserves. */
+  display: flex; align-items: center;
   background: none; border: none; color: var(--muted); font: inherit; font-weight: 600;
   cursor: pointer; padding: 4px 10px 4px 0; margin-right: 4px;
 }

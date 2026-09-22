@@ -105,6 +105,11 @@ interface CssLike {
   /** `M229` `A`'s contrast gate: several things here are dimmed with `opacity` rather than with a
    *  quieter token, and a reading that ignored it would grade them at full strength. */
   readonly opacity: string;
+  /** `M233` `H`'s mark gate. The wordmark is drawn, not set, so the colour that decides whether it
+   *  can be seen is the stroke and not `color` — and reading it off the live page is the point:
+   *  `currentColor` and `var(--accent)` (`D1286`) both arrive here already resolved to the theme's
+   *  own value, which is the one thing a stylesheet cannot be asked. */
+  readonly stroke: string;
 }
 interface ElLike {
   readonly tagName: string;
@@ -1100,6 +1105,117 @@ test('every text on every door, in every theme, clears its contrast threshold', 
   // happened to reach.
   bad.sort((a, b) => a.ratio - b.ratio);
   assert.deepEqual(bad.slice(0, 12).map(say), [], `${bad.length} distinct ways of painting text render below their threshold`);
+});
+
+// ── §4b THE MARK (`M233` `H`, `D1290`) ────────────────────────────────────────────────────────
+//
+// **This exists because §4 above stopped being able to see the wordmark, and would have stayed
+// green about it.** `inkProbe` walks elements carrying a direct text node — both places the page
+// prints `tflw` were text nodes, so both were judged in all four themes, and `Wordmark` deleted
+// them. An `<svg>` has no text node: the denominator `texts` drops by two, nothing is reported,
+// and the largest mark on the landing becomes the one element whose legibility nothing checks.
+// A gate whose subject walks out from under it is `M228`'s *rule keyed on a proxy* and `M223`'s
+// *a threshold about the page's height is not a claim about the element*, one family down.
+//
+// **The bar is 3:1 and that is argued, not inherited.** WCAG 1.4.3 governs text; a stroked
+// graphic is 1.4.11 Non-text Contrast, whose bar is 3. `threshold()` already returns 3 for large
+// text and 4.5 for body, so the number is one this file's own arithmetic uses — what changes is
+// which rule the subject falls under, and a 40px-tall stroke is on the far side of that line by
+// any reading. Measured headroom on the shipped tokens is 5.31:1 at the narrowest.
+//
+// Ink and rail are judged SEPARATELY rather than as one mark. They are different colours by
+// construction (`D1286`: ink is `currentColor`, the rail is `var(--accent)`), they come from
+// different tokens, and a theme can break one without touching the other — the doorbar's ink is
+// `--muted` while its rail is the same `--accent` as the hero's, so the two sites do not even
+// share a failure mode.
+
+interface Stroke {
+  readonly where: string;
+  readonly which: string;
+  readonly stroke: string;
+  readonly ground: readonly string[];
+  readonly opacity: number;
+}
+
+/** Every painted stroke of every wordmark on the page, with the ground each sits on. */
+const markProbe = (where: string): Promise<readonly Stroke[]> =>
+  page.evaluate((w) => {
+    const out: Array<{ where: string; which: string; stroke: string; ground: string[]; opacity: number }> = [];
+    for (const svg of document.body.querySelectorAll('svg[aria-label="tflw"]')) {
+      if (!svg.checkVisibility()) continue;
+      // The ground is read from the SVG outward, exactly as `inkProbe` reads it for text: an SVG
+      // paints nothing of its own (`fill="none"`), so the first opaque ancestor is what the
+      // strokes actually sit on. `flatten` composites in Node.
+      const ground: string[] = [];
+      let opacity = 1;
+      for (let a: ElLike | null = svg; a !== null; a = a.parentElement) {
+        const cs = getComputedStyle(a);
+        ground.push(cs.backgroundColor);
+        const o = parseFloat(cs.getPropertyValue('opacity'));
+        if (!Number.isNaN(o)) opacity *= o;
+      }
+      const site = svg.closest('.doorbar-home') !== null ? 'doorbar' : svg.closest('.landing-head') !== null ? 'hero' : 'elsewhere';
+      for (const path of svg.querySelectorAll('path')) {
+        const cs = getComputedStyle(path);
+        // `stroke` is resolved by the browser, so `currentColor` arrives as the inherited colour
+        // and `var(--accent)` as the theme's value — which is the whole point of reading the live
+        // page rather than the stylesheet.
+        out.push({ where: `${w} ${site}`, which: cs.stroke === getComputedStyle(path.parentElement!).stroke ? 'ink' : 'rail', stroke: cs.stroke, ground: [...ground], opacity });
+      }
+    }
+    return out;
+  }, where);
+
+test('the wordmark clears the non-text contrast bar, in every theme, in both places it appears', async () => {
+  const bad: string[] = [];
+  let judged = 0;
+  let narrowest = { what: '', ratio: Infinity };
+  // The landing carries the hero; any door carries the doorbar. Both, per theme, because the
+  // doorbar's ink is `--muted` and the hero's is `--fg` — one reading cannot stand for the other.
+  for (const [door, tab] of [['', 'landing'], ['api', 'compose']] as Array<[string, string]>) {
+    await visit(door, tab);
+    for (const theme of THEMES) {
+      await wear(theme);
+      const strokes = await markProbe(`${theme} ${door || 'landing'}`);
+      // Five strokes a mark, always: four ink and one rail. Asserted per site rather than in total,
+      // because a component that rendered an empty `<svg>` would otherwise be caught only by the
+      // aggregate below — and the aggregate is exactly the number a vacuous probe gets right.
+      assert.equal(strokes.length, 5, `${theme} ${door || 'landing'}: expected one 5-stroke mark, saw ${strokes.length} strokes`);
+      for (const st of strokes) {
+        const fg = parseColor(st.stroke);
+        assert.notEqual(fg, null, `${st.where}: the ${st.which} stroke did not parse — ${st.stroke}`);
+        const bg = flatten(st.ground);
+        assert.notEqual(bg, null, `${st.where}: the ${st.which} stroke never reached an opaque ground`);
+        judged++;
+        const ratio = effective(fg!, bg!, st.opacity);
+        if (ratio < narrowest.ratio) narrowest = { what: `${st.where} ${st.which}`, ratio };
+        // 1.4.11, not 1.4.3 — see the note above this test.
+        if (ratio + 1e-9 < 3) bad.push(`${st.where}: ${st.which} ${Math.round(ratio * 100) / 100}:1 < 3`);
+      }
+    }
+  }
+  // 2 sites × 4 themes × 5 strokes. Spelled out so a walk that silently visited one state is a
+  // failure here rather than a smaller green number.
+  assert.equal(judged, 40, `the gate judged ${judged} strokes, not 40 — it is not walking both sites in every theme`);
+  assert.deepEqual([...new Set(bad)], [], `the mark is under the 3:1 non-text bar somewhere (narrowest overall: ${narrowest.what} at ${Math.round(narrowest.ratio * 100) / 100}:1)`);
+});
+
+test('control: the mark probe convicts a stroke it cannot see', async () => {
+  // The negative control the claim needs. Painting the rail a hair off its own ground is the
+  // mutation a token edit would actually make — `--accent` is one line in `styles.css`, and the
+  // failure it would cause is a rail that is present, correctly shaped, and invisible.
+  await visit('', 'landing');
+  await wear('terminal');
+  assert.deepEqual((await markProbe('clean')).filter((s) => effective(parseColor(s.stroke)!, flatten(s.ground)!, s.opacity) < 3), []);
+  await page.evaluate(() => {
+    // `--bg` on Terminal is #08090b; #0e1013 is a hair off it, which is 1.09:1.
+    document.querySelector('.landing-head svg[aria-label="tflw"] path:last-of-type')!.setAttribute('stroke', '#0e1013');
+  });
+  const after = await markProbe('injected');
+  const convicted = after.filter((s) => effective(parseColor(s.stroke)!, flatten(s.ground)!, s.opacity) < 3);
+  assert.equal(convicted.length, 1, `the probe convicted ${convicted.length} strokes — it should see exactly the injected one`);
+  // …and it judged the other four rather than skipping them, which a count alone cannot show.
+  assert.equal(after.length, 5, 'the injection reduced what the probe could see');
 });
 
 test('control: the instrument sees text it cannot read, and reads the large-text bar', async () => {

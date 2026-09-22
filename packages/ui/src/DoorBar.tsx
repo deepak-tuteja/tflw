@@ -8,6 +8,7 @@
 
 import type { ReactNode } from 'react';
 import { DOORS, countByDoor } from './doors';
+import { Wordmark } from './Wordmark';
 import type { Lens, ProjectView } from './contract';
 
 export interface DoorBarProps {
@@ -27,8 +28,22 @@ export function DoorBar({ project, door, onDoor, themePick }: DoorBarProps) {
   const counts = countByDoor(project);
   return (
     <nav className="doorbar" data-doorbar={door}>
-      <button className="doorbar-home" onClick={() => onDoor(null)} data-door-home data-tip="back to the four doors">
-        tflw
+      {/* `M233` `H` (`D1288`) — the same mark as the landing's, at 18 rather than a second asset.
+          The glyph was the alternative and is deliberately not used: its heavier strokes (3.0/3.4
+          against the wordmark's 2.6/3.0) exist for a 16px favicon, where the generator's own note
+          says "a stroke loses proportionally more to antialiasing", and at 18px in a nav that
+          margin is not being spent. Ink is `currentColor`, so the button's own `--muted` and its
+          `:hover` `--fg` reach the mark with no rule here mentioning it.
+          `aria-label` is NOT optional now (`D1289`): the button's accessible name used to be its
+          text, and a control whose only child is a graphic otherwise announces as unlabelled. */}
+      <button
+        className="doorbar-home"
+        onClick={() => onDoor(null)}
+        data-door-home
+        data-tip="back to the four doors"
+        aria-label="tflw — back to the four doors"
+      >
+        <Wordmark height={18} />
       </button>
       {DOORS.map((d) => (
         <button
