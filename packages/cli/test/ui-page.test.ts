@@ -18,6 +18,7 @@ import type { Server } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer, SCRATCH_PATH } from '../src/ui-server.js';
+import { coverageBuildArgs, startUiCoverage, stopUiCoverage } from './ui-coverage.js';
 import { checkProgram, parseSource, print, STEP_LENS } from '@tflw/lang';
 import { roundDurationMs, type LoadMetrics, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
 import { describeWorkload, formatThresholdActual, formatThresholdTarget, remediationFor } from '@tflw/reporter';
@@ -119,7 +120,8 @@ before(async () => {
   const viteManifestPath = createRequire(uiRoot).resolve('vite/package.json');
   const viteBin = join(dirname(viteManifestPath), (JSON.parse(await readFile(viteManifestPath, 'utf8')) as { bin: { vite: string } }).bin.vite);
   const staticDir = join(scratch, 'ui');
-  execFileSync(process.execPath, [viteBin, 'build', '--outDir', staticDir, '--logLevel', 'warn'], { cwd: uiRoot, stdio: 'pipe' });
+  // `M234`: `...coverageBuildArgs()` is empty unless this run is under `npm run coverage`.
+  execFileSync(process.execPath, [viteBin, 'build', '--outDir', staticDir, '--logLevel', 'warn', ...coverageBuildArgs()], { cwd: uiRoot, stdio: 'pipe' });
 
   root = join(scratch, 'project');
   await cp(join(fixtures, 'project'), root, { recursive: true });
@@ -161,9 +163,15 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${port}`;
   browser = await chromium.launch();
   page = await browser.newPage();
+  // `M234`. Inert unless this run is under `npm run coverage`; see `./ui-coverage.ts` for why the
+  // 203 tests below counted toward nothing until now.
+  await startUiCoverage(page);
 });
 
 after(async () => {
+  // Before `browser.close()` (the page is the source) and before `rm(scratch)` (the bundle is read
+  // out of it and copied somewhere that outlives this process). `M234`.
+  if (page !== undefined) await stopUiCoverage(page, join(scratch, 'ui'), 'page');
   await browser?.close();
   await server?.close();
   await rm(scratch, { recursive: true, force: true });

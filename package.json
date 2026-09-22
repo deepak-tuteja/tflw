@@ -2,7 +2,7 @@
   "name": "tflw-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "testFlow \u2014 a testing-only DSL (.tflw / tflw CLI). Monorepo root.",
+  "description": "testFlow — a testing-only DSL (.tflw / tflw CLI). Monorepo root.",
   "type": "module",
   "repository": {
     "type": "git",
@@ -52,7 +52,8 @@
     "example": "node examples/storefront/run.mjs --tag functional",
     "example:ui": "node packages/cli/dist/cli.cjs ui examples/storefront",
     "example:load": "node examples/storefront/run.mjs --tag workload",
-    "example:pacing": "node examples/storefront/run.mjs --tag pacing"
+    "example:pacing": "node examples/storefront/run.mjs --tag pacing",
+    "verify:coverage-floors": "node scripts/coverage-floors.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

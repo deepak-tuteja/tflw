@@ -58,6 +58,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer } from '../src/ui-server.js';
+import { coverageBuildArgs, startUiCoverage, stopUiCoverage } from './ui-coverage.js';
 import { parseColor, flatten, effective, threshold } from './contrast.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -149,6 +150,8 @@ let projectRoot: string;
 let server: UiServer;
 let browser: Browser;
 let page: Page;
+/** The bundle this file built, read in `after()` by `M234`'s coverage collector. */
+let staticDir: string;
 
 /** `Terminal` first because it is the default (`D1107`) — the geometry pass runs on whatever is
  *  first here, and it should be the thing a reader actually gets. */
@@ -164,8 +167,9 @@ before(async () => {
   scratch = await mkdtemp(join(tmpdir(), 'tflw-ui-appearance-'));
   const viteManifestPath = createRequire(uiRoot).resolve('vite/package.json');
   const viteBin = join(dirname(viteManifestPath), (JSON.parse(await readFile(viteManifestPath, 'utf8')) as { bin: { vite: string } }).bin.vite);
-  const staticDir = join(scratch, 'ui');
-  execFileSync(process.execPath, [viteBin, 'build', '--outDir', staticDir, '--logLevel', 'warn'], { cwd: uiRoot, stdio: 'pipe' });
+  staticDir = join(scratch, 'ui');
+  // `M234`: `...coverageBuildArgs()` is empty unless this run is under `npm run coverage`.
+  execFileSync(process.execPath, [viteBin, 'build', '--outDir', staticDir, '--logLevel', 'warn', ...coverageBuildArgs()], { cwd: uiRoot, stdio: 'pipe' });
 
   const root = join(scratch, 'project');
   projectRoot = root;
@@ -193,9 +197,14 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${port}`;
   browser = await chromium.launch();
   page = await openPage();
+  // `M234`. This file's module-scope page only; the two ad-hoc pages below (`:389`, `:1360`) are
+  // viewport variants of the same paths and are deliberately not collected.
+  await startUiCoverage(page);
 });
 
 after(async () => {
+  // Before the page closes and before `rm(scratch)` takes the bundle with it (`M234`).
+  if (page !== undefined) await stopUiCoverage(page, staticDir, 'appearance');
   await page?.close();
   await browser?.close();
   await server?.close();

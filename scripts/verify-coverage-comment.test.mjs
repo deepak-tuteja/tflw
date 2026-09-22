@@ -89,6 +89,11 @@ test('the CI comment points at both homes of the floor rather than restating it'
   // needs to be able to get to both from here, and a pointer cannot go stale the way a copy can.
   assert.match(comment, /\.c8rc\.json/, "ci.yml's Coverage comment must name where the floor actually lives");
   assert.match(comment, /scripts\/coverage\.mjs/, "ci.yml's Coverage comment must point at the file documenting how the floor was derived");
+  // `M234`. The floor stopped being one number in one file, so a reader sent only to `.c8rc.json`
+  // is sent to the weaker of the two tiers — and the per-package gate is the one that names the
+  // package that slipped. A pointer that is now half the truth is the same defect as one that has
+  // gone stale, which is what this whole file exists about.
+  assert.match(comment, /coverage-floors\.json/, "ci.yml's Coverage comment must name the per-package floors, which are the tier that actually gates");
   assert.match(
     comment,
     /[Dd]o not lower it/,

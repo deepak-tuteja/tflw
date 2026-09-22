@@ -1,6 +1,14 @@
 {
   "all": true,
-  "src": ["packages/lang/src", "packages/runtime/src", "packages/reporter/src", "packages/lsp-server/src", "packages/cli/src", "packages/vscode/src"],
+  "src": [
+    "packages/lang/src",
+    "packages/runtime/src",
+    "packages/reporter/src",
+    "packages/lsp-server/src",
+    "packages/ui/src",
+    "packages/cli/src",
+    "packages/vscode/src"
+  ],
   "exclude-after-remap": true,
   "exclude": [
     "**/dist/**",
@@ -9,11 +17,14 @@
     "**/*.generated.ts",
     "**/node_modules/**"
   ],
-  "reporter": ["text", "lcov"],
+  "reporter": [
+    "text",
+    "lcov"
+  ],
   "reports-dir": "coverage",
   "check-coverage": true,
-  "statements": 94,
-  "lines": 94,
+  "statements": 89,
+  "lines": 89,
   "branches": 88,
-  "functions": 94
+  "functions": 81
 }
