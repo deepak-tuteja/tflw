@@ -14,7 +14,7 @@
 import type { Position, Span } from './token.js';
 import type { AcceptDialogStmt, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ExpectStmt, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
 import { pollable, quantifiable } from './ast.js';
-import { parse as parseTokens, parseStringParts } from './parser.js';
+import { parse as parseTokens, parsePathText, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
 
 const ORIGIN: Position = { line: 1, column: 1, offset: 0 };
@@ -1187,20 +1187,23 @@ function buildSubject(spec: SubjectSpec): BuildResult<Subject> {
 }
 
 /**
- * `items[0].price` → segments. Typed by a person, so it is validated rather than assumed: an
- * index must be a whole number and a property must be a bare word, because both are what the
- * parser's own `parseBodyPath` will demand when the file is read back.
+ * `items[0].price` → segments. Typed by a person, so it is validated rather than assumed.
+ *
+ * **`M230` `B` replaced this function's own regex with the parser's scanner** (`D1264`). It used to
+ * mirror `parseBodyPath` — *"because both are what the parser will demand when the file is read
+ * back"* — and mirroring is exactly what `M213-18` found broken: the two agreed perfectly and were
+ * both narrower than any real response body, so the corpus produced no disagreement to notice.
+ * `parsePathText` is now the single reading, and `quotedHead` is true here because a body path
+ * opens with a key (`body."content-type"`), not with a variable name.
+ *
+ * The leading `.` is still stripped, because the page hands this function the path *after* `body`
+ * and has done since `M213`.
  */
 function bodyPath(raw: string): PathSegment[] | string {
   const trimmed = raw.trim().replace(/^\./, '');
   if (trimmed === '') return [];
-  const segments: PathSegment[] = [];
-  for (const piece of trimmed.split('.')) {
-    const m = /^([A-Za-z_]\w*)((?:\[\d+\])*)$/.exec(piece);
-    if (!m) return `\`${piece}\` is not a path segment — write a name, then optional \`[0]\` indexes`;
-    segments.push({ kind: 'prop', name: m[1]! });
-    for (const idx of m[2]!.matchAll(/\[(\d+)\]/g)) segments.push({ kind: 'index', index: Number(idx[1]) });
-  }
+  const segments = parsePathText(trimmed, { quotedHead: true });
+  if (segments === null) return `\`${trimmed}\` is not a path — write a name, then optional \`.name\`, \`."quoted key"\` or \`[0]\` steps`;
   return segments;
 }
 

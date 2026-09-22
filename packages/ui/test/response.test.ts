@@ -84,6 +84,17 @@ test('the subset is nested and not flattened — a dotted key would name a key w
   assert.ok(!text.includes('a.b'), 'a flattened key would assert a top-level key spelled with dots');
 });
 
+test('`M230` `B`: a quoted key nests by its own name, and a dot inside it is part of the key', () => {
+  // The regression `D1262` created and this gate closes: `subsetText` split the path on `.`, which
+  // was correct for exactly as long as a key could not contain one. `a."b.c"` is two segments; a
+  // split makes it three, and the subset then asserts against keys the response does not have.
+  const text = subsetText([
+    { path: 'a."b.c"', valueText: '1', subsetable: true },
+    { path: '"content-type"', valueText: '"json"', subsetable: true },
+  ]);
+  assert.equal(text, '{ "a": { "b.c": 1 }, "content-type": "json" }');
+});
+
 test('ticking an array leaf WITH anything else is refused, with the reason — it would widen the claim', () => {
   const found = leaves('{"total":2,"items":[{"id":7}]}');
   const both = found.leaves.filter((l) => l.path === 'total' || l.path === 'items[0].id');
@@ -105,14 +116,41 @@ test('no ticks build nothing at all — never an empty subset, which asserts not
   assert.equal(verifySpec([]), null);
 });
 
-test('a key `body.<path>` cannot spell is skipped and counted, never offered (`M213-18`)', () => {
+/**
+ * **`M213-18` is closed, and this is the test that used to record it as open** (`M230` `B`,
+ * `D1262`). The assertion is inverted deliberately rather than deleted: this count is the row's
+ * own instrument — it is what made the gap visible in the first place, by enumerating paths no
+ * person would have typed — so the cheapest honest proof that the repair reached the *product*
+ * and not only the grammar is that the same three keys now produce three offers and a `skipped`
+ * of zero.
+ *
+ * Its previous body is worth keeping in view, because the difference is the whole round:
+ *
+ *     assert.deepEqual(found.leaves.map((l) => l.path), ['fine']);
+ *     assert.equal(found.skipped, 2, 'a hyphenated key and a numeric key are both unspellable');
+ */
+test('`M230` `B`: a hyphenated and a numeric key are offered, quoted, and build (`M213-18` closed)', () => {
   const found = leaves('{"content-type":"json","0":"first","fine":1}');
-  assert.deepEqual(found.leaves.map((l) => l.path), ['fine']);
-  assert.equal(found.skipped, 2, 'a hyphenated key and a numeric key are both unspellable');
-  // The control: the ones it does offer really do build.
-  const out = verifySpec(found.leaves);
-  assert.ok(out?.ok);
-  assert.equal(sentence(out.spec), 'expect body.fine equals 1');
+  // `"0"` leads because `Object.keys` puts integer-like keys first — the walk reads the body, not
+  // the source text, and this order is the browser's rather than anyone's choice.
+  assert.deepEqual(
+    found.leaves.map((l) => l.path),
+    ['"0"', '"content-type"', 'fine'],
+  );
+  assert.equal(found.skipped, 0, 'nothing in this body is unspellable any more');
+  // The control that matters: an offered path is one the builder really takes, in the language's
+  // own spelling. A pane that *listed* a key it could not write would be the defect this replaced,
+  // pointing the other way.
+  const one = verifySpec(found.leaves.filter((l) => l.path === '"content-type"'));
+  assert.ok(one?.ok);
+  assert.equal(sentence(one.spec), 'expect body."content-type" equals "json"');
+  // …and all three together are a subset, keyed by the **decoded** names rather than by the path's
+  // spelling. `fine` comes back bare and the other two keep their quotes, which is `print`
+  // reapplying the grammar's own rule — see `subsetText`'s docblock: this module quotes every key
+  // it writes and the printer un-quotes the ones that do not need it.
+  const all = verifySpec(found.leaves);
+  assert.ok(all?.ok);
+  assert.equal(sentence(all.spec), 'expect body matches subset { "0": "first", "content-type": "json", fine: 1 }');
 });
 
 test('the tick list is capped and says so; the cap is on the list, never on the body', () => {

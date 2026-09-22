@@ -1421,8 +1421,14 @@ A nested object/array literal's first key may be either a bare ident or a **quot
 `body csv` (CSV), `body pdf text` (PDF), `duration`, `request` (§6.2.2 — the connection attempt
 itself, not the response).
 
-- `body.<path>`: dot/index addressing — `body.items[0].price`. On a non-JSON response, a
-  JSON-path expect raises a teaching error pointing at `body text` (P#33).
+- `body.<path>`: dot/index addressing — `body.items[0].price`. A segment may also be **quoted**,
+  which is how a key that is not an identifier is spelled: `body."content-type"`, `body."0"`,
+  `body.items[0]."unit price"` (`M230`, `D1262`). Quotes name *the key*; brackets take a number and
+  name *the nth element*, so `body."0"` and `body[0]` are different subjects and both occur. The
+  same spelling is read by `capture` and by a `{ref}` interpolation, which share this grammar
+  (`D1264`); inside a string literal the quotes are escaped like any others —
+  `"ct is {o.\"content-type\"}"`. On a non-JSON response, a JSON-path expect raises a teaching
+  error pointing at `body text` (P#33).
 - `duration`: wall time of the request — `expect duration is less than 500ms`. A regression
   tripwire, not perf testing (P#33). **Measured as a floating-point number of milliseconds and
   compared unrounded** (`M160`, `D807`/`D810`): a 0.6 ms response satisfies `is less than 1`. Until

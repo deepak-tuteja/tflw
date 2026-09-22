@@ -82,7 +82,28 @@ export async function runA11yScan(page: PWPage): Promise<Finding[]> {
   const alreadyInjected = await page.evaluate(() => typeof (globalThis as unknown as { axe?: unknown }).axe !== 'undefined');
   if (!alreadyInjected) {
     const source = await loadAxeSource();
-    await page.addScriptTag({ content: source });
+    // **`M230` `A` / `D1261` — the scan takes its own measurement without disabling the thing it
+    // measures** (`M228-01`). This was `page.addScriptTag({ content: source })`, and a page whose
+    // policy is `default-src 'self'` refuses an inline script, so the matcher *raised* instead of
+    // returning a verdict. That made this project's own documentation self-contradicting:
+    // `guide/security-scanning.md` ships `sec/csp-missing` as a **serious** finding, so the site
+    // asks a reader to set the exact header that breaks the construct `guide/browser-advanced.md`
+    // documents as working — and `examples/storefront`, which sets it, is where the row was found.
+    //
+    // `page.evaluate(source)` runs the same bytes in the same main world through CDP's
+    // `Runtime.evaluate`, which is not a page resource and so is outside the policy. Measured on
+    // `fedora-box` against `script-src 'self'`: `addScriptTag` raises with *"Executing inline
+    // script violates the following Content Security Policy directive"*, this line injects with
+    // **0 CSP console errors** and `axe.run()` returns its violations normally. Wrapping the
+    // source in an IIFE was measured identical and is not used — the file is already one call
+    // expression, so the wrapper would only be there to look careful.
+    //
+    // The refused alternative is `browser.newContext({ bypassCSP: true })`, and it is refused on a
+    // rule rather than on cost: *a product that judges a page's security headers must not silently
+    // disable one of them to take its reading.* It is also wider than it looks — it lifts the
+    // policy for everything else the test does, so a later assertion about behaviour under CSP
+    // would be measuring a page that no longer has one.
+    await page.evaluate(source);
   }
   const results = await page.evaluate<AxeResults>(() => (globalThis as unknown as { axe: { run: () => Promise<AxeResults> } }).axe.run());
   return results.violations.map((v) => {

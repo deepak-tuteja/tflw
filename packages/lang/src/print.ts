@@ -1095,8 +1095,7 @@ function printBodyPath(path: readonly PathSegment[]): string {
   let out = '';
   for (const seg of path) {
     if (seg.kind === 'prop') {
-      if (!isBareIdent(seg.name)) refuse('BodySubject', `\`${seg.name}\` is not a property name this language can write`);
-      out += '.' + seg.name;
+      out += '.' + spellProp(seg.name);
     } else if (seg.kind === 'index') {
       out += `[${num(seg.index)}]`;
     } else {
@@ -1390,6 +1389,20 @@ function isBareIdent(name: string): boolean {
 }
 
 /**
+ * **`D1263` — the printer quotes a segment when, and only when, the bare spelling would not parse
+ * back.** Not *whenever quoting is possible*, which is the tempting rule and the wrong one: under
+ * it `body.id` would print as `body."id"`, every existing file would change on `tflw fmt`, and the
+ * round trip would still be green because both spellings parse. `verify:fmt-roundtrip` compares
+ * the printed text against the file, so a printer that always quoted would fail it on the whole
+ * corpus — but a printer that quoted *sometimes-for-no-reason* would fail it only where it chose
+ * to, which is the harder defect to find. Keying on `isBareIdent` makes the choice a property of
+ * the name rather than of the printer's mood, and `fmt` stays idempotent by construction.
+ */
+function spellProp(name: string): string {
+  return isBareIdent(name) ? name : '"' + escape(name) + '"';
+}
+
+/**
  * Precedence, with the escape hatch this grammar has instead of parentheses.
  *
  * `-x` is sugar for `0 - x` and the parser records only the sugar's result (`parser.ts:4986`), so
@@ -1622,19 +1635,47 @@ function printString(s: StringLit): string {
   let out = '"';
   for (const part of s.parts) {
     if (part.kind === 'text') out += escape(part.value);
-    else out += '{' + printRef(part.ref) + '}';
+    // One escaping pass over the hole as well — see `printRef`'s `inString`.
+    else out += escape('{' + printRef(part.ref, true) + '}');
   }
   return out + '"';
 }
 
-/** `{order.items[0].id}` — a property is dotted unless it opens the reference, an index is
- *  bracketed and never dotted. `PathSegment` has exactly these two kinds (`ast.ts:1005`); the
- *  wildcard lives in `RedactPathSegment`, a deliberately separate type, and cannot arrive here. */
-function printRef(ref: readonly PathSegment[]): string {
+/**
+ * `{order.items[0].id}` — a property is dotted unless it opens the reference, an index is
+ * bracketed and never dotted. `PathSegment` has exactly these two kinds (`ast.ts:1005`); the
+ * wildcard lives in `RedactPathSegment`, a deliberately separate type, and cannot arrive here.
+ *
+ * **`inString` is not a formatting flag, it is which escaping pass owns the text** (`M230` `B`).
+ * An interpolation has two homes and only one of them is inside a string literal. As a subject
+ * (`{order."content-type"} equals …`) or a value (`let x = {order."content-type"}`) the quotes are
+ * the file's own and take the normal escapes. Inside a string — `"order {o."content-type"}"` —
+ * `printString` runs `escape` over this whole region afterwards, so quoting here as well would
+ * escape every backslash twice and emit a path that reads back as different text.
+ *
+ * So the in-string form emits the quotes raw and refuses the names it cannot survive: a key
+ * carrying `"`, `\`, `{`, `}` or a line break has no unambiguous reading once the string is
+ * decoded, because `parseStringParts` finds the hole by scanning for the first `}` and
+ * `parsePathText` finds the segment by scanning for the closing quote. `refuse` is right rather
+ * than a best effort — this is `fmt` refusing to write a file it could not read back, which is the
+ * contract `verify:fmt-roundtrip` rests on. The same key is still perfectly writable as a subject.
+ */
+function printRef(ref: readonly PathSegment[], inString = false): string {
   let out = '';
   for (const seg of ref) {
-    if (seg.kind === 'prop') out += out === '' ? seg.name : '.' + seg.name;
-    else if (seg.kind === 'index') out += `[${String(seg.index)}]`;
+    if (seg.kind === 'prop') {
+      if (out === '') {
+        // The head is a variable name, in every one of the three call sites.
+        if (!isBareIdent(seg.name)) refuse('StringLit', `\`${seg.name}\` is not a name an interpolation can open with`);
+        out += seg.name;
+      } else if (inString) {
+        if (isBareIdent(seg.name)) out += '.' + seg.name;
+        else if (/["\\{}\n\r]/.test(seg.name)) refuse('StringLit', `\`${seg.name}\` is a key an interpolation inside a string cannot spell — write it as a subject instead`);
+        else out += '."' + seg.name + '"';
+      } else {
+        out += '.' + spellProp(seg.name);
+      }
+    } else if (seg.kind === 'index') out += `[${String(seg.index)}]`;
     else refuse('PathSegment', `unknown segment kind \`${(seg as { kind: string }).kind}\``);
   }
   if (out === '') refuse('StringLit', 'an interpolation with no path segments');

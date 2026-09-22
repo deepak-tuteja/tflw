@@ -25,7 +25,8 @@
 // page would have said so. So a leaf whose path crosses an index is offered as a **path assertion
 // only**, and `subsetable` below is what says which leaves those are.
 
-import type { CaptureSpec, ExpectSpec } from '@tflw/lang';
+import type { CaptureSpec, ExpectSpec, PathSegment } from '@tflw/lang';
+import { parsePathText } from '@tflw/lang';
 
 /** One tickable value in a response body: where it is, what it says, and whether it can be part
  *  of a subset. */
@@ -57,17 +58,48 @@ export interface Tickable {
 }
 
 /**
- * A path the language's `body.<path>` grammar cannot spell (`M213-18`).
+ * The language's own spelling for one object key (`M230` `B`, `D1262`).
  *
- * `build.ts`'s `bodyPath` takes a bare word per segment and optional `[n]` indexes, which is what
- * `parseBodyPath` will demand when the file is read back — so `body.content-type` and `body.0`
- * are not paths, and a real response carries both (a JSON object keyed by id, a header map
- * inlined into a body). This is a **language gap**, not a defect in this module, and `D1101` bars
- * closing it this round; what this module owes is to not offer a tick that cannot be written.
+ * **This is where `M213-18` was found and it is closed now.** The walk below enumerates every path
+ * in a real response body, which is a thing no person does — and that is the row's whole carry: a
+ * human does not attempt a key they can see is unspellable, so the language's corpus held zero
+ * evidence that `body.content-type` and `body.0` did not parse. This module counted them as
+ * `skipped` and said so in the pane. `D1262` gave the grammar a quoted segment, so it now spells
+ * them instead of counting them.
+ */
+function spellKey(key: string): string {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return key;
+  return '"' + key.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\t/g, '\\t') + '"';
+}
+
+/**
+ * A path this pane is about to offer that would not read back as the same path.
+ *
+ * **The guard asks the language rather than restating it** — `parsePathText` is the one scanner
+ * `parseBodyPath`, `build.ts` and string interpolation all now share, so this check cannot drift
+ * away from what a tick actually writes. That is the repair for the shape of the original defect
+ * as much as for the defect: the old version was a fourth copy of the grammar, written as a regex,
+ * and a fourth copy is how the limit stayed invisible in the first place.
+ *
+ * It is not expected to fire, and it is kept anyway: a response body is arbitrary bytes from a
+ * service under test, `skipped` is in this module's contract, and a pane that silently offered a
+ * tick it could not write would be the defect this one replaced.
  */
 function unaddressable(path: string): boolean {
   if (path === '') return false;
-  return path.split('.').some((piece) => !/^[A-Za-z_]\w*(?:\[\d+\])*$/.test(piece));
+  const read = parsePathText(path, { quotedHead: true });
+  if (read === null) return true;
+  return pathOf(read) !== path;
+}
+
+/** The inverse of the scan above — segments back to the text this module builds. */
+function pathOf(segments: readonly PathSegment[]): string {
+  let out = '';
+  for (const seg of segments) {
+    if (seg.kind === 'index') out += `[${seg.index}]`;
+    else out += out === '' ? spellKey(seg.name) : `.${spellKey(seg.name)}`;
+  }
+  return out;
 }
 
 /** The language's own text for a JSON scalar. `undefined` never occurs in parsed JSON. */
@@ -120,7 +152,11 @@ export function leaves(bodyText: string): Tickable {
         return;
       }
       for (const key of keys) {
-        walk((node as Record<string, unknown>)[key], path === '' ? key : `${path}.${key}`, crossedArray);
+        // `D1262` — the key is spelled the way the language spells it, which for `content-type`
+        // or `0` means quoted. Before `M230` this wrote the raw key and `unaddressable` then
+        // dropped the leaf.
+        const spelled = spellKey(key);
+        walk((node as Record<string, unknown>)[key], path === '' ? spelled : `${path}.${spelled}`, crossedArray);
       }
       return;
     }
@@ -140,12 +176,23 @@ export function leaves(bodyText: string): Tickable {
  * Keys are quoted unconditionally. The grammar admits bare identifiers, and quoting every key is
  * one rule instead of two plus a spelling test — and it is what `print` emits for a key that needs
  * it, so a file written here and a file formatted later agree.
+ *
+ * **The path is read with `parsePathText`, not split on `.`** (`M230` `B`). Splitting was correct
+ * for exactly as long as a key could not contain a dot, and `D1262` ended that: `a."b.c"` is two
+ * segments and `split('.')` makes it three, one of which is `"b` — so the subset would assert
+ * against keys no response has. The segment's **decoded name** is what goes into the object
+ * literal, because the quotes are the path's spelling and `JSON.stringify` below supplies the
+ * literal's own.
  */
 export function subsetText(ticked: readonly Leaf[]): string {
   interface Node { readonly children: Map<string, Node>; value: string | null }
   const root: Node = { children: new Map(), value: null };
   for (const leaf of ticked) {
-    const segments = leaf.path.split('.');
+    const read = parsePathText(leaf.path, { quotedHead: true });
+    // `leaves` only ever emits paths it has just checked round-trip (`unaddressable`), and a
+    // subsetable leaf never crosses an array, so neither fallback is reachable from this module.
+    // They are here so a future caller gets the raw key rather than a crash or a silent wrong key.
+    const segments = read === null ? [leaf.path] : read.map((seg) => (seg.kind === 'prop' ? seg.name : `[${seg.index}]`));
     let at = root;
     for (const segment of segments.slice(0, -1)) {
       let next = at.children.get(segment);
