@@ -8,6 +8,7 @@
 
 import { useState } from 'react';
 import { DOORS, countByDoor, lenslessCount, unparsedCount } from './doors';
+import { Wordmark } from './Wordmark';
 import { initProject } from './api';
 import type { Lens, ProjectView } from './contract';
 
@@ -51,7 +52,13 @@ export function Landing({ project, error, noProject, onOpen, onCreated }: Landin
   return (
     <div className="landing" data-landing>
       <header className="landing-head">
-        <h1>tflw</h1>
+        {/* `M233` `H` (`D1288`/`D1289`) — the drawn mark, not the word set in the theme's own face.
+            It was `<h1>tflw</h1>` at 28px/700, measuring 66.1 × 37 of ink; the mark is asked for at
+            height 40 and takes 66.25 by its own viewBox aspect, so the `<h1>`'s 40.6px box does not
+            move. The heading keeps its text for anything that reads the document rather than looks
+            at it — `Wordmark` carries `aria-label="tflw"`, and the two would announce the name
+            twice, so the element is the picture and the name lives on it. */}
+        <h1><Wordmark height={40} /></h1>
         <p className="muted">{noProject ? 'There is no project here yet. Pick what you are here to do, and one will be made for it.' : 'What are you here to do?'}</p>
       </header>
 
