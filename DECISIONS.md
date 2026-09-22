@@ -9129,9 +9129,18 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
   the CSRF header by verb. apiV2 is the *target*; the arrival server is the *instrument*, and an
   instrument route can be as artificial as the plant needs (`D745`'s split).
 
+### D1042
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
+
+**`D1042` — the landing page is four doors, and a door is a kind of work.** `API`, `BROWSER`,
+`LOAD`, `SCANS`. It answers *what am I here to do*, which is the only surface tflw has ever had
+that tells a newcomer what the tool is for; it then offers open-a-project or create-one. The
+door decides where you land and what the "new test" button scaffolds, and **nothing else**.
+
 ### D1044
 
-<sub>cited from tflw-tests/tflw-acceptance/load-door/browser-contrast.tflw, tflw-tests/tflw-acceptance/scan-door/mixed.tflw · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md, tflw-tests/tflw-acceptance/load-door/browser-contrast.tflw, tflw-tests/tflw-acceptance/scan-door/mixed.tflw · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
 
 **`D1044` — a panel is earned by a construct, not granted by a door.** Inside a project every
 test shows the panels its own source earns. Add a `threshold` to an API test and the workload
@@ -9155,15 +9164,128 @@ choice and the flag is this run's, which is what keeps a fresh `--baseline-write
 before it is committed. A config key that a flag could not override would make the committed
 document the only reachable one.
 
+### D1087
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M212_COMPOSE_LEGIBLE.md`</sub>
+
+**`D1087` — a new test and a new file are each created through one small dialog, built on the
+pane's own builders.** A file needs a name before it can exist, and a guided start is worth more to
+a newcomer than an empty shell. **The dialog constructs its AST through the same builders the
+pane's controls use** — one construction path, not two. This clause is the whole of why the
+decision is safe, because two construction paths is exactly how `.legacy` came to show another
+example's placeholders.
+
+### D1088
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M212_COMPOSE_LEGIBLE.md`</sub>
+
+**`D1088` — `D1082`'s legacy form is retired, on its own stated expiry condition.** It was kept
+because it was the only way to write a new test; it has not been that since `S2`–`S6`. Deleted, not
+hidden — a collapsed 13-field form is still in the tab order.
+
 ### D1205
 
-<sub>cited from tflw-tests/tflw-acceptance/load-door/browser-contrast.tflw, tflw-tests/tflw-acceptance/load-door/playback-and-plan.tflw, tflw-tests/tflw-acceptance/load-door/rate-shapes.tflw · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md, tflw-tests/tflw-acceptance/load-door/browser-contrast.tflw, tflw-tests/tflw-acceptance/load-door/playback-and-plan.tflw +1 more · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
 
 **`D1205` — a workload is an ordinary clause of a declaration, and any door that can hold one may edit it**
 
 `D1044` has said since `M200` that **a panel is earned by the construct and never granted by the
 door**. The workload row is the one place the product does the opposite: it grants the editor to
 LOAD by name, and the grant is enforced by a link rather than by a rule.
+
+### D1206
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+
+**`D1206` — the language gains a workload replacement, mirroring the threshold one**
+
+`Replacement` gains `{ kind: 'workload'; decl: number; node: Workload | null }`, and
+`replaceWorkload` is `replaceThreshold` with the index dropped: a test carries at most one, so the
+member takes no index, `null` removes it, and a node where there is none inserts under the header
+at the place `insertInTest`'s workload branch already computes.
+
+### D1207
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+
+**`D1207` — an insertion anchor stops at the last line that belongs to the declaration**
+
+`endOfTestText` and `endLineOf` walk back over **whitespace**. The line they need is the last one
+that belongs to the declaration, and a comment block introducing the *next* declaration belongs to
+neither the span's arithmetic nor to this test.
+
+### D1209
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+
+**`D1209` — region 2 is segmented by what the declaration earns, on every door**
+
+The pane under the grip is the response box. A workload-bearing test earns a **plan** panel there —
+the planned curve with the achieved run overlaid when one is comparable, which is `D1103`'s
+*"planned with achieved overlaid in one frame is the picture a load tool exists to show"*.
+
+### D1211
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+
+**`D1211` — `load`'s vocabulary row**
+
+```
+load: {
+  constructs: NEUTRAL + ApiStep + WaitUntilApiStmt,
+  adds:       [+ request, + let, + wait until],
+  sends:      true,
+  plays:      true,
+  dropsSubjects: api's set,
+  scaffold:   'workload',
+}
+```
+
+`constructs` is API's set and that is `TF033`'s doing rather than a copy: a workload may not sit
+beside a browser step, so the body of a workload-bearing test is api steps and the neutral kinds.
+The entry stops being the lie its own docblock admits to — *"their `constructs` describes a pane
+that is not on the screen"*.
+
+### D1212
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+
+**`D1212` — ▶ states its cost, which is what keeps it from looking like `send`**
+
+`D1168` gave ▶ to BROWSER and warned in the same docblock that *"offering both on one door would be
+two gestures that look alike and mean different things"*. On LOAD they mean things that are very
+different and look alike, so the control says which:
+
+- `▶ run at this rate · ~2s` — the duration summed from the workload's own stages, for `ramp`,
+  `hold`, `step` and `spike`;
+- `▶ run at this rate · no clock` — for the two `iterations` shapes, **29 of the corpus's 85
+  workload lines**, whose length nothing can predict. That is the existing form's own wording.
+
+### D1213
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+
+**`D1213` — the scaffold writes what is forced and what is measured, and refuses the rest**
+
+`+ new test` on LOAD writes:
+
+```
+test "…"
+  ramp to 5 users over 2s
+  api GET /
+  expect status equals 200
+  threshold error rate is less than 1%
+```
+
+### D1214
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+
+**`D1214` — `[hidden]` is honoured**
+
+`styles.css` gains `[hidden] { display: none !important; }`. The attribute is the page's way of
+saying *not now*, and a component's own `display` must not outrank it. §1.6 is one instance;
+the rule is written once because the next one will not be found by measurement either.
 
 ### D1225
 
@@ -13274,7 +13396,7 @@ Successor to `M210`, which made Compose *read* the file. This round makes it **r
 
 ### M213
 
-<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M213_TFLW_UI.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tflw-acceptance/load-door/README.md, tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M213_TFLW_UI.md`</sub>
 
 **M213 — the tflw UI: a theme, a base layer, and three doors that can compose**
 
@@ -13361,9 +13483,17 @@ Status: **SCOPED 2026-09-21; all three slices BUILT the same day — build state
 
 Status: **SCOPED 2026-09-21; §4 settled by measurement the same day; A/B/C BUILT.**
 
+### M223
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M223_PANES_FIT.md`</sub>
+
+**`M223` — the panes fit what they hold, and a divider says so**
+
+Status: **SCOPED 2026-09-21 by grilling, on the live page; slices `A`–`E` ALL BUILT the same day, `F` the same evening, `G` the day after — build state is §6.**
+
 ### M224
 
-<sub>cited from CHANGELOG.md, tflw-tests/.gitignore, tflw-tests/tflw-acceptance/load-door/editing-cases.tflw +3 more · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tflw-acceptance/load-door/README.md, tflw-tests/.gitignore +4 more · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
 
 **`M224` — the LOAD door stops being a form and starts being a door**
 
@@ -13384,7 +13514,7 @@ exists to show opens clipped to 20% of itself.
 
 ### M228
 
-<sub>cited from CHANGELOG.md, tflw-tests/.gitignore, tflw-tests/tflw-acceptance/scan-door/crawls.tflw +2 more · lifted from `PLAN_M228_SCANS_DOOR.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tflw-acceptance/scan-door/README.md, tflw-tests/.gitignore +3 more · lifted from `PLAN_M228_SCANS_DOOR.md`</sub>
 
 **`M228` — the SCANS door stops being a form**
 
