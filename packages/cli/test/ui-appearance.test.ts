@@ -688,6 +688,12 @@ test('no region of the Compose pane overflows the window, on a thirteen-request 
       await page.goto(`${baseUrl}#/${door}/compose/tests/thirteen.tflw`);
       await page.reload();
       await page.locator('[data-seq-col]').waitFor();
+      /* `M234` `A4` — and the same file assertion `M215` `B3` needed below, for the same reason:
+         this gate also writes its fixture and navigates straight to it, so a listing that has not
+         caught up shows a different file and every measurement below is about that one. The
+         fourteenth-row wait further down would catch it eventually — nine rows are not fourteen —
+         but it catches it as a 60-second timeout rather than as a sentence. */
+      await page.locator('[data-compose-file="tests/thirteen.tflw"]').waitFor();
       // A file the parser only RECOVERED draws fewer rows than it has statements, and a height gate
       // reading a salvage is a height gate reading a smaller file. The first draft of this fixture
       // wrote `expect body.name is not empty`, which is not a matcher this language has.
@@ -832,6 +838,18 @@ test('`M215` `B3`: the coloured copy and the field under it are one box, in all 
       await page.goto(`${baseUrl}#/api/compose/tests/jsonbody.tflw`);
       await page.reload();
       await page.locator('[data-seq-col]').waitFor();
+      /* `M234` `A4` — **THE PANE IS SHOWING THE FILE THIS GATE WROTE**, which is the thing the
+         two waits below assumed and neither asserted (`D1308`). CI Node 24 failed here on
+         `terminal`, the FIRST theme, and the instrumentation added in `A3` is what named it:
+         `{"tab":"true","editor":1,"bodyEdit":0,"ink":0,"rows":9}` — the Body tab selected, an
+         editor open, **nine sequence rows** and no body field at all. `jsonbody.tflw` is one test
+         of two steps; nine rows is a different file. `writeFile` had not reached the served
+         project's listing by the time `goto` resolved, the route fell back, and the request row
+         the pick then found has no body — so `[data-body-ink]` was never going to appear and no
+         amount of timeout was going to change that. `A2` bought this gate 60 seconds on the
+         reading that the default was the binding constraint; it was not, and that reading is
+         withdrawn here rather than left standing beside the fix. */
+      await page.locator('[data-compose-file="tests/jsonbody.tflw"]').waitFor();
       /* `M234` `A` — the ROW, not the column (`D1308`). Same hazard as the thirteen-request gate
          above: `[data-seq-col]` is attached before its rows are, so the pick below could land
          mid-redraw, the selection not take, and the body tab never appear — which surfaces 100

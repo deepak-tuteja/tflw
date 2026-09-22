@@ -9701,8 +9701,38 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
     const sizes = [{ width: 1440, height: 900 }, { width: 900, height: 600 }, { width: 700, height: 420 }];
     const rows = ['[data-file-row="tests/checkout.tflw"]', '[data-dir-toggle="tests"]', '[data-outline-goto="3"]', '[data-seq-line="3"]'];
     const off: string[] = [];
-    for (const size of sizes) {
+    /* `M234` `A4` — **THE PREVIOUS RESIZE CLOSES THE NEXT MENU**, and the instrumentation `A2`
+       added is what proved it (`D1308`). CI Node 22 reported
+       `[data-file-row="tests/checkout.tflw"] at 700x420 → null · menus [] · row {…,"height":22}`:
+       the row is present and a sane size, and there is **no `.ctx-menu` in the document at all**.
+       So nothing was mis-placed and nothing was clipped — `openMenu`'s visible-wait passed and the
+       menu was gone one line later. `ContextMenu.tsx:199` closes on `resize`, which is right: a
+       menu placed against a window that has changed size is in the wrong place. `setViewportSize`
+       resolves before the page has necessarily dispatched that event, so the FIRST menu opened
+       after a resize is the one the previous resize closes — which is exactly the row and the
+       viewport CI named, the first row of the smallest size.
+       Two guesses were made at this failure from a bare `→ null` and both were wrong (`A`, `A2`).
+       This is the third, and it is the first one a measurement asked for. */
+    const settleViewport = async (size: { width: number; height: number }): Promise<void> => {
       await p.setViewportSize(size);
+      // Two frames, so the `resize` listener has run before the next menu is opened.
+      //
+      // **Reached through the element's own document rather than through `window`**, because this
+      // file has no DOM globals at all and that is a decision rather than an omission — three
+      // comments in it say so where a `document.activeElement` would have been easier than a
+      // `:focus` locator. `tsconfig.test.json` carries `types: ["node"]` and no DOM lib, and
+      // `ui-appearance.test.ts` pays for its own access with four hand-written `declare const`
+      // shims whose whole argument is that `declare const document: any` would typecheck the
+      // probe's bugs as happily as its correctness. Adding a fifth here to buy two frames is the
+      // wrong trade; the element Playwright hands the callback already knows its own window.
+      await p.locator('body').evaluate((el) => new Promise<void>((resolve) => {
+        const view = el.ownerDocument.defaultView;
+        if (view === null) { resolve(); return; }
+        view.requestAnimationFrame(() => view.requestAnimationFrame(() => { resolve(); }));
+      }));
+    };
+    for (const size of sizes) {
+      await settleViewport(size);
       for (const row of rows) {
         if (await p.locator(row).count() === 0) continue;
         await openMenu(p, row);
