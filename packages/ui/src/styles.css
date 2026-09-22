@@ -545,8 +545,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .door:hover { border-color: var(--accent); }
 .door-label { font-weight: var(--kw-weight); letter-spacing: var(--label-spacing); text-transform: var(--label-transform); font-size: 13px; color: var(--accent); }
 .door-blurb { font-size: 13px; }
-.door-like, .door-count { font-size: 12px; }
-.door-count { margin-top: 4px; }
+.door-count { font-size: 12px; margin-top: 4px; }
 .landing-foot { margin-top: 24px; font-size: 12px; }
 
 .doorbar { display: flex; align-items: center; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }

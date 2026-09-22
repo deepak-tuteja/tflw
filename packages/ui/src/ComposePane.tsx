@@ -27,10 +27,12 @@
 // `M210` `S1` (`D1081`) — so `D1111` is a row it already had, and what this round adds there is a
 // create (`A6`). The other two are this file.
 //
-// The door's landing copy has promised *"like Bruno — files on disk, git-friendly, no cloud"*
-// since `M203`. The pane never was that: it was one scrolling document with a file strip, a test
-// band, a body sequence, a card, a prefix list and a write bar stacked down it, and a reader
-// looking for one request read all six.
+// From `M203` until the copy was removed (`M233` §7) the door's landing surface named another tool
+// to say what this pane would feel like. The pane never was that: it was one scrolling document with a file strip, a test band,
+// a body sequence, a card, a prefix list and a write bar stacked down it, and a reader looking for
+// one request read all six. The copy is gone — a door says what work it is for, and a comparison to
+// a tool the reader may not have used is not that — but the gap it described is what this pane was
+// built to close, so the paragraph stays.
 //
 // ── WHAT IS SELECTED IS WHAT THE EDITOR DRAWS (`D1113`) ────────────────────────────────────────
 //
