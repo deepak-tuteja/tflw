@@ -23,10 +23,21 @@ import { SourceText } from './Source';
 /** One line a session produced. A recorded **statement**, or a locator a `pick` suggested. */
 export type SessionLine =
   | { readonly id: number; readonly kind: 'step'; readonly text: string; readonly node: Step }
-  /** A line the recorder sent that this page could not parse. Kept and shown rather than dropped:
-   *  a recorder that silently loses a gesture is one nobody can trust, and the raw line is what a
-   *  defect report needs (`D1076`). */
+  /**
+   * A line the recorder sent **on stdout** that this page could not parse. Kept and shown rather
+   * than dropped: a recorder that silently loses a gesture is one nobody can trust, and the raw
+   * line is what a defect report needs (`D1076`).
+   *
+   * **REACHABLE SINCE `D1265`, AND IT WAS NOT BEFORE.** `M219` `F` built this row, measured every
+   * session opening with two junk rows above the first real one, and withdrew the fix — because
+   * `tflw record`'s banners failed to parse for exactly the reason a refused gesture does, and
+   * nothing in the line said which it was. Now stdout carries steps and nothing else, so a line
+   * here that does not read is a recorder defect and can be called one.
+   */
   | { readonly id: number; readonly kind: 'unreadable'; readonly text: string }
+  /** Something the command said about itself on **stderr** — its banners, and the word it writes
+   *  when it skips a gesture the builders refused. Never a statement, never keepable (`D1265`). */
+  | { readonly id: number; readonly kind: 'notice'; readonly text: string }
   | { readonly id: number; readonly kind: 'locator'; readonly locator: LocatorSpec };
 
 export interface Session {
@@ -77,7 +88,26 @@ export function SessionPanel({ session, onKeep, onKeepAll, onPlay, playing, onDr
     );
   }
 
-  const steps = session.lines.filter((l) => l.kind !== 'locator');
+  /**
+   * **The statements, and `kind === 'step'` is the whole of that** — `M231` (`D1265`).
+   *
+   * This read `kind !== 'locator'` and was right for as long as a step and a locator were the only
+   * rows that could exist. `unreadable` was declared beside them and never constructed, so the
+   * proxy and the fact agreed by accident for two milestones; `D1265` makes that row reachable and
+   * adds `notice`, so both would have been counted — *keep all 5* over three statements, and a
+   * `▶ try 2` offered on a session holding no statement at all, which writes nothing and runs the
+   * file unchanged.
+   *
+   * **What it would NOT have done is splice them**, and that is the difference between this and
+   * its three siblings: `keepAll` and `playSession` both flat-map on `kind === 'step'` and were
+   * never wrong. The proxy decided only what the buttons *say* and whether they appear — a number
+   * that disagrees with what the button then does.
+   *
+   * That is this arc's fourth rule keyed on a proxy that broke when the proxy gained a member
+   * (`M223` `F`, `M228` `F1`, `M229` `A`), and the cheapest of them precisely because the fact
+   * already had a name two call sites were using.
+   */
+  const steps = session.lines.filter((l) => l.kind === 'step');
   return (
     <div className="session-panel" data-session={session.kind} data-session-live={session.live ? 'yes' : 'no'} data-session-lines={session.lines.length}>
       <header className="response-head-bar">
@@ -134,6 +164,13 @@ export function SessionPanel({ session, onKeep, onKeepAll, onPlay, playing, onDr
                   <code className="stmt-text">
                     {l.locator.kind} “{l.locator.value}”
                   </code>
+                </>
+              ) : l.kind === 'notice' ? (
+                <>
+                  <span className="tick-none" data-session-notice={l.id}>
+                    ·
+                  </span>
+                  <span className="muted stmt-text">{l.text}</span>
                 </>
               ) : l.kind === 'unreadable' ? (
                 <>

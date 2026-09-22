@@ -3747,17 +3747,25 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
     await writeFile(
       stub,
       [
-        // Two banners and four statements — the banners matter for `pick`'s reason: a reader that
-        // filtered by matching their wording would turn one into a step the day somebody rewords it.
-        'process.stdout.write(`recording ${process.argv[3]} — press Ctrl+C to stop.\n`);',
-        'process.stdout.write(`ready — use the page as a user would. Close the window or press Ctrl+C to stop.\n`);',
+        /* **THE BANNERS ARE ON STDERR AND THE STATEMENTS ARE ON STDOUT** — `D1265`, which is what
+           `M219-01` turned out to need. They matter for `pick`'s reason too: a reader that
+           filtered by matching their wording would turn one into a step the day somebody rewords
+           it — so nothing here reads them, it reads which channel they came down. */
+        'process.stderr.write(`recording ${process.argv[3]} — press Ctrl+C to stop.\n`);',
+        'process.stderr.write(`ready — use the page as a user would. Close the window or press Ctrl+C to stop.\n`);',
         'process.stdout.write(`click button "Sign in"\n`);',
-        'process.stdout.write(`fill field "Email" with "alice@example.com"\n`);',
-        'process.stdout.write(`tick field "Remember me"\n`);',
-        // A line that is NOT a statement, beyond the banners: `record` writes one to stderr when it
-        // skips an action, and a stdout line that does not parse must be dropped rather than
-        // guessed at.
+        /* A stdout line that is not a statement. Before `D1265` this was indistinguishable from a
+           banner and had to be dropped; now everything on this channel is meant to be a step, so
+           a line that does not read is a recorder defect and says so. */
         'process.stdout.write(`…and something the grammar does not admit\n`);',
+        'process.stdout.write(`fill field "Email" with "alice@example.com"\n`);',
+        /* **A block, which is a statement that is not a line** (`D1268`) — the reason the page
+           accumulates stdout rather than parsing each line where it lands. */
+        'process.stdout.write(`switch to new tab\n  click text "View receipt"\n`);',
+        'process.stdout.write(`tick field "Remember me"\n`);',
+        // And the word `record` writes when the builders refuse a gesture — stderr, beside the
+        // banners, because it is the command talking about itself and never a step.
+        'process.stderr.write(`skipped one click: could not read the locator "css \\"#x\\""\n`);',
         'const alive = setInterval(() => {}, 250);',
         'setTimeout(() => { clearInterval(alive); process.exit(0); }, 4000);',
         'process.on("SIGINT", () => process.exit(0));',
@@ -3798,22 +3806,58 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
       );
       assert.deepEqual(
         shown.filter((l) => l.kind === 'step').map((l) => l.text),
-        ['click button "Sign in"', 'fill field "Email" with "alice@example.com"', 'tick field "Remember me"'],
-        'the recorder’s statements arrive as lines, in order',
+        [
+          'click button "Sign in"',
+          'fill field "Email" with "alice@example.com"',
+          /* **One row, two lines** — the block arrived whole because the page accumulates stdout
+             and offers the parser a chunk, not a line (`D1268`). Parsed where they landed, the
+             head would have been unreadable and the body a `click` that scopes nothing. */
+          'switch to new tab\n  click text "View receipt"',
+          'tick field "Remember me"',
+        ],
+        'the recorder’s statements arrive as rows, in order, and a block is one of them',
       );
+
       /**
-       * **And nothing else** — two banners and one unreadable line, none of which is a statement.
+       * **`M219-01` IS CLOSED HERE, AND THE COUNT IS HOW YOU CAN TELL** — `M231` (`D1265`).
        *
-       * **`M219-01` is here.** The build tried to keep the unreadable line as a marked row, on the
-       * argument that a gesture the language cannot spell vanishing with nothing to report is the
-       * silence `D1076` refuses. It is — and the page cannot act on it, because `tflw record`'s
-       * stream has **no framing**: this stub's two banners fail to parse for exactly the same
-       * reason a refused gesture does. Measured: every session opened with two junk rows. So the
-       * drop is restored and the defect is filed against the stream rather than papered over here,
-       * and **this assertion is what pins it** — the day a line is attributable, the count changes.
+       * `M219` `F` built exactly this row, measured every session opening with **two junk rows**
+       * above the first real one, and withdrew it — because `tflw record`'s stream had no framing:
+       * the banners failed to parse for precisely the reason a refused gesture does, and nothing
+       * in the line said which it was. The assertion that replaced it said so in advance —
+       * *the day a line is attributable, the count changes* — and this is that day.
+       *
+       * Attribution is now the channel. A line on stdout is meant to be a step, so one that does
+       * not read is a **recorder defect** and is shown as one; everything the command says about
+       * itself is on stderr and is shown as a notice, which is not a statement and never was.
        */
-      assert.equal(shown.length, 3, `two banners and one unreadable line are not rows:\n${JSON.stringify(shown, null, 1)}`);
-      assert.equal(shown.filter((l) => l.kind !== 'step').length, 0);
+      assert.deepEqual(
+        shown.filter((l) => l.kind === 'unreadable').map((l) => l.text),
+        ['…and something the grammar does not admit'],
+        `a stdout line that does not parse is kept and named, not dropped:\n${JSON.stringify(shown, null, 1)}`,
+      );
+      const notices = shown.filter((l) => l.kind === 'notice').map((l) => l.text);
+      assert.equal(notices.length, 3, `two banners and one refusal, all of them notices:\n${JSON.stringify(shown, null, 1)}`);
+      assert.ok(notices.some((n) => n.startsWith('recording ')), 'the opening banner is a notice, not an error and not a step');
+      assert.ok(notices.some((n) => n.startsWith('skipped one click:')), 'and so is the word the command writes when the builders refuse a gesture');
+      assert.equal(shown.length, 8, `four statements, one unreadable line and three notices:\n${JSON.stringify(shown, null, 1)}`);
+
+      /**
+       * **AND THE BUTTON COUNTS STATEMENTS, NOT ROWS.**
+       *
+       * `SessionPanel` read `kind !== 'locator'` for *the statements*, which was right for as long
+       * as a step and a locator were the only rows that could exist — `unreadable` was declared
+       * beside them in `M219` `F` and never constructed. Making it reachable and adding `notice`
+       * turns that proxy into a lie: *keep all 8* over four statements, on a panel whose own
+       * `keepAll` splices four. This arc's fourth rule keyed on a proxy that broke when the proxy
+       * gained a member.
+       */
+      assert.equal(await fresh.locator('[data-session-lines="8"]').count(), 1, 'the panel holds eight rows');
+      assert.match(
+        (await fresh.locator('[data-session-keep-all]').textContent()) ?? '',
+        /keep all 4\b/,
+        'and offers to keep the four that are statements',
+      );
 
       /* **And the file has not changed**, which is the whole of what `D1165` adds. The mutation
          this pins is *the recorder appends straight to the buffer*: with it, the three statements
@@ -3836,8 +3880,9 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
       await fresh.locator('[data-tabstrip="source"]').waitFor();
       const after = (await fresh.locator('[data-preview]').textContent())!;
       assert.ok(after.includes('fill field "Email" with "alice@example.com"'), `the kept line is in the buffer:\n${after}`);
-      assert.equal(after.includes('click button "Sign in"'), false, 'and only the kept line — the other two are still evidence');
+      assert.equal(after.includes('click button "Sign in"'), false, 'and only the kept line — the other three are still evidence');
       assert.equal(after.includes('tick field "Remember me"'), false);
+      assert.equal(after.includes('switch to new tab'), false);
 
       /**
        * **`M221` `C` — ▶ on the panel runs the test WITH the pending lines, and keeps none of
@@ -3857,9 +3902,10 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
       await fresh.locator('[data-tabstrip="compose"]').waitFor();
       const tryIt = fresh.locator('[data-session-play]');
       await tryIt.waitFor();
-      /* Two lines are still pending — the keep above took the middle one — so the control counts
-         what is left rather than what the session started with. */
-      assert.match((await tryIt.textContent())!, /▶ try 2/, 'the control does not count the lines still pending');
+      /* Three statements are still pending — the keep above took one of four — so the control
+         counts what is left rather than what the session started with, and counts STATEMENTS:
+         the unreadable row and the three notices are beside them and are not lines to run. */
+      assert.match((await tryIt.textContent())!, /▶ try 3/, 'the control does not count the lines still pending, nor the rows that are not statements');
       const onDisk = await readFile(join(dir, 'web.tflw'), 'utf8');
       await tryIt.click();
 
@@ -3872,17 +3918,18 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
         if (played === '') await new Promise((r) => setTimeout(r, 100));
       }
       assert.notEqual(played, '', 'no scratch was written beside the file — ▶ ran the disk');
-      /* `D1185` — the whole test, with the pending lines spliced into it. Both of them: the one
-         `keep` already wrote is in the buffer, and the two still pending are added on top. */
+      /* `D1185` — the whole test, with the pending lines spliced into it: the one `keep` already
+          wrote is in the buffer, and the three still pending are added on top. */
       assert.ok(played.includes('open "/checkout"'), `the test's own steps are in what ran:\n${played}`);
       assert.ok(played.includes('click button "Sign in"'), `a pending line is in what ran:\n${played}`);
-      assert.ok(played.includes('tick field "Remember me"'), `and the other one:\n${played}`);
+      assert.ok(played.includes('tick field "Remember me"'), `and the others:\n${played}`);
+      assert.ok(played.includes('switch to new tab'), `including the block, whose body goes with it:\n${played}`);
       assert.ok(played.includes('fill field "Email"'), 'the kept line is there too — the scratch is the BUFFER, not the disk');
 
       /* `D1186` — and nothing was kept. The file has not moved and the session still holds every
          line it held, so the tick is still the only thing that writes (`D1165`). */
       assert.equal(await readFile(join(dir, 'web.tflw'), 'utf8'), onDisk, 'a play wrote to the file — playing is not keeping');
-      assert.equal(await fresh.locator('[data-session-line][data-session-line-kind="step"]').count(), 2, 'the play consumed the lines it ran');
+      assert.equal(await fresh.locator('[data-session-line][data-session-line-kind="step"]').count(), 3, 'the play consumed the lines it ran');
 
       assert.deepEqual(pageErrors, [], 'classifying a line must not throw — a dropped line and a crashed handler are otherwise indistinguishable');
     } finally {

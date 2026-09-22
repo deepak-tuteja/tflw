@@ -165,6 +165,46 @@ a recorder can see that a page changed but not what about the change mattered, s
 yours to add afterwards. Runs until the window is closed or Ctrl+C. `<url>` must be absolute — no
 `tflw.config` involved.
 
+### Tabs
+
+Every tab the session opens is recorded, not just the one it started in. A click that opens a tab
+is written as the block that wraps it, because the runtime has to be listening before the click
+happens; coming back to a tab you left prints the switch that takes you there.
+
+```tflw
+click button "Track parcel"
+switch to new tab
+  click text "View receipt"
+click button "Print"
+switch to tab 1
+```
+
+### Names that match more than one thing
+
+A page with twelve *Add to cart* buttons has no unambiguous name for any of them. Rather than fall
+back to a selector naming the position the row happened to be in, the recorder scopes the
+statement to the nearest ancestor that narrows the name to one **and** has a name of its own:
+
+```tflw
+within css "[aria-label=\"Product 2\"]"
+  click button "Add to cart"
+```
+
+An ancestor that narrows the name but cannot be named is skipped — a `within` naming a position is
+no better than the selector it would replace. When nothing qualifies, a CSS path is still written.
+
+### What is not recorded
+
+Clicks the browser synthesised. Pressing `Enter` in a text field submits the form, and the browser
+does that by dispatching a click at the submit button — recorded, that click makes a replay submit
+twice. Activating a focused control from the keyboard *is* a gesture and is still recorded.
+
+### Redirecting it to a file
+
+Steps go to stdout and everything else — the opening banner, and the word it writes when it has to
+skip an action — goes to stderr. So `tflw record http://localhost:3000 > steps.tflw` gives you a
+file whose every line is a step, ready to paste under a `test` declaration.
+
 ## `tflw watch`
 
 <table>
