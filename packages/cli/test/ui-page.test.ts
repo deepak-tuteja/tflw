@@ -9537,12 +9537,15 @@ test('`M217` `C2`: a draft belongs to its file and survives a look at another on
     // Back, and the work is there.
     await p.locator('[data-file-row="a.tflw"]').click();
     await p.locator('[data-compose-dirty]').waitFor();
-    /* `M234` `A` — wait for the ROWS, not only for the dirty mark (`D1308`). `[data-compose-dirty]`
-       says the buffer came back; it does not say the sequence has been drawn from it, and the
-       count below does not retry. Node 22 read **0** rows against 11 in CI. Same hazard as
-       `M213` `S4`'s, at the next site. */
-    await p.locator('.seq-row').nth(rows - 1).waitFor({ timeout: 60_000 });
-    assert.equal(await p.locator('.seq-row').count(), rows, 'the pending edit came back with the file');
+    /* `M234` `A6` — **the count is what has to retry, not the wait in front of it** (`D1308`).
+       `A` put a row wait here on the reading that the sequence had not been drawn yet. It had:
+       CI Node 22 then read 0 rows against 11 with the wait satisfied and the whole test taking
+       359 ms, which is a re-render between the two calls and not a slow one. */
+    const back = await countSettling(p, '.seq-row', rows);
+    if (back !== rows) {
+      const showing = await p.locator('[data-compose-file]').evaluateAll((els) => els.map((e) => e.getAttribute('data-compose-file')));
+      assert.fail(`the pending edit did not come back with the file — ${back} rows against ${rows}, pane showing ${JSON.stringify(showing)}`);
+    }
   });
 });
 
@@ -9687,6 +9690,30 @@ const IMPORTED = {
  * first frame in which the menu is rendered at the origin so `place()` can read its height. Waiting
  * for visibility alone would measure a box that is about to move.
  */
+/**
+ * `.count()` that settles — `M234` `A6` (`D1308`).
+ *
+ * This file's own docblock warns that a read after a wait does not retry, and this round has now
+ * spent three CI rounds on that shape at three different sites. `count()` is the sharpest case of
+ * it: it resolves against whatever the DOM holds on one tick, and a pane that re-renders between
+ * the wait and the read answers **0** with no error of any kind. CI Node 22 read 0 rows against
+ * 11 on a test whose whole duration was 359 ms — so nothing was slow, and a longer wait was never
+ * the answer; the DOM simply had a frame in which the rows were not there.
+ *
+ * Playwright's own auto-retrying assertions live in `@playwright/test`, which this file does not
+ * use — it is `node:test` plus the `playwright` library — so the retry is written out. It returns
+ * what it last saw rather than throwing, so the caller can say what else was on the page.
+ */
+const countSettling = async (p: Page, selector: string, want: number): Promise<number> => {
+  let seen = -1;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    seen = await p.locator(selector).count();
+    if (seen === want) return seen;
+    await p.waitForTimeout(100);
+  }
+  return seen;
+};
+
 const openMenu = async (p: Page, selector: string): Promise<void> => {
   await p.locator(selector).first().click({ button: 'right' });
   await p.locator('.ctx-menu:not([data-menu-placed="measuring"])').waitFor({ state: 'visible' });
