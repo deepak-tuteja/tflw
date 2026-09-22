@@ -154,7 +154,7 @@ of that detail gets captured (`full`/`headers only`/`none`; the CLI flag keeps t
 are on one screen. A failed browser attempt's trace opens in Playwright's own viewer without
 leaving the page, from the `playwright-core` the project already resolves. Everything this chapter
 describes still applies — the page renders the run, it does not re-word it. See
-[The page](/page/).
+[The page](/ui/).
 
 ## Printing from inside a test — `log`
 

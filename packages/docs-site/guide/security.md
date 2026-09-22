@@ -125,4 +125,4 @@ in a month.
 `tflw ui`'s SCANS door lists every finding a run produced, grouped by rule and by severity, with
 the baseline's verdict beside it — which is how a finding that was accepted last week and is
 gating now becomes visible. The authorized target declaration is still required and still written
-in the file: the page does not grant permission, it reads it. See [The page](/page/).
+in the file: the page does not grant permission, it reads it. See [The page](/ui/).

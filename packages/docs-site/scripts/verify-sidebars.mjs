@@ -42,11 +42,17 @@ const EXPECTED = [
   // The step the funnel page leads into — unchanged by `FU-30`, and the reference point its
   // markup was compared against when the bug was measured.
   { page: 'guide/first-test.html', shows: 'Start here', hides: 'More' },
-  // The page's own surface. `The page` present is the new `/page/` key resolving; `More` absent is
-  // the proof it beat the `/` fallback rather than stacking beside it — which is the failure the
-  // `hides` half exists for, and the one a fifth rail makes easier to reach than a fourth did.
-  { page: 'page/index.html', shows: 'The page', hides: 'More' },
-  { page: 'page/doors.html', shows: 'The page', hides: 'More' },
+  // The UI's own surface. `The UI` present is the `/ui/` key resolving; `More` absent is the proof
+  // it beat the `/` fallback rather than stacking beside it — which is the failure the `hides`
+  // half exists for, and the one a fifth rail makes easier to reach than a fourth did.
+  //
+  // **Three rows, and the third is a door page.** The section grew from five pages to nine, and
+  // the four door pages are the ones a reader is most likely to arrive at from a search result
+  // rather than from the index — so one of them is checked, not only the two that were here when
+  // the rail had a single level.
+  { page: 'ui/index.html', shows: 'The UI', hides: 'More' },
+  { page: 'ui/doors.html', shows: 'The UI', hides: 'More' },
+  { page: 'ui/load.html', shows: 'The UI', hides: 'More' },
 ];
 
 /** Each pillar overview is reachable from the rail, and it is the group's own title that reaches it.

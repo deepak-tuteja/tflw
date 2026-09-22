@@ -1,11 +1,15 @@
+---
+pageClass: ui-shots
+---
+
 # The spine
 
 Every surface past the landing is the same three things in the same places: the **files** down the
 left, the **door bar** across the top, and the **tab strip** over whichever file you picked. Learn
 it once and nothing else on the page needs learning.
 
-![The shell: the file list, the door bar, the tab strip, and a file open on Source](/page/spine-paper.png){.light-only}
-![The shell: the file list, the door bar, the tab strip, and a file open on Source](/page/spine-terminal.png){.dark-only}
+![The shell: the file list, the door bar, the tab strip, and a file open on Source](/ui/spine-paper.png){.light-only}
+![The shell: the file list, the door bar, the tab strip, and a file open on Source](/ui/spine-terminal.png){.dark-only}
 
 ## The file list
 

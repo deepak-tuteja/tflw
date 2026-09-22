@@ -1,4 +1,4 @@
-// The `/page/` pictures describe the page as it is now (`M233` `B`, `D1283`).
+// The `/ui/` pictures describe the page as it is now (`M233` `B`, `D1283`).
 //
 // Every other claim this site makes is checked against something: a construct against the
 // manifest, an invocation against `CLI_FLAGS`, a sample against the shipped checker. **A PNG is
@@ -34,20 +34,20 @@ import { DOCS_PAGE_DIR, SHOTS, THEMES, appearanceOf, screenshotInputsHash, shotE
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const SITE = join(here, '..');
-const PAGE_MD_DIR = join(SITE, 'page');
+const PAGE_MD_DIR = join(SITE, 'ui');
 const DIST = join(SITE, '.vitepress', 'dist');
 const MANIFEST_PATH = join(DOCS_PAGE_DIR, 'manifest.json');
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const RECUT = 'run: node --import tsx packages/ui/scripts/make-screenshots.mjs';
 
-/** Every `![alt](/page/NAME.png){.class}` the `/page/` surface writes, wherever it writes it. */
+/** Every `![alt](/ui/NAME.png){.class}` the `/ui/` surface writes, wherever it writes it. */
 function embeds() {
   const out = [];
   if (!existsSync(PAGE_MD_DIR)) return out;
   for (const name of readdirSync(PAGE_MD_DIR).sort()) {
     if (!name.endsWith('.md')) continue;
     const text = readFileSync(join(PAGE_MD_DIR, name), 'utf8');
-    for (const m of text.matchAll(/!\[([^\]]*)\]\(\/page\/([A-Za-z0-9._-]+)\)(\{[^}]*\})?/g)) {
+    for (const m of text.matchAll(/!\[([^\]]*)\]\(\/ui\/([A-Za-z0-9._-]+)\)(\{[^}]*\})?/g)) {
       out.push({ page: name, alt: m[1], shot: m[2], attrs: m[3] ?? '' });
     }
   }
@@ -77,15 +77,15 @@ test('every declared shot exists and is a PNG', () => {
   }
 });
 
-test('the `/page/` surface embeds every shot, and embeds nothing that is not there', () => {
+test('the `/ui/` surface embeds every shot, and embeds nothing that is not there', () => {
   // Both directions, and `M201`'s carry is why: *a floor is blind in exactly one direction*. A
   // rule that only checks "every embed resolves" is satisfied by a page that embeds nothing; one
   // that only checks "every shot is embedded" is satisfied by a page embedding a file that 404s.
   const found = embeds();
-  assert.ok(found.length > 0, `the /page/ surface embeds no pictures at all — ${PAGE_MD_DIR} has no image reference`);
+  assert.ok(found.length > 0, `the /ui/ surface embeds no pictures at all — ${PAGE_MD_DIR} has no image reference`);
   const referenced = new Set(found.map((e) => e.shot));
-  for (const name of SHOTS) assert.ok(referenced.has(name), `no /page/ page embeds ${name}`);
-  for (const e of found) assert.ok(shotExists(e.shot), `${e.page} embeds /page/${e.shot}, which does not exist`);
+  for (const name of SHOTS) assert.ok(referenced.has(name), `no /ui/ page embeds ${name}`);
+  for (const e of found) assert.ok(shotExists(e.shot), `${e.page} embeds /ui/${e.shot}, which does not exist`);
 });
 
 test('each embed is tagged for the appearance its theme belongs to', () => {
@@ -109,6 +109,43 @@ test('each embed is tagged for the appearance its theme belongs to', () => {
   for (const e of found) assert.ok(e.alt.trim().length > 0, `${e.page} embeds ${e.shot} with no alt text`);
 });
 
+test('the appearance tag is a rule the built stylesheet actually carries', () => {
+  // THE TEST ABOVE IS NOT ENOUGH, and `M233` `I` found out the expensive way: it asserts the
+  // author wrote `{.light-only}`, which was true from the day the shots landed and stayed true
+  // while every page in this section rendered both halves of every pair.
+  //
+  // `{.light-only}` is not a VitePress feature. It is an attrs block that markdown-it copies onto
+  // the `<img>` as a class, and a class does nothing until a stylesheet claims it. VitePress ships
+  // `html:not(.dark) .VPImage.dark` for its own logo component, which a markdown image never
+  // becomes — so the attribute looks supported, the build is clean, the gate above is green, and
+  // the reader gets the light screenshot stacked on top of the dark one.
+  //
+  // So the claim is made about the ARTEFACT: the stylesheet `dist` actually serves must contain a
+  // rule for each appearance class. Reading `custom.css` instead would re-make the original
+  // mistake in a new place — asserting what the author typed, one layer further down.
+  assert.ok(existsSync(DIST), `the site is not built — expected ${DIST}`);
+  const assets = join(DIST, 'assets');
+  const css = readdirSync(assets)
+    .filter((n) => n.endsWith('.css'))
+    .map((n) => readFileSync(join(assets, n), 'utf8'))
+    .join('\n');
+  assert.ok(css.length > 0, 'the built site ships no stylesheet at all — every rule below would pass over an empty string');
+  for (const [theme] of THEMES) {
+    const cls = appearanceOf(`x-${theme}.png`);
+    assert.notEqual(cls, null, `${theme} has no appearance class`);
+    // `.light-only` as a selector token, not as a substring of the markdown the minifier never
+    // sees. A rule is a selector followed by a declaration block; anything less is a class name
+    // mentioned in a comment.
+    // `assert.ok` and not `assert.match`: the built stylesheet is 113 KB of minified font-face
+    // declarations, and a failed `match` prints the whole subject. A gate whose red output has to
+    // be scrolled past is a gate people stop reading.
+    assert.ok(
+      new RegExp(`\\.${cls}-only[^{}]*\\{[^}]*\\}`).test(css),
+      `the built stylesheet has no rule for .${cls}-only — the tag is written on the <img> and the cascade ignores it, so both halves of every pair render`,
+    );
+  }
+});
+
 test('the built site serves the pictures at the deployed base path', () => {
   // `M233` §0 defect 2, and the reason it is worth a test of its own: this site is served from
   // `base: '/tflw/'`, and a path that is right in the markdown can still be wrong in `dist` —
@@ -120,14 +157,14 @@ test('the built site serves the pictures at the deployed base path', () => {
     `the site is not built — expected ${DIST}.\n       Run \`npm run build -w @tflw/docs-site\` first (CI's \`npm run build\` does this).`,
   );
   for (const name of SHOTS) {
-    assert.ok(existsSync(join(DIST, 'page', name)), `${name} did not reach dist/page/ — it will 404 on the deployed site`);
+    assert.ok(existsSync(join(DIST, 'ui', name)), `${name} did not reach dist/ui/ — it will 404 on the deployed site`);
   }
-  const html = readdirSync(join(DIST, 'page'), { withFileTypes: true })
+  const html = readdirSync(join(DIST, 'ui'), { withFileTypes: true })
     .filter((d) => d.isFile() && d.name.endsWith('.html'))
-    .map((d) => readFileSync(join(DIST, 'page', d.name), 'utf8'))
+    .map((d) => readFileSync(join(DIST, 'ui', d.name), 'utf8'))
     .join('\n');
-  assert.ok(html.length > 0, 'the built site has no /page/ HTML at all');
+  assert.ok(html.length > 0, 'the built site has no /ui/ HTML at all');
   for (const name of SHOTS) {
-    assert.ok(html.includes(`/tflw/page/${name}`), `the built /page/ HTML does not reference /tflw/page/${name} — the base path was not applied`);
+    assert.ok(html.includes(`/tflw/ui/${name}`), `the built /ui/ HTML does not reference /tflw/ui/${name} — the base path was not applied`);
   }
 });

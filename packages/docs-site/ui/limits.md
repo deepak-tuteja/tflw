@@ -1,3 +1,7 @@
+---
+pageClass: ui-shots
+---
+
 # What the page will not do
 
 Some of this is work not yet done and some of it is deliberate. They are separated here because a
