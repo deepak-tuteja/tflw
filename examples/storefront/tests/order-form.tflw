@@ -1,0 +1,34 @@
+# The delivery form — the three shapes a form has, and the one thing that is not instant.
+
+@checkout @functional
+test "the delivery details go in as one block"
+  open "/order"
+  # Five fields, one step. The table is the statement: a row per field, named the way the page
+  # names it, which is what a person reading the test has to be able to check against the page.
+  fill form
+    | "Email"    | "ada@example.com"  |
+    | "Name"     | "Ada Whitfield"    |
+    | "Address"  | "14 Bridge Street" |
+    | "Town"     | "Bristol"          |
+    | "Postcode" | "BS1 4ST"          |
+  # The page echoes the town back, because `expect field "Town" equals "Bristol"` is `TF042`:
+  # `equals` reads a value and a UI locator is not one. A form that shows what it took is both
+  # what a delivery form does and the only thing a test can stand on.
+  expect text "Delivering to Bristol" is visible
+
+@checkout @functional
+test "the choices a shop offers are a select and two checkboxes"
+  open "/order"
+  select "Filter" from field "Grind"
+  tick field "Gift wrap this order"
+  # `Send me offers` starts ticked, which is the only state in which unticking it means anything.
+  untick field "Send me offers"
+  expect text "Ground for Filter" is visible
+  expect field "Gift wrap this order" is checked
+  expect field "Send me offers" is not checked
+
+@checkout @functional
+test "saving is not instant, so the test waits for the answer and not for a clock"
+  open "/order"
+  click button "Save for later"
+  wait until text "Your order is saved" is visible timeout wait 5s

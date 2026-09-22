@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Build your order</title>
+  <link rel="stylesheet" href="/shelf.css">
+</head>
+<body>
+  <h1>Build your order</h1>
+  <p class="note">Everything on this page is something a small shop actually does. It is also,
+    deliberately, every browser gesture the tflw language can write — see <code>tests/</code>.</p>
+
+  <p>Delivery estimate: <span id="estimate">checking…</span></p>
+
+  <label for="q">Find a coffee</label>
+  <input id="q" autocomplete="off">
+  <p id="matches-count" class="note">Showing 3 of 3</p>
+  <ul id="matches" aria-label="Matching coffees">
+    <li>Filter coffee, 1kg</li>
+    <li>Espresso blend, 250g</li>
+    <li>Decaf, 250g</li>
+  </ul>
+
+  <h2>Your basket</h2>
+  <ul id="basket" aria-label="Basket">
+    <li>Decaf, 250g — £9.00 <button type="button">Remove</button></li>
+    <li>Espresso blend, 250g — £8.50 <button type="button">Remove</button></li>
+  </ul>
+
+  <h2>Saved for later</h2>
+  <!-- One line, one Remove button. There are three `Remove` buttons on this page, so naming one of
+       them needs `within list "Saved for later"` — which is what that block is for. -->
+  <ul id="saved" aria-label="Saved for later">
+    <li id="saved-line" draggable="true">Filter coffee, 1kg — £14.00 <button type="button">Remove</button></li>
+  </ul>
+  <p id="moved" hidden>Moved Filter coffee, 1kg to your basket</p>
+  <p id="kept" hidden>Kept in your saved items</p>
+
+  <h2>Bulk orders</h2>
+  <div class="po-drop" id="po-drop">
+    <p>Drop a purchase order CSV here</p>
+  </div>
+  <p id="po-read" hidden></p>
+
+  <h2>Where it goes</h2>
+  <form id="delivery">
+    <label>Email <input name="email" type="email" autocomplete="email"></label>
+    <label>Name <input name="name" autocomplete="name"></label>
+    <label>Address <input name="line1" autocomplete="address-line1"></label>
+    <label>Town <input name="city" autocomplete="address-level2"></label>
+    <label>Postcode <input name="postcode" autocomplete="postal-code"></label>
+    <label>Grind
+      <select name="grind">
+        <option>Whole bean</option>
+        <option>Filter</option>
+        <option>Espresso</option>
+      </select>
+    </label>
+    <label><input type="checkbox" name="gift"> Gift wrap this order</label>
+    <label><input type="checkbox" name="offers" checked> Send me offers</label>
+    <button type="button" id="save">Save for later</button>
+  </form>
+  <p id="to">Delivering to nowhere yet</p>
+  <p id="grind-note">Ground for Whole bean</p>
+  <p id="toast" hidden>Your order is saved</p>
+
+  <p><span id="why" tabindex="0">Why we ask for a postcode</span></p>
+  <p id="why-note" hidden>We use it to pick the nearest depot, which is how next-day works.</p>
+
+  <p>
+    <a href="/terms" target="_blank" rel="noopener">Terms of sale</a> ·
+    <a href="/order.csv" id="csv" download="order.csv">Download this order as CSV</a>
+  </p>
+
+  <div class="filler" aria-hidden="true"></div>
+  <p id="bottom">End of the order page</p>
+
+  <script src="/order.js"></script>
+</body>
+</html>

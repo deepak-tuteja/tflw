@@ -1,0 +1,22 @@
+# The two things that leave the page — a tab of its own, and a file.
+
+@checkout @functional
+test "the terms open in a tab of their own, and close again"
+  open "/order"
+  # The block is what makes the new tab the active one. That persists past the block, unlike
+  # `within`'s scoping — which is why the assertion below reads the terms and not the order page.
+  switch to new tab
+    click text "Terms of sale"
+  expect text "Terms of sale for The Coffee Shelf" is visible
+  close tab
+  # Tabs are numbered from 1. With the second one closed there is one left, and it is the order
+  # page the run started on.
+  switch to tab 1
+  expect text "Build your order" is visible
+
+@checkout @functional
+test "the order downloads as a file the shop names"
+  open "/order"
+  download as file
+    click text "Download this order as CSV"
+  expect text "Build your order" is visible

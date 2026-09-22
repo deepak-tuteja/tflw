@@ -1266,7 +1266,10 @@ test('`M224` `D1207`: every test in the example project accepts a threshold, by 
     });
   }
   assert.deepEqual(refused, []);
-  assert.equal(seen, 16, 'the example project declares 16 tests — if it grew, move this number');
+  // `M234` `C` — 16 -> 35. The example is now an equality against what the printer can emit
+  // (`exampleCoverage.test.ts`), and widening it is what found the defect the gate above this one
+  // pins: a paragraph closing the FILE was being read as the last test's trailing note.
+  assert.equal(seen, 35, 'the example project declares 35 tests — if it grew, move this number');
 });
 
 test('`M224` `D1207`: a trailing note inside a test keeps the new line below it', () => {
@@ -1280,6 +1283,25 @@ test('`M224` `D1207`: a trailing note inside a test keeps the new line below it'
     node: threshold({ metric: { kind: 'errorRate' }, op: 'lessThan', bound: 1, scope: null }),
   });
   assert.equal(out, 'test "the catalog answers"\n  api GET /catalog\n  # TODO: assert the body too\n  threshold error rate is less than 1%\n');
+});
+
+test('`M234` `C`: a paragraph that closes the FILE is not the last test\'s trailing note', () => {
+  // The case `M224` `A`'s rule was one fact short of, found by widening `examples/storefront`
+  // rather than by reading: a comment run with nothing after it was taken to be this test's own
+  // note whatever its indentation, so a dedented paragraph closing the file put the new line
+  // below it — outside the test — and `settleSplice` refused the whole edit.
+  //
+  // Five lines is the whole reproduction. The test directly above is the negative control and is
+  // why the repair is about **indentation** and not about being last: `  # TODO: assert the body
+  // too` is written at the body's depth, so it IS this test's note and the new line still goes
+  // under it.
+  const source = 'test "t"\n  api GET /x\n  expect status equals 200\n\n# a closing note about the file\n';
+  const out = insert(source, {
+    kind: 'threshold',
+    testName: 't',
+    node: threshold({ metric: { kind: 'errorRate' }, op: 'lessThan', bound: 1, scope: null }),
+  });
+  assert.equal(out, 'test "t"\n  api GET /x\n  expect status equals 200\n  threshold error rate is less than 1%\n\n# a closing note about the file\n');
 });
 
 test('`M224` `D1206`: a workload is rewritten in place, and removing it leaves the thresholds', () => {

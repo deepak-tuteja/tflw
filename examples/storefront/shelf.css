@@ -1,0 +1,17 @@
+/* The shop's one stylesheet. It is a FILE and not a `<style>` block for a reason a reader of this
+   example should see: every page here is served under `Content-Security-Policy: default-src
+   'self'`, and that policy blocks an inline `<style>` exactly as it blocks an inline `<script>`.
+   A page that inlines both still passes `sec/csp-missing` — the header is present — and renders
+   with none of its own CSS. Same-origin files cost nothing and are what the policy is for. */
+body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 44rem; color: #111; background: #fff; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.1rem; margin-top: 2rem; }
+ul { padding-left: 1.1rem; }
+li { margin: .4rem 0; }
+label { display: block; margin: .6rem 0; }
+input, select { padding: .3rem; }
+button { padding: .3rem .7rem; }
+.po-drop { border: 2px dashed #999; border-radius: 6px; padding: 1.2rem; text-align: center; color: #555; }
+.filler { height: 900px; }
+.note { color: #555; font-size: .9rem; }
+[hidden] { display: none; }

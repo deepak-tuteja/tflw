@@ -1,0 +1,23 @@
+# The supplier this shop does not own, and the bulk order that arrives as a file.
+
+@checkout @functional
+test "the delivery estimate comes from a supplier, so the test stands in for one"
+  # `stub` answers a request the PAGE makes, which is why the estimate is fetched from another
+  # origin at all: a page that only ever talks to its own server gives this statement nothing to
+  # do. The host does not resolve and is not meant to.
+  stub GET "https://delivery.example.test/v1/estimate" respond status 200 body { day: "Thursday" }
+  open "/order"
+  expect text "arrives Thursday" is visible
+
+@checkout @functional
+test "with no supplier answering, the page says so rather than showing nothing"
+  open "/order"
+  expect text "unavailable" is visible
+
+@checkout @functional
+test "a bulk order arrives as a file dropped on the page"
+  open "/order"
+  # The path is relative to this file, and the file is real — the checker refuses a reference it
+  # cannot resolve, and the drop reads the bytes off disk rather than inventing a `File`.
+  drop file "../payloads/purchase-order.csv" onto css "#po-drop"
+  expect text "3 order lines read from purchase-order.csv" is visible

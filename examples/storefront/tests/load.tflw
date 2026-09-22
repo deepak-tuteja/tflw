@@ -65,3 +65,33 @@ test "minting order references keeps up with the checkout rate"
   threshold error rate is less than 1%
   let ref = unique like "ORD-######"
   log "minted {ref}"
+
+# The one statement in the language that spends time on purpose. `pause` is **per-iteration
+# pacing** and the checker holds it to that (`TF033`): outside a workload-bearing test there is
+# nothing for it to pace, and waiting for something to *become* true is `wait until`. Here it is a
+# reader who looks at the shelf, thinks, and looks again — which is what a shop's traffic is, and
+# is a different load profile from the same twenty requests issued flat out.
+#
+# The threshold is loose for the obvious reason: the pause is inside the iteration, so it is inside
+# the duration the threshold reads. A p95 tighter than the pause would be a test of arithmetic.
+#
+# **IT IS `@pacing` AND NOT `@workload`, AND THE REASON IS THIS FILE'S OWN WARNING COMING TRUE.**
+# The note above says *bounding one test's workload can change another test's verdict, because the
+# bottleneck judgement is the run's and not the test's* — and this test is what demonstrated it.
+# Measured, same box, same tree, one tag apart:
+#
+#     --tag workload, without it : INCONCLUSIVE 3/3
+#     --tag workload, with it    : PASS 4/4 · generator cpu 74%
+#
+# A pause is idle time inside the run, so it dilutes the CPU rate the bottleneck judgement reads,
+# and the example's first teaching point — that a load verdict against a toy on loopback is not
+# available at any setting — would have quietly become false. So it runs on its own:
+# `npm run example:pacing`.
+@pacing
+test "a reader who pauses between pages is a different kind of load"
+  run 10 iterations across 2 users
+  threshold p95 duration is less than 800ms
+  threshold error rate is less than 1%
+  api GET /items
+  expect status equals 200
+  pause 200ms
