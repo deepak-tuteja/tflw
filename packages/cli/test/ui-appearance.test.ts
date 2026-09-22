@@ -659,6 +659,41 @@ test('a door’s Compose is measured in every theme, because its height is theme
  * Clause 3 is the denominator this file's other gates all carry, and it is what makes this
  * stronger than the bar rather than merely different: a bar passes when the pane renders nothing.
  */
+/**
+ * Open a file this gate has just **written**, and be sure the pane is showing that file
+ * (`M234` `A4`/`A5`, `D1308`).
+ *
+ * Two gates in this file write a fixture and navigate straight to it, and both assumed the served
+ * project's listing had caught up. `M215` `B3` proved it does not always:
+ * `{"tab":"true","editor":1,"bodyEdit":0,"ink":0,"rows":9}` — nine rows for a file of two steps, so
+ * the route had fallen back and every measurement after it was about a different file.
+ *
+ * **The reload is the retry, and it is what a single `waitFor` cannot be.** `readProject` runs
+ * `discoverTests` fresh and answers `cache-control: no-store`, so the listing a page holds is the
+ * one it fetched on load — a page that opened before the write landed will go on showing the
+ * fallback for as long as anything waits on it. `A4` asked for the right element and waited 30
+ * seconds for it on CI Node 22 rather than loading again, which is the same mistake in a new
+ * costume: *waiting longer for a page that will never change its mind*.
+ *
+ * If six loads is not enough, the failure names what the pane IS showing and what the explorer
+ * lists — because this round has now twice repaired a timeout whose message named the wrong thing.
+ */
+const showWrittenFile = async (url: string, path: string): Promise<void> => {
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    await page.goto(url);
+    await page.reload();
+    await page.locator('[data-seq-col]').waitFor();
+    if (await page.locator(`[data-compose-file="${path}"]`).count() > 0) return;
+    await page.waitForTimeout(500);
+  }
+  const seen = await page.locator('[data-compose-file]').evaluateAll((els) => els.map((e) => e.getAttribute('data-compose-file')));
+  const rows = await page.locator('[data-file-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-row')));
+  assert.fail(
+    `${path} was written before the first of six loads and the pane is still showing ${JSON.stringify(seen)}; ` +
+    `the explorer lists ${JSON.stringify(rows)}`,
+  );
+};
+
 test('no region of the Compose pane overflows the window, on a thirteen-request file, on either door that draws it', async () => {
   // Thirteen requests, each with two assertions and a capture between two of them — the shape the
   // corpus census found (2.49 requests per test, 101 interleaved statements, 81% of bindings read
@@ -685,15 +720,7 @@ test('no region of the Compose pane overflows the window, on a thirteen-request 
        every file behind every door and this one opens there like any other. What is being held is
        the layout, which is `vocabulary.ts`'s to differ about and not `ComposePane`'s. */
     for (const [door, theme] of DOORS.filter((d) => d === 'api' || d === 'load').flatMap((d) => THEMES.map((t) => [d, t] as const))) {
-      await page.goto(`${baseUrl}#/${door}/compose/tests/thirteen.tflw`);
-      await page.reload();
-      await page.locator('[data-seq-col]').waitFor();
-      /* `M234` `A4` — and the same file assertion `M215` `B3` needed below, for the same reason:
-         this gate also writes its fixture and navigates straight to it, so a listing that has not
-         caught up shows a different file and every measurement below is about that one. The
-         fourteenth-row wait further down would catch it eventually — nine rows are not fourteen —
-         but it catches it as a 60-second timeout rather than as a sentence. */
-      await page.locator('[data-compose-file="tests/thirteen.tflw"]').waitFor();
+      await showWrittenFile(`${baseUrl}#/${door}/compose/tests/thirteen.tflw`, 'tests/thirteen.tflw');
       // A file the parser only RECOVERED draws fewer rows than it has statements, and a height gate
       // reading a salvage is a height gate reading a smaller file. The first draft of this fixture
       // wrote `expect body.name is not empty`, which is not a matcher this language has.
@@ -835,21 +862,7 @@ test('`M215` `B3`: the coloured copy and the field under it are one box, in all 
   await writeFile(file, ['test "a body to paint"', '  api POST /orders body { ok: true, who: null, qty: 3 }', '  expect status equals 201', ''].join('\n'));
   try {
     for (const theme of THEMES) {
-      await page.goto(`${baseUrl}#/api/compose/tests/jsonbody.tflw`);
-      await page.reload();
-      await page.locator('[data-seq-col]').waitFor();
-      /* `M234` `A4` — **THE PANE IS SHOWING THE FILE THIS GATE WROTE**, which is the thing the
-         two waits below assumed and neither asserted (`D1308`). CI Node 24 failed here on
-         `terminal`, the FIRST theme, and the instrumentation added in `A3` is what named it:
-         `{"tab":"true","editor":1,"bodyEdit":0,"ink":0,"rows":9}` — the Body tab selected, an
-         editor open, **nine sequence rows** and no body field at all. `jsonbody.tflw` is one test
-         of two steps; nine rows is a different file. `writeFile` had not reached the served
-         project's listing by the time `goto` resolved, the route fell back, and the request row
-         the pick then found has no body — so `[data-body-ink]` was never going to appear and no
-         amount of timeout was going to change that. `A2` bought this gate 60 seconds on the
-         reading that the default was the binding constraint; it was not, and that reading is
-         withdrawn here rather than left standing beside the fix. */
-      await page.locator('[data-compose-file="tests/jsonbody.tflw"]').waitFor();
+      await showWrittenFile(`${baseUrl}#/api/compose/tests/jsonbody.tflw`, 'tests/jsonbody.tflw');
       /* `M234` `A` — the ROW, not the column (`D1308`). Same hazard as the thirteen-request gate
          above: `[data-seq-col]` is attached before its rows are, so the pick below could land
          mid-redraw, the selection not take, and the body tab never appear — which surfaces 100
