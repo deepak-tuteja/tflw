@@ -38,10 +38,39 @@
 // ordinary movement; a real regression is worth more than one point.
 //
 // Raise it when the number rises and stays risen. Do not lower it to make a red run green.
+//
+// ## `M234`: TWO TIERS, AND WHY THE AGGREGATE MOVED 94 -> 90
+//
+// The paragraph above describes a floor over **six** `src` directories. `M234` added a seventh,
+// `packages/ui/src`, and had no choice: the package was already leaking into the report one file at
+// a time as unit tests imported it — 8 files on `main`, 26 on the branch — so the denominator was
+// moving with no decision behind it, and a branch that *added* tests made the number *fall*.
+//
+// So the aggregate now describes a different population, and re-deriving it against that population
+// is not the act the rule above forbids. The forbidden act is dropping a floor at **unchanged**
+// scope to turn a red run green; this is a floor following its own subject. What makes the
+// distinction more than a form of words is `coverage-floors.json`, added in the same edit: **every
+// package is pinned separately, one point under its own measured value**, so nothing the old 94
+// protected is now unprotected. `@tflw/lang` was never held at 94 in any useful sense — it sat at
+// 98.22 and could have shed four points inside a passing global average. It is held at 97 now.
+//
+// The two tiers answer different questions and both are kept:
+//
+//   · `.c8rc.json` — the **aggregate backstop**. One number over everything, pinned under the
+//     measured whole (91.10/89.94/82.02). It catches a collapse, and it is deliberately the weaker
+//     of the two. It stays `check-coverage: true` because a reader of `ci.yml` must be able to find
+//     a real floor in the file that comment names.
+//   · `coverage-floors.json` — the **gate**, run below. Nine populations spanning 68.87% to 98.22%
+//     on lines and 39.56% to 100% on functions; no single figure can hold a spread like that, and
+//     an average over it is exactly `M86`'s *a number about the wrong thing*.
+//
+// A package with coverage and no pin is a FAILURE there, not a default — `D540`'s rule that an
+// allow-list is the honest half and not a silencer.
 
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
@@ -54,6 +83,13 @@ function run(command, args) {
   if (error) throw error;
   return status ?? 1;
 }
+
+// `M234`. The page gate's bundle is copied here so c8 can still read it when it remaps, which
+// happens after every workspace has finished and long after the gate deleted its own scratch. It is
+// keyed by vite's content hash, so a stale copy is never *wrong* — it is only unread and growing, at
+// about 4 MB a gate per run. Cleared here rather than by the gate, because two gates write into it
+// within one run and neither of them owns it.
+rmSync(join(repoRoot, 'coverage', '.ui-bundle'), { recursive: true, force: true });
 
 console.log('› bundling with source maps (TFLW_BUNDLE_SOURCEMAP=1)');
 const bundled = run(npm, ['run', 'bundle', '--prefix', 'packages/cli']);
@@ -88,4 +124,41 @@ console.log('› c8 npm run test:raw');
 // This ceiling moves with the suite, it does not stay fixed. When it is next hit, the honest
 // choices are to raise it again or to narrow what `.c8rc.json` instruments with `all: true` —
 // not to drop a floor, which measures something else entirely.
-process.exit(run(process.execPath, ['--max-old-space-size=8192', require.resolve('c8/bin/c8.js'), npm, 'run', 'test:raw']));
+const status = run(process.execPath, ['--max-old-space-size=8192', require.resolve('c8/bin/c8.js'), npm, 'run', 'test:raw']);
+
+// `M234` — THE POST-CONDITION, because the way this instrument breaks is silent.
+//
+// `packages/cli/test/ui-coverage.ts` collects the page gate's browser coverage and hands it to c8
+// through a source map. Every *loud* failure of that path is asserted where it happens: no map
+// emitted, no script reported. The one that says nothing is a map that resolves to the wrong place
+// — and it does not error, it files 55 files' worth of real lines under a path nobody reads while
+// `all: true` backfills the real paths at 0%. Measured exactly so during the build: 641 of 2425
+// functions non-zero in the coverage file, `ui/src` reading **0** in the report. One `resolve()`
+// took it to **61.91%** on the same data.
+//
+// So the run asserts its own instrument afterwards, and the subject is chosen to make the assertion
+// mean something: `ComposePane.tsx` is imported by **no** file in `packages/ui/test`, so the only
+// thing that can put a covered line in it is the browser. A unit test cannot quietly hold this up.
+// Its measured value from the appearance gate alone is 53.38%; the floor here is not a threshold on
+// the UI, it is `> 0` — *did the mechanism run at all*.
+const WITNESS = 'packages/ui/src/ComposePane.tsx';
+const lcov = join(repoRoot, 'coverage', 'lcov.info');
+if (existsSync(lcov)) {
+  const record = readFileSync(lcov, 'utf8').split('end_of_record').find((r) => r.includes(WITNESS));
+  const hit = Number(/^LH:(\d+)$/m.exec(record ?? '')?.[1] ?? 0);
+  if (hit === 0) {
+    console.error(
+      `\n✗ the page gate's browser coverage did not reach ${WITNESS}.\n` +
+        `  No unit test imports that file, so a zero here means the browser tier was not counted —\n` +
+        `  the source map resolved somewhere c8 could not file, or the collector never ran. Whatever\n` +
+        `  number this run printed for packages/ui/src is unit tests only. See\n` +
+        `  packages/cli/test/ui-coverage.ts; do not read the floor until this is green.`,
+    );
+    process.exit(1);
+  }
+  console.log(`› browser coverage reached ${WITNESS}: ${hit} line(s) hit`);
+}
+// `M234` — the per-package gate. After the witness above, because a floor read off an instrument
+// that did not run is the thing the witness exists to refuse.
+const floors = run(process.execPath, [join(repoRoot, 'scripts', 'coverage-floors.mjs')]);
+process.exit(status || floors);

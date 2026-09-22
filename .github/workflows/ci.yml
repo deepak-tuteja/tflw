@@ -247,6 +247,13 @@ jobs:
       # point low on purpose — is documented at length in `scripts/coverage.mjs`. **Do not lower it
       # to make a red run green.** Write the test the uncovered line is asking for.
       #
+      # `M234`: THERE ARE TWO FLOORS NOW, and a red step is usually the second one. `.c8rc.json`
+      # holds the aggregate backstop; `coverage-floors.json` holds one pin per package, and that is
+      # the gate that actually names what slipped. A package with coverage and no pin fails there by
+      # design. Both are derived in `scripts/coverage.mjs`, which also explains why the aggregate
+      # moved 94 -> 90 when `packages/ui/src` entered the scope — a floor following its own subject,
+      # not a floor lowered to make a run green.
+      #
       # The four numbers are deliberately NOT repeated here. `M134a-01` prescribed copying them into
       # this comment; doing so would have created a fourth place they live and a fourth place they
       # can go stale, which is the exact defect this comment is being rewritten to repair. Two homes
