@@ -9537,6 +9537,11 @@ test('`M217` `C2`: a draft belongs to its file and survives a look at another on
     // Back, and the work is there.
     await p.locator('[data-file-row="a.tflw"]').click();
     await p.locator('[data-compose-dirty]').waitFor();
+    /* `M234` `A` — wait for the ROWS, not only for the dirty mark (`D1308`). `[data-compose-dirty]`
+       says the buffer came back; it does not say the sequence has been drawn from it, and the
+       count below does not retry. Node 22 read **0** rows against 11 in CI. Same hazard as
+       `M213` `S4`'s, at the next site. */
+    await p.locator('.seq-row').nth(rows - 1).waitFor({ timeout: 60_000 });
     assert.equal(await p.locator('.seq-row').count(), rows, 'the pending edit came back with the file');
   });
 });
@@ -9711,7 +9716,20 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
            second row, which is exactly where the backlog of undismissed menus is deepest. */
         const box = await p.locator('.ctx-menu:not([data-menu-placed="measuring"])').boundingBox();
         if (box === null || box.x < 0 || box.y < 0 || box.x + box.width > size.width || box.y + box.height > size.height) {
-          off.push(`${row} at ${size.width}x${size.height} → ${JSON.stringify(box)}`);
+          /* `M234` `A` — SAY WHAT WAS SEEN, because twice now a repair has been guessed from
+             `→ null` alone and twice it has been wrong (`D1308`). `null` from `boundingBox()`
+             means *not visible*, and this gate cannot currently tell an unplaced menu from a
+             zero-height one from one that closed between the wait and the read. CI reports the
+             SAME row at the SAME viewport on both runs — `[data-dir-toggle="tests"]` at 700x420 —
+             which is a deterministic fact about that environment rather than a race, and none of
+             it reproduces on the box. So the gate is made to report its own state instead of
+             being repaired on a third guess. */
+          const seen = await p.locator('.ctx-menu').evaluateAll((els) => els.map((e) => {
+            const r = e.getBoundingClientRect();
+            return { placed: e.getAttribute('data-menu-placed'), w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) };
+          }));
+          const rowBox = await p.locator(row).first().boundingBox();
+          off.push(`${row} at ${size.width}x${size.height} → ${JSON.stringify(box)} · menus ${JSON.stringify(seen)} · row ${JSON.stringify(rowBox)}`);
         }
         await p.keyboard.press('Escape');
         await p.locator('.ctx-menu').waitFor({ state: 'detached' });
