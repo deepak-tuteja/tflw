@@ -13345,7 +13345,7 @@ it (`S5`).
 
 ### M208
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M208_SECURITY_TRIAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M208_SECURITY_TRIAGE.md`</sub>
 
 **`M208` — security triage gets a home, and the baseline becomes a project fact**
 
@@ -13569,5 +13569,15 @@ from a gesture the grammar refuses.
   ledger 10 → 6.
 - **`M232` BUILT** — `M213-06`, `M213-07`, `M213-19`, `M215-01`, `M220-02`, `M222-02` closed and
   `M232-01` filed and closed in the round that found it; ledger **6 → 0**.
+
+### M234
+
+<sub>cited from tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M234_CORPUS_AND_SITE.md`</sub>
+
+**`M234` — the corpus the docs photograph, and the site that shows it**
+
+*Scoped 2026-09-22 by grilling. Stages `A`-`C` BUILT and merged 2026-09-22 (`tflw#228`, rebase,
+3 commits) — the example corpus, the coverage gate that landed red, and the per-package floor.
+Stages `D`-`H`, the docs site itself, are not built.*
 
 <!-- GENERATED:decisions:end -->
