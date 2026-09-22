@@ -302,6 +302,11 @@ before(async () => {
     // M3e: real accessible/inaccessible pages for `expect page has no … a11y violations`.
     '/a11y-clean': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_CLEAN_HTML),
     '/a11y-bad': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_BAD_HTML),
+    // `M230` `A` (`M228-01`): the *same* broken page under the policy this project's own
+    // `sec/csp-missing` rule asks a reader to set. Same bytes as `/a11y-bad`, one extra header —
+    // so a difference in verdict between the two routes is the policy and nothing else.
+    '/a11y-csp': (_req, res) =>
+      res.writeHead(200, { 'content-type': 'text/html', 'content-security-policy': "default-src 'self'; script-src 'self'" }).end(A11Y_BAD_HTML),
     '/a11y-dynamic': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_DYNAMIC_HTML),
     // `M147d`/`A3-11`: same two subjects, observed late enough that `timeout expect` cannot reach them.
     '/a11y-slow': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(A11Y_SLOW_HTML),
@@ -1612,6 +1617,57 @@ test('a `critical` floor correctly fails against a page that really does have cr
   const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
   assert.equal(report.ok, false);
   assert.match(asEntry(report.tests[0], 'functional').error ?? '', /found 2/);
+});
+
+/**
+ * `M230` `A`, `D1261` (`M228-01`) — **the a11y scan returns a verdict under a strict CSP.**
+ *
+ * The defect this replaces was not a wrong answer, it was *no answer*: `page.addScriptTag` is a
+ * page resource, a `script-src 'self'` policy refuses it, and the matcher raised. The site's own
+ * contradiction is the sharp half — `guide/security-scanning.md` ships `sec/csp-missing` as a
+ * **serious** finding, so following this project's security advice broke this project's a11y
+ * construct, and `examples/storefront` (which sets the header) is where it was found.
+ *
+ * **The count is four, not five, and that is the gate's whole point.** `/a11y-csp` serves
+ * `A11Y_BAD_HTML` byte-for-byte with one header added, and the first draft of this test asserted
+ * the same five violations `/a11y-bad` produces — reasoning that identical bytes must produce an
+ * identical reading. They do not, and the reason is the thing worth gating: `default-src 'self'`
+ * refuses the **inline `style` attribute** too, so the ghost button renders black-on-white and
+ * `color-contrast` genuinely does not fire. Measured on the box, three contexts over the same
+ * page: plain 5 with `button color=rgb(238,238,238)`, under the policy **4** with
+ * `rgb(0,0,0)`, and under `browser.newContext({ bypassCSP: true })` **5** with `rgb(238,238,238)`
+ * again.
+ *
+ * So `4` is not a fixture quirk to be worked around — it is the **discriminator between the two
+ * candidate repairs**, and it makes `D1261`'s rule falsifiable by a number rather than only
+ * arguable. *A product that judges a page's security headers must not silently disable one of them
+ * to take its reading*: a scan reporting five here is a scan reading a page the user's server never
+ * sent. The explicit `color-contrast` assertion below is that control, and it is the one
+ * `bypassCSP` fails.
+ *
+ * The remaining two assertions cover the other direction. The four rules are named, because a scan
+ * that injected nothing and reported nothing would **pass** and a gate asserting only *did not
+ * raise* would call that green. And no Playwright machinery reaches the reader — that is the
+ * assertion the original mutation reddens, since restoring `addScriptTag` puts *"Executing inline
+ * script violates the following Content Security Policy directive"* where a verdict belongs.
+ */
+test('`M230` `A`: an a11y scan under a strict CSP returns its verdict rather than raising (`D1261`)', async () => {
+  const shortExpectConfig: ResolvedConfig = { ...config, timeouts: { ...config.timeouts, expect: 300 } };
+  const { program } = parseSource(`test "a11y under CSP"
+  open "/a11y-csp"
+  expect page has no a11y violations
+`);
+  const { report } = await runProgram(program, shortExpectConfig, { source: 'x', browserManager });
+  assert.equal(report.ok, false);
+  const error = asEntry(report.tests[0], 'functional').error ?? '';
+  // axe genuinely ran and genuinely read this page.
+  assert.match(error, /expected page to have no a11y violations, but found 4/);
+  for (const rule of ['image-alt', 'label', 'landmark-one-main', 'region']) assert.match(error, new RegExp(rule));
+  // The policy is still in force. `color-contrast` is absent because the inline `style` attribute
+  // was refused — under `bypassCSP: true` it comes back and this line is what says so.
+  assert.doesNotMatch(error, /color-contrast/);
+  // And no tool error reaches the reader.
+  assert.doesNotMatch(error, /Content Security Policy|addScriptTag|inline script/i);
 });
 
 test('negation: `not has no … violations` passes when the page genuinely has that severity', async () => {

@@ -410,7 +410,12 @@ test('the API builders refuse in the form’s own words', () => {
     [() => buildApiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'form', fields: [] }, label: null }), /at least one field/],
     [() => buildApiStep({ service: null, method: 'POST', path: '/x', headers: [], body: { kind: 'form', fields: [{ key: 'a b', value: 'v' }] }, label: null }), /is not a form field name/],
     [() => buildExpect({ soft: false, quantifier: 'any', subject: { kind: 'status' }, matcher: 'equals', operand: '200' }), /`any` and `all` quantify a list/],
-    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: 'items[x]' }, matcher: 'equals', operand: '1' }), /is not a path segment/],
+    // `M230` `B`: the wording moved with the grammar. `bodyPath` reads the path with the parser's
+    // own `parsePathText` now instead of its own regex, so it refuses the whole path rather than
+    // one piece of it — and the refusal names the quoted spelling `D1262` added, because a person
+    // typing `items[x]` into the form is exactly the reader who has not heard of it.
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: 'items[x]' }, matcher: 'equals', operand: '1' }), /is not a path — write a name/],
+    [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: 'items[x]' }, matcher: 'equals', operand: '1' }), /"quoted key"/],
     [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'status' }, matcher: 'equals', operand: '' }), /compares against something/],
     [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'request' }, matcher: 'connects', operand: '200' }), /takes no value/],
     [() => buildExpect({ soft: false, quantifier: null, subject: { kind: 'header', name: '' }, matcher: 'equals', operand: '"x"' }), /needs a header name/],

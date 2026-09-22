@@ -9146,6 +9146,25 @@ choice and the flag is this run's, which is what keeps a fresh `--baseline-write
 before it is committed. A config key that a flag could not override would make the committed
 document the only reachable one.
 
+### D1262
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+
+**`D1262` — a body path segment may be quoted, and quoting is how a key that is not an identifier
+is spelled.** `body."content-type"`, `body."0"`, `body.items[0]."unit price"`. Additive: no
+spelling that parsed before parses differently, which is what the `1.0.0` freeze will require and
+is free to take now. The AST is **unchanged** — a quoted segment is a `{ kind: 'prop' }` segment
+like any other, so nothing downstream of the parser needed a branch.
+
+### D1264
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+
+**`D1264` — `capture` and `{interpolation}` read the same path grammar, so they take the same
+spelling in the same round.** This is the decision `M213-18` named as owed and did not take. The
+alternative — widening `expect` alone — is refused for the reason `M169d5` records: *a rule spent
+in one implementation and not the other lets parity agree with itself.*
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -13055,5 +13074,19 @@ the grilling found wrong, for a reason recorded as `D1043` below.
 `M206` `Q6` confirmed the break is real and repaired it *in the language rather than in the rule*,
 then deferred the work. `M207` built the strips and deferred it again, deliberately, because this
 is a language change and a new write path rather than a UI round.
+
+### M230
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+
+**§2 — `M230`, two holes in the language**
+
+**`M230` closes two ledger rows a reader meets without ever opening the page: `M228-01`, where
+`expect page has no … a11y violations` raises against any page with a strict
+`Content-Security-Policy`, and `M213-18`, where a response key that is not a bare identifier cannot
+be asserted on at all.** BUILT 2026-09-22. Four decisions, `D1261`–`D1264`: axe-core is injected
+through the browser's debugging protocol rather than added to the page as a script, and a body path
+segment may be quoted — `body."content-type"`, `body."0"` — with `capture` and `{interpolation}`
+taking the same spelling in the same round.
 
 <!-- GENERATED:decisions:end -->

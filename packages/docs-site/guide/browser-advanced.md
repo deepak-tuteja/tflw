@@ -195,6 +195,12 @@ violations` also counts `critical` findings. Omit it to count every severity. Re
 hydrating gets the same grace a not-yet-rendered locator gets. A failing assertion lists up to 5
 real violations (rule id, severity, description, target element).
 
+The scan works on a page with a strict Content-Security-Policy — including the one
+[`sec/csp-missing`](/guide/security-scanning) asks you to set. axe-core is evaluated through the
+browser's debugging protocol rather than added to the page as a script, so the policy under test
+stays exactly as the server sent it and a later assertion about behaviour under CSP is still
+measuring the real thing.
+
 ## Visual regression
 
 ```tflw fragment

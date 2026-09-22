@@ -320,7 +320,11 @@ Subject     := 'status' NetworkRef?
                                                                   # alert | confirm | prompt | beforeunload.
                                                                   # The second word is required: a bare
                                                                   # `dialog` would have to imply one silently
-BodyPath    := ('.' IDENT | '[' NUMBER ']')+                     # .items[0].price
+BodyPath    := ('.' (IDENT | STRING) | '[' NUMBER ']')+           # .items[0].price, ."content-type"
+                                                                  # A quoted segment names a key that is not
+                                                                  # an identifier (M230/D1262). Quotes mean
+                                                                  # the key; brackets mean the nth element,
+                                                                  # so ."0" and [0] are different subjects.
 NetworkRef  := 'to' STRING ('with' 'method' STRING)?              # (§9.7, M3d)
              | 'of' 'request' 'to' STRING ('with' 'method' STRING)?  # trailing clause on status/header/body/body text
 
@@ -433,7 +437,12 @@ Atom        := STRING | NUMBER | 'true' | 'false' | 'null'
              | CallName '(' (Value (',' Value)*)? ')'             # action/JS-helper call (§8)
              | IDENT                                              # variable/capture reference
 
-Interp      := '{' IDENT ('.' IDENT | '[' NUMBER ']')* '}'
+Interp      := '{' IDENT ('.' (IDENT | STRING) | '[' NUMBER ']')* '}'
+                                                                  # The head is a variable name and is always
+                                                                  # bare; later segments take the same quoted
+                                                                  # spelling BodyPath does (M230/D1264). Inside
+                                                                  # a string literal those quotes are escaped:
+                                                                  # "ct is {o.\"content-type\"}".
 JsonDoc     := Object | Array                                    # what a `body` may be (M147d/D639)
 Object      := '{' (Field (',' Field)* ','?)? '}'
 Field       := (IDENT | STRING) ':' Value

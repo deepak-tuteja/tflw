@@ -791,12 +791,17 @@ export interface ExpectEdit {
   readonly snapshotName: string;
 }
 
-/** `items[0].price` — a body path as the language spells it. */
+/** `items[0].price` — a body path as the language spells it, which since `M230` `B` (`D1262`)
+ *  includes a quoted key: `headers."content-type"`, `byId."0"`. The rule is `print.ts`'s
+ *  `spellProp` and `D1263`'s: quote when, and only when, the bare spelling would not parse back. */
 function pathText(segments: readonly PathSegment[]): string {
   let out = '';
   for (const segment of segments) {
     if (segment.kind === 'index') out += `[${segment.index}]`;
-    else out += out === '' ? segment.name : `.${segment.name}`;
+    else {
+      const spelled = /^[A-Za-z_][A-Za-z0-9_]*$/.test(segment.name) ? segment.name : `"${segment.name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+      out += out === '' ? spelled : `.${spelled}`;
+    }
   }
   return out;
 }
@@ -2019,8 +2024,13 @@ export function ResponsePanel({ ran, open, onVerify, onCapture }: {
           {tickable.capped || tickable.skipped > 0 ? (
             <p className="muted" data-compose-ticks-elided>
               {tickable.capped ? `only the first ${LEAF_CAP} values are listed — the body below is whole. ` : ''}
+              {/* `M230` `B` closed `M213-18`, so a hyphenated or numeric key is now offered as
+                  `body."content-type"` rather than counted here. The line stays because a
+                  response body is arbitrary bytes from a service under test and `leaves` still
+                  checks every path it is about to offer reads back — a count that is expected to
+                  be zero is not the same as a count that cannot happen. */}
               {tickable.skipped > 0
-                ? `${tickable.skipped} value${tickable.skipped === 1 ? '' : 's'} sit under a key \`body.<path>\` cannot spell (M213-18) — the body below shows them.`
+                ? `${tickable.skipped} value${tickable.skipped === 1 ? '' : 's'} sit under a key \`body.<path>\` cannot spell — the body below shows them.`
                 : ''}
             </p>
           ) : null}

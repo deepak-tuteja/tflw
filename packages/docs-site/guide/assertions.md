@@ -29,6 +29,7 @@ matcher on the right is comparing against:
 | `duration` | wall time of the request | `expect duration is less than 500ms` |
 | `header "<name>"` | one response header, by name | `expect header "content-type" contains "json"` |
 | `body` / `body.<path>` | the body parsed as JSON, addressed by dot/index path | `expect body.items[0].price equals 9.99` |
+| `body."<key>"` | one key of that body whose name is not a bare word | `expect body."content-type" equals "json"` |
 | `body text` | the body as a raw string | `expect body text contains "healthy"` |
 | `body bytes` | the body as untouched bytes | `expect body bytes has count 1024` |
 | `body csv` / `body csv[N].col` | the body parsed as RFC-4180 CSV | `expect body csv[0].name equals "Widget"` |
@@ -36,6 +37,31 @@ matcher on the right is comparing against:
 
 `request` is the ninth and the odd one out — it judges the connection attempt rather than a
 response, and has [its own section](#connection-failure-assertions) below.
+
+### Keys that are not bare words
+
+A path segment is normally a bare word — `body.items[0].price`. When a key is not one, **quote
+it**:
+
+```tflw fragment
+api GET /products
+expect body."content-type" equals "application/json"
+expect body."0".name equals "Widget"
+expect body.items[0]."unit price" is greater than 0
+```
+
+Quotes name *the key*; brackets take a number and name *the nth element*. So `body."0"` reads an
+object keyed `"0"` and `body[0]` reads the first element of an array — different subjects, and both
+occur in real APIs.
+
+The same spelling works everywhere a path does. `capture body."content-type" as ct` binds it, and a
+`{ref}` hole reads it — inside a string, the quotes are escaped like any others:
+
+```tflw fragment
+api GET /products
+capture body."content-type" as ct
+log "served as {ct}"
+```
 
 Three of these earn their existence on responses that are not JSON:
 

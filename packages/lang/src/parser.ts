@@ -4081,12 +4081,37 @@ class Parser {
     }
   }
 
+  /**
+   * `body.items[0].price`, and — since `M230` `B` (`D1262`) — `body."content-type"`.
+   *
+   * **The quoted segment exists because a path was only ever something a person typed** (`M213-18`).
+   * A human does not attempt a key they can see is unspellable, so the corpus held zero evidence of
+   * the limit for the language's whole life; it took `response.ts` enumerating *every* path in a
+   * real response body to produce the counterexample, and real services key objects by id and
+   * inline header maps into bodies routinely. `expect body.content-type equals "json"` did not
+   * parse, `body.0` did not parse, and neither failure was reachable by reading the grammar.
+   *
+   * It is **additive**: no spelling that parsed before parses differently, which is what the
+   * `1.0.0` freeze will require and is free to take now. A quoted segment is read for its **text**
+   * — the raw decoded token — so `."a{b}"` names the literal key `a{b}` and no interpolation is
+   * defined inside a path. A path is resolved before any value is, so there is nothing for an
+   * interpolation there to mean.
+   *
+   * `["0"]` is deliberately not a second spelling of the same thing: brackets take a number and
+   * mean *the nth element*, quotes take text and mean *the key*, and a JSON object keyed `"0"`
+   * is a different subject from the first element of an array. Both occur, and they are written
+   * `body."0"` and `body[0]`.
+   */
   private parseBodyPath(): PathSegment[] {
     const segs: PathSegment[] = [];
     while (this.check('dot') || this.check('lbracket')) {
       if (this.check('dot')) {
         this.advance();
-        const name = this.expect('ident', 'a property name after `.`');
+        if (this.check('string')) {
+          segs.push({ kind: 'prop', name: this.advance().value });
+          continue;
+        }
+        const name = this.expect('ident', PROP_AFTER_DOT);
         if (!name) break;
         segs.push({ kind: 'prop', name: name.value });
       } else {
@@ -5457,10 +5482,20 @@ class Parser {
     const first = this.expect('ident', 'a variable name inside `{…}`');
     if (!first) return null;
     const ref: PathSegment[] = [{ kind: 'prop', name: first.value }];
+    // `D1264` — `capture` and `{interpolation}` read the same path grammar, so they take the same
+    // spelling in the same round. `capture` gets the quoted segment for free (it shares
+    // `parseSubject`); this is the other half, and widening `expect` alone was refused for the
+    // reason `M169d5` records: a rule spent in one implementation and not the other lets parity
+    // agree with itself. The *head* stays a bare ident — it is a variable name, and `let "a-b" = …`
+    // is not a thing the language has.
     while (this.check('dot') || this.check('lbracket')) {
       if (this.check('dot')) {
         this.advance();
-        const name = this.expect('ident', 'a property name after `.`');
+        if (this.check('string')) {
+          ref.push({ kind: 'prop', name: this.advance().value });
+          continue;
+        }
+        const name = this.expect('ident', PROP_AFTER_DOT);
         if (!name) break;
         ref.push({ kind: 'prop', name: name.value });
       } else {
@@ -5800,20 +5835,122 @@ export function parseStringParts(value: string): StringPart[] {
   return parts;
 }
 
-/** Parse `orderId`, `body.id`, `items[0].price` into path segments, or null if malformed. */
-function parseRefText(text: string): PathSegment[] | null {
-  const trimmed = text.trim();
-  if (!/^[A-Za-z_][A-Za-z0-9_]*(\s*\.\s*[A-Za-z_][A-Za-z0-9_]*|\s*\[\s*\d+\s*\])*$/.test(trimmed)) return null;
+/**
+ * Parse path **text** — `orderId`, `body.id`, `items[0].price`, `headers."content-type"` — into
+ * segments, or `null` if it is not a path.
+ *
+ * **One implementation, three callers, and that is the point** (`M230` `B`, `D1264`). Before this
+ * round the same grammar was written three times: here for `{ref}` holes inside a string,
+ * `parseBodyPath` above for the token stream, and `build.ts`'s own regex for text a person types
+ * into the page. `M213-18`'s carry is that they had already drifted in the direction nobody could
+ * see — each was *narrower* than a real response body, identically, so nothing disagreed and
+ * nothing was wrong. `M169d5` names the failure mode: a rule spent in one implementation and not
+ * the other lets parity agree with itself.
+ *
+ * `quotedHead` is the one real difference between the callers and is therefore a parameter rather
+ * than a third copy. A `{ref}` hole opens with a **variable name**, which is always a bare
+ * identifier because `let` binds nothing else; a body path opens with a **key**, which may need
+ * quoting like any other. Passing it wrongly is visible: a quoted head in a string hole would name
+ * a variable that cannot be bound.
+ *
+ * Whitespace is tolerated around separators (`items [0] . price`) because the previous regex
+ * tolerated it and a spelling that parsed must keep parsing.
+ */
+export function parsePathText(text: string, opts: { readonly quotedHead?: boolean } = {}): PathSegment[] | null {
+  const src = text.trim();
   const segs: PathSegment[] = [];
-  const re = /\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*(\d+)\s*\]|^([A-Za-z_][A-Za-z0-9_]*)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(trimmed)) !== null) {
-    if (m[3] !== undefined) segs.push({ kind: 'prop', name: m[3] });
-    else if (m[1] !== undefined) segs.push({ kind: 'prop', name: m[1] });
-    else if (m[2] !== undefined) segs.push({ kind: 'index', index: Number(m[2]) });
+  let i = 0;
+  const ws = (): void => {
+    while (i < src.length && (src[i] === ' ' || src[i] === '\t')) i++;
+  };
+  /** A quoted key, decoded with the same escape set the lexer uses (`ESCAPES`). Returns `null` on
+   *  an unterminated quote or an escape the language does not have, so the caller refuses the whole
+   *  path rather than inventing a key. */
+  const quoted = (): string | null => {
+    i++; // opening "
+    let out = '';
+    while (i < src.length) {
+      const ch = src[i]!;
+      if (ch === '"') {
+        i++;
+        return out;
+      }
+      if (ch === '\\') {
+        const next = src[i + 1];
+        if (next === undefined) return null;
+        const decoded = next === 'n' ? '\n' : next === 't' ? '\t' : next === 'r' ? '\r' : next === '"' ? '"' : next === '\\' ? '\\' : null;
+        if (decoded === null) return null;
+        out += decoded;
+        i += 2;
+        continue;
+      }
+      out += ch;
+      i++;
+    }
+    return null; // unterminated
+  };
+  const bare = (): string | null => {
+    const m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(src.slice(i));
+    if (!m) return null;
+    i += m[0].length;
+    return m[0];
+  };
+
+  ws();
+  if (i >= src.length) return null;
+  if (src[i] === '"') {
+    if (opts.quotedHead !== true) return null;
+    const head = quoted();
+    if (head === null) return null;
+    segs.push({ kind: 'prop', name: head });
+  } else {
+    const head = bare();
+    if (head === null) return null;
+    segs.push({ kind: 'prop', name: head });
+  }
+
+  for (;;) {
+    ws();
+    if (i >= src.length) break;
+    if (src[i] === '.') {
+      i++;
+      ws();
+      if (src[i] === '"') {
+        const name = quoted();
+        if (name === null) return null;
+        segs.push({ kind: 'prop', name });
+        continue;
+      }
+      const name = bare();
+      if (name === null) return null;
+      segs.push({ kind: 'prop', name });
+      continue;
+    }
+    if (src[i] === '[') {
+      i++;
+      ws();
+      const m = /^\d+/.exec(src.slice(i));
+      if (!m) return null;
+      i += m[0].length;
+      ws();
+      if (src[i] !== ']') return null;
+      i++;
+      segs.push({ kind: 'index', index: Number(m[0]) });
+      continue;
+    }
+    return null; // trailing junk — not a path
   }
   return segs.length > 0 ? segs : null;
 }
+
+function parseRefText(text: string): PathSegment[] | null {
+  return parsePathText(text);
+}
+
+/** The `.`-segment diagnostic, written once because `parseBodyPath` and `parseInterp` both give it
+ *  and a reader meeting `TF010` here should learn the quoted spelling from the error itself —
+ *  `D1262` is additive, so nobody has a reason to look for it. */
+const PROP_AFTER_DOT = 'a property name after `.` — a bare word, or a quoted key such as `."content-type"`';
 
 export function parse(tokens: readonly Token[]): ParseResult {
   return new Parser(tokens).parse();
