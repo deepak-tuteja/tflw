@@ -4255,7 +4255,7 @@ applicable** — never a violation, and never a silent pass. The result carries 
 
 ### D285
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +14 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +15 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D285 — zero applicable rules is a failure, not a pass**
 
@@ -4327,7 +4327,7 @@ one word covers both scan kinds.
 
 ### D291
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +9 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D291 — D21's declaration half lands now, and Tier 1 requires it**
 
@@ -4915,7 +4915,7 @@ different resolutions.
 
 ### D343
 
-<sub>cited from SPEC.md, tflw-tests/tflw.config · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/scan-door/tflw.config, tflw-tests/tflw.config · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D343 — `TF060` widens from "the default `api` base" to every scannable origin**
 
@@ -7843,7 +7843,7 @@ larger number it did not measure.
 
 ### D847
 
-<sub>cited from tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/census-shape.mjs, tflw-tests/scripts/lib/reach.mjs +2 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/discover-mutation-kills.mjs +6 more · lifted from `PLAN_M164_ROSTER_VACUITY.md`</sub>
 
 **`D847` — the installation proof is the bundle with its build stamp normalised out, and `D843`'s named mechanism does not work**
 
@@ -8599,7 +8599,7 @@ adopted verbatim; `D953` is what makes it true rather than aspirational.
 
 ### D955
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/refresh-tflw.mjs +1 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+<sub>cited from tflw-tests/.gitignore, tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs +2 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
 **`D955` — a branch refresh marks itself, and the mark is not `commit`.** `D737` governs what the
 build could *observe*; this records what the packer was *told*. A `'released'` grader may refuse a
@@ -9014,7 +9014,7 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
 
 ### D1023
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/lib/bundle-identity.mjs, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
 
 - **D1023 — the `M195` rule's gate line carries `TFLW_BIN`.** `M196-01`, found when S1's first
   measurement did not move: the sibling's `regression.mjs` resolves the *released* tflw (its
@@ -9028,7 +9028,7 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
 
 ### D1024
 
-<sub>cited from SPEC.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/stack-ports.mjs +3 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/stack-ports.mjs +4 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
 
 - **D1024 — a config URL may name a non-secret environment override with the literal as its
   default.** `api [service] env NAME default "<url>"`, `web env NAME default "<url>"`,
@@ -9041,7 +9041,7 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
 
 ### D1025
 
-<sub>cited from tflw-tests/cli.mjs, tflw-tests/scripts/lib/stack-ports.mjs, tflw-tests/tflw.config · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+<sub>cited from tflw-tests/cli.mjs, tflw-tests/scripts/lib/stack-ports.mjs, tflw-tests/tflw-acceptance/load-door/tflw.config +1 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
 
 - **D1025 — the stack takes the same names.** `docker-compose.yml` publishes
   `${TFLW_PORT_API:-4001}`, `${TFLW_PORT_INVENTORY:-4002}`, `${TFLW_PORT_WEB:-8090}`,
@@ -9129,6 +9129,15 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
   the CSRF header by verb. apiV2 is the *target*; the arrival server is the *instrument*, and an
   instrument route can be as artificial as the plant needs (`D745`'s split).
 
+### D1044
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/browser-contrast.tflw, tflw-tests/tflw-acceptance/scan-door/mixed.tflw · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
+
+**`D1044` — a panel is earned by a construct, not granted by a door.** Inside a project every
+test shows the panels its own source earns. Add a `threshold` to an API test and the workload
+panel appears on that test, in whatever mode you are in. Nothing is hidden by the door you came
+through, so a mixed file — which is every real file — is never shown in thirds.
+
 ### D1060
 
 <sub>cited from SPEC.md · lifted from `PLAN_M208_SECURITY_TRIAGE.md`</sub>
@@ -9145,6 +9154,63 @@ wrong is a build that is greener than the evidence. **`--baseline` wins**: the k
 choice and the flag is this run's, which is what keeps a fresh `--baseline-write` output inspectable
 before it is committed. A config key that a flag could not override would make the committed
 document the only reachable one.
+
+### D1205
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/browser-contrast.tflw, tflw-tests/tflw-acceptance/load-door/playback-and-plan.tflw, tflw-tests/tflw-acceptance/load-door/rate-shapes.tflw · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+
+**`D1205` — a workload is an ordinary clause of a declaration, and any door that can hold one may edit it**
+
+`D1044` has said since `M200` that **a panel is earned by the construct and never granted by the
+door**. The workload row is the one place the product does the opposite: it grants the editor to
+LOAD by name, and the grant is enforced by a link rather than by a rule.
+
+### D1225
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/playback-and-plan.tflw · lifted from `PLAN_M226_WORKLOAD_FOOTER.md`</sub>
+
+**`D1225` — the footer is earned by the workload, not granted by the door**
+
+The user asked for it *"for LOAD door"*. It is taken on the **construct** instead, because §1.2
+says the construct is what predicts the need: a declaration carrying a workload has the tallest
+editor on the page and the shortest sequence beside it, and that is true of a workload test opened
+on the API door as well. This is `D1044` (*a panel is earned by the construct, never granted by the
+door*) and it is the same axis `D1209` took for region 2's segment one round ago — including
+where the gate goes, which is **on API**, so that it cannot pass for a door's reason
+(`M223` `F`'s vacuity lesson).
+
+### D1235
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/playback-and-plan.tflw · lifted from `PLAN_M227_FOOTER_LEGIBILITY.md`</sub>
+
+**`D1235` — the footer yields to a live playback region**
+
+Found by the user on a populated BROWSER playback: the plan band sits above `PLAYBACK` and the
+trace, and *a footer that is not the last thing is not a footer*.
+
+### D1238
+
+<sub>cited from tflw-tests/tflw-acceptance/scan-door/crawls.tflw · lifted from `PLAN_M228_SCANS_DOOR.md`</sub>
+
+**`D1238` — a `crawl` is drawn and not built**
+
+`OutlineCrawl` joins `OutlineHook | OutlineTest` in `FileOutline.declarations`, so the sequence and
+the sidebar tree both draw it. Its rows are **read-only, and say why** — which is not a compromise
+but this table's own written rule, from `DoorVocabulary.constructs`:
+
+### D1239
+
+<sub>cited from tflw-tests/tflw-acceptance/scan-door/mixed.tflw · lifted from `PLAN_M228_SCANS_DOOR.md`</sub>
+
+**`D1239` — the authorization state is a region-2 segment, earned by the construct**
+
+### D1254
+
+<sub>cited from tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M229_UI_REVIEW.md`</sub>
+
+**`D1254` — `current` is a property of a run, not a run.**
+`report/current` is the newest run copied, so the list drew one run twice. The newest row carries
+the marker; there is no second row.
 
 ### D1262
 
@@ -9164,6 +9230,16 @@ like any other, so nothing downstream of the parser needed a branch.
 spelling in the same round.** This is the decision `M213-18` named as owed and did not take. The
 alternative — widening `expect` alone — is refused for the reason `M169d5` records: *a rule spent
 in one implementation and not the other lets parity agree with itself.*
+
+### D1271
+
+<sub>cited from tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+
+**`D1271` — `files` is `artefacts`, and `listReports` says which tests a report holds**
+
+`M213-19`. `ReportEntry.files` is the artefact list — `results.json`, `report.html`, `junit.xml` —
+and the first consumer to read it as *the `.tflw` files this run executed* matched nothing,
+silently. The carry is **a field name that is a category rather than a contract**.
 
 ### D1275
 
@@ -11128,7 +11204,7 @@ free. The highest decision in `PLAN_M130B_AUTHZ_ENGINE.md` is `D335`, so this pl
 
 ### M131a
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/authz-scan-public-target.tflw, tflw-tests/tflw.config · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/authz-scan-public-target.tflw, tflw-tests/tflw-acceptance/scan-door/tflw.config +1 more · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **`M131a` — tflw**
 
@@ -12716,7 +12792,7 @@ a parity gate*, and one was built on 2026-09-06. This widens it.
 
 ### M184
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/verify-provenance.mjs +1 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/bundle-identity.mjs, tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs +2 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
 **`M184` — the refresh is a local act, the artifact is rsynced, and the banner names the mode rather than the thing**
 
@@ -12753,7 +12829,7 @@ is that the arrangement is **already half-doing this, informally, and the halves
 
 ### M184c
 
-<sub>cited from tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs, tflw-tests/scripts/refresh-tflw.mjs +1 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
+<sub>cited from tflw-tests/.gitignore, tflw-tests/scripts/lib/tflw-bin.mjs, tflw-tests/scripts/lib/tflw-provenance.mjs +2 more · lifted from `PLAN_M184_REFRESH_IS_LOCAL.md`</sub>
 
 **`M184c` — the ref a build was packed from (`D955`, `D737`)**
 
@@ -13018,7 +13094,7 @@ hand. Those three are fixed first (`M192b`), so the phases are green from the da
 
 ### M196
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +2 more · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +4 more · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
 
 **`M196` — a reuse window is a frame**
 
@@ -13033,7 +13109,7 @@ running the extracted actions against the stack.
 
 ### M197
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +25 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +26 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
 
 **`M197` — the sweep runs its four groups at once**
 
@@ -13103,7 +13179,7 @@ the grilling found wrong, for a reason recorded as `D1043` below.
 
 ### M203
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M203_DOORS_MEET_A_PROJECT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +4 more · lifted from `PLAN_M203_DOORS_MEET_A_PROJECT.md`</sub>
 
 **`M203` — the doors meet a project**
 
@@ -13179,7 +13255,7 @@ served page. Successor to `M209`.
 
 ### M211
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M211_LEDGER_DRAWDOWN.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +6 more · lifted from `PLAN_M211_LEDGER_DRAWDOWN.md`</sub>
 
 **`M211` — the ledger drawdown: six open rows, and what each one turns out to be**
 
@@ -13198,7 +13274,7 @@ Successor to `M210`, which made Compose *read* the file. This round makes it **r
 
 ### M213
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M213_TFLW_UI.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M213_TFLW_UI.md`</sub>
 
 **M213 — the tflw UI: a theme, a base layer, and three doors that can compose**
 
@@ -13287,16 +13363,28 @@ Status: **SCOPED 2026-09-21; §4 settled by measurement the same day; A/B/C BUIL
 
 ### M224
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/.gitignore, tflw-tests/tflw-acceptance/load-door/editing-cases.tflw +3 more · lifted from `PLAN_M224_LOAD_DOOR.md`</sub>
 
 **`M224` — the LOAD door stops being a form and starts being a door**
 
 The user, after accepting `M223` `G` on the live page: *"lets move to LOAD door now — updating its
 compose pane as per the standard we have generalised for API and BROWSER door."*
 
+### M227
+
+<sub>cited from tflw-tests/tflw-acceptance/load-door/playback-and-plan.tflw · lifted from `PLAN_M227_FOOTER_LEGIBILITY.md`</sub>
+
+**`M227` — the footer earns its height, and speaks with one voice**
+
+`M226` moved region 2 to the foot of the pane for a workload-bearing declaration and measured the
+move as costing the editor nothing. It did not measure what the footer then *held*. This round is
+the consequence: the plan panel is the tallest tenant region 2 can carry and it is the one tenant
+that was never given a floor, so on every workload test in the corpus the picture a load tool
+exists to show opens clipped to 20% of itself.
+
 ### M228
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M228_SCANS_DOOR.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/.gitignore, tflw-tests/tflw-acceptance/scan-door/crawls.tflw +2 more · lifted from `PLAN_M228_SCANS_DOOR.md`</sub>
 
 **`M228` — the SCANS door stops being a form**
 
@@ -13308,7 +13396,7 @@ compose pane as per the standard we have generalised for API and BROWSER door."*
 
 ### M229
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M229_UI_REVIEW.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M229_UI_REVIEW.md`</sub>
 
 **`M229` — what the six-pass review found, built**
 
@@ -13342,7 +13430,7 @@ from a gesture the grammar refuses.
 
 ### M232
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
 
 **`M230`–`M232` — the ledger to zero, before the site describes the page**
 
