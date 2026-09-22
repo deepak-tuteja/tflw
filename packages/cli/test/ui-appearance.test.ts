@@ -843,7 +843,23 @@ test('`M215` `B3`: the coloured copy and the field under it are one box, in all 
       await wear(theme);
       await page.locator('[data-seq-row="request"] [data-seq-pick]').first().click();
       await page.locator('[data-editor-tab="body"]').click();
-      await page.locator('[data-body-ink]').waitFor();
+      /* `M234` `A2` — 60s, and say what was on the page if it still is not there (`D1308`).
+         The default 30 timed out here on CI Node 22 and on a 12-way-loaded box, while an
+         unloaded box renders it every time — the same shape as the fourteenth-row wait above,
+         where the default was the binding constraint rather than the page. If 60 is not the
+         answer either, the message below is: this gate cannot presently tell a body editor that
+         never opened from one that opened without ink, and guessing between them from a bare
+         `TimeoutError` is what this round has already got wrong twice. */
+      await page.locator('[data-body-ink]').waitFor({ timeout: 60_000 }).catch(async () => {
+        const state = await page.evaluate(() => ({
+          tab: document.querySelector('[data-editor-tab="body"]')?.getAttribute('aria-selected') ?? null,
+          editor: document.querySelectorAll('[data-editor]').length,
+          bodyEdit: document.querySelectorAll('[data-body-edit-text]').length,
+          ink: document.querySelectorAll('[data-body-ink]').length,
+          rows: document.querySelectorAll('[data-seq-row]').length,
+        }));
+        assert.fail(`[data-body-ink] never appeared on ${theme} — ${JSON.stringify(state)}`);
+      });
       await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
 
       const fit = await page.evaluate(() => {
