@@ -1288,10 +1288,11 @@ test('no control on any door or tab lacks a tip', async () => {
       // reads the old one and the mismatch is the thing worth finding.
       const ASKS = '[data-tip], [data-tip-derived]';
       // **The one exemption, and it is a whole class rather than a list of names.** A landing door
-      // is a card: its blurb and its `like` line are printed on it as text a reader is already
-      // looking at, so a tooltip there would be the control's own words said back to it — which is
-      // the fifteen echoes `M216` `B1` measured and `D1127` removed. Counted rather than skipped,
-      // so the carve-out cannot quietly become the page.
+      // is a card: its label, blurb and count are printed on it as text a reader is already looking
+      // at, so a tooltip there would be the control's own words said back to it — which is the
+      // fifteen echoes `M216` `B1` measured and `D1127` removed. Counted rather than skipped, so
+      // the carve-out cannot quietly become the page. (It named a fourth line, `like`, until
+      // `M233` §7 removed that copy; the exemption is the card, not the line count.)
       const SELF_SAID = '.door';
       const out: string[] = [];
       let n = 0;

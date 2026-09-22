@@ -78,7 +78,6 @@ export function Landing({ project, error, noProject, onOpen, onCreated }: Landin
           >
             <span className="door-label">{door.label}</span>
             <span className="door-blurb">{door.blurb}</span>
-            <span className="muted door-like">{door.like}</span>
             <span className="door-count muted" data-door-state={noProject ? 'create' : 'open'}>
               {creating === door.id
                 ? 'making it…'

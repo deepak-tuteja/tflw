@@ -22,16 +22,13 @@ export interface Door {
   readonly label: string;
   /** What this door is for, in the words a newcomer needs before they have a vocabulary. */
   readonly blurb: string;
-  /** The reference the grilling named for this door's surface — kept because it is the fastest
-   *  way to say what the pane will feel like, and because each was the user's own word. */
-  readonly like: string;
 }
 
 export const DOORS: readonly Door[] = [
-  { id: 'api', label: 'API', blurb: 'call an endpoint, assert what comes back, chain one call into the next', like: 'like Bruno — files on disk, git-friendly, no cloud' },
-  { id: 'browser', label: 'BROWSER', blurb: 'drive a real page: click, fill, and assert what a person would see', like: "like Playwright's inspector" },
-  { id: 'load', label: 'LOAD', blurb: 'run the work you already wrote at a rate, and hold it to a threshold', like: 'like JMeter, minus the tree' },
-  { id: 'scan', label: 'SCANS', blurb: 'crawl a surface and judge every response against a severity bar', like: 'a scanner' },
+  { id: 'api', label: 'API', blurb: 'call an endpoint, assert what comes back, chain one call into the next' },
+  { id: 'browser', label: 'BROWSER', blurb: 'drive a real page: click, fill, and assert what a person would see' },
+  { id: 'load', label: 'LOAD', blurb: 'run the work you already wrote at a rate, and hold it to a threshold' },
+  { id: 'scan', label: 'SCANS', blurb: 'crawl a surface and judge every response against a severity bar' },
 ];
 
 export const DOOR_BY_ID: Readonly<Record<Lens, Door>> = Object.fromEntries(DOORS.map((d) => [d.id, d])) as Readonly<Record<Lens, Door>>;
