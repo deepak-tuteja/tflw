@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { RecordCoalescer, pathOfUrl, type RawRecordEvent, type RecordedAction } from '../src/browser.js';
+import { RecordCoalescer, pathOfUrl, type RawRecordEvent, type RecordedAction, type RecordedLocator } from '../src/browser.js';
 
 const raw = (cssPath: string, name: string) => ({
   buttonName: name, fieldName: name, listName: null, textName: null, cssPath, primaryKind: 'field' as const,
@@ -20,18 +20,24 @@ const ev = (over: Partial<RawRecordEvent> & Pick<RawRecordEvent, 'kind'> & { css
   tag: over.tag ?? 'INPUT',
   checked: over.checked ?? null,
   kind: over.kind,
+  /* **A click defaults to the one a mouse made**, so every gate written before `D1267` goes on
+     asserting about a real gesture rather than accidentally about a synthetic one. The synthetic
+     shape is spelled out in full where it is the subject. */
+  detail: over.detail ?? (over.kind === 'click' ? 1 : null),
+  activeIsTarget: over.activeIsTarget ?? true,
+  scopes: over.scopes ?? [],
 });
 
 /** The resolver, stubbed: naming an element needs a live page, and what this file is about is what
  *  happens to the events once they are named. */
-const resolve = async (r: { cssPath: string }): Promise<string> => `field ${JSON.stringify(r.cssPath)}`;
+const resolve = async (r: { cssPath: string }): Promise<RecordedLocator> => ({ syntax: `field ${JSON.stringify(r.cssPath)}`, within: null });
 
 const run = async (events: readonly RawRecordEvent[]): Promise<readonly RecordedAction[]> => {
   const c = new RecordCoalescer();
   const out: RecordedAction[] = [];
   for (const e of events) out.push(...(await c.accept(e, resolve)));
   const tail = c.flush();
-  if (tail !== null) out.push({ kind: 'fill', locator: await resolve(tail.raw), value: tail.value });
+  if (tail !== null) out.push({ kind: 'fill', locator: (await resolve(tail.raw)).syntax, value: tail.value });
   return out;
 };
 

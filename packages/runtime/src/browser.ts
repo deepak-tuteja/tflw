@@ -1425,16 +1425,50 @@ export interface RawRecordEvent {
   readonly inputType: string | null;
   readonly tag: string;
   readonly checked: boolean | null;
+  /**
+   * `MouseEvent.detail` for a `click`, `null` for every other kind — the click count, which is
+   * **0 for a click no pointer made** (`M220-01`, `D1267`).
+   */
+  readonly detail: number | null;
+  /**
+   * Whether `document.activeElement` was the event's own target when it fired. Read in the page
+   * because it is a fact about the moment: by the time Node hears about the click, focus has
+   * moved on.
+   */
+  readonly activeIsTarget: boolean;
+  /** The acted-on element's `aria-label`-bearing ancestors, nearest first (`D1266`). */
+  readonly scopes: readonly RecordScope[];
+}
+
+/** One candidate `within` scope, as the page reports it. */
+export interface RecordScope {
+  readonly label: string;
+  /** `<ul>`, `<ol>` or `role="list"` — the shapes the language spells as `list "name"`. */
+  readonly listish: boolean;
 }
 
 /** One recorded action, already resolved to a locator the language can print. */
 export interface RecordedAction {
-  readonly kind: 'click' | 'fill' | 'select' | 'tick' | 'untick' | 'press' | 'open';
-  /** `button "Sign in"` — the same syntax `pick` prints, and `null` for an `open` or a page-level
-   *  `press`, which name no element. */
+  readonly kind: 'click' | 'fill' | 'select' | 'tick' | 'untick' | 'press' | 'open' | 'switch' | 'close';
+  /** `button "Sign in"` — the same syntax `pick` prints, and `null` for an `open`, a `switch`, a
+   *  `close` or a page-level `press`, which name no element. */
   readonly locator: string | null;
-  /** The value for a `fill`/`select`, the key for a `press`, the path for an `open`. */
+  /** The value for a `fill`/`select`, the key for a `press`, the path for an `open`, the 1-based
+   *  tab number for a `switch`. */
   readonly value: string | null;
+  /**
+   * The scope this action's locator needs to be unambiguous — `list "Products"`, or
+   * `css "[aria-label=\"Product 2\"]"` — written as the `within` block that wraps it (`D1266`).
+   * `null` when the name stood alone, which is the ordinary case.
+   */
+  readonly within?: string | null;
+  /**
+   * **This click opened a new tab** (`D1268`), so it is written as the `switch to new tab` block
+   * that wraps it rather than as a bare click. The block and not a following `switch to tab N`,
+   * because the runtime must be listening for the context's `page` event *before* the trigger
+   * runs — which is the race a flat recording loses intermittently rather than loudly.
+   */
+  readonly opensNewTab?: boolean;
 }
 
 /**
@@ -1541,7 +1575,25 @@ function installRecordCapture(marker: string): void {
     };
   };
 
-  (window as unknown as { __tflwRecordSend: (kind: string, el: Element, value: string | null) => void }).__tflwRecordSend = (kind, el, value) => {
+  /**
+   * The nameable ancestors of the acted-on element, **nearest first** — `M219-03`, `D1266`.
+   *
+   * Only the label is collected here, because what counts as *nameable* is a question for the
+   * language and the live page, not for the DOM: Node asks whether each spelling resolves to one
+   * element and whether the acted-on element is the only match inside it.
+   */
+  (window as unknown as { __tflwRecordScopes: (el: Element) => unknown }).__tflwRecordScopes = (el) => {
+    const found: { label: string; listish: boolean }[] = [];
+    let up: Element | null = el.parentElement;
+    for (let i = 0; i < 8 && up && up !== document.body; i++) {
+      const label = (up.getAttribute('aria-label') ?? '').trim();
+      if (label) found.push({ label, listish: up.tagName === 'UL' || up.tagName === 'OL' || up.getAttribute('role') === 'list' });
+      up = up.parentElement;
+    }
+    return found;
+  };
+
+  (window as unknown as { __tflwRecordSend: (kind: string, el: Element, value: string | null, detail: number | null) => void }).__tflwRecordSend = (kind, el, value, detail) => {
     const input = el as HTMLInputElement;
     (window as unknown as { __tflwRecordReport: (e: unknown) => void }).__tflwRecordReport({
       kind,
@@ -1550,26 +1602,32 @@ function installRecordCapture(marker: string): void {
       inputType: el.tagName === 'INPUT' ? String(input.type ?? '').toLowerCase() : null,
       tag: el.tagName,
       checked: el.tagName === 'INPUT' ? Boolean(input.checked) : null,
+      detail,
+      scopes: (window as unknown as { __tflwRecordScopes: (el: Element) => unknown }).__tflwRecordScopes(el),
+      /* **Read here, not in Node.** Which element has focus is a fact about the instant the event
+         fired; by the time the report crosses into Node the form has submitted and focus has
+         moved. `D1267`. */
+      activeIsTarget: document.activeElement === el,
     });
   };
 
   document.addEventListener('click', (event) => {
     if (event.target instanceof Element) {
-      (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null) => void }).__tflwRecordSend('click', event.target, null);
+      (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null, d: number | null) => void }).__tflwRecordSend('click', event.target, null, event.detail);
     }
   }, true);
 
   document.addEventListener('input', (event) => {
     if (event.target instanceof Element) {
       const value: unknown = (event.target as HTMLInputElement).value;
-      (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null) => void }).__tflwRecordSend('input', event.target, typeof value === 'string' ? value : null);
+      (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null, d: number | null) => void }).__tflwRecordSend('input', event.target, typeof value === 'string' ? value : null, null);
     }
   }, true);
 
   document.addEventListener('change', (event) => {
     if (event.target instanceof Element) {
       const value: unknown = (event.target as HTMLInputElement).value;
-      (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null) => void }).__tflwRecordSend('change', event.target, typeof value === 'string' ? value : null);
+      (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null, d: number | null) => void }).__tflwRecordSend('change', event.target, typeof value === 'string' ? value : null, null);
     }
   }, true);
 
@@ -1615,10 +1673,11 @@ function installRecordCapture(marker: string): void {
     if (editing) return;
     if (!command && !bare) return;
     if (command && event.key.length > 1 && !bare) return;
-    (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null) => void }).__tflwRecordSend(
+    (window as unknown as { __tflwRecordSend: (k: string, el: Element, v: string | null, d: number | null) => void }).__tflwRecordSend(
       'press',
       event.target,
       [...mods, event.key].join('+'),
+      null,
     );
   }, true);
 }
@@ -1706,8 +1765,14 @@ export function wirePickSession(page: PWPage, onPick: (picked: PickedLocator) =>
  * `change` on an `<input>`/`<select>` and would otherwise be written as *fill this control with
  * the string "on"*, which parses, runs, and does something else.
  */
+/** `within` is **absent** unless there is one, so the ordinary action stays the three-field object
+ *  it has always been and nothing downstream has to know about a field it never sees (`D1266`). */
+function scope(at: RecordedLocator): { within?: string } {
+  return at.within === null ? {} : { within: at.within };
+}
+
 export class RecordCoalescer {
-  private pending: { readonly cssPath: string; readonly raw: RawPickInfo; value: string } | null = null;
+  private pending: { readonly cssPath: string; readonly raw: RawPickInfo; readonly scopes: readonly RecordScope[]; value: string } | null = null;
   /**
    * **What has already been written for each element** — `M220` `E` (`D1175`, closing the second
    * half of `M219-02`).
@@ -1734,12 +1799,12 @@ export class RecordCoalescer {
    * emit one; that leaves a stale entry for a `<select>`'s own path, which is harmless because a
    * `<select>` never reaches the text-`change` branch that reads this map.
    */
-  flush(): { readonly raw: RawPickInfo; readonly value: string } | null {
+  flush(): { readonly raw: RawPickInfo; readonly scopes: readonly RecordScope[]; readonly value: string } | null {
     const out = this.pending;
     this.pending = null;
     if (out === null) return null;
     this.written.set(out.cssPath, out.value);
-    return { raw: out.raw, value: out.value };
+    return { raw: out.raw, scopes: out.scopes, value: out.value };
   }
 
   /**
@@ -1751,12 +1816,14 @@ export class RecordCoalescer {
    */
   async accept(
     event: RawRecordEvent,
-    resolve: (raw: RawPickInfo) => Promise<string>,
+    resolve: (raw: RawPickInfo, scopes: readonly RecordScope[]) => Promise<RecordedLocator>,
   ): Promise<readonly RecordedAction[]> {
     const out: RecordedAction[] = [];
     const emitPending = async (): Promise<void> => {
       const flushed = this.flush();
-      if (flushed !== null) out.push({ kind: 'fill', locator: await resolve(flushed.raw), value: flushed.value });
+      if (flushed === null) return;
+      const at = await resolve(flushed.raw, flushed.scopes);
+      out.push({ kind: 'fill', locator: at.syntax, value: flushed.value, ...scope(at) });
     };
 
     if (event.kind === 'input') {
@@ -1764,20 +1831,22 @@ export class RecordCoalescer {
       // default — not what the user did. Its state is a `change`.
       if (event.inputType === 'checkbox' || event.inputType === 'radio') return out;
       if (this.pending !== null && this.pending.cssPath !== event.raw.cssPath) await emitPending();
-      this.pending = { cssPath: event.raw.cssPath, raw: event.raw, value: event.value ?? '' };
+      this.pending = { cssPath: event.raw.cssPath, raw: event.raw, scopes: event.scopes, value: event.value ?? '' };
       return out;
     }
 
     if (event.kind === 'change') {
       if (event.inputType === 'checkbox' || event.inputType === 'radio') {
         await emitPending();
-        out.push({ kind: event.checked ? 'tick' : 'untick', locator: await resolve(event.raw), value: null });
+        const ticked = await resolve(event.raw, event.scopes);
+        out.push({ kind: event.checked ? 'tick' : 'untick', locator: ticked.syntax, value: null, ...scope(ticked) });
         return out;
       }
       if (event.tag === 'SELECT') {
         if (this.pending !== null && this.pending.cssPath === event.raw.cssPath) this.flush();
         else await emitPending();
-        out.push({ kind: 'select', locator: await resolve(event.raw), value: event.value ?? '' });
+        const chosen = await resolve(event.raw, event.scopes);
+        out.push({ kind: 'select', locator: chosen.syntax, value: event.value ?? '', ...scope(chosen) });
         return out;
       }
       // A text field: the `change` is the authoritative final value, replacing whatever the
@@ -1790,7 +1859,7 @@ export class RecordCoalescer {
          half: an author who cleared the field and retyped the identical string produced `input`
          events on the way, and those are a real second fill. */
       if (this.pending === null && this.written.get(event.raw.cssPath) === (event.value ?? '')) return out;
-      this.pending = { cssPath: event.raw.cssPath, raw: event.raw, value: event.value ?? '' };
+      this.pending = { cssPath: event.raw.cssPath, raw: event.raw, scopes: event.scopes, value: event.value ?? '' };
       await emitPending();
       return out;
     }
@@ -1802,10 +1871,28 @@ export class RecordCoalescer {
          it again, which for a checkbox is the opposite of what was recorded. The `change` that
          follows says what happened; this is the event that says the mouse moved. */
       if (event.inputType === 'checkbox' || event.inputType === 'radio' || event.tag === 'SELECT') return out;
-      out.push({ kind: 'click', locator: await resolve(event.raw), value: null });
+      /* **A click nobody made is not a click** — `M220-01`, `D1267`.
+         Pressing `Enter` in a text field submits the form, and the browser reaches the submit
+         button by dispatching a `click` at it. Recorded, that click makes a replay submit twice:
+         once for the `press` and once for the click the press itself caused.
+         `detail === 0` marks a click no pointer made — and it marks keyboard activation of a
+         focused button too, which IS a gesture, so it cannot discriminate alone. Measured with
+         `M220` `E`'s instrument:
+             real mouse click            detail 1   activeIsTarget true
+             Enter in a text field       detail 0   activeIsTarget FALSE  ← focus is on the field
+             Space on a focused button   detail 0   activeIsTarget true
+             Enter on a focused button   detail 0   activeIsTarget true
+             Enter on the submit button  detail 0   activeIsTarget true
+         The focused element separates them with nothing invented. The last row is why this is a
+         disjunction and not a replacement: pressing `Enter` on a focused submit button is both a
+         real gesture and a form submit, and dropping every `detail === 0` click would lose it. */
+      if (event.detail === 0 && !event.activeIsTarget) return out;
+      const clicked = await resolve(event.raw, event.scopes);
+      out.push({ kind: 'click', locator: clicked.syntax, value: null, ...scope(clicked) });
       return out;
     }
-    out.push({ kind: 'press', locator: await resolve(event.raw), value: event.value });
+    const pressed = await resolve(event.raw, event.scopes);
+    out.push({ kind: 'press', locator: pressed.syntax, value: event.value, ...scope(pressed) });
     return out;
   }
 }
@@ -1837,50 +1924,181 @@ export function wireRecordSession(
   onAction: (action: RecordedAction) => void,
   onClosed: () => void,
 ): Promise<void> {
+  const context = page.context();
   let closed = false;
   const notifyClosed = (): void => {
     if (closed) return;
     closed = true;
     onClosed();
   };
+  /* The *session* ends when the tab it was started on goes, or the browser does. A second tab
+     closing is a gesture inside the session, not the end of it — which is the whole of `M219-04`
+     restated for `close`. */
   page.on('close', notifyClosed);
-  page.context().browser()?.on('disconnected', notifyClosed);
+  context.browser()?.on('disconnected', notifyClosed);
 
   const coalescer = new RecordCoalescer();
-  const resolve = async (raw: RawPickInfo): Promise<string> => (await resolvePickedRecord(page, raw)).syntax;
-  let actedSinceNavigation = false;
-  let lastUrl: string | null = null;
+  /** Tabs in the order they opened — the order `switch to tab N` counts in, 1-based. */
+  const tabs: PWPage[] = [page];
+  /** The tab the last emitted action belonged to, which is the tab a replay would be on. */
+  let active: PWPage = page;
+  /** Per tab, because a navigation is a fact about one tab and there are now several. */
+  const perTab = new Map<PWPage, { lastUrl: string | null; acted: boolean; suppressFirstOpen: boolean }>();
+  perTab.set(page, { lastUrl: null, acted: false, suppressFirstOpen: false });
+  /** Armed the instant a click is reported and before the browser has acted on it (`D1268`). */
+  const awaitingPopup = new Map<PWPage, (opened: PWPage) => void>();
   /** Events arrive faster than they resolve, and resolution asks the live DOM — so they are
    *  queued. Without this a click that navigates would be resolved against the page it navigated
    *  *to*, and a fill's flush could be emitted after the click that flushed it. */
   let queue: Promise<void> = Promise.resolve();
 
-  page.on('framenavigated', (frame) => {
-    if (frame !== page.mainFrame()) return;
-    const url = frame.url();
-    if (url === lastUrl || url === 'about:blank') return;
-    const previous = lastUrl;
-    lastUrl = url;
-    if (previous !== null && actedSinceNavigation) {
-      actedSinceNavigation = false;
+  const stateOf = (p: PWPage): { lastUrl: string | null; acted: boolean; suppressFirstOpen: boolean } => {
+    const found = perTab.get(p);
+    if (found) return found;
+    const fresh = { lastUrl: null, acted: false, suppressFirstOpen: true };
+    perTab.set(p, fresh);
+    return fresh;
+  };
+
+  /**
+   * **Emit, after saying which tab we are on.** A replay is a single cursor moving through tabs,
+   * so an action in a tab that is not the active one has to be preceded by the switch that makes
+   * it active — which is the second of the three tab constructs `M219-04` names.
+   */
+  const emit = (from: PWPage, action: RecordedAction, opened: PWPage | null): void => {
+    if (from !== active) {
+      const index = tabs.indexOf(from);
+      if (index >= 0) onAction({ kind: 'switch', locator: null, value: String(index + 1) });
+      active = from;
+    }
+    if (opened !== null && action.kind === 'click') {
+      onAction({ ...action, opensNewTab: true });
+      /* `switch to new tab`'s scoping is **not** transient — it persists past the block, the way
+         switching tabs in a real browser does. So the cursor is now in the tab that opened, and
+         the next action in the old one earns a `switch to tab N`. */
+      active = opened;
       return;
     }
-    actedSinceNavigation = false;
-    queue = queue.then(() => {
-      onAction({ kind: 'open', locator: null, value: pathOfUrl(url, previous) });
+    onAction(action);
+  };
+
+  /**
+   * **A bounded wait on every click, and that is the price `D1268` named.**
+   *
+   * The block exists because the runtime has to be listening before the trigger runs; a recorder
+   * that emitted the click first and corrected itself afterwards could not, because `D1265` makes
+   * stdout a stream somebody may be redirecting into a file.
+   *
+   * It is affordable for a measured reason: the capture listener runs in the **capture phase**, so
+   * Node hears about the click *before* the browser follows the link — the watcher is always armed
+   * in time. Measured on the box, the context's `page` event then arrived while the click was
+   * still resolving (resolution completed at +40 ms), so the race is usually already decided by
+   * the time this is awaited, and the full window is paid only by clicks that open nothing.
+   */
+  const armPopup = (opener: PWPage): Promise<PWPage | null> =>
+    new Promise((settle) => {
+      const timer = setTimeout(() => {
+        awaitingPopup.delete(opener);
+        settle(null);
+      }, POPUP_WINDOW_MS);
+      timer.unref?.();
+      awaitingPopup.set(opener, (opened) => {
+        clearTimeout(timer);
+        settle(opened);
+      });
     });
+
+  const wireNavigation = (p: PWPage): void => {
+    p.on('framenavigated', (frame) => {
+      if (frame !== p.mainFrame()) return;
+      const state = stateOf(p);
+      const url = frame.url();
+      if (url === state.lastUrl || url === 'about:blank') return;
+      const previous = state.lastUrl;
+      state.lastUrl = url;
+      /* **A tab the browser opened did not have its address typed into it.** Its first navigation
+         is the click that opened it, which is already written down as the block. */
+      if (state.suppressFirstOpen) {
+        state.suppressFirstOpen = false;
+        state.acted = false;
+        return;
+      }
+      if (previous !== null && state.acted) {
+        state.acted = false;
+        return;
+      }
+      state.acted = false;
+      queue = queue.then(() => {
+        emit(p, { kind: 'open', locator: null, value: pathOfUrl(url, previous) }, null);
+      });
+    });
+    p.on('close', () => {
+      if (p === page || closed || page.isClosed()) return;
+      const index = tabs.indexOf(p);
+      if (index < 0) return;
+      queue = queue.then(() => {
+        /* `close tab` closes the *active* one, so the cursor has to be on it first — the same
+           rule `emit` applies to every other action, and the reason this goes through it. */
+        emit(p, { kind: 'close', locator: null, value: null }, null);
+        active = tabs[index - 1] ?? page;
+      });
+    });
+  };
+
+  wireNavigation(page);
+
+  /**
+   * **THE CONTEXT, NOT THE PAGE** — `M219-04`.
+   *
+   * `wireRecordSession` wired exactly one `Page`, so everything done in a second tab was not
+   * recorded wrongly, it was not recorded at all. Measured: one click in tab 1 → 2 actions, two
+   * clicks in tab 2 → still 2, one click back in tab 1 → 3. A recording with a hole in it never
+   * looks broken, which is what made this worth a milestone rather than a patch.
+   */
+  context.on('page', (opened) => {
+    tabs.push(opened);
+    stateOf(opened);
+    wireNavigation(opened);
+    void opened
+      .opener()
+      .then((by) => {
+        /* `opener()` is the attribution, and it is the reason a popup can be tied to the click
+           that made it rather than to whatever else the context was doing. Measured true on the
+           box for a `target="_blank"` link. */
+        const waiting = by === null ? undefined : awaitingPopup.get(by);
+        if (by !== null && waiting) {
+          awaitingPopup.delete(by);
+          waiting(opened);
+        }
+      })
+      .catch(() => {});
   });
 
   return (async () => {
-    await page.exposeFunction('__tflwRecordReport', (event: RawRecordEvent) => {
-      actedSinceNavigation = true;
+    /* A **binding** and not an exposed function, because the handler now has to know which tab
+       called it — `source.page` is that, and there is no other way to ask. */
+    await context.exposeBinding('__tflwRecordReport', (source, event: RawRecordEvent) => {
+      const from = source.page;
+      stateOf(from).acted = true;
+      const opened = event.kind === 'click' ? armPopup(from) : null;
       queue = queue.then(async () => {
-        for (const action of await coalescer.accept(event, resolve)) onAction(action);
+        const actions = await coalescer.accept(event, (raw, scopes) => resolvePickedRecord(from, raw, scopes));
+        const popup = opened === null ? null : await opened;
+        for (const action of actions) emit(from, action, action.kind === 'click' ? popup : null);
       });
     });
-    await page.addInitScript(installRecordCapture, RECORD_MARKER_ATTR);
+    await context.addInitScript(installRecordCapture, RECORD_MARKER_ATTR);
   })();
 }
+
+/**
+ * How long a click waits to find out whether it opened a tab (`D1268`).
+ *
+ * Measured on the box: the context's `page` event arrived before the click finished resolving at
+ * +40 ms, so this is over six times the margin that was observed. It is a ceiling and not a delay
+ * — a click that opens a tab stops waiting the moment the tab arrives.
+ */
+const POPUP_WINDOW_MS = 250;
 
 /**
  * The path an `open` records, relative to the page that was already open.
@@ -1904,9 +2122,60 @@ export function pathOfUrl(url: string, previous: string | null): string {
   }
 }
 
-/** `resolvePickedLocator` under the recorder's own marker attribute. One function, two markers —
- *  a recording and a pick must not clear each other's mark if both are somehow live. */
-async function resolvePickedRecord(page: PWPage, raw: RawPickInfo): Promise<PickedLocator> {
+/** A resolved recorder locator, and the `within` it needs to be unambiguous (`D1266`). */
+export interface RecordedLocator {
+  /** `button "Add to cart"` — the same syntax `pick` prints. */
+  readonly syntax: string;
+  /** `list "Products"` / `css "[aria-label=\"Product 2\"]"`, or `null` when the name stood alone. */
+  readonly within: string | null;
+}
+
+/**
+ * How one candidate ancestor is spelled, in the order the language prefers.
+ *
+ * A role spelling first because it is the one a person would have written; the `aria-label`
+ * attribute second because it always exists when the page offered a label at all. Both are
+ * *semantic* — they name the container by what it is called, not by where it sits — which is the
+ * whole difference from the structural `css` path `M219-03` was filed against.
+ */
+function scopeSpellings(page: PWPage, scope: RecordScope): { readonly syntax: string; readonly pw: PWLocator }[] {
+  const out: { syntax: string; pw: PWLocator }[] = [];
+  if (scope.listish) out.push({ syntax: `list ${JSON.stringify(scope.label)}`, pw: page.getByRole('list', { name: scope.label }) });
+  /* A label carrying a quote or a backslash has no safe spelling inside a CSS attribute selector
+     here, so it contributes only its role form — one fewer candidate, never a wrong one. */
+  if (!/["\\]/.test(scope.label)) {
+    const selector = `[aria-label="${scope.label}"]`;
+    out.push({ syntax: `css ${JSON.stringify(selector)}`, pw: page.locator(selector) });
+  }
+  return out;
+}
+
+/**
+ * `resolvePickedLocator` under the recorder's own marker attribute. One function, two markers —
+ * a recording and a pick must not clear each other's mark if both are somehow live.
+ *
+ * **AND ONE TIER MORE THAN `pick` HAS** — `M219-03`, `D1266`. `pick` answers *what do I write in
+ * this field*, one element at a time, and a fallback to a structural `css` path is a fair answer
+ * to that. A recording is a sequence, and the same path pins the test to the position the row
+ * happened to be in: measured on the webV2 catalog, `button "Add to cart"` matches **12**, so a
+ * click on row one recorded a `css` path naming the `span` the mouse was over.
+ *
+ * So when no name resolves alone, the ancestors are tried as scopes. The rule is the **nearest
+ * disambiguating ancestor the language can name**, and the two halves of that came apart when it
+ * was measured:
+ *
+ * | ancestor | matches inside | nameable |
+ * |---|---|---|
+ * | +1 `div.product-row-actions` | 1 | no |
+ * | +2 `li[aria-label="Product 2"]` | 1 | yes |
+ * | +3 `ul.product-grid` | 12 | no |
+ *
+ * The *nearest* disambiguating ancestor is nameable only structurally, which is the artefact this
+ * exists to stop writing — so an ancestor that disambiguates and cannot be named is skipped, not
+ * settled for. When none qualifies the `css` path is still the answer, because a `within` that
+ * names nothing is no better than the path it would replace.
+ */
+async function resolvePickedRecord(page: PWPage, raw: RawPickInfo, scopes: readonly RecordScope[]): Promise<RecordedLocator> {
   const namesByKind: Record<'button' | 'field' | 'list' | 'text', string | null> = {
     button: raw.buttonName,
     field: raw.fieldName,
@@ -1914,17 +2183,31 @@ async function resolvePickedRecord(page: PWPage, raw: RawPickInfo): Promise<Pick
     text: raw.textName,
   };
   const order = raw.primaryKind ? [raw.primaryKind, ...PICK_KIND_ORDER.filter((k) => k !== raw.primaryKind)] : PICK_KIND_ORDER;
-  for (const kind of order) {
-    const name = namesByKind[kind];
-    if (!name) continue;
-    for (const strategy of candidateStrategies(page, kind, name)) {
-      const count = await strategy.pwLocator.count().catch(() => 0);
-      if (count !== 1) continue;
-      const marked = await strategy.pwLocator.first().getAttribute(RECORD_MARKER_ATTR).catch(() => null);
-      if (marked === '1') return { syntax: `${kind} ${JSON.stringify(name)}`, via: kind };
+  const resolvesAlone = async (scope: LocatorScope): Promise<string | null> => {
+    for (const kind of order) {
+      const name = namesByKind[kind];
+      if (!name) continue;
+      for (const strategy of candidateStrategies(scope, kind, name)) {
+        const count = await strategy.pwLocator.count().catch(() => 0);
+        if (count !== 1) continue;
+        const marked = await strategy.pwLocator.first().getAttribute(RECORD_MARKER_ATTR).catch(() => null);
+        if (marked === '1') return `${kind} ${JSON.stringify(name)}`;
+      }
+    }
+    return null;
+  };
+
+  const bare = await resolvesAlone(page);
+  if (bare !== null) return { syntax: bare, within: null };
+
+  for (const scope of scopes) {
+    for (const spelling of scopeSpellings(page, scope)) {
+      if ((await spelling.pw.count().catch(() => 0)) !== 1) continue;
+      const inside = await resolvesAlone(spelling.pw);
+      if (inside !== null) return { syntax: inside, within: spelling.syntax };
     }
   }
-  return { syntax: `css ${JSON.stringify(raw.cssPath)}`, via: 'css' };
+  return { syntax: `css ${JSON.stringify(raw.cssPath)}`, within: null };
 }
 
 export interface RecordSessionHandle {

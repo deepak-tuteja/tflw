@@ -1428,33 +1428,96 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   const lineId = useRef(0);
   useEffect(() => setSession(null), [path]);
 
-  const appendRecorded = useCallback(
-    (line: string) => {
-      /**
-       * **Parsed before it is believed, exactly as it was** (`D1095`). A recorder writes whatever
-       * the page gave it and a page's `<option>` text is arbitrary user content, so the line is
-       * read by the language before anything is done with it — what changed in `M219` `F` is only
-       * that a line that reads becomes a **row here** instead of bytes in the file.
-       *
-       * **A LINE THAT DOES NOT READ IS STILL DROPPED, AND THE ATTEMPT TO STOP DROPPING IT IS THE
-       * FINDING** (`M219-01`). Keeping it looked like closing a `D1076` silence — a gesture the
-       * language cannot spell vanishing with nothing to report — and it is not, because
-       * `tflw record`'s stream has **no framing**: the two banners it opens with (*"recording
-       * … — press Ctrl+C to stop."*, *"ready — use the page as a user would."*) fail to parse for
-       * exactly the same reason a refused gesture does, and nothing in the line says which it is.
-       * Built and measured: every session opened with two junk rows. So the page cannot attribute
-       * an unparseable line and does not pretend to; the fix belongs in the stream, and is filed
-       * rather than guessed at here.
-       */
-      const { program, diagnostics } = parseSource(`test "r"\n  ${line}\n`);
-      if (diagnostics.some((d) => d.severity === 'error')) return;
-      const node = program.tests[0]?.body[0];
-      if (node === undefined) return;
+  /**
+   * **The recorder's stdout, accumulated** — `D1265` and `D1268` together.
+   *
+   * A line could be parsed in isolation for as long as every statement *was* a line. `D1268` ends
+   * that: a click that opened a tab is written as the `switch to new tab` block that wraps it, and
+   * a block is two lines whose relationship is their indentation. So stdout is read the way an
+   * indentation-based grammar has to be read — a top-level line opens a chunk, indented lines join
+   * it, and the chunk is offered to the parser as one statement.
+   *
+   * A chunk that parses becomes a row immediately, which is what keeps an ordinary click instant.
+   * One that does not is **held**, because it may be a block whose body has not arrived yet, and
+   * it becomes an `unreadable` row the moment the next top-level line proves it was not — or when
+   * the session ends, whichever comes first.
+   */
+  const chunk = useRef<string[]>([]);
+
+  /* Spelled out rather than `Omit<SessionLine, 'id'>`, because `Omit` collapses a union into the
+     properties its members share and would refuse every row here. */
+  const pushRow = useCallback(
+    (row: { kind: 'step'; text: string; node: Step } | { kind: 'unreadable'; text: string } | { kind: 'notice'; text: string }) => {
       const id = (lineId.current += 1);
-      const row: SessionLine = { id, kind: 'step', text: print(node).ok ? (print(node) as { text: string }).text : line, node };
-      setSession((current) => (current === null ? current : { ...current, lines: [...current.lines, row] }));
+      setSession((current) => (current === null ? current : { ...current, lines: [...current.lines, { ...row, id }] }));
     },
     [],
+  );
+
+  /** Reads the held chunk. `settled` means no further line can join it, so a chunk that still does
+   *  not parse is not incomplete — it is unreadable, and now attributable as such (`D1265`). */
+  const readChunk = useCallback(
+    (settled: boolean) => {
+      const lines = chunk.current;
+      if (lines.length === 0) return;
+      const text = lines.join('\n');
+      if (text.trim() === '') {
+        chunk.current = [];
+        return;
+      }
+      /**
+       * **Parsed before it is believed, exactly as it was** (`D1095`). A recorder writes whatever
+       * the page gave it and a page's `<option>` text is arbitrary user content, so the chunk is
+       * read by the language before anything is done with it.
+       */
+      const { program, diagnostics } = parseSource(`test "r"\n${lines.map((l) => `  ${l}`).join('\n')}\n`);
+      const body = program.tests[0]?.body ?? [];
+      if (!diagnostics.some((d) => d.severity === 'error') && body.length === 1) {
+        const node = body[0]!;
+        const printed = print(node);
+        pushRow({ kind: 'step', text: printed.ok ? printed.text : text, node });
+        chunk.current = [];
+        return;
+      }
+      if (!settled) return;
+      /**
+       * **AND NOW IT IS KEPT, WHICH `M219` `F` COULD NOT DO** (`M219-01`).
+       *
+       * That build tried this and withdrew it, measured: every session opened with two junk rows,
+       * because `tflw record`'s banners failed to parse for precisely the reason a refused gesture
+       * does and nothing in the line said which it was. `D1265` moved the banners to stderr, so a
+       * line that arrives *here* and does not read is a recorder defect — which is a thing worth
+       * showing, and the silence `D1076` refuses.
+       */
+      pushRow({ kind: 'unreadable', text });
+      chunk.current = [];
+    },
+    [pushRow],
+  );
+
+  const appendRecorded = useCallback(
+    (line: string) => {
+      const joins = /^\s/.test(line) && chunk.current.length > 0;
+      if (joins) {
+        chunk.current.push(line);
+        readChunk(false);
+        return;
+      }
+      /* A new top-level line settles whatever was held: nothing can join it any more. */
+      readChunk(true);
+      chunk.current = [line];
+      readChunk(false);
+    },
+    [readChunk],
+  );
+
+  /** Everything the command said about itself, which is now everything on stderr (`D1265`) — its
+   *  banners and the word it writes when the builders refuse a gesture. Never a statement. */
+  const noticeRecorded = useCallback(
+    (text: string) => {
+      for (const line of text.split('\n')) if (line.trim() !== '') pushRow({ kind: 'notice', text: line.trim() });
+    },
+    [pushRow],
   );
 
   /**
@@ -1595,20 +1658,38 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
          never in the file, so nothing is lost by clearing them — and carrying them would put two
          sessions' gestures in one list with no way to tell them apart. */
       setSession({ kind: 'record', live: true, into: decl.name, lines: [] });
+      chunk.current = [];
       recordStop.current = recordActions(pickPath, {
         line: appendRecorded,
-        problem: (text) => setEditProblem(text),
+        /**
+         * **stderr is a notice, not an edit problem** — `D1265`.
+         *
+         * It was the latter, and could be, because the only thing that ever arrived here was the
+         * command's own diagnosis of a failure. Moving the banners off stdout puts two ordinary
+         * sentences on this channel at the start of every session, and raising an edit problem for
+         * *"recording http://… — press Ctrl+C to stop."* would be an error message for a session
+         * that started correctly.
+         *
+         * Filed in the panel instead, beside the statements, which is also where the refusals
+         * belong: *skipped one click: could not read the locator* is about the gesture the author
+         * just made, and the panel is what they are looking at.
+         */
+        problem: noticeRecorded,
         end: () => {
           recordStop.current = null;
           recordInto.current = null;
           setRecording(null);
+          /* Nothing further can join the held chunk, so it is read one last time — which is how
+             the last line of a session becomes a row rather than waiting for a gesture that will
+             never come (`D1265`). */
+          readChunk(true);
           /* **The lines stay when the browser closes**, which is the point of the panel: closing
              the browser is how you stop adding to the list, not how you throw it away. */
           setSession((current) => (current === null ? current : { ...current, live: false }));
         },
       });
     },
-    [pickPath, appendRecorded],
+    [pickPath, appendRecorded, noticeRecorded, readChunk],
   );
 
   /** The door or the file changing closes the browser, for `pick`'s reason and with its gate. */

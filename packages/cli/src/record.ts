@@ -16,6 +16,10 @@ import {
   buildSelect,
   buildCheck,
   buildPress,
+  buildWithin,
+  buildSwitchToTab,
+  buildSwitchToNewTab,
+  buildCloseTab,
   type Step,
   type LocatorSpec,
 } from '@tflw/lang';
@@ -38,17 +42,22 @@ import type { RecordedAction } from '@tflw/runtime';
  * silently: a recording that quietly loses a step is worse than one that says it did.
  */
 export function recordedLine(action: RecordedAction): { ok: true; text: string } | { ok: false; reason: string } {
+  /** The locator syntax the recorder resolved, read back through the grammar — see below. */
+  const readLocator = (syntax: string): LocatorSpec | null => {
+    const { program, diagnostics } = parseSource(`test "r"\n  click ${syntax}\n`);
+    if (diagnostics.some((d) => d.severity === 'error')) return null;
+    const step = program.tests[0]?.body[0];
+    if (!step || step.type !== 'ClickStmt') return null;
+    return { kind: step.locator.kind, value: step.locator.value.value };
+  };
+
   const locator = ((): LocatorSpec | null => {
     if (action.locator === null) return null;
     // The locator arrives as printed syntax (`button "Sign in"`), which is what `pick` emits and
     // what `resolvePickedLocator` verified. Reading it back through the parser is the same
     // discipline the page end follows: the only thing entitled to say what `button "x"` means is
     // the grammar.
-    const { program, diagnostics } = parseSource(`test "r"\n  click ${action.locator}\n`);
-    if (diagnostics.some((d) => d.severity === 'error')) return null;
-    const step = program.tests[0]?.body[0];
-    if (!step || step.type !== 'ClickStmt') return null;
-    return { kind: step.locator.kind, value: step.locator.value.value };
+    return readLocator(action.locator);
   })();
   if (action.locator !== null && locator === null) return { ok: false, reason: `could not read the locator ${JSON.stringify(action.locator)}` };
 
@@ -65,10 +74,35 @@ export function recordedLine(action: RecordedAction): { ok: true; text: string }
          than about the test — so a recorder that dropped the locator would write a line that
          passes on the machine it was recorded on. */
       case 'press': return buildPress({ keys: action.value ?? 'Enter', locator });
+      /* The two tab statements name no element and carry no value the page supplied — `switch to
+         tab N` counts in open order and `close tab` takes nothing at all (`M219-04`). */
+      case 'switch': return buildSwitchToTab(action.value ?? '1');
+      case 'close': return buildCloseTab();
     }
   })();
   if (!built.ok) return built;
-  const printed = print(built.node, { indent: 0 });
-  return printed.ok ? { ok: true, text: printed.text.trim() } : { ok: false, reason: printed.reason ?? 'the printer refused this action' };
+
+  /**
+   * **The wrappers, outside in** — `D1266` then `D1268`.
+   *
+   * A `within` scopes the statement because the name was ambiguous without it; the tab block wraps
+   * whatever came out of that, because what opened the tab is the whole gesture and not the part
+   * of it the scope happened to need. Ordering them the other way would put the scope around the
+   * block, which scopes the *wrong* document — the block's body runs in the tab that is still
+   * open, and its scope is that page's subtree.
+   */
+  const scoped = ((): { ok: true; node: Step } | { ok: false; reason: string } => {
+    if (!action.within) return built;
+    const around = readLocator(action.within);
+    if (around === null) return { ok: false, reason: `could not read the scope ${JSON.stringify(action.within)}` };
+    return buildWithin({ locator: around, frame: false, body: [built.node] });
+  })();
+  if (!scoped.ok) return scoped;
+
+  const wrapped = action.opensNewTab ? buildSwitchToNewTab([scoped.node]) : scoped;
+  if (!wrapped.ok) return wrapped;
+
+  const printed = print(wrapped.node, { indent: 0 });
+  return printed.ok ? { ok: true, text: printed.text.replace(/\s+$/, '') } : { ok: false, reason: printed.reason ?? 'the printer refused this action' };
 }
 

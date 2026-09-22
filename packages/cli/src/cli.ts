@@ -702,7 +702,24 @@ async function recordCommand(argv: string[]): Promise<number> {
     resolveClosed();
   };
   process.on('SIGINT', onSigint);
-  process.stdout.write(`recording ${url} — press Ctrl+C to stop.\n`);
+  /**
+   * **THE BANNERS GO TO STDERR, AND THAT IS `M219-01`'s REPAIR** — `D1265`.
+   *
+   * stdout carries steps and nothing else, so everything on it is a statement: a redirect writes a
+   * file whose every line is one, and the page reading this stream can finally *attribute* a line
+   * it cannot parse instead of dropping it.
+   *
+   * It could not before, and the reason is the one `M219` `F` found by building the wrong half:
+   * this banner fails to parse for precisely the reason a refused gesture does, and nothing in the
+   * line said which it was — so keeping unreadable lines as marked rows opened every session with
+   * two junk rows above the first real one. The fix belongs in the stream, not in the page.
+   *
+   * The refused alternatives were a per-line prefix and NDJSON frames, both on the same ground:
+   * each ends the redirect. A prefix writes its markers into the file; NDJSON ends the
+   * human-readable stream outright, and a recorder nobody can read over a shoulder is one nobody
+   * checks. The split is also the cheapest of the three — the refusals were already here.
+   */
+  process.stderr.write(`recording ${url} — press Ctrl+C to stop.\n`);
 
   try {
     session = await startRecordSession(
@@ -716,7 +733,7 @@ async function recordCommand(argv: string[]): Promise<number> {
       () => resolveClosed(),
     );
     if (interrupted) void session.close();
-    else process.stdout.write('ready — use the page as a user would. Close the window or press Ctrl+C to stop.\n');
+    else process.stderr.write('ready — use the page as a user would. Close the window or press Ctrl+C to stop.\n');
   } catch (e) {
     if (!interrupted) {
       process.off('SIGINT', onSigint);
