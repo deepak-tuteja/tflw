@@ -31,7 +31,7 @@
 :root {
   color-scheme: dark;
   --bg: #08090b;   --panel: #08090b;  --panel2: #0d0f12;  --input: #0e1114;
-  --line: #1b1f24; --fg: #c9d1d9;     --muted: #6e7681;
+  --line: #1b1f24; --fg: #c9d1d9;     --muted: #8b949e;
   --accent: #56d4dd; --on-accent: #04191b;
   --pass: #8fbf6b; --pass-bg: transparent; --pass-bd: transparent; --pass-on: #8fbf6b;
   --fail: #f07178; --fail-bg: transparent; --fail-bd: transparent; --fail-on: #f07178;
@@ -43,7 +43,7 @@
   /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
      is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
   --syn-kw: #56d4dd; --syn-str: #c3e88d; --syn-num: #f78c6c; --syn-typ: #c792ea;
-  --syn-var: #c9d1d9; --syn-com: #4b525c; --syn-op: #6e7681; --syn-com-style: italic;
+  --syn-var: #c9d1d9; --syn-com: #737d8d; --syn-op: #8b949e; --syn-com-style: italic;
   /* `M213` `S1` — the two colours that were painted as literals until the palette-closure gate
      asked where they came from. A scrim and a mat under a transparent screenshot are theme
      decisions like any other: `Paper` cannot use the dark three's black scrim, and `#fff`
@@ -57,7 +57,7 @@
   color-scheme: dark;
   /* surface */
   --bg: #0b0e13;   --panel: #10151d;  --panel2: #0e131a;  --input: #080b0f;
-  --line: #1e2633; --fg: #dde3ec;     --muted: #78849a;
+  --line: #1e2633; --fg: #dde3ec;     --muted: #828da2;
   --accent: #5c87c9; --on-accent: #05070a;
   /* state — THREE tokens each, and the third is the one `Ribbon` needed. `--pass`/`--fail`/`--warn`
      are FOREGROUNDS on the page's own ground, which is how every rule in this file has always used
@@ -82,7 +82,7 @@
   /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
      is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
   --syn-kw: #f2f6fb; --syn-str: #aab6c8; --syn-num: #c6d0de; --syn-typ: #8e9bb0;
-  --syn-var: #dde3ec; --syn-com: #4e5869; --syn-op: #6b7789; --syn-com-style: normal;
+  --syn-var: #dde3ec; --syn-com: #728096; --syn-op: #828da2; --syn-com-style: normal;
   --scrim: rgba(0, 0, 0, 0.5); --shot-mat: #ffffff;
   --sans: 'IBM Plex Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -90,7 +90,7 @@
 :root[data-tflw-theme='ribbon'] {
   color-scheme: dark;
   --bg: #141319;   --panel: #1d1b25;  --panel2: #191822;  --input: #100f15;
-  --line: #2e2b3a; --fg: #ece9f2;     --muted: #948fa6;
+  --line: #2e2b3a; --fg: #ece9f2;     --muted: #9691a8;
   --accent: #a78bfa; --on-accent: #17122a;
   --pass: #5bd99a; --pass-bg: #5bd99a; --pass-bd: #5bd99a; --pass-on: #0f1a14;
   --fail: #ff7a85; --fail-bg: #ff7a85; --fail-bd: #ff7a85; --fail-on: #2a0f12;
@@ -102,7 +102,7 @@
   /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
      is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
   --syn-kw: #a78bfa; --syn-str: #6fd3c7; --syn-num: #8fa7ff; --syn-typ: #e39bd4;
-  --syn-var: #ece9f2; --syn-com: #615c73; --syn-op: #948fa6; --syn-com-style: normal;
+  --syn-var: #ece9f2; --syn-com: #87819a; --syn-op: #9691a8; --syn-com-style: normal;
   --scrim: rgba(12, 10, 20, 0.6); --shot-mat: #ffffff;
   --sans: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -110,19 +110,19 @@
 :root[data-tflw-theme='paper'] {
   color-scheme: light;
   --bg: #f7f8fa;   --panel: #ffffff;  --panel2: #eef1f5;  --input: #ffffff;
-  --line: #dde2e9; --fg: #161a20;     --muted: #5c6673;
+  --line: #dde2e9; --fg: #161a20;     --muted: #5b6572;
   --accent: #2b59c3; --on-accent: #ffffff;
   --pass: #14532d; --pass-bg: #dcfce7; --pass-bd: #a7e3bd; --pass-on: #14532d;
   --fail: #7f1d1d; --fail-bg: #fee2e2; --fail-bd: #f2b4b4; --fail-on: #7f1d1d;
   --warn: #713f12; --warn-bg: #fef3c7; --warn-bd: #e8d08a; --warn-on: #713f12;
-  --m-get: #2b59c3; --m-post: #0f766e; --m-write: #a16207; --m-delete: #b91c1c;
+  --m-get: #2b59c3; --m-post: #0f766e; --m-write: #9c5f07; --m-delete: #b91c1c;
   --radius: 6px; --ctl-radius: 4px; --border: 1px; --unit: 9px;
   --label-transform: uppercase; --label-spacing: 0.1em;
   --title-size: 15px; --title-weight: 600; --kw-weight: 600;
   /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
      is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
   --syn-kw: #2b59c3; --syn-str: #0f766e; --syn-num: #7c3aed; --syn-typ: #0369a1;
-  --syn-var: #161a20; --syn-com: #8a939f; --syn-op: #5c6673; --syn-com-style: normal;
+  --syn-var: #161a20; --syn-com: #656e7b; --syn-op: #5b6572; --syn-com-style: normal;
   --scrim: rgba(22, 26, 32, 0.35); --shot-mat: #ffffff;
   --sans: 'Public Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -376,7 +376,10 @@ button.cancel { background: var(--warn); }
 
 .runs { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .run-row { display: flex; align-items: center; gap: 8px; white-space: nowrap; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; }
-.run-row.selected { border-color: var(--accent); }
+/* `M229` `E` (`D1253`) — the open report, told the way the door bar tells its open door. The
+   border alone was the whole signal since `M192`; `.doorbar-tab.on` had already settled what a
+   chosen thing in a row of peers looks like here, so this is that rule rather than a second one. */
+.run-row.selected { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
 .dot.ok { background: var(--pass); }
 .dot.fail { background: var(--fail); }
@@ -507,11 +510,33 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 
 /* The landing and the door bar (M200 A0-3, D1042). The landing is the only surface tflw has that
    answers "what is this for" before you know any of its words, so the four doors are the page —
-   not a menu above one. */
-.landing { max-width: 880px; margin: 0 auto; padding: 48px 20px 40px; }
+   not a menu above one.
+
+   **AND FOR SIX DAYS IT DREW THEM 3 + 1** — `M229` `G` (`D1258`). This block was written when the
+   page had three doors; `M200` `A0` added the fourth card on 2026-09-16 and the container never
+   grew. Four tracks at `minmax(240px, …)` with three gutters need 996px of content and the measure
+   allowed 840, so SCANS wrapped to a second row at 1280, 1440 and 1680 alike, in a card 137px tall
+   beside its peers' 174. The comment above it was the whole design record and the layout
+   contradicted it — for six days, on the one surface written for a reader who knows none of this
+   tool's words.
+
+   (`S2` said SCANS became the fourth door in `M228`, and that is a different fact: `M228` `B` made
+   it a Compose door. The landing card is `M200`'s, which is the version of the claim `git log -S`
+   answers and the one that makes the window six days rather than none.)
+
+   **So the measure is now computed from what the grid needs, rather than the grid being fitted
+   into a measure somebody picked.** The four is written once, here, as arithmetic a reader can
+   check against the rule underneath — and the gate asserts the doors occupy ONE row, so a fifth
+   door reopens this line instead of silently wrapping. `.landing-head p` keeps its own 68ch, which
+   is what stops a wider container from turning the blurb into a long line. */
+.landing {
+  --door-min: 240px; --door-gap: 12px;
+  max-width: calc(4 * var(--door-min) + 3 * var(--door-gap) + 40px);
+  margin: 0 auto; padding: 48px 20px 40px;
+}
 .landing-head h1 { font-size: 28px; margin: 0 0 2px; letter-spacing: -0.01em; }
 .landing-head p { margin: 0 0 24px; max-width: 68ch; }
-.doors { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.doors { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--door-min), 1fr)); gap: var(--door-gap); }
 .door {
   display: grid; gap: 4px; text-align: left; cursor: pointer;
   background: var(--panel); color: var(--fg); border: 1px solid var(--line);
@@ -1169,7 +1194,23 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 /* `D1118` — the gestures that make another of what this column lists, at the foot of the list. */
 .seq-foot { display: flex; flex-wrap: wrap; gap: calc(var(--unit) * 0.8); padding: calc(var(--unit) * 1); border-top: 1px solid var(--line); flex: none; }
 .seq-foot .seq-add { font-size: 12px; }
-.explorer-new { margin-top: calc(var(--unit) * 1.5); padding-top: calc(var(--unit) * 1.2); border-top: 1px solid var(--line); }
+/* **`M229` `G` (`D1259`) — it keeps its place, because reachability was a function of project
+   size.** `D1118` put the create at the FOOT of the list and the comment beside it in `Sidebar.tsx`
+   argues why; what neither said is where the foot of a 100-row list is. Measured: `scan-door` 264px
+   down, `examples/storefront` 308px, `testFlow-tests` **2404px — 1504px below a 900px fold**,
+   inside the sidebar's single scroller. Visible in every fixture and example in this repository and
+   out of reach in the one project with a real file count, which is why nothing had ever caught it.
+
+   Sticky rather than fixed, and full-bleed rather than inset: the negative inline margins pull it
+   to the sidebar's own edges so the tree scrolls UNDER an opaque strip instead of past a floating
+   button, and `var(--panel)` is the surface it is part of rather than a new one. `D1118`'s order is
+   untouched — it is still the last thing in the list, and now it is also still on screen. */
+.explorer-new {
+  position: sticky; bottom: 0;
+  margin: calc(var(--unit) * 1.5) calc(var(--unit) * -2) 0;
+  padding: calc(var(--unit) * 1.2) calc(var(--unit) * 2) calc(var(--unit) * 2);
+  border-top: 1px solid var(--line); background: var(--panel);
+}
 
 /* ── region 3: the editor, and the response under it (`D1113`, `D1116`) ────────────────────── */
 /* **`M223` `B` (`D1195`, `D1198`) — the editor track is what the editor holds.**
@@ -1508,7 +1549,6 @@ p.scan-probes::before { content: ''; }
   margin-right: 1.5ch;
   text-align: right;
   color: var(--muted);
-  opacity: 0.65;
   user-select: none;
   -webkit-user-select: none;
 }

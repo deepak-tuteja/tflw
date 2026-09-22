@@ -7,7 +7,7 @@
 // gap is the whole of `D1064` and a fixture without it cannot falsify anything.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchingFiles, parseQuery, projectTags, taggedTestCount } from '../src/search';
+import { lensesInRun, matchingFiles, parseQuery, projectTags, taggedTestCount } from '../src/search';
 import type { ProjectView } from '../src/contract';
 
 const file = (path: string, tests: Array<{ name: string; tags: string[] }>): ProjectView['files'][number] => ({
@@ -92,4 +92,52 @@ test('a fragment file is never a match, and is never hidden for it', () => {
   // other unmatched row, and `D1068`'s `—` is still what its count says.
   assert.equal(matchingFiles(p, parseQuery('@crud', p))!.has('shared/root.tflw'), false);
   assert.equal(matchingFiles(p, parseQuery('root', p))!.has('shared/root.tflw'), true, 'but its own path still matches');
+});
+
+// ── `lensesInRun` — what the run this page is about to start would reach (`M229` `B`, `D1250`) ──
+//
+// **THE FIXTURE ABOVE CANNOT STATE THIS CLAIM**, because every test in it is `lenses: ['api']` —
+// which is the vacuity `M228` `F` filed: a gate can be green because the page has nothing to read.
+// So this half gets its own corpus, shaped exactly like the defect: a file per lens, so that a
+// narrowing which crosses them is expressible at all.
+const lensed = (path: string, tests: Array<{ name: string; tags: string[]; lenses: ProjectView['files'][number]['tests'][number]['lenses'] }>): ProjectView['files'][number] => ({
+  ...file(path, tests.map((t) => ({ name: t.name, tags: t.tags }))),
+  tests: tests.map((t, i) => ({ name: t.name, tags: t.tags, line: i + 1, workload: t.lenses.includes('load'), lenses: t.lenses, sessions: [], steps: { api: 1, browser: 0, load: 0, scan: 0 } })),
+});
+
+const mixed = project([
+  lensed('tests/catalog.tflw', [{ name: 'the catalogue answers', tags: ['smoke'], lenses: ['api'] }]),
+  lensed('tests/shop.tflw', [{ name: 'the shop greets', tags: ['ui'], lenses: ['browser'] }]),
+  lensed('tests/load.tflw', [{ name: 'the catalogue holds', tags: ['perf'], lenses: ['api', 'load'] }]),
+]);
+
+test('with nothing narrowing it, the run reaches every lens the project holds', () => {
+  assert.deepEqual([...lensesInRun(mixed, [], parseQuery('', mixed))].sort(), ['api', 'browser', 'load']);
+});
+
+test('a selection is what narrows the run, and it is not the door', () => {
+  // **The case no door-keyed rule survives, and the reason `PLAN_M229_UI_REVIEW.md`'s `D1250` was
+  // amended.** A reader standing behind the API door who selects the load file is about to run a
+  // workload, so `--workers` is theirs — and the plan's `VOCABULARY.api.takesWorkers` would have
+  // hidden it. The door does not appear in this function's arguments at all, which is the point.
+  assert.deepEqual([...lensesInRun(mixed, ['tests/load.tflw'], parseQuery('', mixed))].sort(), ['api', 'load']);
+  assert.deepEqual([...lensesInRun(mixed, ['tests/catalog.tflw'], parseQuery('', mixed))], ['api']);
+  assert.deepEqual([...lensesInRun(mixed, ['tests/shop.tflw'], parseQuery('', mixed))], ['browser']);
+  // And the two flags are not one flag: this narrowing bears a workload and drives no browser.
+  const both = lensesInRun(mixed, ['tests/load.tflw', 'tests/shop.tflw'], parseQuery('', mixed));
+  assert.equal(both.has('load') && both.has('browser'), true);
+});
+
+test('a tag query narrows by TEST, a text query by FILE — the same fork `D1064` draws the label with', () => {
+  assert.deepEqual([...lensesInRun(mixed, [], parseQuery('@perf', mixed))].sort(), ['api', 'load']);
+  assert.deepEqual([...lensesInRun(mixed, [], parseQuery('@ui', mixed))], ['browser']);
+  assert.deepEqual([...lensesInRun(mixed, [], parseQuery('shop', mixed))], ['browser']);
+  // A tag nothing carries reaches nothing — the state the button already refuses to be pressed in.
+  assert.equal(lensesInRun(mixed, [], parseQuery('@nope', mixed)).size, 0);
+});
+
+test('a selection outranks a query, because that is the order the button’s own label resolves in', () => {
+  // Two answers to *what is about to run* is the failure `RunStrip`'s header names; this asserts
+  // the controls resolve it the same way the label does rather than in their own order.
+  assert.deepEqual([...lensesInRun(mixed, ['tests/shop.tflw'], parseQuery('@perf', mixed))], ['browser']);
 });

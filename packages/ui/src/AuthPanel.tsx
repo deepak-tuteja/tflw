@@ -285,7 +285,7 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
               <li key={s.name} data-auth-unused-session={s.name}>
                 <code>{s.name}</code>
                 {s.outOfScope === null ? '' : ` — ${scopeNote(s, envName)}`}{' '}
-                <button className="linkish" onClick={() => onEdit(s.line)} data-auth-edit={`session:${s.name}`} title={`open tflw.config at line ${s.line}`}>
+                <button className="linkish" onClick={() => onEdit(s.line)} data-auth-edit={`session:${s.name}`} aria-label={`edit the ${s.name} session in tflw.config`} data-tip={`open tflw.config at line ${s.line}`}>
                   [edit]
                 </button>
               </li>
@@ -315,7 +315,7 @@ function SessionRow({ name, tests, session, envName, onEdit }: {
         {session?.privileged ? <span className="chip" title="excluded from the authorization probe set — this principal is *meant* to reach other principals’ resources">privileged</span> : null}
         {session?.oauth2 ? <span className="chip" title="an OAuth2 client-credentials grant, not a hand-written login">oauth2</span> : null}
         {session === null ? null : (
-          <button className="linkish" onClick={() => onEdit(session.line)} data-auth-edit={`session:${name}`} title={`open tflw.config at line ${session.line}`}>
+          <button className="linkish" onClick={() => onEdit(session.line)} data-auth-edit={`session:${name}`} aria-label={`edit the ${name} session in tflw.config`} data-tip={`open tflw.config at line ${session.line}`}>
             [edit]
           </button>
         )}
@@ -374,7 +374,7 @@ function TargetRow({ target, repeated, onEdit }: {
         <code>{target.target}</code>
         <span className="chip" title="where this declaration is written">{target.block}</span>
         {target.line > 0 ? (
-          <button className="linkish" onClick={() => onEdit(target.line)} data-auth-edit={`target:${target.line}`} title={`open tflw.config at line ${target.line}`}>
+          <button className="linkish" onClick={() => onEdit(target.line)} data-auth-edit={`target:${target.line}`} aria-label="edit this authorized target in tflw.config" data-tip={`open tflw.config at line ${target.line}`}>
             [edit]
           </button>
         ) : null}

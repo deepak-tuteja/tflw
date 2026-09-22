@@ -1402,6 +1402,13 @@ test('a folder collapses, and the address reopens it (`D1066` — expansion is i
 // sidebar no longer assembles a command, which is what frees it to become a file tree.
 // ---------------------------------------------------------------------------
 
+// **RESTATED BY `M229` `B` (`D1250`) RATHER THAN PATCHED, BECAUSE THAT ROUND MADE IT FALSE AS
+// WRITTEN.** `workers` is no longer on every strip unconditionally — it is drawn when the run the
+// button describes would reach a workload. This test still passes and its claim is unchanged,
+// because nothing here narrows anything and `fixtures/project` holds `tests/load.tflw`; that
+// dependency was silent, so it is asserted below rather than relied on. What the test is about is
+// **reachability from every tab and every door**, which `D1250` does not touch — the strip is one
+// strip and the sidebar assembles nothing, whatever the strip happens to be carrying.
 test('the run strip carries env, workers and the button on all five tabs of all four doors, and the sidebar carries none of them', async () => {
   const doors = ['api', 'browser', 'load', 'scan'];
   const tabs = ['compose', 'source', 'run', 'auth', 'config'];
@@ -1425,6 +1432,44 @@ test('the run strip carries env, workers and the button on all five tabs of all 
       assert.equal(await page.locator('aside.sidebar [data-env-select], aside.sidebar [data-workers], aside.sidebar [data-run], aside.sidebar [data-cancel]').count(), 0, `the sidebar assembles no command on ${where}`);
     }
   }
+});
+
+// `M229` `B` (`D1250`) — a run-strip flag is earned by what the run holds, not granted by the door.
+// This closes `M216-01` and the unfiled twin beside it.
+test('`workers` and `headed` are drawn for the run the button describes, and the door is not what decides', async () => {
+  // **The narrowing that no door-keyed rule survives is the third case.** A reader standing behind
+  // the API door who selects the load file is about to run a workload — `run all` and a selection
+  // alike ignore the door — so `--workers` is theirs. `PLAN_M229_UI_REVIEW.md` specified this as two
+  // booleans on `VOCABULARY` read off the door, which would have hidden the flag that governs the
+  // tests actually about to run; the plan is amended in place with the measurement.
+  const read = async (hash: string): Promise<{ workers: number; headed: number; label: string }> => {
+    await page.goto(`${baseUrl}${hash}`);
+    await page.reload();
+    await page.locator('[data-runstrip] [data-run]').waitFor();
+    return {
+      workers: await page.locator('[data-runstrip] [data-workers]').count(),
+      headed: await page.locator('[data-runstrip] [data-headed]').count(),
+      label: (await page.locator('[data-runstrip] [data-run]').textContent()) ?? '',
+    };
+  };
+
+  // Unnarrowed: the fixture holds an `api`, a `browser` and a `load` file, so both are drawn — and
+  // this is the reading that makes the three below mean something rather than being three empties.
+  const all = await read('#/api/compose');
+  assert.deepEqual([all.workers, all.headed, all.label], [1, 1, 'run all'], 'the unnarrowed run reaches every lens the fixture holds');
+
+  // One API file: neither flag has a subject, so `D1082` removes both.
+  const api = await read('#/api/compose?files=tests/catalog.tflw');
+  assert.deepEqual([api.workers, api.headed], [0, 0], 'a run of one API file offers a workload flag and a browser flag');
+
+  // **The load file, ON THE API DOOR.** A door-keyed rule is green on every case above and red
+  // here, which is the whole of why this one is in the list.
+  const load = await read('#/api/compose?files=tests/load.tflw');
+  assert.deepEqual([load.workers, load.headed], [1, 0], '`--workers` did not follow the workload across the door');
+
+  // …and its mirror, so the two are not one flag: the browser file on the LOAD door.
+  const browser = await read('#/load/compose?files=tests/shop.tflw');
+  assert.deepEqual([browser.workers, browser.headed], [0, 1], '`--headed` did not follow the browser across the door');
 });
 
 test("the narrowing is the explorer's gesture and the strip reads it back — one request across two panes", async () => {
@@ -9317,6 +9362,13 @@ test('`M217` `C1`: the create dialog previews the bytes that land, pending edits
     await p.locator('[data-compose-new-test]').click();
     await p.locator('[data-new-name]').fill('staged beside a pending edit');
     await p.locator('[data-new-preview]').waitFor();
+    // **The whole file is asked for, because since `M229` `C` (`D1251`) the preview opens on the
+    // ADDITION.** The claim this test makes is about which *bytes* the dialog built from — the
+    // pending buffer and not the saved file — and those bytes are the surrounding file, which is
+    // now one control away rather than in front of you. Restated rather than patched: reading the
+    // addition alone here would have been a green assertion about a different claim.
+    assert.equal(await p.locator('[data-new-preview]').getAttribute('data-new-preview-showing'), 'addition');
+    await p.locator('[data-new-preview-context]').click();
     const preview = (await p.locator('[data-new-preview]').textContent())!;
     assert.match(preview, /capture body\.id as basketId\n\s+api GET \/\n\s+expect status equals 200/, 'the preview carries the pending request');
     assert.match(preview, /test "staged beside a pending edit"/, 'and the test about to be made');
@@ -9379,6 +9431,9 @@ test('`M217` `D1`: a `+` on a file row opens THAT file’s dialog (`D1139`)', as
     assert.match((await p.locator('[data-new-thing] h3').textContent())!, /b\.tflw$/, 'the dialog names the file the `+` was on');
 
     await p.locator('[data-new-name]').fill('made from the explorer');
+    // The whole file, for `D1251`'s reason — see the note on the staging test above. The claim is
+    // which file's bytes the dialog built from, and that is a claim about the context.
+    await p.locator('[data-new-preview-context]').click();
     const preview = (await p.locator('[data-new-preview]').textContent())!;
     assert.match(preview, /test "elsewhere"/, 'and is built from THAT file’s bytes');
     assert.doesNotMatch(preview, /basketId/, 'not from the one that was open a moment ago');
@@ -11476,4 +11531,221 @@ test('`M228` `F4`: the `scan` segment and the pane’s `TF060` preview both foll
     await ui.close();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// `M229` `C` (`D1251`) — the dialog previews the addition, and the addition is on screen.
+test('the create dialog shows the lines it is about to write, on every door', async () => {
+  // **The finding, in one number: the scaffold was 1183 px below the fold on LOAD.** The preview
+  // rendered the whole file, pinned at the top, in a box that shows eleven lines — so what a reader
+  // saw was the existing file's header comment, on all four doors, with nothing saying the lines
+  // the dialog exists to write were further down. `D1052` says the pane previews what will happen;
+  // this one previewed what would not change, and the cost scaled with the file.
+  //
+  // **The negative control is the product's own control, which is the best kind.** `D1251` keeps
+  // the whole file one press away, and that press reproduces the defect exactly — so the same
+  // measurement, taken twice in one page, is both the claim and the proof that the claim can fail.
+  // A code mutation would have had to invent the state this button reaches honestly.
+  const header = Array.from({ length: 60 }, (_, i) => `# a teaching comment, line ${i + 1} of sixty — this is what the dialog used to show`).join('\n');
+  const file = `${header}\ntest "the one that was already here"\n  api GET /a\n  expect status equals 200\n`;
+  await withProjectFixture({ 'one.tflw': file }, async (p, base) => {
+    for (const door of ['api', 'browser', 'load', 'scan']) {
+      await p.goto(`${base}/#/${door}/compose/one.tflw`);
+      await p.reload();
+      await p.locator('[data-compose-new-test]').click();
+      await p.locator('[data-new-name]').fill(`written on ${door}`);
+      await p.locator('[data-new-preview]').waitFor();
+
+      // The reading: where the line naming the new test sits, against what the box is showing.
+      const seen = async (): Promise<{ showing: string | null; visible: boolean; top: number; scroll: number; height: number; lines: number }> =>
+        p.locator('[data-new-preview]').evaluate((pre, name) => {
+          const rows = [...pre.querySelectorAll('[data-source-line]')];
+          const row = rows.find((r) => (r.textContent ?? '').includes(`test "${name}"`)) ?? null;
+          // Rectangles rather than `offsetTop`, because the claim is *on screen* and the box
+          // scrolls: the row's top relative to the box's own is what `scrollTop` moves.
+          const box = pre.getBoundingClientRect();
+          const top = row === null ? -1 : row.getBoundingClientRect().top - box.top;
+          return {
+            showing: pre.getAttribute('data-new-preview-showing'),
+            visible: row !== null && top >= 0 && top < pre.clientHeight,
+            top: Math.round(top),
+            scroll: Math.round(pre.scrollTop),
+            height: pre.clientHeight,
+            lines: rows.length,
+          };
+        }, `written on ${door}`);
+
+      const addition = await seen();
+      assert.equal(addition.showing, 'addition', `${door}: the dialog did not open on the addition`);
+      assert.ok(addition.lines > 1 && addition.lines <= 10, `${door}: the addition is ${addition.lines} lines — that is a file, not a scaffold`);
+      assert.ok(addition.visible, `${door}: the new test is ${addition.top}px into a box ${addition.height}px tall (scrolled ${addition.scroll})`);
+
+      // …and the control that restores the old view restores the old defect, which is what makes
+      // the line above a measurement rather than a tautology about a short string.
+      await p.locator('[data-new-preview-context]').click();
+      const whole = await seen();
+      assert.equal(whole.showing, 'file');
+      assert.ok(whole.lines > 60, `${door}: the whole-file view is ${whole.lines} lines`);
+      assert.equal(whole.visible, false, `${door}: the whole-file view was supposed to push the scaffold off screen and did not`);
+
+      await p.locator('[data-new-cancel]').click();
+      await p.locator('[data-new-thing]').waitFor({ state: 'detached' });
+    }
+  });
+});
+
+// `M229` `D` (`D1252`) — an address names what is drawn.
+test('an address that resolves to something else is corrected to what is on screen', async () => {
+  // **Three cases, and the third is the one `M228` paid for.** An unrecognised tab, an
+  // unrecognised door, and a hash naming a file the project does not have — all three drew a page
+  // and went on advertising an address that reproduces a different one.
+  await withProjectFixture(
+    { 'one.tflw': 'test "the only one"\n  api GET /a\n  expect status equals 200\n' },
+    async (p, base) => {
+      const historyLength = (): Promise<number> => p.locator('body').evaluate((el) => el.ownerDocument.defaultView!.history.length);
+      const settle = async (hash: string, want: string): Promise<{ hash: string; entries: number }> => {
+        await p.goto(`${base}/#/api/compose/one.tflw`);
+        await p.reload();
+        await p.locator('[data-tabstrip]').waitFor();
+        const before = await historyLength();
+        await p.locator('body').evaluate((el, h) => { el.ownerDocument.location.hash = h; }, hash);
+        // **Waited for, not slept on.** The correction lands in an effect that runs after the
+        // project read, so the address is the signal; a fixed delay would be a gate tuned to this
+        // machine. The wait is a string expression because this package compiles with no DOM lib
+        // (`ui-appearance.test.ts` states the rule), and it is allowed to time out: the control
+        // cases below expect the address NOT to move, and a timeout there is the pass.
+        await p.waitForFunction(`location.hash === ${JSON.stringify(want)}`, undefined, { timeout: 4000 }).catch(() => {});
+        return { hash: new URL(p.url()).hash, entries: (await historyLength()) - before };
+      };
+
+      // 1. A tab nobody has heard of. The page draws Compose, which is `doors.ts`'s own tolerance
+      //    working; the address now says so.
+      const bogusTab = await settle('#/api/bogus', '#/api');
+      assert.equal(bogusTab.hash, '#/api', 'the address kept naming a tab the page is not showing');
+
+      // 2. `#/api/runs`, which is the near-miss the review actually found — one letter from a real
+      //    tab, which is how a reader produces this state without trying.
+      assert.equal((await settle('#/api/runs', '#/api')).hash, '#/api');
+
+      // 3. **A file this project does not have.** The pane falls back to the first file, and until
+      //    now the address went on naming the other one — which is `M228`'s `%2F` defect exactly:
+      //    every reading taken off that page was honestly read off the wrong row.
+      const gone = await settle('#/api/compose/gone.tflw', '#/api/compose/one.tflw');
+      assert.equal(gone.hash, '#/api/compose/one.tflw', 'the address named a file the pane is not drawing');
+
+      // 4. A door nobody has heard of draws the landing, and the landing's address is `#`.
+      // `''` and not `'#'`: the browser stores a bare `#` as no fragment at all, so those are one
+      // address and the `URL` parser reports the shorter spelling. The page wrote `#`.
+      assert.equal((await settle('#/bogus', '')).hash, '');
+
+      // **The correction replaces rather than pushes.** Otherwise the back button walks into the
+      // address that was just corrected, and pressing it corrects it again — a trap the reader
+      // cannot get out of except by going back twice as fast as the page rewrites.
+      assert.ok(bogusTab.entries <= 1, `the correction added ${bogusTab.entries} history entries`);
+
+      // And the control: an address that is already honest is left exactly alone, so this is a
+      // correction and not a rewriter that happens to agree.
+      assert.equal((await settle('#/api/source/one.tflw', '#/api/source/one.tflw')).hash, '#/api/source/one.tflw');
+      assert.equal((await settle('#/browser/compose/one.tflw/L2', '#/browser/compose/one.tflw/L2')).hash, '#/browser/compose/one.tflw/L2');
+    },
+  );
+});
+
+// `M229` `E` (`D1253`, `D1254`, `D1255`) — the run list's first three decisions, on a page.
+test('the run list marks the open report, counts `current` as a property, and keeps the directory name out of the row', async () => {
+  // **`RunList` occurs 0 times in `DECISIONS.md`** and it draws the surface every ▶ press lands
+  // on — `UI_STRUCTURE.md` §4's headline, and the review's last pass found three defects there.
+  // The fixture is the shape that produced all three: two kept runs, and a `report/` that is a byte
+  // copy of the newer one, which is what `keepReport` leaves behind after every run this page
+  // starts.
+  const older = '2026-09-20T10-41-50-120Z';
+  const newer = '2026-09-21T11-02-03-400Z';
+  await withProjectFixture({ 'one.tflw': 'test "the only one"\n  api GET /a\n  expect status equals 200\n' }, async (p, base, dir) => {
+    const results = (passed: number, total: number): string => JSON.stringify({ ok: passed === total, total, passed, failed: total - passed, tests: [] });
+    for (const [id, body] of [[older, results(1, 2)], [newer, results(3, 3)]] as const) {
+      await mkdir(join(dir, 'report', 'runs', id), { recursive: true });
+      await writeFile(join(dir, 'report', 'runs', id, 'results.json'), body);
+    }
+    // `report/` is the newer run copied — the same bytes, which is exactly what `keepReport` does.
+    await writeFile(join(dir, 'report', 'results.json'), results(3, 3));
+
+    await p.goto(`${base}/#/api/run/one.tflw`);
+    await p.reload();
+    await p.locator('[data-runs]').waitFor();
+
+    const rows = p.locator('[data-report-row]');
+    // **`D1254` — two directories, one run each, and `current` is not a third.** Before this the
+    // list drew three rows for two runs, the top two identical in counts and instant.
+    assert.deepEqual(await rows.evaluateAll((els) => els.map((e) => e.getAttribute('data-report-row'))), [newer, older], 'the list holds one row per run, newest first');
+    assert.equal(await p.locator(`[data-report-row="${newer}"] [data-row-current]`).count(), 1, '`current` is not marked on the run that holds it');
+    assert.equal(await p.locator(`[data-report-row="${older}"] [data-row-current]`).count(), 0, 'and it is marked on a run that does not');
+
+    // **`D1255` — the directory name is provenance.** It was the widest thing in the row and the
+    // readable date sat beside it saying the same instant; it is in the tip now, which is where a
+    // value you might need to copy belongs.
+    for (const id of [newer, older]) {
+      const row = p.locator(`[data-report-row="${id}"]`);
+      const text = (await row.textContent()) ?? '';
+      assert.ok(!text.includes(id), `the row still prints its directory name: ${text}`);
+      assert.match(text, /\d/, `the row says nothing at all: ${text}`);
+      assert.ok(((await row.getAttribute('data-tip')) ?? '').includes(id), `the directory name is not in the tip either — it has simply been lost`);
+    }
+
+    // **`D1253` — which of them is open.** The class and the accent border have been here since
+    // `M192`; what was missing is a state a script or a screen reader can read, which is why the
+    // review measured this surface as having no selected state at all.
+    const pressed = (): Promise<(string | null)[]> => rows.evaluateAll((els) => els.map((e) => e.getAttribute('aria-pressed')));
+    // On arrival the shell has already opened the newest report — measured, not assumed: the first
+    // draft of this line asserted nothing was open and read `['true', 'false']`, which is the page
+    // being helpful and the gate being wrong about it.
+    assert.deepEqual(await pressed(), ['true', 'false'], 'exactly one row is marked on arrival, and it is the newest');
+    await p.locator(`[data-report-row="${older}"]`).click();
+    await p.locator(`[data-report-row="${older}"][aria-pressed="true"]`).waitFor();
+    assert.deepEqual(await pressed(), ['false', 'true'], 'exactly one row is marked, and it is the one that was opened');
+    // …and it is the row whose evidence the pane is actually showing — a marker on the wrong row
+    // is worse than none, and nothing above this line would have caught it.
+    assert.match((await p.locator('[data-report-summary], .report, main').first().textContent()) ?? '', /1\s*\/\s*2|1 of 2|passed/i);
+    await p.locator(`[data-report-row="${newer}"]`).click();
+    await p.locator(`[data-report-row="${newer}"][aria-pressed="true"]`).waitFor();
+    assert.deepEqual(await pressed(), ['true', 'false'], 'opening another run left two rows marked');
+  });
+});
+
+// `M229` `D` (`D1252`) — the half of the normalisation that only a slow machine found.
+test('an address ahead of a project read is not an address that contradicts it', async () => {
+  // **THIS IS THE GATE FOR A DEFECT THIS MAC COULD NOT PRODUCE.** `D1252`'s first build corrected
+  // any address naming a file the project does not have — and `+ new file` produces exactly that
+  // address for as long as its re-read takes, because `onDone` starts the read and moves the
+  // address in the same breath. Two standing gates went red **on the box and nowhere else**: the
+  // create wrote `tests/second.tflw`, the correction put the hash back on `first.tflw`, and this
+  // machine had been winning the race by a few milliseconds every time.
+  //
+  // So the read is **delayed on purpose** rather than hoped about. A timing defect gated by the
+  // timing that happened to occur is not gated at all — it is the same class as `M213-12`, whose
+  // hash-only navigation raced a React commit and was latent until the box was slow enough to lose.
+  await withProjectFixture({ 'first.tflw': 'test "it answers"\n  api GET /a\n  expect status equals 200\n' }, async (p, base) => {
+    await p.goto(`${base}/#/api/compose/first.tflw`);
+    await p.reload();
+    await p.locator('[data-files]').waitFor();
+    // Only now: the first read must land normally, or the page has no project to be ahead of.
+    await p.route('**/api/project**', async (route) => {
+      await new Promise((r) => setTimeout(r, 700));
+      await route.continue();
+    });
+    try {
+      await p.locator('[data-compose-new-file]').click();
+      await p.locator('[data-new-file]').fill('tests/second.tflw');
+      await p.locator('[data-new-name]').fill('it also answers');
+      await p.locator('[data-new-create]').click();
+      await p.locator('[data-new-thing="file"]').waitFor({ state: 'detached' });
+
+      // Immediately: the write has happened, the read has not, and the address names the new file.
+      assert.match(new URL(p.url()).hash, /compose\/tests\/second\.tflw/, 'the address was corrected off the file that had just been made');
+      // …and it is still naming it once the read lands, which is the half that says the guard
+      // released rather than merely stuck.
+      await p.waitForFunction(`document.querySelectorAll('[data-file-row]').length === 2`, undefined, { timeout: 5000 });
+      assert.match(new URL(p.url()).hash, /compose\/tests\/second\.tflw/, 'the address moved once the project caught up');
+    } finally {
+      await p.unroute('**/api/project**');
+    }
+  });
 });

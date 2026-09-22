@@ -41,13 +41,35 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as 
  *  which it never read: the only thing `mode` decided was the caller's `into`, and *what gets
  *  built* was the same two statements on all four doors. `D1042` said since `M200` `A0-3` that
  *  the door decides this, and this is where it now does. */
+/**
+ * **Which lines of `text` are the ones this dialog is about to add** — `M229` `C` (`D1251`).
+ *
+ * `insertIntoSource` splices, so the result is the input with a run of lines inserted somewhere in
+ * it; the range is therefore the common prefix and the common suffix taken off. That is a
+ * derivation rather than a second opinion — the alternative was for the builder to *report* where
+ * it wrote, which is a number that can disagree with the bytes, and disagreeing copies of one
+ * picture is `D1094`.
+ *
+ * For a new **file** `into` is empty, the common prefix and suffix are both nothing, and the whole
+ * text is the addition — which is the right answer rather than a special case.
+ */
+function addedLines(before: string, after: string): { readonly from: number; readonly to: number } {
+  const a = before === '' ? [] : before.split('\n');
+  const b = after.split('\n');
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  return { from: head, to: b.length - tail };
+}
+
 export function newSource(input: {
   readonly scaffold: Scaffold;
   readonly name: string;
   readonly method: string;
   readonly path: string;
   readonly into: string;
-}): { ok: true; text: string } | { ok: false; reason: string } {
+}): { ok: true; text: string; added: { readonly from: number; readonly to: number } } | { ok: false; reason: string } {
   if (input.name.trim() === '') return { ok: false, reason: 'the test needs a name — it is how a run reports it' };
   const body = scaffoldBody(input);
   if (!body.ok) return body;
@@ -82,7 +104,7 @@ export function newSource(input: {
   });
   if (!test.ok) return { ok: false, reason: test.reason };
   const result = insertIntoSource(input.into, { kind: 'test', node: test.node });
-  return result.ok ? { ok: true, text: result.text } : { ok: false, reason: result.reason };
+  return result.ok ? { ok: true, text: result.text, added: addedLines(input.into, result.text) } : { ok: false, reason: result.reason };
 }
 
 /** The opening statements this door's scaffold writes — `D1189`'s whole branch, and the only place
@@ -215,6 +237,8 @@ export function NewThing({ mode, door, openPath, openText, existing, onStage, on
   const [file, setFile] = useState(inDir === null ? 'tests/new.tflw' : `${inDir.replace(/\/+$/, '')}/new.tflw`);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+  /** `M229` `C` (`D1251`) — the surrounding file is reachable and is never what opens. */
+  const [showFile, setShowFile] = useState(false);
   const first = useRef<HTMLInputElement | null>(null);
 
   // The first field takes focus when the dialog opens. A modal that opens with focus still behind
@@ -227,6 +251,24 @@ export function NewThing({ mode, door, openPath, openText, existing, onStage, on
   const pathProblem = mode === 'file' ? newPathProblem(file, existing) : null;
   const built = newSource({ scaffold, name, method, path, into: mode === 'file' ? '' : openText });
   const problem = pathProblem ?? (built.ok ? null : built.reason);
+  /**
+   * **The preview is of the ADDITION** — `M229` `C` (`D1251`).
+   *
+   * It used to be the whole file, pinned at the top, in a 180 px box that shows eleven lines. The
+   * scaffolds are correct on all four doors (`D1191`), and on all four doors **none of them was on
+   * screen**: measured 470 px below the fold on API, 557 on BROWSER, 1079 on SCANS and **1183 on
+   * LOAD**, with nothing saying there was anything down there. What the dialog showed was the
+   * existing file's header comment, and the cost scales with the file — so the surface that exists
+   * to say *this is what I will write* was reliably showing what it would **not** change.
+   *
+   * `D1052` is the standing rule it contradicted — the pane previews what will happen — and the
+   * repair is not to scroll: a reader who wants the context can ask for it, and the control that
+   * offers it says how much of it there is. The bytes are unchanged and `create` still writes
+   * `built.text`, so `D1087`'s claim that the preview is the value that lands is untouched.
+   */
+  const lines = built.ok ? built.text.split('\n') : [];
+  const addition = built.ok ? lines.slice(built.added.from, built.added.to).join('\n') : '';
+  const context = built.ok ? lines.length - (built.added.to - built.added.from) : 0;
 
   const create = async (): Promise<void> => {
     if (!built.ok || pathProblem !== null) return;
@@ -301,7 +343,19 @@ export function NewThing({ mode, door, openPath, openText, existing, onStage, on
 
         {/* **The bytes, before the button.** Not a courtesy — it is the same value `create` writes,
             so the preview cannot describe a different file from the one that lands. */}
-        <pre className="preview" data-new-preview>{built.ok ? <SourceText text={built.text} /> : ''}</pre>
+        <pre className="preview" data-new-preview data-new-preview-showing={built.ok ? (showFile ? 'file' : 'addition') : undefined}>
+          {built.ok ? <SourceText text={showFile ? built.text : addition} /> : ''}
+        </pre>
+        {/* **The context, counted.** `D1076` — over-offering beats silent omission — so the file is
+            offered rather than dropped, and the count is what makes the offer worth reading: *18
+            more lines* is a decision a reader can take, and a bare *show the file* is not. It is
+            absent when there is nothing else to show, which is every new **file**: there the
+            addition IS the file, and `D1082` refuses a control whose subject is absent. */}
+        {built.ok && context > 0 ? (
+          <button className="linkish" onClick={() => setShowFile(!showFile)} data-new-preview-context data-tip="the preview above shows only the lines this will add — the rest of the file is unchanged">
+            {showFile ? 'just the new test' : `the whole file — ${context} more line${context === 1 ? '' : 's'}, none of them changed`}
+          </button>
+        ) : null}
         {problem === null ? null : (
           <p className="muted" data-new-problem>
             {problem}

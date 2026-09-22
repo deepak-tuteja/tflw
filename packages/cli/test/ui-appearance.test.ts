@@ -23,9 +23,25 @@
 //
 // WHAT IT DOES NOT CLAIM. It does not judge taste. It cannot tell you a palette is ugly, that a
 // spacing is mean, or that a pane reads badly — those are the user's call on the running app, and
-// `D1105` reserves them there deliberately. It asserts three things a machine can hold: nothing
-// renders in the user agent's own chrome, no control is wildly out of scale with the controls
-// beside it, and **every colour on the page comes from the theme**.
+// `D1105` reserves them there deliberately. It asserts things a machine can hold: nothing renders
+// in the user agent's own chrome, no control is wildly out of scale with the controls beside it,
+// and **every colour on the page comes from the theme**.
+//
+// `M229` ADDED THREE MORE, AND THE FIRST OF THEM IS WHY THE ROUND EXISTS. The palette claim above
+// was green while **241 elements painted text nobody could read**, because every one of them used
+// `--muted`, which is a declared token: the gate asserts *provenance* and never *legibility*, and
+// a gate that checks where a value came from cannot see that the value is wrong. So:
+//
+//   §4 **contrast** (`D1249`) — every text clears its WCAG threshold, on four themes.
+//   §5 **layout that survives scale** (`D1258`, `D1259`) — two defects invisible on every fixture
+//      in this repository and present on the only project with a real file count.
+//   §6 **the tip census** (`D1256`) — no control anywhere lacks a tip, resolved the way
+//      `Tooltip.tsx` resolves one.
+//
+// **Legibility is not the taste `D1104` refuses to judge**, and that line is the whole of the
+// amendment: it is a ratio between two colours with a threshold published by somebody else. The
+// three new sections keep this file's own rule — every claim is followed by an injection that must
+// make it fail, and by a denominator, because a census of nothing is green.
 //
 // `mac-dashboard`'s `tests/budget.mjs` is the sibling precedent for the last one, and the shape it
 // contributes is the vacuity control: each of the three claims here is followed by an injection
@@ -42,6 +58,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer } from '../src/ui-server.js';
+import { parseColor, flatten, effective, threshold } from './contrast.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const uiRoot = join(here, '..', '..', 'ui');
@@ -85,6 +102,9 @@ interface CssLike {
   readonly whiteSpace: string;
   readonly letterSpacing: string;
   readonly tabSize: string;
+  /** `M229` `A`'s contrast gate: several things here are dimmed with `opacity` rather than with a
+   *  quieter token, and a reading that ignored it would grade them at full strength. */
+  readonly opacity: string;
 }
 interface ElLike {
   readonly tagName: string;
@@ -100,11 +120,16 @@ interface ElLike {
   /** …and the two heights that say whether a region is scrolling inside itself. */
   readonly scrollHeight: number;
   readonly clientHeight: number;
+  /** `M229` `A` walks for **direct** text, because an ancestor's `color` is not what its child
+   *  paints with — a container and the span inside it are two readings, not one. */
+  readonly childNodes: ArrayLike<{ readonly nodeType: number; readonly nodeValue: string | null }> & Iterable<{ readonly nodeType: number; readonly nodeValue: string | null }>;
+  closest(selector: string): ElLike | null;
   querySelectorAll(selector: string): ArrayLike<ElLike> & Iterable<ElLike>;
   querySelector(selector: string): ElLike | null;
   appendChild(child: ElLike): void;
   remove(): void;
   setAttribute(name: string, value: string): void;
+  removeAttribute(name: string): void;
   getAttribute(name: string): string | null;
 }
 declare const document: ElLike & { readonly body: ElLike; readonly documentElement: ElLike; readonly head: ElLike; createElement(tag: string): ElLike };
@@ -885,4 +910,459 @@ test('the state tokens are spent, not merely declared — the Run tab paints pas
     });
     assert.deepEqual(spent, ['--fail', '--pass'], `${theme} declares the state hues and the report does not paint them`);
   }
+});
+
+// ── 4. Contrast: the claim `D1104` does not make, and the page was failing ─────────────────────
+//
+// **THE FINDING THAT PUT THIS SECTION HERE.** Section 3 above reads four thousand painted colours
+// across four themes and seventeen page states and asserts every one of them is in the theme's
+// token set. It was green — and on the default theme, **241 elements were painting text nobody
+// could read**. Every one of them is `--muted`, which *is* a declared token, so palette closure is
+// satisfied exactly. The gate asserts **provenance**; it never asserts **legibility**, and a gate
+// that checks where a value came from cannot see that the value is wrong.
+//
+// That is this repository's most-repeated shape, arriving here for the fourth time in one arc:
+// `M223` `F` (*a door-keyed rule is green under every mutation that makes it construct-keyed*),
+// `M227` `A` (*a rule keyed on one of three tenants is keyed on nothing*), `M228` `F1` (*a rule
+// keyed on a proxy breaks the day the proxy gains a second member*).
+//
+// **WHY THIS IS NOT THE TASTE `D1104` REFUSES TO JUDGE.** Its own docblock says what it will not
+// claim — *"It cannot tell you a palette is ugly, that a spacing is mean, or that a pane reads
+// badly"* — and `D1105` reserves all three for the user on the running app. Legibility is not in
+// that set. It is a ratio between two colours with a threshold published by someone else, and the
+// page either clears it or does not. `D1249` amends `D1104` on exactly that line and nowhere else.
+//
+// **THE ARITHMETIC IS IN NODE, DELIBERATELY** (`contrast.ts`, unit-tested in `contrast.test.ts`).
+// The probe below returns CSS strings and does no colour maths at all, because the maths is what
+// the review got wrong: its parser read `color(srgb 0.68 …)` as an 8-bit triple and reported 1.05:1
+// for text at 9.68:1. Splitting them is what lets the risky half be tested against pairs whose
+// answers come from outside this repository.
+
+/** One distinct way text is painted on this page, with a count and an example. */
+interface Ink {
+  readonly path: string;
+  readonly sample: string;
+  readonly color: string;
+  /** `background-color` from the element outward, **nearest first** — `flatten` composites it. */
+  readonly ground: readonly string[];
+  readonly opacity: number;
+  readonly size: number;
+  readonly weight: number;
+  readonly count: number;
+}
+interface InkProbe {
+  readonly inks: readonly Ink[];
+  /** Every element carrying direct text, counted before any exemption — the denominator. */
+  readonly texts: number;
+  /** Those skipped as inactive, reported so the exemption can never quietly become the page. */
+  readonly inactive: number;
+}
+
+/**
+ * Every distinct (ink, ground, size, weight) on the page, with one example element each.
+ *
+ * **Distinct and not per-element, for a reason that is about the failure message rather than the
+ * cost.** A page has hundreds of text nodes and a handful of ways of painting them; reporting the
+ * elements would print `--muted` two hundred and forty-one times and bury the two syntax tokens
+ * beside it. Reporting the *ways* prints six rows, each saying how many elements it covers.
+ *
+ * **What is exempt, and it is one thing.** An inactive control — `:disabled`, inside a disabled
+ * fieldset, or `aria-disabled="true"` — which is WCAG 1.4.3's own carve-out for inactive user
+ * interface components. Nothing else. In particular a thing merely *dimmed* with `opacity` is
+ * judged, with its opacity applied: this stylesheet dims a locked step, an unmatched file row and a
+ * withheld finding that way, and each of those is text a reader is expected to read.
+ *
+ * **What it cannot see, said out loud rather than discovered as a gap.** Generated content — a
+ * `::before` is not a text node, so the source view's line-number gutter is outside this walk;
+ * `placeholder`, which is an attribute and absent in every state that has a value anyway; and text
+ * over something that is not its own ancestor, since the ground is read by walking up. The first of
+ * those is why `.source-text [data-source-line]::before` lost its `opacity` in this slice rather
+ * than being gated.
+ */
+const inkProbe = (): Promise<InkProbe> =>
+  page.evaluate(() => {
+    const doc = document;
+    const label = (el: ElLike): string => {
+      const cls = typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}` : '';
+      const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme');
+      return `${el.tagName.toLowerCase()}${cls}${data ? `[${data.name}]` : ''}`;
+    };
+
+    const seen = new Map<string, { rec: Ink; n: number }>();
+    let texts = 0;
+    let inactive = 0;
+    for (const el of doc.body.querySelectorAll('*')) {
+      if (!el.checkVisibility()) continue;
+      let text = '';
+      for (const n of el.childNodes) if (n.nodeType === 3 && n.nodeValue !== null) text += n.nodeValue;
+      if (text.trim() === '') continue;
+      texts++;
+      if (el.closest('[disabled], [aria-disabled="true"]') !== null) {
+        inactive++;
+        continue;
+      }
+      const cs = getComputedStyle(el);
+      // The ground and the opacity stack, in one walk outward. Opacity multiplies because nesting
+      // two half-opaque boxes gives a quarter; the ground stops being collected the moment an
+      // ancestor is opaque, which this file cannot decide — so everything is collected and `flatten`
+      // decides in Node, where the parser lives.
+      const ground: string[] = [];
+      let opacity = 1;
+      for (let a: ElLike | null = el; a !== null; a = a.parentElement) {
+        const acs = a === el ? cs : getComputedStyle(a);
+        ground.push(acs.backgroundColor);
+        const o = parseFloat(acs.getPropertyValue('opacity'));
+        if (!Number.isNaN(o)) opacity *= o;
+      }
+      const rec: Ink = {
+        path: label(el),
+        sample: text.trim().replace(/\s+/g, ' ').slice(0, 44),
+        color: cs.color,
+        ground,
+        opacity: Math.round(opacity * 1000) / 1000,
+        size: parseFloat(cs.fontSize),
+        weight: parseFloat(cs.fontWeight),
+        count: 1,
+      };
+      const key = `${rec.color}|${ground.join('>')}|${rec.opacity}|${rec.size}|${rec.weight}`;
+      const hit = seen.get(key);
+      if (hit === undefined) seen.set(key, { rec, n: 1 });
+      else hit.n++;
+    }
+    return { inks: [...seen.values()].map((v) => ({ ...v.rec, count: v.n })), texts, inactive };
+  });
+
+interface Unreadable {
+  readonly where: string;
+  readonly path: string;
+  readonly sample: string;
+  readonly ratio: number;
+  readonly bar: number;
+  readonly count: number;
+}
+
+/** Judge one `inkProbe` reading. Every colour string goes through `contrast.ts` and nothing else. */
+const unreadable = (where: string, r: InkProbe): { readonly bad: Unreadable[]; readonly judged: number; readonly noGround: string[] } => {
+  const bad: Unreadable[] = [];
+  const noGround: string[] = [];
+  let judged = 0;
+  for (const ink of r.inks) {
+    const fg = parseColor(ink.color);
+    // **Transparent ink is not a defect and this is the one place it occurs**: `M215`'s overlay
+    // editor paints the colour in a `<pre>` and makes the `<textarea>` on top of it invisible, so
+    // the field's own value is text nobody is meant to see. It is gated as a pair of boxes by the
+    // `B3` test above; judging its contrast would be judging a design decision as a failure.
+    if (fg === null || fg.a === 0) continue;
+    const bg = flatten(ink.ground);
+    if (bg === null) {
+      noGround.push(`${where}: ${ink.path} — the walk to an opaque ground ended at ${ink.ground[ink.ground.length - 1]}`);
+      continue;
+    }
+    judged++;
+    const ratio = effective(fg, bg, ink.opacity);
+    const bar = threshold(ink.size, ink.weight);
+    if (ratio + 1e-9 < bar) bad.push({ where, path: ink.path, sample: ink.sample, ratio: Math.round(ratio * 100) / 100, bar, count: ink.count });
+  }
+  return { bad, judged, noGround };
+};
+
+const say = (u: Unreadable): string => `${u.where}: ${u.path} ${u.ratio}:1 < ${u.bar} (×${u.count}) — “${u.sample}”`;
+
+test('every text on every door, in every theme, clears its contrast threshold', async () => {
+  // `D1249`. The mutation that proves this gate is one theme's `--muted` put back to `#6e7681`,
+  // and the test below makes it — on Terminal alone, which is also what proves the walk is
+  // per-theme rather than reading the default four times.
+  const bad: Unreadable[] = [];
+  const noGround: string[] = [];
+  let judged = 0;
+  let texts = 0;
+  let inactive = 0;
+  for (const [door, tab] of states) {
+    await visit(door, tab);
+    for (const theme of THEMES) {
+      await wear(theme);
+      const r = await inkProbe();
+      texts += r.texts;
+      inactive += r.inactive;
+      const v = unreadable(`${theme} ${door || 'landing'}/${tab}`, r);
+      judged += v.judged;
+      bad.push(...v.bad);
+      noGround.push(...v.noGround);
+    }
+  }
+  // The denominators, both of them. A walk that found no text satisfies the line below perfectly,
+  // and an exemption that swallowed the page satisfies it just as well — `M228` `F`'s carry is that
+  // a gate can be vacuous because the page has nothing to read.
+  assert.ok(judged > 2000, `the gate judged ${judged} readings across ${states.length} states × ${THEMES.length} themes — it is not walking the page`);
+  assert.ok(inactive < texts / 10, `${inactive} of ${texts} text elements were exempted as inactive — the carve-out has become the page`);
+  assert.deepEqual(noGround, [], 'a reading never reached an opaque ground, so its ratio would have been invented');
+  // Sorted worst-first: with one token wrong this prints the token, not the first element the walk
+  // happened to reach.
+  bad.sort((a, b) => a.ratio - b.ratio);
+  assert.deepEqual(bad.slice(0, 12).map(say), [], `${bad.length} distinct ways of painting text render below their threshold`);
+});
+
+test('control: the instrument sees text it cannot read, and reads the large-text bar', async () => {
+  // Two injections, because the claim has two halves and a single control would only prove one.
+  await visit('api', 'compose');
+  assert.deepEqual(unreadable('clean', await inkProbe()).bad, []);
+  await page.evaluate(() => {
+    const main = document.querySelector('.main')!;
+    // 1. Unreadable at any size: a grey a hair off the ground it sits on.
+    const dim = document.createElement('p');
+    dim.setAttribute('style', 'color: #23262b; background: #1b1f24; font-size: 13px');
+    dim.textContent = 'nobody can read this';
+    main.appendChild(dim);
+    // 2. The same ratio at 30px, which the 3:1 bar admits — so a gate applying 4.5 to everything
+    //    would convict this one too, and a gate applying 3 to everything would acquit the first.
+    const big = document.createElement('p');
+    big.setAttribute('style', 'color: #6f7782; background: #1b1f24; font-size: 30px; opacity: 1');
+    big.textContent = 'large and legal';
+    main.appendChild(big);
+  });
+  const v = unreadable('injected', await inkProbe());
+  assert.equal(v.bad.length, 1, `the instrument convicted ${v.bad.length} readings — it should see exactly the small one`);
+  assert.equal(v.bad[0]!.sample, 'nobody can read this');
+  assert.equal(v.bad[0]!.bar, 4.5);
+  // …and the large one was judged rather than skipped, which is the half a count cannot show.
+  assert.ok(v.judged >= 2, 'the large-text injection was never judged at all');
+});
+
+test('control: an `opacity` dim is a reading, and a disabled control is exempt', async () => {
+  // The two halves of the exemption rule, each injected so neither can drift into the other. The
+  // first is the one that matters: `styles.css` dims a locked step, an unmatched file row and a
+  // withheld finding with `opacity` rather than with a quieter token, and a gate blind to that
+  // would grade all three at full strength.
+  await visit('api', 'compose');
+  await page.evaluate(() => {
+    const main = document.querySelector('.main')!;
+    const faded = document.createElement('p');
+    // Legible at full strength on this ground; not at a fifth of it.
+    faded.setAttribute('style', 'color: #c9d1d9; background: #08090b; opacity: 0.2; font-size: 13px');
+    faded.textContent = 'dimmed by opacity';
+    main.appendChild(faded);
+    const off = document.createElement('button');
+    off.setAttribute('style', 'color: #23262b; background: #1b1f24; font-size: 13px');
+    off.setAttribute('disabled', '');
+    off.textContent = 'inactive and exempt';
+    main.appendChild(off);
+  });
+  const r = await inkProbe();
+  const v = unreadable('injected', r);
+  assert.deepEqual(v.bad.map((u) => u.sample), ['dimmed by opacity'], 'the opacity dim and the disabled control were not told apart');
+  assert.equal(r.inactive, 1, 'the disabled control was not counted as exempted — it was never seen');
+});
+
+// ── 5. Layout that survives scale — `M229` `G` ────────────────────────────────────────────────
+//
+// **BOTH DEFECTS HERE ARE INVISIBLE ON EVERY FIXTURE IN THIS REPOSITORY, AND THAT IS THE POINT.**
+// The landing drew its four doors as 3 + 1 at every width a laptop has, and the explorer's `+ new
+// file` sat 1504 px below the fold — on `testFlow-tests`, and nowhere else, because every project
+// here has five files. A gate that measures the default fixture would be green on both. So the
+// first claim is taken at three widths and the second on a project this test builds to have a real
+// file count, which is the only part of the finding that can be reproduced without a sibling
+// checkout.
+//
+// `M229` `G` departs from `PLAN_M229_UI_REVIEW.md` on exactly that point. The plan says *"the
+// second gate must run against `testFlow-tests`, not a fixture"*; a suite that reads a sibling
+// working copy cannot run on CI, on the box, or on a fresh clone, and the property under test is
+// **file count**, not that repository. A hundred generated files reproduce it and couple the suite
+// to nothing.
+
+test('the landing holds every door in one row, at every width a reader has', async () => {
+  // `D1258`. Three widths and not one: `auto-fit` collapses tracks by available space, so a single
+  // measurement says nothing about whether the measure or the viewport decided the answer. The
+  // mutation is `max-width: 880px` back on `.landing`, which reddens all three.
+  const wide = await openPage();
+  try {
+    for (const width of [1280, 1440, 1680]) {
+      await wide.setViewportSize({ width, height: 900 });
+      await wide.goto(`${baseUrl}#/`);
+      await wide.reload();
+      await wide.locator('[data-doors]').waitFor();
+      const seen = await wide.evaluate(() => {
+        const cards = [...document.querySelectorAll('[data-doors] .door')];
+        return {
+          doors: cards.length,
+          rows: [...new Set(cards.map((c) => Math.round(c.getBoundingClientRect().y)))].length,
+          heights: [...new Set(cards.map((c) => Math.round(c.getBoundingClientRect().height)))],
+        };
+      });
+      // The denominator, and it is a live one: `DOORS` is four today and this line is what makes a
+      // fifth reopen `D1258` rather than wrap in silence.
+      assert.equal(seen.doors, DOORS.length, `${width}: the landing drew ${seen.doors} doors`);
+      assert.equal(seen.rows, 1, `${width}: the four doors occupy ${seen.rows} rows`);
+      // The tell the review actually saw first — a wrapped card is a different height from its
+      // peers, because it is alone on its own track.
+      assert.equal(seen.heights.length, 1, `${width}: the door cards are ${seen.heights.join('/')}px — they are not peers`);
+    }
+  } finally {
+    await wide.close();
+  }
+});
+
+test('the explorer’s create keeps its place on a project with a real file count', async () => {
+  // `D1259`. The files are written and removed here rather than shipped as a fixture, because a
+  // hundred committed `.tflw` files would be read by `verify:corpora`, the printer's own corpus
+  // gate and the checker's coverage census — three instruments this claim has nothing to do with.
+  const dir = join(projectRoot, 'bulk');
+  await mkdir(dir, { recursive: true });
+  const body = (n: number): string => `@api\ntest "generated ${n}"\n  api GET /thing/${n}\n  expect status equals 200\n`;
+  await Promise.all(Array.from({ length: 100 }, (_, i) => writeFile(join(dir, `bulk-${String(i).padStart(3, '0')}.tflw`), body(i))));
+  try {
+    await at('api', 'compose');
+    await page.locator('[data-explorer-new]').waitFor();
+    const read = await page.evaluate(() => {
+      const el = document.querySelector('[data-explorer-new]')!;
+      const list = document.querySelector('[data-files]')!;
+      const side = el.parentElement!;
+      const r = el.getBoundingClientRect();
+      return {
+        files: Number(list.getAttribute('data-files')),
+        bottom: Math.round(r.bottom),
+        top: Math.round(r.y),
+        viewport: window.innerHeight,
+        scrolls: side.scrollHeight > side.clientHeight,
+      };
+    });
+    // **The denominators first, and there are two.** A project that is not big enough to scroll
+    // satisfies the claim below for the wrong reason — which is exactly how this defect survived
+    // every fixture in the repository.
+    assert.ok(read.files >= 100, `the explorer listed ${read.files} files — the project is not big enough to state anything`);
+    assert.ok(read.scrolls, 'the sidebar is not scrolling, so nothing here is about reachability');
+    assert.ok(read.top >= 0 && read.bottom <= read.viewport, `\`+ new file\` sits at ${read.top}–${read.bottom} in a ${read.viewport}px viewport`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ── 6. The census: every control says what it does — `M229` `F` (`D1256`) ─────────────────────
+//
+// `M225` closed this for one block by hand — the workload editor, 25 controls, 0 `data-tip` and 16
+// native `title`s — and `M228` `F2` found the same shape again in the region-2 nav. Two independent
+// sightings of one defect is what makes a census worth running instead of a third fix.
+//
+// **THE RESOLUTION RULE IS THE PRODUCT'S OWN, AND GETTING IT WRONG IS THIS ROUND'S OWN MISTAKE,
+// TWICE.** The review first reported the run strip's `env`/`workers`/`headed` as untipped, and then
+// the theme select — and all four are tipped, by a wrapping `<label>` and by `div.theme-pick`.
+// `Tooltip.tsx` resolves a tip with `el.closest('[data-tip], [data-tip-derived]')`, so that is the
+// question asked here, spelled the same way. A census with its own idea of what counts as tipped
+// would be a second implementation of one picture (`D1094`) and would have produced exactly the two
+// false findings that cost the review an hour.
+
+test('no control on any door or tab lacks a tip', async () => {
+  const bare: string[] = [];
+  let controls = 0;
+  let derived = 0;
+  let selfSaid = 0;
+  let band = 0;
+  /**
+   * **The census has to reach the forms, and `states` alone does not.** A door's Compose opens with
+   * no declaration selected, so the test band — which holds two of the review's findings — is not
+   * drawn at all; and the Config tab renders `data-api-config="loading"` for a beat, which is a
+   * panel with no editor in it. `M228` `F`'s carry is exactly this: *a gate can be vacuous because
+   * the page has nothing to read*, and its own `no untipped tabs` returned `[]` from a pane that
+   * drew no nav. So each state waits for the thing it is about, and every door gets a second visit
+   * at a declaration address.
+   */
+  const READY: Readonly<Record<string, string>> = {
+    landing: '[data-doors]',
+    compose: '[data-seq-col]',
+    run: '[data-runs]',
+    auth: '[data-api-auth]',
+    config: '[data-api-config="saved"], [data-api-config="unsaved"]',
+  };
+  const walk: Array<[string, string, string | null]> = [
+    ...states.map(([d, t]): [string, string, string | null] => [d, t, null]),
+    ...DOORS.map((d): [string, string, string | null] => [d, 'compose', 'tests/catalog.tflw/L2']),
+  ];
+  for (const [door, tab, at] of walk) {
+    if (at === null) await visit(door, tab);
+    else {
+      await page.goto(`${baseUrl}#/${door}/compose/${at}`);
+      await page.reload();
+    }
+    await page.locator(READY[tab]!).first().waitFor();
+    const r = await page.evaluate(() => {
+      // `Tooltip.tsx`'s own selector, copied as a string on purpose: if it changes there, this
+      // reads the old one and the mismatch is the thing worth finding.
+      const ASKS = '[data-tip], [data-tip-derived]';
+      // **The one exemption, and it is a whole class rather than a list of names.** A landing door
+      // is a card: its blurb and its `like` line are printed on it as text a reader is already
+      // looking at, so a tooltip there would be the control's own words said back to it — which is
+      // the fifteen echoes `M216` `B1` measured and `D1127` removed. Counted rather than skipped,
+      // so the carve-out cannot quietly become the page.
+      const SELF_SAID = '.door';
+      const out: string[] = [];
+      let n = 0;
+      let d = 0;
+      let said = 0;
+      for (const el of document.body.querySelectorAll('button, select, input, textarea')) {
+        if (!el.checkVisibility()) continue;
+        n++;
+        if (el.closest(SELF_SAID) !== null) {
+          said++;
+          continue;
+        }
+        const asks = el.closest(ASKS);
+        if (asks === null) {
+          const cls = typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}` : '';
+          const data = [...el.attributes].find((a) => a.name.startsWith('data-'));
+          const label = el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 24);
+          out.push(`${el.tagName.toLowerCase()}${cls}${data ? `[${data.name}]` : ''} — \u201c${label}\u201d`);
+        } else if (asks.getAttribute('data-tip') === null) d++;
+      }
+      // The two controls `R1` found, named so the walk can prove it reached them: they are drawn
+      // only when a declaration is selected, and `states` never selects one.
+      const band = document.body.querySelectorAll('[data-band-name], [data-band-tags-edit]').length;
+      return { out, n, d, said, band };
+    });
+    controls += r.n;
+    derived += r.d;
+    selfSaid += r.said;
+    band += r.band;
+    for (const b of r.out) bare.push(`${door || 'landing'}/${tab}: ${b}`);
+  }
+  // **Three denominators, and each one closes a way this claim could be green on nothing.** *No
+  // untipped control* is satisfied perfectly by a page that drew none; a page where every tip
+  // resolved through `data-tip-derived` would carry truncation tooltips and no sentences; and an
+  // exemption that grew would empty the census without anyone noticing.
+  assert.ok(controls > 300, `the census saw ${controls} controls across ${walk.length} page states — it is not reaching the forms`);
+  assert.ok(derived > 0, 'no tip on the whole page is derived, so `D1127`\u2019s mechanism is not being exercised');
+  assert.equal(selfSaid, DOORS.length, `${selfSaid} controls were exempted as self-describing — that is meant to be the four landing doors and nothing else`);
+  assert.ok(band >= DOORS.length, `the census never reached the test band (${band} sightings) — the two fields \`R1\` found are drawn only at a declaration address`);
+  assert.deepEqual([...new Set(bare)].slice(0, 30), [], `${new Set(bare).size} distinct controls carry no tip`);
+});
+
+test('control: the census names the control a mutation strips', async () => {
+  // **A 200-row failure teaches nothing**, so the claim above is only useful if the message points
+  // at the thing. The mutation is the one the plan specified — a wrapping `<label>`'s tip removed —
+  // and it is made on the live page rather than in the source, because what is being checked is the
+  // *resolution rule*: `env` is tipped by its label and not by itself, which is the reading the
+  // review got wrong twice.
+  await visit('api', 'compose');
+  const untipped = async (): Promise<string[]> =>
+    page.evaluate(() => {
+      const out: string[] = [];
+      for (const el of document.body.querySelectorAll('button, select, input, textarea')) {
+        if (!el.checkVisibility() || el.closest('.door') !== null) continue;
+        if (el.closest('[data-tip], [data-tip-derived]') === null) {
+          const data = [...el.attributes].find((a) => a.name.startsWith('data-'));
+          out.push(`${el.tagName.toLowerCase()}${data ? `[${data.name}]` : ''}`);
+        }
+      }
+      return out;
+    });
+  assert.deepEqual(await untipped(), []);
+  await page.evaluate(() => {
+    document.querySelector('[data-env-select]')!.closest('[data-tip]')!.setAttribute('data-tip', '');
+  });
+  // `setAttribute` to the empty string, not `removeAttribute`: an empty `data-tip` still MATCHES
+  // `[data-tip]`, so this is the harder mutation — it proves the census resolves a tip rather than
+  // merely finding the attribute.
+  assert.deepEqual(await untipped(), [], 'an empty `data-tip` is still an attribute, and the census is about the attribute');
+  await page.evaluate(() => {
+    document.querySelector('[data-env-select]')!.closest('[data-tip]')!.removeAttribute('data-tip');
+  });
+  assert.deepEqual(await untipped(), ['select[data-env-select]'], 'the census did not name the control whose label lost its tip');
 });

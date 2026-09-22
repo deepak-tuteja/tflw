@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -243,13 +243,47 @@ test('a run from the API is a real tflw run: the stream arrives over SSE, the re
       assert.equal(runs.length, 2, 'newest first: the refused run, then the real one');
       assert.deepEqual(runs.map((r) => [r.status, r.kept]), [['done', null], ['done', `report/runs/${record.id}`]]);
 
+      // **`M229` `E` (`D1254`) — RESTATED, because that round made the old line false on purpose.**
+      // It read `['current', record.id]`, and those two entries were **one run**: `keepReport`
+      // copies `report/` into `report/runs/<id>` entry by entry, so the newest kept directory and
+      // `current` are the same bytes under two names. The list advertised two runs, both with the
+      // same counts and the same instant, and nothing on either row said so. `current` is a flag on
+      // the run now, so the assertion is the count as much as the ids.
       const reports = (await (await fetch(`${base}/api/reports`)).json()) as ReportEntry[];
-      assert.deepEqual(reports.map((r) => r.id), ['current', record.id]);
+      assert.deepEqual(reports.map((r) => [r.id, r.current === true]), [[record.id, true]], 'one run, and it is the one `report/current` holds');
       for (const r of reports) {
         assert.deepEqual(r.summary, { ok: true, total: 1, passed: 1, failed: 0 });
         assert.ok(r.files.includes('results.json') && r.files.includes('events.ndjson'), `${r.id} holds ${r.files.join(',')}`);
       }
-      assert.equal(reports[1]!.path, `report/runs/${record.id}`);
+      assert.equal(reports[0]!.path, `report/runs/${record.id}`);
+
+      // **THE OTHER DIRECTION, WHICH IS THE ONE THAT COULD LOSE A RUN.** `tflw run` in a terminal
+      // writes `report/` and keeps nothing, so `current` is then a run with no `runs/<id>` of its
+      // own. Folding on *position* — the newest kept row — would have hidden it behind a run it has
+      // nothing to do with, which is why `listReports` compares the evidence instead. Written by
+      // hand here because a second run through this server would keep itself and never make the
+      // shape.
+      const terminalRun = JSON.stringify({ ok: false, total: 3, passed: 2, failed: 1 });
+      await writeFile(join(dir, 'report', 'results.json'), terminalRun);
+      const after = (await (await fetch(`${base}/api/reports`)).json()) as ReportEntry[];
+      assert.deepEqual(after.map((r) => [r.id, r.current === true]), [['current', true], [record.id, false]], 'a `report/` that matches no kept run is a run of its own');
+      assert.deepEqual(after[0]!.summary, { ok: false, total: 3, passed: 2, failed: 1 }, 'and it is the terminal run’s own evidence, not the kept one’s');
+      // Put it back, so nothing below reads a report this assertion invented.
+      await cp(join(dir, 'report', 'runs', record.id, 'results.json'), join(dir, 'report', 'results.json'));
+
+      // **THE SAME RUN IS NOT ALWAYS THE SAME EVIDENCE, and the sibling's sweep is what found it.**
+      // `testFlow-tests`' `verify-ui.mjs` plants a stale `findings.sarif` into `report/` and reads
+      // `/api/reports` to watch it appear and then go — `M192-03`'s own grader — and a fold decided
+      // on `results.json` alone closed the only window that grader has. So a `report/` holding a
+      // member its kept copy does not is a row of its own, which is also the honest answer: that
+      // state is the defect `M192-03` filed, and a list that hid it would be hiding a defect.
+      await writeFile(join(dir, 'report', 'findings.sarif'), '{"runs":[]}');
+      const planted = (await (await fetch(`${base}/api/reports`)).json()) as ReportEntry[];
+      assert.deepEqual(planted.map((r) => [r.id, r.current === true]), [['current', true], [record.id, false]], 'a `report/` carrying a member its copy does not is the same run and not the same evidence');
+      assert.ok(planted[0]!.files.includes('findings.sarif') && !planted[1]!.files.includes('findings.sarif'), 'the plant is visible on exactly one of the two rows');
+      await rm(join(dir, 'report', 'findings.sarif'));
+      const swept = (await (await fetch(`${base}/api/reports`)).json()) as ReportEntry[];
+      assert.deepEqual(swept.map((r) => r.id), [record.id], 'and they fold back together the moment the evidence matches again');
 
       const served = await fetch(`${base}/api/reports/${record.id}/results.json`);
       assert.equal(served.status, 200);
