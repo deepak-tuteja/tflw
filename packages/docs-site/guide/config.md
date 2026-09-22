@@ -231,3 +231,22 @@ Single-valued, legal in `defaults` and in an `env` block (an env's line replaces
 resolved against `tflw.config`'s own directory, and overridden by `--baseline <file>` for one run.
 
 Full reference: [SPEC.md §3](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#3-the-config-dialect--tflwconfig-p2731-).
+
+## Keeping files out of a run — `exclude`
+
+`exclude` takes glob patterns that discovery skips when a run names a **folder** rather than a
+file. Naming a file explicitly still runs it: the key shapes what a sweep picks up, and never
+overrides an instruction you gave directly.
+
+It is the right place for fixtures that parse as tflw but are not tests, and for a directory of
+work in progress you do not want a pipeline to pick up yet.
+
+## Overriding `workers` for one test — `parallel` and `sequential`
+
+`workers` above sets how many test files run at once for the whole project. A single test can
+override the file's default behaviour by carrying `sequential` — `test "mutates shared stock"
+sequential` — which is what you reach for when one test touches shared state the others assume.
+
+`parallel` is the opposite override, for a test in an otherwise sequential file. Writing both on
+one declaration is refused rather than resolved, because there is no reading of it that is
+obviously right.

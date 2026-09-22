@@ -1045,6 +1045,93 @@ multi-word call name. The parser always guessed "call", and reported the variabl
   which is how a suite that declared `api root` came to write its host's port into test files.
 - **A relative `token url` resolves against the default `api` base**, like a step path.
 
+### Added — the page writes the language (M200, M201)
+
+- **A printer for the whole language.** Every construct the parser accepts can now be rendered back
+  to source: 116 of 116 kinds, and a whole-file round trip of 260 of 260 files in the corpus. This
+  is what makes an authoring surface possible at all — a form that cannot be turned back into
+  `.tflw` is a form that owns your test.
+- **Builders for every construct a door writes**, each landing with the vocabulary gate that says
+  which words the form can produce and which the printer refuses. A construct the builder can say
+  and the printer cannot is a defect the round trip catches rather than a surprise at write time.
+- **The corpus the printer is graded on is authored here**, not harvested from the test suite. A
+  harvested corpus measures what someone happened to write; an authored one measures the language,
+  and the coverage floor is an equality so that reading *more* than claimed fails too (M201).
+
+### Added — `tflw ui` becomes a workspace (M203, M205–M209, M213)
+
+- **A file explorer**: every `.tflw` file as a tree, with the tests each holds, a count behind the
+  current door, and a search box that takes either a name or an `@tag` and says which it read.
+- **A tab strip over one file** — Source, Compose, Run, Auth, Config — where a tab is a stage of
+  that file's life or a project fact it resolves against. The door, the file and the tab all live
+  in the address, so a link is shareable and a reload changes nothing.
+- **A run strip**: environment, worker count and the run button, with the run streaming into the
+  page and writing a real run directory. `tflw ui` also opens an empty directory and offers to
+  scaffold a project, with the forms opening blank rather than guessing at your service.
+- **Four themes**, differing in type, density and shape as much as in colour, remembered in the
+  browser and never written to the project.
+
+### Added — Compose, the authoring pane (M210, M212, M214–M218)
+
+- **The pane draws what the file says.** One region edits whichever row is selected — a request, a
+  statement, the test's own facts, or the file's — which removed 47 controls down to 13 and retired
+  the fixed-height name box that truncated a 40-character sentence.
+- **The whole assertion vocabulary is editable**, not a subset, with the body read as JSON and a
+  live diagnostic where it is not. Statements between requests — `let`, `capture`, `wait until` and
+  the notes above them — are rows in the same sequence, in file order, because the interleaving is
+  what makes the next request work.
+- **Send runs the prefix.** Most requests read a binding an earlier step made, so sending one alone
+  fails for reasons that are not about it: Send issues the request and the ones that feed it, lists
+  what it will fire before firing, and grades nothing.
+- **Undo, and a say in where things land.** Every destructive gesture is reversible, a new request
+  goes where you were rather than at the end, and the explorer's right-click menus carry the door's
+  first destructive routes behind a confirmation.
+
+### Added — the pane reaches all four doors (M219, M224, M228, M232)
+
+- **BROWSER, LOAD and SCANS each stopped being a form** and gained the same three-region pane the
+  API door has, with their own vocabularies: locators and the whole interaction set; the workload
+  shapes, their units and thresholds as a grid; the scan families and the permission they require.
+- **A door decides where you land and what a new test scaffolds — nothing else.** A test carrying a
+  workload shows its workload panel behind every door, because a panel is earned by the construct
+  and not granted by the door (M232).
+- The catalogue of steps a door offers is derived from the door's own construct set, so a construct
+  the language gains is offered without a second list being edited.
+
+### Added — recording and playback (M220–M222, M231)
+
+- **`tflw record` drives a real browser and writes the `.tflw` your clicks made.** It records what
+  actually happened: a click that opens a tab is written as the `switch to new tab` block that
+  wraps it, a click on an ambiguous name is scoped with the `within` that disambiguates it, and a
+  synthetic click a script dispatched is not recorded at all, because nobody clicked anything.
+- Recording writes steps to stdout and everything else to stderr, so `tflw record > flow.tflw`
+  yields a file that parses (M231).
+- **Playback runs a test in the page and draws it in place** — the stage sits under the columns
+  rather than replacing them, so the source that produced a step stays on screen beside it.
+
+### Added — security triage in the page (M208, M211)
+
+- **The accepted-findings baseline became a project fact** rather than a command-line flag, so the
+  page and a CI run grade against the same document.
+- **The findings list is one row per distinct finding**, with the baseline's verdict beside it and
+  an `[accept]` that links a finding to the editor without writing anything itself.
+- Config became multi-document and addressable per environment, so a project with four
+  environments is read rather than reconstructed.
+
+### Fixed — the language, and what building the page found (M199, M229, M230)
+
+- **`expect page has no a11y violations` threw against any page setting a strict
+  `Content-Security-Policy`** — and the security scanner ships `sec/csp-missing` as a serious
+  finding, so the documentation asked a reader to set the header that broke the construct. The
+  injection now goes through a route the policy does not govern (M230).
+- **A body path segment that is not a bare identifier had no spelling at all.** `body.user-name`
+  and keys with dots, spaces or digits-first are now addressable with a quoted segment (M230).
+- **The identifier arity nobody chose.** A pattern bounded at three digits silently stopped
+  matching the sequence once it passed 999, and every test that could have caught it spelled its
+  fixtures with the same bound — so the gate and the defect agreed (M199).
+- Sixteen findings from a review of the page itself, including a contrast floor re-solved across
+  all four themes and a drag that died at a same-origin iframe (M229).
+
 ## [0.1.0] — 2026-07-06
 
 First public draft. API-only — the browser half lands in `0.2.0`.

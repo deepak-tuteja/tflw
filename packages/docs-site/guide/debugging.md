@@ -147,3 +147,22 @@ failure isn't self-explanatory from the terminal output alone. `--evidence <leve
 of that detail gets captured (`full`/`headers only`/`none`; the CLI flag keeps the hyphen,
 `--evidence headers-only`, since a shell argument is not lexed by tflw) — see
 [CI, reporting & safety](/guide/ci-and-reporting#evidence-levels).
+
+## Reading a failure in the page
+
+`tflw ui` shows a run beside the source that produced it, so a red step and the line that wrote it
+are on one screen. A failed browser attempt's trace opens in Playwright's own viewer without
+leaving the page, from the `playwright-core` the project already resolves. Everything this chapter
+describes still applies — the page renders the run, it does not re-word it. See
+[The page](/page/).
+
+## Printing from inside a test — `log`
+
+`log "created order {orderId}"` emits one line into the run log and into the report, with variables
+interpolated. An optional level comes first — `log warn "retrying against the stale replica"` — and
+what actually reaches the terminal depends on the `log level` key in `tflw.config`.
+
+It is the debugging tool that survives into CI: a line written this way is in `report.html` beside
+the step that wrote it, which a `console.log` in a `use` module is not. Secrets are redacted here
+the same way they are everywhere else, so interpolating a captured token prints the redaction
+rather than the token.
