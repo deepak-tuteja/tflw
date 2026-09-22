@@ -696,6 +696,19 @@ test('no region of the Compose pane overflows the window, on a thirteen-request 
       // missing tag as the same failure. A height gate reading a salvage is a height gate reading a
       // smaller file, which is the thing worth catching.
       assert.equal(await page.locator('[data-file-row="tests/thirteen.tflw"] [data-recovered]').count(), 0, 'the file the gate wrote does not parse');
+      /* `M234` `A` — WAIT FOR THE FOURTEENTH ROW BEFORE MEASURING (`D1308`). `[data-seq-col]`
+         above is the column, not its contents: on a slow runner the column is attached while nine
+         of the fourteen rows are drawn, and the double `requestAnimationFrame` below settles PAINT
+         rather than data, so it cannot help. Node 22 failed exactly this in CI — *"the gate is
+         reading 9 sequence rows, not a thirteen-request file"* — on a commit the box ran green.
+         A wait on the row that must exist is the retry `querySelectorAll().length` never had, and
+         it carries the claim in the selector the way this file's own `data-seq-adds` note asks. */
+      // 60s and not the default 30: this replaces an assertion that failed FAST with a wait that
+      // fails SLOW, and a CI runner is exactly where the rows are late. The file already buys the
+      // same headroom for its slow waits. Measured: on a 12-way-loaded box the fourteenth row
+      // takes longer than 30s, which is harsher than any runner but shows the default is the
+      // binding constraint rather than the page.
+      await page.locator('[data-seq-row]').nth(13).waitFor({ timeout: 60_000 });
       await wear(theme);
       await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
 
@@ -819,6 +832,14 @@ test('`M215` `B3`: the coloured copy and the field under it are one box, in all 
       await page.goto(`${baseUrl}#/api/compose/tests/jsonbody.tflw`);
       await page.reload();
       await page.locator('[data-seq-col]').waitFor();
+      /* `M234` `A` — the ROW, not the column (`D1308`). Same hazard as the thirteen-request gate
+         above: `[data-seq-col]` is attached before its rows are, so the pick below could land
+         mid-redraw, the selection not take, and the body tab never appear — which surfaces 100
+         lines later as `waitFor: Timeout 30000ms exceeded` on `[data-body-ink]`, blaming the
+         editor for something the sequence column did. Reproduced on a 12-way-loaded box; never
+         seen in CI, so this is the hazard applied at the next site rather than a fix for an
+         observed CI failure. */
+      await page.locator('[data-seq-row="request"]').first().waitFor();
       await wear(theme);
       await page.locator('[data-seq-row="request"] [data-seq-pick]').first().click();
       await page.locator('[data-editor-tab="body"]').click();

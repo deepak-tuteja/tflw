@@ -10,7 +10,7 @@ import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtemp, cp, rm, readFile, writeFile, mkdir, symlink, utimes } from 'node:fs/promises';
+import { mkdtemp, cp, rm, readFile, writeFile, mkdir, symlink, utimes, readdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -1790,6 +1790,46 @@ const composeRan = async (file: string, line: number): Promise<void> => {
   await page.locator(`[data-seq-open="${line}"] [data-compose-response]`).waitFor();
 };
 
+/**
+ * **The report the pane is ACTUALLY reading for this file** — `D1099`'s own rule, resolved the
+ * same way the page resolves it: the newest run on disk whose `results.json` lists the file.
+ *
+ * `M234` `A` (`D1308`), and this is a defect in the gate rather than a flake. This file's very
+ * first line says *"the report directory is the oracle, never a number written in this file"* —
+ * and the test below was reading `oracle.full`, the COMMITTED fixture, while the pane had long
+ * since moved on. `before()` stamps `full` newest with one `utimes` precisely so *which report the
+ * pane shows* is not a filesystem race; what nobody noticed is that an earlier test **runs the
+ * project for real** (`--tag @catalog`, and it keeps its directory), which makes that live run
+ * newer than the stamp. From that test onward the pane draws the live run's verdicts for
+ * `catalog.tflw` and the gate compares them against frozen ones.
+ *
+ * It passed for as long as it has because the two agree on an idle machine: `expect status equals
+ * 200` is recorded at **0 ms** in the fixture and also takes 0 ms live. Under load it takes 1, and
+ * the gate reports `'1' !== '0'` — which is what Node 22 did in CI, and what a 12-way-loaded box
+ * reproduces exactly: **fails in the whole file, passes in isolation under the same load.**
+ *
+ * So the oracle is not pinned to a directory name — it is asked for, by the same rule the page
+ * uses. A number written in this file was never the alternative.
+ */
+const reportShowing = async (file: string): Promise<RunReport> => {
+  const runs = join(root, 'report', 'runs');
+  let best: { at: number; report: RunReport } | null = null;
+  for (const id of await readdir(runs)) {
+    const results = join(runs, id, 'results.json');
+    let at: number;
+    try {
+      at = (await stat(results)).mtimeMs;
+    } catch {
+      continue; // a run that kept no report — `--workers 0` leaves a row and no directory.
+    }
+    const report = JSON.parse(await readFile(results, 'utf8')) as RunReport;
+    if (!report.tests.some((t) => t.file === file)) continue;
+    if (best === null || at > best.at) best = { at, report };
+  }
+  assert.ok(best !== null, `no report on disk holds ${file} — the pane could not be showing one either`);
+  return best.report;
+};
+
 test('`M213` `S2`: a file that has run shows its last response on every request, with no run and no press (`D1099`)', async () => {
   await composeRan('tests/catalog.tflw', 3);
   // The selected request's own response — the disclosure, closed, carrying the three facts.
@@ -1828,20 +1868,31 @@ test('`M213` `S2`: every verdict the report holds is beside the statement it is 
   await composeRan('tests/catalog.tflw', 3);
   const marks = page.locator('[data-seq-open="3"] [data-verdict]');
   assert.ok((await marks.count()) >= 2, 'the request on line 3 has assertions and the run graded them');
-  // The report's own sentence, not a second one written by the page.
-  const report = oracle.full!;
+  // The report's own sentence, not a second one written by the page — and the report the PANE is
+  // reading, not the one this file copied in (`M234` `A`, `D1308`; see `reportShowing` above).
+  const report = await reportShowing('tests/catalog.tflw');
   const step = report.tests
     .filter((t): t is Extract<typeof t, { kind: 'functional' }> => t.kind === 'functional')
     .find((t) => t.file === 'tests/catalog.tflw')!
     .steps.find((x) => x.line === 4)!;
-  const first = await marks.first().textContent();
-  assert.ok(first!.includes(step.detail!), `the row says what the run said — ${JSON.stringify(step.detail)} in ${JSON.stringify(first)}`);
+  /* `M234` `A` — ONE READ OF ONE ELEMENT (`D1308`). The two facts below were two round trips
+     through `marks.first()`, and a locator re-resolves on every use: the pane redraws, the second
+     `first()` is a different mark from the first, and the sentence then describes line 4's step
+     while the duration comes off another one. That is not a hypothetical — Node 22 failed here
+     with `'1' !== '0'` under a message quoting a row whose text had just matched, which is only
+     possible if the two reads saw two elements. The oracle is the committed `results.json` both
+     the page and this file read, so the two can never legitimately disagree. */
+  const mark = await marks.first().evaluate((el) => ({
+    text: el.textContent ?? '',
+    ms: el.querySelector('[data-verdict-ms]')?.getAttribute('data-verdict-ms') ?? null,
+  }));
+  assert.ok(mark.text.includes(step.detail!), `the row says what the run said — ${JSON.stringify(step.detail)} in ${JSON.stringify(mark.text)}`);
   // Read off the attribute rather than out of the sentence: a substring match on a number is a
   // match on any row whose text happens to contain it.
   assert.equal(
-    await marks.first().locator('[data-verdict-ms]').getAttribute('data-verdict-ms'),
+    mark.ms,
     String(step.durationMs),
-    `and how long it took, which \`StepResult\` has carried all along — row read ${JSON.stringify(first)}`,
+    `and how long it took, which \`StepResult\` has carried all along — row read ${JSON.stringify(mark.text)}`,
   );
 });
 
@@ -3008,9 +3059,20 @@ test('`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the ro
      response box and both of `M217`/`M218`'s additions were all API-only, and this gate was green
      throughout. The three below are the ones that separated the panes, asserted in both
      directions so the fork coming back reddens this rather than passing quietly. */
-  await page.locator('[data-seq-row]').first().waitFor();
-  assert.ok((await page.locator('[data-seq-row]').count()) > 0, 'the sequence column is this door’s too');
-  assert.ok((await page.locator('[data-editor]').count()) > 0, 'and so is the editor beside it');
+  /* `M234` `A` — THE WAIT IS THE ASSERTION (`D1308`). These were a wait followed by three
+     unprotected `count()` reads, and the hazard is written down twelve lines below this very
+     block: *"`count()` and `evaluateAll` do not retry, and the foot is redrawn whenever the
+     address moves"*. Waiting for one row and then counting rows is the case that note calls out
+     by name — *the button that was waited for is not the list that is then read* — so a redraw
+     between the two reads zero and reports this door as having no sequence column at all. Node 24
+     failed exactly that in CI on a commit the box ran 203/203. */
+  await page.locator('[data-seq-row]').first().waitFor()
+    .catch(() => assert.fail('the sequence column is this door’s too'));
+  await page.locator('[data-editor]').first().waitFor()
+    .catch(() => assert.fail('and so is the editor beside it'));
+  /* The absence claim keeps its `count()`, and the two waits above are what make it mean anything:
+     a non-retrying count of zero read before the pane has drawn is a FALSE PASS — the same race in
+     the direction that says nothing rather than the direction that fails. */
   assert.equal(await page.locator('[data-body-rows]').count(), 0, 'the pane `M214` left behind is gone from every door, not narrowed');
 
   /**
@@ -9639,11 +9701,20 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
       for (const row of rows) {
         if (await p.locator(row).count() === 0) continue;
         await openMenu(p, row);
-        const box = await p.locator('.ctx-menu').boundingBox();
+        /* `M234` `A` — THE SAME SELECTOR `openMenu` WAITED ON, AND THE ESCAPE IS AWAITED
+           (`D1308`). Two halves of one race, and `A2` twenty lines down already has both: it waits
+           on `.ctx-menu:not([data-menu-placed="measuring"])` and then on `{ state: 'detached' }`
+           after its own Escape. This loop opens a menu per row per viewport and waited for
+           neither, so a right-click could land while the previous menu was still detaching — the
+           `waitFor` inside `openMenu` then matches the OLD menu, and `boundingBox()` reads it as
+           it leaves. That is the `null` Node 22 reported at 700x420, on the third viewport and the
+           second row, which is exactly where the backlog of undismissed menus is deepest. */
+        const box = await p.locator('.ctx-menu:not([data-menu-placed="measuring"])').boundingBox();
         if (box === null || box.x < 0 || box.y < 0 || box.x + box.width > size.width || box.y + box.height > size.height) {
           off.push(`${row} at ${size.width}x${size.height} → ${JSON.stringify(box)}`);
         }
         await p.keyboard.press('Escape');
+        await p.locator('.ctx-menu').waitFor({ state: 'detached' });
       }
     }
     await p.setViewportSize({ width: 1440, height: 900 });
@@ -9710,6 +9781,8 @@ test('`M218` `B1`: every item either runs or says why — asked of every row kin
         if (why === null || why.trim() === '') silent.push(`${row} ▸ ${id}`);
       }
       await p.keyboard.press('Escape');
+      // `M234` `A` — awaited away before the next row opens one (`D1308`), same as `A1`'s loop.
+      await p.locator('.ctx-menu').waitFor({ state: 'detached' });
     }
     assert.deepEqual(silent, [], 'no disabled item is silent about why');
     // The control: if nothing was ever disabled the loop above proved nothing at all. `shared/
@@ -9726,6 +9799,11 @@ test('`M218` `B1`: Delete is refused on an imported file and names the importers
     const why = (await p.locator('.ctx-menu [data-menu-why="delete"]').textContent()) ?? '';
     assert.ok(why.includes('tests/checkout.tflw') && why.includes('tests/basket.tflw'), `the reason names them: ${why}`);
     await p.keyboard.press('Escape');
+    /* `M234` `A` — and gone before the next one opens (`D1308`). `openMenu` waits for a PLACED
+       menu to be visible, which the menu being dismissed still is: without this the second
+       `openMenu` can return on the first file's menu and the assertion below reads `disabled`
+       from the row it was supposed to have left. */
+    await p.locator('.ctx-menu').waitFor({ state: 'detached' });
     // …and the same menu on a file nobody imports offers it.
     await openMenu(p, '[data-file-row="tests/lonely.tflw"]');
     assert.equal(await p.locator('.ctx-menu [data-menu-item="delete"]').getAttribute('data-menu-state'), 'enabled');
