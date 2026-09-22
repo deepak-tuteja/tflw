@@ -1,0 +1,24 @@
+# One action, and the two statements that make an action worth having.
+#
+# A shop signs in everywhere. `action` is where that goes, `give` is how it hands something back,
+# and the call site is one line — which is the whole argument for extracting anything.
+
+action signIn(email, password)
+  api POST /login body { email: "{email}", password: "{password}" }
+  expect status equals 200
+  capture body.ok as signedIn
+  give signedIn
+
+@identity @functional
+test "signing in is one line, because the shop does it in every other test"
+  let ok = signIn("sam@example.com", "hunter2")
+  expect {ok} equals true
+
+# A call on its own line and a call inside a `let` are **different statements**, and the coverage
+# gate is what said so: with only the `let` above, `CallStmt` was still owed. The distinction is
+# the ordinary one — sometimes what you want is what the action did, not what it gave back.
+@identity @functional
+test "…and called for what it does, the answer goes unread"
+  signIn("sam@example.com", "hunter2")
+  api GET /items
+  expect status equals 200

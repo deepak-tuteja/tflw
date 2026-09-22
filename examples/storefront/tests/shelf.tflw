@@ -1,0 +1,34 @@
+# Reading the order page — the four gestures a visitor makes before they have decided anything.
+#
+# `/order` is the one page in this shop with controls on it, and the reason it exists is worth
+# stating where a reader will meet it: the rest of the storefront is two documents and a form,
+# which is enough for `open`, `click` and `expect text` and for nothing else. Nineteen of the
+# twenty-two browser statements tflw can write had no surface here at all, so the corpus could not
+# hold them and the docs photographed a test using three of them (`M234`).
+
+@catalogue @functional
+test "the shelf page is what a first visit looks like"
+  open "/"
+  expect text "The Coffee Shelf" is visible
+  # `screenshot` is evidence, never an assertion — it passes even where the run turned evidence
+  # down, and says so in the report rather than reporting a capture that is not there.
+  screenshot "the shelf"
+
+@catalogue @functional
+test "searching narrows the list to what was typed"
+  open "/order"
+  fill field "Find a coffee" with "decaf"
+  press "Enter"
+  expect text "Showing 1 of 3" is visible
+
+@catalogue @functional
+test "the note under the postcode question is only there for a pointer"
+  open "/order"
+  hover text "Why we ask for a postcode"
+  expect text "We use it to pick the nearest depot, which is how next-day works." is visible
+
+@catalogue @functional
+test "the page ends where it says it does"
+  open "/order"
+  scroll to text "End of the order page"
+  expect text "End of the order page" is visible

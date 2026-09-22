@@ -1,0 +1,37 @@
+# The basket — a confirmation taken both ways, and a line dragged from one list to another.
+#
+# **`within` is load-bearing here and is not decoration.** There are three `Remove` buttons on the
+# order page, so `click button "Remove"` is an ambiguous locator and tflw refuses it rather than
+# picking one — the same refusal `signin.tflw` records for `expect text "Sign in"`. Scoping to the
+# list names one of the three.
+
+# **The answer is armed BEFORE the question is asked, and the first draft had it the other way
+# round.** A native `confirm()` blocks the page until something answers it, so there is no moment
+# between the click and the dialog in which a test could decide — `accept dialog` says what to do
+# with the *next* one. tflw says so when you get it wrong, which is how this file was corrected:
+# `warning[TF079]: dismiss dialog armed the next native dialog and no dialog was raised before the
+# test ended — the arming did nothing`. That warning is on a test that PASSED, which is the point
+# of it: the assertion after a mis-ordered arm is true for a reason the author did not write.
+
+@checkout @functional
+test "removing a saved item asks first, and yes means yes"
+  open "/order"
+  accept dialog
+  within list "Saved for later"
+    click button "Remove"
+  expect dialog message equals "Remove Filter coffee, 1kg from your saved items?"
+  expect css "#saved-line" is hidden
+
+@checkout @functional
+test "…and no leaves the item where it was"
+  open "/order"
+  dismiss dialog
+  within list "Saved for later"
+    click button "Remove"
+  expect text "Kept in your saved items" is visible
+
+@checkout @functional
+test "a saved item can be dragged into the basket"
+  open "/order"
+  drag css "#saved-line" to css "#basket"
+  expect text "Moved Filter coffee, 1kg to your basket" is visible

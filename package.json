@@ -51,7 +51,8 @@
     "docs:demand": "node scripts/gen-decisions.mjs --demand",
     "example": "node examples/storefront/run.mjs --tag functional",
     "example:ui": "node packages/cli/dist/cli.cjs ui examples/storefront",
-    "example:load": "node examples/storefront/run.mjs --tag workload"
+    "example:load": "node examples/storefront/run.mjs --tag workload",
+    "example:pacing": "node examples/storefront/run.mjs --tag pacing"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

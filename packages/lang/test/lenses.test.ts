@@ -166,7 +166,12 @@ test('every test in the corpus classifies, and a third of them land in more than
   // `M203` `S4` — the example project (`examples/storefront/tests/`, 4 files, 11 tests + 1 crawl) joined this repository's corpus: 50 -> 61 (its 11 tests; the crawl is counted by `combos`, not by `total`).
   // `M216` — the example gained `tests/checkout.tflw` (5 tests, 0 crawls): requests with nested
   // bodies and headers that decide something, which the example had none of. 61 -> 66.
-  const EXPECTED_TESTS = 66;
+  // `M234` `C` — the example gained **seven files and nineteen tests**: 66 -> 85. The corpus it
+  // holds is no longer whatever somebody happened to write, it is every statement the printer can
+  // emit, asserted as an equality by `exampleCoverage.test.ts` — it stood at **6 of 31** and the
+  // docs photographed it. Nineteen of those thirty-one needed a page with controls on it to be
+  // written against at all, which is what `examples/storefront/order.html` is for.
+  const EXPECTED_TESTS = 85;
   assert.equal(mine.total, EXPECTED_TESTS,
     `the corpus classified ${mine.total} tests, expected ${EXPECTED_TESTS} — move the number in the change that moved the corpus`);
 

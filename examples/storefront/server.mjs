@@ -15,8 +15,24 @@
 //
 // stdlib only, one file, no build. `node server.mjs` and it is up.
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+/** The three files the order page is made of, read once at start-up. Served from this origin so
+ *  `default-src 'self'` admits them — see the comment at the top of `shelf.css`. */
+const ASSET = {
+  '/shelf.css': ['text/css; charset=utf-8', readFileSync(join(here, 'shelf.css'), 'utf8')],
+  '/order.js': ['text/javascript; charset=utf-8', readFileSync(join(here, 'order.js'), 'utf8')],
+};
+const ORDER_PAGE = readFileSync(join(here, 'order.html'), 'utf8');
 
 export const PORT = 4720;
+
+/** How long the warehouse takes to pack an order. Long enough that a poll polls more than once,
+ *  short enough that the suite does not wait on it. */
+const PACKING_MS = 600;
 
 const CATALOGUE = [
   { id: 1, name: 'Filter coffee, 1kg', price: 1400 },
@@ -24,10 +40,13 @@ const CATALOGUE = [
   { id: 3, name: 'Decaf, 250g', price: 900 },
 ];
 
+// **The stylesheet is linked, not inlined, and that is a correctness fix rather than a tidy-up.**
+// Every page here carries `default-src 'self'`, which blocks an inline `<style>` exactly as it
+// blocks an inline `<script>`. This helper inlined one for the example's whole life: the header
+// was present, `sec/csp-missing` passed, and the pages rendered with none of their own CSS.
 const page = (title, body) =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title>` +
-  '<style>body{font:16px/1.5 system-ui;margin:2rem;max-width:40rem;color:#111;background:#fff}' +
-  'li{margin:.4rem 0}label{display:block;margin:.6rem 0}input{padding:.3rem}</style></head>' +
+  '<link rel="stylesheet" href="/shelf.css"></head>' +
   `<body>${body}</body></html>`;
 
 export function startStorefront(port = PORT) {
@@ -43,10 +62,10 @@ export function startStorefront(port = PORT) {
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'x-content-type-options': 'nosniff', ...extra });
       res.end(JSON.stringify(body));
     };
-    const html = (status, body) => {
+    const html = (status, body, policy = "default-src 'self'") => {
       // A Content-Security-Policy on every document. `sec/csp-missing` is a **serious** finding and
       // applies to anything served as `text/html`, so without this the crawl below fails honestly.
-      res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'self'" });
+      res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': policy });
       res.end(body);
     };
     const read = (then) => {
@@ -96,7 +115,7 @@ export function startStorefront(port = PORT) {
         if (!found) return json(400, { error: 'no such item' });
         const qty = Number(body.qty ?? 1);
         if (!Number.isInteger(qty) || qty < 1) return json(422, { error: 'qty must be a whole number of at least 1' });
-        const order = { id: orders.size + 1, ref: body.ref ?? null, itemId: found.id, qty, total: found.price * qty };
+        const order = { id: orders.size + 1, ref: body.ref ?? null, itemId: found.id, qty, total: found.price * qty, status: 'placed' };
         orders.set(order.id, order);
         json(201, order);
       });
@@ -179,10 +198,61 @@ export function startStorefront(port = PORT) {
         json(201, order, { ...echo, location: `/orders/${id}` });
       });
     }
+    // ---- fulfilment: the one thing here that finishes after the answer, not with it -------------
+    //
+    // `POST /orders/:id/fulfil` accepts the work and says so — `202`, not `201`, because nothing
+    // is packed yet — and `GET /orders/:id` is the handle you watch. That is what `wait until api`
+    // is for, and a shop with no such route has nothing to point it at. The warehouse takes
+    // `PACKING_MS`; the poll is what turns that into a test.
+    const fulfil = /^\/orders\/(\d+)\/fulfil$/.exec(path);
+    if (req.method === 'POST' && fulfil) {
+      const order = orders.get(Number(fulfil[1]));
+      if (!order) return json(404, { error: 'no such order' });
+      order.packedAt = Date.now() + PACKING_MS;
+      return json(202, { id: order.id, status: 'packing' }, { location: `/orders/${order.id}` });
+    }
     const one = /^\/orders\/(\d+)$/.exec(path);
     if (req.method === 'GET' && one) {
       const order = orders.get(Number(one[1]));
-      return order ? json(200, order) : json(404, { error: 'no such order' });
+      if (!order) return json(404, { error: 'no such order' });
+      const { packedAt, ...rest } = order;
+      const status = packedAt === undefined ? order.status : packedAt <= Date.now() ? 'shipped' : 'packing';
+      return json(200, { ...rest, status });
+    }
+    // ---- the order page, and the three things it is made of --------------------------------------
+    //
+    // **This page is where the browser half of the language becomes runnable.** The rest of this
+    // shop is two documents and a form, which is enough for `open`, `click` and `expect text` and
+    // nothing else — so nineteen of the twenty-two browser statements tflw can write had no
+    // surface in this example to be written against, and the docs photographed a test using three
+    // of them beside a sentence claiming twenty-two (`M234`). Every control on it is a thing a
+    // small shop does; none of it is a widget put there to be tested.
+    if (req.method === 'GET' && ASSET[path]) {
+      const [type, body] = ASSET[path];
+      res.writeHead(200, { 'content-type': type, 'x-content-type-options': 'nosniff' });
+      return res.end(body);
+    }
+    if (req.method === 'GET' && path === '/order') {
+      // `connect-src` names the delivery supplier because the page really does call it, and a
+      // policy that forbade it would make the un-stubbed reading (`unavailable`) a CSP refusal
+      // rather than a supplier being down. Naming one host is the point of the directive.
+      return html(200, ORDER_PAGE, "default-src 'self'; connect-src 'self' https://delivery.example.test");
+    }
+    if (req.method === 'GET' && path === '/terms') {
+      return html(200, page('Terms of sale',
+        '<h1>Terms of sale for The Coffee Shelf</h1>' +
+        '<p>Coffee is roasted to order and posted within two working days.</p>' +
+        '<p><a href="/order">Back to your order</a></p>'));
+    }
+    if (req.method === 'GET' && path === '/order.csv') {
+      // `Content-Disposition: attachment` is what makes this a download rather than a navigation,
+      // which is the difference `download as file` is written around.
+      res.writeHead(200, {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': 'attachment; filename="order.csv"',
+        'x-content-type-options': 'nosniff',
+      });
+      return res.end('item,qty,price\nDecaf 250g,1,9.00\nEspresso blend 250g,1,8.50\n');
     }
     json(404, { error: `no route ${req.method} ${path}` });
   });

@@ -1,0 +1,19 @@
+# Work that finishes after the answer — and the statement that is the wrong tool for it.
+
+@checkout @functional
+test "an order is accepted before it is packed, and the poll is what waits"
+  api POST /orders body { itemId: 3, qty: 2 }
+  expect status equals 201
+  capture body.id as orderId
+  # 202, not 201: nothing is packed yet, and the status is where that is said.
+  api POST /orders/{orderId}/fulfil
+  expect status equals 202
+  wait until api GET /orders/{orderId}
+    expect status equals 200
+    expect body.status equals "shipped"
+
+# **`pause` is not here, and the checker is why.** The first draft of this file ended this test
+# with `pause 600ms` instead of a `wait until`, and `TF033` refused it: *`pause` is only legal
+# inside a workload-bearing `test`*. That is the right refusal and it is worth meeting once — a
+# pause outside a workload is a test waiting on a clock instead of on the thing it is about, and
+# there is nothing for it to pace. It lives in `load.tflw`, where it is per-iteration pacing.

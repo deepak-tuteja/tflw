@@ -357,6 +357,7 @@ function lastLineOfDecl(text: string, decl: TestDecl | HookDecl): { line: number
   const byLine = new Map(records.map((r) => [r.line, r]));
   const total = records.length === 0 ? 1 : records[records.length - 1]!.line;
   const kind = (n: number): 'blank' | 'comment' | 'code' => byLine.get(n)?.kind ?? 'blank';
+  const indentOf = (n: number): number => byLine.get(n)?.indent ?? 0;
   const floor = decl.span.start.line;
 
   let line = Math.min(lineAt(text, Math.max(backOverWhitespace(text, decl.span.end.offset) - 1, 0)), total);
@@ -367,7 +368,21 @@ function lastLineOfDecl(text: string, decl: TestDecl | HookDecl): { line: number
     while (top > floor && kind(top - 1) === 'comment') top -= 1;
     let below = line + 1;
     while (below <= total && kind(below) === 'blank') below += 1;
-    if (below > total) break;                                   // nothing follows: this test's own note
+    if (below > total) {
+      /* **Nothing follows the run, and that is not enough to make it this test's text**
+         (`M234` `C`). The rule above tells a note apart from an introduction by what is *around*
+         the run, and a run at the end of the file has nothing around it — so a **dedented**
+         paragraph closing the file was read as the last test's trailing note and the new line was
+         written below it, outside the test. `settleSplice` then refused the whole edit, because a
+         `  threshold …` under a column-0 comment is not text `format` agrees with.
+         Found by `examples/storefront/tests/fulfilment.tflw`, whose closing paragraph is exactly
+         that shape, and reproduced in five lines — see the gate below this one. Indentation is
+         what separates the two: a note about a statement of this test is written at the body's
+         depth, and a note about the file is written at the file's. */
+      if (indentOf(top) > indentOf(floor)) break;               // indented: this test's own note
+      line = top - 1;                                           // dedented: a note about the file
+      continue;
+    }
     if (top - 1 <= floor || kind(top - 1) !== 'blank') break;    // attached to a statement of this test
     line = top - 1;
   }
