@@ -53,12 +53,15 @@ $('basket').addEventListener('drop', (e) => {
   e.preventDefault();
   if (!document.body.contains(line) || line.parentElement === $('basket')) return;
   // **`append` MOVES the node; it does not copy it — and the first draft removed it instead.**
-  // That is what a shop means (it is the same line, in a different list) and it is also what
-  // tflw's `drag` needs: `performDrag` finishes by dispatching `dragend` on the SOURCE element,
-  // so a drop handler that removes its own source leaves that last dispatch waiting for an
-  // element that is gone. Measured — the drop itself succeeded and `Moved …` was on the page,
-  // and the step still failed 30 seconds later with `locator.dispatchEvent: Timeout 30000ms
-  // exceeded`, which names neither the removal nor the source.
+  // That is what a shop means: it is the same line, in a different list.
+  //
+  // It was also, for one milestone, what tflw's `drag` *required*, and this comment said so.
+  // `performDrag` finished by dispatching `dragend` on the source **locator**, so a handler that
+  // removed its own source left that last dispatch waiting 30 s for an element that was gone —
+  // measured, with the drop itself already landed. **That is fixed** (`M234-01`, repaired in
+  // `M236` `A`: the source element is held, not re-queried), so `append` is here because it is
+  // what a shop means and for no other reason. A handler that removed or re-rendered the line
+  // would work too, and `packages/runtime/test/browser-steps.test.ts` proves all three.
   $('basket').append(line);
   $('moved').hidden = false;
 });

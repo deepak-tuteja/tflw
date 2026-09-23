@@ -1253,8 +1253,15 @@ export function ComposePane(props: ComposePaneProps) {
   }, [editorPx, footer, splitKey]);
 
   if (outline === null) {
+    // `M236` `C` (`M235-09`, `D-M236-3`): **the placeholder does not answer to `[data-compose-pane]`.**
+    // It used to, as `data-compose-pane="reading"`, which made `locator('[data-compose-pane]').waitFor()`
+    // satisfiable by a pane that had drawn nothing — six gates waited that way and a `count()` under
+    // one of them answered `0` about a file that was still being read. The rule is fixed here, at
+    // the marker, rather than at the six call sites: a rule enforced at every consumer is a rule the
+    // next consumer will not know about. `[data-compose-pane]` now means *a pane with a file in it*,
+    // and the placeholder says so in its own name.
     return (
-      <div className="compose-pane reading" data-compose-pane="reading">
+      <div className="compose-pane reading" data-compose-placeholder="reading">
         <p className="muted" data-compose-state>
           reading {path || 'the project'}…
         </p>

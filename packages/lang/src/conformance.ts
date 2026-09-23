@@ -195,6 +195,19 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     decidable: 'propagation',
     note: 're-raises a Playwright failure under the step label',
   },
+  {
+    id: 'browser-drag-phase-failed',
+    file: 'browser.ts',
+    excerpt: 'drag failed at ${phase}${on}: ${firstLine}',
+    decidable: 'propagation',
+    note:
+      'the same re-raise as `browser-step-failed`, per phase — `M236` `A` (`M234-01`). `runAction` '
+      + 'wraps one call with one label, and a drag is seven calls whose failures mean different '
+      + 'things, so which of the five events ended the step and which side of the gesture it was '
+      + 'are carried instead of being flattened into one anonymous `drag failed:`. Nothing new is '
+      + 'decidable here: it is still a Playwright failure re-raised, with the author\'s own locator '
+      + 'text attached because the interpreter was already holding it.',
+  },
 
   // -- contract.ts -----------------------------------------------------------
   {

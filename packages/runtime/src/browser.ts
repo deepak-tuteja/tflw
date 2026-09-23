@@ -1175,23 +1175,75 @@ export async function performOpen(page: PWPage, url: string, timeoutMs: number):
   await runAction('open', () => page.goto(url, { timeout: timeoutMs }));
 }
 
+/** `M236` `A` (`M234-01`'s second half, `D-M236-2`): a rejection handler that names the phase, the
+ * side and the author's own locator text. `runAction` cannot do this — it wraps one call with one
+ * label, and a drag is seven calls whose failures mean different things. Typed to return `never` so
+ * it composes with `.catch()` on a call whose value is used. */
+function dragFailure(phase: string, side: 'from' | 'to', sides?: DragSides): (err: unknown) => never {
+  return (err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    const firstLine = message.split('\n')[0]!.trim();
+    const on = sides ? ` on ${side === 'from' ? sides.from : sides.to}` : '';
+    throw new RuntimeError(`drag failed at ${phase}${on}: ${firstLine}`);
+  };
+}
+
+/** The author's own text for the two sides of a `drag`, which the interpreter already builds for
+ * the success line (`interpreter.ts`, `locatorDetail`). `M236` `A` (`M234-01`): a five-event
+ * gesture that reports as one anonymous `drag failed: …` cannot say which event ended it, so the
+ * descriptions come down rather than being rebuilt from a generated CSS selector. Optional, because
+ * the runtime's own tests call `performDrag` directly. */
+export interface DragSides {
+  from: string;
+  to: string;
+}
+
 /** `drag <locator> to <locator>` (SPEC §9.5, M3b) — dispatches a native HTML5 drag-and-drop
  * sequence with a real `DataTransfer` rather than using Playwright's own `dragTo()`, which relies
  * on simulated mouse movement and doesn't reliably fire native `dragstart`/`drop` listeners
  * (testFlow-tests' webV2-3 build hit this directly: `dragTo()` silently no-op'd a hand-rolled
- * drag-reorder list). This is Playwright's own documented manual-DnD recipe. */
-export async function performDrag(fromLocator: PWLocator, toLocator: PWLocator, timeoutMs: number): Promise<void> {
-  await runAction('drag', async () => {
-    await fromLocator.waitFor({ state: 'visible', timeout: timeoutMs });
-    await toLocator.waitFor({ state: 'visible', timeout: timeoutMs });
-    const page = fromLocator.page();
+ * drag-reorder list). This is Playwright's own documented manual-DnD recipe.
+ *
+ * `M236` `A` (`M234-01`): **the source is held, not re-queried.** A locator is by design a query
+ * re-run at every use, and the fifth event is the one place where re-running it is the bug — the
+ * HTML drag-and-drop processing model fires `dragend` at the node that received `dragstart`, and by
+ * the time `dragend` is sent the page's drop handler has already run. Measured on the box
+ * 2026-09-22, one node onto another under three drop handlers: with `basket.append(line)` the
+ * re-query happens to find the same node and the step is green; with `line.remove()` it finds
+ * nothing and the step fails at **30 020 ms** *after the drop landed*; with
+ * `line.replaceWith(clone)` — what any re-rendering list does — it finds the clone and the step is
+ * **green while telling a node that never received `dragstart` that the gesture had ended**. So the
+ * construct was wrong in two of the three shapes and only one of the two said so. A held
+ * `ElementHandle` is not a workaround for a locator limitation; it is the correct expression of
+ * what the fifth event means. This is the repository's first `ElementHandle`, deliberately.
+ *
+ * `M236` `A` (`M234-02`): the three dispatches that remain against the *target* carry the
+ * configured timeout. The two source dispatches run against a handle, which issues no query, so
+ * they take no timeout and need none. */
+export async function performDrag(
+  fromLocator: PWLocator,
+  toLocator: PWLocator,
+  timeoutMs: number,
+  sides?: DragSides,
+): Promise<void> {
+  await fromLocator.waitFor({ state: 'visible', timeout: timeoutMs }).catch(dragFailure('wait for the source', 'from', sides));
+  await toLocator.waitFor({ state: 'visible', timeout: timeoutMs }).catch(dragFailure('wait for the target', 'to', sides));
+  const page = fromLocator.page();
+  const source = await fromLocator.elementHandle({ timeout: timeoutMs }).catch(dragFailure('resolve the source', 'from', sides));
+  try {
     const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
-    await fromLocator.dispatchEvent('dragstart', { dataTransfer });
-    await toLocator.dispatchEvent('dragenter', { dataTransfer });
-    await toLocator.dispatchEvent('dragover', { dataTransfer });
-    await toLocator.dispatchEvent('drop', { dataTransfer });
-    await fromLocator.dispatchEvent('dragend', { dataTransfer });
-  });
+    try {
+      await source.dispatchEvent('dragstart', { dataTransfer }).catch(dragFailure('dragstart', 'from', sides));
+      await toLocator.dispatchEvent('dragenter', { dataTransfer }, { timeout: timeoutMs }).catch(dragFailure('dragenter', 'to', sides));
+      await toLocator.dispatchEvent('dragover', { dataTransfer }, { timeout: timeoutMs }).catch(dragFailure('dragover', 'to', sides));
+      await toLocator.dispatchEvent('drop', { dataTransfer }, { timeout: timeoutMs }).catch(dragFailure('drop', 'to', sides));
+      await source.dispatchEvent('dragend', { dataTransfer }).catch(dragFailure('dragend', 'from', sides));
+    } finally {
+      await dataTransfer.dispose().catch(() => {});
+    }
+  } finally {
+    await source.dispose().catch(() => {});
+  }
 }
 
 /** `drop file "./f.png" onto <locator>` (SPEC §9.5, M3b) — for a dropzone with no underlying
@@ -1218,9 +1270,9 @@ export async function performDropFile(page: PWPage, absFilePath: string, pwLocat
       { base64, fileName, mimeType },
     );
     await pwLocator.waitFor({ state: 'visible', timeout: timeoutMs });
-    await pwLocator.dispatchEvent('dragenter', { dataTransfer });
-    await pwLocator.dispatchEvent('dragover', { dataTransfer });
-    await pwLocator.dispatchEvent('drop', { dataTransfer });
+    await pwLocator.dispatchEvent('dragenter', { dataTransfer }, { timeout: timeoutMs });
+    await pwLocator.dispatchEvent('dragover', { dataTransfer }, { timeout: timeoutMs });
+    await pwLocator.dispatchEvent('drop', { dataTransfer }, { timeout: timeoutMs });
   });
 }
 

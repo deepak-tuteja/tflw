@@ -280,6 +280,61 @@ const DIAGNOSE_HTML = `<!doctype html>
   <input id="em" type="text" />
 </body></html>`;
 
+// `M236` `A` (`M234-01`): three drop handlers, identical in every other respect, on one page. The
+// existing `drag` test at `/` swaps two siblings with `insertBefore`, so the dragged node survives
+// and is re-attached — it is the ONE shape the defect does not touch, which is why this construct
+// had a green test and a broken implementation for its whole life.
+//
+// `?shape=move` appends the source into the basket · `?shape=remove` deletes it · `?shape=replace`
+// swaps it for a clone that reuses the same `id`, which is what any re-rendering list does.
+// `?shape=vanish` is not a drop handler at all — the *target* deletes itself on `dragenter`, which
+// is the one arrangement that reaches a target dispatch with nothing behind it (`M234-02`).
+//
+// **The `dragstart`/`dragend` listeners are bound to the source element itself, not to `document`**,
+// and that is not a style choice: two of the three shapes detach the source, and an event dispatched
+// at a detached node does not propagate anywhere. A delegated listener would observe nothing in
+// exactly the two shapes this page exists to separate.
+//
+// **`#same-node` is written by identity, never by `id`.** The replace shape hands the clone the same
+// `id`, so an `id` comparison is green against the defect. `cloneNode(true)` copies no listeners
+// either, which is what makes the shipped behaviour legible: dispatching `dragend` at the clone
+// reaches nothing at all, and the marker stays at its "no dragend" resting value.
+const DRAG_SHAPES_HTML = (shape: string) => `<!doctype html>
+<html><head><title>drag shapes</title></head><body>
+  <div id="line" draggable="true">Saved for later</div>
+  <div id="basket" style="height: 80px; border: 1px solid black">Basket</div>
+  <p id="dropped">not dropped</p>
+  <p id="same-node">no dragend</p>
+  <script>
+    (function () {
+      var startNode = null;
+      var line = document.getElementById('line');
+      var basket = document.getElementById('basket');
+      line.addEventListener('dragstart', function (e) { startNode = e.target; });
+      line.addEventListener('dragend', function (e) {
+        document.getElementById('same-node').textContent = e.target === startNode ? 'same node' : 'different node';
+      });
+      basket.addEventListener('dragenter', function (e) {
+        e.preventDefault();
+        // M236 A (M234-02): the only way to reach a target DISPATCH with no element behind it.
+        // waitFor runs before the three target dispatches and shares their budget, so a target
+        // that was never there is caught one phase earlier and gates nothing about them.
+        // (No backticks in here: this comment lives inside a template literal.)
+        if (${JSON.stringify(shape)} === 'vanish') basket.remove();
+      });
+      basket.addEventListener('dragover', function (e) { e.preventDefault(); });
+      basket.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var shape = ${JSON.stringify(shape)};
+        if (shape === 'move') basket.appendChild(line);
+        else if (shape === 'remove') line.remove();
+        else if (shape === 'replace') line.replaceWith(line.cloneNode(true));
+        document.getElementById('dropped').textContent = 'dropped';
+      });
+    })();
+  </script>
+</body></html>`;
+
 let server: FixtureServer;
 let config: ResolvedConfig;
 let browserManager: BrowserManager;
@@ -321,6 +376,12 @@ before(async () => {
     },
     '/snap-widget': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(SNAP_WIDGET_HTML),
     '/diagnose': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(DIAGNOSE_HTML),
+    // `M236` `A` (`M234-01`): one page, three drop handlers, selected by query string — the routes
+    // differ by exactly the fact under test, the pattern `M230` `A` used for `M228-01`.
+    '/drag-shapes': (req, res) => {
+      const shape = new URL(req.url ?? '/', 'http://x').searchParams.get('shape') ?? 'move';
+      res.writeHead(200, { 'content-type': 'text/html' }).end(DRAG_SHAPES_HTML(shape));
+    },
   });
   config = { ...testConfig(server.baseUrl), webBaseUrl: server.baseUrl };
   browserManager = new BrowserManager();
@@ -1064,6 +1125,85 @@ test('`drag … to …` dispatches a real dragstart/dragenter/dragover/drop sequ
     steps.map((s) => s.kind),
     ['open', 'drag', 'expect'],
   );
+});
+
+// `M236` `A` (`M234-01`/`M234-02`). Four tests over one route, and the third is the one that
+// matters — it is the only one the *silent* half of the defect reddens.
+//
+// The mutation controls, stated so a later reader can run them:
+//   · reverting the held `ElementHandle` in `performDrag` must redden the **remove** shape through
+//     the elapsed budget and the **replace** shape through `same node` ALONE. If it reddens only
+//     the remove shape, the third test is not written correctly and the silent half is ungated.
+//   · reverting `{ timeout: timeoutMs }` on the three target dispatches must change a **duration**
+//     and no verdict, which is why the fourth test asserts elapsed time against a budget rather
+//     than an outcome.
+
+/** A config whose browser budget is four seconds — short enough that Playwright's own thirty-second
+ * default is unmistakable in the elapsed time, long enough not to be flaky on a loaded runner. */
+function dragConfig(): ResolvedConfig {
+  return { ...testConfig(server.baseUrl, { browser: 4_000 }), webBaseUrl: server.baseUrl };
+}
+
+async function runDrag(source: string) {
+  const { program, diagnostics } = parseSource(source);
+  assert.deepEqual(diagnostics, [], `unexpected parse diagnostics: ${JSON.stringify(diagnostics)}`);
+  const started = Date.now();
+  const { report } = await runProgram(program, dragConfig(), { source, browserManager });
+  return { report, elapsedMs: Date.now() - started };
+}
+
+for (const shape of ['move', 'remove', 'replace'] as const) {
+  test(`\`drag\` completes inside the configured budget when the drop handler ${shape}s the source`, async () => {
+    const { report, elapsedMs } = await runDrag(`test "drag ${shape}"
+  open "/drag-shapes?shape=${shape}"
+  drag css "#line" to css "#basket"
+  expect text "dropped" is visible
+`);
+    assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+    // The budget is the assertion: the shipped code took 30 020 ms on the remove shape, against a
+    // configured 5 000. Anything near thirty seconds here is the defect, whatever the verdict says.
+    assert.ok(elapsedMs < 20_000, `the whole test took ${elapsedMs} ms, which is Playwright's default timeout and not this project's`);
+  });
+}
+
+test('`drag` fires `dragend` at the node that received `dragstart`, even after the drop handler has replaced it', async () => {
+  // The control that keeps the two above from being claims about the drop: `dropped` proves the
+  // drop landed, `same node` proves the gesture ended on the right element. The shipped code
+  // satisfied the first in all three shapes and the second in only one.
+  for (const shape of ['move', 'remove', 'replace'] as const) {
+    const { report } = await runDrag(`test "drag identity ${shape}"
+  open "/drag-shapes?shape=${shape}"
+  drag css "#line" to css "#basket"
+  expect text "dropped" is visible
+  expect text "same node" is visible
+`);
+    assert.equal(report.ok, true, `${shape}: ${JSON.stringify(report.tests[0], null, 2)}`);
+  }
+});
+
+test('`drag` spends the configured browser timeout, not Playwright\'s default, and names the phase and the side that failed', async () => {
+  // `M234-02`'s control: the *target* is gone, so a target dispatch is what waits. With the timeout
+  // threaded through it ends at the author's four seconds; without it, at thirty.
+  // `M234-01`'s second half (`D-M236-2`) rides the same failure: the message must say which of the
+  // seven phases ended the step and against which side of the author's own text.
+  const { report, elapsedMs } = await runDrag(`test "drag to a vanishing target"
+  open "/drag-shapes?shape=vanish"
+  drag css "#line" to css "#basket"
+`);
+  assert.equal(report.ok, false);
+  const entry = asEntry(report.tests[0], 'functional');
+  const drag = entry.steps[entry.steps.length - 1]!;
+  assert.equal(drag.kind, 'drag');
+  assert.equal(drag.ok, false);
+  // A `StepResult` has no `error` — the failure reason is the test entry's, and the step carries a
+  // one-line `detail`. Both are asserted: the entry is the surface a reader sees, and the detail is
+  // what the timeline prints beside the step, and a message that names the phase in one place and
+  // not the other would be half a repair.
+  assert.match(entry.error ?? '', /drag failed at dragover on `css "#basket"`:/,
+    `the message must name the phase and the side, and got: ${entry.error}`);
+  assert.match(drag.detail ?? '', /drag failed at dragover on `css "#basket"`:/,
+    `the step's own line must name them too, and got: ${drag.detail}`);
+  assert.ok(elapsedMs < 20_000, `waited ${elapsedMs} ms against a configured 4 000`);
 });
 
 test('`drop file … onto …` builds a real in-page `File` from actual on-disk bytes for a dropzone with no `<input type="file">`', async () => {

@@ -2875,12 +2875,15 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
     await sized.goto(`${baseUrl}#/load`);
     await sized.reload();
     await sized.locator('[data-compose-pane]').waitFor();
-    /* `M235-09` — **the wait above is satisfied by the pane saying it is NOT ready.** The reading
-       branch renders `data-compose-pane="reading"` (`ComposePane.tsx:1257`), so `[data-compose-pane]`
-       matches it, and the `count()` underneath answers `0` against a pane that has drawn nothing
-       yet. That was always true; `M235-07`'s `ownOutline` widened the window it fires in, and the
-       next sweep reddened it at 1 of 56 — which is the repair working as an instrument even as it
-       made this site marginally more likely.
+    /* `M235-09` — **the wait above WAS satisfied by the pane saying it is NOT ready.** The reading
+       branch rendered `data-compose-pane="reading"`, so `[data-compose-pane]` matched it, and the
+       `count()` underneath answered `0` against a pane that had drawn nothing yet. That was always
+       true; `M235-07`'s `ownOutline` widened the window it fires in, and the next sweep reddened it
+       at 1 of 56 — which is the repair working as an instrument even as it made this site
+       marginally more likely. **Repaired at the marker in `M236` `C`** (`D-M236-3`): the placeholder
+       is `[data-compose-placeholder]` now and the wait above is correct as written. The `settle`
+       below stays, because it is this site's own measured reproduction and removing the belt that
+       caught the defect is how a round loses the evidence it was opened by.
        The rows are established first and the absence is read after, because an absence over a set
        that has not painted passes for the wrong reason — the same ordering `C2` applied to four
        emptiness claims. */
@@ -12367,6 +12370,89 @@ test('the run list marks the open report, counts `current` as a property, and ke
     await p.locator(`[data-report-row="${newer}"][aria-pressed="true"]`).waitFor();
     assert.deepEqual(await pressed(), ['true', 'false'], 'opening another run left two rows marked');
   });
+});
+
+// `M236` `C` (`M235-09`, `D-M236-3`) — **what `[data-compose-pane]` means.**
+//
+// Six gates in this file wait with `locator('[data-compose-pane]').waitFor()` and then read
+// something out of the pane. Until `M236` the reading placeholder rendered
+// `data-compose-pane="reading"`, so every one of those waits was satisfiable by a pane that had
+// drawn nothing — the wait said *a pane exists*, the test meant *a pane has a file in it*, and
+// `:2877` reddened on exactly that at 1 of 56.
+//
+// **The placeholder window is held open on purpose.** A race gated by whichever side happened to
+// win is not gated (`D1252`'s own argument, one test below): the file read is delayed, the
+// assertion is taken while it is outstanding, and then it is released and the same selectors are
+// read again. So the test states both halves of the marker's meaning rather than one.
+//
+// The mutation is one attribute: putting `data-compose-pane` back on `ComposePane.tsx`'s reading
+// branch reddens the middle assertion and nothing else.
+//
+// **What this does and does not demonstrate**, said plainly rather than implied. It demonstrates
+// that the placeholder window is reachable, that it is observable, and that `[data-compose-pane]`
+// no longer answers during it. It does **not** individually mutation-prove the other five sites:
+// each of them is `waitFor()` on that selector with nothing before it but a navigation, so the
+// window this test holds open is the same window they were racing, but that is an argument from
+// the shape of the five and not a measurement of each.
+test('the reading placeholder is not a pane: `[data-compose-pane]` answers only for a pane with a file in it', async () => {
+  await withProjectFixture(
+    {
+      'first.tflw': 'test "it answers"\n  api GET /a\n  expect status equals 200\n',
+      'second.tflw': 'test "it also answers"\n  api GET /b\n  expect status equals 200\n',
+    },
+    async (p, base) => {
+      await p.goto(`${base}/#/api/compose/first.tflw`);
+      await p.reload();
+      await p.locator('[data-compose-pane]').waitFor();
+
+      // The handler parks until this test says so — and **the parking is what has to be cleaned
+      // up**. A route left mid-flight resumes after `unroute` and `route.continue()` then throws
+      // `Route is already handled!` as an unhandled rejection, which node:test attributes to the
+      // `before` hook and fails the whole file. Measured on the box: this test passed and the file
+      // did not. So every handler invocation is tracked, they are all awaited before the route is
+      // removed, and the continue itself tolerates a route torn down underneath it.
+      let release: (() => void) | null = null;
+      const held = new Promise<void>((r) => { release = r; });
+      const inflight: Promise<void>[] = [];
+      await p.route('**/api/file**', async (route) => {
+        const job = (async () => {
+          await held;
+          await route.continue().catch(() => {});
+        })();
+        inflight.push(job);
+        await job;
+      });
+      try {
+        // Open the other file. The read is now outstanding and `outline` is null, so the pane is
+        // the placeholder — for as long as this test wants it to be.
+        await p.goto(`${base}/#/api/compose/second.tflw`);
+        await p.locator('[data-compose-placeholder]').waitFor();
+
+        assert.equal(
+          await p.locator('[data-compose-placeholder]').count(), 1,
+          'the placeholder is on screen, so this is the window the six waits were racing',
+        );
+        // one-shot: the file read is held open by the route above, so the pane it would draw
+        // CANNOT arrive while this line runs — the absence is a fact about a blocked request and
+        // not a race. A `settle` here would be a retry loop waiting for something this test is
+        // itself preventing, which is the shape `M141` calls a gate that can no longer fail.
+        assert.equal(
+          await p.locator('[data-compose-pane]').count(), 0,
+          'a pane that has drawn nothing must not answer to the selector six gates read as `the file is here`',
+        );
+      } finally {
+        release!();
+        await Promise.all(inflight);
+        await p.unroute('**/api/file**');
+      }
+
+      // …and the other half: once the bytes land, the selector answers, and it answers about a
+      // pane that has rows. Without this the assertion above is satisfiable by a broken marker.
+      await p.locator('[data-compose-pane]').waitFor();
+      assert.equal(await p.locator('[data-compose-placeholder]').count(), 0, 'the placeholder went away when the file arrived');
+      await p.waitForFunction(`document.querySelectorAll('[data-seq-row]').length > 0`, undefined, { timeout: 5000 });
+    },
+  );
 });
 
 // `M229` `D` (`D1252`) — the half of the normalisation that only a slow machine found.
