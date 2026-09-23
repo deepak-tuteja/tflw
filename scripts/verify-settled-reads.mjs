@@ -140,6 +140,40 @@ const WAITS = new Set([
   'waitForResponse', 'waitForRequest', 'waitForEvent',
 ]);
 
+// **`ATTACH-ONLY` — what a `waitFor` actually promises** (`E`, measured 2026-09-23).
+//
+// The first draft of this classifier treated any wait on a subject as settling any read of it. The
+// 56-run sweep falsified that: `a new .tflw file can be made from the page` failed **3 of 56** on a
+// `textContent()` written directly under a `waitFor()` on *its own subject* — a read this gate was
+// calling clean. The element was there the whole time, carrying the file the page had just left,
+// so the wait returned on the first tick and the assertion read the previous document's subject.
+//
+// `locator.waitFor()` and `page.waitForSelector()` wait for a **state** — attached, visible, hidden,
+// detached — and say nothing whatever about text, attributes or input value. So they settle a
+// *presence* read and do not settle a *value* read. `waitForFunction`, `waitForURL`,
+// `waitForResponse` and the rest are not in this set: those wait on a condition the author wrote,
+// which is the thing being asserted.
+//
+// **THE CARVE-OUT IS WHAT MAKES IT A RULE RATHER THAN A BLANKET FLAG, AND A CONTROL SAID SO.**
+// `CONTROLS[0]` — `[data-files]`'s `getAttribute` under a `waitFor` — is verified **by hand** to be
+// settled, and a rule without this carve-out flags it. The line above it is `page.reload()`: the
+// document is replaced, so nothing matched afterwards can be stale and the attach-wait is a wait
+// for first paint. That is visible statically. After an in-page gesture it is not, because the DOM
+// survives the gesture. Hence: an attach-wait settles a value read when the last action was a
+// navigation, or when no action has happened yet; otherwise it settles presence alone.
+//
+// Measured across both files: **50 reads in 28 tests** move from clean to at risk. A version
+// without the navigation carve-out moved 107 and falsified a hand-verified control, which is how
+// the distinction was found rather than assumed.
+const ATTACH_WAITS = new Set(['waitFor', 'waitForSelector']);
+const NAVIGATIONS = new Set(['goto', 'reload', 'goBack', 'goForward']);
+
+// Reads that ask exactly what an attach-wait establishes. `count()` after a wait for the element is
+// settled by it; so is `isVisible()` after the default visible-wait. Listing them keeps the rule
+// from mis-firing on the day someone writes one — `M166`: a gate that fails plausibly gets switched
+// off, and none of these appears in the 50 the rule moves today.
+const PRESENCE_READS = new Set(['isVisible', 'isHidden', 'count']);
+
 // The retry layer itself. A read lexically inside one of these is the thing that retries.
 const RETRY_WRAPPERS = new Set(['settle', 'countSettling', 'openMenuAndBox', 'laidOutChartHeights']);
 
@@ -162,8 +196,14 @@ const CENSUS = [
   ['ui-page', 'Compose draws every request the file holds', 'CI, 1 run', 'NO-AUTO-WAIT', 'converted'],
   ['ui-page', '`M227` `A`: the report', 'CI, 1 run', null, 'declared'],
   ['ui-page', 'the query is in the address', 'sweep, 10/56', 'SYNC/ASYNC-STATE', 'converted'],
-  ['ui-page', '`M216` `B1`: it appears on keyboard focus', 'sweep, 1/56', null, 'converted'],
-  ['ui-page', 'a new .tflw file can be made from the page', 'sweep, 1/56', null, 'converted'],
+  // `E`'s second sweep re-measured both of these. `M216 B1` failed again at the same rate and the
+  // conversion changed what its failure *means*: it now exhausts 40 looks over 2s and reports the
+  // attribute genuinely absent, which is a claim about the page rather than a timing guess.
+  ['ui-page', '`M216` `B1`: it appears on keyboard focus', 'sweep, 2/112', null, 'converted'],
+  // This one is the round's own finding. It was `converted` — and still failed 3 of 56, on a read
+  // this classifier called settled. The shape it now carries is what the rule was written from, so
+  // the claim here is that the shape stays gone; see `ATTACH_WAITS`.
+  ['ui-page', 'a new .tflw file can be made from the page', 'sweep, 4/112', 'VALUE/ATTACH-ONLY', 'converted'],
   ['ui-page', 'a tag query runs the tests carrying the tag', 'close-out', 'SERVER/SERVER-POLL', 'declared'],
 ];
 
@@ -282,6 +322,7 @@ function classifyTest(testNode, testName, src, vars, findings, stats, lines) {
     return null;
   };
   const settled = new Set();
+  const valueSettled = new Set();
   const everWaited = new Set();
   const events = [];
 
@@ -291,7 +332,7 @@ function classifyTest(testNode, testName, src, vars, findings, stats, lines) {
       const recv = n.expression.expression;
       if (WAITS.has(m)) {
         const s = m === 'waitForSelector' ? subjectOf(n, vars) : subjectOf(recv, vars);
-        events.push({ pos: n.getStart(), kind: 'wait', subject: s ?? '?' });
+        events.push({ pos: n.getStart(), kind: 'wait', subject: s ?? '?', attachOnly: ATTACH_WAITS.has(m) });
       } else if (ACTIONS.has(m)) {
         events.push({ pos: n.getStart(), kind: 'action', subject: subjectOf(recv, vars) ?? '?', method: m });
       } else if (AWAITED_READS.has(m) || SYNC_READS.has(m)) {
@@ -339,16 +380,33 @@ function classifyTest(testNode, testName, src, vars, findings, stats, lines) {
 
   events.sort((a, b) => a.pos - b.pos);
   let acted = false;
+  let lastAction = null;
   for (const ev of events) {
-    if (ev.kind === 'wait') { settled.add(ev.subject); everWaited.add(ev.subject); acted = false; continue; }
-    if (ev.kind === 'action') { settled.clear(); acted = true; continue; }
+    if (ev.kind === 'wait') {
+      settled.add(ev.subject); everWaited.add(ev.subject); acted = false;
+      // A non-attach wait settles whatever the author waited for; an attach wait settles the value
+      // only when nothing could be stale — see `ATTACH_WAITS` above.
+      if (!ev.attachOnly || lastAction === null || lastAction === 'nav') valueSettled.add(ev.subject);
+      else valueSettled.delete(ev.subject);
+      continue;
+    }
+    if (ev.kind === 'action') {
+      settled.clear(); valueSettled.clear(); acted = true;
+      lastAction = NAVIGATIONS.has(ev.method) ? 'nav' : 'inpage';
+      continue;
+    }
     stats.reads++;
     if (ev.subject === null && !ev.server) { stats.unresolved++; continue; }
     const key = ev.server ? '@server' : ev.subject;
     let reason = null;
     if (ev.sync && acted) reason = 'ASYNC-STATE';
     else if (ev.server) reason = 'SERVER-POLL';
-    else if (settled.has(key)) reason = null;
+    else if (settled.has(key)) {
+      const attachOnly = !valueSettled.has(key)
+        && !PRESENCE_READS.has(ev.method)
+        && (classOf(ev.method) === 'VALUE' || classOf(ev.method) === 'GEOMETRY');
+      reason = attachOnly ? 'ATTACH-ONLY' : null;
+    }
     else if (everWaited.has(key)) reason = 'WAITED-THEN-ACTED';
     else reason = 'NEVER-WAITED';
     if (reason) {
@@ -511,7 +569,7 @@ function oracle({ findings, stats }) {
   return 0;
 }
 
-// **The self-test.** Seven reads written here on purpose, each a claim the classifier must get
+// **The self-test.** Eleven reads written here on purpose, each a claim the classifier must get
 // right, and the reason this exists rather than a control pinned to a line of `ui-page.test.ts`:
 // `C2` is about to rewrite hundreds of those lines, and a control that churns with the code it
 // guards stops being read. The last two are the pair a mutation sweep found the oracle blind to —
@@ -532,7 +590,14 @@ const SELF_TEST_SOURCE = [
   `  await page.locator('[data-ok]').evaluate((el) => el.getAttribute('x'));`, // 12 read + in-page
   `  await page.locator('[data-box]').boundingBox();`,                          // 13 geometry
   `  await settle(async () => page.locator('[data-late]').count(), untilEqual(3), opts);`, // 14
-  `});`,                                                                        // 15
+  `  await page.locator('[data-val]').waitFor();`,                              // 15 attach-wait, after a click
+  `  await page.locator('[data-val]').textContent();`,                          // 16 a VALUE read: not settled
+  `  await page.locator('[data-val]').count();`,                                // 17 a PRESENCE read: settled
+  `  await page.locator('[data-val]').isVisible();`,                            // 18 PRESENCE_READS' own claim
+  `  await page.reload();`,                                                     // 19 the document is replaced
+  `  await page.locator('[data-val]').waitFor();`,                              // 20
+  `  await page.locator('[data-val]').textContent();`,                          // 21 now the value IS settled
+  `});`,                                                                        // 22
 ].join('\n');
 
 // Claims are pinned by **line**, not by subject: `[data-ok] count` is written twice on purpose —
@@ -553,12 +618,23 @@ const SELF_TEST_CLAIMS = [
   [12, 'evaluate', 'WAITED-THEN-ACTED', 'VALUE', 'the outer `evaluate` is a read; only its callback is in-page'],
   [13, 'boundingBox', 'NEVER-WAITED', 'GEOMETRY', 'a box read before anything laid the element out'],
   [14, 'count', null, null, 'a read inside `settle()` is the converted form, not a site'],
+  // The three that pin `ATTACH-ONLY` in **both** directions. A rule that only ever flagged would
+  // pass claim 16 and fail 17 and 20, and a classifier with the rule deleted passes 17 and 20 and
+  // fails 16 — so no single-sided mistake survives all three.
+  [16, 'textContent', 'ATTACH-ONLY', 'VALUE', 'a `waitFor` after an in-page gesture settles presence, never the value'],
+  [17, 'count', null, null, 'a presence read is exactly what an attach-wait does establish'],
+  // `isVisible` is the claim `PRESENCE_READS` exists for, and it is the only one: `count` is
+  // excluded by its *class* and would stay clean with that set emptied, so pinning `count` alone
+  // would have shipped an unexercised carve-out — `D922`, a gate whose failure modes nothing
+  // demonstrates is a gate nobody has seen work.
+  [18, 'isVisible', null, null, 'the default `waitFor` waits for visible, so asking whether it is visible is settled'],
+  [21, 'textContent', null, null, 'after a navigation nothing can be stale, so the attach-wait settles the value too'],
 ];
 
 function selfTest() {
   const { findings, stats } = classify([{ rel: 'self-test.ts', text: SELF_TEST_SOURCE }]);
   let failed = 0;
-  console.log('self-test — eight synthetic reads, each a claim pinned to its own line:');
+  console.log(`self-test — ${SELF_TEST_CLAIMS.length} synthetic reads, each a claim pinned to its own line:`);
   console.log('');
   for (const [line, method, reason, cls, why] of SELF_TEST_CLAIMS) {
     const hits = findings.filter((f) => f.line === line && f.method === method);

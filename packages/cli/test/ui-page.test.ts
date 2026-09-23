@@ -14,10 +14,11 @@
 // tests have been red in CI for exactly that reason and no other.
 //
 // **A read is settled when its subject has been waited on since the last action that could change
-// it.** An `await page.locator(X).waitFor()` settles `X` and nothing else, and the next `click`,
-// `fill`, `goto` or `setViewportSize` spends it. Anything else is a single sample.
+// it — and a `waitFor` settles *presence*, not *value*.** An `await page.locator(X).waitFor()`
+// establishes that `X` is on the page and nothing about what `X` says; the next `click`, `fill`,
+// `goto` or `setViewportSize` spends even that. Anything else is a single sample.
 //
-// Three things make that sharper than it sounds, and all three have cost a CI round here:
+// Four things make that sharper than it sounds, and all four have cost a run here:
 //
 //   - **`count()`, `evaluateAll()` and `allTextContents()` wait for nothing at all.** They answer
 //     against whatever matches at that instant, so an empty DOM returns `0` or `[]` immediately.
@@ -27,6 +28,14 @@
 //   - **An absence is the dangerous shape.** `count() === 0`, `deepEqual(xs, [])` — a page that has
 //     not painted satisfies every one of them. That failure is a silent pass, not a red run, which
 //     is why four of `C2`'s repairs were emptiness claims that first establish their population.
+//   - **A `waitFor` on the very subject you are about to read is not enough when the element was
+//     already there.** `waitFor` waits for a *state* — attached, visible, hidden — so it returns on
+//     the first tick against an element that already holds that state, still carrying whatever it
+//     held before. `E`'s sweep found this at 3 of 56 on a `textContent()` written directly under a
+//     `waitFor()` on its own subject: the pane was on screen the whole time, drawing the file the
+//     page had just left. After a `goto` or `reload` the document is new and the wait is sound;
+//     after an in-page gesture it is not. The gate calls this class `ATTACH-ONLY`, and it was the
+//     one shape the gate itself had been calling clean.
 //
 // **So: wait for the thing you are about to read, or read it through `settle`.** Reach for
 // `untilMeasurable` and keep the wait separate from the claim — wait for *a* verdict, assert
@@ -2866,8 +2875,24 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
     await sized.goto(`${baseUrl}#/load`);
     await sized.reload();
     await sized.locator('[data-compose-pane]').waitFor();
+    /* `M235-09` — **the wait above is satisfied by the pane saying it is NOT ready.** The reading
+       branch renders `data-compose-pane="reading"` (`ComposePane.tsx:1257`), so `[data-compose-pane]`
+       matches it, and the `count()` underneath answers `0` against a pane that has drawn nothing
+       yet. That was always true; `M235-07`'s `ownOutline` widened the window it fires in, and the
+       next sweep reddened it at 1 of 56 — which is the repair working as an instrument even as it
+       made this site marginally more likely.
+       The rows are established first and the absence is read after, because an absence over a set
+       that has not painted passes for the wrong reason — the same ordering `C2` applied to four
+       emptiness claims. */
+    const rows = await settle(
+      () => sized.locator('[data-seq-row]').count(),
+      untilMeasurable('the pane has drawn the file it is reading', (n) => n > 0),
+      { attempts: 40, delayMs: 50, page: sized },
+    );
+    assert.ok(rows.value > 0, `LOAD draws none of the pane’s rows (${rows.attempts} look(s))`);
+    // one-shot: the rows above establish that the pane is drawn, so this absence is a claim about
+    // the door rather than about a pane still reading
     assert.equal(await sized.locator('[data-load-form]').count(), 0, 'LOAD still draws its own form');
-    assert.ok((await sized.locator('[data-seq-row]').count()) > 0, 'LOAD draws none of the pane’s rows');
 
     // And the shape of those numbers, stated rather than left implicit — otherwise three doors
     // that had all regressed identically would satisfy the parity above.
@@ -4359,7 +4384,19 @@ test('a project with no `authorized target`: the SCANS door says so, shows the T
     // 1. The landing offers to create one, and SCANS now has a scaffold of its own to offer —
     //    `D1053`. Before `A2-4` this door created the plain project and said so.
     await fresh.locator('[data-landing]').waitFor();
-    assert.equal(await fresh.locator('[data-door="scan"] [data-door-state]').getAttribute('data-door-state'), 'create');
+    /* `M235-08` — the wait above is on `[data-landing]` and the read below is on a **door**, which
+       is a different subject, so the landing could be up and still be deciding. It was:
+       `noProject` was `useState(false)` and `false` is one of the two answers, so a directory that
+       is not a project painted `open` doors until the probe returned. `E`'s sweep caught it at
+       1 of 56 with `'open' !== 'create'`. The page now says `asking` until it knows, which is what
+       makes this wait expressible without being the assertion (`M141`): *it has finished asking* is
+       measurable, *what it answered* is the claim. A door still `asking` after two seconds fails here. */
+    const decided = await settle(
+      () => fresh.locator('[data-door="scan"] [data-door-state]').getAttribute('data-door-state'),
+      untilMeasurable('the landing has finished asking whether this is a project', (v) => v !== null && v !== 'asking'),
+      { attempts: 40, delayMs: 50, page: fresh },
+    );
+    assert.equal(decided.value, 'create', `the door offers to create a project (${decided.attempts} look(s))`);
     await fresh.locator('[data-door="scan"]').click();
     await fresh.locator('.compose-pane-grid').waitFor();
 
@@ -4493,7 +4530,19 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
     // 1. The landing says there is nothing here, and offers to make one rather than showing four
     //    doors onto an empty project.
     await fresh.locator('[data-landing]').waitFor();
-    assert.equal(await fresh.locator('[data-door="load"] [data-door-state]').getAttribute('data-door-state'), 'create');
+    /* `M235-08` — the wait above is on `[data-landing]` and the read below is on a **door**, which
+       is a different subject, so the landing could be up and still be deciding. It was:
+       `noProject` was `useState(false)` and `false` is one of the two answers, so a directory that
+       is not a project painted `open` doors until the probe returned. `E`'s sweep caught it at
+       1 of 56 with `'open' !== 'create'`. The page now says `asking` until it knows, which is what
+       makes this wait expressible without being the assertion (`M141`): *it has finished asking* is
+       measurable, *what it answered* is the claim. The `create` copy asserted below is downstream of the same answer. */
+    const decided = await settle(
+      () => fresh.locator('[data-door="load"] [data-door-state]').getAttribute('data-door-state'),
+      untilMeasurable('the landing has finished asking whether this is a project', (v) => v !== null && v !== 'asking'),
+      { attempts: 40, delayMs: 50, page: fresh },
+    );
+    assert.equal(decided.value, 'create', `the door offers to create a project (${decided.attempts} look(s))`);
     assert.match((await fresh.locator('[data-door="load"]').textContent()) ?? '', /create a project, with a load test/);
 
     // 2. Picking LOAD creates the project and lands in the LOAD door. `tflw init --load`, spawned
@@ -4554,9 +4603,24 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
     await fresh.locator('[data-tab="run"]').click();
     await fresh.locator('[data-tabstrip="run"]').waitFor();
     await fresh.locator('[data-report]').waitFor({ timeout: 60_000 });
-    const chart = fresh.locator('[data-report] canvas').first();
-    await chart.waitFor();
-    assert.ok((await chart.boundingBox())!.width > 0, 'the workload charts are painted');
+    /* `M235` `E` — **the one HIGH the `ATTACH-ONLY` rule turned up, and it is `M227` `A`'s recorded
+       shape at a second site**: `waitFor()` settles that the canvas has attached, `boundingBox()`
+       then reads a box that may be pre-layout, and `M227 A` failed in CI reading exactly that as
+       `[0]` against `[180]`. Written on `laidOutChartHeights`' pattern, which is this file's
+       established answer to the same question. The predicate is a measurability one — a canvas is
+       either laid out or it is not, which is not `M141`'s *measured wrong* — and it stays
+       falsifiable because the budget is bounded: a report whose charts never size fails here with
+       the widths it saw, rather than passing on a lucky frame or hanging. */
+    const painted = await settle(
+      () => fresh.locator('[data-report] canvas')
+        .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().width))),
+      untilMeasurable("the report's charts mounted and sized", (w) => w.length > 0 && !w.includes(0)),
+      { attempts: 50, delayMs: 100, page: fresh },
+    );
+    assert.ok(
+      painted.value.length > 0 && !painted.value.includes(0),
+      `the workload charts are painted (${painted.attempts} look(s); widths ${painted.value.join(', ') || 'none'})`,
+    );
 
     // 6. And the file is readable by the tool with no page involved.
     const check = execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'check'], { cwd: dir, encoding: 'utf8', stdio: 'pipe' });
@@ -5856,7 +5920,23 @@ test('a new .tflw file can be made from the page, and the page then opens it', a
       { attempts: 40, delayMs: 50, page: fresh },
     );
     assert.match(moved.value, /compose\/tests\/second\.tflw/, `and the page is now on the file it just made (${moved.attempts} look(s), hash ${moved.value})`);
-    await fresh.locator('[data-compose-subject-what]').waitFor();
+    /* `M235` `E` — THE SWEEP CONVICTED THIS READ 3 OF 56, AND THE GATE HAD CALLED IT CLEAN.
+       It was `waitFor()` on `[data-compose-subject-what]` and then `textContent()` on the same
+       subject, which reads as settled and is not: `waitFor` waits for a *state*, the element was
+       on screen throughout carrying `first.tflw`'s subject, so the wait returned on the first tick
+       and the assertion judged the document the page had just left. That is the whole `ATTACH-ONLY`
+       class, and this is the read that found it.
+       What is measurable without assuming the answer is **which file the pane is drawing** — the
+       pane states it in its own bar. The assertion is then what that file's first declaration says,
+       and a pane that arrives on the right file carrying the wrong subject fails here rather than
+       being retried away, which is `M141`'s rule. */
+    const showing = await settle(
+      () => fresh.locator('[data-compose-file]').first().textContent(),
+      untilEqual<string | null>('tests/second.tflw'),
+      { attempts: 40, delayMs: 50, page: fresh },
+    );
+    assert.equal(showing.value, 'tests/second.tflw', `the pane is drawing the file the create made (${showing.attempts} look(s))`);
+    // one-shot: the settle above established the pane is on `tests/second.tflw`; a subject drawn from another file would mean the bar and the body render from different sources, which is a defect to report rather than retry.
     assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test "it also answers"');
   } finally {
     await fresh.close();
@@ -8879,12 +8959,33 @@ test('`M216` `B1`: it appears on keyboard focus, and describes without renaming 
        `C1` flagged this read correctly as `NEVER-WAITED`; it banded it `LOW`, and `C2` converted
        the HIGH read in this same test and left this one. The band is where to start, not where the
        risk ends — see §`E`. */
+    /* `M235` `E`, SECOND SWEEP — **the conversion did its job and the failure changed meaning.**
+       It failed again, 1 of 56, and now as `(40 look(s)) null !== 'tflw-tip'`: the retry spent its
+       whole 2s budget and the attribute was still not there. Under `M141` that is no longer *read
+       too early*, it is *measured absent* — a claim about the page, which is what a settle is for.
+       Two mechanisms fit, and `Tooltip.tsx` allows both. `#tflw-tip` renders only while `shown` is
+       set, and `go()` sets `aria-describedby` and `setShown` together, so the attribute is present
+       the instant the tip is. Either (a) something called `hide()` after the `waitFor` above —
+       `focusout`, `pointerover` off the control, `scroll` are all bound — which removes the
+       attribute and unmounts the tip, or (b) the control re-rendered: the attribute is written with
+       `el.setAttribute` on a DOM node, outside React, so a re-render drops it while `anchor.current`
+       keeps pointing at the detached node and the tip stays up. The two disagree about exactly one
+       observable, so the read takes it and the message names it. Nothing is repaired on a mechanism
+       nobody has reproduced; the next occurrence will say which one it is. */
     const described = await settle(
-      () => x.getAttribute('aria-describedby'),
-      untilMeasurable('the control has been given something to be described by', (v) => v !== null),
+      async () => ({
+        points: await x.getAttribute('aria-describedby'),
+        tip: await p.locator('#tflw-tip').count(),
+      }),
+      untilMeasurable('the control has been given something to be described by', (v) => v.points !== null),
       { attempts: 40, delayMs: 50, page: p },
     );
-    assert.equal(described.value, 'tflw-tip', `the control points at what describes it (${described.attempts} look(s))`);
+    assert.equal(
+      described.value.points,
+      'tflw-tip',
+      `the control points at what describes it (${described.attempts} look(s); the tip element is `
+      + `${described.value.tip > 0 ? 'STILL ON SCREEN -> the control re-rendered out from under an imperative setAttribute' : 'GONE -> the layer was hidden after the wait'})`,
+    );
     assert.equal(await p.locator('#tflw-tip').getAttribute('role'), 'tooltip');
 
     // **And the name survived the migration.** On an icon-only control `title` was doing two jobs;

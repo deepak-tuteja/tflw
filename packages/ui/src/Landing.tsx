@@ -15,9 +15,21 @@ import type { Lens, ProjectView } from './contract';
 export interface LandingProps {
   readonly project: ProjectView | null;
   readonly error: string | null;
-  /** True when this directory holds no `tflw.config` — the landing then offers to create one
-   *  rather than showing four doors onto nothing (`M200` `A0-5`). */
-  readonly noProject: boolean;
+  /**
+   * `true` when this directory holds no `tflw.config` — the landing then offers to create one
+   * rather than showing four doors onto nothing (`M200` `A0-5`) — and **`null` while the page has
+   * not yet asked** (`M235-08`).
+   *
+   * The third state is not a nicety. `App` held this as `useState(false)`, and `false` is not a
+   * neutral default here: it is *one of the two answers*. So a directory that is not a project
+   * painted four `open` doors and *"What are you here to do?"* until the probe returned, and a
+   * click inside that window called `onOpen` on a project that does not exist. `M235` `E`'s sweep
+   * caught it at 1 of 56.
+   *
+   * It also gives a test a predicate that is not the assertion it is making: *the landing has
+   * finished asking* is measurable, and *what it answered* is the claim (`M141`).
+   */
+  readonly noProject: boolean | null;
   readonly onOpen: (door: Lens) => void;
   readonly onCreated: () => void;
 }
@@ -59,7 +71,13 @@ export function Landing({ project, error, noProject, onOpen, onCreated }: Landin
             at it — `Wordmark` carries `aria-label="tflw"`, and the two would announce the name
             twice, so the element is the picture and the name lives on it. */}
         <h1><Wordmark height={40} /></h1>
-        <p className="muted">{noProject ? 'There is no project here yet. Pick what you are here to do, and one will be made for it.' : 'What are you here to do?'}</p>
+        <p className="muted">
+          {noProject === null
+            ? 'Reading this directory…'
+            : noProject
+              ? 'There is no project here yet. Pick what you are here to do, and one will be made for it.'
+              : 'What are you here to do?'}
+        </p>
       </header>
 
       {error ? (
@@ -79,16 +97,20 @@ export function Landing({ project, error, noProject, onOpen, onCreated }: Landin
             key={door.id}
             className="door"
             onClick={() => void (noProject ? create(door.id) : onOpen(door.id))}
-            disabled={creating !== null}
+            // A door cannot be pressed before the page knows what pressing it means — the same
+            // press is *create* or *open* depending on the answer that has not arrived yet.
+            disabled={creating !== null || noProject === null}
             data-door={door.id}
             data-door-count={counts[door.id]}
           >
             <span className="door-label">{door.label}</span>
             <span className="door-blurb">{door.blurb}</span>
-            <span className="door-count muted" data-door-state={noProject ? 'create' : 'open'}>
+            <span className="door-count muted" data-door-state={noProject === null ? 'asking' : noProject ? 'create' : 'open'}>
               {creating === door.id
                 ? 'making it…'
-                : noProject
+                : noProject === null
+                  ? '…'
+                  : noProject
                   ? // What this door's `tflw init` actually scaffolds, named rather than implied
                     // (`D1051`, amended by `D1053`). **This said BROWSER and SCANS had no scaffold
                     // until `A2-6`, four commits after `A2-4` gave SCANS one** — the argv, the
