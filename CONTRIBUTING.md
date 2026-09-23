@@ -75,6 +75,9 @@ npm run verify:sibling-pin              # ¶ CI adds --require-network (D921)
 npm run verify:sibling-pin:self-test
 npm run verify:own-identifiers
 npm run verify:own-identifiers:self-test
+npm run verify:settled-reads
+npm run verify:settled-reads:oracle
+npm run verify:settled-reads:self-test
 npm run refresh:own-identifiers -- --check   # § needs the records
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI

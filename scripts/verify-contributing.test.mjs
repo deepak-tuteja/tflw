@@ -177,6 +177,45 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:settled-reads',
+    class: 'gate',
+    local: 'npm run verify:settled-reads',
+    why: "`M235` `C3`. The two page gates drive a live, re-rendering React page and read it with `node:assert`, and neither "
+      + "half retries — so every one-shot read is a single sample of a frame that may already be gone. Twelve tests have gone "
+      + "red that way: eight found by CI over one week, three by a 56-run sweep, and a twelfth by an unrelated close-out at a "
+      + "site the sweep never reddened, which is the argument for a classifier rather than more sweeping — a sampler finds what "
+      + "it happens to catch. A RATCHET and not a clean-tree gate, measured rather than conceded: 121 of 961 reads follow a "
+      + "`waitFor` on exactly their own subject, so demanding a clean tree would have been red on the day it landed and "
+      + "switched off by the end of the week. An equality rather than a ceiling (`M201`), so a repair arrives with the number "
+      + "it changed and the baseline's diff stays the record of what was fixed. Static, milliseconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
+    cmd: 'npm run verify:settled-reads:oracle',
+    class: 'gate',
+    local: 'npm run verify:settled-reads:oracle',
+    why: "The census of twelve, run against the classifier above — `D922` again. It is sharp on the five whose failing shape "
+      + "the census recorded, and lands on the exact diagnosed read in all five; the other seven were recorded as \"read after "
+      + "wait\" or \"a hang, not a wrong read\", which names no shape, so they are listed as carrying no shape claim rather than "
+      + "quietly given the weak test and counted as passes. Two negative controls sit beside it because the census alone cannot "
+      + "fail a classifier that flags everything. Static, milliseconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
+    cmd: 'npm run verify:settled-reads:self-test',
+    class: 'gate',
+    local: 'npm run verify:settled-reads:self-test',
+    why: "Eight synthetic reads pinned by line, each claiming both what settled it and what it is exposed to. Pinned by line "
+      + "and not by subject because one selector is written twice on purpose — once settled, once after the action that spends "
+      + "the wait — and the first draft, keyed on the subject, failed against a correct classifier. Ten mutations of the "
+      + "classifier: 10/10 convicted here, 8/10 by the oracle, and the two the oracle misses are the ones that matter, because "
+      + "a classifier blind to an already-converted read would go on flagging every site it repaired. Static, milliseconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:decisions',
     class: 'gate',
     local: 'npm run verify:decisions',
