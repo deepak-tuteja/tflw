@@ -100,18 +100,32 @@ test('each shot is the size the manifest says it is, measured off the file', () 
  * Without this the viewport map is a comment: a view could quietly drift back to the default and
  * every other gate here would stay green, because a picture at the wrong size is still a picture.
  */
-test('every view records the window it was shot in, and the two that differ actually differ', () => {
+test('every view records the window it was shot in, and the per-view map is used in both directions', () => {
   const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
   assert.ok(manifest.viewports !== undefined, `the manifest records no per-view viewports — ${RECUT}`);
   for (const view of VIEWS) {
     assert.deepEqual(manifest.viewports[view], viewportFor(view), `${view} was shot in a window the map does not assign it`);
   }
-  const composes = VIEWS.filter((v) => v.startsWith('compose-'));
-  assert.ok(composes.length > 0, 'no compose views — the clause below would pass over an empty set');
-  for (const v of composes) {
-    assert.ok(viewportFor(v).height < DEFAULT_VIEWPORT.height, `${v} is shot at the default height, so D1304 bought nothing`);
-  }
-  assert.ok(viewportFor('browser-menu').height > DEFAULT_VIEWPORT.height, 'browser-menu is shot at the default height, so the 23-kind list crops');
+  /* **This clause was wrong in `E` and the way it was wrong is worth keeping.** It read *every*
+     compose view must be shorter than the default — which is not `D1304`'s property, it is the
+     value `E` happened to choose, and asserting a chosen value is asserting nothing. It also made
+     the gate agree with the defect: `compose-load` and `compose-scan` at 560 lost the test body and
+     the targets block respectively, and this test was green for both.
+
+     The property `D1304` actually has is that the map is **used in both directions** — a per-view
+     viewport nobody moves is a comment. Which views move, and which way, is a judgement about what
+     each file's constructs earn, and it is not checkable from here: the thing that caught the
+     defect was opening the PNGs and looking at them. Said out loud rather than papered over with a
+     stricter-looking assertion, because a gate that cannot see the failure should not imply it can. */
+  const heights = VIEWS.map((v) => viewportFor(v).height);
+  assert.ok(
+    heights.some((h) => h < DEFAULT_VIEWPORT.height),
+    'no view is shot shorter than the default — the per-view map is doing nothing (D1304)',
+  );
+  assert.ok(
+    heights.some((h) => h > DEFAULT_VIEWPORT.height),
+    'no view is shot taller than the default, so the 23-kind `+ step…` list crops (D1303)',
+  );
 });
 
 test('every declared shot exists and is a PNG', () => {
