@@ -1,14 +1,14 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 961,
-    "atRisk": 840,
+    "reads": 959,
+    "atRisk": 838,
     "high": 334,
     "medium": 17,
-    "low": 489,
+    "low": 487,
     "declared": 9,
     "inPage": 103,
-    "inRetry": 13
+    "inRetry": 15
   },
   "tests": {
     "packages/cli/test/ui-page.test.ts": {
@@ -741,11 +741,6 @@
         "high": 1,
         "medium": 0,
         "low": 1
-      },
-      "`M216` `B1`: it appears on keyboard focus, and describes without renaming (`D1129`)": {
-        "high": 0,
-        "medium": 0,
-        "low": 2
       },
       "`M216` `B3`: a row’s hover is derived from whether it is truncated, asked at two widths (`D1127`)": {
         "high": 2,
