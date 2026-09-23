@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitepress';
 import tflwGrammar from '../../vscode/syntaxes/tflw.tmLanguage.json' with { type: 'json' };
 
@@ -30,6 +31,8 @@ import tflwGrammar from '../../vscode/syntaxes/tflw.tmLanguage.json' with { type
  */
 const GUIDE_SIDEBAR = [
   {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
     text: 'Start here',
     items: [
       { text: 'Install & quickstart', link: '/getting-started' },
@@ -39,6 +42,8 @@ const GUIDE_SIDEBAR = [
     ],
   },
   {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
     // `D654`. A pillar's overview is the group's own `text` link, not a first item inside it. The
     // two renderings differ in what they say about the page: an item is a sibling of the chapters,
     // a linked group title is the thing the chapters are under — which is what an overview is.
@@ -58,6 +63,8 @@ const GUIDE_SIDEBAR = [
     ],
   },
   {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
     // `D655` split the one 434-line page at the workload/threshold seam: the first chapter is how
     // you generate load, the second is how you judge it. The labels are each page's own H1 — the
     // rail promising workloads and delivering thresholds too was the reason the pre-split label
@@ -70,6 +77,8 @@ const GUIDE_SIDEBAR = [
     ],
   },
   {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
     // Findings & baselines goes last, not first: it is the machinery for what you do with what the
     // four scans find, and it reads as procedure before there is anything to apply it to.
     text: 'Security & vulnerability testing',
@@ -83,6 +92,8 @@ const GUIDE_SIDEBAR = [
     ],
   },
   {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
     text: 'Running & reporting',
     items: [
       { text: 'Running & debugging tests', link: '/guide/debugging' },
@@ -122,6 +133,56 @@ export default defineConfig({
   // an unregistered language.
   markdown: {
     languages: [{ ...(tflwGrammar as object), aliases: ['tflw-config'] }],
+    /**
+     * **Every `/ui/` shot carries the size it was cut at** — `M234` `G` (`D1306`).
+     *
+     * 34 `<img>` in `/ui/` carried no `width`, so each section reflowed as its pictures arrived and
+     * the text under them jumped. The numbers are not guessed and not read from the page: they are
+     * the observed sizes `make-screenshots.mjs` reads back off each PNG's IHDR and records in
+     * `manifest.json` (`M234` `E`). Divided by `deviceScaleFactor`, because the file is cut at 2x
+     * and the page lays it out in css pixels.
+     *
+     * **A shot the manifest does not name fails the build**, loudly, by name. Without that this
+     * rule quietly stops applying the first time a view is added — which is the failure mode the
+     * rule exists to prevent, one level up: a picture whose dimensions nobody stamped looks exactly
+     * like a picture whose dimensions nobody needed.
+     *
+     * `loading="lazy"` on all but the first pair. A view ships as a light/dark pair (`D1282`), so
+     * the first two images on a page are the one above the fold and everything after them is not.
+     * That is a proxy for "below the fold" rather than a measurement of it — markdown-it has no
+     * layout — and it is stated here rather than implied by the number 2.
+     */
+    config(md) {
+      const manifest = JSON.parse(readFileSync(new URL('../public/ui/manifest.json', import.meta.url), 'utf8')) as {
+        shots: { name: string; width: number; height: number }[];
+        deviceScaleFactor: number;
+      };
+      const cut = new Map(manifest.shots.map((s) => [s.name, s]));
+      const scale = manifest.deviceScaleFactor || 1;
+      const fallback = md.renderer.rules.image;
+      md.renderer.rules.image = (tokens, idx, options, env, self) => {
+        const token = tokens[idx]!;
+        const named = /\/ui\/([A-Za-z0-9._-]+\.png)$/.exec(token.attrGet('src') ?? '');
+        if (named !== null) {
+          const shot = cut.get(named[1]!);
+          if (shot === undefined) {
+            throw new Error(
+              `${named[1]} is embedded in the docs and is not in public/ui/manifest.json — ` +
+                'run: node --import tsx packages/ui/scripts/make-screenshots.mjs (D1306)',
+            );
+          }
+          token.attrSet('width', String(Math.round(shot.width / scale)));
+          token.attrSet('height', String(Math.round(shot.height / scale)));
+          const seen = ((env.__uiShots as number | undefined) ?? 0) + 1;
+          env.__uiShots = seen;
+          if (seen > 2) {
+            token.attrSet('loading', 'lazy');
+            token.attrSet('decoding', 'async');
+          }
+        }
+        return fallback === undefined ? self.renderToken(tokens, idx, options) : fallback(tokens, idx, options, env, self);
+      };
+    },
   },
 
   themeConfig: {
