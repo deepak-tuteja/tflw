@@ -174,7 +174,26 @@ after(async () => {
   if (page !== undefined) await stopUiCoverage(page, join(scratch, 'ui'), 'page');
   await browser?.close();
   await server?.close();
-  await rm(scratch, { recursive: true, force: true });
+  /* `M235` `A1b` — **the fourth handle gets the guard the other three have.**
+     Three lines above this one already defend against a `before()` that never completed, and this
+     one did not: `rm(undefined)` throws `ERR_INVALID_ARG_TYPE` out of the teardown and the whole
+     FILE is reported `hookFailed` in half a millisecond, naming a path argument rather than the
+     setup that never ran. A rule applied in one place and not the next, in the teardown of the
+     file `PLAN_M235` is about.
+
+     HOW IT IS REACHED, because it is not obvious and it cost 52 minutes to find: a
+     `--test-name-pattern` that matches nothing. `M227` `A` is named ``​`M227` `A`: the report's
+     charts…`` and the pattern `M227. .A: the report` misses the backtick between the `A` and the
+     colon, so zero tests are selected, `before()` is never run, and `after()` runs anyway. The
+     run then held the box lease for 52 minutes on an idle machine, because `M108` removed
+     `--test-force-exit` on purpose — a leaked ref'd handle hangs the file rather than being
+     killed mid-report, and CI bounds that with `timeout-minutes: 60` while an ad-hoc box
+     invocation bounds it with nothing.
+
+     The guard is the repair; the *diagnosis* is `A3`'s rule that a filtered run must assert it
+     selected more than zero tests before anyone believes its verdict, because a run that selected
+     nothing and a run still in progress look identical from outside. */
+  if (scratch !== undefined) await rm(scratch, { recursive: true, force: true });
 });
 
 /**
@@ -583,6 +602,34 @@ test('the workload view: the shape, every stat, every threshold and every endpoi
   assert.deepEqual(await section.locator('[data-endpoint]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-endpoint'))), [...byP95].reverse());
 });
 
+/**
+ * The report's chart heights, read once they are LAID OUT — `M234-06`'s shape, fifth site.
+ *
+ * `getBoundingClientRect()` through `evaluateAll` resolves against whatever the DOM holds on one
+ * tick and retries nothing, so a canvas that is mounted but not yet sized measures **0**. CI Node 22
+ * failed here in 103 ms with `actual [0]` against `expected [180]` — four charts found and every
+ * one of them zero, which is not a wrong height, it is no height yet.
+ *
+ * **The retry is on "not measurable", never on "measured wrong", and that distinction is what keeps
+ * the assertion falsifiable.** Retrying until the heights equal 180 would make this gate
+ * unable to fail — the exact defect `M141` is named for. So the loop waits only while a chart is
+ * missing or reads 0, and a chart that settles at 200 is returned immediately and fails the caller's
+ * assertion; a chart genuinely stuck at 0 exhausts the budget and fails with the same message it
+ * always did. Same rule as `openMenuAndBox`, where a mis-placed menu is never retried and a vanished
+ * one is.
+ */
+const laidOutChartHeights = async (min: number): Promise<number[]> => {
+  let heights: number[] = [];
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    heights = await page
+      .locator('[data-chart] canvas')
+      .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+    if (heights.length >= min && !heights.includes(0)) return heights;
+    await page.waitForTimeout(100);
+  }
+  return heights;
+};
+
 // **The report's charts keep their constant height** — `M227` `A` (`D1230`).
 //
 // `height="fill"` is the plan panel's alone, and this is the gate that says so. The four charts
@@ -594,7 +641,7 @@ test('the workload view: the shape, every stat, every threshold and every endpoi
 // property of how it was mounted and not of what it plotted.
 test('`M227` `A`: the report\'s charts are 180 px, and none of them opted into filling a region (`D1230`)', async () => {
   await openReport('full');
-  const heights = await page.locator('[data-chart] canvas').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+  const heights = await laidOutChartHeights(4);
   assert.ok(heights.length >= 4, `the report drew charts to measure (${heights.length})`);
   assert.deepEqual([...new Set(heights)].sort(), [180], `every report chart keeps the constant: ${[...new Set(heights)].join(', ')}`);
   assert.equal(await page.locator('[data-chart-fill]').count(), 0, 'and none of them carries the fill contract');
