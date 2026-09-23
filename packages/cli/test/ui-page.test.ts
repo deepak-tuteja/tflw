@@ -1585,14 +1585,34 @@ test('a tag query runs the tests carrying the tag, not the tests in the files ca
     // Waited for at the server, not at the page: when a run ends the page swaps the live pane for
     // the report it kept, so every DOM landmark this could watch is one the page is in the middle
     // of replacing.
-    let mine: { id: string; status: string; kept: string | null } | undefined;
-    for (let i = 0; i < 120 && mine?.status !== 'done'; i++) {
-      const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string; status: string; kept: string | null }[];
-      mine = runs.find((r) => !before.has(r.id));
-      if (mine?.status !== 'done') await new Promise((r) => setTimeout(r, 500));
-    }
-    assert.equal(mine?.status, 'done', 'the run finished');
-    assert.ok(mine.kept, 'the run kept a directory');
+    /* `M235` `C2`'s first conversion, and it arrived here rather than in its own slice because
+       `M234` `H`'s close-out tripped over it — `the run kept a directory`, on a run whose status
+       had already reached `done`.
+
+       **The loop below waited on `status` and then read `kept` one line later.** That is this
+       suite's standing defect exactly (`M235` §4): a read after a wait does not retry, so the
+       server marking a run finished a tick before it has named the directory reads as a null. The
+       eleven-test census was measured by `A3`'s sweep; this is a twelfth, found by a different
+       instrument, which is the argument for `C1`'s classifier rather than for more sweeping.
+
+       The predicate is `untilMeasurable` and the two clauses are one fact: **a run in progress has
+       no final state to read.** Its final state is `done` *and* a directory it kept. A run that
+       never finishes, or finishes having kept nothing, spends the budget and fails the assertions
+       below with the message it always had — which is what keeps this falsifiable. */
+    const finished = await settle(
+      async () => {
+        const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string; status: string; kept: string | null }[];
+        return runs.find((r) => !before.has(r.id));
+      },
+      untilMeasurable(
+        'the run has finished and named the directory it kept',
+        (r) => r?.status === 'done' && typeof r.kept === 'string' && r.kept !== '',
+      ),
+      { attempts: 120, delayMs: 500, page },
+    );
+    const mine = finished.value;
+    assert.equal(mine?.status, 'done', `the run finished (${finished.attempts} look(s))`);
+    assert.ok(mine?.kept, `the run kept a directory (${finished.attempts} look(s), status ${mine?.status})`);
     const written = JSON.parse(await readFile(join(root, mine.kept, 'results.json'), 'utf8')) as RunReport;
     assert.deepEqual(written.tests.map((t) => t.name).sort(), expected, 'the run is the tag, not the files');
   } finally {
