@@ -8870,7 +8870,21 @@ test('`M216` `B1`: it appears on keyboard focus, and describes without renaming 
     const x = p.locator('[data-seq-remove]').first();
     await x.focus();
     await p.locator('#tflw-tip').waitFor();
-    assert.equal(await x.getAttribute('aria-describedby'), 'tflw-tip', 'the control points at what describes it');
+    /* `M235` `E` — **THE SWEEP FOUND THIS ONE AND THE CLASSIFIER'S ORDERING DID NOT** (1 of 56 runs,
+       `null !== 'tflw-tip'`, 121 ms). The wait above is on the TIP; the read below is on the
+       CONTROL. One effect mounts the tip and points the control at it, and waiting for the first
+       half of that effect says nothing about the second — so the read lands on an element that is
+       attached, focused, and not yet described. `getAttribute` auto-waits for the element and not
+       for the attribute, which is the whole distinction.
+       `C1` flagged this read correctly as `NEVER-WAITED`; it banded it `LOW`, and `C2` converted
+       the HIGH read in this same test and left this one. The band is where to start, not where the
+       risk ends — see §`E`. */
+    const described = await settle(
+      () => x.getAttribute('aria-describedby'),
+      untilMeasurable('the control has been given something to be described by', (v) => v !== null),
+      { attempts: 40, delayMs: 50, page: p },
+    );
+    assert.equal(described.value, 'tflw-tip', `the control points at what describes it (${described.attempts} look(s))`);
     assert.equal(await p.locator('#tflw-tip').getAttribute('role'), 'tooltip');
 
     // **And the name survived the migration.** On an icon-only control `title` was doing two jobs;
@@ -8901,7 +8915,16 @@ test('`M216` `B1`: it appears on keyboard focus, and describes without renaming 
 
     await p.keyboard.press('Escape');
     await p.locator('#tflw-tip').waitFor({ state: 'detached' });
-    assert.equal(await x.getAttribute('aria-describedby'), null, 'and the pointer is dropped when it goes');
+    /* The same pair in reverse, and the same gap: the tip leaving does not mean the control has
+       been un-pointed. `untilEqual` rather than `untilMeasurable` because here `null` IS the wanted
+       reading, so there is no unreadable state to wait out — this is retrying on the assertion, and
+       it stays honest only because the budget is bounded (`settle.ts`). */
+    const dropped = await settle(
+      () => x.getAttribute('aria-describedby'),
+      untilEqual<string | null>(null),
+      { attempts: 40, delayMs: 50, page: p },
+    );
+    assert.equal(dropped.value, null, `and the pointer is dropped when it goes (${dropped.attempts} look(s))`);
   });
 });
 
