@@ -111,7 +111,39 @@ jobs:
       # the suite folded in here verifies the guard: fixture ledgers carrying known defects,
       # including reconstructions of `M98c-02`'s missing `🚫` and `M99`'s three rows left `open`
       # after the code shipped.
-      - run: xvfb-run -a npm test
+      # `M235` `D` — **THIS RUNS ON NODE 24 ONLY, AND THAT IS THE WHOLE POINT OF THE CONDITION.**
+      #
+      # The `Coverage` step below is gated `node-version == 22` and runs `c8 npm run test:raw`,
+      # which is this same suite again. So until `M235` the Node 22 job ran the 203-test Playwright
+      # page gate TWICE and the Node 24 job once, and nothing said so anywhere. Measured on run
+      # 35838713333 (`4f2e24f`): Node 22 `npm test` 9m51s + Coverage 14m42s = a 25m59s job against
+      # Node 24's 9m08s.
+      #
+      # THAT ASYMMETRY WAS BEING READ AS A RUNTIME DEFECT. 11 of 17 CI runs were red between
+      # 2026-09-18 and 2026-09-23, 10 of the 14 failing jobs on Node 22, and the standing diagnosis
+      # was "Node 22 is failing". It is not: the page suite has ~631 one-shot DOM reads and no
+      # retrying assertion anywhere (`PLAN_M235`, §4), Node 22 simply spent ~24.5 min inside it per
+      # push against Node 24's ~8. Predicted exposure ratio 3.06x, observed failure ratio 2.5x —
+      # and Node 24 was red with Node 22 GREEN on `8fcb215`, which is the fact that settles it.
+      #
+      # So the duplicate is removed rather than the runtime blamed. What each job now covers:
+      #
+      #   Node 24 — `npm test`: the MINIFIED bundle, plus the headcount wrapper (see below).
+      #   Node 22 — `Coverage`: the UNMINIFIED bundle under NODE_V8_COVERAGE (`coverageBuildArgs()`).
+      #
+      # Both configurations still run, once each, across the matrix. Nothing is skipped; the suite
+      # is no longer paid for twice in one job.
+      #
+      # THE ONE THING THIS GIVES UP, stated rather than discovered later: `scripts/coverage.mjs`
+      # runs `test:raw`, not `test`, deliberately — so the headcount gate
+      # (`scripts/verify-test-counts.mjs`, M107b, which catches a test file that silently stops
+      # reporting) now runs on ONE job instead of two. That is sound because a headcount is a
+      # property of the source and not of the runtime, but it does mean a Node-24-only outage takes
+      # the headcount with it. `coverage.mjs`'s own comment is amended in the same commit so the two
+      # files do not disagree about which step asserts it — the `M134a-01` shape, where a stale
+      # orienting comment sent the reader to look for a defect that was not there.
+      - if: matrix.node-version != 22
+        run: xvfb-run -a npm test
 
       # A test naming a `TF0xx` code its harness cannot emit is a passing test of nothing — the
       # shape that survived two mutations in M98d. Static, so it runs in seconds and needs no

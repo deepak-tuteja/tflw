@@ -100,6 +100,12 @@ if (bundled !== 0) process.exit(bundled);
 // extra uninstrumented process between c8 and the suites for no gain; CI asserts the headcount in
 // its own `npm test` step. Keeping this path byte-identical also keeps the floor above comparable
 // to the reading it was pinned from.
+//
+// `M235` `D`: that `npm test` step is now gated to Node 24 (it and this step were running the same
+// suite twice in the Node 22 job — see the long note on it in `.github/workflows/ci.yml`). So the
+// sentence above is still true and is true of ONE job rather than both. Nothing here changes: this
+// path is unchanged and the floor stays comparable. Said out loud because two files describing one
+// arrangement is how `M134a-01` happened.
 console.log('› c8 npm run test:raw');
 // THE HEAP, AND WHY THE FLAG IS ON THIS PROCESS AND NOT IN `NODE_OPTIONS` (M160d).
 //
