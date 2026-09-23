@@ -260,6 +260,58 @@ const CLASSIFIED = [
   // Nothing in ci.yml runs `mutate.mjs` or `verify-shards.mjs` any more, so there is no CI form to
   // classify; since `M195` no rule sweeps the registry anywhere (`npm run sweep` is a tool).
 
+  // --- ci.yml, job `sibling-gates` (`M236` `B`, `M234-05`) ---------------------------------------
+  //
+  // The whole job exists because four gates whose ground truth is THIS tree were triggered only by
+  // commits in the OTHER one — `config:key:baseline` left `main` latently red for five days,
+  // observed by nothing. So the point of these steps is **when they run**, not who runs them: they
+  // move the signal from the sibling's next unrelated run to this pull request's own CI, which under
+  // `D511` (tflw merges first) is exactly when it is worth having.
+  //
+  // That is why all four are `ci-only` rather than `gate`. A local form genuinely exists — it is
+  // what demonstrated this slice's green condition, two checkouts side by side and
+  // `TFLW_BIN=<tflw>/packages/cli/dist/cli.cjs npm run verify:construct-coverage --prefix
+  // ../testFlow-tests` — but making it a pre-push obligation would charge every contributor four
+  // cross-repo commands, a vendored build and an environment variable for an event that happens
+  // when somebody adds a construct. The CI run is the mechanism; a pre-push rule would be a second,
+  // weaker copy of it.
+  { wf: 'ci.yml', job: 'sibling-gates', cmd: 'npm ci', class: 'setup', why: 'dependency install, in the tflw checkout — `prepack` needs it before `refresh-tflw` can pack' },
+  {
+    wf: 'ci.yml',
+    job: 'sibling-gates',
+    cmd: 'npm run refresh-tflw',
+    class: 'setup',
+    why: "packs THIS checkout's CLI into the sibling's vendor directory, which is what makes the vendored build and the tree under test the same commit. A precondition and not a verdict: `verify:construct-coverage` refuses to grade otherwise, deliberately (`M153b-01`)",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'sibling-gates',
+    cmd: 'npm run verify:construct-coverage',
+    class: 'ci-only',
+    why: "the sibling's roster against `tflw spec --json` built from the head under review. Carries `TFLW_BIN` because `resolveTflw('released')` refuses any build not packed from `main` — right for the sibling's CI, which grades tflw's default branch, and exactly wrong for a job whose purpose is grading the PR head. Red here means the sibling needs a roster edit, which is correct attribution: tflw is what shipped the construct",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'sibling-gates',
+    cmd: 'npm run verify:notation-parity',
+    class: 'ci-only',
+    why: "reads this repository's notation patterns out of `scripts/` AS TEXT and compares them against the sibling's implementation. Needs both trees; adds no contributor obligation for the reason given above the block",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'sibling-gates',
+    cmd: 'npm run verify:provenance',
+    class: 'ci-only',
+    why: "the sibling's prose against this repository's published `DECISIONS.md` and this repository's tracked pin of the sibling's citations. Needs both trees; same reasoning",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'sibling-gates',
+    cmd: 'npm run verify:contributing',
+    class: 'ci-only',
+    why: "the sibling's gate set against its own CONTRIBUTING.md, which points here for the cross-repo diagnostic-code pair — so this asserts that pointer resolves against the head under review rather than against whatever is on `main`. Needs both trees; same reasoning",
+  },
+
   // --- docs.yml, job `build` --------------------------------------------------------------------
   { wf: 'docs.yml', job: 'build', cmd: 'npm ci', class: 'setup', why: 'dependency install' },
   { wf: 'docs.yml', job: 'build', cmd: 'npm run build -w @tflw/lang', class: 'setup', why: 'the playground/editor pages import it directly; built subset of the `npm run build` gate' },

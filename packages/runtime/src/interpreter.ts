@@ -3694,8 +3694,13 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const toName = String(evalValue(step.to.value, ctx));
           const { pwLocator: fromLoc, via: fromVia } = await resolveForStep(ctx, config, step.from);
           const { pwLocator: toLoc, via: toVia } = await resolveForStep(ctx, config, step.to);
-          await performDrag(fromLoc, toLoc, config.timeouts.browser);
-          result = mkStep('drag', src, step.span, true, stepStart, `drag ${locatorDetail(step.from, fromName, fromVia)} to ${locatorDetail(step.to, toName, toVia)}`);
+          // `M236` `A` (`M234-01`): the two descriptions were built for the success line only and
+          // thrown away on failure, which is how a five-event gesture reported as one anonymous
+          // step. They are built once now and both paths read them.
+          const fromDetail = locatorDetail(step.from, fromName, fromVia);
+          const toDetail = locatorDetail(step.to, toName, toVia);
+          await performDrag(fromLoc, toLoc, config.timeouts.browser, { from: fromDetail, to: toDetail });
+          result = mkStep('drag', src, step.span, true, stepStart, `drag ${fromDetail} to ${toDetail}`);
           break;
         }
         case 'DropFileStmt': {

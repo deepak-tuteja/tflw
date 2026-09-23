@@ -1,9 +1,9 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 953,
-    "atRisk": 882,
-    "high": 332,
+    "reads": 956,
+    "atRisk": 883,
+    "high": 333,
     "medium": 65,
     "low": 485,
     "declared": 11,
@@ -976,6 +976,11 @@
         "high": 4,
         "medium": 0,
         "low": 3
+      },
+      "the reading placeholder is not a pane: `[data-compose-pane]` answers only for a pane with a file in it": {
+        "high": 1,
+        "medium": 0,
+        "low": 0
       },
       "an address ahead of a project read is not an address that contradicts it": {
         "high": 1,

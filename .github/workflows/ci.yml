@@ -330,6 +330,126 @@ jobs:
           path: coverage/lcov.info
 
   # ---------------------------------------------------------------------------
+  # `M236` `B` (`M234-05`, `D-M236-1`) — **the four gates whose input is this tree.**
+  #
+  # `testFlow-tests` holds four checks whose ground truth is tflw's source, not its own:
+  # `verify:construct-coverage` (built from `tflw spec --json`), `verify:notation-parity` (tflw's
+  # notation patterns read as text), `verify:provenance` (tflw's published `DECISIONS.md` and
+  # tflw's pin of the sibling's citations) and `verify:contributing` (tflw's CONTRIBUTING pointer).
+  # All four live in the sibling's CI and all four are therefore triggered by **commits in the
+  # sibling**, while the thing that moves them is a commit HERE.
+  #
+  # Measured 2026-09-23, which is the whole reason this job exists: `config:key:baseline` landed on
+  # tflw `main` on 2026-09-18 and the sibling's last `main` run was 2026-09-16. `main` over there
+  # was latently red for five days, observed by nothing, and the first run to look was a pull
+  # request whose branch had no connection to the cause. `constructs.mjs` claims in its own source
+  # that it *"turns this gate red on the day it ships"* — the claim is not wrong, it was conditional
+  # on a trigger nobody supplied.
+  #
+  # **Why not `repository_dispatch` from here.** That was the first form of `D-M236-1` and it was
+  # withdrawn on a measured precondition: the default `GITHUB_TOKEN` is scoped to the repository
+  # containing the workflow and cannot dispatch to another, and neither repository holds any other
+  # secret. The route needs a fine-grained PAT or an App on both repos. This one needs neither, and
+  # it is **earlier** rather than merely equivalent: a dispatch would have fired on the day a
+  # construct *shipped*, and this fires on the pull request that adds it, before it ships. `D511`
+  # already says tflw merges first, so that is exactly when the information is worth having.
+  #
+  # **Two things this deliberately keeps, which a later round must not tidy away.**
+  #
+  # The same four gates now run twice against two different tflw versions: here against the PR
+  # head, and in the sibling's own CI against tflw's `main`. They can disagree, and when they do
+  # each is right about a different question — *this PR will need a roster edit* versus *`main`
+  # needs one now*. Removing either loses one of those two questions.
+  #
+  # And this job can go red because the SIBLING needs an edit — a red whose fix is a commit in the
+  # other repository. That is correct attribution (tflw is what shipped the construct) and it is a
+  # new shape for this repo, said here before it happens rather than discovered by whoever sees it.
+  #
+  # It is deliberately a separate job from `test`: it needs a second checkout and nothing else here
+  # does, and a cross-repo red must be legible as one rather than folded into a matrix leg. The
+  # sibling's own copy of this dance measures at 0:27.
+  sibling-gates:
+    name: the sibling's cross-repo gates, against this tree
+    runs-on: ubuntu-latest
+    # Static checks over two checkouts plus one `npm ci`. Same hang bound the sibling gives the
+    # identical job; this is not a budget.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout tflw (this tree — on a pull request, the PR head)
+        uses: actions/checkout@v4
+        with:
+          path: testFlow
+
+      # No `ref:`, so this is the sibling's default branch — the mirror image of what the sibling's
+      # `acceptance-check` job does to tflw. Each repository grades its own head against the other's
+      # main, and between the two merges of a `D511` pair there is one accepted red window either
+      # way. `tflw-tests` is the repository name; the directory it is checked out into must be
+      # `testFlow-tests`, because that is the layout its own scripts resolve `../testFlow` from.
+      - name: Checkout the sibling (tflw-tests)
+        uses: actions/checkout@v4
+        with:
+          repository: deepak-tuteja/tflw-tests
+          path: testFlow-tests
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: testFlow/package-lock.json
+
+      - run: npm ci
+        working-directory: testFlow
+
+      # `refresh-tflw` packs THIS checkout's CLI and installs it into the sibling's vendor
+      # directory, which is what makes the vendored build and the tree under test the same commit —
+      # `verify:construct-coverage` refuses to run otherwise, deliberately. `prepack` builds the
+      # workspace, so no separate build step.
+      - name: Vendor this tflw build into the sibling
+        run: npm run refresh-tflw
+        working-directory: testFlow-tests
+
+      # The four, in the sibling's own order. Each runs even if an earlier one failed: `M171d`
+      # measured the opposite arrangement over there and found two gates reported `skipped` because
+      # a third failed first, and a gate that has never been observed to run in CI is not a gate.
+
+      # **`TFLW_BIN` is load-bearing here and is the one place this job is not a mirror.** Measured
+      # 2026-09-23 while building this: `verify:construct-coverage` resolves `released`, and
+      # `resolveTflw('released')` REFUSES a build not packed from `main` —
+      # *"`released` asks whether the SHIPPED build still does this, and a branch build is not it."*
+      # That refusal is right for the sibling's CI, which grades tflw's default branch, and it is
+      # exactly wrong here, where the point is to grade the head under review. So this step asks the
+      # branch question instead, by naming the build `refresh-tflw` just made out of this checkout.
+      # The gate then prints `<- TFLW_BIN, built from <sha>`, so its own first line says which tree
+      # it graded rather than leaving it to be inferred from the job name.
+      #
+      # The override also bypasses the two staleness refusals (`M153b-01`'s vendor check and
+      # `M184c`'s packed-from record). That is safe *here and only here*: the build is made in this
+      # job out of this job's checkout, so there is no older build for it to be confused with. On a
+      # human's machine those refusals are the difference between a wrong answer and no answer, and
+      # nothing about this step argues for weakening them there.
+      - name: Every construct this tree ships is rostered in the sibling
+        if: '!cancelled()'
+        run: npm run verify:construct-coverage
+        working-directory: testFlow-tests
+        env:
+          TFLW_BIN: ${{ github.workspace }}/testFlow/packages/cli/dist/cli.cjs
+
+      - name: The two notation implementations share one grammar
+        if: '!cancelled()'
+        run: npm run verify:notation-parity
+        working-directory: testFlow-tests
+
+      - name: The sibling's prose still cites this tree
+        if: '!cancelled()'
+        run: npm run verify:provenance
+        working-directory: testFlow-tests
+
+      - name: The gate set and the sibling's CONTRIBUTING.md agree
+        if: '!cancelled()'
+        run: npm run verify:contributing
+        working-directory: testFlow-tests
+
+  # ---------------------------------------------------------------------------
   # `M194` — the mutation sweep no longer runs here.
   #
   # From `M124` to `M192` this file ended in a `mutations` matrix job and a `mutation-controls`
