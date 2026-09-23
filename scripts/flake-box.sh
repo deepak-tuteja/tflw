@@ -14,10 +14,18 @@
 # once at 1.4x their solo time, 4.9 GB. So a shard here is a REPETITION, not a mutation.
 #
 # `--test-name-pattern` IS NEVER USED, AND THAT IS A RULE RATHER THAN A PREFERENCE (`A1b-3`). A
-# filtered run of `ui-page.test.ts` opens `before()`'s handles, runs no test, and never exits;
-# measured 2026-09-23, `rc=124` with a 15-byte log reading only `TAP version 13`. The mechanism is
-# not established and is deliberately not asserted here — what is established is that the shape
-# hangs, so the harness must not produce it. Sharding by repetition sidesteps it entirely.
+# filtered run of `ui-page.test.ts` that selects nothing runs no test and never exits; measured
+# 2026-09-23, `rc=124` with a 15-byte log reading only `TAP version 13`. The rule stands; the
+# harness must not produce the shape, and sharding by repetition sidesteps it entirely.
+#
+# **THIS COMMENT SAID `opens `before()`'s handles` UNTIL 2026-09-24 AND THAT WAS FALSE** (`M236`
+# `E`, `M235-02`). It does not open them: `before()` is never run when zero tests are selected —
+# `ui-page.test.ts`'s own `after()` docblock says so correctly — and `chromium.launch()` lives
+# inside it. Re-measured on the box against a Chromium census: **0 before, 0 after**, `ps` naming
+# no chrome process at all, on a run that hung the full 120 s. So this shape hangs with **no
+# browser**, and the orphan Chromium that `A1b-2`'s process table caught belongs to a filtered run
+# whose pattern MATCHED tests — a different shape, attributed to this one for a day. Two files in
+# this repository disagreed and the disagreement was the diagnosis `M235-02` was filed missing.
 #
 # EVERY RUN IS BOUNDED BY ITS PROCESS GROUP, NOT BY ITS CHILD (`A1b-2`). `timeout` kills the process
 # it spawned; `node --test`'s worker sits in another process group and outlives it. The same
