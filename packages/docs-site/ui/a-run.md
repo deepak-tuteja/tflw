@@ -17,6 +17,14 @@ Each test in the run reports a verdict and the steps that produced it. A failed 
 expected and what arrived, in the same words the terminal uses — the page renders the run, it does
 not re-word it.
 
+Where a run judged anything by a security rule, a panel above the files says what it judged and —
+more usefully — what it **declined** to judge. The run in the picture passed 36 of 36 and still
+reports two things a green verdict would otherwise hide: that none of its 24 api steps sits in a
+test declaring an owner, so `authorization violations` had nothing to grade; and that one probe was
+stood down, because a synthesized `POST /login` is a write and this origin's `authorized target`
+does not declare `probe mutating`. Neither is a failure. Both are the difference between *nothing
+was found* and *nothing was looked for*.
+
 For browser tests, a failed attempt can carry a Playwright trace. The page serves that trace to
 Playwright's own viewer, from the `playwright-core` the project already resolves, so opening one
 needs no extra install and spawns nothing. Where a project has no `playwright-core`, the page says
@@ -36,6 +44,11 @@ sees it. Nothing about being started from a page makes a run provisional.
 Where a project has more than one run directory, one can be read against another: the compared run's
 column appears beside the current one, with the difference called out. This is how a threshold that
 has started drifting becomes visible before it breaches.
+
+**The control is not in the picture above, and its absence is the rule working.** The example has
+run once, so there is nothing to compare against and the page offers no chooser rather than an empty
+one — the same reasoning as a door with no tests behind it. Run the suite a second time and the
+chooser appears beside the run's own chip.
 
 For load tests specifically, the planned and achieved rates are drawn on one plot, so a workload
 that did not reach its target is a picture rather than an inference.

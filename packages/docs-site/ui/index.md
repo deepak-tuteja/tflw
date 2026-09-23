@@ -30,6 +30,12 @@ npx tflw ui --port 4144
 npx tflw ui --no-open
 ```
 
+**Every picture on these pages is of one project**, and it is a real one you can run:
+[`examples/storefront`](https://github.com/deepak-tuteja/tflw/tree/main/examples/storefront) in this
+repository — a shop with a catalogue, a basket, a delivery form, an order page and a crawl. From a
+clone, `npm run example` starts it and runs the suite against it; `npx tflw ui examples/storefront`
+opens the page these shots were taken of. Nothing here is a mock-up.
+
 An empty directory is not an error. The page offers to make a project, and which kind it makes
 depends on which door you came through — see [The four doors](/ui/doors).
 
@@ -38,6 +44,27 @@ depends on which door you came through — see [The four doors](/ui/doors).
 The landing surface offers four doors — **API**, **BROWSER**, **LOAD** and **SCANS** — and a count
 beside each. The count is the tests in this project that door's work describes, so a project with no
 load tests shows nothing behind LOAD, and one test can be counted behind more than one door.
+
+The line under the doors is the other half of that rule, and the project above is showing it: **one
+test behind no door**. A door is earned by the constructs a test carries, so a test built only out
+of constructs no door is about — a call, a binding, an assertion on its result — is behind none of
+them, and the page says so rather than filing it somewhere plausible:
+
+```tflw
+action signIn(email, password)
+  api POST /login body { email: "{email}", password: "{password}" }
+  expect status equals 200
+  capture body.ok as signedIn
+  give signedIn
+
+test "signing in is one line, because the shop does it in every other test"
+  let ok = signIn("sam@example.com", "hunter2")
+  expect {ok} equals true
+```
+
+The `action` carries the `api` step, so the API door counts *it* — and the test below, which is a
+call, a binding and an assertion, is behind nothing. It still runs, and it is still in the file
+list. It is just not what any of the four doors are for.
 
 Past the landing, every surface is the same three things: a file list, a door, and five tabs over
 whichever file you picked. That shape does not change, which is what [the spine](/ui/spine) means.

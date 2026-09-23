@@ -28,7 +28,10 @@ doors are not four folders: a login that seeds state over the API and then drive
 test doing two kinds of work, and filing it under either one would be wrong.
 
 The count beside a door is therefore not a partition. The four counts can sum to more than the
-number of tests in the project, and usually do.
+number of tests in the project, and usually do — **the strip in the picture above sums to 43 across
+a project holding 36 declarations**, which is the overlap made visible rather than asserted. The
+landing surface reports the other end of the same rule: one test there is behind no door at all,
+because every construct it carries is one no door is about.
 
 ## Compose
 

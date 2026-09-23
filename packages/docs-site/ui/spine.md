@@ -14,9 +14,16 @@ it once and nothing else on the page needs learning.
 ## The file list
 
 Every `.tflw` file the project holds, in directory order, each with a count of the tests behind the
-current door. A file that does not parse is listed with its diagnostics and counted nowhere — an
-unparsed file has no honest number to contribute, so it contributes none rather than an
-approximation.
+current door. A file with none behind it is dimmed rather than hidden — it is still a file in this
+project, and the door you are standing in is not a filter. A file that does not parse is listed with
+its diagnostics and counted nowhere: an unparsed file has no honest number to contribute, so it
+contributes none rather than an approximation.
+
+Above the list, the project's own line says how many files there are, how many tests are behind the
+door you are in, and **how many are behind a different one** — `12 files · 17 behind API · 18 behind
+another door` in the picture. That last number is [the overlap](/ui/doors) stated where you are
+standing, so a door never reads as the whole project. Under the search box, the tag count tells you
+how much narrowing the project supports before you try it.
 
 Picking a file changes what the tabs show. It never changes the door.
 
