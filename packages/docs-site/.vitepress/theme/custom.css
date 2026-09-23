@@ -318,3 +318,55 @@ html.dark .vp-doc img.light-only {
     margin-left: -80px;
   }
 }
+
+/* `M234` `G` (`D1305`) — press a picture to read it.
+   Theme-aware by construction: every colour is a VitePress token, so the overlay follows the
+   reader's appearance the same way the `.light-only`/`.dark-only` pair it enlarges does. */
+.vp-doc img {
+  cursor: zoom-in;
+}
+
+.tflw-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  cursor: zoom-out;
+  /* `color-mix` rather than an rgba literal: a hardcoded black scrim is wrong on Paper and a
+     hardcoded white one is wrong on Terminal, and this site has both. */
+  background: color-mix(in srgb, var(--vp-c-bg) 92%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.tflw-zoom:focus {
+  outline: none;
+}
+
+.tflw-zoom img {
+  max-width: min(100%, 1600px);
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--vp-c-text-1) 28%, transparent);
+}
+
+/* The fade is a preference, not a feature: a reader who has asked for less motion gets the
+   overlay with no animation at all rather than a shorter one. */
+@media (prefers-reduced-motion: no-preference) {
+  .tflw-zoom {
+    animation: tflw-zoom-in 120ms ease-out;
+  }
+}
+
+@keyframes tflw-zoom-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
