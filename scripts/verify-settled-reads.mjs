@@ -580,11 +580,99 @@ function selfTest() {
   return failed ? 1 : 0;
 }
 
+// **The ratchet** (`C3`). The plan expected the lint to be "no at-risk reads", on the reading that
+// most of the 631 followed a `waitFor` on exactly their own subject. Measured, **121 of 961 do** —
+// so a lint written that way would have been red on the day it landed and switched off by the end
+// of the week. What is enforceable instead is that the number does not grow without somebody
+// saying so.
+//
+// **It is an equality, not a ceiling** — `M201`'s rule, that a floor is blind in exactly one
+// direction, so the pins are equalities. A ceiling would let every repair silently loosen the
+// baseline until it stopped constraining anything, and nothing would ever say the file had drifted.
+// An equality means a repair must come with the number it changed, which is also how the diff on
+// this file becomes a readable record of what `C2` and its successors actually did.
+//
+// Keyed by test name and severity rather than by line, because line numbers churn on every edit and
+// a baseline that churns is a baseline nobody reads.
+const BASELINE = path.join(ROOT, 'scripts', 'settled-reads-baseline.json');
+
+function tally({ findings, stats }) {
+  const tests = {};
+  for (const f of findings) {
+    const byFile = (tests[f.file] ??= {});
+    const row = (byFile[f.test] ??= { high: 0, medium: 0, low: 0 });
+    row[f.severity.toLowerCase()] += 1;
+  }
+  return {
+    totals: {
+      reads: stats.reads,
+      atRisk: findings.length,
+      high: findings.filter((f) => f.severity === 'HIGH').length,
+      medium: findings.filter((f) => f.severity === 'MEDIUM').length,
+      low: findings.filter((f) => f.severity === 'LOW').length,
+      declared: stats.declared.length,
+      inPage: stats.inPage,
+      inRetry: stats.inRetry,
+    },
+    tests,
+  };
+}
+
+function check(result, { update }) {
+  const now = tally(result);
+  if (update) {
+    writeFileSync(BASELINE, `${JSON.stringify({
+      note: 'Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. '
+        + 'An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.',
+      ...now,
+    }, null, 2)}\n`);
+    console.log(`baseline written: ${now.totals.atRisk} at risk (${now.totals.high} HIGH) across ${Object.keys(now.tests).length} file(s)`);
+    return 0;
+  }
+  if (!existsSync(BASELINE)) {
+    console.log(`no baseline at ${path.relative(ROOT, BASELINE)} — write one with \`npm run verify:settled-reads:update\``);
+    return 1;
+  }
+  const was = JSON.parse(read(BASELINE));
+  const problems = [];
+  for (const [k, v] of Object.entries(now.totals)) {
+    if (was.totals[k] !== v) problems.push(`  total ${k}: baseline ${was.totals[k]}, now ${v}`);
+  }
+  const names = new Set([...Object.keys(was.tests ?? {}), ...Object.keys(now.tests)]);
+  for (const file of names) {
+    const a = was.tests?.[file] ?? {};
+    const b = now.tests[file] ?? {};
+    for (const t of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      const x = a[t] ?? { high: 0, medium: 0, low: 0 };
+      const y = b[t] ?? { high: 0, medium: 0, low: 0 };
+      for (const sev of ['high', 'medium', 'low']) {
+        if (x[sev] !== y[sev]) problems.push(`  ${file} · ${sev.toUpperCase()} ${x[sev]} -> ${y[sev]}  ${t.slice(0, 64)}`);
+      }
+    }
+  }
+  if (problems.length === 0) {
+    console.log(`settled-reads: ${now.totals.atRisk} at risk (${now.totals.high} HIGH) of ${now.totals.reads} reads — unchanged.`);
+    return 0;
+  }
+  console.log('settled-reads: the at-risk set has moved.');
+  console.log('');
+  for (const p2 of problems.slice(0, 40)) console.log(p2);
+  if (problems.length > 40) console.log(`  … and ${problems.length - 40} more`);
+  console.log('');
+  console.log('A read that goes UP is a new one-shot read of a page that may still be moving —');
+  console.log('see the authoring rule in `packages/cli/test/ui-page.test.ts`. A read that goes DOWN');
+  console.log('is a repair, and the baseline is an equality on purpose (`M201`): record it with');
+  console.log('  npm run verify:settled-reads:update');
+  return 1;
+}
+
 const args = process.argv.slice(2);
 if (import.meta.url === `file://${process.argv[1]}`) {
   const result = args.includes('--self-test') ? { findings: [], stats: {} } : classify();
   if (args.includes('--json')) {
     console.log(JSON.stringify(result, null, 2));
+  } else if (args.includes('--check') || args.includes('--update')) {
+    process.exitCode = check(result, { update: args.includes('--update') });
   } else if (args.includes('--self-test')) {
     process.exitCode = selfTest();
   } else if (args.includes('--oracle')) {
