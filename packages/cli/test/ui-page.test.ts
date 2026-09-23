@@ -9722,9 +9722,62 @@ const countSettling = async (p: Page, selector: string, want: number): Promise<n
   return seen;
 };
 
+const PLACED_MENU = '.ctx-menu:not([data-menu-placed="measuring"])';
+
 const openMenu = async (p: Page, selector: string): Promise<void> => {
   await p.locator(selector).first().click({ button: 'right' });
-  await p.locator('.ctx-menu:not([data-menu-placed="measuring"])').waitFor({ state: 'visible' });
+  await p.locator(PLACED_MENU).waitFor({ state: 'visible' });
+};
+
+/**
+ * Open a context menu and read its box as ONE retrying operation — `M234-06` (`D1308`'s shape,
+ * fourth site).
+ *
+ * `countSettling` above says this file has spent three CI rounds on *a read after a wait does not
+ * retry*. This is the fourth, and unlike the first three it is grounded in the error rather than in
+ * a guess at it. CI Node 22 reported, inside the Coverage step:
+ *
+ *     locator.boundingBox: Timeout 30000ms exceeded.
+ *       - waiting for locator('.ctx-menu:not([data-menu-placed="measuring"])')
+ *       at ui-page.test.ts:9782
+ *
+ * — which is the READ, not `openMenu`'s wait and not the click. So the menu was visible when
+ * `openMenu` returned and was gone one line later, and `boundingBox()` auto-waits, so a menu that
+ * never comes back costs the full default timeout instead of returning `null`.
+ *
+ * **`A4` diagnosed the cause correctly and its repair moved the window rather than closing it.**
+ * `ContextMenu.tsx:199` closes on `resize`, `setViewportSize` resolves before the page has
+ * necessarily dispatched that event, and `settleViewport`'s two frames are a *timing heuristic*: on
+ * a two-core runner already carrying c8 instrumentation, the event can land after them. When it
+ * lands before `openMenu`'s wait the menu is simply absent (`A4`'s `menus []`, fast); when it lands
+ * between that wait and this read the menu is visible and then gone — the 30 s hang seen here. Same
+ * mechanism, later by a few milliseconds, and a frame count cannot be made robust against a machine
+ * that is arbitrarily slow.
+ *
+ * So the retry is written out, as `A6` wrote out `count()`. A vanished menu is asked for again; a
+ * *mis-placed* one is not retried and is returned to the caller to judge, because a menu outside
+ * the viewport still has a box — `null` here means **not in the document**, never "in the wrong
+ * place". Every wait is bounded so that a genuine breakage fails in seconds rather than spending
+ * 30 s per read, and the attempt count is returned so the diagnostic can say whether the placement
+ * it reports was reached first time or on the sixth.
+ */
+type MenuBox = { x: number; y: number; width: number; height: number };
+
+const openMenuAndBox = async (
+  p: Page,
+  selector: string,
+): Promise<{ box: MenuBox | null; attempts: number }> => {
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    await p.locator(selector).first().click({ button: 'right' });
+    try {
+      await p.locator(PLACED_MENU).waitFor({ state: 'visible', timeout: 1500 });
+    } catch {
+      continue; // never arrived, or arrived and left before the wait resolved — ask again
+    }
+    const box = await p.locator(PLACED_MENU).boundingBox({ timeout: 1500 }).catch(() => null);
+    if (box !== null) return { box, attempts: attempt };
+  }
+  return { box: null, attempts: 8 };
 };
 
 test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row kind (`D1145`)', async () => {
@@ -9770,7 +9823,6 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
       await settleViewport(size);
       for (const row of rows) {
         if (await p.locator(row).count() === 0) continue;
-        await openMenu(p, row);
         /* `M234` `A` — THE SAME SELECTOR `openMenu` WAITED ON, AND THE ESCAPE IS AWAITED
            (`D1308`). Two halves of one race, and `A2` twenty lines down already has both: it waits
            on `.ctx-menu:not([data-menu-placed="measuring"])` and then on `{ state: 'detached' }`
@@ -9778,8 +9830,13 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
            neither, so a right-click could land while the previous menu was still detaching — the
            `waitFor` inside `openMenu` then matches the OLD menu, and `boundingBox()` reads it as
            it leaves. That is the `null` Node 22 reported at 700x420, on the third viewport and the
-           second row, which is exactly where the backlog of undismissed menus is deepest. */
-        const box = await p.locator('.ctx-menu:not([data-menu-placed="measuring"])').boundingBox();
+           second row, which is exactly where the backlog of undismissed menus is deepest.
+
+           `M234-06` — the open and the read are now ONE retrying operation (`openMenuAndBox`),
+           because the repair above closed the half of the race it could see and the other half
+           came back as a 30 s hang on this very line. Read that helper's docblock before touching
+           this: the retry is for a menu that is GONE, and a mis-placed one is still judged here. */
+        const { box, attempts } = await openMenuAndBox(p, row);
         if (box === null || box.x < 0 || box.y < 0 || box.x + box.width > size.width || box.y + box.height > size.height) {
           /* `M234` `A` — SAY WHAT WAS SEEN, because twice now a repair has been guessed from
              `→ null` alone and twice it has been wrong (`D1308`). `null` from `boundingBox()`
@@ -9794,7 +9851,7 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
             return { placed: e.getAttribute('data-menu-placed'), w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) };
           }));
           const rowBox = await p.locator(row).first().boundingBox();
-          off.push(`${row} at ${size.width}x${size.height} → ${JSON.stringify(box)} · menus ${JSON.stringify(seen)} · row ${JSON.stringify(rowBox)}`);
+          off.push(`${row} at ${size.width}x${size.height} → ${JSON.stringify(box)} · after ${attempts} open(s) · menus ${JSON.stringify(seen)} · row ${JSON.stringify(rowBox)}`);
         }
         await p.keyboard.press('Escape');
         await p.locator('.ctx-menu').waitFor({ state: 'detached' });
