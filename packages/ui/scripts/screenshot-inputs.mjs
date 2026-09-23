@@ -95,12 +95,29 @@ export const VIEWS = /** @type {const} */ ([
  */
 export const DEFAULT_VIEWPORT = { width: 1440, height: 900 };
 
+/* `M234` `F` — **CORRECTED, and the correction is the more useful record.** `E` put all four
+   Compose views at 560 from one measurement — §0.6's "three of four Compose shots are ~half empty"
+   — and shipped without looking at the pictures. Three of four was right, and the fourth,
+   `compose-load`, was the one already correct at 425: its ink-trim had done the job because a plan
+   panel puts ink low in the pane. At 560 that panel is a bottom dock that takes what is left, so
+   the shot came out with **no test body at all** and `+ new test` sliced in half, under a caption
+   promising "its workload and the thresholds that grade it".
+
+   `compose-scan` broke the same way and for a second reason as well (see `DOOR_FILES`).
+
+   A repair proposed from one example and applied to four without measuring each is `M167`'s shape,
+   which this plan quotes. The measurement that would have caught it was looking at the file that
+   was written — which is why `E`'s own per-shot sizes could not: 1060x350 is a *plausible* number
+   for all four, and plausible is the failure mode this repository keeps filing.
+
+   So the rule is what it always was — **a view whose file earns a panel keeps the full window** —
+   and only the two panel-free doors take the short one. */
 export const VIEW_VIEWPORT = /** @type {const} */ ({
-  'compose-api': { width: 1440, height: 560 },
-  'compose-browser': { width: 1440, height: 560 },
-  'compose-load': { width: 1440, height: 560 },
-  'compose-scan': { width: 1440, height: 560 },
+  'compose-api': { width: 1440, height: 560 }, //     no panel: the pane is sequence + source
+  'compose-browser': { width: 1440, height: 560 }, // no panel, and six gestures to keep in frame
   'browser-menu': { width: 1440, height: 1220 },
+  // `compose-load` and `compose-scan` are DELIBERATELY absent: a plan panel and a targets block
+  // both need the default 900, and the ink-trim closes whatever they do not use.
 });
 
 /** The window `view` is shot in. */
@@ -149,7 +166,16 @@ export const DOOR_FILES = /** @type {const} */ ([
   ['api', ['tests/fulfilment.tflw', 'tests/checkout.tflw']], //    api            1 test,  20 lines
   ['browser', ['tests/receipt.tflw', 'tests/shelf.tflw']], //      browser        2 tests, 23 lines
   ['load', ['tests/load.tflw']], //                                api,load,scan  4 tests, 98 lines
-  ['scan', ['tests/scan.tflw']], //                                api,scan       2 tests + a crawl
+  /* `M234` `F` — **`scan.tflw` was chosen by the FILE's lens and the picture is of a DECLARATION.**
+     Its scan-ness lives in a `crawl`; the two tests above that crawl are plain `GET`s that exist to
+     seed its traffic, and the pane opens on the first of them — so the shot came out showing
+     `expect status equals 200` on the SCANS page, under a section titled "The targets block",
+     with no targets block in it. The pre-`D` fixture shot had the whole block, so this was a
+     regression and not an inherited gap.
+     `signin.tflw` asserts `expect response has no serious security violations` in both its tests —
+     the severity matcher itself, which is what earns the panel — and at 27 lines it is legible.
+     `scan.tflw` stays as the fallback. */
+  ['scan', ['tests/signin.tflw', 'tests/scan.tflw']], //           api,browser,scan  2 tests, 27 lines
 ]);
 
 /** Every shot, by file name: one per view per theme. */

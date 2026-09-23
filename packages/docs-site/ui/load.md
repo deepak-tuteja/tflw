@@ -9,8 +9,8 @@ pageClass: ui-shots
 A load test is not a different kind of test. It is a test with a **workload** line saying how often
 to run it, and **thresholds** saying what counts as holding up.
 
-![Compose on the LOAD door: a load test, its workload and the thresholds that grade it](/ui/compose-load-paper.png){.light-only}
-![Compose on the LOAD door: a load test, its workload and the thresholds that grade it](/ui/compose-load-terminal.png){.dark-only}
+![Compose on the LOAD door: a load test, and the plan panel its workload line earned](/ui/compose-load-paper.png){.light-only}
+![Compose on the LOAD door: a load test, and the plan panel its workload line earned](/ui/compose-load-terminal.png){.dark-only}
 
 ## The panel in that picture is earned, not granted
 

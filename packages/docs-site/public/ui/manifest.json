@@ -1,5 +1,5 @@
 {
-  "inputs": "f8d897ae808fc653d1cc21b56f150ccf28d4e8c7e9c412185d5e5a54c993db92",
+  "inputs": "6d03fbb007f98c51c9f6dc0020cfe203deee17f0e8e6f27b7a7f1f82aeab9b74",
   "inputCount": 95,
   "shots": [
     {
@@ -65,22 +65,22 @@
     {
       "name": "compose-load-terminal.png",
       "width": 2144,
-      "height": 730
+      "height": 1410
     },
     {
       "name": "compose-load-paper.png",
       "width": 2120,
-      "height": 700
+      "height": 1380
     },
     {
       "name": "compose-scan-terminal.png",
       "width": 2144,
-      "height": 730
+      "height": 1410
     },
     {
       "name": "compose-scan-paper.png",
       "width": 2120,
-      "height": 700
+      "height": 1380
     },
     {
       "name": "run-terminal.png",
@@ -124,11 +124,11 @@
     },
     "compose-load": {
       "width": 1440,
-      "height": 560
+      "height": 900
     },
     "compose-scan": {
       "width": 1440,
-      "height": 560
+      "height": 900
     },
     "run": {
       "width": 1440,
@@ -136,5 +136,5 @@
     }
   },
   "deviceScaleFactor": 2,
-  "cutAt": "2026-09-23T13:44:49.897Z"
+  "cutAt": "2026-09-23T14:23:19.607Z"
 }
