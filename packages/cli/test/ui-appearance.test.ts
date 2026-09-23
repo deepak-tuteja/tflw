@@ -60,6 +60,9 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer } from '../src/ui-server.js';
 import { coverageBuildArgs, startUiCoverage, stopUiCoverage } from './ui-coverage.js';
 import { parseColor, flatten, effective, threshold } from './contrast.js';
+// `M235` `B1` — `settle.ts` was put in its own module so this file could use it too, and `C2` is
+// where that stops being a claim about the future.
+import { settle, untilMeasurable } from './settle.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const uiRoot = join(here, '..', '..', 'ui');
@@ -737,6 +740,19 @@ test('no region of the Compose pane overflows the window, on a thirteen-request 
       // WARNING badge, so the first draft of this line read a file that parses perfectly and a
       // missing tag as the same failure. A height gate reading a salvage is a height gate reading a
       // smaller file, which is the thing worth catching.
+      /* `M235` `C2` — this is an ABSENCE, and an absence read off an explorer that has not drawn
+         the row is a pass for the wrong reason: `count()` waits for nothing, and zero badges on
+         zero rows reads exactly like zero badges on a clean file. `showWrittenFile` above returns
+         when the *pane* shows the file, which is a different subject from the *row* this claim is
+         about. So the row is established first and the badge is then read once. */
+      const listed = await settle(
+        () => page.locator('[data-file-row="tests/thirteen.tflw"]').count(),
+        untilMeasurable('the explorer has drawn the row this claim is about', (n) => n > 0),
+        { attempts: 40, delayMs: 50, page },
+      );
+      assert.ok(listed.value > 0, `the explorer lists the file the gate wrote (${listed.attempts} look(s))`);
+      // one-shot: read over the row the wait above established; retrying an absence would only
+      // delay a real salvage badge until the budget ran out
       assert.equal(await page.locator('[data-file-row="tests/thirteen.tflw"] [data-recovered]').count(), 0, 'the file the gate wrote does not parse');
       /* `M234` `A` — WAIT FOR THE FOURTEENTH ROW BEFORE MEASURING (`D1308`). `[data-seq-col]`
          above is the column, not its contents: on a slow runner the column is attached while nine

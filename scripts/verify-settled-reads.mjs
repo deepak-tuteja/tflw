@@ -52,6 +52,22 @@
 // inside a test body, `RETRY_WRAPPERS` is what will have to carry it, and `--self-test` is what
 // proves `RETRY_WRAPPERS` still works.
 //
+// ## The opt-out, and why it had to exist
+//
+// Some reads must stay one-shot *by design*. `M218` `A1` reads `.ctx-menu`'s boxes and the row's
+// own box on the failure path, to say what was on the page at the instant the clamp was violated —
+// retrying those would change what they report, turning a diagnostic into a second gate. A
+// classifier with no way to express that would either flag them forever or be quietly narrowed
+// until it stopped flagging real sites too.
+//
+// So a read may declare itself, on its own line or the line above:
+//
+//     // one-shot: it reports what was on the page when the assertion failed
+//
+// Declared reads are excluded, **counted, and listed by `--report`**, so the set stays reviewable.
+// The reason text is required: `// one-shot:` with nothing after it is not honoured, because an
+// opt-out that costs nothing to write is an opt-out nobody argues with.
+//
 // Reads whose receiver cannot be resolved to a selector are **counted and reported, never silently
 // passed** — the same discipline `verify-test-observability.mjs` applies to tests whose harness it
 // cannot resolve. A classifier that quietly drops what it does not understand reports a clean tree
@@ -136,19 +152,19 @@ const RETRY_WRAPPERS = new Set(['settle', 'countSettling', 'openMenuAndBox', 'la
 // it. It is only worth something beside the population figures `--report` prints: 980 reads, and
 // the HIGH band is the ordering `C2` works down. Two instruments, neither sufficient alone.
 const CENSUS = [
-  // file          test (substring)                                             provenance     shape
-  ['ui-page', '`M218` `A1`: the menu stays on screen', 'CI, 5 runs', 'GEOMETRY'],
-  ['ui-appearance', 'no region of the Compose pane overflows', 'CI, 2 runs', null],
-  ['ui-page', '`M217` `C2`: a draft belongs to its file', 'CI, 2 runs', 'NO-AUTO-WAIT'],
-  ['ui-appearance', '`M215` `B3`: the coloured copy and the field under it are one box', 'CI, 2 runs', null],
-  ['ui-page', '`M213` `S2`: every verdict the report holds is beside the statement', 'CI, 1 run', null],
-  ['ui-page', '`M213` `S4`: the BROWSER door composes', 'CI, 1 run', null],
-  ['ui-page', 'Compose draws every request the file holds', 'CI, 1 run', 'NO-AUTO-WAIT'],
-  ['ui-page', '`M227` `A`: the report', 'CI, 1 run', null],
-  ['ui-page', 'the query is in the address', 'sweep, 10/56', 'SYNC/ASYNC-STATE'],
-  ['ui-page', '`M216` `B1`: it appears on keyboard focus', 'sweep, 1/56', null],
-  ['ui-page', 'a new .tflw file can be made from the page', 'sweep, 1/56', null],
-  ['ui-page', 'a tag query runs the tests carrying the tag', 'close-out', 'SERVER/SERVER-POLL'],
+  // file          test (substring)                                        provenance     shape                state
+  ['ui-page', '`M218` `A1`: the menu stays on screen', 'CI, 5 runs', 'GEOMETRY', 'converted'],
+  ['ui-appearance', 'no region of the Compose pane overflows', 'CI, 2 runs', null, 'converted'],
+  ['ui-page', '`M217` `C2`: a draft belongs to its file', 'CI, 2 runs', 'NO-AUTO-WAIT', 'converted'],
+  ['ui-appearance', '`M215` `B3`: the coloured copy and the field under it are one box', 'CI, 2 runs', null, 'at-risk'],
+  ['ui-page', '`M213` `S2`: every verdict the report holds is beside the statement', 'CI, 1 run', null, 'converted'],
+  ['ui-page', '`M213` `S4`: the BROWSER door composes', 'CI, 1 run', null, 'declared'],
+  ['ui-page', 'Compose draws every request the file holds', 'CI, 1 run', 'NO-AUTO-WAIT', 'converted'],
+  ['ui-page', '`M227` `A`: the report', 'CI, 1 run', null, 'declared'],
+  ['ui-page', 'the query is in the address', 'sweep, 10/56', 'SYNC/ASYNC-STATE', 'converted'],
+  ['ui-page', '`M216` `B1`: it appears on keyboard focus', 'sweep, 1/56', null, 'converted'],
+  ['ui-page', 'a new .tflw file can be made from the page', 'sweep, 1/56', null, 'converted'],
+  ['ui-page', 'a tag query runs the tests carrying the tag', 'close-out', 'SERVER/SERVER-POLL', 'declared'],
 ];
 
 // **The controls.** The census alone cannot fail a classifier that flags every read, so two reads
@@ -163,6 +179,8 @@ const CONTROLS = [
   ['two report directories side by side', '[data-compared-with="headers"]', 'count',
     'a no-auto-wait read, settled by a `waitFor` on its own subject after an action'],
 ];
+
+const ONE_SHOT = /\/\/\s*one-shot:\s*\S/;
 
 const read = (p) => readFileSync(p, 'utf8');
 const norm = (s) => s.replace(/\s+/g, ' ').trim();
@@ -252,7 +270,17 @@ function insideRetryOrPage(node) {
 }
 
 /** Walk one test body in source order, tracking what is settled. */
-function classifyTest(testNode, testName, src, vars, findings, stats) {
+function classifyTest(testNode, testName, src, vars, findings, stats, lines) {
+  // The marker is looked for on the read's own line and anywhere in the **contiguous comment block
+  // directly above it**, because the reason is usually two lines long and a lookup that reads one
+  // line above silently ignored the marker whenever it was. Found that way, on the first site.
+  const oneShotReason = (line) => {
+    if (ONE_SHOT.test(lines[line - 1] ?? '')) return lines[line - 1].match(/one-shot:\s*(.+)$/)[1].trim();
+    for (let i = line - 2; i >= 0 && /^\s*(\/\/|\*)/.test(lines[i] ?? ''); i--) {
+      if (ONE_SHOT.test(lines[i])) return lines[i].match(/one-shot:\s*(.+)$/)[1].trim();
+    }
+    return null;
+  };
   const settled = new Set();
   const everWaited = new Set();
   const events = [];
@@ -268,7 +296,11 @@ function classifyTest(testNode, testName, src, vars, findings, stats) {
         events.push({ pos: n.getStart(), kind: 'action', subject: subjectOf(recv, vars) ?? '?', method: m });
       } else if (AWAITED_READS.has(m) || SYNC_READS.has(m)) {
         const where = insideRetryOrPage(n);
-        if (where === null) {
+        const lineNo = src.getLineAndCharacterOfPosition(n.getStart()).line + 1;
+        const declared = where === null ? oneShotReason(lineNo) : null;
+        if (declared !== null) {
+          stats.declared.push({ test: testName, line: lineNo, method: m, reason: declared });
+        } else if (where === null) {
           events.push({
             pos: n.getStart(),
             kind: 'read',
@@ -283,13 +315,19 @@ function classifyTest(testNode, testName, src, vars, findings, stats) {
         }
       }
     }
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'settle') {
+      stats.settling.add(testName);
+    }
     // A bare awaited `fetch(...)` is a read of server state with no wait available at all.
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'fetch') {
-      if (insideRetryOrPage(n) === null) {
+      const lineNo = src.getLineAndCharacterOfPosition(n.getStart()).line + 1;
+      const declared = insideRetryOrPage(n) === null ? oneShotReason(lineNo) : null;
+      if (declared !== null) {
+        stats.declared.push({ test: testName, line: lineNo, method: 'fetch', reason: declared });
+      } else if (insideRetryOrPage(n) === null) {
         events.push({
           pos: n.getStart(), kind: 'read', method: 'fetch', sync: false, subject: null,
-          line: src.getLineAndCharacterOfPosition(n.getStart()).line + 1,
-          text: norm(n.getText()).slice(0, 120), server: true,
+          line: lineNo, text: norm(n.getText()).slice(0, 120), server: true,
         });
       } else {
         stats.inRetry++;
@@ -326,9 +364,10 @@ function classifyTest(testNode, testName, src, vars, findings, stats) {
 export function classify(sources) {
   const inputs = sources ?? FILES.map((rel) => ({ rel, text: read(path.join(ROOT, rel)) }));
   const findings = [];
-  const stats = { reads: 0, unresolved: 0, inRetry: 0, inPage: 0, tests: 0 };
+  const stats = { reads: 0, unresolved: 0, inRetry: 0, inPage: 0, tests: 0, settling: new Set(), declared: [] };
   for (const { rel, text } of inputs) {
     const src = ts.createSourceFile(rel, text, ts.ScriptTarget.Latest, true);
+    const lines = text.split('\n');
     const vars = collectVars(src, new Map());
     const visit = (n) => {
       if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'test') {
@@ -340,7 +379,7 @@ export function classify(sources) {
         if (body) {
           const local = collectVars(body, new Map(vars));
           const before = findings.length;
-          classifyTest(body, name, src, local, findings, stats);
+          classifyTest(body, name, src, local, findings, stats, lines);
           for (let i = before; i < findings.length; i++) findings[i].file = rel;
         }
         return;
@@ -371,6 +410,7 @@ function report({ findings, stats }) {
   console.log(`  unresolved     ${stats.unresolved}  (receiver not a resolvable subject — reported, not passed)`);
   console.log(`  inside a retry ${stats.inRetry}  (excluded: the read retries)`);
   console.log(`  in-page code   ${stats.inPage}  (excluded: runs in the browser, not a Playwright read)`);
+  console.log(`  declared       ${stats.declared.length}  (excluded: \`// one-shot:\` at the site — listed below)`);
   console.log('');
   for (const [r, c] of Object.entries(byReason).sort((a, b) => b[1] - a[1])) {
     console.log(`  ${r.padEnd(18)} ${c}`);
@@ -392,6 +432,11 @@ function report({ findings, stats }) {
   for (const f of findings) if (f.severity === 'HIGH') highByTest.set(f.test, (highByTest.get(f.test) ?? 0) + 1);
   console.log(`tests carrying at least one HIGH read: ${highByTest.size} of ${stats.tests}`);
   console.log('');
+  if (stats.declared.length) {
+    console.log('reads that declared themselves one-shot, and why:');
+    for (const d of stats.declared) console.log(`  ${String(d.line).padStart(6)}  ${d.method.padEnd(14)}${d.reason}`);
+    console.log('');
+  }
   console.log('top 20 tests by HIGH count:');
   for (const [t, c] of [...highByTest].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
     console.log(`  ${String(c).padStart(4)}  ${t.slice(0, 96)}`);
@@ -414,18 +459,26 @@ function oracle({ findings, stats }) {
   // carrying no shape claim rather than quietly given the weak test and counted as if they passed.
   let failed = 0;
   const rows = [];
-  for (const [file, needle, provenance, shape] of CENSUS) {
+  for (const [file, needle, provenance, shape, state] of CENSUS) {
     const hits = findings.filter((f) => f.file.includes(file) && f.test.includes(needle));
     const high = hits.filter((f) => f.severity === 'HIGH');
+    const [wantCls, wantReason] = (shape ?? '').split('/');
+    const match = shape && hits.find((f) => f.cls === wantCls && (!wantReason || f.reason === wantReason));
     let verdict;
-    if (hits.length === 0) { verdict = 'MISSED'; failed++; }
+    if (state === 'declared') {
+      const says = stats.declared.some((d) => d.test.includes(needle));
+      if (match) { verdict = `STILL ${wantCls}`; failed++; }
+      else if (!says) { verdict = 'NO one-shot:'; failed++; }
+      else verdict = 'declared';
+    } else if (state === 'converted') {
+      const settles = [...stats.settling].some((t) => t.includes(needle));
+      if (match) { verdict = `STILL ${wantCls}`; failed++; }
+      else if (!settles) { verdict = 'NO settle()'; failed++; }
+      else verdict = 'converted';
+    } else if (hits.length === 0) { verdict = 'MISSED'; failed++; }
     else if (shape === null) verdict = 'flagged';
-    else {
-      const [wantCls, wantReason] = shape.split('/');
-      const match = hits.find((f) => f.cls === wantCls && (!wantReason || f.reason === wantReason));
-      if (match) verdict = `${shape} :${match.line}`;
-      else { verdict = `NO ${shape}`; failed++; }
-    }
+    else if (match) verdict = `${shape} :${match.line}`;
+    else { verdict = `NO ${shape}`; failed++; }
     rows.push([verdict, hits.length, high.length, provenance, needle]);
   }
   console.log('the census of twelve, against the classifier:');
@@ -442,14 +495,17 @@ function oracle({ findings, stats }) {
     if (hit) failed++;
   }
 
-  const shaped = CENSUS.filter((c) => c[3] !== null).length;
+  const shaped = CENSUS.filter((c) => c[3] !== null && c[4] === 'at-risk').length;
+  const done = CENSUS.filter((c) => c[4] !== 'at-risk').length;
+  const dec = CENSUS.filter((c) => c[4] === 'declared').length;
   console.log('');
   if (failed) {
     console.log(`FAIL: ${failed} claim(s) not met — a census test misclassified, or a control flagged.`);
     console.log('The classifier is wrong. Fix it before converting anything (`C1` acceptance).');
     return 1;
   }
-  console.log(`PASS: all ${CENSUS.length} census tests flagged; all ${shaped} with a recorded shape flagged AT that shape;`);
+  console.log(`PASS: ${CENSUS.length - done} census tests still flagged, ${shaped} of them AT the recorded shape;`);
+  console.log(`      ${done - dec} converted (shape gone AND the test calls settle()), ${dec} declared one-shot with a reason;`);
   console.log(`      both controls clean.`);
   console.log(`      ${findings.length} of ${stats.reads} reads flagged overall, so neither claim is passed by flagging everything.`);
   return 0;
