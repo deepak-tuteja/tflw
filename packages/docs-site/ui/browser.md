@@ -47,4 +47,16 @@ All twenty-two kinds the language has. That sentence is worth stating because un
 reason given — **650 statements, 27% of all browser steps in the two corpora**. Five of the
 nineteen already had working builders that nothing could reach.
 
+Two surfaces reach them, and it is worth knowing which is which. `+ open`, `+ click` and `+ fill`
+sit in the pane's foot as gestures of their own. **`+ step…` holds the rest** — a filterable list
+of **23** entries: the eighteen browser kinds without their own button, plus `call`, `capture`,
+`give`, `log` and `pause`, which are not browser words at all and which every door offers.
+
+![`+ step…` on the BROWSER door: the rest of the browser vocabulary as a filterable list of 23](/ui/browser-menu-paper.png){.light-only}
+![`+ step…` on the BROWSER door: the rest of the browser vocabulary as a filterable list of 23](/ui/browser-menu-terminal.png){.dark-only}
+
+That is eighteen and three of the twenty-two. The twenty-second is `within`, which is a block with
+a body rather than a step, and no `+` gesture writes one — you edit a `within` the language already
+put there.
+
 Next: [Browser testing: interacting with a UI](/guide/browser-basics).

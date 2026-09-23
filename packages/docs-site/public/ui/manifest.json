@@ -1,28 +1,140 @@
 {
-  "inputs": "883789337b6306e3c351a8b201d4c592346fc938d34a7b3d3db37ea5c4c09ddb",
-  "inputCount": 90,
+  "inputs": "f8d897ae808fc653d1cc21b56f150ccf28d4e8c7e9c412185d5e5a54c993db92",
+  "inputCount": 95,
   "shots": [
-    "landing-terminal.png",
-    "landing-paper.png",
-    "spine-terminal.png",
-    "spine-paper.png",
-    "doors-terminal.png",
-    "doors-paper.png",
-    "compose-api-terminal.png",
-    "compose-api-paper.png",
-    "compose-browser-terminal.png",
-    "compose-browser-paper.png",
-    "compose-load-terminal.png",
-    "compose-load-paper.png",
-    "compose-scan-terminal.png",
-    "compose-scan-paper.png",
-    "run-terminal.png",
-    "run-paper.png"
+    {
+      "name": "landing-terminal.png",
+      "width": 2152,
+      "height": 652
+    },
+    {
+      "name": "landing-paper.png",
+      "width": 2152,
+      "height": 616
+    },
+    {
+      "name": "spine-terminal.png",
+      "width": 2880,
+      "height": 1738
+    },
+    {
+      "name": "spine-paper.png",
+      "width": 2880,
+      "height": 1764
+    },
+    {
+      "name": "doors-terminal.png",
+      "width": 2144,
+      "height": 70
+    },
+    {
+      "name": "doors-paper.png",
+      "width": 2120,
+      "height": 70
+    },
+    {
+      "name": "compose-api-terminal.png",
+      "width": 2144,
+      "height": 730
+    },
+    {
+      "name": "compose-api-paper.png",
+      "width": 2120,
+      "height": 700
+    },
+    {
+      "name": "compose-browser-terminal.png",
+      "width": 2144,
+      "height": 730
+    },
+    {
+      "name": "compose-browser-paper.png",
+      "width": 2120,
+      "height": 700
+    },
+    {
+      "name": "browser-menu-terminal.png",
+      "width": 2880,
+      "height": 2380
+    },
+    {
+      "name": "browser-menu-paper.png",
+      "width": 2880,
+      "height": 2388
+    },
+    {
+      "name": "compose-load-terminal.png",
+      "width": 2144,
+      "height": 730
+    },
+    {
+      "name": "compose-load-paper.png",
+      "width": 2120,
+      "height": 700
+    },
+    {
+      "name": "compose-scan-terminal.png",
+      "width": 2144,
+      "height": 730
+    },
+    {
+      "name": "compose-scan-paper.png",
+      "width": 2120,
+      "height": 700
+    },
+    {
+      "name": "run-terminal.png",
+      "width": 2144,
+      "height": 1500
+    },
+    {
+      "name": "run-paper.png",
+      "width": 2120,
+      "height": 1486
+    }
   ],
   "viewport": {
     "width": 1440,
     "height": 900
   },
+  "viewports": {
+    "landing": {
+      "width": 1440,
+      "height": 900
+    },
+    "spine": {
+      "width": 1440,
+      "height": 900
+    },
+    "doors": {
+      "width": 1440,
+      "height": 900
+    },
+    "compose-api": {
+      "width": 1440,
+      "height": 560
+    },
+    "compose-browser": {
+      "width": 1440,
+      "height": 560
+    },
+    "browser-menu": {
+      "width": 1440,
+      "height": 1220
+    },
+    "compose-load": {
+      "width": 1440,
+      "height": 560
+    },
+    "compose-scan": {
+      "width": 1440,
+      "height": 560
+    },
+    "run": {
+      "width": 1440,
+      "height": 900
+    }
+  },
   "deviceScaleFactor": 2,
-  "cutAt": "2026-09-22T16:00:30.911Z"
+  "cutAt": "2026-09-23T13:44:49.897Z"
 }
