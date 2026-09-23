@@ -239,6 +239,30 @@ jobs:
       # character.
       - run: npm run verify:own-identifiers:self-test
 
+      # `M235` `C3`. The two page gates drive a live, re-rendering React page and read it with
+      # `node:assert`, and neither half retries — so every one-shot read is a single sample of a
+      # frame that may already be gone. Twelve tests have failed that way: eight found by CI over
+      # one week, three by a 56-run sweep, and a twelfth by an unrelated close-out at a site the
+      # sweep never reddened. That last one is why this is a classifier and not more sweeping — a
+      # sampler finds what it happens to catch; only an enumeration is complete.
+      #
+      # It is a RATCHET and not a clean-tree gate, and the difference is measured rather than
+      # conceded: 121 of 961 reads follow a `waitFor` on exactly their own subject, so "no at-risk
+      # reads" would have been red the day it landed and switched off by the end of the week. An
+      # equality, not a ceiling, for `M201`'s reason — a floor is blind in exactly one direction, so
+      # a repair has to come with the number it changed and the baseline's diff stays a record of
+      # what was actually fixed.
+      - run: npm run verify:settled-reads
+
+      # Its controls, `D922` again. The census of twelve is the oracle, sharp on the five whose
+      # failing shape was recorded — it lands on the exact diagnosed read in all five — and the
+      # self-test is eight synthetic reads pinned by line, each claiming both what settled it and
+      # what it is exposed to. Ten mutations of the classifier: 10/10 convicted by the self-test,
+      # 8/10 by the oracle, and the two the oracle misses are the ones that matter, because a
+      # classifier blind to an already-converted read would go on flagging every site it repaired.
+      - run: npm run verify:settled-reads:oracle
+      - run: npm run verify:settled-reads:self-test
+
       # The other half of `D666`. `verify:decisions` keeps every *canonical* citation pointed at an
       # entry that exists; this keeps prose from writing the older spelling, `decision 57`, which
       # names a number without saying which of nine numbered sequences indexes it (`M152b`/`D691`).

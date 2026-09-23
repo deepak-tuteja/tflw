@@ -1,5 +1,13 @@
 // The appearance gate (`M213` `S1`, `D1104`).
 //
+// **THE AUTHORING RULE FOR READS APPLIES HERE TOO**, and is written out once, at the head of
+// `ui-page.test.ts` — `M235` `C3`. The short form: this file reads a live, re-rendering page with
+// `node:assert`, nothing retries, `count()` and `evaluateAll()` wait for nothing at all, and an
+// absence claim over a page that has not painted is a silent pass. Wait for the subject you are
+// about to read, or read it through `settle` (`settle.ts`), keeping the wait separate from the
+// claim. A read that must stay one-shot says `// one-shot: <reason>` at the site.
+// `npm run verify:settled-reads` holds the count and refuses a new one.
+//
 // WHY THIS FILE EXISTS, IN ONE SENTENCE: every other gate in this repository asserts a selector, an
 // attribute, a count or a model value, and `M212` shipped a control **130 px tall in browser-default
 // white** with 115 `ui-page` tests green. That is `M209-02`'s own rule — *a gate asserting a class,

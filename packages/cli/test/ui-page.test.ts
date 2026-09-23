@@ -5,6 +5,48 @@
 // `packages/ui/fixtures/project/` (`scripts/make-fixtures.mjs`), one directory per evidence
 // level. The last test runs the project from the page against the fixture server and grades
 // the page against the directory that run wrote.
+//
+// ## The authoring rule for reads — `M235` `C3`
+//
+// **This file reads a page that is still moving, and nothing here retries.** It is `node:test` plus
+// the `playwright` library, not `@playwright/test`, so there is no auto-retrying assertion: a
+// resolved Playwright read answers against one frame and `node:assert` judges that frame. Twelve
+// tests have been red in CI for exactly that reason and no other.
+//
+// **A read is settled when its subject has been waited on since the last action that could change
+// it.** An `await page.locator(X).waitFor()` settles `X` and nothing else, and the next `click`,
+// `fill`, `goto` or `setViewportSize` spends it. Anything else is a single sample.
+//
+// Three things make that sharper than it sounds, and all three have cost a CI round here:
+//
+//   - **`count()`, `evaluateAll()` and `allTextContents()` wait for nothing at all.** They answer
+//     against whatever matches at that instant, so an empty DOM returns `0` or `[]` immediately.
+//     Six of the twelve failed in 38-359 ms; nothing was slow.
+//   - **`page.url()` is synchronous**, and the router writes the address on a later effect than the
+//     gesture that caused it. The worst site in the census, 10 of 56 sweep runs, was this.
+//   - **An absence is the dangerous shape.** `count() === 0`, `deepEqual(xs, [])` — a page that has
+//     not painted satisfies every one of them. That failure is a silent pass, not a red run, which
+//     is why four of `C2`'s repairs were emptiness claims that first establish their population.
+//
+// **So: wait for the thing you are about to read, or read it through `settle`.** Reach for
+// `untilMeasurable` and keep the wait separate from the claim — wait for *a* verdict, assert
+// *two*; wait for *a* query in the address, assert *the* query. A predicate that is the assertion
+// is `M141`'s defect and a gate that can no longer fail. `untilEqual` is for a value genuinely
+// converging on a total this test already knows, and stays honest only because the budget is
+// bounded. See `settle.ts`.
+//
+// **A read that must stay one-shot says so**, on its own line or in the comment block above it:
+//
+//     // one-shot: it reports what was on the page when the assertion failed
+//
+// The reason is required and is read by a person, not a parser. Failure-path diagnostics, a
+// baseline captured *before* a gesture, and a claim whose population a helper on the line above has
+// already established are the three that have earned it so far.
+//
+// `npm run verify:settled-reads` is the ratchet: it holds the at-risk set at the number recorded in
+// `scripts/settled-reads-baseline.json` and refuses a new one. `npm run report:settled-reads` lists
+// them worst-first. Neither is a defect list — most of these reads will never lose the race — but
+// the ones that do have never yet been found by reading.
 
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
