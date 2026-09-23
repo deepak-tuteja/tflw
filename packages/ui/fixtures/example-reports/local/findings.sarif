@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "tflw",
+          "informationUri": "https://deepak-tuteja.github.io/tflw/",
+          "version": "0.1.0",
+          "rules": [
+            {
+              "id": "sec/cookie-not-httponly",
+              "shortDescription": {
+                "text": "Cookie readable by JavaScript"
+              },
+              "fullDescription": {
+                "text": "A `Set-Cookie` header arrived without the `HttpOnly` attribute, so any script running on this origin can read the cookie through `document.cookie`."
+              },
+              "help": {
+                "text": "A `Set-Cookie` header arrived without the `HttpOnly` attribute, so any script running on this origin can read the cookie through `document.cookie`.\n\nIt converts any cross-site scripting flaw anywhere on the origin — including in a third-party script you did not write — into full session theft. `HttpOnly` is what keeps an XSS bug from being an account takeover.\n\nFix: Set `HttpOnly` on every cookie no client-side code needs to read. A session or authentication cookie always qualifies; a UI preference cookie that JavaScript genuinely reads is the only common exception, and it should not carry anything sensitive.\n\nIn NestJS: Pass the flag where the cookie is set — `res.cookie('sid', value, { httpOnly: true, secure: true, sameSite: 'lax' })` — or set `cookie: { httpOnly: true }` in the session middleware's options if a session library issues it.\n\nReferences:\nOWASP — Session Management Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html\nCWE-1004: Sensitive Cookie Without 'HttpOnly' Flag: https://cwe.mitre.org/data/definitions/1004.html",
+                "markdown": "A `Set-Cookie` header arrived without the `HttpOnly` attribute, so any script running on this origin can read the cookie through `document.cookie`.\n\nIt converts any cross-site scripting flaw anywhere on the origin — including in a third-party script you did not write — into full session theft. `HttpOnly` is what keeps an XSS bug from being an account takeover.\n\n**Fix** — Set `HttpOnly` on every cookie no client-side code needs to read. A session or authentication cookie always qualifies; a UI preference cookie that JavaScript genuinely reads is the only common exception, and it should not carry anything sensitive.\n\n**In NestJS** — Pass the flag where the cookie is set — `res.cookie('sid', value, { httpOnly: true, secure: true, sameSite: 'lax' })` — or set `cookie: { httpOnly: true }` in the session middleware's options if a session library issues it.\n\n**References**\n\n- [OWASP — Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)\n- [CWE-1004: Sensitive Cookie Without 'HttpOnly' Flag](https://cwe.mitre.org/data/definitions/1004.html)"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "external/cwe/cwe-1004"
+                ],
+                "security-severity": "9.5"
+              }
+            },
+            {
+              "id": "sec/csp-missing",
+              "shortDescription": {
+                "text": "No Content-Security-Policy on a document response"
+              },
+              "fullDescription": {
+                "text": "An HTML document was served with no `Content-Security-Policy` header, so nothing constrains where the page may load or execute script from."
+              },
+              "help": {
+                "text": "An HTML document was served with no `Content-Security-Policy` header, so nothing constrains where the page may load or execute script from.\n\nCSP is the control that limits the blast radius of an injection you have not found yet: with a policy, an injected `<script>` from another origin does not run; without one, it does. It is defence in depth rather than a fix for a specific bug, which is why its absence is worth recording even on a page you believe has no injection point.\n\nFix: Start with a restrictive policy and relax it against real console violations rather than guessing — `default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'`. Prefer nonces or hashes over `'unsafe-inline'`; a policy containing `'unsafe-inline'` for scripts provides very little of what CSP is for.\n\nIn NestJS: `helmet()` ships a `contentSecurityPolicy` default; override the directives it sets rather than disabling the middleware. For an API that only ever answers JSON, the honest fix is often that the endpoint should not be serving `text/html` at all.\n\nReferences:\nOWASP — Content Security Policy Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html\nCWE-693: Protection Mechanism Failure: https://cwe.mitre.org/data/definitions/693.html",
+                "markdown": "An HTML document was served with no `Content-Security-Policy` header, so nothing constrains where the page may load or execute script from.\n\nCSP is the control that limits the blast radius of an injection you have not found yet: with a policy, an injected `<script>` from another origin does not run; without one, it does. It is defence in depth rather than a fix for a specific bug, which is why its absence is worth recording even on a page you believe has no injection point.\n\n**Fix** — Start with a restrictive policy and relax it against real console violations rather than guessing — `default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'`. Prefer nonces or hashes over `'unsafe-inline'`; a policy containing `'unsafe-inline'` for scripts provides very little of what CSP is for.\n\n**In NestJS** — `helmet()` ships a `contentSecurityPolicy` default; override the directives it sets rather than disabling the middleware. For an API that only ever answers JSON, the honest fix is often that the endpoint should not be serving `text/html` at all.\n\n**References**\n\n- [OWASP — Content Security Policy Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html)\n- [CWE-693: Protection Mechanism Failure](https://cwe.mitre.org/data/definitions/693.html)"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "external/cwe/cwe-693"
+                ],
+                "security-severity": "7.5"
+              }
+            }
+          ]
+        }
+      },
+      "results": [],
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "properties": {
+        "tflw/notApplicable": [
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/cookie-not-secure",
+            "because": [
+              "the scheme is https AND the response sets a cookie"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/cors-wildcard-with-credentials",
+            "because": [
+              "the response carries Access-Control-Allow-Origin"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/hsts-missing",
+            "because": [
+              "the scheme is https"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/tls-version-old",
+            "because": [
+              "the scheme is https and the TLS probe succeeded"
+            ]
+          },
+          {
+            "kind": "rule",
+            "scan": "security",
+            "id": "sec/tls-weak-cipher",
+            "because": [
+              "the scheme is https and the TLS probe succeeded"
+            ]
+          },
+          {
+            "kind": "subject",
+            "scan": "security",
+            "id": "subject:POST /login",
+            "because": [
+              "a synthesized write, and this origin's `authorized target` does not declare `probe mutating` — affirming a scan is not affirming writes (`D330`/`D465`)"
+            ],
+            "count": 1
+          }
+        ]
+      }
+    }
+  ]
+}

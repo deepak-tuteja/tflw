@@ -29,19 +29,51 @@
 // `ui-appearance.test.ts`'s own `openPage` carries the same line.
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtemp, cp, readFile, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, cp, open, readFile, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { DOCS_PAGE_DIR, DOOR_FILES, MANIFEST, REPO, SHOTS, THEMES, UI_ROOT, screenshotInputs, screenshotInputsHash } from './screenshot-inputs.mjs';
+import { DEFAULT_VIEWPORT, VIEWS, DOCS_PAGE_DIR, DOOR_FILES, MANIFEST, REPO, SHOTS, THEMES, UI_ROOT, screenshotInputs, screenshotInputsHash, viewOf, viewportFor } from './screenshot-inputs.mjs';
 
 // 1440x900 is the width every appearance gate measures at, so a picture and a gate describe the
 // same layout. `deviceScaleFactor: 2` because this page is dense text: at 1x the docs site scales
 // a 1440px shot into a ~700px column and the type stops being readable, which makes the picture
 // decorative. The cost is measured and printed at the end rather than assumed.
-const VIEWPORT = { width: 1440, height: 900 };
+// `M234` `E` — the window is per view now (`D1304`, `viewportFor`), and this is the one every view
+// is shot in unless it names its own. It stays 1440 wide for the reason above: that is the width
+// every appearance gate measures at.
+const VIEWPORT = DEFAULT_VIEWPORT;
 const SCALE = 2;
+
+/**
+ * A PNG's real size, read back off the file that was just written — `M234` `E` (`D1306` as amended).
+ *
+ * **Not `boundingBox()`, and the difference is the whole reason this function exists.** `cut()`
+ * trims every shot to its last painting element and clamps it to the window, so the element's box
+ * is an upper bound on the picture and frequently not the picture: `compose-load` measured 705 css
+ * tall as an element and was written 425 tall as a file. A dimension taken from the page would be
+ * wrong for exactly the shots the trim is doing its job on.
+ *
+ * It is also the **first observed fact in this manifest**. Everything else in it is declared —
+ * `shots` is `VIEWS × THEMES`, and the docs gate asserts that array against the same constant it
+ * was built from, which compares a declaration with itself. These sixteen numbers come off disk.
+ */
+const pngSize = async (path) => {
+  const head = Buffer.alloc(24);
+  const fh = await open(path, 'r');
+  try {
+    const { bytesRead } = await fh.read(head, 0, 24, 0);
+    if (bytesRead < 24) throw new Error(`${path}: ${bytesRead} bytes — not a PNG header`);
+  } finally {
+    await fh.close();
+  }
+  if (head.toString('ascii', 1, 4) !== 'PNG') throw new Error(`${path}: no PNG signature — the shot did not write`);
+  return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+};
+
+/** Every shot's observed size, in file order, filled by `cut()`. */
+const SIZES = new Map();
 
 const scratch = await mkdtemp(join(tmpdir(), 'tflw-page-shots-'));
 let browser;
@@ -54,12 +86,28 @@ try {
   const staticDir = join(scratch, 'ui');
   execFileSync(process.execPath, [viteBin, 'build', '--outDir', staticDir, '--logLevel', 'warn'], { cwd: UI_ROOT, stdio: 'pipe' });
 
+  /* `M234` `D` — **the pictures are of the runnable example now, not of the page gate's fixture.**
+     `D1297`: there is one runnable example and it is the one the docs photograph. `fixtures/project`
+     stays exactly where it is as the corpus for `ui-page.test.ts`'s 203 tests; it is simply no
+     longer what a reader of the docs is looking at.
+
+     **One env, and that is a decision** (`M234` §3.1 `D-3`). The fixture declares `env full default`
+     and `env headers`; the example declares `env local default`, one line. A second env in the
+     example would exist only to make the new screenshot resemble the old screenshot — the
+     corpus-shaped-by-the-picture mistake `D1303` already refused once, arriving from the other
+     direction. `D1299` makes this example's job *printable coverage*, and an env is not a printable
+     construct.
+
+     `report/runs/<name>` rather than a flat `report/`: `tflw run` writes the report flat and has no
+     `runs/` in its output at all — `runs/` is the page's own run history, which is what the `run`
+     view is a picture of. `make-example-report.mjs` produces the committed copy (`D1302`). */
   const root = join(scratch, 'project');
-  await cp(join(UI_ROOT, 'fixtures', 'project'), root, { recursive: true });
+  await cp(join(REPO, 'examples', 'storefront'), root, { recursive: true });
+  await rm(join(root, 'report'), { recursive: true, force: true });
   await symlink(join(REPO, 'node_modules'), join(root, 'node_modules'), 'dir');
-  for (const env of ['full', 'headers']) {
+  for (const env of ['local']) {
     await mkdir(join(root, 'report', 'runs'), { recursive: true });
-    await cp(join(UI_ROOT, 'fixtures', 'reports', env), join(root, 'report', 'runs', env), { recursive: true });
+    await cp(join(UI_ROOT, 'fixtures', 'example-reports', env), join(root, 'report', 'runs', env), { recursive: true });
   }
 
   // The server is the CLI's own, from source under tsx — the same one `tflw ui` runs.
@@ -78,7 +126,10 @@ try {
   /** The file the shell shots open. Preference order, so a fixture rename degrades to a neighbour
    *  rather than to a crash — and the chosen one is printed, because a picture of a different file
    *  is a picture of a different thing. */
-  const PREFERRED = ['tests/orders.tflw', 'tests/catalog.tflw', 'tests/shop.tflw'];
+  /* `M234` `D-1`. `catalogue.tflw` leads because the spine shot is of the shell — explorer,
+     doorbar and tab strip at once — and a file carrying **two** lenses (`api,browser`) is the one
+     that makes the doorbar's per-door counts mean something in the same picture. */
+  const PREFERRED = ['tests/catalogue.tflw', 'tests/receipt.tflw', 'tests/shelf.tflw'];
 
   /**
    * One shot, cropped to the thing its caption names (`M233` `I`, `D1292`).
@@ -96,6 +147,18 @@ try {
    */
   const cut = async (page, name, target) => {
     if (typeof target !== 'string' || target.length === 0) throw new Error(`${name}: every view names a selector (D1292) — got ${JSON.stringify(target)}`);
+    /* **The window is asserted here and set by the caller, and that order is deliberate** —
+       `M234` `E`. Setting it inside `cut` would be tidier and would break `browser-menu`:
+       `ContextMenu.tsx:199` closes on `resize` and the add-step dialog is opened by a gesture, so
+       a resize taken *after* the gesture can dismiss the very thing being photographed. That is
+       `M234` `A4`'s finding, which cost this repository three guesses, arriving one layer up. So
+       the caller sizes the window before it gestures, and this refuses a shot taken at the wrong
+       one — which is the half a comment cannot enforce. */
+    const want = viewportFor(viewOf(name));
+    const have = page.viewportSize();
+    if (have === null || have.width !== want.width || have.height !== want.height) {
+      throw new Error(`${name}: shot at ${have?.width}x${have?.height}, but this view is ${want.width}x${want.height} (D1304)`);
+    }
     // **Take the pointer out of the picture first.** Every shot here is reached by clicking
     // something, and a click leaves the pointer hovering whatever it hit — so the first `spine`
     // cut carried a tooltip standing open over the file list, covering two of the five filenames
@@ -103,7 +166,7 @@ try {
     //
     // The corner, and then a beat for the tooltip's own exit. A screenshot is of a page at rest,
     // and a page with a pointer parked on it is not at rest.
-    await page.mouse.move(VIEWPORT.width - 2, VIEWPORT.height - 2);
+    await page.mouse.move(want.width - 2, want.height - 2);
     await page.waitForTimeout(250);
     const openTips = await page.locator('.tooltip, [role="tooltip"], [data-tooltip-open]').count();
     if (openTips > 0) throw new Error(`${name}: ${openTips} tooltip(s) still open with the pointer in the corner — the shot would carry one`);
@@ -144,10 +207,12 @@ try {
     const clip = {
       x: Math.max(0, box.x),
       y: Math.max(0, box.y),
-      width: Math.min(box.width, VIEWPORT.width - Math.max(0, box.x)),
-      height: Math.min(box.height, VIEWPORT.height - Math.max(0, box.y)),
+      width: Math.min(box.width, want.width - Math.max(0, box.x)),
+      height: Math.min(box.height, want.height - Math.max(0, box.y)),
     };
-    await page.screenshot({ path: join(DOCS_PAGE_DIR, name), clip });
+    const file = join(DOCS_PAGE_DIR, name);
+    await page.screenshot({ path: file, clip });
+    SIZES.set(name, await pngSize(file));
     return name;
   };
 
@@ -229,7 +294,13 @@ try {
     // of the four therefore look alike on purpose, and the section says so rather than cropping
     // until they look different.
     const opened = [];
+    let menu = '?';
+    let kinds = [];
     for (const [door, candidates] of DOOR_FILES) {
+      // `M234` `E` — the window first, then the navigation. Every Compose view is 1440x560
+      // (`D1304`): the pane's `+` gestures are pinned to its bottom edge, so the ink-trim cannot
+      // close the ~300px of empty pane a 900px window leaves under a short test.
+      await page.setViewportSize(viewportFor(`compose-${door}`));
       await at(door, 'compose');
       let chose = null;
       for (const path of candidates) {
@@ -245,10 +316,42 @@ try {
       await page.locator('[data-compose-pane]').waitFor();
       await cut(page, `compose-${door}-${theme}.png`, '[data-compose-pane]');
       opened.push(`${door}:${chose.replace(/^tests\//, '')}`);
+
+      /* **9. `+ step…`, and it is shot HERE because this is the only door that has it** —
+         `M234` `E`, `D1303`/`D1164`.
+
+         `ui/browser.md` says "all twenty-two kinds the language has" are editable, and the picture
+         under that sentence has been of a test using three. `D1303` settled where the missing
+         evidence lives: not in a taller file, because a file covering all 22 is ~23 rows and
+         `ui-appearance.test.ts:732` needs a thirteen-request file to already overflow the sequence
+         column — so the corpus cannot carry the claim and this dialog can. It enumerates the
+         vocabulary as a list, which is the shape a claim about a vocabulary wants.
+
+         The window is sized BEFORE the gesture that opens it, never after — see `cut`'s own note. */
+      if (door === 'browser') {
+        await page.setViewportSize(viewportFor('browser-menu'));
+        await page.locator('[data-seq-add="step"]').first().click();
+        await page.locator('[data-add-step]').waitFor();
+        // The count is the claim, so it is read rather than assumed: a dialog that silently offered
+        // fewer would still photograph as a full-looking list.
+        const offered = await page.locator('[data-add-step-count]').getAttribute('data-add-step-count');
+        if (offered === null || Number(offered) < 20) {
+          throw new Error(`browser-menu: \`+ step…\` offers ${offered} kinds — the picture is the completeness claim (D1303)`);
+        }
+        // The kinds themselves, printed once. `F` has to write a sentence about this list and the
+        // page's current one says "twenty-two" beside a dialog that offers 23 — so the list is
+        // reported rather than counted from memory.
+        kinds = await page.locator('[data-add-step-kind]').evaluateAll((els) => els.map((e) => e.getAttribute('data-add-step-kind')).sort());
+        await cut(page, `browser-menu-${theme}.png`, '[data-add-step]');
+        await page.locator('[data-add-step-cancel]').click();
+        await page.locator('[data-add-step]').waitFor({ state: 'detached' });
+        menu = offered;
+      }
     }
 
     await page.close();
-    console.log(`  ${theme}: 8 views, spine on ${shown}, compose on ${opened.join(' ')}`);
+    console.log(`  ${theme}: ${VIEWS.length} views, spine on ${shown}, compose on ${opened.join(' ')}, + step… offered ${menu}`);
+    if (theme === THEMES[0][0]) console.log(`  + step… kinds (${kinds.length}): ${kinds.join(' ')}`);
   }
 
   await writeFile(
@@ -257,8 +360,18 @@ try {
       {
         inputs: screenshotInputsHash(),
         inputCount: screenshotInputs().length,
-        shots: SHOTS,
+        /* `M234` `E` (`D1306` as amended) — **each shot now carries the size it was written at**,
+           read back off the file rather than taken from the page. `G`'s markdown-it rule stamps
+           `width`/`height` from these so the `/ui/` section stops reflowing as it loads; divide by
+           `deviceScaleFactor` for css pixels. A shot the manifest does not name must fail the build
+           loudly, which is only possible because this list is now the one place both halves meet. */
+        shots: SHOTS.map((name) => {
+          const size = SIZES.get(name);
+          if (size === undefined) throw new Error(`${name} is declared in SHOTS and was never cut — the manifest would name a picture nobody took`);
+          return { name, ...size };
+        }),
         viewport: VIEWPORT,
+        viewports: Object.fromEntries(VIEWS.map((v) => [v, viewportFor(v)])),
         deviceScaleFactor: SCALE,
         cutAt: new Date().toISOString(),
       },

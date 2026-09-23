@@ -30,7 +30,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { DOCS_PAGE_DIR, SHOTS, THEMES, appearanceOf, screenshotInputsHash, shotExists } from '../../ui/scripts/screenshot-inputs.mjs';
+import { DEFAULT_VIEWPORT, DOCS_PAGE_DIR, SHOTS, THEMES, VIEWS, appearanceOf, screenshotInputsHash, shotExists, viewportFor } from '../../ui/scripts/screenshot-inputs.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const SITE = join(here, '..');
@@ -57,12 +57,61 @@ function embeds() {
 test('the manifest was cut from the page as it is now', () => {
   assert.ok(existsSync(MANIFEST_PATH), `there is no ${MANIFEST_PATH} — ${RECUT}`);
   const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-  assert.deepEqual(manifest.shots, SHOTS, 'the manifest names a different set of shots than the generator cuts');
+  assert.deepEqual(
+    manifest.shots.map((s) => s.name),
+    SHOTS,
+    'the manifest names a different set of shots than the generator cuts',
+  );
   assert.equal(
     manifest.inputs,
     screenshotInputsHash(),
     `the page, its fixture corpus, the server or the generator changed since the shots were cut — ${RECUT}`,
   );
+});
+
+/**
+ * **`M234` `E` — the first assertion in this file that is not a declaration against itself.**
+ *
+ * The test above compares `manifest.shots` with `SHOTS`, and `SHOTS` is `VIEWS × THEMES` — the same
+ * constant the manifest was built from. It is worth keeping (it catches a manifest left behind by
+ * an older `VIEWS`) but it cannot, even in principle, notice that a cut wrote something other than
+ * what it declared: both sides are the generator's own intent.
+ *
+ * `D1306` as amended makes each shot carry the size it was **written at**, read back off the PNG.
+ * So this reads the files on disk and compares. It is what lets `G` stamp `width`/`height` on 34
+ * `<img>` without the page reflowing as it loads, and — more to the point here — it is the one row
+ * in that manifest a stale re-cut cannot fake.
+ */
+test('each shot is the size the manifest says it is, measured off the file', () => {
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+  for (const { name, width, height } of manifest.shots) {
+    assert.ok(Number.isInteger(width) && width > 0, `${name}: the manifest carries no usable width (${width})`);
+    assert.ok(Number.isInteger(height) && height > 0, `${name}: the manifest carries no usable height (${height})`);
+    // The IHDR sits at a fixed offset in every PNG: 8 bytes of signature, then the chunk's length
+    // and type, then width and height as big-endian uint32.
+    const head = readFileSync(join(DOCS_PAGE_DIR, name)).subarray(0, 24);
+    assert.equal(head.readUInt32BE(16), width, `${name} is ${head.readUInt32BE(16)}px wide, the manifest says ${width} — ${RECUT}`);
+    assert.equal(head.readUInt32BE(20), height, `${name} is ${head.readUInt32BE(20)}px tall, the manifest says ${height} — ${RECUT}`);
+  }
+});
+
+/**
+ * `M234` `E` — every view is shot in the window `D1304` assigns it, and the manifest records which.
+ * Without this the viewport map is a comment: a view could quietly drift back to the default and
+ * every other gate here would stay green, because a picture at the wrong size is still a picture.
+ */
+test('every view records the window it was shot in, and the two that differ actually differ', () => {
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+  assert.ok(manifest.viewports !== undefined, `the manifest records no per-view viewports — ${RECUT}`);
+  for (const view of VIEWS) {
+    assert.deepEqual(manifest.viewports[view], viewportFor(view), `${view} was shot in a window the map does not assign it`);
+  }
+  const composes = VIEWS.filter((v) => v.startsWith('compose-'));
+  assert.ok(composes.length > 0, 'no compose views — the clause below would pass over an empty set');
+  for (const v of composes) {
+    assert.ok(viewportFor(v).height < DEFAULT_VIEWPORT.height, `${v} is shot at the default height, so D1304 bought nothing`);
+  }
+  assert.ok(viewportFor('browser-menu').height > DEFAULT_VIEWPORT.height, 'browser-menu is shot at the default height, so the 23-kind list crops');
 });
 
 test('every declared shot exists and is a PNG', () => {

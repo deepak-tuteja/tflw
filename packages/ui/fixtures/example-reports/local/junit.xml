@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="tflw" tests="40" failures="0" errors="0" time="5.737" timestamp="2026-09-23T13:35:25.201Z">
+  <testsuite name="tests/account.tflw" tests="2" failures="0" errors="0" time="0.017" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="signing in is one line, because the shop does it in every other test" classname="tests/account.tflw" time="0.014"/>
+    <testcase name="…and called for what it does, the answer goes unread" classname="tests/account.tflw" time="0.003"/>
+  </testsuite>
+  <testsuite name="tests/basket.tflw" tests="3" failures="0" errors="0" time="0.491" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="removing a saved item asks first, and yes means yes" classname="tests/basket.tflw" time="0.345"/>
+    <testcase name="…and no leaves the item where it was" classname="tests/basket.tflw" time="0.084"/>
+    <testcase name="a saved item can be dragged into the basket" classname="tests/basket.tflw" time="0.062"/>
+  </testsuite>
+  <testsuite name="tests/catalogue.tflw" tests="4" failures="0" errors="0" time="0.071" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="the catalogue lists what is on the shelf" classname="tests/catalogue.tflw" time="0.002"/>
+    <testcase name="one item reads back the way the catalogue listed it" classname="tests/catalogue.tflw" time="0.001"/>
+    <testcase name="the shelf page shows the same three things a person can read" classname="tests/catalogue.tflw" time="0.034"/>
+    <testcase name="an order placed over the API is the one the shop page can price" classname="tests/catalogue.tflw" time="0.034"/>
+  </testsuite>
+  <testsuite name="tests/checkout.tflw" tests="5" failures="0" errors="0" time="0.010" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="a basket prices what is in it, line by line" classname="tests/checkout.tflw" time="0.002"/>
+    <testcase name="checking out without a token is refused before the address is read" classname="tests/checkout.tflw" time="0.001"/>
+    <testcase name="the whole checkout — who is ordering, where it goes, and how it is paid" classname="tests/checkout.tflw" time="0.003"/>
+    <testcase name="pressing pay twice is one order, not two" classname="tests/checkout.tflw" time="0.003"/>
+    <testcase name="an address missing its city and postcode is refused field by field" classname="tests/checkout.tflw" time="0.001"/>
+  </testsuite>
+  <testsuite name="tests/delivery.tflw" tests="3" failures="0" errors="0" time="0.142" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="the delivery estimate comes from a supplier, so the test stands in for one" classname="tests/delivery.tflw" time="0.044"/>
+    <testcase name="with no supplier answering, the page says so rather than showing nothing" classname="tests/delivery.tflw" time="0.040"/>
+    <testcase name="a bulk order arrives as a file dropped on the page" classname="tests/delivery.tflw" time="0.058"/>
+  </testsuite>
+  <testsuite name="tests/fulfilment.tflw" tests="1" failures="0" errors="0" time="0.606" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="an order is accepted before it is packed, and the poll is what waits" classname="tests/fulfilment.tflw" time="0.606"/>
+  </testsuite>
+  <testsuite name="tests/load.tflw" tests="8" failures="0" errors="0" time="0.000" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="the catalogue holds up when everyone arrives at once — p95 duration &lt; 250" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="the catalogue holds up when everyone arrives at once — error rate &lt; 0.01" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="signing in holds up, and is still judged while it does — p95 duration &lt; 400" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="signing in holds up, and is still judged while it does — error rate &lt; 0.01" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="minting order references keeps up with the checkout rate — p95 duration &lt; 50" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="minting order references keeps up with the checkout rate — error rate &lt; 0.01" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="a reader who pauses between pages is a different kind of load — p95 duration &lt; 800" classname="tests/load.tflw" time="0.000"/>
+    <testcase name="a reader who pauses between pages is a different kind of load — error rate &lt; 0.01" classname="tests/load.tflw" time="0.000"/>
+  </testsuite>
+  <testsuite name="tests/order-form.tflw" tests="3" failures="0" errors="0" time="0.884" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="the delivery details go in as one block" classname="tests/order-form.tflw" time="0.074"/>
+    <testcase name="the choices a shop offers are a select and two checkboxes" classname="tests/order-form.tflw" time="0.119"/>
+    <testcase name="saving is not instant, so the test waits for the answer and not for a clock" classname="tests/order-form.tflw" time="0.691"/>
+  </testsuite>
+  <testsuite name="tests/receipt.tflw" tests="2" failures="0" errors="0" time="0.205" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="the terms open in a tab of their own, and close again" classname="tests/receipt.tflw" time="0.114"/>
+    <testcase name="the order downloads as a file the shop names" classname="tests/receipt.tflw" time="0.091"/>
+  </testsuite>
+  <testsuite name="tests/scan.tflw" tests="3" failures="0" errors="0" time="0.005" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="the surface the crawl will walk: the two pages a visitor sees" classname="tests/scan.tflw" time="0.002"/>
+    <testcase name="…and the sign-in it posts to, which the crawl will withhold" classname="tests/scan.tflw" time="0.001"/>
+    <testcase name="everything this file touched, walked again as a stranger" classname="tests/scan.tflw" time="0.002">
+      <system-out>crawl surface: 3 discovered, 1 withheld, 2 sent, 2 reached (see `scanBlindSpot.declines` in results.json for each withheld route's reason)</system-out>
+    </testcase>
+  </testsuite>
+  <testsuite name="tests/shelf.tflw" tests="4" failures="0" errors="0" time="0.254" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="the shelf page is what a first visit looks like" classname="tests/shelf.tflw" time="0.058"/>
+    <testcase name="searching narrows the list to what was typed" classname="tests/shelf.tflw" time="0.051"/>
+    <testcase name="the note under the postcode question is only there for a pointer" classname="tests/shelf.tflw" time="0.079"/>
+    <testcase name="the page ends where it says it does" classname="tests/shelf.tflw" time="0.066"/>
+  </testsuite>
+  <testsuite name="tests/signin.tflw" tests="2" failures="0" errors="0" time="0.033" timestamp="2026-09-23T13:35:25.201Z">
+    <properties>
+      <property name="env" value="local"/>
+      <property name="seed" value="2226903051"/>
+      <property name="now" value="2026-09-23T13:35:25.200Z"/>
+    </properties>
+    <testcase name="signing in over the API hands back a session, and the session is judged" classname="tests/signin.tflw" time="0.001"/>
+    <testcase name="signing in on the page is judged the same way the API call is" classname="tests/signin.tflw" time="0.032"/>
+  </testsuite>
+</testsuites>
