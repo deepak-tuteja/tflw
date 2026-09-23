@@ -291,9 +291,31 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   const opensPage = useMemo(() => pageOpeners(project.files), [project]);
 
   const [busy, setBusy] = useState(false);
+  /**
+   * **The outline, but only when it is THIS path's bytes** — `M235-07`.
+   *
+   * `path` comes from the route and `outline` comes from the file, and they are not the same tick.
+   * `M217` `D`'s effect below says so in its own words — *"for one render the path has moved and
+   * the bytes have not"* — and guards the **splice** with `file.path !== path`. The render never
+   * got the same comparison, so after a create-and-navigate the pane drew its bar from the new path
+   * and its body from the old file's declarations: `M235` `E`'s sweep caught it at 3 of 56, and
+   * again at 1 of 56 after the read beneath it was repaired, which is how the two halves were shown
+   * to be disagreeing rather than the read being early.
+   *
+   * It needs no new UI, which is why it is a comparison and not a state: `ComposePane` already
+   * treats `outline === null` as *reading {path}…* (`ComposePane.tsx:1255`), built for exactly this
+   * moment. Everything derived from the outline for the reader — `at`, and the two prefixes under
+   * it — is taken from this rather than from the raw prop, so one comparison settles the whole
+   * pane. The splice keeps its own guard: it is stricter, it names the intent's path too, and a
+   * guard that reads correct code is cheaper than a guard somebody has to re-derive.
+   */
+  const ownOutline = useMemo(
+    () => (outline === null || file === null || file.path !== path ? null : outline),
+    [outline, file, path],
+  );
   /** What `L<line>` names — one resolution, so the band and the card cannot disagree about which
    *  test they are showing (`D1080`). */
-  const at = useMemo(() => (outline === null ? null : addressed(outline, focusLine)), [outline, focusLine]);
+  const at = useMemo(() => (ownOutline === null ? null : addressed(ownOutline, focusLine)), [ownOutline, focusLine]);
 
   /**
    * **What has run, for every request in this file** (`M213` `S2`, `D1099`).
@@ -1955,10 +1977,10 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     [workloadName, workloadRun],
   );
   const prefixThis = useMemo(
-    () => (outline === null || at === null || onDecl ? null : prefixOf(outline, at, 'this')),
-    [outline, at, onDecl],
+    () => (ownOutline === null || at === null || onDecl ? null : prefixOf(ownOutline, at, 'this')),
+    [ownOutline, at, onDecl],
   );
-  const prefixAll = useMemo(() => (outline === null || at === null ? null : prefixOf(outline, at, 'all')), [outline, at]);
+  const prefixAll = useMemo(() => (ownOutline === null || at === null ? null : prefixOf(ownOutline, at, 'all')), [ownOutline, at]);
 
   /**
    * **The scratch a press writes, and the map that reads its report back** (`D1216`).
@@ -2399,7 +2421,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           path={path}
           authorization={project.authorization}
           onProjectTab={(which) => onTab(which)}
-          outline={outline}
+          outline={ownOutline}
           at={at}
           focusLine={focusLine}
           onLine={(line) => onTab('compose', line)}

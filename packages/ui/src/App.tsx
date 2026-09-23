@@ -268,7 +268,9 @@ export function App() {
     return p;
   }, []);
 
-  const [noProject, setNoProject] = useState(false);
+  /** `null` until the project probe has answered — `false` is one of the two answers, not a
+   *  neutral default, and shipping it as the default is `M235-08`. */
+  const [noProject, setNoProject] = useState<boolean | null>(null);
 
   /**
    * The open file's bytes, read **once for the page** (`M210` `S1`).
@@ -1019,7 +1021,7 @@ export function App() {
     [openFileView, fileText, opensPage],
   );
 
-  if (door === null || noProject) {
+  if (door === null || noProject === true) {
     // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back
     // to the landing, which is where a project can be made (`A0-5`).
     return <Landing project={project} error={error} noProject={noProject} onOpen={setDoor} onCreated={() => void readProjectView()} />;

@@ -1,14 +1,14 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 959,
-    "atRisk": 838,
-    "high": 334,
-    "medium": 17,
-    "low": 487,
-    "declared": 9,
+    "reads": 953,
+    "atRisk": 882,
+    "high": 332,
+    "medium": 65,
+    "low": 485,
+    "declared": 11,
     "inPage": 103,
-    "inRetry": 15
+    "inRetry": 21
   },
   "tests": {
     "packages/cli/test/ui-page.test.ts": {
@@ -34,7 +34,7 @@
       },
       "WebUI at `evidence full`: the screenshot a step took, the failure shot, and the trace handed to Playwright's viewer": {
         "high": 5,
-        "medium": 0,
+        "medium": 1,
         "low": 6
       },
       "WebUI at `evidence headers only`: no screenshot, no trace, and the sentence saying why, under every browser test": {
@@ -69,17 +69,17 @@
       },
       "a run from the page: the live pane fills from the stream, and the kept directory is what the page then shows": {
         "high": 8,
-        "medium": 0,
+        "medium": 2,
         "low": 4
       },
       "a run cancelled from the page: its kept directory says so above the report, with the exit the process ended with": {
         "high": 2,
-        "medium": 0,
+        "medium": 5,
         "low": 0
       },
       "a run that could not start: the live pane keeps its exit and stderr, drawn as the failure it is, and nothing is kept": {
         "high": 3,
-        "medium": 0,
+        "medium": 3,
         "low": 2
       },
       "Source indexes every declaration the server read, with the badges the sidebar used to carry": {
@@ -284,12 +284,12 @@
       },
       "`M224` `C`: the plan is painted, and the overlay appears only where the units agree": {
         "high": 1,
-        "medium": 0,
+        "medium": 1,
         "low": 2
       },
       "`M224` `E`: ▶ on a workload names its duration, or says it has no clock": {
         "high": 1,
-        "medium": 0,
+        "medium": 1,
         "low": 3
       },
       "`M224` `G`: an element with `hidden` computes `display: none`, even against its own class": {
@@ -308,7 +308,7 @@
         "low": 2
       },
       "LOAD now measures what a door with a strip measures — tab for tab, against the two that have one": {
-        "high": 2,
+        "high": 0,
         "medium": 0,
         "low": 2
       },
@@ -344,7 +344,7 @@
       },
       "[accept] under an env with no baseline says what to declare, rather than failing quietly": {
         "high": 0,
-        "medium": 0,
+        "medium": 1,
         "low": 1
       },
       "`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the rows are the file’s own": {
@@ -354,7 +354,7 @@
       },
       "`M221` `A`+`B`: the stage is under the columns with room for the viewer, and ▶ no longer refuses an unsaved buffer": {
         "high": 2,
-        "medium": 2,
+        "medium": 5,
         "low": 2
       },
       "`M213` `S4`: adding a gesture to a test that already opened a page writes no second `open`": {
@@ -374,7 +374,7 @@
       },
       "`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer follows the phase": {
         "high": 4,
-        "medium": 1,
+        "medium": 2,
         "low": 8
       },
       "a pick session outlives a tab switch and dies with the door — asserted on the process, not the DOM": {
@@ -384,7 +384,7 @@
       },
       "`M213` `S5`: a recording writes statements into the test it was started on, as they happen": {
         "high": 3,
-        "medium": 0,
+        "medium": 1,
         "low": 3
       },
       "`M213` `S4`: `pick` fixes the locator on the row it is pressed on, from a live session": {
@@ -400,12 +400,12 @@
       "a project with no `authorized target`: the SCANS door says so, shows the TF060 it will get, and writes anyway": {
         "high": 5,
         "medium": 0,
-        "low": 3
+        "low": 2
       },
       "a directory that is not a project: pick LOAD, get one, write a test into it, run it, read its charts": {
         "high": 1,
         "medium": 0,
-        "low": 4
+        "low": 3
       },
       "the API door adds work to a test the LOAD door started, above its workload’s thresholds": {
         "high": 0,
@@ -439,7 +439,7 @@
       },
       "the affirmation this door refuses to make is one the author can make on this page (M207-02)": {
         "high": 2,
-        "medium": 0,
+        "medium": 1,
         "low": 2
       },
       "the reason for authorized targets lives on the door that owns it, in both states, and not in Auth": {
@@ -454,12 +454,12 @@
       },
       "the Config tab makes the edit the product had been telling the author to make": {
         "high": 4,
-        "medium": 0,
+        "medium": 1,
         "low": 3
       },
       "a test written from Compose appears in the Source index without a reload": {
         "high": 1,
-        "medium": 0,
+        "medium": 3,
         "low": 2
       },
       "the card is the request the address names, and the band is the declaration that holds it": {
@@ -499,7 +499,7 @@
       },
       "`M222`: the create dialog reads the door — BROWSER scaffolds `open`, and the test it makes is one BROWSER can edit": {
         "high": 3,
-        "medium": 0,
+        "medium": 2,
         "low": 4
       },
       "a new test goes into the open file through the same builders the pane’s own controls use": {
@@ -574,7 +574,7 @@
       },
       "`M210` `S2`: an edit that is not yet a request says so and leaves the buffer where it was": {
         "high": 0,
-        "medium": 0,
+        "medium": 1,
         "low": 2
       },
       "`M210` `S2`: the address keeps the request across a tab trip, and Config does not inherit its line": {
@@ -629,7 +629,7 @@
       },
       "`M210` `S4`: a note is edited where it is, written where there was none, and removed by clearing it": {
         "high": 2,
-        "medium": 0,
+        "medium": 1,
         "low": 1
       },
       "`M210` `S4`: a polling request is editable, and its own block survives the edit": {
@@ -654,7 +654,7 @@
       },
       "`M210` `S6`: send runs the file up to the selected request, and says so before it is pressed": {
         "high": 4,
-        "medium": 0,
+        "medium": 6,
         "low": 4
       },
       "`M214` `A4`: `✕` on a request takes its assertions with it, in one edit (`D1117`)": {
@@ -664,7 +664,7 @@
       },
       "`M214` `A4`: `✕` refuses what another statement is holding, and names the line holding it (`D1117`)": {
         "high": 1,
-        "medium": 0,
+        "medium": 2,
         "low": 1
       },
       "`M214` `A4`: `✕` on the test removes the declaration, and the file is what is left (`D1117`)": {
@@ -742,6 +742,11 @@
         "medium": 0,
         "low": 1
       },
+      "`M216` `B1`: it appears on keyboard focus, and describes without renaming (`D1129`)": {
+        "high": 0,
+        "medium": 1,
+        "low": 0
+      },
       "`M216` `B3`: a row’s hover is derived from whether it is truncated, asked at two widths (`D1127`)": {
         "high": 2,
         "medium": 0,
@@ -749,7 +754,7 @@
       },
       "`M216` `B1`: the hover is painted from the theme, in all four (`D1124`)": {
         "high": 0,
-        "medium": 0,
+        "medium": 1,
         "low": 1
       },
       "`M216` `C`: `send` and `run` each say what they do, and they do not say the same thing (`D1130`)": {
@@ -819,7 +824,7 @@
       },
       "`M217` `C1`: the create dialog previews the bytes that land, pending edits included (`D1141`)": {
         "high": 1,
-        "medium": 1,
+        "medium": 2,
         "low": 0
       },
       "`M217` `D1`: a `+` on a file row opens THAT file’s dialog (`D1139`)": {
@@ -882,6 +887,11 @@
         "medium": 0,
         "low": 0
       },
+      "`M218` `B3`: `New file here` opens in the folder it was asked from (`D1159`)": {
+        "high": 0,
+        "medium": 2,
+        "low": 0
+      },
       "`M218` `E4`: a draft follows its file across a rename (`D1155`)": {
         "high": 1,
         "medium": 0,
@@ -899,17 +909,17 @@
       },
       "`M225` `A`/`B`: send all issues every request, indexes every one, and the panel stops denying it": {
         "high": 18,
-        "medium": 0,
+        "medium": 2,
         "low": 9
       },
       "`M225` `H`: region 2 never nests one scroller inside another, in any of its four states": {
         "high": 1,
-        "medium": 0,
+        "medium": 2,
         "low": 1
       },
       "`M226` `A`: a workload declaration puts region 2 at the foot of the pane, and the construct is what decides": {
         "high": 1,
-        "medium": 0,
+        "medium": 1,
         "low": 2
       },
       "`M227`: a plan-bearing footer gets the height it needs, draws from zero, and says it once": {
@@ -929,7 +939,7 @@
       },
       "`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, scaffolds a scan (`D1244`), and plays without sending (`D1241`)": {
         "high": 3,
-        "medium": 0,
+        "medium": 1,
         "low": 1
       },
       "`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and saying why (`D1238`)": {
@@ -951,6 +961,11 @@
         "high": 0,
         "medium": 0,
         "low": 2
+      },
+      "the create dialog shows the lines it is about to write, on every door": {
+        "high": 0,
+        "medium": 1,
+        "low": 0
       },
       "an address that resolves to something else is corrected to what is on screen": {
         "high": 0,
