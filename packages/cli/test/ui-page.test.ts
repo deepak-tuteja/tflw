@@ -19,6 +19,7 @@ import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer, SCRATCH_PATH } from '../src/ui-server.js';
 import { coverageBuildArgs, startUiCoverage, stopUiCoverage } from './ui-coverage.js';
+import { settle, untilEqual, untilMeasurable } from './settle.js';
 import { checkProgram, parseSource, print, STEP_LENS } from '@tflw/lang';
 import { roundDurationMs, type LoadMetrics, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
 import { describeWorkload, formatThresholdActual, formatThresholdTarget, remediationFor } from '@tflw/reporter';
@@ -617,17 +618,20 @@ test('the workload view: the shape, every stat, every threshold and every endpoi
  * assertion; a chart genuinely stuck at 0 exhausts the budget and fails with the same message it
  * always did. Same rule as `openMenuAndBox`, where a mis-placed menu is never retried and a vanished
  * one is.
+ *
+ * `M235` `B1` — the loop now lives in `settle.ts` and the rule above has a name, `untilMeasurable`.
+ * Nothing about this site changed: same predicate, same budget of 50 x 100 ms, same last-seen value
+ * handed back for the caller's assertion to judge.
  */
 const laidOutChartHeights = async (min: number): Promise<number[]> => {
-  let heights: number[] = [];
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    heights = await page
+  const outcome = await settle(
+    () => page
       .locator('[data-chart] canvas')
-      .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
-    if (heights.length >= min && !heights.includes(0)) return heights;
-    await page.waitForTimeout(100);
-  }
-  return heights;
+      .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height))),
+    untilMeasurable(`${min} chart(s) mounted and sized`, (h) => h.length >= min && !h.includes(0)),
+    { attempts: 50, delayMs: 100, page },
+  );
+  return outcome.value;
 };
 
 // **The report's charts keep their constant height** — `M227` `A` (`D1230`).
@@ -9758,15 +9762,21 @@ const IMPORTED = {
  * Playwright's own auto-retrying assertions live in `@playwright/test`, which this file does not
  * use — it is `node:test` plus the `playwright` library — so the retry is written out. It returns
  * what it last saw rather than throwing, so the caller can say what else was on the page.
+ *
+ * `M235` `B1` — the loop now lives in `settle.ts`, and this is the suite's one `untilEqual` site.
+ * That predicate retries on the assertion itself, which `M141` forbids in general; it is sound here
+ * for one reason only, and the reason is the budget. A pane that is painting climbs 0 -> 11 and
+ * settles; a pane that genuinely holds nine rows is asked a hundred times, answers nine a hundred
+ * times, and is returned as nine for the caller to fail on. Remove the bound and this stops being a
+ * gate. See `settle.ts` for why the other predicate is the one to reach for everywhere else.
  */
 const countSettling = async (p: Page, selector: string, want: number): Promise<number> => {
-  let seen = -1;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    seen = await p.locator(selector).count();
-    if (seen === want) return seen;
-    await p.waitForTimeout(100);
-  }
-  return seen;
+  const outcome = await settle(
+    () => p.locator(selector).count(),
+    untilEqual(want),
+    { attempts: 100, delayMs: 100, page: p },
+  );
+  return outcome.value;
 };
 
 const PLACED_MENU = '.ctx-menu:not([data-menu-placed="measuring"])';
@@ -9807,6 +9817,10 @@ const openMenu = async (p: Page, selector: string): Promise<void> => {
  * place". Every wait is bounded so that a genuine breakage fails in seconds rather than spending
  * 30 s per read, and the attempt count is returned so the diagnostic can say whether the placement
  * it reports was reached first time or on the sixth.
+ *
+ * `M235` `B1` — the loop now lives in `settle.ts`. This site is why `settle` takes a *read* and not
+ * a locator: one attempt here is a gesture and two bounded waits, and `null` is this read's own word
+ * for "not yet". The budget stays 8, the delay stays 0 because the 1500 ms `waitFor` is the pacing.
  */
 type MenuBox = { x: number; y: number; width: number; height: number };
 
@@ -9814,17 +9828,24 @@ const openMenuAndBox = async (
   p: Page,
   selector: string,
 ): Promise<{ box: MenuBox | null; attempts: number }> => {
-  for (let attempt = 1; attempt <= 8; attempt += 1) {
-    await p.locator(selector).first().click({ button: 'right' });
-    try {
-      await p.locator(PLACED_MENU).waitFor({ state: 'visible', timeout: 1500 });
-    } catch {
-      continue; // never arrived, or arrived and left before the wait resolved — ask again
-    }
-    const box = await p.locator(PLACED_MENU).boundingBox({ timeout: 1500 }).catch(() => null);
-    if (box !== null) return { box, attempts: attempt };
-  }
-  return { box: null, attempts: 8 };
+  // The re-click is inside the read, not beside it: one attempt of this wait IS *open it and
+  // measure it*, which is the whole point of the fourth site. `settle` needs no separate hook for
+  // it, and a read that decides its own bounded wait means “not yet” is the only shape this
+  // needs — `settle` itself never swallows an error (`settle.ts`).
+  const outcome = await settle(
+    async (): Promise<MenuBox | null> => {
+      await p.locator(selector).first().click({ button: 'right' });
+      try {
+        await p.locator(PLACED_MENU).waitFor({ state: 'visible', timeout: 1500 });
+      } catch {
+        return null; // never arrived, or arrived and left before the wait resolved — ask again
+      }
+      return await p.locator(PLACED_MENU).boundingBox({ timeout: 1500 }).catch(() => null);
+    },
+    untilMeasurable('the menu is in the document', (box) => box !== null),
+    { attempts: 8, delayMs: 0, page: p },
+  );
+  return { box: outcome.value, attempts: outcome.attempts };
 };
 
 test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row kind (`D1145`)', async () => {
