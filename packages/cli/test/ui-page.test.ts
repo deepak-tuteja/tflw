@@ -648,6 +648,9 @@ test('`M227` `A`: the report\'s charts are 180 px, and none of them opted into f
   const heights = await laidOutChartHeights(4);
   assert.ok(heights.length >= 4, `the report drew charts to measure (${heights.length})`);
   assert.deepEqual([...new Set(heights)].sort(), [180], `every report chart keeps the constant: ${[...new Set(heights)].join(', ')}`);
+  // one-shot: `laidOutChartHeights` two lines up has already waited for every chart to mount and
+  // size, so this absence is asserted about a page that is known to have painted its charts — the
+  // classifier cannot see that, because the wait happens inside a module-scope helper
   assert.equal(await page.locator('[data-chart-fill]').count(), 0, 'and none of them carries the fill contract');
 });
 
@@ -1577,6 +1580,8 @@ test('a tag query runs the tests carrying the tag, not the tests in the files ca
     await page.locator('[data-search]').fill(`@${tag}`);
     assert.equal(await page.locator('[data-run]').getAttribute('data-run-narrowing'), 'tag');
     assert.equal(await page.locator('[data-run]').textContent(), `run @${tag}`);
+    // one-shot: it is the baseline — the set of runs that existed *before* the click — so asking
+    // again would not settle it, it would change what the comparison below means
     const before = new Set(((await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string }[]).map((r) => r.id));
     await page.locator('[data-run]').click();
     // The run is identified through `/api/runs` rather than by whatever `[data-report]` happens to
@@ -1694,8 +1699,26 @@ test('the query is in the address, and a reload reproduces it and the button', a
   const view = await fullProject();
   const tag = [...new Set(view.files.flatMap((f) => f.tests.flatMap((t) => t.tags)))].sort()[0]!;
   await page.locator('[data-search]').fill(`@${tag}`);
-  const link = page.url();
-  assert.match(new URL(link).hash, new RegExp(`[?&]q=%40${tag}`));
+  // `M235` `C2` — the census's worst site, 10 of 56 sweep runs. `fill()` resolves when the input's
+  // value is set; the router writes the query into the hash on a *later* effect, so reading
+  // `page.url()` on the next line samples an address that does not carry the query yet. It is not
+  // even a read after a wait — there is no wait here to accuse, only the assumption that the
+  // address is a synchronous consequence of typing.
+  //
+  // The predicate is *a* query and the assertion is *the* query, which is `M141`'s rule made
+  // concrete: a router that wrote `q=wrong` satisfies the wait on the first look and fails the
+  // assertion exactly as a single read would have.
+  const addressed = await settle(
+    async () => page.url(),
+    untilMeasurable('the router has written a query into the address', (u) => /[?&]q=/.test(new URL(u).hash)),
+    { attempts: 60, delayMs: 50, page },
+  );
+  const link = addressed.value;
+  assert.match(
+    new URL(link).hash,
+    new RegExp(`[?&]q=%40${tag}`),
+    `the address carries the query that was typed (${addressed.attempts} look(s), hash ${new URL(link).hash})`,
+  );
 
   const fresh = await browser.newPage();
   try {
@@ -1710,7 +1733,17 @@ test('the query is in the address, and a reload reproduces it and the button', a
   // The selection and the query ride together, and neither moves the file the tabs face.
   const first = (await page.locator('[data-file-row]').first().getAttribute('data-file-row'))!;
   await page.locator(`[data-file-row="${first}"]`).click();
-  assert.match(new URL(page.url()).hash, /\?files=[^&]+&q=/);
+  // Same shape, same reason: the click writes the selection into the address on a later effect.
+  const selected = await settle(
+    async () => page.url(),
+    untilMeasurable('the selection has reached the address', (u) => /[?&]files=/.test(new URL(u).hash)),
+    { attempts: 60, delayMs: 50, page },
+  );
+  assert.match(
+    new URL(selected.value).hash,
+    /\?files=[^&]+&q=/,
+    `the selection and the query ride together (${selected.attempts} look(s), hash ${new URL(selected.value).hash})`,
+  );
   assert.equal(await page.locator('[data-run]').getAttribute('data-run-narrowing'), 'selection', 'an explicit selection outranks a query');
   await page.locator('[data-search]').fill('');
 });
@@ -1946,7 +1979,16 @@ test('`M213` `S2`: a file that has run shows its last response on every request,
 test('`M213` `S2`: every verdict the report holds is beside the statement it is about, with its own duration (`D1093`)', async () => {
   await composeRan('tests/catalog.tflw', 3);
   const marks = page.locator('[data-seq-open="3"] [data-verdict]');
-  assert.ok((await marks.count()) >= 2, 'the request on line 3 has assertions and the run graded them');
+  /* `M235` `C2` — the wait is for *a* verdict and the claim is for *two*, which is `M141`'s split:
+     no verdicts at all is a pane that has not painted its grades, and that is unreadable rather
+     than a small number. A page that settles on one verdict returns on the first look and fails
+     the assertion, exactly as a single read would have. */
+  const graded = await settle(
+    () => marks.count(),
+    untilMeasurable('the graded verdicts have painted', (n) => n > 0),
+    { attempts: 40, delayMs: 50, page },
+  );
+  assert.ok(graded.value >= 2, `the request on line 3 has assertions and the run graded them (${graded.value} after ${graded.attempts} look(s))`);
   // The report's own sentence, not a second one written by the page — and the report the PANE is
   // reading, not the one this file copied in (`M234` `A`, `D1308`; see `reportShowing` above).
   const report = await reportShowing('tests/catalog.tflw');
@@ -3152,6 +3194,8 @@ test('`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the ro
   /* The absence claim keeps its `count()`, and the two waits above are what make it mean anything:
      a non-retrying count of zero read before the pane has drawn is a FALSE PASS — the same race in
      the direction that says nothing rather than the direction that fails. */
+  // one-shot: the two waits directly above are what make this absence mean anything, and the
+  // comment over them is the argument — a retry here would weaken a claim that is already sound
   assert.equal(await page.locator('[data-body-rows]').count(), 0, 'the pane `M214` left behind is gone from every door, not narrowed');
 
   /**
@@ -3171,6 +3215,8 @@ test('`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the ro
      `waitFor` on this page. The `getAttribute` under it is for the message a failure needs. */
   await page.locator(`[data-seq-foot][data-seq-adds="${WANT}"]`).waitFor().catch(() => undefined);
   assert.equal(await page.locator('[data-seq-foot]').getAttribute('data-seq-adds'), WANT, 'the foot draws the door’s vocabulary, in the table’s order');
+  // one-shot: the `data-seq-adds` wait above has already drawn the foot, so this absence is read
+  // off a foot that is known to be painted — the same argument as the `[data-body-rows]` claim
   assert.equal(await page.locator('[data-seq-add="request"]').count(), 0, '`+ request` is API’s word, not this door’s');
 
   /* **The gesture lands ON the statement it wrote** — `D1136`, which this door needed only from
@@ -5407,13 +5453,27 @@ test('Compose draws every request the file holds, at its own line, under the dec
     // shape: **an attribute that every render carries cannot tell you WHICH render you are on.**
     await page.reload();
     await page.locator('[data-compose-summary]').waitFor();
-    const drawn = await page.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
-    assert.deepEqual(drawn.sort((a, b) => a - b), wanted.map((r) => r.line), `${f.path}: every request in the file is a row in the explorer's outline`);
+    /* `M235` `C2` — `[data-compose-summary]` being present does not mean the outline under it has
+       painted its rows, and `evaluateAll` waits for nothing: CI read `[]` against `[4,6,16,29]` in
+       38 ms. `untilEqual` on the sorted list, because the rows converge on a total this test
+       already knows, and the bound is what keeps a file that genuinely draws the wrong rows
+       failing rather than spinning. */
+    const want = wanted.map((r) => r.line).sort((a, b) => a - b);
+    const outline = await settle(
+      async () => (await page.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))))).sort((a, b) => a - b),
+      untilEqual(want),
+      { attempts: 40, delayMs: 50, page },
+    );
+    assert.deepEqual(outline.value, want, `${f.path}: every request in the file is a row in the explorer's outline (${outline.attempts} look(s))`);
     // And the declarations, which is the other half of `D1081`'s two levels.
     const { program } = parseSource(source);
     const decls = [...program.hooks, ...program.tests].map((d) => d.span.start.line).sort((a, b) => a - b);
-    const drawnDecls = await page.locator('[data-outline-decl]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-line'))));
-    assert.deepEqual(drawnDecls.sort((a, b) => a - b), decls, `${f.path}: every hook and test is a row too — a declaration with no request is still there`);
+    const outlineDecls = await settle(
+      async () => (await page.locator('[data-outline-decl]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-line'))))).sort((a, b) => a - b),
+      untilEqual(decls),
+      { attempts: 40, delayMs: 50, page },
+    );
+    assert.deepEqual(outlineDecls.value, decls, `${f.path}: every hook and test is a row too — a declaration with no request is still there (${outlineDecls.attempts} look(s))`);
   }
 });
 
@@ -5744,7 +5804,16 @@ test('a new .tflw file can be made from the page, and the page then opens it', a
     // never fail, so a guided start that produced one would teach the shape the checker warns about.
     assert.match(onDisk, /^ {2}expect status equals 200$/m);
 
-    assert.match(new URL(fresh.url()).hash, /compose\/tests\/second\.tflw/, 'and the page is now on the file it just made');
+    /* `M235` `C2` — the create navigates, and the router writes the hash on a later effect than
+       the one that detaches the dialog. The wait is *the address has left the file it started on*,
+       which is measurable without assuming where it went; the assertion is where it went. A create
+       that landed on the wrong file satisfies the predicate at once and fails here. */
+    const moved = await settle(
+      async () => new URL(fresh.url()).hash,
+      untilMeasurable('the address has left the file it started on', (h) => !h.includes('first.tflw')),
+      { attempts: 40, delayMs: 50, page: fresh },
+    );
+    assert.match(moved.value, /compose\/tests\/second\.tflw/, `and the page is now on the file it just made (${moved.attempts} look(s), hash ${moved.value})`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
     assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test "it also answers"');
   } finally {
@@ -8769,12 +8838,24 @@ test('`M216` `B1`: it appears on keyboard focus, and describes without renaming 
     // wrong in a useful way**: a length cutoff called the `as` clause button an icon, and `as` is
     // the language's own keyword rendered as a two-character word. A glyph is a glyph because it
     // is unreadable, not because it is short.
+    /* `M235` `C2` — the claim below is an EMPTINESS, and an emptiness over a set that has not
+       painted is a pass for the wrong reason. So the population is established first, as a
+       measurability wait, and only then is the filtered subset read. Retrying the filter itself
+       would be the other mistake: it would spend the budget hiding a real violation. */
+    const tipped = await settle(
+      () => p.locator('[data-tip], [data-tip-derived]').count(),
+      untilMeasurable('the controls that carry a tip have painted', (n) => n > 0),
+      { attempts: 40, delayMs: 50, page: p },
+    );
+    assert.ok(tipped.value > 0, `there are tip-bearing controls to judge (${tipped.attempts} look(s))`);
+    // one-shot: read over the population the wait above established; a retry would only delay a
+    // real violation until the budget ran out
     const nameless = await p.locator('[data-tip], [data-tip-derived]').evaluateAll((els) =>
       els.filter((e) => ['BUTTON', 'A'].includes(e.tagName))
         .filter((e) => !/[\p{L}\p{N}]/u.test((e.textContent ?? '').trim()))
         .filter((e) => ((e.getAttribute('aria-label') ?? '').trim() === ''))
         .map((e) => e.outerHTML.slice(0, 160)));
-    assert.deepEqual(nameless, [], 'every icon-only control still carries its own accessible name');
+    assert.deepEqual(nameless, [], `every icon-only control still carries its own accessible name (of ${tipped.value})`);
 
     await p.keyboard.press('Escape');
     await p.locator('#tflw-tip').waitFor({ state: 'detached' });
@@ -9600,17 +9681,44 @@ test('`M217` `C2`: a draft belongs to its file and survives a look at another on
     await p.goto(`${base}/#/api/compose/a.tflw/L1`);
     await p.locator('[data-seq-add="request"]').click();
     await p.locator('[data-compose-dirty]').waitFor();
-    const rows = await p.locator('.seq-row').count();
+    /* `M235` `C2` — `count()` waits for nothing, and this is the reading the whole test is
+       measured against: if it samples a half-painted pane the expected total is wrong and the
+       comparison at the end is against a number that was never true. `untilMeasurable`, because
+       "no rows at all" is a pane that has not painted, not a sequence with nothing in it — a
+       request was just added, so zero is unreadable rather than small. */
+    const drawn = await settle(
+      () => p.locator('.seq-row').count(),
+      untilMeasurable('the sequence has painted', (n) => n > 0),
+      { attempts: 40, delayMs: 50, page: p },
+    );
+    const rows = drawn.value;
 
     // Away. The explorer says which file is unsaved — the set of marks IS the set of drafts, so
     // the other file must not carry one.
     await p.locator('[data-file-row="b.tflw"]').click();
     await p.locator('[data-file-row="b.tflw"][data-open="yes"]').waitFor();
-    assert.equal(await p.locator('[data-compose-dirty]').count(), 0, 'the file you are looking at has nothing pending');
+    /* Both of these read state that the file switch *removes* and *moves*, and the wait above is
+       on a third subject — the row's own `data-open`. `untilEqual` rather than `untilMeasurable`
+       for the pair, knowingly: a marker that is still on screen is measurable and wrong, so this
+       is retrying on the assertion, which `settle.ts` sanctions only because the budget is bounded
+       and a permanently-wrong value still fails. The alternative — waiting on the pane's own
+       `data-compose-file` — would be stronger, and is not taken here because it would be a claim
+       about an attribute this test does not otherwise use. */
+    const pending = await settle(
+      () => p.locator('[data-compose-dirty]').count(),
+      untilEqual(0),
+      { attempts: 40, delayMs: 50, page: p },
+    );
+    assert.equal(pending.value, 0, `the file you are looking at has nothing pending (${pending.attempts} look(s))`);
+    const marked = await settle(
+      () => p.locator('[data-file-unsaved]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-unsaved'))),
+      untilEqual(['a.tflw']),
+      { attempts: 40, delayMs: 50, page: p },
+    );
     assert.deepEqual(
-      await p.locator('[data-file-unsaved]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-unsaved'))),
+      marked.value,
       ['a.tflw'],
-      'and the explorer marks the one that does, and only it',
+      `and the explorer marks the one that does, and only it (${marked.attempts} look(s))`,
     );
 
     // Back, and the work is there.
@@ -9622,6 +9730,8 @@ test('`M217` `C2`: a draft belongs to its file and survives a look at another on
        359 ms, which is a re-render between the two calls and not a slow one. */
     const back = await countSettling(p, '.seq-row', rows);
     if (back !== rows) {
+      // one-shot: it says which file the pane was showing when the count came back wrong; a retry
+      // would describe a later page than the one that failed
       const showing = await p.locator('[data-compose-file]').evaluateAll((els) => els.map((e) => e.getAttribute('data-compose-file')));
       assert.fail(`the pending edit did not come back with the file — ${back} rows against ${rows}, pane showing ${JSON.stringify(showing)}`);
     }
@@ -9877,6 +9987,7 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
     const sizes = [{ width: 1440, height: 900 }, { width: 900, height: 600 }, { width: 700, height: 420 }];
     const rows = ['[data-file-row="tests/checkout.tflw"]', '[data-dir-toggle="tests"]', '[data-outline-goto="3"]', '[data-seq-line="3"]'];
     const off: string[] = [];
+    const skipped: string[] = [];
     /* `M234` `A4` — **THE PREVIOUS RESIZE CLOSES THE NEXT MENU**, and the instrumentation `A2`
        added is what proved it (`D1308`). CI Node 22 reported
        `[data-file-row="tests/checkout.tflw"] at 700x420 → null · menus [] · row {…,"height":22}`:
@@ -9910,7 +10021,19 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
     for (const size of sizes) {
       await settleViewport(size);
       for (const row of rows) {
-        if (await p.locator(row).count() === 0) continue;
+        /* `M235` `C2` — a `count()` waits for nothing, so a row that has not painted yet answers
+           `0` and this loop **silently skips its own subject and passes**. That is `M168`'s shape:
+           a guard must leave the guarded thing reachable. The guard itself stays, because not
+           every row kind need exist in every fixture — but it now costs a bounded wait before it
+           believes the absence, and a row it skips is named in the diagnostic instead of
+           vanishing. `untilMeasurable`, because "no rows at all" is not a small number of rows,
+           it is a reading that has not happened. */
+        const present = await settle(
+          () => p.locator(row).count(),
+          untilMeasurable('the row has painted', (n) => n > 0),
+          { attempts: 20, delayMs: 50, page: p },
+        );
+        if (present.value === 0) { skipped.push(`${row} at ${size.width}x${size.height}`); continue; }
         /* `M234` `A` — THE SAME SELECTOR `openMenu` WAITED ON, AND THE ESCAPE IS AWAITED
            (`D1308`). Two halves of one race, and `A2` twenty lines down already has both: it waits
            on `.ctx-menu:not([data-menu-placed="measuring"])` and then on `{ state: 'detached' }`
@@ -9934,10 +10057,13 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
              which is a deterministic fact about that environment rather than a race, and none of
              it reproduces on the box. So the gate is made to report its own state instead of
              being repaired on a third guess. */
+          // one-shot: it reports what was on the page at the instant the clamp was violated, and a
+          // retry would report a different page from the one that failed
           const seen = await p.locator('.ctx-menu').evaluateAll((els) => els.map((e) => {
             const r = e.getBoundingClientRect();
             return { placed: e.getAttribute('data-menu-placed'), w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) };
           }));
+          // one-shot: the same instant as `seen` above; the two are read as one description
           const rowBox = await p.locator(row).first().boundingBox();
           off.push(`${row} at ${size.width}x${size.height} → ${JSON.stringify(box)} · after ${attempts} open(s) · menus ${JSON.stringify(seen)} · row ${JSON.stringify(rowBox)}`);
         }
@@ -9946,7 +10072,7 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
       }
     }
     await p.setViewportSize({ width: 1440, height: 900 });
-    assert.deepEqual(off, [], 'every menu is fully inside the window');
+    assert.deepEqual(off, [], `every menu is fully inside the window${skipped.length ? ` (rows not present: ${skipped.join(', ')})` : ''}`);
   });
 });
 
