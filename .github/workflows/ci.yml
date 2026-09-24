@@ -113,8 +113,10 @@ jobs:
       # after the code shipped.
       # `M235` `D` — **THIS RUNS ON NODE 24 ONLY, AND THAT IS THE WHOLE POINT OF THE CONDITION.**
       #
-      # The `Coverage` step below is gated `node-version == 22` and runs `c8 npm run test:raw`,
-      # which is this same suite again. So until `M235` the Node 22 job ran the 203-test Playwright
+      # The `Coverage` step below is gated `node-version == 22` and runs `npm run test:raw` under
+      # c8's `NODE_V8_COVERAGE` (`M236` `G` split that out of `c8 <cmd>` so the V8 tree can be
+      # repaired before it is reported over — see `scripts/coverage.mjs`), which is this same
+      # suite again. So until `M235` the Node 22 job ran the 203-test Playwright
       # page gate TWICE and the Node 24 job once, and nothing said so anywhere. Measured on run
       # 35838713333 (`4f2e24f`): Node 22 `npm test` 9m51s + Coverage 14m42s = a 25m59s job against
       # Node 24's 9m08s.
