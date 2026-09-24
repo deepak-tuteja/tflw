@@ -68,7 +68,7 @@
 // allow-list is the honest half and not a silencer.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,8 +78,8 @@ const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const env = { ...process.env, TFLW_BUNDLE_SOURCEMAP: '1' };
 
-function run(command, args) {
-  const { status, error } = spawnSync(command, args, { cwd: repoRoot, env, stdio: 'inherit' });
+function run(command, args, extraEnv = {}) {
+  const { status, error } = spawnSync(command, args, { cwd: repoRoot, env: { ...env, ...extraEnv }, stdio: 'inherit' });
   if (error) throw error;
   return status ?? 1;
 }
@@ -106,7 +106,7 @@ if (bundled !== 0) process.exit(bundled);
 // sentence above is still true and is true of ONE job rather than both. Nothing here changes: this
 // path is unchanged and the floor stays comparable. Said out loud because two files describing one
 // arrangement is how `M134a-01` happened.
-console.log('› c8 npm run test:raw');
+console.log('› npm run test:raw, under NODE_V8_COVERAGE');
 // THE HEAP, AND WHY THE FLAG IS ON THIS PROCESS AND NOT IN `NODE_OPTIONS` (M160d).
 //
 // c8's *report* phase — the merge that runs after every workspace has already passed — reads the
@@ -127,10 +127,64 @@ console.log('› c8 npm run test:raw');
 // limits would change what the suite runs under to fix something that happens once the suite is
 // over. `ubuntu-latest` gives 16 GB, so 8 GB for a single short-lived merge is not tight.
 //
+// `M236` `G` amends the *reason*, not the flag. The suite and the merge are two processes now, so
+// the flag sits on `c8 report`, which spawns nothing — what used to be a careful choice about an
+// inherited environment is now a property of the arrangement. The paragraph is kept because it is
+// the argument for re-raising the ceiling the next time it is hit, and that argument is unchanged.
+//
+// The tree's size in that measurement has moved and the numbers above are not re-derived: measured
+// again 2026-09-24 on the box it is **1052 files, 3.4 GB**, against the 843 / 2.6 GB recorded then.
+// The 8192 still finishes it. Recorded rather than overwritten, because the 5.59 GB peak belongs to
+// the tree it was measured on and re-labelling it with today's file count would invent a reading.
+//
 // This ceiling moves with the suite, it does not stay fixed. When it is next hit, the honest
 // choices are to raise it again or to narrow what `.c8rc.json` instruments with `all: true` —
 // not to drop a floor, which measures something else entirely.
-const status = run(process.execPath, ['--max-old-space-size=8192', require.resolve('c8/bin/c8.js'), npm, 'run', 'test:raw']);
+//
+// `M236` `G`: THE RUN IS THREE PHASES NOW, AND WHY IT IS NOT ONE `c8 <cmd>` ANY MORE.
+//
+// `c8 <cmd>` does two things in one invocation: it sets `NODE_V8_COVERAGE` and runs the
+// suite, then reports over the tree that produced. `M236-01` needs a step *between*
+// those two — see the long note in `scripts/coverage-universes.mjs`, but in one line:
+// one source file can reach the tree under two transpilations, c8 keeps one source map
+// per url, and the universe that map does not describe is remapped onto fabricated
+// positions and reads as uncovered. Measured on the real tree, that cost
+// `packages/cli/src/ui-server.ts` 361 lines and `packages/cli/src/cli.ts` 665.
+//
+// So the two halves of `c8 <cmd>` are written out by hand here. They are exactly what
+// `c8/bin/c8.js` does on the non-`report` branch — clean the temp directory, create it,
+// put it in `NODE_V8_COVERAGE`, run the child — and then `c8 report` is the same code
+// path c8 would have called itself. Nothing is reimplemented; a seam is opened.
+//
+// The temp directory is passed explicitly rather than left to default. c8 derives it
+// from `reports-dir` when `NODE_V8_COVERAGE` is unset, which is the same path — but the
+// two phases have to agree about it, and a default that agrees by coincidence is the
+// kind of thing that stops agreeing when `.c8rc.json` moves.
+//
+// The floor above stays comparable across this change: the suite is the same command in
+// the same environment, and the report is c8's own report over the same tree. What
+// changed is that the tree no longer lies about two of its files.
+const tmpDir = join(repoRoot, 'coverage', 'tmp');
+rmSync(tmpDir, { recursive: true, force: true });
+mkdirSync(tmpDir, { recursive: true });
+const status = run(npm, ['run', 'test:raw'], { NODE_V8_COVERAGE: tmpDir });
+
+// Between the suite and the report. This FAILS the run if it cannot leave every url
+// carrying one transpilation — a report over a tree it could not separate is a report
+// that understates without saying so, which is the condition `M236-01` was filed on.
+console.log('> separating coverage universes');
+// The tool streams — one V8 file in memory at a time — but a single file from the page gate is
+// not small, so it gets headroom rather than the default. It does NOT get the 8 GB the merge
+// gets: needing that much here would mean it had stopped streaming, and the flag would hide it.
+const separated = run(process.execPath, [
+  '--max-old-space-size=2048', join(repoRoot, 'scripts', 'coverage-universes.mjs'), tmpDir,
+]);
+if (separated !== 0) process.exit(separated);
+
+console.log('> c8 report');
+const reported = run(process.execPath, [
+  '--max-old-space-size=8192', require.resolve('c8/bin/c8.js'), 'report', '--temp-directory', tmpDir,
+]);
 
 // `M234` — THE POST-CONDITION, because the way this instrument breaks is silent.
 //
@@ -167,4 +221,4 @@ if (existsSync(lcov)) {
 // `M234` — the per-package gate. After the witness above, because a floor read off an instrument
 // that did not run is the thing the witness exists to refuse.
 const floors = run(process.execPath, [join(repoRoot, 'scripts', 'coverage-floors.mjs')]);
-process.exit(status || floors);
+process.exit(status || reported || floors);
