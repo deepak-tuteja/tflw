@@ -5221,6 +5221,28 @@ test('the built dist/cli.cjs applies --fail-on, writes a baseline, and reads it 
     const narrowJson = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { baseline?: { narrowedBy?: string } };
     assert.equal(narrowJson.baseline?.narrowedBy, '--only input handling');
 
+    // 5c. `M238-02` — `--baseline-write` holds only the run it is on. From a narrowed run over a file
+    //     that held more, it says how many entries are gone; the build is untouched. The control is the
+    //     same write from a FULL run, which drops the same dead entry and must say nothing new, because
+    //     pruning a fixed finding is exactly what a full-run write is for.
+    const staleText = await readFile(join(dir, 'stale.json'), 'utf8');
+    await writeFile(join(dir, 'narrow-write.json'), staleText, 'utf8');
+    const { stdout: narrowWrite } = await execFileAsync(
+      'node',
+      [cliEntry, 'run', '--no-color', '--baseline', 'stale.json', '--only', 'input handling', '--baseline-write', 'narrow-write.json'],
+      { cwd: dir },
+    );
+    assert.match(
+      narrowWrite,
+      /baseline: written from a narrowed run \(--only input handling\), so it holds only what this run produced — 1 entry the previous narrow-write\.json held is not in it; write it from a full run before committing it/,
+    );
+    await writeFile(join(dir, 'full-write.json'), staleText, 'utf8');
+    const { stdout: fullWrite } = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--baseline', 'stale.json', '--baseline-write', 'full-write.json'], { cwd: dir });
+    assert.match(fullWrite, /baseline written to full-write\.json/);
+    assert.doesNotMatch(fullWrite, /written from a narrowed run/, 'a full-run write prunes on purpose and must say nothing new');
+    const pruned = JSON.parse(await readFile(join(dir, 'full-write.json'), 'utf8')) as { accepted: { fingerprint: string }[] };
+    assert.equal(pruned.accepted.some((e) => e.fingerprint === deadFingerprint), false, 'the control really did drop the entry');
+
     // 6. The usage errors, which are the reason both flags are parsed before any test runs (P#46).
     const badFailOn = await execFileAsync('node', [cliEntry, 'run', '--fail-on', 'high'], { cwd: dir }).catch((e: { stderr?: string }) => e);
     assert.match((badFailOn as { stderr?: string }).stderr ?? '', /not a severity/);

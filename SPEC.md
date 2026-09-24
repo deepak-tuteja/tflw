@@ -3399,7 +3399,10 @@ something, which is the opposite of relaxing it.
 deduplicated. It ships with `--baseline` rather than after it: fingerprints are hashes, and a feature
 whose adoption step is hand-transcribing forty of them is not adoptable. It writes **this run's**
 findings and nothing else, so write it from a full run: a `--tag` run legitimately produces a subset
-of the suite's findings, and a file written from one holds only that subset.
+of the suite's findings, and a file written from one holds only that subset. A write from a narrowed
+run says so after the `baseline written` line, with how many entries the file it replaced held that
+it does not (M238, `M238-02`); a full run's write prints nothing more, because pruning a fixed
+finding is what it is for.
 
 Entries in the `--baseline` this run read that matched no finding are **named on the console and in
 `results.json`'s `baseline` block, and never fail the build** (M238, `D-M238-3`) — a stale entry is
