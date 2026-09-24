@@ -5160,6 +5160,14 @@ test('the built dist/cli.cjs applies --fail-on, writes a baseline, and reads it 
     //    reviewable, and a report that agreed with the gate would describe the gate, not the run.
     const { stdout: green } = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--baseline', 'accepted.json'], { cwd: dir });
     assert.match(green, /1\/1 passed/);
+    // `M238` — every entry matched, so the run says nothing new: the quiet path is the claim most
+    // likely to rot, and it is asserted here rather than assumed. The report still carries the count.
+    assert.doesNotMatch(green, /matched no finding/);
+    const greenJson = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { baseline?: { accepted: number; matched: number; stale: unknown[] } };
+    assert.deepEqual(
+      { accepted: greenJson.baseline?.accepted, matched: greenJson.baseline?.matched, stale: greenJson.baseline?.stale.length },
+      { accepted: written.accepted.length, matched: written.accepted.length, stale: 0 },
+    );
     const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
     assert.match(html, /Security findings/);
     assert.match(html, /known\/accepted/);
@@ -5183,6 +5191,35 @@ test('the built dist/cli.cjs applies --fail-on, writes a baseline, and reads it 
     const seededHtml = await readFile(join(dir, 'report', 'report.html'), 'utf8');
     assert.match(seededHtml, /seed 24301/);
     assert.match(seededHtml, /promote this payload/i);
+
+    // 5b. `M238` (`M234-04`) — the baseline's other half. `staleBaselineEntries` shipped in `M134b`,
+    //     `cli.ts` imported it, and nothing called it, while `--help` said stale entries are reported;
+    //     a green unit test of the function is what made it look done. So this is asserted through the
+    //     built binary: remove the *call* in `cli.ts` and this step goes red, which a unit test cannot.
+    //     A fabricated entry beside the real one is the stale set; the build stays green (`D-M238-3`).
+    const deadFingerprint = 'dead00000000beef';
+    await writeFile(
+      join(dir, 'stale.json'),
+      JSON.stringify({ version: 1, accepted: [...written.accepted, { fingerprint: deadFingerprint, rule: 'sec/fixed-long-ago', endpoint: 'GET /gone' }] }),
+      'utf8',
+    );
+    const { stdout: staleOut } = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--baseline', 'stale.json'], { cwd: dir });
+    assert.match(staleOut, /1\/1 passed/, 'a stale entry is advisory: it must never fail the build');
+    assert.match(staleOut, new RegExp(`baseline: 1 of ${written.accepted.length + 1} accepted entries in stale\\.json matched no finding in this run`));
+    assert.match(staleOut, new RegExp(`sec/fixed-long-ago {2}GET /gone {2}${deadFingerprint}`));
+    assert.doesNotMatch(staleOut, /narrowed/, 'a whole-suite run must not say it was narrowed');
+    const staleJson = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as {
+      baseline?: { source: string; matched: number; stale: { fingerprint: string }[]; narrowedBy?: string };
+    };
+    assert.equal(staleJson.baseline?.source, 'stale.json');
+    assert.equal(staleJson.baseline?.matched, written.accepted.length);
+    assert.deepEqual(staleJson.baseline?.stale.map((e) => e.fingerprint), [deadFingerprint]);
+    // The same run narrowed by `--only` says so, because an entry it did not match may belong to a
+    // test it did not run — the reason the function's docblock gives for never pruning on absence.
+    const { stdout: narrowOut } = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--baseline', 'stale.json', '--only', 'input handling'], { cwd: dir });
+    assert.match(narrowOut, /narrowed \(--only input handling\)/);
+    const narrowJson = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { baseline?: { narrowedBy?: string } };
+    assert.equal(narrowJson.baseline?.narrowedBy, '--only input handling');
 
     // 6. The usage errors, which are the reason both flags are parsed before any test runs (P#46).
     const badFailOn = await execFileAsync('node', [cliEntry, 'run', '--fail-on', 'high'], { cwd: dir }).catch((e: { stderr?: string }) => e);

@@ -56,7 +56,8 @@ import {
   type ScanDecline,
   parseBaseline,
   renderBaseline,
-  staleBaselineEntries,
+  auditBaseline,
+  staleBaselineNote,
   MAX_SEEDED_PER_CLASS,
   type ScanFinding,
   type ScanGate,
@@ -2200,13 +2201,29 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   );
   const scanBlindSpot = buildScanBlindSpot(census, scanDeclines);
   const scanCoverage = buildScanCoverage(censusByScan);
-  const merged = redactReport(
+  const redacted = redactReport(
     mergeReports(reports, resolved.envName, resolved.authorizedTargets, seed, now, resolved.insecure, browserEngine, resolved.evidenceLevel, resolved.teardown, usingDemo, scanBlindSpot, {
       findings: scanFindings,
       coverage: scanCoverage,
     }),
     redactor,
   );
+  // `M238` (`M234-04`) — the baseline's other half. `staleBaselineEntries` shipped in `M134b`, was
+  // imported here, and was never called, while `--help` promised stale entries are reported. The
+  // audit is taken from the **redacted merged** findings for `--baseline-write`'s reason below, and
+  // after the shard merge, so `--workers N` cannot make an entry look stale that another worker
+  // matched. A run that did not run the whole suite says so, because an entry it did not match may
+  // belong to a test it skipped (the reason the function's own docblock gives for never pruning).
+  const narrowedBy = [
+    ...(args.files.length > 0 ? ['files named on the command line'] : []),
+    // Wrapped, not spread: `describeRunFilter` returns a string, and spreading one yields its characters.
+    ...[describeRunFilter({ tags: args.tags, only: args.only, failed: args.failed })].filter((d) => d !== undefined),
+    ...(args.skipWorkload ? ['--skip-workload'] : []),
+  ].join(', ');
+  const merged: RunReport =
+    baselineDoc === null || baselineFrom === null
+      ? redacted
+      : { ...redacted, baseline: auditBaseline(baselineDoc, redacted.findings ?? [], baselineFrom.path, narrowedBy === '' ? undefined : narrowedBy) };
   // `M192b` (`M192-03`): a run owns `report/` whole. `findings.sarif`, `events.ndjson`, `assets/`
   // and the two repro directories are written only when the run has something for them, and a run
   // that does not must not leave the previous run's behind as its own. This is the first write
@@ -2223,6 +2240,10 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     await writeFile(target, renderBaseline(merged.findings ?? []), 'utf8');
     out.write(`${withTimestamps(`baseline written to ${relative(cwd, target)} — ${(merged.findings ?? []).filter((f) => f.fingerprint).length} accepted`, timestamps)}\n`);
   }
+  // Advisory (`D-M238-3`): printed, carried in `results.json`, and never read by the exit code.
+  // Silent when nothing is stale, so the common run prints what it always printed.
+  const staleNote = merged.baseline === undefined ? '' : staleBaselineNote(merged.baseline);
+  if (staleNote !== '' && !ndjsonActive) out.write(`${withTimestamps(staleNote, timestamps)}\n`);
   const reportDir = join(cwd, resolved.reportDir);
   const outPath = await writeReport(merged, reportDir, resolved.logLevel);
   await writeJunitXml(merged, reportDir);
@@ -4145,8 +4166,9 @@ function printUsage(): void {
       '                                                      build (SPEC §9.12); it can only relax the matcher a test wrote, never tighten it',
       '                                                      --baseline <file> accepted findings, matched by fingerprint; they still render, marked known/accepted;',
       '                                                      overrides tflw.config\'s `baseline "<file>"` key for this run',
-      '                                                      --baseline-write <file> writes this run\'s findings out as the accepted set (stale entries are',
-      '                                                      reported, never removed — a --tag run legitimately produces a subset)',
+      '                                                      --baseline-write <file> writes this run\'s findings out as the accepted set — only this',
+      '                                                      run\'s, so write it from a full run (a --tag run legitimately produces a subset);',
+      '                                                      entries in --baseline that matched nothing are named after the run, never failed',
       '                                                      --probe-seeded <n> n generated mutation payloads per already-granted class, on top of the fixed',
       '                                                      corpus; reported and never gating, and it cannot widen what `authorized target` permitted',
       '                                                      --log-level <level> minimum level a `log` step must clear to be rendered: debug|info|warn|error',

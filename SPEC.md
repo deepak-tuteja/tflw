@@ -3397,10 +3397,16 @@ something, which is the opposite of relaxing it.
 
 **`--baseline-write <file>`** writes this run's findings out as the accepted set, sorted and
 deduplicated. It ships with `--baseline` rather than after it: fingerprints are hashes, and a feature
-whose adoption step is hand-transcribing forty of them is not adoptable. Entries in a baseline that
-this run did not produce are **reported and never removed** — a `--tag` run legitimately produces a
-subset of the suite's findings, so pruning on absence would delete acceptances the next full run
-still needs.
+whose adoption step is hand-transcribing forty of them is not adoptable. It writes **this run's**
+findings and nothing else, so write it from a full run: a `--tag` run legitimately produces a subset
+of the suite's findings, and a file written from one holds only that subset.
+
+Entries in the `--baseline` this run read that matched no finding are **named on the console and in
+`results.json`'s `baseline` block, and never fail the build** (M238, `D-M238-3`) — a stale entry is
+usually a weakness somebody fixed, and failing the build on the day it is fixed teaches people to
+stop pruning. A run narrowed by file arguments, `--tag`, `--only`, `--failed` or `--skip-workload`
+says so beside the list, because an entry it did not match may belong to a test it did not run.
+Nothing is printed when every entry matched.
 
 Every failure mode of a baseline file makes a build *greener*, so a malformed one is refused rather
 than degraded to "accepted nothing" — which looks exactly like a codebase that fixed its findings.

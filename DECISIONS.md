@@ -13580,4 +13580,14 @@ from a gesture the grammar refuses.
 3 commits) — the example corpus, the coverage gate that landed red, and the per-package floor.
 Stages `D`-`H`, the docs site itself, are not built.*
 
+### M238
+
+<sub>cited from SPEC.md · lifted from `PLAN_M238_BASELINE_STALE.md`</sub>
+
+**`M238` — the baseline's other half, and the corpus that would have proved it**
+
+**Scoped 2026-09-24 by grilling; slices `A` and `B` built the same day** (§10).
+Cross-repo: tflw first (`D511`), then `testFlow-tests`, whose slice `C` is not started. Discharges
+**`M234-04`**, one of the three rows open after `M237`, and files `M238-01`..`04`.
+
 <!-- GENERATED:decisions:end -->

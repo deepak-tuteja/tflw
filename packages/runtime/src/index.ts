@@ -25,10 +25,12 @@ export {
   parseBaseline,
   renderBaseline,
   staleBaselineEntries,
+  auditBaseline,
+  staleBaselineNote,
   toScanFinding,
   withheldNote,
 } from './scanFindings.js';
-export type { Baseline, BaselineEntry, GateVerdict, ScanCensus, ScanDecline, ScanFinding, ScanGate, ScanKind, ScanSink, WithheldReason } from './scanFindings.js';
+export type { Baseline, BaselineAudit, BaselineEntry, GateVerdict, ScanCensus, ScanDecline, ScanFinding, ScanGate, ScanKind, ScanSink, WithheldReason } from './scanFindings.js';
 export { sortFindings, findingsSummaryLine } from './scan-words.js';
 // M135a (D409) — the three packs' rule ids, exported as closed tuples and as the union they form.
 // `@tflw/reporter` keys the remediation KB on `ScanRuleId`, which is what makes a rule shipping

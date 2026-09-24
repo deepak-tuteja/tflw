@@ -8,7 +8,7 @@ import type { EvidenceLevel, LogDestination, LogLevel, RedactPattern, SessionDec
 export type { LogDestination, LogLevel } from '@tflw/lang';
 import type { BrowserEngine } from './browser.js';
 import type { SnapshotDiffAsset } from './snapshot.js';
-import type { ScanFinding, ScanKind } from './scanFindings.js';
+import type { BaselineAudit, ScanFinding, ScanKind } from './scanFindings.js';
 import type { HistogramBucket } from './histogram.js';
 import type { SerializedTimelineBucket, TimelinePoint } from './timeline.js';
 export type { TimelinePoint, SerializedTimelineBucket } from './timeline.js';
@@ -678,6 +678,13 @@ export interface RunReport {
    * and every existing `RunReport` fixture keeps compiling.
    */
   readonly findings?: readonly ScanFinding[];
+  /**
+   * `M238` (`M234-04`) — what the run's baseline matched and which of its entries matched nothing.
+   *
+   * Present whenever a baseline was read, and absent otherwise, so a run without one adds nothing to
+   * the report. Advisory (`D-M238-3`): `ok` and the exit code never read it.
+   */
+  readonly baseline?: BaselineAudit;
   /**
    * M134b (D389) — which rules each scan applied and which stood down, with the reason.
    *
