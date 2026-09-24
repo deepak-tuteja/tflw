@@ -265,6 +265,30 @@ jobs:
       - run: npm run verify:settled-reads:oracle
       - run: npm run verify:settled-reads:self-test
 
+      # `M237` `A2`. Every test file, run with `--test-name-pattern` selecting none of its tests,
+      # must exit cleanly. `node:test` runs the root `after()` without awaiting the root `before()`
+      # when nothing is selected (measured, Node v22.22.0), so a file with an async setup either
+      # crashes in its teardown naming an argument or leaks what the setup went on to open and
+      # never exits. Eleven of 265 files did one or the other, across two ledger rows and four
+      # milestones, and one of them had been repaired eight days earlier in a way that silenced the
+      # crash and kept the leak.
+      #
+      # It is a RUN and not a source-shape check, deliberately: a walk of each `after()` body for an
+      # unguarded binding costs seconds and would have passed the one file that was guarded, silent
+      # and still hanging. `A0` priced the run first — 234 s for the whole tree, including six files
+      # each burning a timeout.
+      #
+      # Every invocation is the workspace's OWN `test` script narrowed to one file by `mutate.mjs`'s
+      # `fastCommand`. The census that opened this round retyped one by hand and reported a twelfth
+      # defective file that is clean under its own command; `scripts/test-concurrency.test.mjs` is
+      # this repository's standing record of that mistake at 307-failure scale.
+      - run: npm run verify:zero-match
+
+      # Its control, `D922`. Two files in a throwaway package, identical but for the repair — the
+      # gate must call the unrepaired one red and the repaired one green. Without it this step is a
+      # command that exits 0 over a tree nobody has seen it judge.
+      - run: npm run verify:zero-match:self-test
+
       # The other half of `D666`. `verify:decisions` keeps every *canonical* citation pointed at an
       # entry that exists; this keeps prose from writing the older spelling, `decision 57`, which
       # names a number without saying which of nine numbered sequences indexes it (`M152b`/`D691`).

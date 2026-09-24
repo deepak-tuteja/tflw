@@ -78,6 +78,8 @@ npm run verify:own-identifiers:self-test
 npm run verify:settled-reads
 npm run verify:settled-reads:oracle
 npm run verify:settled-reads:self-test
+npm run verify:zero-match
+npm run verify:zero-match:self-test
 npm run refresh:own-identifiers -- --check   # § needs the records
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
@@ -384,6 +386,19 @@ npm run verify:ledger                  # § never runs in CI, by decision
   `cited from` line, so a re-pin moves lines that contain no identifier at all. CI cannot catch the
   omission — `verify:decisions` runs a reduced tier on a runner because the records are gitignored —
   and the first real re-pin after this repair moved **8 lines**, every one an attribution.
+
+- **`npm run verify:zero-match`** — **the one gate here that takes minutes rather than seconds, and
+  the cost is the point.** It runs every test file with `--test-name-pattern` selecting none of its
+  tests and asserts a clean exit — 265 process launches. It exists because `node:test` runs the root
+  `after()` hook *without awaiting* the root `before()` hook when nothing is selected, so a file with
+  an async setup either crashes in its teardown naming an argument it never received, or leaks what
+  the setup went on to open and hangs forever. Eleven files did one or the other across two ledger
+  rows and four milestones. The cheap version of this gate — walking each `after()` body for a
+  teardown call on a binding only `before()` assigns — was measured and rejected: it passes
+  `packages/cli/test/ui-page.test.ts`, which has precisely that shape and was hanging anyway. If you
+  are adding a test file with a `before()` that opens anything, route it through `stagedSetup` in
+  `scripts/test-staging.mjs`, which is also where the mechanism is written down.
+  `npm run verify:zero-match:self-test` is its control and takes about fifteen seconds.
 
 - **`npm run verify:ledger`** — **§ it never runs in CI, and that is a decision.** Its corpus,
   `REVIEW_FINDINGS.md`, is gitignored on purpose, so in CI its input is simply absent — and a check

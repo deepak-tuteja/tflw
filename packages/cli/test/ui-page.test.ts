@@ -75,6 +75,7 @@ import { checkProgram, parseSource, print, STEP_LENS } from '@tflw/lang';
 import { roundDurationMs, type LoadMetrics, type RunReport, type StepResult, type TestResult, type WorkloadTestResult } from '@tflw/runtime';
 import { describeWorkload, formatThresholdActual, formatThresholdTarget, remediationFor } from '@tflw/reporter';
 import { findingsSummaryLine, sortFindings, WITHHELD_LABEL, SCAN_KIND_LABEL } from '@tflw/runtime';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const uiRoot = join(here, '..', '..', 'ui');
@@ -165,7 +166,7 @@ const pretty = (text: string): string => {
   }
 };
 
-before(async () => {
+const setup = stagedSetup(async () => {
   scratch = await mkdtemp(join(tmpdir(), 'tflw-ui-page-'));
   // The bundle, built here rather than taken from `dist/ui` so this file grades the checked-out
   // page whatever was last built. The ui's own vite, not the root's (VitePress pins a vite 5).
@@ -220,31 +221,48 @@ before(async () => {
   await startUiCoverage(page);
 });
 
+before(setup.begin);
+
 after(async () => {
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
   // Before `browser.close()` (the page is the source) and before `rm(scratch)` (the bundle is read
   // out of it and copied somewhere that outlives this process). `M234`.
   if (page !== undefined) await stopUiCoverage(page, join(scratch, 'ui'), 'page');
   await browser?.close();
   await server?.close();
-  /* `M235` `A1b` — **the fourth handle gets the guard the other three have.**
-     Three lines above this one already defend against a `before()` that never completed, and this
-     one did not: `rm(undefined)` throws `ERR_INVALID_ARG_TYPE` out of the teardown and the whole
-     FILE is reported `hookFailed` in half a millisecond, naming a path argument rather than the
-     setup that never ran. A rule applied in one place and not the next, in the teardown of the
-     file `PLAN_M235` is about.
+  /* `M235` `A1b`, **AMENDED BY `M237` `A1` — THE DIAGNOSIS IN THIS BLOCK WAS WRONG, AND THE
+     REPAIR IT ARGUED FOR MADE THIS FILE THE QUIETEST FAILURE IN THE CENSUS.**
 
-     HOW IT IS REACHED, because it is not obvious and it cost 52 minutes to find: a
-     `--test-name-pattern` that matches nothing. `M227` `A` is named ``​`M227` `A`: the report's
-     charts…`` and the pattern `M227. .A: the report` misses the backtick between the `A` and the
-     colon, so zero tests are selected, `before()` is never run, and `after()` runs anyway. The
-     run then held the box lease for 52 minutes on an idle machine, because `M108` removed
-     `--test-force-exit` on purpose — a leaked ref'd handle hangs the file rather than being
-     killed mid-report, and CI bounds that with `timeout-minutes: 60` while an ad-hoc box
-     invocation bounds it with nothing.
+     WHAT IT SAID. A `--test-name-pattern` that matches nothing selects zero tests, so "`before()`
+     is never run, and `after()` runs anyway" — and the repair was therefore to guard each teardown
+     call against a binding `before()` had not assigned, the way the three lines above already did.
+     How the shape is reached is still right and still worth the 52 minutes it cost: `M227` `A` is
+     named ``​`M227` `A`: the report's charts…`` and the pattern `M227. .A: the report` misses the
+     backtick between the `A` and the colon.
 
-     The guard is the repair; the *diagnosis* is `A3`'s rule that a filtered run must assert it
-     selected more than zero tests before anyone believes its verdict, because a run that selected
-     nothing and a run still in progress look identical from outside. */
+     WHAT IS ACTUALLY TRUE, measured 2026-09-24 on the box at Node v22.22.0 and reproduced on
+     Node v26.7.0, with a probe whose `before()` sleeps 1200 ms and then opens a listening socket:
+     `before()` IS run. `node:test` simply does not await it before running `after()` when nothing
+     is selected —
+
+         B start -> A ran, server is UNDEFINED -> A done -> B end, listening -> hangs
+
+     WHAT THAT COST HERE. The guard turns every teardown call into a silent no-op, and `before()`
+     then carries on and opens the browser, the server and the scratch tree with the only code that
+     would ever have closed them already finished. In the 265-file census this file is the single
+     entry that hangs with NO `hookFailed` and a 15-byte log reading `TAP version 13` and nothing
+     else. A loud failure naming a path argument became a silent one naming nothing, for eight days,
+     inside the repair.
+
+     THE REPAIR IS THE `setup.settled()` ON THE FIRST LINE OF THIS HOOK; the mechanism is written
+     once, in `scripts/test-staging.mjs`. The guards below stay, for the case they were always
+     right about: a `before()` that genuinely THREW partway leaves bindings unassigned, and an
+     `undefined.close()` there buries the setup's own diagnosis under a second failure naming an
+     argument. `M108` removed `--test-force-exit` on purpose and this round does not put it back —
+     a leaked ref'd handle hanging is honest; what was wrong is that the handles were opened for a
+     run with zero tests in it.
+
+     `scripts/verify-zero-match.mjs` is why a twelfth file cannot arrive here unnoticed. */
   if (scratch !== undefined) await rm(scratch, { recursive: true, force: true });
 });
 

@@ -24,6 +24,7 @@ import { BrowserManager } from '../src/browser.js';
 import { startFixtureServer, testConfig, json, type FixtureServer } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
 import { asEntry } from './__helpers__/entry.js';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 const HOME_HTML = `<!doctype html><html><head><title>home</title></head><body><h1>Home</h1></body></html>`;
 
@@ -45,7 +46,7 @@ const XHR_HTML = (target: string) => `<!doctype html><html><head><title>xhr</tit
 let server: FixtureServer;
 let browserManager: BrowserManager;
 
-before(async () => {
+const setup = stagedSetup(async () => {
   server = await startFixtureServer({
     '/': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(HOME_HTML),
     '/xhr': (req, res) => {
@@ -57,9 +58,12 @@ before(async () => {
   browserManager = new BrowserManager();
 });
 
+before(setup.begin);
+
 after(async () => {
-  await browserManager.close();
-  await server.close();
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
+  await browserManager?.close();
+  await server?.close();
 });
 
 /** `webBaseUrl` decides which hostname the *navigation* uses; `allowHosts` is always the same list,

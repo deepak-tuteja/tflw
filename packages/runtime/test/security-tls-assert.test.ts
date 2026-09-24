@@ -20,6 +20,7 @@ import { testConfig } from './support.js';
 import { TlsProber } from '../src/tlsProbe.js';
 import { authorized } from './__helpers__/authorized.js';
 import type { ResolvedConfig } from '../src/types.js';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 let certDir: string;
 let https: Server;
@@ -39,7 +40,7 @@ async function port(server: Server | HttpServer): Promise<number> {
   return address.port;
 }
 
-before(async () => {
+const setup = stagedSetup(async () => {
   certDir = mkdtempSync(join(tmpdir(), 'tflw-sec-tls-'));
   const keyPath = join(certDir, 'key.pem');
   const certPath = join(certDir, 'cert.pem');
@@ -55,10 +56,13 @@ before(async () => {
   plainUrl = `http://127.0.0.1:${await port(plain)}`;
 });
 
+before(setup.begin);
+
 after(async () => {
-  await new Promise<void>((resolve) => https.close(() => resolve()));
-  await new Promise<void>((resolve) => plain.close(() => resolve()));
-  rmSync(certDir, { recursive: true, force: true });
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
+  if (https !== undefined) await new Promise<void>((resolve) => https.close(() => resolve()));
+  if (plain !== undefined) await new Promise<void>((resolve) => plain.close(() => resolve()));
+  if (certDir !== undefined) rmSync(certDir, { recursive: true, force: true });
 });
 
 /** `insecure`, because the fixture is self-signed — and `authorizedTargets` covering it, because

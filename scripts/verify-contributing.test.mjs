@@ -204,6 +204,36 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:zero-match',
+    class: 'gate',
+    local: 'npm run verify:zero-match',
+    why: "`M237` `A2` — every test file, run with `--test-name-pattern` selecting none of its tests, must exit cleanly. "
+      + "`node:test` runs the root `after()` WITHOUT awaiting the root `before()` when nothing is selected (measured, Node "
+      + "v22.22.0 and v26.7.0), so a file with an async setup either crashes in its teardown naming an argument or leaks what "
+      + "the setup went on to open and never exits. Eleven of 265 files did one or the other. It is a RUN and not a "
+      + "source-shape walk on purpose: a walk of each `after()` body for an unguarded binding PASSES `ui-page.test.ts`, "
+      + "which had exactly that shape and was hanging anyway. Every invocation is the workspace's own `test` script narrowed "
+      + "to one file, never retyped — the census that opened the round retyped one and reported a twelfth defective file that "
+      + "is clean under its own command. Needs a display for the browser suites' setups and `packages/*/dist` — the `build` "
+      + "step. Minutes, not seconds: it is 265 process launches",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
+    cmd: 'npm run verify:zero-match:self-test',
+    class: 'gate',
+    local: 'npm run verify:zero-match:self-test',
+    why: "`D922`. Three throwaway files in a temp package: the crash half alone (a setup that opens nothing, so the file "
+      + "EXITS `rc=1` with `hookFailed` — `pack.test.ts`'s shape), the leak half (never exits), and a repaired twin routed "
+      + "through `stagedSetup`. The gate must call the first two red and the third green, and it additionally asserts the "
+      + "crash control was caught AS a `hookFailed`, because that string is the only thing separating the two failure shapes "
+      + "— and it exists only in node's TAP reporter, which node selects by TTY and by version. That is not hypothetical: the "
+      + "classifier read `spec` output and saw nothing on a Mac at Node v26.7.0 while passing on the box at v22.22.0, and "
+      + "this control is what said so. Static, ~15 s",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:settled-reads:self-test',
     class: 'gate',
     local: 'npm run verify:settled-reads:self-test',

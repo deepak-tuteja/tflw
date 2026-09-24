@@ -27,6 +27,7 @@ import { snapshotPaths } from '../src/snapshot.js';
 import { startFixtureServer, testConfig, json, type FixtureServer } from './support.js';
 import type { ResolvedConfig } from '../src/types.js';
 import { asEntry } from './__helpers__/entry.js';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 const FIXTURE_HTML = `<!doctype html>
 <html>
@@ -339,7 +340,7 @@ let server: FixtureServer;
 let config: ResolvedConfig;
 let browserManager: BrowserManager;
 
-before(async () => {
+const setup = stagedSetup(async () => {
   server = await startFixtureServer({
     '/': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(FIXTURE_HTML),
     '/frame': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(FRAME_HTML),
@@ -387,9 +388,12 @@ before(async () => {
   browserManager = new BrowserManager();
 });
 
+before(setup.begin);
+
 after(async () => {
-  await browserManager.close();
-  await server.close();
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
+  await browserManager?.close();
+  await server?.close();
 });
 
 async function run(source: string) {
