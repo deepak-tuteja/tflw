@@ -15,6 +15,7 @@ import { BrowserManager } from '../src/browser.js';
 import { startFixtureServer, testConfig, type FixtureServer } from './support.js';
 import type { ResolvedConfig, ResolvedTimeouts } from '../src/types.js';
 import { asEntry } from './__helpers__/entry.js';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 // Two `Save` buttons the suggestion renderer cannot tell apart, which the DOM can tell apart three
 // ways: a `data-testid`, an `id`, and an enclosing labelled section.
@@ -81,7 +82,7 @@ async function run(source: string, config: ResolvedConfig) {
   return runProgram(program, config, { source, browserManager });
 }
 
-before(async () => {
+const setup = stagedSetup(async () => {
   server = await startFixtureServer({
     '/dup-save': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(DUP_SAVE_HTML),
     '/many-cart': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(MANY_CART_HTML),
@@ -91,9 +92,12 @@ before(async () => {
   browserManager = new BrowserManager();
 });
 
+before(setup.begin);
+
 after(async () => {
-  await browserManager.close();
-  await server.close();
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
+  await browserManager?.close();
+  await server?.close();
 });
 
 // ---- FU-21: the ambiguity list ---------------------------------------------------------------

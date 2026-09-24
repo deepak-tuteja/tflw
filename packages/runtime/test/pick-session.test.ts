@@ -8,6 +8,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { BrowserManager, wirePickSession, type PickedLocator } from '../src/browser.js';
 import { startFixtureServer, type FixtureServer } from './support.js';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 const PICK_HTML = `<!doctype html>
 <html><body>
@@ -43,7 +44,7 @@ const NUMERIC_VALUE_HTML = `<!doctype html>
 let server: FixtureServer;
 let browserManager: BrowserManager;
 
-before(async () => {
+const setup = stagedSetup(async () => {
   server = await startFixtureServer({
     '/pick': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(PICK_HTML),
     '/elsewhere': (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><html><body>elsewhere</body></html>'),
@@ -52,9 +53,12 @@ before(async () => {
   browserManager = new BrowserManager(); // headless — see file header
 });
 
+before(setup.begin);
+
 after(async () => {
-  await browserManager.close();
-  await server.close();
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
+  await browserManager?.close();
+  await server?.close();
 });
 
 async function withPickedPage(

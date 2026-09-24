@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 // @ts-expect-error — a plain .mjs build script with no type declarations, deliberately shared with
 // `scripts/bundle.mjs` rather than reimplemented here (M92a).
 import { collectNotices } from '../../../scripts/third-party-notices.mjs';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cliRoot = join(here, '..');
@@ -43,7 +44,7 @@ function publishEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-before(async () => {
+const setup = stagedSetup(async () => {
   // `npm pack` runs `prepack` for us: rm -rf dist, rebuild @tflw/lang+runtime+reporter, then
   // esbuild-bundle src/cli.ts into one dist/cli.cjs.
   scratchDir = await mkdtemp(join(tmpdir(), 'tflw-pack-'));
@@ -53,6 +54,8 @@ before(async () => {
   if (!tgz) throw new Error('npm pack did not produce a .tgz in ' + scratchDir);
   tarballPath = join(scratchDir, tgz);
 });
+
+before(setup.begin);
 
 test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/artifact-contract.json + dist/ui/ + package.json + README.md + LICENSE, with zero runtime dependencies', async () => {
   const { stdout } = await execFileAsync('tar', ['-tzf', tarballPath]);
@@ -248,5 +251,6 @@ test('`tflw init` scaffolds a working project from the installed binary', async 
 });
 
 after(async () => {
-  await rm(scratchDir, { recursive: true, force: true });
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
+  if (scratchDir !== undefined) await rm(scratchDir, { recursive: true, force: true });
 });

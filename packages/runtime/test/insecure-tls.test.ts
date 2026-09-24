@@ -16,12 +16,13 @@ import { parseSource } from '@tflw/lang';
 import { runProgram } from '../src/interpreter.js';
 import { testConfig } from './support.js';
 import { asEntry } from './__helpers__/entry.js';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 let server: Server;
 let baseUrl: string;
 let certDir: string;
 
-before(async () => {
+const setup = stagedSetup(async () => {
   certDir = mkdtempSync(join(tmpdir(), 'tflw-insecure-tls-'));
   const keyPath = join(certDir, 'key.pem');
   const certPath = join(certDir, 'cert.pem');
@@ -40,9 +41,12 @@ before(async () => {
   baseUrl = `https://127.0.0.1:${address.port}`;
 });
 
+before(setup.begin);
+
 after(async () => {
-  await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
-  rmSync(certDir, { recursive: true, force: true });
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
+  if (server !== undefined) await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  if (certDir !== undefined) rmSync(certDir, { recursive: true, force: true });
 });
 
 const SOURCE = `test "health check"\n  api GET /health\n  expect status equals 200\n`;

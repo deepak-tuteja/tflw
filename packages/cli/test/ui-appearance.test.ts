@@ -71,6 +71,7 @@ import { parseColor, flatten, effective, threshold } from './contrast.js';
 // `M235` `B1` — `settle.ts` was put in its own module so this file could use it too, and `C2` is
 // where that stops being a claim about the future.
 import { settle, untilMeasurable } from './settle.js';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const uiRoot = join(here, '..', '..', 'ui');
@@ -174,7 +175,7 @@ const DOORS = ['api', 'browser', 'load', 'scan'] as const;
  *  of the user's own bytes, its colours are the seven syntax tokens, and it carries no control. */
 const TABS = ['compose', 'run', 'auth', 'config'] as const;
 
-before(async () => {
+const setup = stagedSetup(async () => {
   scratch = await mkdtemp(join(tmpdir(), 'tflw-ui-appearance-'));
   const viteManifestPath = createRequire(uiRoot).resolve('vite/package.json');
   const viteBin = join(dirname(viteManifestPath), (JSON.parse(await readFile(viteManifestPath, 'utf8')) as { bin: { vite: string } }).bin.vite);
@@ -213,13 +214,16 @@ before(async () => {
   await startUiCoverage(page);
 });
 
+before(setup.begin);
+
 after(async () => {
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
   // Before the page closes and before `rm(scratch)` takes the bundle with it (`M234`).
   if (page !== undefined) await stopUiCoverage(page, staticDir, 'appearance');
   await page?.close();
   await browser?.close();
   await server?.close();
-  await rm(scratch, { recursive: true, force: true });
+  if (scratch !== undefined) await rm(scratch, { recursive: true, force: true });
 });
 
 /**

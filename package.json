@@ -41,6 +41,8 @@
     "verify:decisions": "node scripts/gen-decisions.mjs --check",
     "verify:citations": "node scripts/verify-citations.mjs",
     "verify:anchors": "node scripts/verify-anchors.mjs",
+    "verify:zero-match": "node scripts/verify-zero-match.mjs",
+    "verify:zero-match:self-test": "node scripts/verify-zero-match.mjs --self-test",
     "verify:sibling-pin": "node scripts/verify-sibling-pin.mjs",
     "verify:sibling-pin:self-test": "node scripts/verify-sibling-pin.mjs --self-test",
     "verify:own-identifiers": "node scripts/verify-own-identifiers.mjs",

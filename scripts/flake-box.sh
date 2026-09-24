@@ -14,18 +14,27 @@
 # once at 1.4x their solo time, 4.9 GB. So a shard here is a REPETITION, not a mutation.
 #
 # `--test-name-pattern` IS NEVER USED, AND THAT IS A RULE RATHER THAN A PREFERENCE (`A1b-3`). A
-# filtered run of `ui-page.test.ts` that selects nothing runs no test and never exits; measured
-# 2026-09-23, `rc=124` with a 15-byte log reading only `TAP version 13`. The rule stands; the
-# harness must not produce the shape, and sharding by repetition sidesteps it entirely.
+# filtered run of `ui-page.test.ts` that selects nothing ran no test and never exited; measured
+# 2026-09-23, `rc=124` with a 15-byte log reading only `TAP version 13`. The rule stands, and
+# sharding by repetition sidesteps the shape entirely.
 #
-# **THIS COMMENT SAID `opens `before()`'s handles` UNTIL 2026-09-24 AND THAT WAS FALSE** (`M236`
-# `E`, `M235-02`). It does not open them: `before()` is never run when zero tests are selected —
-# `ui-page.test.ts`'s own `after()` docblock says so correctly — and `chromium.launch()` lives
-# inside it. Re-measured on the box against a Chromium census: **0 before, 0 after**, `ps` naming
-# no chrome process at all, on a run that hung the full 120 s. So this shape hangs with **no
-# browser**, and the orphan Chromium that `A1b-2`'s process table caught belongs to a filtered run
-# whose pattern MATCHED tests — a different shape, attributed to this one for a day. Two files in
-# this repository disagreed and the disagreement was the diagnosis `M235-02` was filed missing.
+# **THE REST OF THIS PARAGRAPH SAID `before()` IS NEVER RUN WHEN ZERO TESTS ARE SELECTED, TWICE,
+# AND BOTH TIMES IT WAS FALSE** (`M236` `E` said it; `M237` `A1` measured it). `before()` is run.
+# `node:test` does not AWAIT it before running `after()` — measured on the box at Node v22.22.0
+# with a probe that sleeps 1200 ms and then listens: `B start -> A ran, server UNDEFINED -> A done
+# -> B end, listening -> rc=124`. So this shape hangs holding everything `before()` opened, and
+# the orphan Chromium `A1b-2`'s process table caught belongs to it after all.
+#
+# THE CHROMIUM CENSUS THAT SAID OTHERWISE IS THE LESSON, NOT THE CLAIM. It reported **0 before, 0
+# after** and was read as *no browser is launched*. Re-measured from INSIDE the living process,
+# `process._getActiveHandles()` at 12 s names a `ProcessWrap` and a `TCPServerWrap`, and a `ps`
+# census taken **while the run was still up** — rather than after `timeout` had killed it — counts
+# **6**. A census of the outside is not a census of the process, and a census taken after the kill
+# is not a census at all.
+#
+# Both halves are repaired at the mechanism now (`scripts/test-staging.mjs`) and gated
+# (`scripts/verify-zero-match.mjs`), so the shape no longer hangs anything. The rule above is kept
+# regardless: this harness has no business producing a run whose denominator is zero.
 #
 # EVERY RUN IS BOUNDED BY ITS PROCESS GROUP, NOT BY ITS CHILD (`A1b-2`). `timeout` kills the process
 # it spawned; `node --test`'s worker sits in another process group and outlives it. The same

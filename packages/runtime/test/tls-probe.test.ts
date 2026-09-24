@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BROKEN_SUITE_CANDIDATES, TlsProber, connectionOptions, type TlsProbePolicy } from '../src/tlsProbe.js';
 import { authorized } from './__helpers__/authorized.js';
+import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
 let certDir: string;
 let key: Buffer;
@@ -64,7 +65,7 @@ async function listen(server: TlsServer | TcpServer): Promise<string> {
   return `https://127.0.0.1:${address.port}`;
 }
 
-before(async () => {
+const setup = stagedSetup(async () => {
   certDir = mkdtempSync(join(tmpdir(), 'tflw-tls-probe-'));
   const keyPath = join(certDir, 'key.pem');
   const certPath = join(certDir, 'cert.pem');
@@ -84,11 +85,15 @@ before(async () => {
   muteUrl = await listen(mute);
 });
 
+before(setup.begin);
+
 after(async () => {
+  await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
   for (const server of [modern, tls12, mute]) {
+    if (server === undefined) continue;
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  rmSync(certDir, { recursive: true, force: true });
+  if (certDir !== undefined) rmSync(certDir, { recursive: true, force: true });
 });
 
 // --- the happy path ----------------------------------------------------------
