@@ -2237,8 +2237,31 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // everywhere else. The document holds hashes and endpoints; that is all it needs.
   if (args.baselineWrite !== undefined) {
     const target = resolve(cwd, args.baselineWrite);
-    await writeFile(target, renderBaseline(merged.findings ?? []), 'utf8');
+    const rendered = renderBaseline(merged.findings ?? []);
+    // `M238-02` — the document holds this run's findings and nothing else, which is right for a
+    // full run (an entry that is gone was fixed) and silently lossy for a narrowed one: `--tag smoke`
+    // over the committed file keeps the smoke tests' acceptances and drops the rest. Not refused —
+    // a first write from a tagged run is legitimate — and not merged, because a merge needs a rule
+    // for when an entry leaves that nobody has written. Said, like every other baseline fact here
+    // (`D-M238-3`), and only on a narrowed run, so a full run's output is what it always was.
+    let narrowedWriteNote = '';
+    if (narrowedBy !== '') {
+      const kept = new Set(parseBaseline(rendered, relative(cwd, target)).accepted.map((e) => e.fingerprint));
+      let previous: readonly { readonly fingerprint: string }[] | null = null;
+      try {
+        previous = parseBaseline(await readFile(target, 'utf8'), relative(cwd, target)).accepted;
+      } catch {
+        previous = null; // no file yet, or not one this run can read: nothing to compare against
+      }
+      const dropped = previous === null ? 0 : previous.filter((e) => !kept.has(e.fingerprint)).length;
+      narrowedWriteNote =
+        `baseline: written from a narrowed run (${narrowedBy}), so it holds only what this run produced` +
+        (dropped > 0 ? ` — ${dropped} ${dropped === 1 ? 'entry' : 'entries'} the previous ${relative(cwd, target)} held ${dropped === 1 ? 'is' : 'are'} not in it` : '') +
+        '; write it from a full run before committing it';
+    }
+    await writeFile(target, rendered, 'utf8');
     out.write(`${withTimestamps(`baseline written to ${relative(cwd, target)} — ${(merged.findings ?? []).filter((f) => f.fingerprint).length} accepted`, timestamps)}\n`);
+    if (narrowedWriteNote !== '' && !ndjsonActive) out.write(`${withTimestamps(narrowedWriteNote, timestamps)}\n`);
   }
   // Advisory (`D-M238-3`): printed, carried in `results.json`, and never read by the exit code.
   // Silent when nothing is stale, so the common run prints what it always printed.

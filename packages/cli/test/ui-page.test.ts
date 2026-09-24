@@ -66,7 +66,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Server } from 'node:http';
-import { createServer as createNetServer, type AddressInfo } from 'node:net';
+import { createServer as createNetServer } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 import { UiServer, SCRATCH_PATH } from '../src/ui-server.js';
 import { coverageBuildArgs, startUiCoverage, stopUiCoverage } from './ui-coverage.js';
@@ -178,14 +178,26 @@ const setup = stagedSetup(async () => {
 
   root = join(scratch, 'project');
   await cp(join(fixtures, 'project'), root, { recursive: true });
-  fixturePort = await new Promise<number>((resolve, reject) => {
-    const probe = createNetServer();
-    probe.once('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address() as AddressInfo;
-      probe.close(() => resolve(port));
-    });
-  });
+  // `M238-03` — the port is chosen **below every ephemeral range**, not by `listen(0)`. The number is
+  // written into the config once and then bound and released by a dozen tests across the whole file,
+  // so it sits free for minutes at a time. A port from `listen(0)` comes out of the kernel's ephemeral
+  // range (Linux 32768-60999, macOS 49152-65535), the same pool every other process's implicit binds
+  // and outbound connections draw from, and on `fedora-box`'s 8-tree sweep one of them took
+  // `127.0.0.1:41181` between two tests (`EADDRINUSE`, 1 of 296). Below the range the kernel never
+  // hands a port out by itself, so only an explicit bind can collide, and the probe skips any port
+  // already held when the file starts.
+  fixturePort = await (async () => {
+    for (let attempt = 0; attempt < 32; attempt++) {
+      const candidate = 20_000 + Math.floor(Math.random() * 12_000);
+      const free = await new Promise<boolean>((resolve) => {
+        const probe = createNetServer();
+        probe.once('error', () => resolve(false));
+        probe.listen(candidate, '127.0.0.1', () => probe.close(() => resolve(true)));
+      });
+      if (free) return candidate;
+    }
+    throw new Error('no free port in 20000-31999 after 32 tries');
+  })();
   const configPath = join(root, 'tflw.config');
   const config = await readFile(configPath, 'utf8');
   assert.ok(config.includes('127.0.0.1:4717'), 'the fixture config names the default port');
@@ -8547,6 +8559,11 @@ test('`M214` `A6`: `+ new file` is in the explorer, where files are (`D1118`)', 
   await withRemovalFixture(['test "one"', '  api GET /a', '  expect status equals 200', ''].join('\n'), async (p, base, dir) => {
     await p.goto(`${base}/#/api/compose/x.tflw`);
     await p.locator('[data-files]').waitFor();
+    // `M238-04` — the explorer arriving says nothing about Compose: `[data-seq-foot]` renders after
+    // the file is read, so the counts below read it one-shot and `+ new test` came back 0 once in a
+    // 296-run sweep. The `0` two lines down was worse, since it passes against a pane that has not
+    // drawn yet. Waiting on the foot settles both.
+    await p.locator('[data-seq-foot]').waitFor();
     assert.equal(
       await p.locator('.sidebar [data-compose-new-file]').count(),
       1,
