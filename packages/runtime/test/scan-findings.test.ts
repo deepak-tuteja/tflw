@@ -23,7 +23,9 @@ import {
   judge,
   parseBaseline,
   renderBaseline,
+  auditBaseline,
   staleBaselineEntries,
+  staleBaselineNote,
   toScanFinding,
   withheldNote,
   type ScanFinding,
@@ -237,4 +239,35 @@ test('stale baseline entries are reported, not removed', () => {
   // The document is untouched — a `--tags` run legitimately produces a subset of the suite's
   // findings, so pruning on absence would delete acceptances the next full run still needs.
   assert.equal(doc.accepted.length, 2);
+});
+
+// `M238` (`M234-04`) — the function above was correct and nothing called it. These pin the shape the
+// CLI now builds from it; the proof that the CLI *calls* it is `e2e.test.ts`'s step 10, because a
+// unit test of the function is exactly the evidence that hid the defect.
+test('M238: the audit counts what matched, and a fingerprintless finding keeps nothing live', () => {
+  const doc = parseBaseline(
+    JSON.stringify({ version: 1, accepted: [{ fingerprint: 'live000000000000', rule: 'r/a', endpoint: 'GET /a' }, { fingerprint: 'dead000000000000', rule: 'r/b', endpoint: 'GET /b' }] }),
+    'b.json',
+  );
+  const audit = auditBaseline(doc, [scan({ fingerprint: 'live000000000000' }), scan({ fingerprint: undefined })], 'b.json');
+  assert.equal(audit.accepted, 2);
+  assert.equal(audit.matched, 1);
+  assert.deepEqual(audit.stale.map((e) => e.fingerprint), ['dead000000000000']);
+  assert.equal('narrowedBy' in audit, false, 'a whole-suite run carries no narrowing field at all');
+});
+
+test('M238: the note is empty when nothing is stale, so the common run prints what it always did', () => {
+  const doc = parseBaseline(JSON.stringify({ version: 1, accepted: [{ fingerprint: 'live000000000000' }] }), 'b.json');
+  assert.equal(staleBaselineNote(auditBaseline(doc, [scan({ fingerprint: 'live000000000000' })], 'b.json')), '');
+});
+
+test('M238: the note names each stale entry, and says so when the run was narrowed', () => {
+  const doc = parseBaseline(JSON.stringify({ version: 1, accepted: [{ fingerprint: 'dead000000000000', rule: 'r/b', endpoint: 'GET /b' }] }), 'b.json');
+  const whole = staleBaselineNote(auditBaseline(doc, [], 'b.json'));
+  assert.match(whole, /^baseline: 1 of 1 accepted entry in b\.json matched no finding in this run$/m);
+  assert.match(whole, /r\/b {2}GET \/b {2}dead000000000000/);
+  assert.match(whole, /never removed/);
+  assert.doesNotMatch(whole, /narrowed/);
+  const narrow = staleBaselineNote(auditBaseline(doc, [], 'b.json', '--tag smoke'));
+  assert.match(narrow, /narrowed \(--tag smoke\)/);
 });

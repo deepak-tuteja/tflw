@@ -321,6 +321,67 @@ export function staleBaselineEntries(baseline: Baseline, produced: ReadonlySet<s
   return baseline.accepted.filter((e) => !produced.has(e.fingerprint));
 }
 
+/**
+ * `M238` (`M234-04`) — what a run's baseline matched, as the run report carries it.
+ *
+ * `staleBaselineEntries` above shipped in `M134b` and **nothing called it**: `cli.ts` imported it
+ * and the help text promised *"stale entries are reported"*, while no run ever reported one. This
+ * is the shape the call site now builds, so the report says what the terminal says.
+ *
+ * `produced` is every fingerprint the run's findings carry — `renderBaseline`'s own filter, and a
+ * safe one, because `parseBaseline` refuses an entry with no fingerprint: a finding that has none
+ * can neither keep an entry live nor make one stale.
+ *
+ * `narrowedBy` is set when the run did not run the whole suite. A stale entry on such a run may
+ * belong to a test the run skipped, which is the reason this is reported and never removed.
+ */
+export interface BaselineAudit {
+  /** The path as the run was given it — the flag's value or the config key's. */
+  readonly source: string;
+  readonly accepted: number;
+  readonly matched: number;
+  readonly stale: readonly BaselineEntry[];
+  readonly narrowedBy?: string;
+}
+
+export function auditBaseline(
+  baseline: Baseline,
+  findings: readonly ScanFinding[],
+  source: string,
+  narrowedBy?: string,
+): BaselineAudit {
+  const produced = new Set(findings.flatMap((f) => (f.fingerprint ? [f.fingerprint] : [])));
+  const stale = staleBaselineEntries(baseline, produced);
+  return {
+    source,
+    accepted: baseline.accepted.length,
+    matched: baseline.accepted.length - stale.length,
+    stale,
+    ...(narrowedBy === undefined ? {} : { narrowedBy }),
+  };
+}
+
+/**
+ * The console's account of an audit — **`''` when nothing is stale**, so the common run prints
+ * exactly what it printed before (`withheldNote`'s argument for returning `''`).
+ *
+ * Advisory by decision (`D-M238-3`): the exit code never moves. A stale entry is usually a
+ * weakness somebody fixed, and failing the build on the day it is fixed teaches people to stop
+ * pruning the file.
+ */
+export function staleBaselineNote(audit: BaselineAudit): string {
+  if (audit.stale.length === 0) return '';
+  const n = audit.stale.length;
+  const lines = [
+    `baseline: ${n} of ${audit.accepted} accepted ${audit.accepted === 1 ? 'entry' : 'entries'} in ${audit.source} matched no finding in this run`,
+    ...audit.stale.map((e) => `  - ${e.rule || '(no rule)'}  ${e.endpoint || '(no endpoint)'}  ${e.fingerprint}`),
+    audit.narrowedBy === undefined
+      ? `  reported, never removed: delete ${n === 1 ? 'it' : 'them'} once you have confirmed the finding was fixed, not hidden`
+      : `  this run was narrowed (${audit.narrowedBy}), so ${n === 1 ? 'it' : 'each'} may belong to a test it did not run — judge against a full run`,
+  ];
+  return lines.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // D386 — the gate
 // ---------------------------------------------------------------------------
