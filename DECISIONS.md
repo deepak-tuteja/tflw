@@ -9379,7 +9379,7 @@ tracked set has to be skipped by name there, not resolved to zero."*
 
 ### D1276
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-cli-refusals.mjs +1 more · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
 
 **`D1276` — `M222-02` is closed as repaired, and the row's own second option is what repaired it**
 
@@ -9401,13 +9401,13 @@ explorer.
 
 ### D1279
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +8 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **`D1279` — `helpers` names where a `use` may load from, the checker judges it as text, and `--no-helpers` is the same rule with an empty list.** A top-level `tflw.config` directive, `helpers "./lib"[, "./more"]`, relative to the config; a config declaring none allows `./helpers` and `./tests/helpers`, which is the dogfood's shape already. The checker resolves a `use` literal against the checked file's own directory — the runtime's rule — and requires the result inside one of the directories; outside is `TF083`, an error, because this is the one declaration that decides what code a run executes. Textual on purpose: no `stat`, no symlink following, so the checker keeps its no-I/O rule and cannot disagree with the runtime about which module a `use` names; a missing module stays `TF043`. The same policy reaches the editor (relative to the config it found) and the page (through `ProjectView.helpers` and the file's own path), so the three judge alike. `tflw check` prints one `helper <module> — \`use\` in <files>` line per module before its verdict; `tflw run --no-helpers` reports every `use` as `TF083` naming the flag. The field is absent-when-empty on `ConfigFile`, for the goldens' sake. Not taken: off by default (the escape hatch would stay unfenced for every existing project), and a per-env key (which code a suite may run does not vary by environment, and a per-env answer would be the loophole).
 
 ### D1280
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **`D1280` — the process: a policy, an audit, an SBOM, and a bot that opens pull requests.** `SECURITY.md` at both roots with GitHub private vulnerability reporting and a 72-hour acknowledgement; a `supply-chain` CI job running `npm audit --audit-level=high` and publishing a CycloneDX SBOM (`npm sbom`) as an artefact; Dependabot weekly, grouped, for npm and for GitHub Actions in both repositories, merged by hand. The security guide states what tflw itself does — no telemetry, no network beyond the named targets, the helper fence, the token model, the headers — and the support statement: Node 22 and 24, latest release only before 1.0. Turning on private vulnerability reporting is a repository setting, and Dependabot opens pull requests on its own schedule; both are outward-facing and land on the user's word, not the plan's. Not taken: `SECURITY.md` alone (a policy with no audit behind it is a promise), and auto-merge (a dependency bump in a testing tool changes what every user's run executes).
 
@@ -13627,7 +13627,7 @@ graded. **`M234-04` closed 2026-09-25 when slice `C` merged there** (tflw-tests#
 
 ### M239
 
-<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONSTRUCTS.md +12 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **§3 `M239` — the boundary: token, origin, confinement, helpers, process**
 
