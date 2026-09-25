@@ -1699,7 +1699,7 @@ test('a runtime crash in one file still writes a report covering every file that
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-crash-'));
     try {
-      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'tflw.config'), `helpers "."\nenv local default\n  api "${baseUrl}"\n`, 'utf8');
       // A crash that is still a *runtime* one after M97c: the helper is present and unloadable,
       // rather than an `import` of a file that isn't there — `TF043` now catches the latter at
       // check time, so it would never reach a run and this test would assert nothing. Same
@@ -2052,7 +2052,7 @@ test('a JS helper using a TS-only runtime construct (enum) fails with a teaching
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-helper-enum-'));
     try {
-      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'tflw.config'), `helpers "."\nenv local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(
         join(dir, 'helpers.ts'),
         `export enum Status { Active, Inactive }\nexport function status(): Status {\n  return Status.Active;\n}\n`,
@@ -2573,7 +2573,7 @@ test('a `.ts` helper in a project whose `package.json` declares no `"type"` prin
       // A manifest *without* `"type"` is the trigger — measured, and not what the row implied: with
       // no `package.json` above the helper Node emits nothing at all.
       await writeFile(join(dir, 'package.json'), '{\n  "name": "typeless-fixture"\n}\n', 'utf8');
-      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'tflw.config'), `helpers "."\nenv local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(join(dir, 'label.ts'), 'export function makeLabel(_ctx: { env: NodeJS.ProcessEnv }, n: number): string {\n  return `n-${n}`;\n}\n', 'utf8');
       await writeFile(
         join(dir, 'helper.tflw'),
@@ -3364,7 +3364,7 @@ test('C4/B5-03: a crashed file appears in the stream instead of vanishing from i
   // disagreed, and a CI job parsing the stream saw nothing wrong.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ndjson-crash-'));
   try {
-    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(join(dir, 'tflw.config'), 'helpers "."\nenv local default\n  api "http://127.0.0.1:1"\n', 'utf8');
     // The helper exists and does not load. It used to be simply absent, which M97c's `TF043` now
     // rejects at check time — a better outcome, and it would have made this test assert nothing
     // about streaming. The crash has to stay a *runtime* one to be this test's subject, so the file
@@ -4382,7 +4382,7 @@ test('`tflw load --workers 2`: Ctrl-C propagates to forked workers and still mer
 test('`tflw load`: a genuinely saturated generator exits 3 (inconclusive) and marks every threshold `skipped`, not passed/failed, in junit', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-inconclusive-'));
   try {
-    await writeFile(join(dir, 'tflw.config'), `env local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
+    await writeFile(join(dir, 'tflw.config'), `helpers "."\nenv local default\n  api "http://127.0.0.1:1"\n`, 'utf8');
     await writeFile(
       join(dir, 'helpers.ts'),
       'export function burnCpu(): boolean {\n  const start = Date.now();\n  while (Date.now() - start < 20) {\n    // deliberate synchronous busy-work — real CPU saturation, not a timing race\n  }\n  return true;\n}\n',
@@ -4611,7 +4611,7 @@ test('`tflw check` stays silent on an unresolvable world rather than calling a n
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-m87-open-world-'));
     try {
-      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'tflw.config'), `helpers "."\nenv local default\n  api "${baseUrl}"\n`, 'utf8');
       // A JS helper (`use`) can export any name, and enumerating those names means executing the
       // module — which the checker does not do. So `whatever(...)` is undecidable here, and the
       // file must check clean rather than be condemned on a guess.
@@ -5652,33 +5652,41 @@ test('`tflw ui` on an empty directory serves a blank project, and refuses only a
   const exited = new Promise<number | null>((resolve) => child.on('exit', (code) => resolve(code)));
   try {
     const started = Date.now();
-    while (!/http:\/\/127\.0\.0\.1:\d+\//.test(out)) {
+    while (!/http:\/\/127\.0\.0\.1:\d+\/\?token=/.test(out)) {
       if (Date.now() - started > 20000) throw new Error(`\`tflw ui\` never printed a URL; output so far:\n${out}`);
       await new Promise((r) => setTimeout(r, 100));
     }
-    const base = /(http:\/\/127\.0\.0\.1:\d+\/)/.exec(out)![1]!;
+    // `M239` `A` (`D1276`) — the printed URL carries the session token, and this test reads it the
+    // way a reader does: off that line. The origin and the token are used apart below because
+    // the page takes the token in its query and the routes take it as a header.
+    const [, base, token] = /(http:\/\/127\.0\.0\.1:\d+\/)\?token=([A-Za-z0-9_-]+)/.exec(out)! as unknown as [string, string, string];
+    const api = (url: string, init: RequestInit = {}): Promise<Response> => fetch(url, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), authorization: `Bearer ${token}` } });
 
-    // The page itself is served — the bundle `bundle.mjs` puts in `dist/ui/`, not a 503.
-    const page = await fetch(base);
+    // The page itself is served — the bundle `bundle.mjs` puts in `dist/ui/`, not a 503 — and only
+    // to a visit that carries the token; the bare origin gets the one-sentence 401 page.
+    const page = await fetch(`${base}?token=${token}`);
     assert.equal(page.status, 200);
     assert.match(await page.text(), /<div id="root">|<script/);
+    const bare = await fetch(base);
+    assert.equal(bare.status, 401);
+    assert.match(await bare.text(), /the URL <code>tflw ui<\/code> printed/);
 
     // And the project route says what it was built to say, through the binary this time.
-    const before = await fetch(`${base}api/project`);
+    const before = await api(`${base}api/project`);
     assert.equal(before.status, 404);
     assert.deepEqual(((await before.json()) as { noProject?: boolean }).noProject, true);
 
     // The create affordance now reaches something: `POST /api/init` spawns `tflw init` and the
     // directory becomes a project the same route can then describe. This is the half that was
     // unreachable, so asserting the 404 alone would leave the finding half-closed.
-    const made = await fetch(`${base}api/init`, {
+    const made = await api(`${base}api/init`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ door: 'api' }),
     });
     assert.equal(made.status, 200, await made.text());
     await access(join(dir, 'tflw.config'));
-    const after = await fetch(`${base}api/project`);
+    const after = await api(`${base}api/project`);
     assert.equal(after.status, 200);
     assert.ok(((await after.json()) as { files: unknown[] }).files.length >= 1, 'the project it just made has a test in it');
   } finally {

@@ -43,6 +43,8 @@ import { DEFAULT_VIEWPORT, VIEWS, DOCS_PAGE_DIR, DOOR_FILES, MANIFEST, REPO, SHO
 // `M234` `E` — the window is per view now (`D1304`, `viewportFor`), and this is the one every view
 // is shot in unless it names its own. It stays 1440 wide for the reason above: that is the width
 // every appearance gate measures at.
+// `M239` `A` (`D1276`) — the server takes a known token; the page URL carries it, the cookie covers the trace viewer.
+const TOKEN = 'm239-test-token-0123456789abcdef';
 const VIEWPORT = DEFAULT_VIEWPORT;
 const SCALE = 2;
 
@@ -113,6 +115,7 @@ try {
   // The server is the CLI's own, from source under tsx — the same one `tflw ui` runs.
   const { UiServer } = await import(join(REPO, 'packages', 'cli', 'src', 'ui-server.ts'));
   server = new UiServer({
+    token: TOKEN,
     root,
     cliEntry: join(REPO, 'packages', 'cli', 'src', 'cli.ts'),
     execArgv: ['--import', fileURLToPath(import.meta.resolve('tsx'))],
@@ -218,6 +221,7 @@ try {
 
   for (const [theme] of THEMES) {
     const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: SCALE });
+    await page.context().addCookies([{ name: 'tflw-ui-token', value: TOKEN, domain: '127.0.0.1', path: '/' }]);
     // Both init scripts run before any document script: the `__name` guard for tsx's transform,
     // and the theme, which `index.html` reads pre-paint.
     await page.addInitScript({ content: 'globalThis.__name = globalThis.__name || ((fn) => fn);' });
@@ -235,7 +239,7 @@ try {
     // state's DOM is still in the document until React commits. A shot taken then is a shot of
     // the page before.
     const at = async (door, tab) => {
-      await page.goto(`${base}#/${door}`);
+      await page.goto(`${base}/?token=${TOKEN}#/${door}`);
       await page.reload();
       await page.locator(`[data-doorbar="${door}"]`).waitFor();
       await page.locator(`[data-tab="${tab}"]`).click();
@@ -260,7 +264,7 @@ try {
     // that scales it into a narrow column. The other four views fill their frame and are shot
     // whole. This was found by looking at the output, which no assertion in the gate could have
     // told us: a mostly-empty PNG is a valid PNG of the right size with the right hash.
-    await page.goto(`${base}#/`);
+    await page.goto(`${base}/?token=${TOKEN}#/`);
     await page.reload();
     await page.locator('[data-doors]').waitFor();
     await cut(page, `landing-${theme}.png`, '[data-landing]');

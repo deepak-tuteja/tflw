@@ -2,8 +2,20 @@
 
 import type { EndEvent, ProjectView, ReportDir, RunEvent, RunRecord, RunReport, RunRequest } from './contract';
 
+/**
+ * This session's token (`M239` `A`, `D1276`) — read off the URL `tflw ui` printed and opened. Every
+ * `fetch` below sends it as `Authorization: Bearer`; the two `EventSource`s, which cannot set a
+ * header, carry it as `?token=`. The page load that carried it also set the cookie the browser
+ * spends on its own navigations (a report file opened in a tab, the trace viewer's assets), so
+ * `reportFileUrl` and the `/trace/` frame need nothing from here. The hash router keeps
+ * `location.search` on every rewrite, which is what keeps the token on the URL across a reload.
+ */
+export const token = (): string => (typeof window === 'undefined' ? '' : (new URLSearchParams(window.location.search).get('token') ?? ''));
+const authed = (init: RequestInit = {}): RequestInit => ({ ...init, headers: { ...(init.headers as Record<string, string> | undefined), authorization: `Bearer ${token()}` } });
+const withToken = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token())}`;
+
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, authed({ cache: 'no-store' }));
   if (!res.ok) throw new Error(`${url}: ${res.status} ${await res.text()}`);
   return (await res.json()) as T;
 }
@@ -15,7 +27,7 @@ export async function getProject(env?: string | null): Promise<ProjectView | nul
      the checker (`D1240`), so a page whose env select moved while this route ignored the pick was
      predicting `TF060` against a different env than the one it was about to run. `null` means
      *whatever the config calls default*, which is what the page sends until somebody picks. */
-  const res = await fetch(env == null ? '/api/project' : `/api/project?env=${encodeURIComponent(env)}`, { cache: 'no-store' });
+  const res = await fetch(env == null ? '/api/project' : `/api/project?env=${encodeURIComponent(env)}`, authed({ cache: 'no-store' }));
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`/api/project: ${res.status} ${(await res.json() as { error?: string }).error ?? ''}`);
   return (await res.json()) as ProjectView;
@@ -23,7 +35,7 @@ export async function getProject(env?: string | null): Promise<ProjectView | nul
 
 /** Create a project here, by spawning `tflw init` — the terminal's own scaffolds (`D1051`). */
 export async function initProject(door: string): Promise<{ ok: boolean; created: string[]; output: string }> {
-  const res = await fetch('/api/init', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ door }) });
+  const res = await fetch('/api/init', authed({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ door }) }));
   return (await res.json()) as { ok: boolean; created: string[]; output: string };
 }
 export const getRuns = () => getJson<RunRecord[]>('/api/runs');
@@ -49,11 +61,11 @@ export const getFile = (path: string) => getJson<FileView>(`/api/file?path=${enc
  * does not parse (with the diagnostic's code and line), `422` it is not formatted.
  */
 export async function putFile(path: string, text: string, ifMatch: string | null): Promise<{ ok: true; etag: string } | { ok: false; status: number; error: string; code?: string; line?: number }> {
-  const res = await fetch('/api/file', {
+  const res = await fetch('/api/file', authed({
     method: 'PUT',
     headers: { 'content-type': 'application/json', ...(ifMatch === null ? {} : { 'if-match': ifMatch }) },
     body: JSON.stringify({ path, text }),
-  });
+  }));
   const body = (await res.json()) as { etag?: string; error?: string; code?: string; line?: number };
   if (res.ok && body.etag) return { ok: true, etag: body.etag };
   return { ok: false, status: res.status, error: body.error ?? `${res.status}`, code: body.code, line: body.line };
@@ -81,11 +93,11 @@ export const getConfig = () => getJson<FileView>('/api/config');
  * because the config dialect is small and a typo in it is a parse error rather than a wrong test.
  */
 export async function putConfig(text: string, ifMatch: string): Promise<{ ok: true; etag: string } | { ok: false; status: number; error: string; code?: string; line?: number }> {
-  const res = await fetch('/api/config', {
+  const res = await fetch('/api/config', authed({
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'if-match': ifMatch },
     body: JSON.stringify({ text }),
-  });
+  }));
   const body = (await res.json()) as { etag?: string; error?: string; code?: string; line?: number };
   if (res.ok && body.etag) return { ok: true, etag: body.etag };
   return { ok: false, status: res.status, error: body.error ?? `${res.status}`, code: body.code, line: body.line };
@@ -133,11 +145,11 @@ export async function putBaseline(
   text: string,
   ifMatch: string | null,
 ): Promise<{ ok: true; etag: string } | { ok: false; status: number; error: string }> {
-  const res = await fetch(`/api/baseline?doc=${encodeURIComponent(doc)}`, {
+  const res = await fetch(`/api/baseline?doc=${encodeURIComponent(doc)}`, authed({
     method: 'PUT',
     headers: { 'content-type': 'application/json', ...(ifMatch === null ? {} : { 'if-match': ifMatch }) },
     body: JSON.stringify({ text }),
-  });
+  }));
   const body = (await res.json()) as { etag?: string; error?: string };
   if (res.ok && body.etag) return { ok: true, etag: body.etag };
   return { ok: false, status: res.status, error: body.error ?? `${res.status}` };
@@ -151,10 +163,10 @@ export async function putBaseline(
  * `{ removed: false }` and not a failure — the promise is that it is not there.
  */
 export async function dropScratch(ifMatch: string | null): Promise<{ ok: true; removed: boolean } | { ok: false; status: number; error: string }> {
-  const res = await fetch('/api/scratch', {
+  const res = await fetch('/api/scratch', authed({
     method: 'DELETE',
     headers: ifMatch === null ? {} : { 'if-match': ifMatch },
-  });
+  }));
   const body = (await res.json()) as { removed?: boolean; error?: string };
   if (res.ok) return { ok: true, removed: body.removed ?? false };
   return { ok: false, status: res.status, error: body.error ?? `${res.status}` };
@@ -200,7 +212,7 @@ function sessionStream(
   on: { line: (text: string) => void; problem: (text: string) => void; end: () => void },
   refusal: string,
 ): () => void {
-  const source = new EventSource(`${route}?path=${encodeURIComponent(path)}`);
+  const source = new EventSource(withToken(`${route}?path=${encodeURIComponent(path)}`));
   source.onmessage = (m: MessageEvent<string>) => on.line(JSON.parse(m.data) as string);
   source.addEventListener('problem', (m) => on.problem(JSON.parse((m as MessageEvent<string>).data) as string));
   source.addEventListener('end', () => {
@@ -222,13 +234,13 @@ function sessionStream(
 }
 
 export async function startRun(request: RunRequest): Promise<RunRecord> {
-  const res = await fetch('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });
+  const res = await fetch('/api/run', authed({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) }));
   if (!res.ok) throw new Error(`POST /api/run: ${res.status} ${await res.text()}`);
   return (await res.json()) as RunRecord;
 }
 
 export async function cancelRun(id: string): Promise<void> {
-  await fetch(`/api/runs/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+  await fetch(`/api/runs/${encodeURIComponent(id)}/cancel`, authed({ method: 'POST' }));
 }
 
 export async function getStderr(id: string): Promise<string> {
@@ -239,7 +251,7 @@ export async function getStderr(id: string): Promise<string> {
  * `end`. Returns the unsubscribe. A line that is not JSON is the child's own noise and is passed
  * to `onNoise` rather than dropped — the page shows what the terminal would have. */
 export function subscribe(id: string, on: { event: (e: RunEvent) => void; noise: (line: string) => void; end: (e: EndEvent) => void }): () => void {
-  const source = new EventSource(`/api/runs/${encodeURIComponent(id)}/events`);
+  const source = new EventSource(withToken(`/api/runs/${encodeURIComponent(id)}/events`));
   source.onmessage = (m: MessageEvent<string>) => {
     try {
       on.event(JSON.parse(m.data) as RunEvent);
@@ -292,14 +304,14 @@ export const planMove = (from: string, to: string) =>
 
 /** Apply a move. The server re-reads and re-plans; nothing the page holds is trusted back. */
 export async function moveFile(from: string, to: string): Promise<{ ok: true; rewrote: number } | { ok: false; error: string }> {
-  const res = await fetch('/api/move', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from, to }) });
+  const res = await fetch('/api/move', authed({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from, to }) }));
   const body = (await res.json()) as { rewrote?: number; error?: string };
   return res.ok ? { ok: true, rewrote: body.rewrote ?? 0 } : { ok: false, error: body.error ?? `${res.status}` };
 }
 
 /** Apply a delete. Refused with `409` when anything imports it (`D1153`). */
 export async function deleteFile(path: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+  const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`, authed({ method: 'DELETE' }));
   if (res.ok) return { ok: true };
   const body = (await res.json()) as { error?: string };
   return { ok: false, error: body.error ?? `${res.status}` };

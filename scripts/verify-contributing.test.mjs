@@ -74,6 +74,10 @@ const WORKFLOW_DIR = join(ROOT, '.github', 'workflows');
 const CLASSIFIED = [
   // --- ci.yml, job `test` (matrix Node 22/24) ---------------------------------------------------
   { wf: 'ci.yml', job: 'test', cmd: 'npm ci', class: 'setup', why: 'dependency install' },
+  // --- ci.yml, job `supply-chain` (`M239` `E`, `D1280`) ---------------------------------------
+  { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm ci', class: 'setup', why: 'dependency install, again, because this job runs on its own runner' },
+  { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm audit --audit-level=high', class: 'gate', local: 'npm audit --audit-level=high', why: 'nothing installed carries a known high-or-critical advisory. Reads the lockfile against the registry, so it needs the network and nothing else' },
+  { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm sbom --sbom-format cyclonedx --package-lock-only > sbom.cdx.json', class: 'ci-only', why: 'the installed tree written down as a CycloneDX SBOM and uploaded as an artefact — a record, not a check; it cannot fail on its own and a contributor has nothing to run' },
   {
     wf: 'ci.yml',
     job: 'test',

@@ -21,8 +21,16 @@ what `tflw run` and `git` see.
 npx tflw ui
 ```
 
-That serves the directory you are standing in and opens a browser at it. Point it somewhere else by
-naming the directory, pick the port yourself, or keep the browser out of it:
+That serves the directory you are standing in and opens a browser at it. The line it prints is the
+address, and the address carries a token minted for this start:
+
+```console
+tflw ui — . at http://127.0.0.1:4141/?token=Kq8…Zw (loopback only, this URL carries the session token; Ctrl-C to stop)
+```
+
+Open that URL — or let the command open it — and the page is yours; a bare `http://127.0.0.1:4141/`
+in a browser that has never opened it says so and stops. Point it somewhere else by naming the
+directory, pick the port yourself, or keep the browser out of it:
 
 ```sh
 npx tflw ui ./tests

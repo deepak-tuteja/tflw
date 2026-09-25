@@ -36,6 +36,9 @@ export { sortFindings, findingsSummaryLine } from './scan-words.js';
 // `@tflw/reporter` keys the remediation KB on `ScanRuleId`, which is what makes a rule shipping
 // without an entry a `tsc` failure rather than an alert that quietly carries no fix.
 export { SECURITY_RULE_IDS, type SecurityRuleId } from './securityRules.js';
+// `M239` `C` (`D1278`) — `tflw ui`'s own headers are graded by the same rules a scan applies to
+// anyone else's page, which is the only gate that cannot drift from what the scanner ships.
+export { runSecurityScan, type Observation } from './securityRules.js';
 export { AUTHZ_RULE_IDS, type AuthzRuleId } from './authzRules.js';
 export { INPUT_RULE_IDS, type InputRuleId } from './inputCorpus.js';
 export { SCAN_RULE_IDS, SCAN_RULE_SEVERITY, type ScanRuleId } from './scanRuleIds.js';

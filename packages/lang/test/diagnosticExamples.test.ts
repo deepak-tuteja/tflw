@@ -91,6 +91,8 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
       ...(probe.needs?.envAuthorizedTargets ? { envAuthorizedTargets: probe.needs.envAuthorizedTargets } : {}),
       ...(probe.needs?.allowPublicTargets ? { allowPublicTargets: probe.needs.allowPublicTargets } : {}),
       ...(probe.needs?.requiredEnv ? { requiredEnv: probe.needs.requiredEnv } : {}),
+      // `TF083` (`M239` `D`) — the `helpers` policy, as `tflw check` derives it from the config.
+      ...(probe.needs?.helpers ? { helpers: probe.needs.helpers } : {}),
     }),
   ];
 }

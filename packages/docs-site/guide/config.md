@@ -241,6 +241,23 @@ overrides an instruction you gave directly.
 It is the right place for fixtures that parse as tflw but are not tests, and for a directory of
 work in progress you do not want a pipeline to pick up yet.
 
+## Where a `use` may load from — `helpers`
+
+A `use "./helpers/sign.ts"` line loads a JavaScript or TypeScript module and calls its exports
+like actions. That is arbitrary code, and `helpers` says where in the project it may come from:
+
+```tflw-config fragment
+helpers "./helpers", "./lib/tflw"
+```
+
+Directories are relative to `tflw.config`. A config that declares none allows `./helpers` and
+`./tests/helpers`. A `use` that resolves anywhere else is `TF083` from `tflw check` and the
+editor, and the run refuses to start — move the module into an allowed directory, or name its
+directory here. `tflw check` also prints one `helper …` line per module a run would load, so a
+review of a suite sees its code without opening every file.
+
+`tflw run --no-helpers` refuses every `use` for that run, whatever this directive allows.
+
 ## Overriding `workers` for one test — `parallel` and `sequential`
 
 `workers` above sets how many test files run at once for the whole project. A single test can

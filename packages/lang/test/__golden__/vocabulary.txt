@@ -7,7 +7,7 @@
 #   V  a `<expr>.value === '…'` comparison
 #   S  a `case '…':` label in a switch on `<expr>.value`
 #
-# 250 words
+# 251 words
 
 A   DELETE
 A   GET
@@ -106,6 +106,7 @@ AKS greater
 AS  has
 AKS header
 A   headers only
+K   helpers
 V   hex
 A   hidden
 K   hold

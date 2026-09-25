@@ -1624,6 +1624,10 @@ export interface ConfigFile extends Node {
   readonly envs: readonly EnvBlock[];
   readonly requires: readonly RequireDecl[];
   readonly excludes: readonly ExcludeDecl[];
+  /** `helpers` lines (`D1279`). **Optional, and omitted when the file declares none**, for the
+   * reason `Program.crawls` gives: a required field would put `"helpers": []` into every config
+   * golden in the corpus. Absent is *the defaults apply*, which `resolveConfig` spells out. */
+  readonly helpers?: readonly HelpersDecl[];
   /** `session <name> ... ` blocks — the single auth concept (SPEC §3.3, P#20/31/42). */
   readonly sessions: readonly SessionDecl[];
 }
@@ -2021,5 +2025,14 @@ export interface RequireDecl extends Node {
  * still runs. */
 export interface ExcludeDecl extends Node {
   readonly type: 'ExcludeDecl';
+  readonly paths: readonly StringLit[];
+}
+
+/** `helpers "./lib"[, "./shared"]` (`M239` `D`, `D1279`) — the directories, relative to this
+ * config's own directory, that a `use` may load a JS/TS module from. A config that declares none
+ * gets the two defaults, `./helpers` and `./tests/helpers` (`DEFAULT_HELPER_DIRS`). Top-level like
+ * `exclude`, and string paths for the same reason: a directory is a path, not a name. */
+export interface HelpersDecl extends Node {
+  readonly type: 'HelpersDecl';
   readonly paths: readonly StringLit[];
 }

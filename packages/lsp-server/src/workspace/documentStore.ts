@@ -15,7 +15,8 @@
 // the common case).
 
 import { readFile, stat } from 'node:fs/promises';
-import { dirname, basename } from 'node:path';
+import { dirname, basename, relative, sep } from 'node:path';
+import type { HelperPolicy } from '@tflw/lang';
 import {
   parseSource,
   parseConfigSource,
@@ -171,6 +172,7 @@ export class DocumentStore {
     // built to prevent. `undefined` on a pathless scratch buffer, where no project resolves and
     // every `env(` in the file would otherwise be squiggled red on code that is correct.
     let requiredEnv: readonly string[] | undefined;
+    let helpers: HelperPolicy | undefined;
     if (doc.root) {
       const project = await loadProjectConfig(doc.root, envSetting).catch(() => undefined);
       if (project?.resolved) {
@@ -185,6 +187,10 @@ export class DocumentStore {
         envTimeouts = { envName: project.resolved.envName, wait: project.resolved.timeouts.wait };
         envAllowHosts = { envName: project.resolved.envName, hosts: project.resolved.allowHosts ?? [] };
         requiredEnv = project.resolved.requiredEnv;
+        // `TF083` (`M239` `D`, `D1279`) — the same policy `tflw check` applies, against the same
+        // file path relative to the config the CLI would read. A pathless buffer has no location
+        // to judge a `use` from, so it gets no policy (`undefined`, world unknown), not an empty one.
+        if (doc.absPath !== undefined) helpers = { dirs: project.resolved.helpers, file: relative(dirname(project.configPath), doc.absPath).split(sep).join('/') };
       }
     }
     // The CLI's own pass list, verbatim — one shared entry point, so the server can't fall behind it
@@ -240,6 +246,7 @@ export class DocumentStore {
         ...(envTimeouts ? { envTimeouts } : {}),
         ...(envAllowHosts ? { envAllowHosts } : {}),
         ...(requiredEnv ? { requiredEnv } : {}),
+        ...(helpers ? { helpers } : {}),
       }),
     ];
     return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), ...(baseDir === undefined ? {} : { baseDir }) };

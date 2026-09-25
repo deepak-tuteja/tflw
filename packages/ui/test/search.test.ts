@@ -29,6 +29,7 @@ const project = (files: ProjectView['files']): ProjectView => ({
   root: '/p',
   envs: [],
   reportDir: './report',
+  helpers: [],
   files,
   traceViewer: false,
   scratchPath: '.scratch.tflw',

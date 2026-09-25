@@ -4,6 +4,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { after } from 'node:test';
+import { DEFAULT_HELPER_DIRS } from '@tflw/lang';
 import { DEFAULT_TIMEOUTS, type ResolvedConfig, type ResolvedTimeouts } from '../src/types.js';
 
 // M108 (review row `M107-03`) — every fixture server started but never closed, with the stack that started it.
@@ -138,6 +139,7 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     baselinePath: null,
     evidenceLevel: 'full',
     keepTrace: false,
+    helpers: DEFAULT_HELPER_DIRS,
     // `D781`/`M157d` — the shipped default, stated rather than inherited. `interpreter.ts`'s
     // predicate is written so an *absent* value still runs teardown, but a fixture config claiming
     // to be a complete `ResolvedConfig` should carry every field it has, and a harness that quietly

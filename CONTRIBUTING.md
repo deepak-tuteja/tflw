@@ -65,6 +65,7 @@ npm run build
 npm run typecheck
 xvfb-run -a npm test
 npm run verify:observability
+npm audit --audit-level=high
 npm run verify:corpora
 npm run verify:fmt-roundtrip -- --check
 npm run verify:check-coverage
@@ -105,6 +106,14 @@ npm run verify:ledger                  # § never runs in CI, by decision
   optional: without a display the headed suites **hang** rather than fail.
 - **`npm run verify:observability`** — a test naming a `TF0xx` its harness cannot emit is a passing
   test of nothing. Static, seconds.
+- **The page's boundary rides inside `npm test`** (`D1276`, `D1277`, `D1278`): `packages/cli/test/
+  ui-server-boundary.test.ts` walks every `/api/` route the router's source declares and asserts
+  401 without the token — so a route added tomorrow joins the walk that day — and `ui-headers.test.ts`
+  grades the served page with tflw's own `sec/*` rules. A change to `ui-server.ts` that loosens
+  either is a red in the suite, not a review comment.
+- **`npm audit --audit-level=high`** — nothing installed carries a known high-or-critical advisory
+  (`M239` `E`, `D1280`). CI's `supply-chain` job runs it and also publishes a CycloneDX SBOM of the
+  tree as an artefact; the SBOM is a record rather than a check and has no local form.
 - **`npm run verify:corpora`** — every guard states, as data, the corpus it reads, and this plants a
   violation inside each declared corpus to check the guard actually catches it. The point is the
   direction these things fail: a guard whose corpus is narrower than its subject does not report a

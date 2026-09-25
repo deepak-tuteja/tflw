@@ -195,6 +195,11 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     reason:
       'M97c/D144, amended by `M97c-03`. Syntactically a session body *can* name a file (`api POST /auth/login body from "./creds.json"`), so this row was written expecting "applies". The original reason was that no single answer existed to check *against*: `runSession` ran the shared body under the `TestCtx` of whichever **test file** triggered it, so one `tflw.config` line resolved to a different absolute path per test file. That was filed as its own row rather than swallowed here — and it has since been fixed, so that reason is retired: a session body\'s paths now resolve against the config\'s own directory, deterministically. The second reason is retired too: "`collectFileReferences` walks a `Program` and sessions live in a `ConfigFile`, so `M97c-01` and this land together or not at all" was true until M116/D151 built `collectConfigFileReferences`, and they did land together — a session body\'s `body from "./creds.json"` and a `cert "…"` are found by the same walk. What keeps the row "n/a" now is the only thing left, and it is the same shape as `missingFiles` on the program side: the `stat` is the **caller\'s**, never the pure pass\'s, so a session\'s file references are reported by `loadAndValidate`, not by `checkSessionBody`. `configFileReferences.test.ts` is where that coverage lives',
   },
+  checkHelperDirs: {
+    verdict: 'n/a',
+    reason:
+      '`M239` `D`/`D1279`. `TF083` reasons about `program.uses`, and the config dialect has no `use` — the same shape as `checkImportsParse` above: a session body is a step list inside `tflw.config`, which loads no JS/TS module, so there is nothing a session could hand this pass. The directive that CONFIGURES the pass (`helpers`) lives in the config dialect, but it is a top-level declaration the parser reads, not a step a session body could contain',
+  },
 };
 
 /** Exported `check*` functions, read off the source so the list cannot go stale silently. */
