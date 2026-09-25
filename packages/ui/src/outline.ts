@@ -30,6 +30,7 @@
 // what the step *is*, in the spelling `tflw fmt` would write.
 
 import { lex, parseSource, print, STEP_LENS, type Lens, type Step, type StepLens, type StepPath } from '@tflw/lang';
+import { landingDecl } from './landingRule';
 import type {
   ActionDecl,
   ApiBody,
@@ -727,8 +728,13 @@ export interface Addressed {
  */
 export function addressed(outline: FileOutline, line: number | null): Addressed | null {
   if (outline.declarations.length === 0) return null;
-  let decl = outline.declarations[0]!;
+  // `M240` `A` (`D1290`, `M239-09`) — with no line named, the landing is the first `test`, not the
+  // first declaration. A file opening with a hook landed on the hook, and the pane's first words
+  // were *a request cannot be added to a hook from here*. With a line named, the rule below is
+  // unchanged: the last declaration at or before it, hooks included, because the line named it.
+  let decl = landingDecl(outline)!;
   if (line !== null) {
+    decl = outline.declarations[0]!;
     for (const candidate of outline.declarations) {
       if (candidate.line <= line) decl = candidate;
     }

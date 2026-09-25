@@ -537,7 +537,12 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
   // The link resolves to the archive the reporter wrote — the page's hash is the reporter's.
   const zip = await api(`${baseUrl}${await line.locator('[data-trace-download]').getAttribute('href')}`);
   assert.equal(zip.status, 200);
-  assert.equal(Number(zip.headers.get('content-length')), Buffer.from(traced[0]!.trace!.base64!, 'base64').length);
+  // `results.json` carries the archive's PATH and not its bytes (`TraceAsset`: `base64` is present
+  // everywhere except `results.json`). This read `trace.base64` for as long as the corpus was the
+  // one `M192` wrote, before the contract split the two — `M240-02`. The size the server serves is
+  // the size of the file the reporter wrote, read off disk.
+  assert.equal(traced[0]!.trace!.base64, undefined, 'the report holds a path, not bytes');
+  assert.equal(Number(zip.headers.get('content-length')), (await stat(join(root, 'report', 'runs', 'full', traced[0]!.trace!.path!))).size);
   assert.equal(await line.locator('code').textContent(), `npx playwright show-trace ${path}`);
   /**
    * ***open trace* opens the viewer IN THIS PAGE** — `M220` `C` (`D1179`).
@@ -1172,7 +1177,9 @@ interface DeclRow { name: string | null; line: string | null; lenses: string | n
 /** The projection whole — `projectView()` below carries only what its own section needs, and the
  *  index is graded on lines, tags and the workload flag as well as on names. */
 interface FullProject {
-  files: { path: string; tests: { name: string; line: number; tags: string[]; workload: boolean; lenses: string[] }[]; crawls: { name: string; line: number; lenses: string[] }[] }[];
+  /** `M240` `A` — the landing memory is keyed by a hash of this. */
+  root: string;
+  files: { path: string; errors: number; tests: { name: string; line: number; tags: string[]; workload: boolean; lenses: string[] }[]; crawls: { name: string; line: number; lenses: string[] }[] }[];
   /** `M221` `B` — the basename ▶ writes beside whichever file it plays (`D1184`). */
   playScratch: string;
 }
@@ -1583,7 +1590,9 @@ test('a long name at depth is one line and an ellipsis, with the whole path in r
     const lineHeight = Number(await row.evaluate((el) => parseFloat(el.ownerDocument.defaultView!.getComputedStyle(el).lineHeight)));
     assert.ok(box.height <= lineHeight + 8, `the row is one line (${box.height} against a ${lineHeight} line)`);
     // Truncated, not shortened: the element is narrower than the text it holds.
-    const code = fresh.locator(`[data-file="${deep}"] code`);
+    // `.file-row > code`, as the tree test reads it: since `M240` `A` the landed file is marked
+    // open and draws its outline under the row, whose names are `<code>` too.
+    const code = fresh.locator(`[data-file="${deep}"] .file-row > code`);
     const { client, scroll } = await code.evaluate((el) => ({ client: el.clientWidth, scroll: el.scrollWidth }));
     assert.ok(scroll > client, `the name is clipped rather than fitting (${scroll} into ${client})`);
     // And nothing is lost: the whole path is on the row and in the address. It is `data-tip` and
@@ -2453,6 +2462,200 @@ test('the switcher moves between doors without leaving the project', async () =>
   // And back to the landing, by the one control that says so.
   await page.locator('[data-door-home]').click();
   await page.locator('[data-landing]').waitFor();
+});
+
+// ---------------------------------------------------------------------------
+// `M240` `A` — where a door lands (`D1290`, closing `M239-09`).
+//
+// The fixture gained two files for this block and nothing else: `tests/actions/aaa-shared.tflw`,
+// an action-only file that SORTS FIRST so `files[0]` is a wrong answer on every door, and
+// `tests/hooks/hook-first.tflw`, whose first declaration is a hook. Graded against `/api/project`'s
+// own derivation: the expected landing is computed here from the wire, by a rule written out in
+// full, never by calling the page's function — which would be the page grading itself.
+// ---------------------------------------------------------------------------
+
+/** The file `D1290`'s rule lands on, computed independently of `landingRule.ts`: the most tests
+ *  and crawls behind the door, ties to the path that sorts first, files with errors left out. */
+const ruleLanding = (view: Awaited<ReturnType<typeof fullProject>>, door: string): string | null => {
+  let best: string | null = null;
+  let most = 0;
+  for (const f of [...view.files].sort((a, b) => (a.path < b.path ? -1 : 1))) {
+    if (f.errors > 0) continue;
+    const n = f.tests.filter((t) => t.lenses.includes(door)).length + f.crawls.filter((c) => c.lenses.includes(door)).length;
+    if (n > most) { most = n; best = f.path; }
+  }
+  return best;
+};
+
+/** The shape of a landing memory key (`landingRule.ts`): the project named by an eight-hex hash of
+ *  its root, then the door. Restated as a pattern rather than imported — the cli test program's
+ *  `rootDir` stops at this package, the same reason `DOOR_LABELS` is restated above — and read off
+ *  the page's own storage, so the hash itself is never computed twice. */
+const LANDING_KEY = String.raw`^tflw\.ui\.[0-9a-f]{8}\.lastFile\.(api|browser|load|scan)$`;
+
+/** Every landing key the page holds, as the page holds them. */
+const landingKeysOnPage = (p: Page): Promise<string[]> =>
+  p.locator('html').evaluate((el, re) => {
+    const ls = el.ownerDocument.defaultView!.localStorage;
+    const keys: string[] = [];
+    for (let i = 0; i < ls.length; i++) { const k = ls.key(i); if (k !== null && new RegExp(re).test(k)) keys.push(k); }
+    return keys.sort();
+  }, LANDING_KEY);
+
+/** Forget every landing this browser holds, so the next door opens by the rule and not by what the
+ *  previous test left behind (`M240` plan §5.2). One context serves the whole file, so any test
+ *  that asserts a landing goes through this first. */
+const freshLanding = async (p: Page): Promise<void> => {
+  const keys = await landingKeysOnPage(p);
+  await p.locator('html').evaluate((el, ks) => { for (const k of ks) el.ownerDocument.defaultView!.localStorage.removeItem(k); }, keys);
+};
+
+/** The file the explorer marks open — the pane's subject, since `M240` `A` passes the drawn path
+ *  and not the address's. Read after a `reload`, so the document is new and the wait is sound. */
+const landedFile = async (p: Page): Promise<string | null> => {
+  await p.reload();
+  await p.locator('[data-files]').waitFor();
+  await p.locator('[data-file-row][data-open="yes"]').waitFor();
+  return p.locator('[data-file-row][data-open="yes"]').getAttribute('data-file-row');
+};
+
+test('`M240` `A`: a first visit lands each door on the file with the most of its kind of work, never on the first path', async () => {
+  const view = await fullProject();
+  const first = [...view.files].sort((a, b) => (a.path < b.path ? -1 : 1))[0]!;
+  assert.equal(first.tests.length + first.crawls.length, 0, `the fixture's first file (${first.path}) must hold nothing, or the old rule is not wrong here`);
+  for (const door of ['api', 'browser', 'load', 'scan']) {
+    const expected = ruleLanding(view, door);
+    assert.ok(expected !== null, `the fixture has something behind ${door}`);
+    await freshLanding(page);
+    await page.goto(`${pageUrl}#/${door}`);
+    const landed = await landedFile(page);
+    assert.equal(landed, expected, `${door} lands on the file with the most behind it`);
+    assert.notEqual(landed, first.path, `${door} does not land on the file that merely sorts first`);
+    // The address stays what was typed — a landing is what is drawn, not a correction of the
+    // address (`D1252`: an address may be less specific than what is drawn, never different).
+    assert.equal(new URL(page.url()).hash, `#/${door}`); // one-shot: the address is this test's own goto, and a reload has completed since; a rewrite here would be the defect
+    // And the pane is about the same file the explorer marks — one subject, read two ways.
+    const drawn = await settle(
+      () => page.locator('[data-compose-file]').first().getAttribute('data-compose-file'),
+      untilMeasurable('the pane names a file', (v) => v !== null),
+      { attempts: 40, delayMs: 50, page },
+    );
+    assert.equal(drawn.value, expected);
+  }
+});
+
+test('`M240` `A`: a door remembers the file you were on, per door and per project, and forgets one the project no longer has', async () => {
+  const view = await fullProject();
+  const rule = ruleLanding(view, 'api')!;
+  const other = view.files.find((f) => f.path !== rule && f.tests.some((t) => t.lenses.includes('api')))!.path;
+  await freshLanding(page);
+  await page.goto(`${pageUrl}#/api`);
+  await page.locator('[data-files]').waitFor();
+  await page.locator(`[data-file-row="${other}"]`).click();
+  await page.locator(`[data-file-row="${other}"][data-open="yes"]`).waitFor();
+  // A reload of the bare door hash lands where the reader was, not where the rule says.
+  await page.goto(`${pageUrl}#/api`);
+  assert.equal(await landedFile(page), other, 'the memory survives a reload');
+  // The memory is the door's: BROWSER has not been visited, so it lands by the rule.
+  await page.goto(`${pageUrl}#/browser`);
+  assert.equal(await landedFile(page), ruleLanding(view, 'browser'), 'another door has its own memory');
+  await page.goto(`${pageUrl}#/api`);
+  assert.equal(await landedFile(page), other, 'and coming back finds the first one intact');
+  // The key names the project by a hash of its root and the door — two doors visited, two keys,
+  // and nothing else of this shape on the page.
+  // Written by an effect after the paint `landedFile` waited for, so the read settles on the count.
+  const keysSeen = await settle(() => landingKeysOnPage(page), untilMeasurable('two doors visited, two keys written', (v: string[]) => v.length >= 2), { attempts: 40, delayMs: 50, page });
+  const keys = keysSeen.value;
+  assert.equal(keys.length, 2, `one key per door visited: ${keys.join(' ')}`);
+  const key = keys.find((k) => k.endsWith('.lastFile.api'))!;
+  assert.ok(key !== undefined && keys.some((k) => k.endsWith('.lastFile.browser')));
+  const held = await settle(
+    () => page.locator('html').evaluate((el, k) => el.ownerDocument.defaultView!.localStorage.getItem(k), key),
+    untilMeasurable('the api door has written its memory', (v) => v !== null),
+    { attempts: 40, delayMs: 50, page },
+  );
+  assert.equal(held.value, other);
+  // A remembered file the project no longer has falls through to the rule rather than to nothing.
+  await page.locator('html').evaluate((el, k) => el.ownerDocument.defaultView!.localStorage.setItem(k, 'tests/renamed-away.tflw'), key); // one-shot: a write, not a read
+  await page.goto(`${pageUrl}#/api`);
+  assert.equal(await landedFile(page), rule, 'a stale memory is not a landing');
+  // A fresh context — the four keys gone — is the rule again, which is the control for the
+  // assertions above: without it, "remembered" and "rule" could be the same file by coincidence.
+  assert.notEqual(other, rule);
+  await freshLanding(page);
+  await page.goto(`${pageUrl}#/api`);
+  assert.equal(await landedFile(page), rule);
+});
+
+test('`M240` `A` (`M239-09`): a file whose first declaration is a hook lands on its first test, and a line naming the hook still reaches it', async () => {
+  const view = await fullProject();
+  const hooked = view.files.find((f) => f.path.endsWith('hook-first.tflw'))!;
+  const text = await readFile(join(root, hooked.path), 'utf8');
+  const hookLine = text.split('\n').findIndex((l) => l === 'before') + 1;
+  const testLine = text.split('\n').findIndex((l) => l.startsWith('test ')) + 1;
+  assert.ok(hookLine > 0 && testLine > hookLine, 'the fixture declares its hook before its test');
+  /** The declaration the pane resolved, once it has resolved one: kind and line off the summary. */
+  const resolved = async (): Promise<{ kind: string | null; line: string | null }> => {
+    await page.locator('[data-compose-summary]').waitFor();
+    const got = await settle(
+      () => page.locator('[data-compose-summary]').evaluate((el) => ({ kind: el.getAttribute('data-compose-decl-kind'), line: el.getAttribute('data-compose-decl-line') })),
+      untilMeasurable('the pane has resolved a declaration', (v) => v.kind !== null),
+      { attempts: 40, delayMs: 50, page },
+    );
+    return got.value;
+  };
+  await page.goto(`${pageUrl}#/api/compose/${hooked.path}`);
+  await page.reload();
+  const landed = await resolved();
+  assert.equal(landed.kind, 'test', 'the landing declaration is the test, not the hook that sorts before it');
+  assert.equal(landed.line, String(testLine));
+  // The hook is still reachable — a line that names it lands on it, as every `L<n>` does.
+  await page.goto(`${pageUrl}#/api/compose/${hooked.path}/L${hookLine}`);
+  await page.reload();
+  const named = await resolved();
+  assert.equal(named.kind, 'hook');
+  assert.equal(named.line, String(hookLine));
+});
+
+test('`M240` `A`: a door with nothing behind it says so and offers a file, instead of drawing whichever file sorted first', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-empty-door-'));
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage();
+  try {
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    await fresh.goto(`${base}/?token=${TOKEN}`);
+    await fresh.locator('[data-landing]').waitFor();
+    const decided = await settle(
+      () => fresh.locator('[data-door="load"] [data-door-state]').getAttribute('data-door-state'),
+      untilMeasurable('the landing has finished asking whether this is a project', (v) => v !== null && v !== 'asking'),
+      { attempts: 40, delayMs: 50, page: fresh },
+    );
+    assert.equal(decided.value, 'create');
+    // `tflw init --load` writes one file with one workload test: LOAD has something, BROWSER has nothing.
+    await fresh.locator('[data-door="load"]').click();
+    await fresh.locator('[data-files]').waitFor();
+    await fresh.locator('[data-file-row][data-open="yes"]').waitFor();
+    assert.equal(await fresh.locator('[data-empty-door]').count(), 0, 'LOAD landed on its own scaffold'); // one-shot: population established by the open row above
+    await fresh.goto(`${base}/?token=${TOKEN}#/browser`);
+    await fresh.locator('[data-empty-door="browser"]').waitFor();
+    assert.equal(await fresh.locator('[data-compose-file]').count(), 0, 'no file is drawn under a door that has none'); // one-shot: the empty door's presence is established above
+    assert.equal(await fresh.locator('[data-file-row][data-open="yes"]').count(), 0, 'and the explorer marks none open'); // one-shot: same
+    // The one gesture that changes the answer opens the create dialog, which scaffolds for this door.
+    await fresh.locator('[data-empty-door-new]').click();
+    await fresh.locator('[data-new-thing="file"]').waitFor();
+    // The explorer is still beside it: the files the scaffold wrote are a click away, and clicking
+    // one draws it — under this door, which has nothing behind it, because the reader named it.
+    await fresh.locator('[data-new-cancel]').click();
+    await fresh.locator('[data-file-row]').first().waitFor();
+    const first = await fresh.locator('[data-file-row]').first().getAttribute('data-file-row'); // one-shot: the scaffold's files were listed at `[data-files]` above and nothing since has changed the tree
+    await fresh.locator(`[data-file-row="${first}"]`).click();
+    await fresh.locator(`[data-compose-file="${first}"]`).waitFor();
+    assert.equal(await fresh.locator('[data-empty-door]').count(), 0); // one-shot: the pane's presence is established above
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

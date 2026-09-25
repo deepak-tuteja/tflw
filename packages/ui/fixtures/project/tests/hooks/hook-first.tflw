@@ -1,0 +1,20 @@
+# `M240` `A` (`D1290`, `M239-09`) — a file whose FIRST declaration is a hook. The landing is the
+# first `test`, not the hook: a pane that opened on `before` said *a request cannot be added to a
+# hook from here* before the reader had done anything. The hook carries two requests so `M239-01`'s
+# `send all` count has something to disagree about: the header, the button and the list must all say
+# two.
+
+import "../actions/aaa-shared.tflw"
+
+before
+  api GET /items
+  expect status equals 200
+  api GET /items/1
+  expect status equals 200
+
+test "a hook ran first, and the test still reads the shelf"
+  let name = readShelf(1)
+  expect {name} equals "widget"
+  api GET /items/1
+  expect status equals 200
+  expect body.name equals "{name}"

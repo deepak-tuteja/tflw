@@ -13,6 +13,8 @@ import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
 import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
+import { EmptyDoor } from './EmptyDoor';
+import { landingFor, projectHash, rememberLanding, rememberedLanding } from './landingRule';
 import { Grip, SIDEBAR, storedSize } from './Grip';
 import { TooltipLayer } from './Tooltip';
 import { ContextMenuLayer, type MenuItem, type MenuRequest } from './ContextMenu';
@@ -753,7 +755,32 @@ export function App() {
    * trap with a longer fuse, because the landing renders first on a cold page.
    */
   const filePaths = project?.files.map((f) => f.path) ?? [];
-  const path = file !== null && filePaths.includes(file) ? file : (filePaths[0] ?? '');
+  /**
+   * **Where this door lands when the address names no file** — `M240` `A` (`D1290`).
+   *
+   * This read `filePaths[0]` — the first path in sort order — which on the dogfood put the API door
+   * on an action-only helper with no test in it and the BROWSER door on a file with nothing behind
+   * BROWSER (review U1). `landingFor` is the rule: the file last opened under this door in this
+   * browser for this project, else the file with the most of this door's kind of work, else
+   * nothing — and nothing is drawn as `EmptyDoor` rather than as the wrong file. The memory is read
+   * here, once per door change and per project read, and written by the effect below on every file
+   * the pane draws; `landing.ts` says why the key carries a hash of the root.
+   */
+  const landing = useMemo(
+    () => (door === null || project === null ? null : landingFor(door, project, rememberedLanding(door, projectHash(project.root)))),
+    // `file` is a dependency although the rule never reads it: the memory is written by the effect
+    // below on every file the pane draws, so a door change with the same door and project — the
+    // address dropping its file — has to re-read what that effect wrote since the last landing.
+    // Without it the memo handed back the previous landing, the effect wrote THAT over the memory,
+    // and a reload lost the file the reader had opened (found by the page suite's own case).
+    [door, project, file],
+  );
+  const landingPath = landing?.path ?? null;
+  const path = file !== null && filePaths.includes(file) ? file : (landingPath ?? '');
+  useEffect(() => {
+    if (door === null || project === null || path === '') return;
+    rememberLanding(door, projectHash(project.root), path);
+  }, [door, project, path]);
 
   /**
    * **The address names what is drawn** — `M229` `D` (`D1252`).
@@ -816,7 +843,9 @@ export function App() {
     // `reading.current > 0` is *a project read is on its way*, and while one is the address is left
     // alone: it may be naming a file that read is about to deliver. The door and the tab are
     // corrected either way — those are decided by the grammar and no read can change them.
-    const drawn = addressed === null || known.includes(addressed) || reading.current > 0 ? addressed : (known[0] ?? null);
+    // `M240` `A` — the file on screen for a named-but-missing file is the door's landing, not
+    // `known[0]`; `landingPath` is what `path` above fell back to, so the address says what is drawn.
+    const drawn = addressed === null || known.includes(addressed) || reading.current > 0 ? addressed : landingPath;
     const q = hash.indexOf('?');
     const canonical = at === null ? '#' : hashForTab(at, tabFromHash(hash), drawn, focusFromHash(hash) ?? undefined, docFromHash(hash)) + (q < 0 ? '' : hash.slice(q));
     // A URL with no fragment at all already names the landing; writing `#` onto it would be a
@@ -826,7 +855,7 @@ export function App() {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${canonical}`);
     // The state below is already the hash's — `onHash` set it — so nothing is re-read here. A
     // `replaceState` fires no `hashchange`, which is the other half of why this cannot loop.
-  }, [project, door, tab, file, focusLine, doc, selection, query]);
+  }, [project, door, tab, file, focusLine, doc, selection, query, landingPath]);
 
   /** **Does this door draw a Compose sequence** — `M224` `D` (`D1210`), read once and spent twice:
    *  the dispatch below and `main-fill`. `vocabulary.ts`'s `adds.length > 0` is the table's own way
@@ -1182,7 +1211,7 @@ export function App() {
        grip moves one number and the media query below 900 px, where the pane stops being a column
        at all, goes on overriding it untouched. */
     <div className="app" style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}>
-      {project ? <Sidebar project={project} door={door} openFile={file} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} unsaved={unsavedPaths}
+      {project ? <Sidebar project={project} door={door} openFile={path === '' ? null : path} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} unsaved={unsavedPaths}
           onNewIn={(p) => { setFile(p); startCreating('test'); }}
           onAddRequest={(declIndex) => setAddIntent((prev) => ({ path, declIndex, n: (prev?.n ?? 0) + 1 }))}
           focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={(m) => startCreating(m)}
@@ -1310,6 +1339,11 @@ export function App() {
             pane was rebuilt three times around it. */}
         {project && composes ? (
           <ComposeDoor
+            /* `M240` `A` (`D1290`) — a door with nothing behind it draws its one sentence and
+               `+ new file` where the file's stage would be, not a pane about whichever file sorted
+               first. `path` is `''` exactly when `landingFor` answered empty and the address names
+               no file the project has; the strip and the project-fact tabs stay. */
+            empty={path === '' ? <EmptyDoor door={door} onNew={() => startCreating('file')} /> : undefined}
             door={door}
             project={project}
             onWritten={() => void readProjectView()}
