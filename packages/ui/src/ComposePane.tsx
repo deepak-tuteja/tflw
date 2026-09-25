@@ -1494,7 +1494,7 @@ export function ComposePane(props: ComposePaneProps) {
             a clause. It used to be four lines explaining the pane to its own builder; what a reader
             needs from it is which declaration this column is the sequence of, and how many
             declarations the file holds around it. */}
-        <span className="muted" data-compose-summary data-compose-subject={at ? 'declaration' : 'file'}>
+        <span className="muted" data-compose-summary data-compose-subject={at ? 'declaration' : 'file'} data-compose-decl-kind={at?.decl.kind} data-compose-decl-line={at?.decl.line}>
           {at ? (
             <>
               {/* **The band says the same words, painted** (`M216`). It was one flat grey sentence, so

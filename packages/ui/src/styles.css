@@ -1218,6 +1218,11 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
    to the sidebar's own edges so the tree scrolls UNDER an opaque strip instead of past a floating
    button, and `var(--panel)` is the surface it is part of rather than a new one. `D1118`'s order is
    untouched — it is still the last thing in the list, and now it is also still on screen. */
+/* `M240` `A` (`D1290`) — a door with nothing behind it: one sentence and the gesture that changes
+   the answer. Sized like `.empty`, so it sits where a pane would and does not read as a page. */
+.empty-door { padding: 24px 0; max-width: 60ch; }
+.empty-door p { margin: 0 0 calc(var(--unit) * 1.5); }
+
 .explorer-new {
   position: sticky; bottom: 0;
   margin: calc(var(--unit) * 1.5) calc(var(--unit) * -2) 0;

@@ -23,29 +23,57 @@ const report = JSON.parse(readFileSync(join(corpus, 'results.json'), 'utf8')) as
 test('the stream replayed through the reducer is results.json: every test, in order, with its steps', () => {
   const live = events.reduce(reduceLive, EMPTY_LIVE);
   assert.equal(live.announced, report.total);
-  assert.deepEqual(live.files, [...new Set(report.tests.map((t) => t.file))]);
+  // Every file a test came from, in the order the run announced them — and the one file the run
+  // announced that no test came from: `tests/actions/aaa-shared.tflw`, action-only (`M240` `A`).
+  // Stated as two claims so a file the reducer dropped and a file it invented are both red.
+  const withTests = new Set(report.tests.map((t) => t.file));
+  assert.deepEqual(live.files.filter((f) => withTests.has(f)), [...withTests]);
+  assert.deepEqual(live.files.filter((f) => !withTests.has(f)), ['tests/actions/aaa-shared.tflw']);
   // A `test:end`'s result is the report's entry minus what the CLI adds at merge: `file`, which
   // the event carries beside it (and the reducer keeps), and — for the functional kind only —
   // `concurrency`, which a workload result carries on the stream already (U4 found the two kinds
   // differ here). Stated rather than absorbed: a third field appearing on one side and not the
   // other is a contract drift the page should notice.
-  assert.equal(live.tests.length, report.tests.length);
+  // **An action's steps are streamed under a name of their own** — `readShelf(...)`, the label
+  // `interpreter.ts` hands `execSteps` for a call — with no `test:start` before them and no
+  // `test:end` after, so the reducer materialises a row for them (`patch`'s last branch: kept
+  // rather than dropped) that the report never holds. One such row here, from the one call in the
+  // corpus; it is stated so a row the reducer dropped and a row it invented are both red. The
+  // steps it carries name the CALLER's source at the action's own line numbers, which is
+  // `M240-03` and the runtime's, not this reducer's.
+  const announced = new Set(events.filter((e) => e.type === 'test:start').map((e) => `${e.file}\u0000${e.name}`));
+  const announcedRows = live.tests.filter((t) => announced.has(`${t.file}\u0000${t.name}`));
+  const synthesized = live.tests.filter((t) => !announced.has(`${t.file}\u0000${t.name}`));
+  assert.deepEqual(synthesized.map((t) => ({ file: t.file, name: t.name, steps: t.steps.length, result: t.result })), [{ file: 'tests/hooks/hook-first.tflw', name: 'readShelf(...)', steps: 4, result: null }]);
+  assert.equal(announcedRows.length, report.tests.length);
   for (let i = 0; i < report.tests.length; i++) {
     const { file, concurrency, ...entry } = report.tests[i] as TestResult | WorkloadTestResult;
-    const t = live.tests[i]!;
+    const t = announcedRows[i]!;
     assert.equal(t.file, file);
     assert.ok(concurrency !== undefined);
     const { file: _f, concurrency: streamed, ...got } = t.result as TestResult | WorkloadTestResult;
     assert.equal(_f, undefined, 'the stream never carries file on the result');
     if (entry.kind === 'workload') assert.equal(streamed, concurrency);
     else assert.equal(streamed, undefined, 'a functional result gains concurrency only at merge');
-    assert.deepEqual(got, entry);
+    // **A trace is bytes on the stream and a path in the report** (`TraceAsset`: `base64` is
+    // present everywhere except `results.json`, `path` there only). This loop compared the two
+    // whole for as long as the corpus was `M192`'s, which predates the split — `M240-02`. The two
+    // halves are stated apart so a report that grew bytes or a stream that lost them is red.
+    const { trace: streamedTrace, ...gotRest } = got as { trace?: { base64?: string; path?: string } };
+    const { trace: reportTrace, ...entryRest } = entry as { trace?: { base64?: string; path?: string } };
+    assert.deepEqual(gotRest, entryRest);
+    if (reportTrace === undefined) assert.equal(streamedTrace, undefined);
+    else {
+      assert.ok(streamedTrace !== undefined && typeof streamedTrace.base64 === 'string' && streamedTrace.path === undefined, 'the stream carries the archive');
+      assert.match(reportTrace.path ?? '', /^assets\/traces\/[0-9a-f]{16}\.zip$/);
+      assert.equal(reportTrace.base64, undefined, 'the report carries the path and never the bytes');
+    }
   }
   // Every test ended, so the steps shown are the result's own; before that they were the
   // `step:end`s as they arrived, which for an unretried test are the same list. A workload has
   // no steps and shows none.
-  for (const t of live.tests) assert.deepEqual(t.steps, t.result!.kind === 'workload' ? [] : (t.result as TestResult).steps);
-  assert.ok(live.tests.some((t) => t.result!.kind === 'workload'), 'the corpus holds the workload kind');
+  for (const t of announcedRows) assert.deepEqual(t.steps, t.result!.kind === 'workload' ? [] : (t.result as TestResult).steps);
+  assert.ok(announcedRows.some((t) => t.result!.kind === 'workload'), 'the corpus holds the workload kind');
 });
 
 test('mid-stream, a test holds the steps that have arrived so far and no result', () => {

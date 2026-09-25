@@ -240,6 +240,15 @@ export interface ComposeDoorProps {
    * identity from `getReports()` is new on every poll whether or not anything happened.
    */
   readonly reportsStamp: string;
+  /**
+   * **What the Compose tab draws when the door has no file to draw** — `M240` `A` (`D1290`).
+   *
+   * `path` is `''` exactly when `landingFor` answered empty and the address names no file; the
+   * strip and the three project-fact tabs still render, because Run, Auth and Config are about
+   * the project and a door with nothing behind it still has runs to read. Only the file's own
+   * stage is replaced, and the shell decides with what.
+   */
+  readonly empty?: ReactNode;
 }
 
 /**
@@ -283,7 +292,7 @@ function reblock(
   return buildDownload({ name: owner.name, body });
 }
 
-export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, onRun, running, reportsStamp, authPanel, configPanel, configMark }: ComposeDoorProps) {
+export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, onRun, running, reportsStamp, empty, authPanel, configPanel, configMark }: ComposeDoorProps) {
   /** **Which actions open a page** (`M219` `B`, `D1161`) — the index's own answer, flattened by
    *  the one function `App` flattens it with. Every `fileOutline` in this component re-reads the
    *  file after an edit to find where a statement moved to, and a re-read that folded sessions
@@ -2403,7 +2412,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           the mutation to an unmounted panel left the gate green, which is how that got caught.
           Unmounted is the better of two equal choices: no hidden `[data-api-send]` sitting in the
           DOM for a selector on another tab to find. */}
-      {tab !== 'compose' ? null : (
+      {tab !== 'compose' ? null : empty !== undefined && empty !== null ? empty : (
         /* **ONE PANE, BOTH DOORS** — `M219` `A` (`D1160`), which reinstates `D1094` rather than
            amending it a second time.
 

@@ -1,0 +1,10 @@
+# `M240` `A` (`D1290`) — an action-only file that SORTS FIRST. It holds no test, so every door's
+# landing rule has to look past it; a page that landed on `files[0]` landed here, on nothing, which
+# is what the review measured on the dogfood's own `_auth.tflw` (U1). The action is a real one and
+# `tests/hooks/hook-first.tflw` calls it, so this is not a decoy the runner would skip.
+
+action readShelf(id)
+  api GET /items/{id}
+  expect status equals 200
+  capture body.name as shelfName
+  give shelfName
