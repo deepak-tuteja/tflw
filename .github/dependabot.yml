@@ -1,0 +1,24 @@
+# `M239` `E` (`D1280`). One grouped pull request a week for npm, one for the actions this
+# workflow pins — merged by hand, never auto-merged, because a dependency bump in a testing tool
+# is a change to what every user's run executes. The group keeps it to two reviews a week rather
+# than one per package.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      npm:
+        patterns: ['*']
+    open-pull-requests-limit: 2
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']
+    open-pull-requests-limit: 1
