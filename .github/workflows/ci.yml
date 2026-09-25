@@ -413,8 +413,11 @@ jobs:
       # Dependabot alerts, read by hand — see SECURITY.md.
       - name: No high or critical advisory in the tree a user installs
         run: npm audit --audit-level=high --omit=dev
-      - name: The installed tree, as a CycloneDX SBOM
-        run: npm sbom --sbom-format cyclonedx --package-lock-only > sbom.cdx.json
+      # The same tree the audit reads. The whole workspace cannot be written down: `npm sbom`
+      # refuses a tree with an invalid peer (`ESBOMPROBLEMS`), and the docs site's search widget
+      # wants a React the page's React 19 is not.
+      - name: The tree a user installs, as a CycloneDX SBOM
+        run: npm sbom --sbom-format cyclonedx --package-lock-only --omit=dev > sbom.cdx.json
       - uses: actions/upload-artifact@v4
         with:
           name: sbom

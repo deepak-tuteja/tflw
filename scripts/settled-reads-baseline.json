@@ -6,9 +6,9 @@
     "high": 333,
     "medium": 65,
     "low": 487,
-    "declared": 11,
+    "declared": 16,
     "inPage": 104,
-    "inRetry": 21
+    "inRetry": 22
   },
   "tests": {
     "packages/cli/test/ui-page.test.ts": {

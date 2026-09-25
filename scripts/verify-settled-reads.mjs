@@ -115,7 +115,7 @@ const READ_CLASS = new Map([
   ...['count', 'evaluateAll', 'allTextContents', 'allInnerTexts'].map((m) => [m, 'NO-AUTO-WAIT']),
   ...['boundingBox'].map((m) => [m, 'GEOMETRY']),
   ...['url'].map((m) => [m, 'SYNC']),
-  ...['fetch'].map((m) => [m, 'SERVER']),
+  ...['fetch', 'api'].map((m) => [m, 'SERVER']), // `api` is the suite's token-adding `fetch` — see SERVER_READS
 ]);
 const classOf = (m) => READ_CLASS.get(m) ?? 'VALUE';
 
@@ -176,6 +176,8 @@ const PRESENCE_READS = new Set(['isVisible', 'isHidden', 'count']);
 
 // The retry layer itself. A read lexically inside one of these is the thing that retries.
 const RETRY_WRAPPERS = new Set(['settle', 'countSettling', 'openMenuAndBox', 'laidOutChartHeights']);
+/** Bare server reads: `fetch`, and the page suite's token-adding wrapper around it. */
+const SERVER_READS = new Set(['fetch', 'api']);
 
 // **The oracle.** Twelve tests are known to carry this defect: eight from CI over one week (§2),
 // three more from `A3`'s 56-run sweep (§2.1), and a twelfth from `M234` `H`'s close-out at a site
@@ -359,15 +361,18 @@ function classifyTest(testNode, testName, src, vars, findings, stats, lines) {
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'settle') {
       stats.settling.add(testName);
     }
-    // A bare awaited `fetch(...)` is a read of server state with no wait available at all.
-    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'fetch') {
+    // A bare awaited `fetch(...)` is a read of server state with no wait available at all. `api(...)`
+    // is the same read: the suite's module-scope wrapper that adds the page's token (`M239` `A`),
+    // and the day it replaced every `fetch(` here this gate lost 14 server reads from its
+    // population and printed them as repairs. A wrapper does not settle anything.
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && SERVER_READS.has(n.expression.text)) {
       const lineNo = src.getLineAndCharacterOfPosition(n.getStart()).line + 1;
       const declared = insideRetryOrPage(n) === null ? oneShotReason(lineNo) : null;
       if (declared !== null) {
-        stats.declared.push({ test: testName, line: lineNo, method: 'fetch', reason: declared });
+        stats.declared.push({ test: testName, line: lineNo, method: n.expression.text, reason: declared });
       } else if (insideRetryOrPage(n) === null) {
         events.push({
-          pos: n.getStart(), kind: 'read', method: 'fetch', sync: false, subject: null,
+          pos: n.getStart(), kind: 'read', method: n.expression.text, sync: false, subject: null,
           line: lineNo, text: norm(n.getText()).slice(0, 120), server: true,
         });
       } else {
