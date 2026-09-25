@@ -4327,7 +4327,7 @@ one word covers both scan kinds.
 
 ### D291
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +9 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D291 — D21's declaration half lands now, and Tier 1 requires it**
 
@@ -11436,7 +11436,7 @@ but *is my gate set the one CI runs*.
 
 ### M134b
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +1 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +2 more · lifted from `PLAN_M134_PENTEST_TIER3.md`</sub>
 
 **`M134b` — the gate contract (2026-08-14 addendum, D385–D391)**
 
@@ -13388,7 +13388,7 @@ verifier already flags as possibly stale, and a row is a claim about a tree that
 
 ### M212
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M212_COMPOSE_LEGIBLE.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +3 more · lifted from `PLAN_M212_COMPOSE_LEGIBLE.md`</sub>
 
 **`M212` — the API Compose pane, made legible; creating from the page; and what a mutation costs**
 
@@ -13572,7 +13572,7 @@ from a gesture the grammar refuses.
 
 ### M234
 
-<sub>cited from tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M234_CORPUS_AND_SITE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M234_CORPUS_AND_SITE.md`</sub>
 
 **`M234` — the corpus the docs photograph, and the site that shows it**
 
@@ -13582,12 +13582,13 @@ Stages `D`-`H`, the docs site itself, are not built.*
 
 ### M238
 
-<sub>cited from SPEC.md · lifted from `PLAN_M238_BASELINE_STALE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M238_BASELINE_STALE.md`</sub>
 
 **`M238` — the baseline's other half, and the corpus that would have proved it**
 
 **Scoped 2026-09-24 by grilling; slices `A` and `B` built the same day** (§10).
-Cross-repo: tflw first (`D511`), then `testFlow-tests`, whose slice `C` is not started. Discharges
-**`M234-04`**, one of the three rows open after `M237`, and files `M238-01`..`04`.
+Cross-repo: tflw first (`D511`), then `testFlow-tests`, whose slice `C` is built and not yet
+graded. **`M234-04` stays open until slice `C` merges there**; this plan's tflw half files
+`M238-01`..`04`.
 
 <!-- GENERATED:decisions:end -->
