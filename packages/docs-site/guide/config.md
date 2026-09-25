@@ -241,7 +241,7 @@ overrides an instruction you gave directly.
 It is the right place for fixtures that parse as tflw but are not tests, and for a directory of
 work in progress you do not want a pipeline to pick up yet.
 
-## Where a `use` may load from — `helpers`
+## Where a `use` may load from: `helpers`
 
 A `use "./helpers/sign.ts"` line loads a JavaScript or TypeScript module and calls its exports
 like actions. That is arbitrary code, and `helpers` says where in the project it may come from:
