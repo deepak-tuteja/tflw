@@ -51,6 +51,7 @@ import type {
   TeardownLevel,
   EvidenceLevel,
   ExcludeDecl,
+  HelpersDecl,
   ExpectStmt,
   Field,
   FieldValue,
@@ -1520,13 +1521,14 @@ class Parser {
     const envs: EnvBlock[] = [];
     const requires: RequireDecl[] = [];
     const excludes: ExcludeDecl[] = [];
+    const helpers: HelpersDecl[] = [];
     const sessions: SessionDecl[] = [];
     this.skipNewlines();
     // M110 (`V4-04`) — the branch chain below and `TF022`'s message are the same list, and the
     // message is now built from `CONFIG_DIRECTIVES`. This makes the *other* half of that pair
     // checkable too: a directive added to the manifest with no branch here fails to compile, so
     // the message can never promise to accept something this loop drops into the `else`.
-    const HANDLED: Record<ConfigDirective, true> = { defaults: true, env: true, session: true, require: true, exclude: true };
+    const HANDLED: Record<ConfigDirective, true> = { defaults: true, env: true, session: true, require: true, exclude: true, helpers: true };
     void HANDLED;
     while (!this.atEof()) {
       const before = this.pos;
@@ -1561,6 +1563,10 @@ class Parser {
         const ex = this.parseExclude();
         if (ex) excludes.push(ex);
         else this.synchronize();
+      } else if (this.isKw(tok, 'helpers')) {
+        const h = this.parseHelpers();
+        if (h) helpers.push(h);
+        else this.synchronize();
       } else if (this.isKw(tok, 'session')) {
         const s = this.parseSessionDecl();
         if (s) sessions.push(s);
@@ -1588,7 +1594,8 @@ class Parser {
       if (this.pos === before) this.advance();
       this.skipNewlines();
     }
-    const config: ConfigFile = { type: 'ConfigFile', defaults, envs, requires, excludes, sessions, span: this.spanFrom(startPos) };
+    // `helpers` is absent-when-empty (see `ConfigFile.helpers`), like `Program.crawls`.
+    const config: ConfigFile = { type: 'ConfigFile', defaults, envs, requires, excludes, ...(helpers.length > 0 ? { helpers } : {}), sessions, span: this.spanFrom(startPos) };
     return { config, diagnostics: this.diagnostics };
   }
 
@@ -2698,6 +2705,24 @@ class Parser {
     }
     this.endLine();
     return { type: 'ExcludeDecl', paths, span: this.spanFrom(start) };
+  }
+
+  /** `helpers "./lib"[, "./shared"]` (`D1279`) — the same shape as `parseExclude`, for the same
+   *  reason `exclude` has it: a directory is a path string, never a bare name. */
+  private parseHelpers(): HelpersDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `helpers`
+    const paths: StringLit[] = [];
+    const first = this.expectString('a directory string, e.g. `helpers "./lib"`');
+    if (!first) return null;
+    paths.push(first);
+    while (this.check('comma')) {
+      this.advance();
+      const p = this.expectString('a directory string');
+      if (p) paths.push(p);
+    }
+    this.endLine();
+    return { type: 'HelpersDecl', paths, span: this.spanFrom(start) };
   }
 
   /** Skip an indented block wholesale (recovery after a bad block header). */

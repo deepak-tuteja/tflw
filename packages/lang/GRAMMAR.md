@@ -608,13 +608,17 @@ Parsed by the same lexer/parser as test files; declaration-only (`test`/`action`
 errors here).
 
 ```
-ConfigFile      := (NEWLINE | RequireDecl | ExcludeDecl | DefaultsBlock | EnvBlock | SessionDecl)*
+ConfigFile      := (NEWLINE | RequireDecl | ExcludeDecl | HelpersDecl | DefaultsBlock | EnvBlock | SessionDecl)*
 
 RequireDecl     := 'require' 'env' IDENT (',' IDENT)* NEWLINE
 ExcludeDecl     := 'exclude' STRING (',' STRING)* NEWLINE         # file-discovery exclusions (§3.9,
                                                                    # D127) — top-level, not a
                                                                    # ConfigEntry; string paths, not
                                                                    # bare idents like `require env`
+HelpersDecl     := 'helpers' STRING (',' STRING)* NEWLINE         # directories a `use` may load from
+                                                                   # (§3.12, D1279); same shape as
+                                                                   # ExcludeDecl, absent = the two
+                                                                   # defaults
 DefaultsBlock   := 'defaults' NEWLINE INDENT ConfigEntry* DEDENT
 EnvBlock        := 'env' IDENT 'default'? NEWLINE INDENT ConfigEntry* DEDENT
 

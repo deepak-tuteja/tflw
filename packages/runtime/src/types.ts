@@ -103,6 +103,10 @@ export interface ResolvedConfig {
    * (no-file-args) discovery must never descend into (SPEC §3, D127, PLAN_DISCOVERY_EXCLUDE.md).
    * `[]` = never declared, no exclusion. Doesn't affect explicit file args. */
   readonly exclude: readonly string[];
+  /** `helpers "<dir>"[, "<dir>"...]` (`M239` `D`, `D1279`) — the directories, relative to this
+   * config's own directory, a `use` may load from; `DEFAULT_HELPER_DIRS` when the file declares
+   * none. Always present, so a consumer never re-derives the default. */
+  readonly helpers: readonly string[];
   /** `session <name> ... ` blocks declared in `tflw.config`, by name (SPEC §3.3, P#42). */
   readonly sessions: ReadonlyMap<string, SessionDecl>;
   /** `M147d`/`M137f-02` (D642) — the declared sessions this env does **not** get, mapped to the envs

@@ -78,6 +78,13 @@ const uiRoot = join(here, '..', '..', 'ui');
 const fixtures = join(uiRoot, 'fixtures');
 const cliEntry = join(here, '..', 'src', 'cli.ts');
 const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
+// `M239` `A` (`D1276`) — one known token; see `ui-page.test.ts` for the shape.
+const TOKEN = 'm239-test-token-0123456789abcdef';
+const newPage = async (options?: Parameters<Browser['newPage']>[0]): Promise<Page> => {
+  const p = await browser.newPage(options);
+  await p.context().addCookies([{ name: 'tflw-ui-token', value: TOKEN, domain: '127.0.0.1', path: '/' }]);
+  return p;
+};
 
 // ── The browser's globals, declared here and nowhere else ──────────────────────────────────────
 //
@@ -157,6 +164,7 @@ declare const requestAnimationFrame: (cb: () => void) => void;
 
 let scratch: string;
 let baseUrl: string;
+let pageUrl: string;
 /** The scratch copy of the fixture project — `M214`'s overflow gate writes a file into it. */
 let projectRoot: string;
 let server: UiServer;
@@ -204,9 +212,10 @@ const setup = stagedSetup(async () => {
   await mkdir(join(root, 'report', 'runs'), { recursive: true });
   await cp(join(fixtures, 'reports', 'full'), join(root, 'report', 'runs', 'full'), { recursive: true });
 
-  server = new UiServer({ root, cliEntry, execArgv: ['--import', tsxLoader], staticDir });
+  server = new UiServer({ token: TOKEN, root, cliEntry, execArgv: ['--import', tsxLoader], staticDir });
   const port = await server.listen(0);
   baseUrl = `http://127.0.0.1:${port}`;
+  pageUrl = `${baseUrl}/?token=${TOKEN}`;
   browser = await chromium.launch();
   page = await openPage();
   // `M234`. This file's module-scope page only; the two ad-hoc pages below (`:389`, `:1360`) are
@@ -247,7 +256,7 @@ after(async () => {
  * subject to the transform it exists to repair.
  */
 const openPage = async (): Promise<Page> => {
-  const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const p = await newPage({ viewport: { width: 1440, height: 900 } });
   await p.addInitScript({ content: 'globalThis.__name = globalThis.__name || ((fn) => fn);' });
   return p;
 };
@@ -260,7 +269,7 @@ const openPage = async (): Promise<Page> => {
  * in the document until React commits. A gate that measures then is measuring the page before.
  */
 const at = async (door: string, tab: string): Promise<void> => {
-  await page.goto(`${baseUrl}#/${door}`);
+  await page.goto(`${pageUrl}#/${door}`);
   await page.reload();
   await page.locator(`[data-doorbar="${door}"]`).waitFor();
   await page.locator(`[data-tab="${tab}"]`).click();
@@ -392,7 +401,7 @@ const states: Array<[string, string]> = [['', 'landing'], ...DOORS.flatMap((d) =
 
 const visit = async (door: string, tab: string): Promise<void> => {
   if (tab === 'landing') {
-    await page.goto(`${baseUrl}#/`);
+    await page.goto(`${pageUrl}#/`);
     await page.reload();
     await page.locator('.landing-head, [data-doorbar]').first().waitFor();
     return;
@@ -412,7 +421,7 @@ test('a page told nothing renders Terminal — the default is the bare `:root` b
   // So: no attribute, no stored choice, and the page is nonetheless Terminal.
   const fresh = await openPage();
   try {
-    await fresh.goto(`${baseUrl}#/`);
+    await fresh.goto(`${pageUrl}#/`);
     await fresh.locator('.landing-head, [data-doorbar]').first().waitFor();
     assert.equal(await fresh.evaluate(() => document.documentElement.getAttribute('data-tflw-theme')), null, 'something stamped the attribute on a page that had no choice to restore');
     assert.equal(await fresh.evaluate(() => window.localStorage.getItem('tflw.theme')), null, 'the page wrote a choice nobody made');
@@ -744,7 +753,7 @@ test('no region of the Compose pane overflows the window, on a thirteen-request 
        every file behind every door and this one opens there like any other. What is being held is
        the layout, which is `vocabulary.ts`'s to differ about and not `ComposePane`'s. */
     for (const [door, theme] of DOORS.filter((d) => d === 'api' || d === 'load').flatMap((d) => THEMES.map((t) => [d, t] as const))) {
-      await showWrittenFile(`${baseUrl}#/${door}/compose/tests/thirteen.tflw`, 'tests/thirteen.tflw');
+      await showWrittenFile(`${pageUrl}#/${door}/compose/tests/thirteen.tflw`, 'tests/thirteen.tflw');
       // A file the parser only RECOVERED draws fewer rows than it has statements, and a height gate
       // reading a salvage is a height gate reading a smaller file. The first draft of this fixture
       // wrote `expect body.name is not empty`, which is not a matcher this language has.
@@ -899,7 +908,7 @@ test('`M215` `B3`: the coloured copy and the field under it are one box, in all 
   await writeFile(file, ['test "a body to paint"', '  api POST /orders body { ok: true, who: null, qty: 3 }', '  expect status equals 201', ''].join('\n'));
   try {
     for (const theme of THEMES) {
-      await showWrittenFile(`${baseUrl}#/api/compose/tests/jsonbody.tflw`, 'tests/jsonbody.tflw');
+      await showWrittenFile(`${pageUrl}#/api/compose/tests/jsonbody.tflw`, 'tests/jsonbody.tflw');
       /* `M234` `A` — the ROW, not the column (`D1308`). Same hazard as the thirteen-request gate
          above: `[data-seq-col]` is attached before its rows are, so the pick below could land
          mid-redraw, the selection not take, and the body tab never appear — which surfaces 100
@@ -1398,7 +1407,7 @@ test('the landing holds every door in one row, at every width a reader has', asy
   try {
     for (const width of [1280, 1440, 1680]) {
       await wide.setViewportSize({ width, height: 900 });
-      await wide.goto(`${baseUrl}#/`);
+      await wide.goto(`${pageUrl}#/`);
       await wide.reload();
       await wide.locator('[data-doors]').waitFor();
       const seen = await wide.evaluate(() => {
@@ -1500,7 +1509,7 @@ test('no control on any door or tab lacks a tip', async () => {
   for (const [door, tab, at] of walk) {
     if (at === null) await visit(door, tab);
     else {
-      await page.goto(`${baseUrl}#/${door}/compose/${at}`);
+      await page.goto(`${pageUrl}#/${door}/compose/${at}`);
       await page.reload();
     }
     await page.locator(READY[tab]!).first().waitFor();

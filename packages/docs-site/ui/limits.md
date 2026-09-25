@@ -22,9 +22,13 @@ any moment without losing anything that was not already a file.
 **It does not lint your taste.** The page will happily show you a passing test that asserts nothing.
 A verdict is about what ran, and the page reports it faithfully rather than editorialising.
 
-**It is local.** `tflw ui` serves on the loopback interface for the person who started it. There is
-no authentication because there is no remote access to authenticate, and making it remotely
-reachable is not something the command offers.
+**It is local, and it is yours.** `tflw ui` serves on the loopback interface for the person who
+started it, and the URL it prints carries a token minted for that start — the page opens from that
+URL and from nothing else, every request from the page carries the token, and a request from any
+other page in your browser, or with a `Host` that is not loopback, is refused. There is no login
+because there is nothing to log into: one process, one token, one person. Making it remotely
+reachable is not something the command offers; `ssh -L` forwards the port and the URL you paste
+carries the token with it.
 
 ## Not yet
 

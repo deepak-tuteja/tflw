@@ -504,6 +504,14 @@ env staging
 `,
   },
   {
+    name: 'helpers-decl',
+    source: `env local default
+  api "http://localhost:3001"
+
+helpers "./helpers", "./lib/tflw"
+`,
+  },
+  {
     name: 'exclude-decl',
     source: `env local default
   api "http://localhost:3001"

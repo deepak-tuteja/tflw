@@ -1,0 +1,57 @@
+{
+  "type": "ConfigFile",
+  "defaults": null,
+  "envs": [
+    {
+      "type": "EnvBlock",
+      "name": "local",
+      "isDefault": true,
+      "entries": [
+        {
+          "type": "ApiServiceDecl",
+          "service": null,
+          "url": {
+            "type": "StringLit",
+            "value": "http://localhost:3001",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "http://localhost:3001"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "requires": [],
+  "excludes": [],
+  "helpers": [
+    {
+      "type": "HelpersDecl",
+      "paths": [
+        {
+          "type": "StringLit",
+          "value": "./helpers",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "./helpers"
+            }
+          ]
+        },
+        {
+          "type": "StringLit",
+          "value": "./lib/tflw",
+          "parts": [
+            {
+              "kind": "text",
+              "value": "./lib/tflw"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "sessions": []
+}

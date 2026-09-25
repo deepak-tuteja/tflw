@@ -13,7 +13,7 @@ import { watch as fsWatch, existsSync, readFileSync, statSync, mkdirSync, openSy
 // M92b (`B6-09`) — `install-browsers` resolves the consumer's own `playwright` instead of letting
 // `npx --yes` fetch an unpinned one from the registry.
 import { createRequire } from 'node:module';
-import { join, resolve, relative, dirname, basename } from 'node:path';
+import { join, resolve, relative, dirname, basename, sep } from 'node:path';
 import { discoverTests } from './project.js';
 import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH, PLAY_SCRATCH } from './ui-server.js';
 import { recordedLine } from './record.js';
@@ -1005,6 +1005,9 @@ interface RunArgs {
   /** `--headed` (M3c) — headless by default; this opts into a visible browser window (only
    * meaningful locally, never in CI). */
   readonly headed: boolean;
+  /** `--no-helpers` (`M239` `D`, `D1279`) — refuse every `use` before the first request; each is
+   * reported as `TF083` naming the flag. */
+  readonly noHelpers: boolean;
   /**
    * `--trace` (`M220` `B`, `D1170`) — keep this run's browser trace even when everything passed.
    *
@@ -1093,6 +1096,7 @@ function parseRunArgs(argv: string[]): RunArgs {
   let logFile: string | undefined;
   let browserRaw: string | undefined;
   let headed = false;
+  let noHelpers = false;
   let trace = false;
   let updateSnapshots = false;
   let logOutputRaw: string | undefined;
@@ -1140,6 +1144,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     else if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
     else if (a === '--headed') headed = true;
+    else if (a === '--no-helpers') noHelpers = true;
     else if (a === '--trace') trace = true;
     else if (a === '--update-snapshots') updateSnapshots = true;
     else if (a === '--log-output') logOutputRaw = flagValue(argv, ++i, a);
@@ -1195,6 +1200,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     logFile,
     browserRaw,
     headed,
+    noHelpers,
     trace,
     updateSnapshots,
     logOutputRaw,
@@ -1218,6 +1224,9 @@ interface ValidatedProject {
   readonly configLines: readonly string[];
   readonly environ: NodeJS.ProcessEnv;
   readonly parsedFiles: { file: string; source: string; program: Program }[];
+  /** Every module a `use` names, once, with the files naming it — what `tflw check` prints
+   *  (`D1279`), so a reviewer sees the code a run would execute without opening a file. */
+  readonly helpersUsed: readonly { readonly module: string; readonly files: readonly string[] }[];
   /** How many `severity: 'warning'` diagnostics were printed on the way here (M97e, D147). Carried
    * out because `checkCommand`'s summary line is otherwise written from `parsedFiles.length` alone
    * and says `no problems found` — which, the first time a shipped diagnostic actually took the
@@ -1251,6 +1260,9 @@ async function loadAndValidate(
    *  here that comes from the command line rather than from the project: `migrate` and the load
    *  worker have no such affirmation to pass, and `[]` states that truthfully. */
   allowPublicTargets: readonly string[] = [],
+  /** `--no-helpers` (`D1279`): `'none'` reports every `use` as `TF083`; `'config'` judges each
+   *  against `tflw.config`'s `helpers` (or the defaults). */
+  helperPolicy: 'config' | 'none' = 'config',
 ): Promise<ValidatedProject | number> {
   // 1. Load + parse tflw.config (declaration-only dialect).
   const configPath = join(cwd, 'tflw.config');
@@ -1452,6 +1464,9 @@ async function loadAndValidate(
       // `resolve.ts` flattens every line in the file into one env-independent list. There is no
       // per-env variant of this fact and therefore no way to derive it per file.
       requiredEnv: resolved.requiredEnv,
+      // `M239` `D` (`D1279`) — `TF083`. `cwd` IS the config's directory (`M97c-03`, above), so the
+      // file's path relative to it is the path the rule judges the `use` literal against.
+      helpers: { dirs: resolved.helpers, file: relative(cwd, file).split(sep).join('/'), refuseAll: helperPolicy === 'none' },
     });
     const diagnostics = [...parsed.diagnostics, ...checkDiags];
     // Only `severity: 'error'` blocks a file from running — a `'warning'` (decision 38's
@@ -1485,7 +1500,18 @@ async function loadAndValidate(
   }
   if (hadErrors) return EXIT_USAGE;
 
-  return { resolved, parsedConfig, configLines: configText.split(/\r?\n/), environ, parsedFiles, warningCount };
+  const byModule = new Map<string, string[]>();
+  for (const { file, program } of parsedFiles) {
+    for (const u of program.uses) {
+      const module = relative(cwd, resolve(dirname(file), u.path.value)).split(sep).join('/');
+      const from = relative(cwd, file).split(sep).join('/');
+      const list = byModule.get(module) ?? [];
+      if (!list.includes(from)) list.push(from);
+      byModule.set(module, list);
+    }
+  }
+  const helpersUsed = [...byModule].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([module, files]) => ({ module, files }));
+  return { resolved, parsedConfig, configLines: configText.split(/\r?\n/), environ, parsedFiles, warningCount, helpersUsed };
 }
 
 /** `tflw watch`-only knobs (M5) — invisible to the real `tflw run` CLI path (`main()` always calls
@@ -1678,7 +1704,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     browserEngine = args.browserRaw as BrowserEngine;
   }
 
-  const loaded = await loadAndValidate(cwd, args.files, args.env, color, undefined, args.allowPublicTargets);
+  const loaded = await loadAndValidate(cwd, args.files, args.env, color, undefined, args.allowPublicTargets, args.noHelpers ? 'none' : 'config');
   if (typeof loaded === 'number') return loaded;
   const { parsedFiles, environ, configLines } = loaded;
   // `--evidence`/`--log-output`/`--log-level` each override one `tflw.config` key for this run
@@ -2707,8 +2733,10 @@ async function uiCommand(argv: string[]): Promise<number> {
     err(`could not listen on 127.0.0.1:${parsed.port}: ${e instanceof Error ? e.message : String(e)}`);
     return EXIT_USAGE;
   }
-  const url = `http://127.0.0.1:${port}/`;
-  process.stdout.write(`tflw ui — ${relative(process.cwd(), parsed.root) || '.'} at ${url} (loopback only; Ctrl-C to stop)\n`);
+  // `D1276` — the token is in the URL and nowhere else: what a reader pastes through `ssh -L` is
+  // what proves the page is theirs.
+  const url = `http://127.0.0.1:${port}/?token=${server.token}`;
+  process.stdout.write(`tflw ui — ${relative(process.cwd(), parsed.root) || '.'} at ${url} (loopback only, this URL carries the session token; Ctrl-C to stop)\n`);
   if (parsed.open) openInBrowser(url);
   await new Promise<void>((resolveStop) => {
     const stop = (): void => {
@@ -2797,6 +2825,10 @@ async function checkCommand(argv: string[]): Promise<number> {
   if (typeof loaded === 'number') return loaded;
 
   const n = loaded.parsedFiles.length;
+  // `M239` `D` (`D1279`) — the modules a run would execute, one line each, before the verdict:
+  // a `use` is the one construct that runs code the language did not write, and a reviewer
+  // reading `check`'s output should not have to open a file to learn that it is there.
+  for (const h of loaded.helpersUsed) process.stdout.write(`helper ${h.module} — \`use\` in ${h.files.join(', ')}\n`);
   // `no problems found` is only true when none were. Until D147 no shipped diagnostic used
   // `'warning'`, so this line had never been reachable in a state it described wrongly — the first
   // real warning printed it to stdout immediately below a `warning[TF043]` on stderr, which is the
@@ -4156,7 +4188,7 @@ function printUsage(): void {
       '',
       'usage:',
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
-      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots]',
+      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots] [--no-helpers]',
       '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
       '            [--teardown always|on-success|never]',
       '            [--log-output console|html|both|none]',
@@ -4178,6 +4210,7 @@ function printUsage(): void {
       '                                                      --headed shows the browser window instead of running headless',
       '                                                      --trace keeps the browser trace even when everything passed (needs --evidence full; open it with `npx playwright show-trace`)',
       '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines (SPEC §9.9)',
+      '                                                      --no-helpers refuses every `use` before the first request (SPEC §3.12)',
       '                                                      --forbid-insecure refuses to run at all if `insecure true` is active for this env (a CI policy gate)',
       '                                                      --evidence <level> how much request/response detail the report keeps: full (default), headers-only, none',
       '                                                      --teardown <level> when a workload iteration\'s `after` hooks run: always (default), on-success, never;',

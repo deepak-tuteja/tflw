@@ -2,6 +2,7 @@
 // active-env selection (P#28), defaults+env merge, per-service base URLs (P#29).
 
 import type { ConfigFile, EnvBlock, EvidenceLevel, LogDestination, LogLevel, RedactPattern, TeardownLevel, TimeoutTarget } from '@tflw/lang';
+import { DEFAULT_HELPER_DIRS } from '@tflw/lang';
 import { DEFAULT_TIMEOUTS, type AuthorizedTarget, type ResolvedConfig, type ResolvedHeader } from './types.js';
 
 export class ConfigError extends Error {
@@ -193,6 +194,10 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
 
   const requiredEnv = config.requires.flatMap((r) => r.names);
   const exclude = config.excludes.flatMap((e) => e.paths.map((p) => p.value));
+  // `D1279` — declared directories as written, else the two defaults. The SAME array object as
+  // `DEFAULT_HELPER_DIRS` when defaulted, which is how the checker's hint knows to say so.
+  const declaredHelpers = (config.helpers ?? []).flatMap((h) => h.paths.map((p) => p.value));
+  const helpers = declaredHelpers.length > 0 ? declaredHelpers : DEFAULT_HELPER_DIRS;
   // `M147d`/`M137f-02` (D642) — the env scope clause, applied in the one place that decides what a
   // session *is* under an env. Everything downstream already reads `resolved.sessions`: the roster
   // `TF028` checks, the `privileged` subset `TF063` reasons about, and all five of the runtime's
@@ -225,6 +230,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
     insecure,
     requiredEnv,
     exclude,
+    helpers,
     sessions,
     sessionsOutOfScope,
     mtls,

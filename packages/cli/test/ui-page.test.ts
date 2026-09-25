@@ -83,6 +83,23 @@ const fixtures = join(uiRoot, 'fixtures');
 const cliEntry = join(here, '..', 'src', 'cli.ts');
 const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
 
+// `M239` `A` (`D1276`) — every server here takes one known token, so a URL can be built before the
+// server is; `api` sends it the way the page does, and `newPage` plants the cookie the browser
+// spends on the navigational surfaces (report files, the trace viewer's assets).
+const TOKEN = 'm239-test-token-0123456789abcdef';
+const api = (url: string, init: RequestInit = {}): Promise<Response> => fetch(url, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), authorization: `Bearer ${TOKEN}` } });
+const newPage = async (options?: Parameters<Browser['newPage']>[0]): Promise<Page> => {
+  const p = await browser.newPage(options);
+  await p.context().addCookies([{ name: 'tflw-ui-token', value: TOKEN, domain: '127.0.0.1', path: '/' }]);
+  // `M239` `C` (`D1278`) — every frame records what its `Content-Security-Policy` refused, so a
+  // policy that broke the page or the trace viewer is a red assertion and not a blank pane.
+  // As a string: this file keeps the browser's globals out of its type space on purpose (see the
+  // `declare const` note beside `ui-appearance.test.ts`), so the reads below go through an element.
+  await p.addInitScript({ content: "window.__cspViolations = []; document.addEventListener('securitypolicyviolation', (e) => window.__cspViolations.push(e.violatedDirective + ' ' + e.blockedURI + ' ' + (e.sourceFile || '') + ':' + (e.lineNumber || 0)));" });
+  return p;
+};
+const cspViolations = (p: Page): Promise<string[]> => p.locator('html').evaluate((el) => (el.ownerDocument.defaultView as unknown as { __cspViolations: string[] }).__cspViolations);
+
 let scratch: string;
 let root: string;
 /** The fixture server's port for this process — a free one, written into the scratch copy of
@@ -91,6 +108,10 @@ let root: string;
 let fixturePort: number;
 let server: UiServer;
 let baseUrl: string;
+/** `${baseUrl}/?token=…` — what a `goto` opens (`M239` `A`, `D1276`): the page needs the token on
+ *  its own URL, and a `goto` differing only in the hash stays a same-document navigation. */
+let pageUrl: string;
+
 let browser: Browser;
 let page: Page;
 const oracle: Record<string, RunReport> = {};
@@ -223,11 +244,12 @@ const setup = stagedSetup(async () => {
   const now = new Date();
   await utimes(join(root, 'report', 'runs', 'full', 'results.json'), now, now);
 
-  server = new UiServer({ root, cliEntry, execArgv: ['--import', tsxLoader], staticDir });
+  server = new UiServer({ token: TOKEN, root, cliEntry, execArgv: ['--import', tsxLoader], staticDir });
   const port = await server.listen(0);
   baseUrl = `http://127.0.0.1:${port}`;
+  pageUrl = `${baseUrl}/?token=${TOKEN}`;
   browser = await chromium.launch();
-  page = await browser.newPage();
+  page = await newPage();
   // `M234`. Inert unless this run is under `npm run coverage`; see `./ui-coverage.ts` for why the
   // 203 tests below counted toward nothing until now.
   await startUiCoverage(page);
@@ -307,16 +329,16 @@ const API_RUN = '#/api/run';
 const functional = (report: RunReport): TestResult[] => report.tests.filter((t): t is TestResult => t.kind === 'functional');
 
 async function openReport(id: string): Promise<void> {
-  await page.goto(`${baseUrl}${API_RUN}`);
+  await page.goto(`${pageUrl}${API_RUN}`);
   await page.locator(`[data-report-row="${id}"]`).click();
   await page.locator(`[data-report="${id}"]`).waitFor();
 }
 
 test('the sidebar is the project as a tree: every file the server read, a leaf name per row, and this door as a count', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.reload();
   await page.locator('[data-files]').waitFor();
-  const project = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; line: number; tags: string[]; lenses: string[] }[]; crawls: { lenses: string[] }[] }[]; envs: { name: string; isDefault: boolean }[] };
+  const project = (await (await api(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { name: string; line: number; tags: string[]; lenses: string[] }[]; crawls: { lenses: string[] }[] }[]; envs: { name: string; isDefault: boolean }[] };
   assert.ok(project.files.length >= 2, 'the fixture project has two files');
   // `D1062` — EVERY `.tflw` file, tests or not. The list used to drop a file with nothing
   // declared in it at all, which is defensible for a list of tests and is a lie in a file tree.
@@ -394,13 +416,13 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
   assert.equal(await page.locator('[data-search-hint]').getAttribute('data-search-kind'), 'none');
   assert.match((await page.locator('[data-search-hint]').textContent())!, new RegExp(`^${allTags.size} tags? in this project`));
   // U7: the tab has the docs site's mark, and the page's own load logs no 404 for it.
-  const icon = await fetch(`${baseUrl}/favicon.svg`);
+  const icon = await api(`${baseUrl}/favicon.svg`);
   assert.equal(icon.status, 200);
   assert.equal(icon.headers.get('content-type'), 'image/svg+xml');
 });
 
 test('the run list is the report directories, each row carrying its own results.json counts', async () => {
-  await page.goto(`${baseUrl}${API_RUN}`);
+  await page.goto(`${pageUrl}${API_RUN}`);
   for (const id of ['full', 'headers']) {
     const row = page.locator(`[data-report-row="${id}"]`);
     await row.waitFor();
@@ -513,7 +535,7 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
   const path = (await line.getAttribute('data-trace'))!;
   assert.match(path, /^assets\/traces\/[0-9a-f]{16}\.zip$/);
   // The link resolves to the archive the reporter wrote — the page's hash is the reporter's.
-  const zip = await fetch(`${baseUrl}${await line.locator('[data-trace-download]').getAttribute('href')}`);
+  const zip = await api(`${baseUrl}${await line.locator('[data-trace-download]').getAttribute('href')}`);
   assert.equal(zip.status, 200);
   assert.equal(Number(zip.headers.get('content-length')), Buffer.from(traced[0]!.trace!.base64!, 'base64').length);
   assert.equal(await line.locator('code').textContent(), `npx playwright show-trace ${path}`);
@@ -534,6 +556,13 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
    * is where the new shape is read.
    */
   assert.equal(await line.locator('[data-open-trace]').evaluate((el) => el.tagName), 'BUTTON', 'the control opens the viewer here, it does not link away');
+  // `M239` `C` — what the viewer and the page said while the frame filled, so a viewer that does
+  // not render fails with its own words rather than with a bare timeout.
+  const said: string[] = [];
+  const onConsole = (m: { type(): string; text(): string }): void => { said.push(`${m.type()}: ${m.text()}`); };
+  const onPageError = (e: Error): void => { said.push(`pageerror: ${e.message}`); };
+  page.on('console', onConsole);
+  page.on('pageerror', onPageError);
   await line.locator('[data-open-trace]').click();
   const frame = page.locator('[data-trace-frame]');
   await frame.waitFor();
@@ -545,14 +574,50 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
   const pointedAt = decodeURIComponent(src.slice(src.indexOf('trace=') + 'trace='.length));
   assert.match(pointedAt, /^https?:\/\//, 'the viewer is handed an absolute URL');
   assert.ok(pointedAt.endsWith(`/api/reports/full/${path}`), `the viewer is pointed at the archive the reporter wrote — got ${pointedAt}`);
-  assert.equal((await fetch(pointedAt)).status, 200, 'and that URL serves');
+  assert.equal((await api(pointedAt)).status, 200, 'and that URL serves');
   // The trace's own content, rendered by the viewer inside the pane: the page the test opened.
-  await page.frameLocator('[data-trace-frame]').getByText('127.0.0.1:4717', { exact: false }).first().waitFor({ timeout: 60_000 });
+  const viewerViolations = async (): Promise<string[]> => {
+    const f = page.frames().find((fr) => fr.url().includes('/trace/index.html'));
+    if (!f) return ['(no viewer frame in the page)'];
+    return f.locator('html').evaluate((el) => (el.ownerDocument.defaultView as unknown as { __cspViolations?: string[] }).__cspViolations ?? []).catch((e: Error) => [`(unreadable: ${e.message})`]);
+  };
+  try {
+    await page.frameLocator('[data-trace-frame]').getByText('127.0.0.1:4717', { exact: false }).first().waitFor({ timeout: 60_000 });
+  } catch (e) {
+    throw new Error(`the viewer did not render the trace — console: ${JSON.stringify(said)}; viewer CSP violations: ${JSON.stringify(await viewerViolations())}; page CSP violations: ${JSON.stringify(await cspViolations(page))}`, { cause: e });
+  } finally {
+    page.off('console', onConsole);
+    page.off('pageerror', onPageError);
+  }
+  // `M239` `C` (`D1278`) — the viewer runs under the narrower policy `/trace/` serves, and it
+  // rendered a snapshot through its service worker without that policy refusing anything.
+  assert.deepEqual(await viewerViolations(), [], 'the trace viewer\'s policy refused something it needs');
+  assert.deepEqual(await cspViolations(page), [], 'the page\'s policy refused something it needs');
   // …and back, because a pane you cannot leave is a tab with extra steps.
   await page.locator('[data-trace-close]').click();
   await page.locator('[data-report]').first().waitFor();
   assert.equal(await page.locator('[data-trace-frame]').count(), 0);
   assert.equal(await page.locator('[data-evidence-withheld]').count(), 0);
+});
+
+test('`M239` `C`: every door draws under the page\'s Content-Security-Policy with nothing refused — the nonce reached the theme script', async () => {
+  for (const door of ['api', 'browser', 'load', 'scan'] as const) {
+    await page.goto(`${pageUrl}#/${door}`);
+    await page.reload();
+    await page.locator(`[data-doorbar="${door}"]`).waitFor();
+    assert.deepEqual(await cspViolations(page), [], `on the ${door} door`);
+  }
+  // The inline theme script ran, which under `script-src 'self' 'nonce-…'` it can only have done
+  // with the nonce: it is the one thing in the page that writes `data-tflw-theme` before React.
+  await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.setItem('tflw.theme', 'paper'));
+  await page.reload();
+  await page.locator('[data-doorbar]').waitFor();
+  assert.equal(await page.locator('html').getAttribute('data-tflw-theme'), 'paper');
+  assert.deepEqual(await cspViolations(page), []);
+  await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.removeItem('tflw.theme'));
+  // The control: the response really carries the policy the assertions above ran under.
+  const res = await api(`${baseUrl}/?token=${TOKEN}`);
+  assert.match(res.headers.get('content-security-policy') ?? '', /script-src 'self' 'nonce-/);
 });
 
 test('WebUI at `evidence headers only`: no screenshot, no trace, and the sentence saying why, under every browser test', async () => {
@@ -949,7 +1014,7 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
-    await page.goto(`${baseUrl}${API_RUN}`);
+    await page.goto(`${pageUrl}${API_RUN}`);
     // `S5`: narrowing by tag is typed now, and it passes `--tag` exactly as the chip did.
     await page.locator('[data-search]').fill('@catalog');
     await page.locator('[data-run]').click();
@@ -962,7 +1027,7 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
     assert.equal(await page.locator('[data-summary] [data-counts]').textContent(), `${written.total} tests · ${written.passed} passed · ${written.failed} failed`);
     assert.equal(await page.locator('[data-test]').count(), written.tests.length);
     // What was asked is what ran: `@catalog` is three of the five tests, and the argv says so.
-    const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { argv: string[]; status: string; exitCode: number | null; kept: string }[];
+    const runs = (await (await api(`${baseUrl}/api/runs`)).json()) as { argv: string[]; status: string; exitCode: number | null; kept: string }[];
     assert.equal(runs.length, 1);
     assert.deepEqual(runs[0]!.argv.slice(-2), ['--tag', 'catalog']);
     assert.equal(runs[0]!.status, 'done');
@@ -1001,7 +1066,7 @@ test('a run cancelled from the page: its kept directory says so above the report
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
-    await page.goto(`${baseUrl}${API_RUN}`);
+    await page.goto(`${pageUrl}${API_RUN}`);
     const before = new Set(await page.locator('[data-report-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-report-row'))));
     await page.locator('[data-search]').fill('@load');
     await page.locator('[data-run]').click();
@@ -1015,7 +1080,7 @@ test('a run cancelled from the page: its kept directory says so above the report
     assert.ok(!before.has(id), 'a new directory was kept');
     const written = JSON.parse(await readFile(join(root, 'report', 'runs', id, 'results.json'), 'utf8')) as RunReport;
     assert.equal(written.aborted, true, 'the report says aborted — the runtime\'s own fact');
-    const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { status: string; exitCode: number | null; kept: string }[];
+    const runs = (await (await api(`${baseUrl}/api/runs`)).json()) as { status: string; exitCode: number | null; kept: string }[];
     const run = runs.find((r) => r.kept === `report/runs/${id}`)!;
     assert.equal(run.status, 'cancelled');
     // U7's rule: the exit is the page's fact, not the report's, whenever the report's verdict does
@@ -1035,14 +1100,14 @@ test('a run cancelled from the page: its kept directory says so above the report
 });
 
 test('a run that could not start: the live pane keeps its exit and stderr, drawn as the failure it is, and nothing is kept', async () => {
-  await page.goto(`${baseUrl}${API_RUN}`);
+  await page.goto(`${pageUrl}${API_RUN}`);
   // `--workers 0` — `tflw run` refuses it (usage, exit 2) before any report is written.
-  const before = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string }[];
+  const before = (await (await api(`${baseUrl}/api/runs`)).json()) as { id: string }[];
   await page.locator('[data-workers]').fill('0');
   await page.locator('[data-run]').click();
   const pane = page.locator('[data-live]');
   await pane.locator('[data-stderr]').waitFor({ timeout: 60_000 });
-  const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string; status: string; exitCode: number | null; kept: string | null }[];
+  const runs = (await (await api(`${baseUrl}/api/runs`)).json()) as { id: string; status: string; exitCode: number | null; kept: string | null }[];
   const run = runs.find((r) => !before.some((b) => b.id === r.id))!;
   assert.equal(run.kept, null);
   assert.equal(run.status, 'done');
@@ -1093,7 +1158,7 @@ interface FullProject {
   /** `M221` `B` — the basename ▶ writes beside whichever file it plays (`D1184`). */
   playScratch: string;
 }
-const fullProject = async (): Promise<FullProject> => (await (await fetch(`${baseUrl}/api/project`)).json()) as FullProject;
+const fullProject = async (): Promise<FullProject> => (await (await api(`${baseUrl}/api/project`)).json()) as FullProject;
 
 /** The door labels, restated — the cli typecheck has no jsx, so `doors.ts` is not importable here.
  *  `DoorBar`'s own gate reads the same four out of the page, so a drift between these and the
@@ -1120,7 +1185,7 @@ test("Source indexes every declaration the server read, with the badges the side
   // same derivation the sidebar was rendering.
   const view = await fullProject();
   for (const f of view.files) {
-    await page.goto(`${baseUrl}#/api/source/${f.path}`);
+    await page.goto(`${pageUrl}#/api/source/${f.path}`);
     // **A WAIT IS ONLY SAFE WHEN ITS SELECTOR NAMES WHAT THE NAVIGATION ASKED FOR** (`M213-12`).
     // These five `goto`s differ only in the HASH, so the browser fires `hashchange` rather than
     // navigating, and until React commits that render the **previous** file's `[data-test-index]`
@@ -1166,14 +1231,14 @@ test('the index is not door-filtered: a test behind another door is listed where
     .flatMap((f) => f.tests.map((t) => ({ path: f.path, ...t })))
     .find((t) => !t.lenses.includes('api') && t.lenses.length > 0);
   assert.ok(elsewhere, 'the fixture holds a test behind some door other than API');
-  await page.goto(`${baseUrl}#/api/source/${elsewhere.path}`);
+  await page.goto(`${pageUrl}#/api/source/${elsewhere.path}`);
   const row = page.locator(`[data-source-test="${elsewhere.name}"]`);
   await row.waitFor();
   assert.equal(await row.getAttribute('data-test-here'), 'no', 'the row says this door is not one of its own');
   const also = await row.locator('[data-also]').evaluateAll((els) => els.map((e) => e.getAttribute('data-also')!).sort());
   assert.deepEqual(also, [...elsewhere.lenses].sort(), 'and names every door it is behind');
   // The sidebar cannot say this: it lists the file with a count and never the test.
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.locator('[data-files]').waitFor();
   assert.equal(await page.locator(`[data-project-test="${elsewhere.name}"]`).count(), 0);
 });
@@ -1191,8 +1256,8 @@ test('the index is not door-filtered: a test behind another door is listed where
 // it. A count high enough that the unfixed page is visibly broken is enough.
 test('a report holding the same finding many times renders one row saying how many, and one accept button', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m211-dupes-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     // Derived from a real report rather than invented, so every field the row renders is one the
@@ -1213,7 +1278,7 @@ test('a report holding the same finding many times renders one row saying how ma
     await writeFile(join(dir, 'report', 'runs', 'plain', 'results.json'), JSON.stringify({ ...source, findings: [one, differs] }));
     const port = await ui.listen(0);
 
-    await fresh.goto(`http://127.0.0.1:${port}${API_RUN}`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}${API_RUN}`);
     await fresh.locator('[data-report-row="dupes"]').click();
     await fresh.locator('[data-report="dupes"]').waitFor();
 
@@ -1245,7 +1310,7 @@ test('a report holding the same finding many times renders one row saying how ma
     // And the pane costs the same as if the duplicates had never been written. The unfixed page
     // measured 3,455,656 px on 29,381 rows — ~118 px each — so 401 rows would have been ~47,000.
     const tall = await fresh.locator('.main').evaluate((el) => el.scrollHeight);
-    await fresh.goto(`http://127.0.0.1:${port}${API_RUN}`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}${API_RUN}`);
     await fresh.locator('[data-report-row="plain"]').click();
     await fresh.locator('[data-report="plain"]').waitFor();
     const control = await fresh.locator('.main').evaluate((el) => el.scrollHeight);
@@ -1272,8 +1337,8 @@ test('a report holding the same finding many times renders one row saying how ma
 // here as included, on purpose.
 test('a file that does not parse is badged as recovered, and the landing stops counting it', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m211-broken-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     const body = (n: number, tag = '@api'): string =>
@@ -1289,7 +1354,7 @@ test('a file that does not parse is badged as recovered, and the landing stops c
     const base = `http://127.0.0.1:${port}`;
 
     // The server's own answer first — the page is graded against this, never against a literal.
-    const project = (await (await fetch(`${base}/api/project`)).json()) as {
+    const project = (await (await api(`${base}/api/project`)).json()) as {
       files: { path: string; tests: unknown[]; diagnostics: number; errors: number; warnings: number }[];
     };
     const byPath = new Map(project.files.map((f) => [f.path, f]));
@@ -1337,8 +1402,8 @@ test('a file that does not parse is badged as recovered, and the landing stops c
 // first draft of this test passed. A file long enough to have a middle is the instrument.
 test('an index row scrolls the text to its own line, and puts that line in the middle', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-s2-scroll-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 900, height: 300 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 900, height: 300 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     const body: string[] = [];
@@ -1347,7 +1412,7 @@ test('an index row scrolls the text to its own line, and puts that line in the m
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
 
-    await fresh.goto(`${base}/#/api/source/long.tflw`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/source/long.tflw`);
     await fresh.locator('[data-test-index]').waitFor();
     const decl = fresh.locator('[data-source-test="case 12"]');
     const declLine = Number(await decl.getAttribute('data-line'));
@@ -1400,7 +1465,7 @@ const treeShape = (p: Page): Promise<string[]> =>
 test('the tree is byte-identical behind all four doors — the door is a count and narrows nothing', async () => {
   const shapes: Record<string, string[]> = {};
   for (const door of ['api', 'browser', 'load', 'scan']) {
-    await page.goto(`${baseUrl}#/${door}`);
+    await page.goto(`${pageUrl}#/${door}`);
     // `[data-doorbar]` carries the door, so this wait names its own subject (`M213-12`); waiting on
     // `[data-files]` would have been satisfied by the previous door's render, and this test's whole
     // claim is that the four trees are equal — the one claim a stale read makes trivially true.
@@ -1417,7 +1482,7 @@ test('the tree is byte-identical behind all four doors — the door is a count a
   for (const door of ['api', 'browser', 'load', 'scan']) {
     const silent = view.files.filter((f) => f.tests.length + f.crawls.length > 0 && ![...f.tests, ...f.crawls].some((t) => t.lenses.includes(door)));
     assert.ok(silent.length > 0, `the fixture has a file with nothing behind ${door}, or this gate proves nothing there`);
-    await page.goto(`${baseUrl}#/${door}`);
+    await page.goto(`${pageUrl}#/${door}`);
     await page.locator(`[data-doorbar="${door}"]`).waitFor();
     for (const f of silent) {
       assert.equal(await page.locator(`[data-file="${f.path}"] [data-door-count]`).getAttribute('data-door-count-state'), 'none', `${f.path} is listed behind ${door}, counting nothing`);
@@ -1431,8 +1496,8 @@ test('a fragment file is in the tree, reads `—`, and is not dimmed', async () 
   // files in the sibling on every screen forever, and a gate with no fragment to look at would
   // never say so.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-s3-fragment-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage();
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage();
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await mkdir(join(dir, 'shared'), { recursive: true });
@@ -1443,7 +1508,7 @@ test('a fragment file is in the tree, reads `—`, and is not dimmed', async () 
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
 
-    await fresh.goto(`${base}/#/browser`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/browser`);
     await fresh.locator('[data-files]').waitFor();
     assert.equal(await fresh.locator('[data-file]').count(), 2, 'the fragment is listed at all — it was in no list before this slice');
 
@@ -1460,14 +1525,14 @@ test('a fragment file is in the tree, reads `—`, and is not dimmed', async () 
     assert.match((await withTests.locator('.file-row').getAttribute('class'))!, /\bmuted\b/, 'has tests, none behind this door — dimmed');
 
     // And on the door it IS behind, the same row counts.
-    await fresh.goto(`${base}/#/api`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api`);
     await fresh.locator('[data-files]').waitFor();
     assert.equal(await fresh.locator('[data-file="api.tflw"] [data-door-count]').textContent(), '1');
     assert.equal(await fresh.locator('[data-file="shared/root.tflw"] [data-door-count]').textContent(), '—', 'the fragment reads the same behind every door');
 
     // The fragment is now openable, which is the capability `D1062` is for: it was in no list, so
     // it could not be read in Source or edited anywhere.
-    await fresh.goto(`${base}/#/api/source/shared/root.tflw`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/source/shared/root.tflw`);
     await fresh.locator('[data-test-index-empty]').waitFor();
     assert.match((await fresh.locator('[data-preview]').textContent())!, /action "the root" do/);
   } finally {
@@ -1484,15 +1549,15 @@ test('a long name at depth is one line and an ellipsis, with the whole path in r
   // does not wrap; the fixture's names are all short, so the instrument is a project with a name
   // long enough to make the claim falsifiable.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-s3-long-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     const deep = 'tests/api/identity/session-refresh-and-oauth2-and-then-some.tflw';
     await mkdir(join(dir, 'tests', 'api', 'identity'), { recursive: true });
     await writeFile(join(dir, deep), ['@api', 'test "it answers"', '  api GET /x', '  expect status equals 200', ''].join('\n'));
     const port = await ui.listen(0);
-    await fresh.goto(`http://127.0.0.1:${port}/#/api`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api`);
     await fresh.locator('[data-files]').waitFor();
 
     const row = fresh.locator(`[data-file="${deep}"] .file-row`);
@@ -1516,7 +1581,7 @@ test('a long name at depth is one line and an ellipsis, with the whole path in r
 });
 
 test('a folder collapses, and the address reopens it (`D1066` — expansion is inferred, never in the URL)', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.reload();
   await page.locator('[data-files]').waitFor();
   const view = await fullProject();
@@ -1531,7 +1596,7 @@ test('a folder collapses, and the address reopens it (`D1066` — expansion is i
   assert.equal(new URL(page.url()).hash, API_DOOR);
 
   // And an address naming a file inside it wins: a link that cannot show what it names is broken.
-  await page.goto(`${baseUrl}#/api/source/${nested.path}`);
+  await page.goto(`${pageUrl}#/api/source/${nested.path}`);
   await page.locator(`[data-file="${nested.path}"]`).waitFor();
   assert.equal(await page.locator(`[data-dir-toggle="${folder}"]`).getAttribute('aria-expanded'), 'true');
 });
@@ -1621,7 +1686,7 @@ test("the narrowing is the explorer's gesture and the strip reads it back — on
   // left behind — which here was a tag chip another test selected and never cleared. The first
   // draft of this test read `/^run all/`, which matches `run all · @load` perfectly well, and so
   // it passed on the wrong page. The assertion is an equality now for the same reason.
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.reload();
   await page.locator('[data-files]').waitFor();
   const run = page.locator('[data-runstrip] [data-run]');
@@ -1656,14 +1721,14 @@ test('a tag query runs the tests carrying the tag, not the tests in the files ca
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   try {
-    await page.goto(`${baseUrl}${API_RUN}`);
+    await page.goto(`${pageUrl}${API_RUN}`);
     await page.reload();
     await page.locator('[data-search]').fill(`@${tag}`);
     assert.equal(await page.locator('[data-run]').getAttribute('data-run-narrowing'), 'tag');
     assert.equal(await page.locator('[data-run]').textContent(), `run @${tag}`);
     // one-shot: it is the baseline — the set of runs that existed *before* the click — so asking
     // again would not settle it, it would change what the comparison below means
-    const before = new Set(((await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string }[]).map((r) => r.id));
+    const before = new Set(((await (await api(`${baseUrl}/api/runs`)).json()) as { id: string }[]).map((r) => r.id));
     await page.locator('[data-run]').click();
     // The run is identified through `/api/runs` rather than by whatever `[data-report]` happens to
     // be selected: this file runs the project several times, so *the report that is not one of the
@@ -1687,7 +1752,7 @@ test('a tag query runs the tests carrying the tag, not the tests in the files ca
        below with the message it always had — which is what keeps this falsifiable. */
     const finished = await settle(
       async () => {
-        const runs = (await (await fetch(`${baseUrl}/api/runs`)).json()) as { id: string; status: string; kept: string | null }[];
+        const runs = (await (await api(`${baseUrl}/api/runs`)).json()) as { id: string; status: string; kept: string | null }[];
         return runs.find((r) => !before.has(r.id));
       },
       untilMeasurable(
@@ -1708,7 +1773,7 @@ test('a tag query runs the tests carrying the tag, not the tests in the files ca
 });
 
 test('the box says which of the two things a query is doing', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.reload();
   await page.locator('[data-files]').waitFor();
   const view = await fullProject();
@@ -1756,7 +1821,7 @@ test('the box says which of the two things a query is doing', async () => {
 });
 
 test('a tag query matches by prefix and expands to the project’s own tags — `--tag a,b` is OR', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.reload();
   await page.locator('[data-files]').waitFor();
   const view = await fullProject();
@@ -1774,7 +1839,7 @@ test('a tag query matches by prefix and expands to the project’s own tags — 
 });
 
 test('the query is in the address, and a reload reproduces it and the button', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.reload();
   await page.locator('[data-files]').waitFor();
   const view = await fullProject();
@@ -1801,7 +1866,7 @@ test('the query is in the address, and a reload reproduces it and the button', a
     `the address carries the query that was typed (${addressed.attempts} look(s), hash ${new URL(link).hash})`,
   );
 
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     await fresh.goto(link);
     await fresh.locator('[data-files]').waitFor();
@@ -1844,7 +1909,7 @@ const selectedFiles = (p: Page): Promise<string[]> =>
   p.locator('[data-file-row][data-selected="yes"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-row')!));
 
 test('a click opens and selects; cmd extends by one and shift by a range, and neither moves the subject', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.reload();
   await page.locator('[data-files]').waitFor();
   const rows = await page.locator('[data-file-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-row')!));
@@ -1880,7 +1945,7 @@ test('a click opens and selects; cmd extends by one and shift by a range, and ne
 });
 
 test('the selection is in the address, and a reload reproduces it and the button', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.reload();
   await page.locator('[data-files]').waitFor();
   const rows = await page.locator('[data-file-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-row')!));
@@ -1890,7 +1955,7 @@ test('the selection is in the address, and a reload reproduces it and the button
   assert.match(new URL(link).hash, /\?files=/);
 
   // `D1066`'s whole point: a link reproduces a run, and a reload never silently empties the button.
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     await fresh.goto(link);
     await fresh.locator('[data-files]').waitFor();
@@ -1907,14 +1972,14 @@ test('the selection is in the address, and a reload reproduces it and the button
   await page.locator(`[data-dir-toggle="${folder}"]`).click();
 
   // And an address with nothing selected is byte-identical to every link written before `S4`.
-  await page.goto(`${baseUrl}#/api/compose/${rows[0]}`);
+  await page.goto(`${pageUrl}#/api/compose/${rows[0]}`);
   await page.locator('[data-files]').waitFor();
   assert.deepEqual(await selectedFiles(page), []);
   assert.equal(await page.locator('[data-runstrip] [data-run]').textContent(), 'run all');
 });
 
 test('a folder means its files (`D1069`) — plain click folds, cmd-click selects what is under it', async () => {
-  await page.goto(`${baseUrl}${API_DOOR}`);
+  await page.goto(`${pageUrl}${API_DOOR}`);
   await page.reload();
   await page.locator('[data-files]').waitFor();
   const view = await fullProject();
@@ -1963,7 +2028,7 @@ const pendingBytes = async (p: Page): Promise<string> => {
 };
 
 const composeAt = async (file: string, line: number): Promise<void> => {
-  await page.goto(`${baseUrl}#/api/compose/${file}/L${line}`);
+  await page.goto(`${pageUrl}#/api/compose/${file}/L${line}`);
   await page.reload();
   await page.locator('[data-doorbar="api"]').waitFor();
   await page.locator(`[data-seq-open="${line}"]`).waitFor();
@@ -2237,7 +2302,7 @@ test('`M213` `S3`: `+ wait until` writes a poll with an assertion in it — the 
 
 test('Compose has no `file` control on any door — the explorer names the file (`M205` Q7)', async () => {
   for (const [door, attr] of [['api', 'data-api-file'], ['browser', 'data-browser-file'], ['load', 'data-load-file'], ['scan', 'data-scan-file']]) {
-    await page.goto(`${baseUrl}#/${door}`);
+    await page.goto(`${pageUrl}#/${door}`);
     await page.locator(`[data-doorbar="${door}"]`).waitFor();
     assert.equal(await page.locator(`[${attr}]`).count(), 0, `${door}'s Compose no longer states the file a second time`);
   }
@@ -2247,7 +2312,7 @@ test('Compose has no `file` control on any door — the explorer names the file 
   // be true anyway, since the write button only exists while there is something to write.
   const view = await fullProject();
   const target = view.files.find((f) => f.tests.length > 0)!.path;
-  await page.goto(`${baseUrl}#/api`);
+  await page.goto(`${pageUrl}#/api`);
   await page.locator('[data-files]').waitFor();
   await page.locator(`[data-file-row="${target}"]`).click();
   await page.locator('[data-compose-summary]').waitFor();
@@ -2262,11 +2327,11 @@ test('Compose has no `file` control on any door — the explorer names the file 
 
 /** The project as the server derived it, used as this section's oracle. */
 async function projectView(): Promise<{ files: { path: string; tests: { name: string; lenses: string[] }[]; crawls: { name: string; lenses: string[] }[] }[] }> {
-  return (await (await fetch(`${baseUrl}/api/project`)).json()) as never;
+  return (await (await api(`${baseUrl}/api/project`)).json()) as never;
 }
 
 test('the landing is four doors, each counting what is actually behind it', async () => {
-  await page.goto(baseUrl);
+  await page.goto(pageUrl);
   await page.locator('[data-landing]').waitFor();
   const view = await projectView();
   const expected: Record<string, number> = { api: 0, browser: 0, load: 0, scan: 0 };
@@ -2291,7 +2356,7 @@ test('the landing is four doors, each counting what is actually behind it', asyn
 });
 
 test('a door opens the project, and the URL is the only place the choice lives', async () => {
-  await page.goto(baseUrl);
+  await page.goto(pageUrl);
   await page.locator('[data-door="load"]').click();
   await page.locator('[data-files]').waitFor();
   assert.equal(new URL(page.url()).hash, '#/load');
@@ -2302,7 +2367,7 @@ test('a door opens the project, and the URL is the only place the choice lives',
   await page.locator('[data-landing]').waitFor();
 
   // And a pasted link opens where it says, with nothing remembered from the visit above.
-  await page.goto(`${baseUrl}#/scan`);
+  await page.goto(`${pageUrl}#/scan`);
   await page.locator('[data-files]').waitFor();
   assert.equal(await page.locator('[data-doorbar]').getAttribute('data-doorbar'), 'scan');
 });
@@ -2317,7 +2382,7 @@ test('the door narrows the count and never the test — a test behind two doors 
   // doors is reachable behind all three, carrying its whole derivation and naming the others.
   for (const test_ of multi) {
     for (const lens of test_.lenses) {
-      await page.goto(`${baseUrl}#/${lens}/source/${test_.path}`);
+      await page.goto(`${pageUrl}#/${lens}/source/${test_.path}`);
       const item = page.locator(`[data-source-test="${test_.name}"]`);
       await item.waitFor();
       assert.equal(await item.getAttribute('data-test-lenses'), test_.lenses.join(' '), `${test_.name} carries its whole derivation behind ${lens}`);
@@ -2340,7 +2405,7 @@ test('the derivation is about constructs, not tags — the page shows it where t
   const view = await fullProject();
   const tagged = view.files.find((f) => f.path.endsWith('security.tflw'));
   assert.ok(tagged, 'the fixture has security.tflw');
-  await page.goto(`${baseUrl}#/api/source/${tagged.path}`);
+  await page.goto(`${pageUrl}#/api/source/${tagged.path}`);
   await page.locator('[data-test-index]').waitFor();
   for (const t of tagged.tests) {
     const row = page.locator(`[data-source-test="${t.name}"]`);
@@ -2352,7 +2417,7 @@ test('the derivation is about constructs, not tags — the page shows it where t
 });
 
 test('the switcher moves between doors without leaving the project', async () => {
-  await page.goto(`${baseUrl}#/api`);
+  await page.goto(`${pageUrl}#/api`);
   await page.locator('[data-doorbar]').waitFor();
   const view = await projectView();
   const browserOnly = view.files.find((f) => f.tests.length > 0 && f.tests.every((t) => t.lenses.includes('browser') && !t.lenses.includes('api')));
@@ -2389,7 +2454,7 @@ test('the switcher moves between doors without leaving the project', async () =>
 
 /** Open a declaration on a door, by the address the sidebar writes. */
 const declAt = async (door: 'api' | 'browser' | 'load', file: string, line: number): Promise<void> => {
-  await page.goto(`${baseUrl}#/${door}/compose/${file}/L${line}`);
+  await page.goto(`${pageUrl}#/${door}/compose/${file}/L${line}`);
   await page.reload();
   await page.locator(`[data-doorbar="${door}"]`).waitFor();
   await page.locator('[data-band-facts]').waitFor();
@@ -2398,7 +2463,7 @@ const declAt = async (door: 'api' | 'browser' | 'load', file: string, line: numb
 /** Which line each test of a file starts on, read off the project the server publishes rather
  *  than counted here — a fixture that grows a comment must not move a gate. */
 const declLines = async (file: string): Promise<number[]> => {
-  const view = (await (await fetch(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { line: number }[] }[] };
+  const view = (await (await api(`${baseUrl}/api/project`)).json()) as { files: { path: string; tests: { line: number }[] }[] };
   return view.files.find((f) => f.path === file)!.tests.map((t) => t.line);
 };
 
@@ -2435,10 +2500,10 @@ test('`M224` `D`: the LOAD door draws the Compose sequence, and its address sele
 // bar. Parity cannot be satisfied by a number nobody chose.
 // **Mutation: restore the two-door predicate → LOAD's `main` loses `main-fill` and the bottoms part.**
 test('`M224` `D`: LOAD lays out like the door the pane was built for, to the pixel', async () => {
-  const sized = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const sized = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     const read = async (door: 'api' | 'load', file: string, line: number): Promise<Record<string, unknown>> => {
-      await sized.goto(`${baseUrl}#/${door}/compose/${file}/L${line}`);
+      await sized.goto(`${pageUrl}#/${door}/compose/${file}/L${line}`);
       await sized.reload();
       await sized.locator('[data-band-facts]').waitFor();
       /* A **locator** evaluate rather than a page one: `types: ["node"]` and no DOM lib, so
@@ -2706,7 +2771,7 @@ test('the BROWSER door has the same five tabs, and its run pane is only reachabl
   // door whose Compose is a different form entirely"* until `M213` `S4`, which is exactly what
   // stopped being true: `BrowserForm` is retired and this door's Compose is the same pane API's
   // is, reading one row of `vocabulary.ts` (`D1094`).
-  await page.goto(`${baseUrl}#/browser`);
+  await page.goto(`${pageUrl}#/browser`);
   await page.reload();
   await page.locator('[data-door-form="browser"]').waitFor();
   assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip BROWSER link stopped opening the door');
@@ -2753,7 +2818,7 @@ test('the LOAD door has the same five tabs, and its run pane is only reachable t
   // `doorFromHash`, `tabFromHash` and `fileFromHash` and the hash stuck — and the page rendered no
   // strip at all. So this door had addressable tabs no gesture could reach, which is what the
   // first loop below is actually pinning.
-  await page.goto(`${baseUrl}#/load`);
+  await page.goto(`${pageUrl}#/load`);
   await page.reload();
   await page.locator('[data-compose-pane]').waitFor();
   assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip LOAD link stopped opening the door');
@@ -2812,10 +2877,10 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
   // §1's own 4,118-screen case. It was caught by the mutation and not by reading the stylesheet:
   // restoring LOAD's inline run pane left the box version green while the strip test beside it went
   // red.
-  const sized = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const sized = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     const read = async (door: 'api' | 'browser' | 'load'): Promise<Record<string, number>> => {
-      await sized.goto(`${baseUrl}#/${door}`);
+      await sized.goto(`${pageUrl}#/${door}`);
       await sized.reload();
       await sized.locator('[data-doorbar]').waitFor();
       const out: Record<string, number> = {};
@@ -2902,7 +2967,7 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
      * not the height, for the same reason the equality above is: four doors at 900 px satisfy any
      * height claim you write.
      */
-    await sized.goto(`${baseUrl}#/load`);
+    await sized.goto(`${pageUrl}#/load`);
     await sized.reload();
     await sized.locator('[data-compose-pane]').waitFor();
     /* `M235-09` — **the wait above WAS satisfied by the pane saying it is NOT ready.** The reading
@@ -2958,7 +3023,7 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
        Compose tab measures **900** — the control would have reported the instrument blind when
        what it had actually found is the layout working. Taken on Source, where `.main` is the
        ordinary scrolling column the parity numbers above are read from. */
-    await sized.goto(`${baseUrl}#/load/source`);
+    await sized.goto(`${pageUrl}#/load/source`);
     await sized.locator('[data-tabstrip="source"]').waitFor();
     const overflowed = await sized.locator('.main').evaluate((el) => {
       const probe = el.ownerDocument.createElement('div');
@@ -2981,7 +3046,7 @@ test('SCANS adopts the strip, and with it no door renders its runs inline any mo
   // is **gone** rather than narrowed. `M205` `S5a` gave API a Run tab and left the other three
   // stacking the run list under their form; `S2b` took BROWSER, `S1` took LOAD, and this takes the
   // last one.
-  await page.goto(`${baseUrl}#/scan`);
+  await page.goto(`${pageUrl}#/scan`);
   await page.reload();
   /* `M228` `B` (`D1237`) — this waited on `[data-scan-form]`, and there is no scan form any more.
      The door draws the standard pane like the other three, so the wait is the pane's own grid. */
@@ -3006,7 +3071,7 @@ test('SCANS adopts the strip, and with it no door renders its runs inline any mo
   // all four rather than by trusting that three previous gates still hold. A conditional narrowed
   // to a door that no longer needs it would pass every per-door test above and fail this.
   for (const door of ['api', 'browser', 'load', 'scan'] as const) {
-    await page.goto(`${baseUrl}#/${door}`);
+    await page.goto(`${pageUrl}#/${door}`);
     await page.reload();
     await page.locator('[data-doorbar]').waitFor();
     assert.equal(await page.locator('.main > .runs').count(), 0, `${door} still renders its runs inline`);
@@ -3035,13 +3100,13 @@ test('SCANS’ Compose predicts and Auth enumerates — one tflw.config, two cla
   // list a target. A gate that only clicked the link would pass against a Compose that had grown
   // its own copy of the list beside it.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-unauth-'));
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init', '--scan'], { cwd: dir, stdio: 'pipe' });
-    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/scan.tflw`);
       await fresh.locator('[data-compose-scan-unauthorized]').waitFor();
 
       // `tflw init --scan` leaves the line commented out on purpose (`D291`), so this project is
@@ -3091,7 +3156,7 @@ test('an unsaved tflw.config edit survives a door change, because a project fact
   // project file, disagreeing about what is unsaved. The state is the shell's now, so walking away
   // to a different KIND OF WORK no longer throws away an edit you have not saved — the same
   // argument the tab case already won.
-  await page.goto(`${baseUrl}#/browser/config`);
+  await page.goto(`${pageUrl}#/browser/config`);
   await page.reload();
   await page.locator('[data-api-config-text]').waitFor();
   const original = await page.locator('[data-api-config-text]').inputValue();
@@ -3120,7 +3185,7 @@ test('Config shows the documents this project declares, addressed by `@env`', as
   // block, which is deliberate and measured: `full` and `headers` exist to hold the SAME finding
   // once gating and once known/accepted, so a `defaults` line would baseline it in both and delete
   // the contrast a dozen assertions above read as their oracle.
-  await page.goto(`${baseUrl}#/scan/config`);
+  await page.goto(`${pageUrl}#/scan/config`);
   await page.reload();
   await page.locator('[data-api-config-text]').waitFor();
 
@@ -3160,7 +3225,7 @@ test('an unsaved edit in one document survives a trip to another, and the mark s
   // moved it up one level for the config. A second document makes the same mistake available one
   // level in — an author who types into a baseline, looks at `tflw.config` and comes back must
   // still have their edit, and the mark must keep saying so while they are away.
-  await page.goto(`${baseUrl}#/scan/config/@headers`);
+  await page.goto(`${pageUrl}#/scan/config/@headers`);
   await page.reload();
   await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
   const original = await page.locator('[data-api-config-text]').inputValue();
@@ -3259,7 +3324,7 @@ test('`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the ro
   // The retired form asked *which test do you want to append to* through a `<select>`, with the
   // file as an argument; this pane draws the file and you point at a declaration. Same three
   // actions — `click`, `fill`, `expect` — reached the way every other door reaches its own.
-  await page.goto(`${baseUrl}#/browser`);
+  await page.goto(`${pageUrl}#/browser`);
   await page.reload();
   await page.locator('[data-door-form="browser"]').waitFor();
 
@@ -3369,7 +3434,7 @@ test('`M221` `A`+`B`: the stage is under the columns with room for the viewer, a
    * columns returned `main` itself, i.e. nothing was there. So the width claim is the one this
    * gate holds, because it is the claim the placement was overturned on.
    */
-  await page.goto(`${baseUrl}#/browser`);
+  await page.goto(`${pageUrl}#/browser`);
   await page.reload();
   await page.locator('[data-door-form="browser"]').waitFor();
   const target = 'tests/shop.tflw';
@@ -3528,7 +3593,7 @@ test('`M213` `S4`: adding a gesture to a test that already opened a page writes 
   // **`BrowserForm` answered this with a mode select and the author's memory; the pane answers it
   // by not having the question.** `+ click` and `+ fill` write one statement each, at the foot;
   // `+ open` is a separate gesture that goes to the top, and nothing bundles them.
-  await page.goto(`${baseUrl}#/browser`);
+  await page.goto(`${pageUrl}#/browser`);
   await page.reload();
   await page.locator('[data-door-form="browser"]').waitFor();
 
@@ -3569,7 +3634,7 @@ test('`M213` `S4`: adding a gesture to a test that already opened a page writes 
  */
 test('`M219` `B`: an `open` starts a session, and so does a `call` the project index says opens a page', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m219-fold-'));
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
     // The actions live in another file, reached by `use` — which is the case a per-file answer
@@ -3605,10 +3670,10 @@ test('`M219` `B`: an `open` starts a session, and so does a `call` the project i
       ].join('\n'),
       'utf8',
     );
-    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      await fresh.goto(`${base}#/browser/compose/web.tflw/L3`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/web.tflw/L3`);
       await fresh.locator('[data-seq-rows]').waitFor();
 
       /** Every sequence row, with the depth the fold drew it at. */
@@ -3687,7 +3752,7 @@ test('`M219` `B`: an `open` starts a session, and so does a `call` the project i
 
       // **A second `open` ends the first session** — it is a new page, and what follows is against
       // it. The mutation this pins is *a second `open` extends the first*.
-      await fresh.goto(`${base}#/browser/compose/web.tflw/L10`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/web.tflw/L10`);
       await fresh.locator('[data-seq-sessions]').waitFor();
       assert.equal(await fresh.locator('[data-seq-sessions]').getAttribute('data-seq-sessions'), '2');
 
@@ -3701,7 +3766,7 @@ test('`M219` `B`: an `open` starts a session, and so does a `call` the project i
        * corpus's 22 declared actions are api-only and are simply never called from a browser test.
        * `seed()` here is the seeding helper that breaks it.
        */
-      await fresh.goto(`${base}#/browser/compose/web.tflw/L16`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/web.tflw/L16`);
       await fresh.locator('[data-seq-sessions]').waitFor();
       const called = await rows();
       assert.deepEqual(
@@ -3741,7 +3806,7 @@ test('`M219` `B`: an `open` starts a session, and so does a `call` the project i
  */
 test('`M219` `D`: one statement in a `within` is one row carrying both; more than one is a group', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m219-within-'));
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
     await writeFile(
@@ -3761,10 +3826,10 @@ test('`M219` `D`: one statement in a `within` is one row carrying both; more tha
       ].join('\n'),
       'utf8',
     );
-    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      await fresh.goto(`${base}#/browser/compose/web.tflw/L1`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/web.tflw/L1`);
       await fresh.locator('[data-seq-rows]').waitFor();
 
       // **THE QUALIFIER ARM.** One row, carrying the scope as a chip and the gesture as the text.
@@ -3796,7 +3861,7 @@ test('`M219` `D`: one statement in a `within` is one row carrying both; more tha
       // **THE GROUP ARM.** Two statements, so the block is a header with its body indented and
       // every row of it addressable — the eight in the corpus that earn it.
       await fresh.locator('[data-tab="compose"]').click();
-      await fresh.goto(`${base}#/browser/compose/web.tflw/L6`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/web.tflw/L6`);
       await fresh.locator('[data-seq-scope]').waitFor();
       assert.equal(await fresh.locator('[data-seq-scope]').getAttribute('data-seq-scope-holds'), '2');
       const held = await fresh.locator('[data-seq-scope] .seq .seq-row').evaluateAll((els) => els.map((e) => (e.querySelector('.seq-text')?.textContent ?? '').trim()));
@@ -3820,7 +3885,7 @@ test('`M219` `D`: one statement in a `within` is one row carrying both; more tha
  */
 test('`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer follows the phase', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m219-step-'));
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
     await writeFile(
@@ -3828,10 +3893,10 @@ test('`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer fol
       'test "mixed"\n  api POST /login\n  expect status equals 200\n  open "/account"\n  expect text "Hi" is visible\n  expect status equals 200\n',
       'utf8',
     );
-    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      await fresh.goto(`${base}#/browser/compose/web.tflw/L1`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/web.tflw/L1`);
       await fresh.locator('[data-seq-add="step"]').waitFor();
 
       /**
@@ -3955,7 +4020,7 @@ test('a pick session outlives a tab switch and dies with the door — asserted o
   const dir = await mkdtemp(join(tmpdir(), 'tflw-pick-life-'));
   const stub = join(dir, 'stub.mjs');
   const pidFile = join(dir, 'pick.pid');
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     await writeFile(join(dir, 'tflw.config'), 'env local\n  web "http://localhost:3000"\n  api "http://127.0.0.1:1"\n', 'utf8');
     // A `click` row, because `pick` is a **locator-fixer** since `M213` `S4` (`D1106`) — the
@@ -3974,11 +4039,11 @@ test('a pick session outlives a tab switch and dies with the door — asserted o
       ].join('\n'),
       'utf8',
     );
-    const srv = new UiServer({ root: dir, cliEntry: stub, execArgv: [], staticDir: join(scratch, 'ui') });
+    const srv = new UiServer({ token: TOKEN, root: dir, cliEntry: stub, execArgv: [], staticDir: join(scratch, 'ui') });
     const port = await srv.listen(0);
     const url = `http://127.0.0.1:${port}/`;
     try {
-      await fresh.goto(`${url}#/browser`);
+      await fresh.goto(`${url}?token=${TOKEN}#/browser`);
       await fresh.locator('[data-door-form="browser"]').waitFor();
       await fresh.locator(`[data-file-row="web.tflw"]`).click();
       await fresh.locator('[data-compose-summary]').waitFor();
@@ -4039,7 +4104,7 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
    */
   const dir = await mkdtemp(join(tmpdir(), 'tflw-record-'));
   const stub = join(dir, 'stub.mjs');
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   const pageErrors: string[] = [];
   fresh.on('pageerror', (e) => pageErrors.push(e.message));
   try {
@@ -4074,10 +4139,10 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
       'utf8',
     );
 
-    const ui = new UiServer({ root: dir, cliEntry: stub, execArgv: [], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry: stub, execArgv: [], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      await fresh.goto(`${base}#/browser`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/browser`);
       await fresh.locator('[data-door-form="browser"]').waitFor();
       await fresh.locator('[data-file-row="web.tflw"]').click();
       await fresh.locator('[data-compose-summary]').waitFor();
@@ -4258,7 +4323,7 @@ test('`M213` `S4`: `pick` fixes the locator on the row it is pressed on, from a 
   // lives, and `pickArgv`/`pickUrl` pin the boundary between them.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-pick-door-'));
   const stub = join(dir, 'stub.mjs');
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   // **A THROWN HANDLER AND A FILTERED LINE LOOK IDENTICAL FROM THE OUTSIDE**, which is how the
   // kind check nearly shipped unverified. Remove it and a banner — a `MalformedStep`, with no
   // `.locator` — makes `locatorFromPickLine` throw inside the stream callback; the suggestion is
@@ -4298,10 +4363,10 @@ test('`M213` `S4`: `pick` fixes the locator on the row it is pressed on, from a 
       'utf8',
     );
 
-    const ui = new UiServer({ root: dir, cliEntry: stub, execArgv: [], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry: stub, execArgv: [], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      await fresh.goto(`${base}#/browser`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/browser`);
       await fresh.locator('[data-door-form="browser"]').waitFor();
       await fresh.locator('[data-file-row="web.tflw"]').click();
       await fresh.locator('[data-compose-summary]').waitFor();
@@ -4361,7 +4426,7 @@ test('the SCANS door grades a response a test already fetches, and the three ind
      The claim is unchanged and is the one worth keeping — **`check`/`expect`, the family and the
      severity floor are three independent positions in the grammar**, so a gate carrying only one
      of them could not tell a printer that dropped another. */
-  await page.goto(`${baseUrl}#/scan`);
+  await page.goto(`${pageUrl}#/scan`);
   await page.reload();
   await page.locator('.compose-pane-grid').waitFor();
 
@@ -4369,7 +4434,7 @@ test('the SCANS door grades a response a test already fetches, and the three ind
   const before = await readFile(join(root, target), 'utf8');
   const line = before.split('\n').findIndex((l) => l.trim() === 'expect status equals 200') + 1;
   assert.ok(line > 0, `the fixture file must hold a plain status assertion to widen:\n${before}`);
-  await page.goto(`${baseUrl}#/scan/compose/${target}/L${line}`);
+  await page.goto(`${pageUrl}#/scan/compose/${target}/L${line}`);
   await page.locator('[data-expect-matcher]').first().waitFor();
 
   /* **The subject first, and `M228` `D` is why.** This was written matcher-first and timed out on
@@ -4408,11 +4473,11 @@ test('the SCANS door grades a response a test already fetches, and the three ind
 
 test('a project with no `authorized target`: the SCANS door says so, shows the TF060 it will get, and writes anyway', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-door-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage();
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage();
   try {
     const base = `http://127.0.0.1:${await ui.listen(0)}`;
-    await fresh.goto(base);
+    await fresh.goto(`${base}/?token=${TOKEN}`);
 
     // 1. The landing offers to create one, and SCANS now has a scaffold of its own to offer —
     //    `D1053`. Before `A2-4` this door created the plain project and said so.
@@ -4554,11 +4619,11 @@ test('a project with no `authorized target`: the SCANS door says so, shows the T
 
 test('a directory that is not a project: pick LOAD, get one, write a test into it, run it, read its charts', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-green-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage();
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage();
   try {
     const base = `http://127.0.0.1:${await ui.listen(0)}`;
-    await fresh.goto(base);
+    await fresh.goto(`${base}/?token=${TOKEN}`);
 
     // 1. The landing says there is nothing here, and offers to make one rather than showing four
     //    doors onto an empty project.
@@ -4679,7 +4744,7 @@ test('the API door adds work to a test the LOAD door started, above its workload
   // A `steps` insertion has to land below the `run … iterations` line and above any `threshold`,
   // which is three regions of one test and the shape the lang gate measures directly.
   const target = 'tests/load.tflw';
-  await page.goto(`${baseUrl}#/load`);
+  await page.goto(`${pageUrl}#/load`);
   await page.reload();
   await page.locator('[data-compose-pane]').waitFor();
   await page.locator(`[data-file-row="${target}"]`).click();
@@ -4704,13 +4769,13 @@ test('the API door adds work to a test the LOAD door started, above its workload
   // *add to an existing test* out of a dropdown; the API door now does it with `+ request` at the
   // foot of that test's own body. `D1044` is unchanged either way — a door adds the work it knows
   // how to describe, to a test any door may have started.
-  await page.goto(`${baseUrl}#/api`);
+  await page.goto(`${pageUrl}#/api`);
   await page.reload();
   await page.locator('[data-door-form="api"]').waitFor();
   await page.locator(`[data-file-row="${target}"]`).click();
   const started2 = await readFile(join(root, target), 'utf8');
   const declLine = started2.split('\n').findIndex((l) => l.includes('test "the API door finishes this one"')) + 1;
-  await page.goto(`${baseUrl}#/api/compose/${target}/L${declLine}`);
+  await page.goto(`${pageUrl}#/api/compose/${target}/L${declLine}`);
   await page.locator('[data-seq-add="request"]').click();
   await page.locator('[data-compose-dirty]').waitFor();
   // The address names the TEST (`M214` `D1113`), so the request that was just added is picked from
@@ -4793,7 +4858,7 @@ test('the page says when the scratch file is not ignored, rather than editing .g
   // so the shell keeps the project view it already has and the notice would be reading a fact from
   // before the `.gitignore` was written.
   const atRequest = async (): Promise<void> => {
-    await page.goto(`${baseUrl}#/api/compose/${f.path}`);
+    await page.goto(`${pageUrl}#/api/compose/${f.path}`);
     await page.reload();
     await page.locator('[data-prefix]').waitFor();
   };
@@ -4807,7 +4872,7 @@ test('the page says when the scratch file is not ignored, rather than editing .g
   // this test that checked only `/api/project`. So the line is added, the page reloaded, and the
   // notice has to be gone.
   await writeFile(join(root, '.gitignore'), `${SCRATCH_PATH}\n`, 'utf8');
-  const project = (await (await fetch(`${baseUrl}/api/project`)).json()) as { scratchPath: string; scratchIgnored: boolean };
+  const project = (await (await api(`${baseUrl}/api/project`)).json()) as { scratchPath: string; scratchIgnored: boolean };
   assert.equal(project.scratchPath, SCRATCH_PATH);
   assert.equal(project.scratchIgnored, true);
 
@@ -4829,20 +4894,20 @@ test('the strip is an address, and Compose keeps what you typed while you are lo
   // The first claim is the one with a cost if it is wrong. `#/api` meant something before the strip
   // existed and has to keep meaning it, because every link anyone has ever pasted is of that shape
   // and `doorFromHash` now has to ignore a segment that was not there.
-  await page.goto(`${baseUrl}#/api`);
+  await page.goto(`${pageUrl}#/api`);
   await page.reload();
   await page.locator('[data-door-form="api"]').waitFor();
   assert.equal(await page.locator('[data-tabstrip]').getAttribute('data-tabstrip'), 'compose', 'a pre-strip link stopped opening the door');
 
   // A pasted tab link lands on that tab, with the door still resolved around it.
-  await page.goto(`${baseUrl}#/api/source`);
+  await page.goto(`${pageUrl}#/api/source`);
   await page.reload();
   await page.locator('[data-tabstrip="source"]').waitFor();
   assert.equal(await page.locator('[data-doorbar]').getAttribute('data-doorbar'), 'api');
 
   // A tab nobody has heard of is `compose`, not an error — the same tolerance `doorFromHash` has
   // for a hand-typed door, for the same reason.
-  await page.goto(`${baseUrl}#/api/coverage`);
+  await page.goto(`${pageUrl}#/api/coverage`);
   await page.reload();
   await page.locator('[data-tabstrip="compose"]').waitFor();
 
@@ -4857,7 +4922,7 @@ test('the strip is an address, and Compose keeps what you typed while you are lo
   // fields are what it should show. A request is named by its line, which is what this test is
   // about anyway — it types into a request's path.
   const firstRequest = requestsInSource(await readFile(join(root, f.path), 'utf8'))[0]!;
-  await page.goto(`${baseUrl}#/api/compose/${f.path}/L${firstRequest.line}`);
+  await page.goto(`${pageUrl}#/api/compose/${f.path}/L${firstRequest.line}`);
   await page.locator('[data-request-path]').waitFor();
 
   // **`M212` `S4b` changed what is typed into, and sharpened what this grades.** The retired form's
@@ -4899,7 +4964,7 @@ test('Auth says what a session does NOT reach, and a mixed test is where that ma
   // all-api or all-page — so the corpus behind the shipped gate could not produce the case where
   // its panel was wrong. The assertion was not weak; the fixture had no instance of the class.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-auth-mixed-'));
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     await writeFile(join(dir, 'tflw.config'), 'env local\n  api "http://127.0.0.1:1"\n  web "http://localhost:3000"\n', 'utf8');
     // One test that logs in twice — an API call for its api steps and a form for its page — which
@@ -4924,10 +4989,10 @@ test('Auth says what a session does NOT reach, and a mixed test is where that ma
     );
     await writeFile(join(dir, 'apionly.tflw'), 'test "nothing but api"\n  api GET /items\n  expect status equals 200\n', 'utf8');
 
-    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     const base = `http://127.0.0.1:${await ui.listen(0)}/`;
     try {
-      await fresh.goto(`${base}#/browser/auth/mixed.tflw`);
+      await fresh.goto(`${base}?token=${TOKEN}#/browser/auth/mixed.tflw`);
       await fresh.locator('[data-auth-reach-api]').waitFor();
 
       // Both kinds counted, from the language's own `stepLensCounts` rather than a rule invented
@@ -4953,7 +5018,7 @@ test('Auth says what a session does NOT reach, and a mixed test is where that ma
       // NEGATIVE CONTROL, and the test is worth little without it: on a file with no page steps the
       // refusal is ABSENT. A warning shown unconditionally is decoration, and would pass every
       // assertion above while telling an api-only author something irrelevant.
-      await fresh.goto(`${base}#/browser/auth/apionly.tflw`);
+      await fresh.goto(`${base}?token=${TOKEN}#/browser/auth/apionly.tflw`);
       await fresh.locator('[data-auth-reach-api]').waitFor();
       assert.equal(await fresh.locator('[data-auth-reach-page]').getAttribute('data-auth-reach-page'), '0');
       assert.equal(await fresh.locator('[data-auth-no-bridge]').count(), 0, 'the refusal is shown on a file it does not apply to');
@@ -4982,7 +5047,7 @@ test('the Auth block leads with the anonymous case, and each door gets only its 
   // `privileged`, so the probe set AND the exclusion set are both non-empty and nameable — a
   // fixture with one or the other empty would let a panel that showed only one of them pass.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-auth-frame-'));
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     await writeFile(
       join(dir, 'tflw.config'),
@@ -5020,13 +5085,13 @@ test('the Auth block leads with the anonymous case, and each door gets only its 
     await writeFile(join(dir, 'named.tflw'), 'test "as somebody" as shopper\n  api GET /items\n  expect status equals 200\n', 'utf8');
     await writeFile(join(dir, 'nobody.tflw'), 'test "as nobody"\n  api GET /items\n  expect status equals 200\n', 'utf8');
 
-    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}/`;
 
       // 1. THE HEADLINE, on the commonest kind of file. The block leads with the anonymous case
       //    rather than with a caveat about sessions the file does not have.
-      await fresh.goto(`${base}#/api/auth/nobody.tflw`);
+      await fresh.goto(`${base}?token=${TOKEN}#/api/auth/nobody.tflw`);
       await fresh.locator('[data-auth-identity]').waitFor();
       assert.equal(await fresh.locator('[data-auth-identity]').getAttribute('data-auth-identity'), 'anonymous');
       assert.match((await fresh.locator('[data-auth-identity]').textContent()) ?? '', /Nothing here declares an identity/);
@@ -5038,7 +5103,7 @@ test('the Auth block leads with the anonymous case, and each door gets only its 
       assert.equal(await fresh.locator('[data-auth-sessions]').count(), 0, 'the enumeration renders with nothing to enumerate');
 
       // 2. The other kind of file names its sessions in the same headline slot.
-      await fresh.goto(`${base}#/api/auth/named.tflw`);
+      await fresh.goto(`${base}?token=${TOKEN}#/api/auth/named.tflw`);
       await fresh.locator('[data-auth-identity]').waitFor();
       assert.equal(await fresh.locator('[data-auth-identity]').getAttribute('data-auth-identity'), 'named');
       assert.match((await fresh.locator('[data-auth-identity]').textContent()) ?? '', /shopper/);
@@ -5047,7 +5112,7 @@ test('the Auth block leads with the anonymous case, and each door gets only its 
       // 3. `Q4` — SCANS inverts the premise: the identity in force is not one, it is all of them.
       //    Both sets named, and the numbers are the ones `probeSetFor` would build: five declared
       //    sessions, two privileged, so four probe as (three plus `anonymous`) and two are out.
-      await fresh.goto(`${base}#/scan/auth/named.tflw`);
+      await fresh.goto(`${base}?token=${TOKEN}#/scan/auth/named.tflw`);
       await fresh.locator('[data-auth-scan-caveat]').waitFor();
       const scanCaveat = fresh.locator('[data-auth-scan-caveat]');
       assert.equal(await scanCaveat.getAttribute('data-auth-probe-set'), '4', 'the probe set is not three sessions plus anonymous');
@@ -5059,7 +5124,7 @@ test('the Auth block leads with the anonymous case, and each door gets only its 
 
       // 4. `Q3` — LOAD's caveat, and the half that matters is the second: a re-login's own requests
       //    are absent from the numbers a `threshold p95 duration` is computed over.
-      await fresh.goto(`${base}#/load/auth/named.tflw`);
+      await fresh.goto(`${base}?token=${TOKEN}#/load/auth/named.tflw`);
       await fresh.locator('[data-auth-load-caveat]').waitFor();
       const loadText = (await fresh.locator('[data-auth-load-caveat]').textContent()) ?? '';
       assert.match(loadText, /Many users, one identity/);
@@ -5071,7 +5136,7 @@ test('the Auth block leads with the anonymous case, and each door gets only its 
       //    every assertion above — and is exactly what shipped in `S4`, which is how BROWSER's
       //    refusal came to be stated on the SCANS door. Walked across all four.
       for (const door of ['api', 'browser', 'load', 'scan'] as const) {
-        await fresh.goto(`${base}#/${door}/auth/named.tflw`);
+        await fresh.goto(`${base}?token=${TOKEN}#/${door}/auth/named.tflw`);
         await fresh.locator('[data-auth-identity]').waitFor();
         assert.equal(await fresh.locator('[data-auth-load-caveat]').count(), door === 'load' ? 1 : 0, `LOAD's caveat on the ${door} door`);
         assert.equal(await fresh.locator('[data-auth-scan-caveat]').count(), door === 'scan' ? 1 : 0, `SCANS' caveat on the ${door} door`);
@@ -5120,10 +5185,10 @@ test('no step carries the LOAD lens, so the wire no longer ships a bucket that c
       ].join('\n'),
       'utf8',
     );
-    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      const project = (await (await fetch(`${base}/api/project`)).json()) as {
+      const project = (await (await api(`${base}/api/project`)).json()) as {
         files: { path: string; tests: { name: string; lenses: string[]; steps: Record<string, number> }[] }[];
       };
       const test = project.files.find((f) => f.path === 'w.tflw')!.tests[0]!;
@@ -5158,13 +5223,13 @@ test('the affirmation this door refuses to make is one the author can make on th
   // now names, on a project that genuinely has none, and asserts the notice retracts itself. A test
   // that only read the sentence would pass against a link that went nowhere.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-affirm-'));
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init', '--scan'], { cwd: dir, stdio: 'pipe' });
-    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
-      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/scan.tflw`);
       await fresh.locator('[data-compose-scan-unauthorized]').waitFor();
 
       // 1. THE PROSE, both halves. `D291` is named as the standing reason, and the claim that the
@@ -5217,7 +5282,7 @@ test('the affirmation this door refuses to make is one the author can make on th
       //    `TF060`, named where to fix it, and the fix taken from this page makes the form stop
       //    saying it. Read after a reload, so the assertion is about `tflw.config` on disk and not
       //    about a value this page is still holding.
-      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/scan.tflw`);
       await fresh.reload();
       await fresh.locator('[data-compose-scan]').waitFor();
       assert.equal(await fresh.locator('[data-compose-scan-unauthorized]').count(), 0, 'the notice survives the affirmation it asked for');
@@ -5253,10 +5318,10 @@ test('the reason for authorized targets lives on the door that owns it, in both 
   // reason is asserted reachable **with targets declared and with none**, and the first of those is
   // the case today's corpora actually exercise.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-scan-why-'));
-  const fresh = await browser.newPage();
+  const fresh = await newPage();
   try {
     execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init', '--scan'], { cwd: dir, stdio: 'pipe' });
-    const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+    const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
     try {
       const base = `http://127.0.0.1:${await ui.listen(0)}`;
       const reason = /A scan issues requests nobody wrote/;
@@ -5269,7 +5334,7 @@ test('the reason for authorized targets lives on the door that owns it, in both 
       //    door. The sentence itself is carried **verbatim**: a gate matching a regex against
       //    prose that was reworded in transit stops being about the same claim, and this one's
       //    whole point is that the sentence exists in both states.
-      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/scan.tflw`);
       await fresh.locator('[data-compose-scan-why]').waitFor();
       assert.equal(await fresh.locator('[data-compose-scan-why]').getAttribute('data-compose-scan-why-targets'), '0');
       assert.match((await fresh.locator('[data-compose-scan-why]').textContent()) ?? '', reason, 'the reason is not on the door with nothing authorized');
@@ -5285,7 +5350,7 @@ test('the reason for authorized targets lives on the door that owns it, in both 
       // 3. STATE TWO — something authorized, which is **every project measured for this round** and
       //    the state the old prose would have lost the explanation in. The reason is still here, and
       //    the affirmative half names the count.
-      await fresh.goto(`${base}#/scan/compose/scan.tflw`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/scan.tflw`);
       await fresh.reload();
       await fresh.locator('[data-compose-scan-why]').waitFor();
       assert.equal(await fresh.locator('[data-compose-scan-unauthorized]').count(), 0, 'the fixture is not in the authorized state, so this half proves nothing');
@@ -5299,7 +5364,7 @@ test('the reason for authorized targets lives on the door that owns it, in both 
       //    a second one, which every assertion above would accept. All four, because the whole
       //    complaint was a project-scoped block reading in one door's terms on every door.
       for (const door of ['api', 'browser', 'load', 'scan'] as const) {
-        await fresh.goto(`${base}#/${door}/auth`);
+        await fresh.goto(`${base}/?token=${TOKEN}#/${door}/auth`);
         await fresh.reload();
         await fresh.locator('[data-auth-targets]').waitFor();
         assert.doesNotMatch((await fresh.locator('[data-auth-targets]').textContent()) ?? '', reason, `the justification is still in Auth on the ${door} door`);
@@ -5322,8 +5387,8 @@ test('the Auth tab says who this file runs as, and every editable thing lands in
   // a session that resolves, a session declared for another env (which resolves to nothing, and
   // until this tab said nowhere on the page), and the reserved `anonymous` principal.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-auth-tab-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage();
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage();
   const noise: string[] = [];
   fresh.on('console', (m) => { if (m.type() === 'error') noise.push(m.text()); });
   try {
@@ -5355,7 +5420,7 @@ test('the Auth tab says who this file runs as, and every editable thing lands in
       'utf8',
     );
     const base = `http://127.0.0.1:${await ui.listen(0)}`;
-    await fresh.goto(`${base}#/api/auth`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/auth`);
     await fresh.locator('[data-api-auth]').waitFor();
 
     // 1. A session that resolves says what running `as` it ADDS to a request — which is the
@@ -5419,15 +5484,15 @@ test('the Config tab makes the edit the product had been telling the author to m
   // the refusal stands for the route that writes tests and the page can do what it was telling
   // people to do.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-config-tab-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage();
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage();
   try {
     execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init'], { cwd: dir, stdio: 'pipe' });
     const scaffold = await readFile(join(dir, 'tflw.config'), 'utf8');
     assert.match(scaffold, /Swap this one line for your service|Swap this one line|api "tflw:\/\/demo"/, 'the scaffold still says what this test is about');
 
     const base = `http://127.0.0.1:${await ui.listen(0)}`;
-    await fresh.goto(`${base}#/api/config`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/config`);
     await fresh.locator('[data-api-config-text]').waitFor();
     assert.equal(await fresh.locator('[data-api-config-text]').inputValue(), scaffold, 'the bytes on disk, not a re-print of them');
     assert.equal(await fresh.locator('[data-api-config-save]').isDisabled(), true, 'nothing to save on arrival');
@@ -5468,13 +5533,13 @@ test('the Config tab makes the edit the product had been telling the author to m
     await fresh.locator('[data-api-config-saved]').waitFor();
     assert.equal(await readFile(join(dir, 'tflw.config'), 'utf8'), edited, 'byte for byte, unreformatted');
     assert.equal(await fresh.locator('[data-tab-mark="config"]').count(), 0);
-    const view = (await (await fetch(`${base}/api/project`)).json()) as { authorization: { apiBaseUrl: string | null } };
+    const view = (await (await api(`${base}/api/project`)).json()) as { authorization: { apiBaseUrl: string | null } };
     assert.equal(view.authorization.apiBaseUrl, 'http://localhost:3001', 'the project the page describes is the project that was edited');
 
     // 4. And the capability it did NOT acquire: the route that writes tests still refuses this
     //    file. `D1049`'s refusal is what Q5 declined to widen, and this is the assertion that
     //    would notice if a later slice took the shortcut.
-    const sneaky = await fetch(`${base}/api/file`, {
+    const sneaky = await api(`${base}/api/file`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ path: 'tflw.config', text: edited }),
@@ -5496,15 +5561,15 @@ test('the Config tab makes the edit the product had been telling the author to m
 // the projection after a write, and a fetch made from the test would not ask it to.
 test('a test written from Compose appears in the Source index without a reload', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-s2-index-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage();
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage();
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await writeFile(join(dir, 'shop.tflw'), ['@api', 'test "the catalogue answers"', '  api GET /catalog', '  expect status equals 200', ''].join('\n'));
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
 
-    await fresh.goto(`${base}/#/api/source/shop.tflw`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/source/shop.tflw`);
     await fresh.locator('[data-test-index]').waitFor();
     assert.equal(await fresh.locator('[data-test-index]').getAttribute('data-test-index'), '1');
     assert.equal(await fresh.locator('[data-source-test]').count(), 1);
@@ -5575,7 +5640,7 @@ test('Compose draws every request the file holds, at its own line, under the dec
   for (const f of view.files) {
     const source = await readFile(join(root, f.path), 'utf8');
     const wanted = requestsInSource(source);
-    await page.goto(`${baseUrl}#/api/compose/${f.path}`);
+    await page.goto(`${pageUrl}#/api/compose/${f.path}`);
     // **`[data-compose]` is not the thing to wait for.** The shell reads the file asynchronously
     // and the pane renders a *reading…* state meanwhile, so a gate that waited for the pane counted
     // rows before any existed. `[data-compose-summary]` appears only once the outline is in hand.
@@ -5631,7 +5696,7 @@ test('the card is the request the address names, and the band is the declaration
   const wanted = requestsInSource(source);
   assert.ok(wanted.length >= 2, 'the fixture file holds more than one request, or this asserts nothing');
   for (const r of wanted) {
-    await page.goto(`${baseUrl}#/api/compose/${withRequests.path}/L${r.line}`);
+    await page.goto(`${pageUrl}#/api/compose/${withRequests.path}/L${r.line}`);
     await page.locator(`[data-request-line="${r.line}"]`).waitFor();
     // The attribute, not the text: since `S2` the method is a `<select>`, and a select's
     // `textContent` is every option it offers concatenated.
@@ -5649,7 +5714,7 @@ test('the card is the request the address names, and the band is the declaration
     .flatMap((d) => d.body)
     .find((st) => st.type === 'ApiStep' && st.headers.length > 0);
   if (headed && headed.type === 'ApiStep' && withHeaders.includes(headed.span.start.line)) {
-    await page.goto(`${baseUrl}#/api/compose/${withRequests.path}/L${headed.span.start.line}`);
+    await page.goto(`${pageUrl}#/api/compose/${withRequests.path}/L${headed.span.start.line}`);
     await page.locator(`[data-request-line="${headed.span.start.line}"]`).waitFor();
     for (const h of headed.headers) {
       const printed = print(h.value);
@@ -5669,7 +5734,7 @@ test('a line naming a declaration opens THAT declaration, not the request neares
   const { program } = parseSource(source);
   const target = program.tests.find((t) => t.body.some((s) => s.type === 'ApiStep') && t.span.start.line > (requestsInSource(source)[0]?.line ?? 0));
   assert.ok(target, 'the fixture has a test declared after some earlier request');
-  await page.goto(`${baseUrl}#/api/compose/${f.path}/L${target.span.start.line}`);
+  await page.goto(`${pageUrl}#/api/compose/${f.path}/L${target.span.start.line}`);
   // `.test-band` explicitly: since `M214` `D1112` the sequence column's first row carries
   // `data-band-line` too — the same claim, *this is the declaration that holds everything below
   // it*, costing one line instead of a panel. Both are right; this assertion is about the card.
@@ -5689,7 +5754,7 @@ test('what the reader has not lit yet is disabled — and it is the control that
   // with a link. A pane that is half live has to be able to say which half, in the controls.
   const view = await fullProject();
   for (const f of view.files) {
-    await page.goto(`${baseUrl}#/api/compose/${f.path}`);
+    await page.goto(`${pageUrl}#/api/compose/${f.path}`);
     await page.reload(); // the same hash-only navigation as the loop above — see `M213-12` there
     await page.locator('[data-compose-summary]').waitFor();
     // `document` is a DOM global and this file is typechecked under `types: ["node"]` with no DOM
@@ -5744,7 +5809,7 @@ test('a step from another door is drawn in position, locked, and dimmed in paint
   const { program } = parseSource(source);
   const browserSteps = program.tests.flatMap((t) => t.body).filter((s) => STEP_LENS[s.type] === 'browser');
   assert.ok(browserSteps.length > 0, 'the fixture holds steps this door cannot edit');
-  await page.goto(`${baseUrl}#/api/compose/${f.path}/L${program.tests[0]!.span.start.line}`);
+  await page.goto(`${pageUrl}#/api/compose/${f.path}/L${program.tests[0]!.span.start.line}`);
   await page.locator('[data-compose-summary]').waitFor();
   assert.equal(await page.locator('[data-compose]').getAttribute('data-compose'), 'no-request', 'a file with no request says so rather than drawing an empty card');
   const drawn = await page.locator('[data-stmt-locked="yes"]').evaluateAll((els) =>
@@ -5772,8 +5837,8 @@ test('a step from another door is drawn in position, locked, and dimmed in paint
 
 test('a note is collapsed to its first line with a count, opens to the rest, and does not say the first line twice', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m210-notes-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     // A header on line 1, a hook, a note on the test, and a note on a statement — the four places
@@ -5809,7 +5874,7 @@ test('a note is collapsed to its first line with a count, opens to the rest, and
     // a note ON rather than only that it is on screen somewhere.
     //
     // The file is the address with no `L`, which is what an explorer click produces.
-    await fresh.goto(`${base}/#/api/compose/noted.tflw`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/noted.tflw`);
     await fresh.locator('[data-compose-summary]').waitFor();
 
     const header = fresh.locator('[data-note="the file"]');
@@ -5829,7 +5894,7 @@ test('a note is collapsed to its first line with a count, opens to the rest, and
     // The declaration — and it is the TEST, not the hook this file opens with, so its line is read
     // off the explorer's own outline rather than off whichever declaration the column is showing.
     const declLine = await fresh.locator('[data-outline-decl="test"] [data-outline-goto]').first().getAttribute('data-outline-goto');
-    await fresh.goto(`${base}/#/api/compose/noted.tflw/L${declLine}`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/noted.tflw/L${declLine}`);
     await fresh.locator('[data-note="test it answers"]').waitFor();
     const decl = fresh.locator('[data-note="test it answers"]');
     assert.equal(await decl.locator('summary').textContent(), '# about this test ');
@@ -5839,7 +5904,7 @@ test('a note is collapsed to its first line with a count, opens to the rest, and
     // onto is the WHOLE block, first line included, because that is what is being edited. So the
     // claim above — *lines two onward* — belongs to the read-only body, and the editable form's
     // claim is the other one: every line exactly once, in the control, without its `#`.
-    await fresh.goto(`${base}/#/api/compose/noted.tflw/L13`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/noted.tflw/L13`);
     await fresh.locator('[data-note="request 13"]').waitFor();
     const request = fresh.locator('[data-note="request 13"]');
     assert.equal(await request.locator('summary').textContent(), '# about the request ');
@@ -5864,8 +5929,8 @@ test('a request can be added to a test from the body’s own sequence', async ()
   // reason worth restating: two writes would leave the file, between them, with an assertion
   // naming a response nothing fetched.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-addreq-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await writeFile(
@@ -5873,7 +5938,7 @@ test('a request can be added to a test from the body’s own sequence', async ()
       ['before', '  api GET /reset', '', 'test "it answers"', '  api GET /a', '  expect status equals 200', ''].join('\n'),
     );
     const port = await ui.listen(0);
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/grow.tflw/L5`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/grow.tflw/L5`);
     await fresh.locator('[data-seq-add="request"]').click();
     await fresh.locator('[data-compose-dirty]').waitFor();
     await fresh.locator('[data-compose-write]').click();
@@ -5885,7 +5950,7 @@ test('a request can be added to a test from the body’s own sequence', async ()
 
     // A hook has no name for the splice to address, which is a fact about the language rather than
     // a limit of this door — so the pane says so where the button would be, instead of hiding it.
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/grow.tflw/L1`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/grow.tflw/L1`);
     await fresh.locator('[data-seq-add-hook]').waitFor();
     assert.equal(await fresh.locator('[data-seq-add="request"]').count(), 0);
   } finally {
@@ -5906,14 +5971,14 @@ test('a new .tflw file can be made from the page, and the page then opens it', a
   // The last assertion is the one that makes this a capability rather than a write: a create that
   // leaves you looking at the file you were already on has no visible consequence.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-newfile-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await writeFile(join(dir, 'first.tflw'), ['test "it answers"', '  api GET /a', '  expect status equals 200', ''].join('\n'));
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
-    await fresh.goto(`${base}/#/api/compose/first.tflw`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/first.tflw`);
     await fresh.locator('[data-compose-new-file]').click();
     await fresh.locator('[data-new-thing="file"]').waitFor();
 
@@ -5996,8 +6061,8 @@ test('`M222`: the create dialog reads the door — BROWSER scaffolds `open`, and
    * half; editability is the half that was broken.
    */
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m222-door-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(
       join(dir, 'tflw.config'),
@@ -6008,7 +6073,7 @@ test('`M222`: the create dialog reads the door — BROWSER scaffolds `open`, and
 
     // **The API door first, unchanged**, so the comparison below is between two doors in one run
     // rather than against a remembered number.
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/one.tflw`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/one.tflw`);
     await fresh.locator('[data-compose-new-test]').click();
     await fresh.locator('[data-new-thing="test"]').waitFor();
     assert.equal(await fresh.locator('[data-new-fields]').getAttribute('data-new-fields'), 'api');
@@ -6020,7 +6085,7 @@ test('`M222`: the create dialog reads the door — BROWSER scaffolds `open`, and
     // The option has already been chosen — it is the door — so asking again inside the dialog
     // would put a control in front of every create on every door to serve a choice nobody makes
     // twice. `method` is the field that goes; `path` stays and says what it opens.
-    await fresh.goto(`http://127.0.0.1:${port}/#/browser/compose/one.tflw`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/browser/compose/one.tflw`);
     await fresh.locator('[data-compose-new-test]').click();
     await fresh.locator('[data-new-thing="test"]').waitFor();
     assert.equal(await fresh.locator('[data-new-fields]').getAttribute('data-new-fields'), 'open');
@@ -6056,7 +6121,7 @@ test('`M222`: the create dialog reads the door — BROWSER scaffolds `open`, and
        a row has a control behind it, and `"no"` is what every `ApiStep` on this door renders as.
        Before `M222` this read `no` for a test one press old. */
     const declLine = onDisk.split('\n').findIndex((l) => l.startsWith('test "the second"')) + 1;
-    await fresh.goto(`http://127.0.0.1:${port}/#/browser/compose/one.tflw/L${declLine}`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/browser/compose/one.tflw/L${declLine}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
     assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test "the second"');
     /* **A `count() === 0` is the shape that passes when nothing rendered**, so the selector is
@@ -6081,7 +6146,7 @@ test('`M222`: the create dialog reads the door — BROWSER scaffolds `open`, and
     /* **The control that makes the line above a claim.** The same statement, picked the same way,
        on the API door — where an `open` is foreign — answers `no`. Without it, `yes` could be an
        attribute that is always `yes`. */
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/one.tflw/L${declLine}`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/one.tflw/L${declLine}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
     await fresh.locator('[data-seq-row]').last().locator('[data-seq-pick]').click();
     await fresh.locator('[data-editor-statement]').waitFor();
@@ -6107,8 +6172,8 @@ test('a new test goes into the open file through the same builders the pane’s 
   //
   // The existing file is left alone, which is the other half: a splice, not a rewrite.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-newtest-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await writeFile(
@@ -6116,7 +6181,7 @@ test('a new test goes into the open file through the same builders the pane’s 
       ['# this comment must survive', '', 'test "the first"', '  api GET /a', '  expect status equals 200', ''].join('\n'),
     );
     const port = await ui.listen(0);
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/one.tflw`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/one.tflw`);
     await fresh.locator('[data-compose-new-test]').click();
     await fresh.locator('[data-new-thing="test"]').waitFor();
     assert.equal(await fresh.locator('[data-new-file]').count(), 0, 'a new test needs no file name — the pane is already on one');
@@ -6138,7 +6203,7 @@ test('a new test goes into the open file through the same builders the pane’s 
     // Compose reads the new test back through its own reader, and finds the request where the
     // builders put it. One construction path means the pane cannot disagree with the dialog.
     const declLine = onDisk.split('\n').findIndex((l) => l.startsWith('test "the second"')) + 1;
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/one.tflw/L${declLine}`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/one.tflw/L${declLine}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
     assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, 'test "the second"');
     // **`M214` `D1113` — a declaration's own line selects the declaration.** It used to resolve to
@@ -6169,14 +6234,14 @@ test('a clause the file does not write is not a field — it is in a menu that n
   // could add would teach a smaller language than the one that exists — which is the failure
   // `D1076` was written against, arriving by the other road.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-add-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     // The scaffold's own shape — the file this round's §0 is about.
     await writeFile(join(dir, 'bare.tflw'), ['test "health check"', '  api GET /health', '  expect status equals 200', ''].join('\n'));
     const port = await ui.listen(0);
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/bare.tflw/L2`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/bare.tflw/L2`);
     await fresh.locator('[data-request-drawn]').waitFor();
 
     // **`M214` `A2` (`D1115`) — the clauses are in four TABS now, and `More` costs one word at
@@ -6229,14 +6294,14 @@ test('a clause the file does not write is not a field — it is in a menu that n
 
     // The test's own clauses are a different scope and are reached by selecting the test — which is
     // the column's first row (`D1112`, `D1113`).
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/bare.tflw/L1`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/bare.tflw/L1`);
     await fresh.locator('[data-band-drawn]').waitFor();
     assert.equal(await fresh.locator('[data-band-drawn]').getAttribute('data-band-drawn'), '0', 'the band states none of its six clauses either');
     const bandOptions = await fresh
       .locator('[data-add-clause="test"] [data-add-option]')
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-add-option')));
     assert.deepEqual(bandOptions, ['tags', 'sessions', 'retry', 'table', 'workload', 'thresholds']);
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/bare.tflw/L2`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/bare.tflw/L2`);
     await fresh.locator('[data-editor-tab="more"]').click();
 
     // Closed, the menu is not in the tab order — `S1`'s lesson, applied to the control `S3` adds,
@@ -6277,8 +6342,8 @@ test('a clause the file DOES write is drawn without being asked for', async () =
   // The control that keeps the test above from being satisfied by a pane that draws nothing. Every
   // assertion there is a zero, and a component returning `null` would pass all of them.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-addstated-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await writeFile(
@@ -6293,7 +6358,7 @@ test('a clause the file DOES write is drawn without being asked for', async () =
       ].join('\n'),
     );
     const port = await ui.listen(0);
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/stated.tflw/L3`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/stated.tflw/L3`);
     await fresh.locator('[data-request-drawn]').waitFor();
     // The tab strip is the count, and the count is read off the file (`M214` `A2`).
     assert.deepEqual(
@@ -6308,7 +6373,7 @@ test('a clause the file DOES write is drawn without being asked for', async () =
     await fresh.locator('[data-editor-tab="more"]').click();
     assert.equal(await fresh.locator('[data-request-fields]').getAttribute('data-request-fields'), 'label');
     // The test's clauses are the test's scope — its own row in the column (`D1113`).
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/stated.tflw/L2`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/stated.tflw/L2`);
     await fresh.locator('[data-band-drawn]').waitFor();
     assert.equal(await fresh.locator('[data-band-drawn]').getAttribute('data-band-drawn'), '2', 'tags and retry are written, so tags and retry are drawn');
   } finally {
@@ -6347,14 +6412,14 @@ test('every request in the declaration is on the pane, in the file’s own order
   // interleaves, and the assertion is the file's line numbers **ascending with no gaps in the set**
   // — which a grouped rendering cannot produce.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-seq-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await writeFile(join(dir, 'seq.tflw'), SEQUENCE_FILE);
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
-    await fresh.goto(`${base}/#/api/compose/seq.tflw/L3`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/seq.tflw/L3`);
     await fresh.locator('[data-body-sequence]').waitFor();
 
     // **`M214` `D1112` — the column is the WHOLE sequence, and nothing is collapsed any more.**
@@ -6396,14 +6461,14 @@ test('clicking a collapsed request opens it, and the one that was open collapses
   // previous one would satisfy every "the request I clicked is open" check and rebuild the 5.9
   // screens this slice exists to remove.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-seqclick-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await writeFile(join(dir, 'seq.tflw'), SEQUENCE_FILE);
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
-    await fresh.goto(`${base}/#/api/compose/seq.tflw/L3`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/seq.tflw/L3`);
     await fresh.locator('[data-seq-goto="9"]').click();
     await fresh.locator('[data-seq-open="9"]').waitFor();
     assert.equal(await fresh.locator('[data-seq-open]').count(), 1, 'one request is open, not two');
@@ -6428,8 +6493,8 @@ test('the file’s facts are outside the test card, and on the page whether or n
   // scopes alternatives, so picking a test took the file's imports off the screen and the pane's
   // answer to *what does this file bring in?* depended on where the cursor was.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-strip-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await mkdir(join(dir, 'shared'), { recursive: true });
@@ -6451,7 +6516,7 @@ test('the file’s facts are outside the test card, and on the page whether or n
     // So what is gated is the same rule with a stronger instrument: pick the file, get the file's
     // facts and no test card; pick the test, get the test's card and no file facts. Both halves,
     // because a pane that lost the file's facts entirely would be as wrong as one that nested them.
-    await fresh.goto(`${base}/#/api/compose/scoped.tflw`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/scoped.tflw`);
     await fresh.locator('[data-compose-summary]').waitFor();
     await fresh.locator('[data-file-facts]').waitFor();
     assert.equal(
@@ -6461,7 +6526,7 @@ test('the file’s facts are outside the test card, and on the page whether or n
     );
     assert.equal(await fresh.locator('.test-band').count(), 0, 'and the test card is not drawn over the file the reader picked');
 
-    await fresh.goto(`${base}/#/api/compose/scoped.tflw/L3`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/scoped.tflw/L3`);
     await fresh.locator('.test-band').waitFor();
     assert.equal(await fresh.locator('.test-band').count(), 1, 'the selected declaration has its own card');
     assert.equal(await fresh.locator('[data-file-facts]').count(), 0, 'and the file is a different subject, reachable from the explorer');
@@ -6487,8 +6552,8 @@ test('no scope but the selected one is in the tab order, and the selected one is
   // strip that renders nothing at all would also report, and `D1085` asked for a collapsed strip
   // that is **still editable**, not for the facts to be taken away.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m212-striptab-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await mkdir(join(dir, 'shared'), { recursive: true });
@@ -6506,7 +6571,7 @@ test('no scope but the selected one is in the tab order, and the selected one is
     //
     // Both halves are still gated, and the second is not optional: `0 focusable` is also what a
     // pane that renders nothing would report.
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/tabbed.tflw/L3`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/tabbed.tflw/L3`);
     await fresh.locator('.test-band').waitFor();
 
     // **`checkVisibility()`, and the two instruments that lie about this.** Measured in this
@@ -6533,7 +6598,7 @@ test('no scope but the selected one is in the tab order, and the selected one is
     assert.ok((await reachable('.editor')) > 0, 'and the selected scope is editable, not merely drawn');
 
     // Pick the file, and it is the one that is editable. The same control set, one selection over.
-    await fresh.goto(`http://127.0.0.1:${port}/#/api/compose/tabbed.tflw`);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/tabbed.tflw`);
     await fresh.locator('[data-file-facts]').waitFor();
     const open = await reachable('[data-file-facts]');
     assert.ok(open > 0, `selected, the file is editable — it offered ${open} controls`);
@@ -6555,20 +6620,20 @@ test('the head names the declaration the body is drawing, not the file the body 
   // the file at all is as bad as one that only names the file.
   const view = await fullProject();
   const many = view.files.find((x) => x.tests.length > 1)!;
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     // **An address with no line still has a subject**, and that is `addressed`'s own rule rather
     // than a fallback drawn here: it answers the file's FIRST declaration when the hash names no
     // line (`outline.ts`). So the head names a declaration here too, and the thing to gate is that
     // it names the right one — a head that read `file` on this address would be describing
     // something the body is not showing, which is the defect this slice is about.
-    await fresh.goto(`${baseUrl}#/api/compose/${many.path}`);
+    await fresh.goto(`${pageUrl}#/api/compose/${many.path}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
     assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'declaration');
     assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test "${many.tests[0]!.name}"`);
 
     const second = many.tests[1]!;
-    await fresh.goto(`${baseUrl}#/api/compose/${many.path}/L${second.line}`);
+    await fresh.goto(`${pageUrl}#/api/compose/${many.path}/L${second.line}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
     assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'declaration');
     assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test "${second.name}"`);
@@ -6584,8 +6649,8 @@ test('the head names the declaration the body is drawing, not the file the body 
 
 test('the file row carries what the file brings in, comma-separated, and says `none` where there is nothing', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m210-filerow-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await mkdir(join(dir, 'shared'), { recursive: true });
@@ -6601,7 +6666,7 @@ test('the file row carries what the file brings in, comma-separated, and says `n
     // were behind a `<details>` in a strip above the card; they are the editor's own content now,
     // open, with nothing to press first — which is what clicking a file in the explorer lands on,
     // because that gesture drops the focus line by design.
-    await fresh.goto(`${base}/#/api/compose/uses.tflw`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/uses.tflw`);
     await fresh.locator('[data-file-facts]').waitFor();
     assert.equal(await fresh.locator('[data-file-imports]').getAttribute('data-file-imports'), '2');
     // **One field per line since `S5`**, and the count is still the claim: the paths are what the
@@ -6637,9 +6702,9 @@ test("the reader's fields stand as tall as its siblings — the hazard the style
   // the browser's own rectangles, and carries its own negative control.
   const view = await fullProject();
   const f = view.files.find((x) => x.path.endsWith('catalog.tflw'))!;
-  const sized = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const sized = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
-    await sized.goto(`${baseUrl}#/api/compose/${f.path}`);
+    await sized.goto(`${pageUrl}#/api/compose/${f.path}`);
     await sized.locator('[data-compose-summary]').waitFor();
     // The hazard is a property of a column-direction container, and the container that has one is
     // the request editor's `More` tab — so the request is selected first (`M214` `D1113`).
@@ -6684,7 +6749,7 @@ test("the reader's fields stand as tall as its siblings — the hazard the style
 test("the explorer's outline opens under the open file's row and under no other", async () => {
   const view = await fullProject();
   const f = view.files.find((x) => x.path.endsWith('catalog.tflw'))!;
-  await page.goto(`${baseUrl}#/api/compose/${f.path}`);
+  await page.goto(`${pageUrl}#/api/compose/${f.path}`);
   await page.locator('[data-outline]').waitFor();
   const shape = await page.locator('.sidebar').evaluate((root, path: string) => {
     const doc = root.ownerDocument;
@@ -6738,7 +6803,7 @@ test("the explorer's outline opens under the open file's row and under no other"
  * position, and adding a comment to a fixture used to be enough to move it.
  */
 const openFirstRequest = async (p: Page, base: string, file = 'edit.tflw'): Promise<void> => {
-  await p.goto(`${base}/#/api/compose/${file}`);
+  await p.goto(`${base}/?token=${TOKEN}#/api/compose/${file}`);
   await p.locator('[data-seq-row="request"] [data-seq-pick]').first().click();
   await p.locator('[data-request-editable="yes"]').waitFor();
 };
@@ -6765,8 +6830,8 @@ const pickStatement = async (p: Page, line: number): Promise<void> => {
 
 const withEditFixture = async (body: string, run: (page: Page, base: string, dir: string) => Promise<void>): Promise<void> => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m210-edit-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await writeFile(join(dir, 'edit.tflw'), body);
@@ -6903,7 +6968,7 @@ test('`M210` `S2`: the address keeps the request across a tab trip, and Config d
   await withEditFixture(EDITABLE, async (p, base) => {
     await openFirstRequest(p, base);
     const second = Number(await p.locator('[data-outline-request]').last().getAttribute('data-outline-request'));
-    await p.goto(`${base}/#/api/compose/edit.tflw/L${second}`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L${second}`);
     await p.locator(`[data-request-line="${second}"]`).waitFor();
     await p.locator('[data-tab="source"]').click();
     assert.match(new URL(p.url()).hash, new RegExp(`/L${second}$`), 'Source keeps the line');
@@ -6922,7 +6987,7 @@ test('`M210` `S2`: an edit that moves the request keeps the address on it', asyn
     await openFirstRequest(p, base);
     const rows = () => p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
     const secondBefore = (await rows())[1]!;
-    await p.goto(`${base}/#/api/compose/edit.tflw/L${secondBefore}`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L${secondBefore}`);
     await p.locator(`[data-request-line="${secondBefore}"]`).waitFor();
     // `M212` `S3`: this request writes no header, so the group is in the menu rather than on the
     // card. One click to ask for it — `D1084`'s stated cost, paid here in the open.
@@ -7186,7 +7251,7 @@ test('`M210` `S3`: an assertion inside a `wait until api` block is read-only, in
   await withEditFixture(ASSERTIONS, async (p, base) => {
     await openFirstRequest(p, base);
     const lines = await p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
-    await p.goto(`${base}/#/api/compose/edit.tflw/L${lines[lines.length - 1]}`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L${lines[lines.length - 1]}`);
     // **Scoped to the open request since `M212` `S2`.** The pane now draws the whole body in file
     // order, so the first `ExpectStmt` in the document belongs to an earlier request and is
     // perfectly editable — an unscoped `.first()` was reading a different statement and asserting
@@ -7238,7 +7303,7 @@ test('`M210` `S4`: every statement kind in the body is a row of controls holding
     // the file's own order. What changed is that the rows are not all on screen at once — the
     // sequence column is one line per statement and the controls are in the region beside it, which
     // is what took the pane from 48 controls in 761 px to the one statement somebody is working on.
-    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw`);
     await p.locator('[data-seq-col]').waitFor();
     const statementLines = await p
       .locator('[data-seq-row][data-stmt-line]')
@@ -7275,7 +7340,7 @@ test('`M210` `S4`: each of them becomes bytes, and the statement beside it does 
     // **Each one is selected before it is typed into** (`D1113`), and the lines are read off the
     // column rather than written here: every edit below moves the lines under it, which is the cost
     // `D1080` states and the reason this re-reads between edits instead of closing over a list.
-    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw`);
     await p.locator('[data-seq-col]').waitFor();
     const edits: Array<[string, (loc: ReturnType<Page['locator']>) => Promise<void>]> = [
       ['[data-let-value]', (l) => l.fill('unique("ord")')],
@@ -7322,7 +7387,7 @@ test('`M210` `S4`: a note is edited where it is, written where there was none, a
   // `D1077` — a note is a note on what it explains, which is what gives a comment an address at
   // all: its owner's index pair. This is the one edit on the pane that is not a node.
   await withEditFixture(SCRIPTS, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw`);
     await p.locator('[data-seq-col]').waitFor();
     await p.locator('[data-seq-row][data-stmt="PauseStmt"] [data-seq-pick]').click();
     await p.locator('[data-editor-statement="PauseStmt"]').waitFor();
@@ -7398,7 +7463,7 @@ test('`M210` `S4`: a polling request is editable, and its own block survives the
   await withEditFixture(SCRIPTS, async (p, base, dir) => {
     await openFirstRequest(p, base);
     const lines = await p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
-    await p.goto(`${base}/#/api/compose/edit.tflw/L${lines[lines.length - 1]}`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L${lines[lines.length - 1]}`);
     await p.locator('[data-request-kind="WaitUntilApiStmt"]').waitFor();
     assert.equal(await p.locator('[data-request-editable]').getAttribute('data-request-editable'), 'yes');
     await p.locator('[data-request-path]').fill('/orders/{orderId}/status');
@@ -7451,7 +7516,7 @@ test('`M210` `S5`: the band holds the declaration\'s own facts, and the workload
     // **`/L9`, because this file opens with a hook** and the band shows the declaration the
     // address names — which is `addressed`'s own rule (`D1080`) and worth naming here, since a
     // gate that opened on the default would be reading the hook and asserting about a test.
-    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L9`);
     await p.locator('[data-band-name]').waitFor();
     assert.equal(await p.locator('[data-band-name]').inputValue(), 'it places an order');
     assert.equal(await p.locator('[data-band-tags-edit]').inputValue(), 'crud orders', 'one field for all of them, because the file writes one line for all of them');
@@ -7481,7 +7546,7 @@ test('`M210` `S5`: the band holds the declaration\'s own facts, and the workload
        The cost was not two clicks; it was infinite in both directions. `D1044` had said since
        `M200` that a panel is earned by the construct and never granted by the door, and this row
        was the one place the product did the opposite. */
-    await p.goto(`${base}/#/api/compose/edit.tflw/L17`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L17`);
     await p.locator('[data-band-workload-edit]').waitFor();
     assert.equal(await p.locator('[data-band-workload]').getAttribute('data-band-workload'), 'SharedIterationsWorkload');
     assert.equal(await p.locator('[data-band-workload-door]').count(), 0, 'the row still links to a door instead of editing');
@@ -7495,7 +7560,7 @@ test('`M210` `S5`: a header edit rewrites the header and not one byte of the bod
   // in it*, and the printer emits no comments — so a tag edit that went through the whole
   // declaration would delete every note inside it.
   await withEditFixture(BAND, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L9`);
     await p.locator('[data-band-name]').waitFor();
     await p.locator('[data-band-tags-edit]').fill('crud orders slow');
     await p.locator('[data-band-name]').fill('it places a bulk order');
@@ -7519,7 +7584,7 @@ test('`M210` `S5`: a header edit rewrites the header and not one byte of the bod
 
 test('`M210` `S5`: `with each` is written from cells, read from a file, and taken away again', async () => {
   await withEditFixture(BAND, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L9`);
     await p.locator('[data-band-name]').waitFor();
     await p.locator('[data-add-clause="test"] > summary').click();
     await p.locator('[data-add-go="table"]').click();
@@ -7555,7 +7620,7 @@ test('`M210` `S5`: `with each` is written from cells, read from a file, and take
 
 test('`M210` `S5`: a threshold is added, edited and removed, at the end of the body where the printer puts them', async () => {
   await withEditFixture(BAND, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L9`);
     await p.locator('[data-band-name]').waitFor();
     await p.locator('[data-threshold-bound="0"]').fill('250');
     await p.locator('[data-threshold-scope="0"]').fill('checkout');
@@ -7584,13 +7649,13 @@ test('`M210` `S5`: a threshold is added, edited and removed, at the end of the b
 
 test('`M210` `S5`: the file row writes what the file brings in, and the file\'s own note is a note like any other', async () => {
   await withEditFixture(BAND, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/edit.tflw/L9`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L9`);
     await p.locator('[data-band-name]').waitFor();
     // `M212` `S1`: the file's facts are their own strip above the declaration, collapsed. Opening
     // it is the gesture a reader makes to edit a file-scoped thing, and it is what this gate now
     // makes before editing one.
     // `M214` `D1113` — the file's own fields are what an address with no `L` selects.
-    await p.goto(`${base}/#/api/compose/edit.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw`);
     await p.locator('[data-file-facts]').waitFor();
     assert.equal(await p.locator('[data-file-path="import:0"]').inputValue(), './shared/helpers.tflw');
     await p.locator('[data-file-path="import:0"]').fill('./shared/orders.tflw');
@@ -7645,7 +7710,7 @@ test('`M210` `S5`: the file row writes what the file brings in, and the file\'s 
 
 test('`M210` `S5`: a hook\'s header is its two words, and `each` is the one you get by writing nothing', async () => {
   await withEditFixture(BAND, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/edit.tflw/L5`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L5`);
     await p.locator('[data-band-kind="hook"]').waitFor();
     assert.equal(await p.locator('[data-band-when]').inputValue(), 'before');
     assert.equal(await p.locator('[data-band-scope]').inputValue(), 'each');
@@ -7671,8 +7736,8 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m210-send-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
     await writeFile(
@@ -7717,7 +7782,7 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
     );
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
-    await fresh.goto(`${base}/#/api/compose/send.tflw/L12`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/send.tflw/L12`);
     await fresh.locator('[data-prefix]').waitFor();
 
     // **The list is the claim, and it is on screen before anything is pressed.** Three requests:
@@ -7796,7 +7861,7 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
      * the pane said *the run reported no api step*. The press below is the same press against the
      * same file with one line changed, and it has to come back with a 200.
      */
-    await fresh.goto(`${base}/#/api/compose/send.tflw/L9`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/send.tflw/L9`);
     await pickStatement(fresh, 9);
     await editorTab(fresh, 'assert');
     // Line 10 — `expect status equals 200` on the request ABOVE the selected one. 418 is a status
@@ -7811,7 +7876,7 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
        the OLD response and pass whatever the new press did. The reload is what makes
        `[data-prefix]` the on-screen state again, which is itself the proof that nothing has run
        this request yet. */
-    await fresh.goto(`${base}/#/api/compose/send.tflw/L12`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/send.tflw/L12`);
     await fresh.reload();
     await fresh.locator('[data-prefix]').waitFor();
     assert.equal(await fresh.locator('[data-compose-response]').count(), 0, 'nothing is showing before the press');
@@ -7850,8 +7915,8 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
 /** A project with one file, served, for the gestures below. */
 const withRemovalFixture = async (body: string, run: (page: Page, base: string, dir: string) => Promise<void>): Promise<void> => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m214-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     await writeFile(join(dir, 'x.tflw'), body);
@@ -7883,7 +7948,7 @@ test('`M214` `A4`: `✕` on a request takes its assertions with it, in one edit 
     '',
   ].join('\n');
   await withRemovalFixture(body, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/x.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw`);
     await p.locator('[data-seq-col]').waitFor();
     assert.deepEqual(
       await p.locator('[data-seq-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-seq-request')))),
@@ -7927,7 +7992,7 @@ test('`M214` `A4`: `✕` refuses what another statement is holding, and names th
     '',
   ].join('\n');
   await withRemovalFixture(body, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/x.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw`);
     await p.locator('[data-seq-col]').waitFor();
     const before = await readFile(join(dir, 'x.tflw'), 'utf8');
 
@@ -7973,7 +8038,7 @@ test('`M214` `A4`: `✕` on the test removes the declaration, and the file is wh
     '',
   ].join('\n');
   await withRemovalFixture(body, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('.test-band').waitFor();
     // **A declaration's own line is where its HEADER starts, tags included** — `@slow` is line 3,
     // not a line above the test. `replaceHeader` has known that since `M210` `S5a` and `selectedAt`
@@ -8013,7 +8078,7 @@ test('`M214` `A5` + `M223` `B`: the response is a region under the editor, behin
   // is under the editor, and the boundary between them is the reader's.
   const body = ['test "one"', '  api GET /a', '  expect status equals 200', ''].join('\n');
   await withRemovalFixture(body, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L2`);
     await p.locator('[data-compose-split]').waitFor();
     assert.equal(
       await p.locator('[data-compose-split]').getAttribute('data-compose-split'),
@@ -8093,7 +8158,7 @@ test('`M214` `A5` + `M223` `B`: the response is a region under the editor, behin
  * lib.
  */
 test('`M223` `B`+`C`: the editor asks for what it holds, the pane under it is never clipped, and both dividers are visible at rest (`D1195`, `D1197`, `D1198`)', async () => {
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     /** One synchronous pass over the column: the editor's box, what is actually inside it, its own
      *  padding (which is NOT slack — the first write-up of this round counted it as slack and
@@ -8127,7 +8192,7 @@ test('`M223` `B`+`C`: the editor asks for what it holds, the pane under it is ne
        statement selected, whose editor is the smallest thing this pane can hold. The mutation for
        both is reinstating the 62% track: 48 px of slack appears above, and 27 px of the record
        pane goes below the column's own bottom edge. */
-    await fresh.goto(`${baseUrl}#/browser/compose/tests/shop.tflw/L3`);
+    await fresh.goto(`${pageUrl}#/browser/compose/tests/shop.tflw/L3`);
     let m = await slack();
     for (let i = 0; i < 50 && (m === null || m.rows === 0); i++) {
       await fresh.waitForTimeout(100);
@@ -8178,7 +8243,7 @@ test('`M223` `B`+`C`: the editor asks for what it holds, the pane under it is ne
      * API `expect` and clipped nothing — because the response pane happened to be tall enough.
      * The mutation is a `door === 'browser'` conditional on the track: this number returns to 208.
      */
-    await fresh.goto(`${baseUrl}#/api/compose/tests/catalog.tflw/L4`);
+    await fresh.goto(`${pageUrl}#/api/compose/tests/catalog.tflw/L4`);
     let api = await slack();
     for (let i = 0; i < 50 && (api === null || api.rows === 0); i++) {
       await fresh.waitForTimeout(100);
@@ -8203,7 +8268,7 @@ test('`M223` `B`+`C`: the editor asks for what it holds, the pane under it is ne
      * **43**, and this is the only reading in the round that can tell those two apart.
      */
     await fresh.setViewportSize({ width: 1000, height: 480 });
-    await fresh.goto(`${baseUrl}#/api/compose/tests/catalog.tflw/L3`);
+    await fresh.goto(`${pageUrl}#/api/compose/tests/catalog.tflw/L3`);
     let tight = await slack();
     for (let i = 0; i < 50 && (tight === null || tight.rows === 0 || tight.needs < 160); i++) {
       await fresh.waitForTimeout(100);
@@ -8225,7 +8290,7 @@ test('`M223` `B`+`C`: the editor asks for what it holds, the pane under it is ne
      * different row, whose content would otherwise resize the track under it. The mutation is
      * dropping the override: the editor snaps back to what it holds on the next click.
      */
-    await fresh.goto(`${baseUrl}#/browser/compose/tests/shop.tflw/L3`);
+    await fresh.goto(`${pageUrl}#/browser/compose/tests/shop.tflw/L3`);
     let split = await fresh.locator('[data-compose-split]').boundingBox();
     for (let i = 0; i < 50 && split === null; i++) {
       await fresh.waitForTimeout(100);
@@ -8281,8 +8346,8 @@ test('`M223` `B`+`C`: the editor asks for what it holds, the pane under it is ne
  */
 test('`M223` `E`: with a trace up, the playback height is the reader’s — and the drag survives the frame (`D1199`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m223-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     // The fixture server is already up for this process — pointing at it is what makes the play a
     // real one. `node_modules` is symlinked for the same reason the shared fixture does it: with
@@ -8323,7 +8388,7 @@ test('`M223` `E`: with a trace up, the playback height is the reader’s — and
         };
       });
 
-    await fresh.goto(`${base}/#/browser/compose/b.tflw/L3`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/b.tflw/L3`);
     let m = await read();
     for (let i = 0; i < 50 && m.rows === 0; i++) {
       await fresh.waitForTimeout(100);
@@ -8412,7 +8477,7 @@ test('`M223` `E`: with a trace up, the playback height is the reader’s — and
  * the comparison is against the live token.
  */
 test('`M223` `G`: a step is content and its keyword is a label — one ink on three surfaces, a chip that lifts rather than paints, and a rail that belongs to the group (`D1202`, `D1203`, `D1204`)', async () => {
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     const read = () =>
       fresh.locator('body').evaluate((root) => {
@@ -8467,7 +8532,7 @@ test('`M223` `G`: a step is content and its keyword is a label — one ink on th
     };
 
     /* ── the BROWSER door, with a step selected so the chip is read on both grounds ──────── */
-    await fresh.goto(`${baseUrl}#/browser/compose/tests/shop.tflw/L4`);
+    await fresh.goto(`${pageUrl}#/browser/compose/tests/shop.tflw/L4`);
     const b = await settle();
 
     /* **Gate 11 — a step's own words are content.** The mutation is putting
@@ -8531,7 +8596,7 @@ test('`M223` `G`: a step is content and its keyword is a label — one ink on th
 
     /* ── the API door: the rail is the group's, not the session's ────────────────────────── */
     const browserRail = b.railColor;
-    await fresh.goto(`${baseUrl}#/api/compose/tests/catalog.tflw/L2`);
+    await fresh.goto(`${pageUrl}#/api/compose/tests/catalog.tflw/L2`);
     const a = await settle();
 
     /* **Gate 20 — a request group has a rail at all.** The mutation is reverting the selector to
@@ -8557,7 +8622,7 @@ test('`M214` `A6`: `+ new file` is in the explorer, where files are (`D1118`)', 
   // thing is created; the dialog is the shell's, because the explorer and Compose are siblings and
   // both ask for it.
   await withRemovalFixture(['test "one"', '  api GET /a', '  expect status equals 200', ''].join('\n'), async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/x.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw`);
     await p.locator('[data-files]').waitFor();
     // `M238-04` — the explorer arriving says nothing about Compose: `[data-seq-foot]` renders after
     // the file is read, so the counts below read it one-shot and `+ new test` came back 0 once in a
@@ -8708,7 +8773,7 @@ const LEGIBLE = [
 
 test('`M216` `B0`/`A1`: Source numbers every line, and the text under the numbers is still the file byte for byte (`D985`)', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/source/x.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/source/x.tflw`);
     const file = await readFile(join(dir, 'x.tflw'), 'utf8');
     const lines = file.split('\n');
     // The last line, not the `<pre>`: the element is in the document before the bytes are.
@@ -8750,7 +8815,7 @@ test('`M216` `B0`/`A1`: Source numbers every line, and the text under the number
   const long: string[] = ['# a file past a hundred lines', ''];
   for (let i = 0; i < 30; i++) long.push('@api', `test "case ${i}"`, `  api GET /c/${i}`, '  expect status equals 200', '');
   await withRemovalFixture(long.join('\n'), async (p, base) => {
-    await p.goto(`${base}/#/api/source/x.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/source/x.tflw`);
     // Waited for by its LAST line, not by the `<pre>`: the element is in the document before the
     // bytes are, and a gutter width read off an empty buffer is one digit — which is how the first
     // draft of this assertion failed while the page was perfectly correct.
@@ -8761,7 +8826,7 @@ test('`M216` `B0`/`A1`: Source numbers every line, and the text under the number
 
 test('`M216` `B0`/`A2`: the project pane is the reader’s width — nudged, dragged, clamped at both ends, and remembered', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-files]').waitFor();
 
     const grip = p.locator('[data-grip="sidebar"]');
@@ -8826,7 +8891,7 @@ test('`M216` `B0`/`A3`: a declaration wears the same chip on all three surfaces 
   // had carried a coloured method chip since `D1081`. This asserts the class is literally shared,
   // which is the thing a later edit breaks by restyling one of them in place.
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-files]').waitFor();
     assert.equal(
       await p.locator('.sidebar [data-outline-decl="test"]').first().locator('.outline-row > .seq-kind').textContent(),
@@ -8858,7 +8923,7 @@ test('`M216` `B0`/`A4`: no sequence row repeats its own chip — the chip is the
   // a gate naming the rows is a gate that has to be edited to admit a fourteenth statement kind,
   // and pinning the sentences is how the last three rounds froze this pane.
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-seq-row]').first().waitFor();
     const rows = await p.locator('li[data-stmt]').evaluateAll((els) =>
       els.map((el) => ({
@@ -8895,7 +8960,7 @@ test('`M216` `B0`/`A5`: the Compose band says which declaration this is, in the 
   // painted. The roles are the language's own, which is why the quotes are here and not on the
   // sidebar's row: this line is prose ABOUT a declaration, so it quotes it the way the file does.
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     const what = p.locator('[data-compose-subject-what]');
     await what.waitFor();
     assert.equal(await what.locator('.t-kw').textContent(), 'test', 'the keyword is a keyword');
@@ -8936,7 +9001,7 @@ const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: num
 
 test('`M216` `B3`: `title` is retired across the shell and the Compose pane — every hover is ours', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-seq-row]').first().waitFor();
 
     // **The vacuity control comes first**, because *no element carries a `title`* is also true of a
@@ -8952,7 +9017,7 @@ test('`M216` `B3`: `title` is retired across the shell and the Compose pane — 
 
 test('`M216` `B1`/`B2`: the hover is our element, and it covers neither the control nor the row under it (`D1125`)', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-seq-row]').first().waitFor();
 
     // A row in a list with a row directly beneath it — the shape of all three screenshots.
@@ -8980,7 +9045,7 @@ test('`M216` `B1`/`B2`: the hover is our element, and it covers neither the cont
 
 test('`M216` `B1`: it appears on keyboard focus, and describes without renaming (`D1129`)', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-seq-row]').first().waitFor();
 
     /* `M237` `B2` — **THE INSTRUMENT THAT NAMES THE EVENT, AFTER `B` NAMED THE MECHANISM.**
@@ -9177,7 +9242,7 @@ test('`M216` `B1`: it appears on keyboard focus, and describes without renaming 
 
 test('`M216` `B3`: a row’s hover is derived from whether it is truncated, asked at two widths (`D1127`)', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-files]').waitFor();
     const label = p.locator('.sidebar [data-outline-decl="test"]').first().locator('.outline-row').first();
     const grip = p.locator('[data-grip="sidebar"]');
@@ -9212,7 +9277,7 @@ test('`M216` `B3`: a row’s hover is derived from whether it is truncated, aske
 
 test('`M216` `B1`: the hover is painted from the theme, in all four (`D1124`)', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-seq-row]').first().waitFor();
     await p.locator('[data-add-clause="test"] summary').click();
     const seen = new Set<string>();
@@ -9257,7 +9322,7 @@ test('`M216` `C`: `send` and `run` each say what they do, and they do not say th
   // pressing `send` was read as running the test and grading it. So the claim is the narrow one:
   // both speak, and they are not saying the same sentence. Neither sentence is pinned.
   await withRemovalFixture(LEGIBLE, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L4`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-compose-send]').first().waitFor();
     const send = await p.locator('[data-compose-send]').first().getAttribute('data-tip');
     const run = await p.locator('[data-run]').getAttribute('data-tip');
@@ -9299,7 +9364,7 @@ const FULL = [
 
 test('`M216` `D1`: every clause the menu offers can be removed, or refuses with a reason (`D1131`)', async () => {
   await withRemovalFixture(FULL, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L2`);
     await p.locator('[data-add-clause="test"]').waitFor();
     await p.locator('[data-add-clause="test"] summary').click();
 
@@ -9328,7 +9393,7 @@ test('`M216` `D1`: every clause the menu offers can be removed, or refuses with 
 
 test('`M216` `D1`: removing a clause unwrites it, and the bytes say so', async () => {
   await withRemovalFixture(FULL, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L2`);
     await p.locator('[data-add-clause="test"] summary').click();
 
     // `tags` is written in the file (`@crud @slow` above the test) and has no per-part control, so
@@ -9351,7 +9416,7 @@ test('`M216` `D2`: the last part takes its clause with it, and the lock that mad
   // content, empty it first* — and `TableEditor` disabled its row remove at `rows.length === 1`,
   // so `with each` could never reach empty and could therefore never be removed at all.
   await withRemovalFixture(FULL, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L2`);
     await p.locator('[data-add-clause="test"] summary').click();
     await p.locator('[data-add-go="table"]').click();
     await p.locator('[data-band-table-kind]').selectOption('inline');
@@ -9391,7 +9456,7 @@ test('`M216` `D3`: `TF033` refuses by name, in both places the removal can be at
     '',
   ].join('\n');
   await withRemovalFixture(workloadFile, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L1`);
     await p.locator('[data-add-clause="test"] summary').click();
 
     await p.locator('[data-add-option="thresholds"] [data-add-remove]').click();
@@ -9408,7 +9473,7 @@ test('`M216` `D3`: `TF033` refuses by name, in both places the removal can be at
 
 test('`M216` `D4`: the request scope removes the same way, and an added-but-unwritten clause just stops being drawn', async () => {
   await withRemovalFixture(FULL, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L2`);
     await openFirstRequest(p, base, 'x.tflw');
     await editorTab(p, 'more');
     await p.locator('[data-add-clause="request"] summary').click();
@@ -9585,7 +9650,7 @@ test('`M224` `G`: no text in the workload editor reads below the AA floor, and i
 
 test('`M216` `E`: the add menu’s options are drawn as controls, in all four themes (`D1134`)', async () => {
   await withRemovalFixture(FULL, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L2`);
     await p.locator('[data-add-clause="test"] summary').click();
     for (const theme of ['terminal', 'instrument', 'paper', 'blueprint']) {
       // Through an element's OWN document, because this package is typechecked with `types:
@@ -9627,7 +9692,7 @@ test('`M216` `E`: the add menu’s options are drawn as controls, in all four th
 
 test('`M216` `E`: the Compose columns are the reader’s too, by the same grip (`D1135`)', async () => {
   await withRemovalFixture(FULL, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L2`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L2`);
     await p.locator('[data-grip="compose"]').waitFor();
     const grip = p.locator('[data-grip="compose"]');
     const seqWidth = (): Promise<number> => p.locator('.seq-col').evaluate((el) => Math.round(el.getBoundingClientRect().width));
@@ -9760,8 +9825,8 @@ const withProjectFixture = async (
   run: (page: Page, base: string, dir: string) => Promise<void>,
 ): Promise<void> => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m217-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     for (const [name, body] of Object.entries(files)) {
@@ -9804,7 +9869,7 @@ test('`M217` `A1`: a create gesture opens what it made, and puts the cursor in i
   // placeholder that asks to be typed over and then leaves you looking somewhere else.
   await withRemovalFixture(CHAINED, async (p, base) => {
     for (const gesture of ['request', 'let', 'wait'] as const) {
-      await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+      await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L1`);
       await p.locator(`[data-seq-add="${gesture}"]`).click();
       await p.locator('[data-compose-dirty]').waitFor();
 
@@ -9860,14 +9925,14 @@ test('`M217` `B1`: inserting a request changes no reader’s response — asked 
     assert.equal(before.length, 5, `the fixture's readers (${before.join(' | ')})`);
 
     const requests = await p.evaluate(() => 0).then(async () => {
-      await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+      await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L1`);
       await p.locator('[data-seq-plus]').first().waitFor();
       return p.locator('[data-seq-plus]').evaluateAll((els) => els.map((e) => e.getAttribute('data-seq-plus')!));
     });
     assert.equal(requests.length, 3, `one \`+\` per request (${requests.join(' · ')})`);
 
     for (const after of requests) {
-      await openClean(p, `${base}/#/api/compose/x.tflw/L1`);
+      await openClean(p, `${base}/?token=${TOKEN}#/api/compose/x.tflw/L1`);
       await p.locator(`[data-seq-plus="${after}"]`).click();
       await p.locator('[data-compose-dirty]').waitFor();
 
@@ -9907,7 +9972,7 @@ test('`M217` `B2`: the `+` is on requests and nowhere else (`D1137`, `D1144`)', 
   // list anybody maintains. `data-stmt` is absent on exactly the request rows — that is what the
   // sequence column already uses to mark a statement — and `[data-seq-plus]` must agree with it.
   await withRemovalFixture(CHAINED, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L1`);
     await p.locator('[data-seq-plus]').first().waitFor();
     const rows = await p.locator('.seq-row').evaluateAll((els) =>
       els.map((e) => ({
@@ -9931,7 +9996,7 @@ test('`M217` `B3`: the last request’s `+` and the foot’s `+ request` write t
   // anything and `B1` would stay green.
   await withRemovalFixture(CHAINED, async (p, base) => {
     const bytes = async (press: string): Promise<string> => {
-      await openClean(p, `${base}/#/api/compose/x.tflw/L1`);
+      await openClean(p, `${base}/?token=${TOKEN}#/api/compose/x.tflw/L1`);
       await p.locator(press).click();
       await p.locator('[data-compose-dirty]').waitFor();
       await p.locator('[data-tab="source"]').click();
@@ -9950,7 +10015,7 @@ test('`M217` `C1`: the create dialog previews the bytes that land, pending edits
   // a file that was not the one the author was looking at, then left a stale buffer behind that
   // the next Save would have put back over the new test.
   await withRemovalFixture(CHAINED, async (p, base, dir) => {
-    await p.goto(`${base}/#/api/compose/x.tflw/L1`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L1`);
     await p.locator('[data-seq-plus="POST /baskets"]').click();
     await p.locator('[data-compose-dirty]').waitFor();
 
@@ -9990,7 +10055,7 @@ test('`M217` `C2`: a draft belongs to its file and survives a look at another on
   // click back, the edit gone. `M217` puts a `+` on every file row, which makes crossing a pending
   // edit a one-click gesture, so that behaviour could not be shipped under it.
   await withProjectFixture({ 'a.tflw': CHAINED, 'b.tflw': ['test "elsewhere"', '  api GET /b', '  expect status equals 200', ''].join('\n') }, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/a.tflw/L1`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/a.tflw/L1`);
     await p.locator('[data-seq-add="request"]').click();
     await p.locator('[data-compose-dirty]').waitFor();
     /* `M235` `C2` — `count()` waits for nothing, and this is the reading the whole test is
@@ -10057,7 +10122,7 @@ test('`M217` `D1`: a `+` on a file row opens THAT file’s dialog (`D1139`)', as
   // follows it are not the same tick, so a dialog opened too early would splice a test into one
   // file's name using another file's bytes, or into an empty string.
   await withProjectFixture({ 'a.tflw': CHAINED, 'b.tflw': ['test "elsewhere"', '  api GET /b', '  expect status equals 200', ''].join('\n') }, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/a.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/a.tflw`);
     await p.locator('li[data-file="b.tflw"] [data-row-plus="test"]').click();
     await p.locator('[data-new-thing="test"]').waitFor();
     assert.match((await p.locator('[data-new-thing] h3').textContent())!, /b\.tflw$/, 'the dialog names the file the `+` was on');
@@ -10078,7 +10143,7 @@ test('`M217` `D2`: a `+` on a test row adds a request to that test, and opens it
   // gate then timed out waiting for a dirty marker a broken file can never produce. The same trap
   // `M216`'s `FULL` fixture recorded one construct over, which is why this comment is here too.
   await withProjectFixture({ 'a.tflw': [CHAINED, 'before file', '  api GET /warm', '  expect status equals 200', ''].join('\n') }, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/a.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/a.tflw`);
     await p.locator('[data-outline-decl="test"]').first().waitFor();
 
     // A hook gets none, and that is the language rather than a gap: the splice names a test BY
@@ -10131,7 +10196,7 @@ test('`M217` `D3`: the `+` costs no name that was not already cut (`D1140`)', as
   // row enough width that it never has to shrink, and a gate measured there cannot see a row that
   // refuses to — which is exactly the defect above.
   await withProjectFixture({ 'tests/a.tflw': LONG }, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/tests/a.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/tests/a.tflw`);
     await p.locator('[data-outline-decl="test"]').first().waitFor();
     const cut = async (): Promise<number> =>
       p.locator('.outline-row .outline-name').evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
@@ -10292,7 +10357,7 @@ const openMenuAndBox = async (
 
 test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row kind (`D1145`)', async () => {
   await withProjectFixture(IMPORTED, async (p, base) => {
-    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    await openClean(p, `${base}/?token=${TOKEN}#/api/compose/tests/checkout.tflw/L3`);
     // **Sizes rather than pointer coordinates.** The clamp is only asked a question when the menu
     // does not fit where it was asked for, and shrinking the window is how a real pointer gets
     // near an edge — a synthetic corner coordinate would put the menu over a row that is not there.
@@ -10390,7 +10455,7 @@ test('`M218` `A1`: the menu stays on screen wherever it is opened, on every row 
 
 test('`M218` `A2`: `Shift`+`F10` opens it and `Escape` gives focus back (`D1147`)', async () => {
   await withProjectFixture(IMPORTED, async (p, base) => {
-    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    await openClean(p, `${base}/?token=${TOKEN}#/api/compose/tests/checkout.tflw/L3`);
     const row = p.locator('[data-file-row="tests/checkout.tflw"]');
     await row.focus();
     await p.keyboard.press('Shift+F10');
@@ -10421,7 +10486,7 @@ test('`M218` `A2`: `Shift`+`F10` opens it and `Escape` gives focus back (`D1147`
 
 test('`M218` `A3`: opening a second menu leaves one open, not two', async () => {
   await withProjectFixture(IMPORTED, async (p, base) => {
-    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    await openClean(p, `${base}/?token=${TOKEN}#/api/compose/tests/checkout.tflw/L3`);
     await openMenu(p, '[data-file-row="tests/checkout.tflw"]');
     await openMenu(p, '[data-file-row="tests/lonely.tflw"]');
     assert.equal(await p.locator('.ctx-menu').count(), 1);
@@ -10431,7 +10496,7 @@ test('`M218` `A3`: opening a second menu leaves one open, not two', async () => 
 
 test('`M218` `B1`: every item either runs or says why — asked of every row kind (`D1146`)', async () => {
   await withProjectFixture(IMPORTED, async (p, base) => {
-    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    await openClean(p, `${base}/?token=${TOKEN}#/api/compose/tests/checkout.tflw/L3`);
     const rows = ['[data-file-row="shared/login.tflw"]', '[data-file-row="tests/lonely.tflw"]', '[data-dir-toggle="tests"]', '[data-outline-goto="3"]', '[data-seq-line="3"]', '[data-seq-line="4"]'];
     const silent: string[] = [];
     let seenDisabled = 0;
@@ -10459,7 +10524,7 @@ test('`M218` `B1`: every item either runs or says why — asked of every row kin
 
 test('`M218` `B1`: Delete is refused on an imported file and names the importers (`D1146`, `D1153`)', async () => {
   await withProjectFixture(IMPORTED, async (p, base) => {
-    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    await openClean(p, `${base}/?token=${TOKEN}#/api/compose/tests/checkout.tflw/L3`);
     await openMenu(p, '[data-file-row="shared/login.tflw"]');
     assert.equal(await p.locator('.ctx-menu [data-menu-item="delete"]').getAttribute('data-menu-state'), 'disabled');
     const why = (await p.locator('.ctx-menu [data-menu-why="delete"]').textContent()) ?? '';
@@ -10478,7 +10543,7 @@ test('`M218` `B1`: Delete is refused on an imported file and names the importers
 
 test('`M218` `B2`: the menu acts on the row under the pointer, not on the selection (`D1149`)', async () => {
   await withProjectFixture(IMPORTED, async (p, base) => {
-    await openClean(p, `${base}/#/api/compose/tests/checkout.tflw/L3`);
+    await openClean(p, `${base}/?token=${TOKEN}#/api/compose/tests/checkout.tflw/L3`);
     // Build a three-file selection — which in this pane means *what will run*, nothing else.
     await p.locator('[data-file-row="tests/checkout.tflw"]').click();
     await p.locator('[data-file-row="tests/basket.tflw"]').click({ modifiers: ['Meta'] });
@@ -10494,11 +10559,11 @@ test('`M218` `B2`: the menu acts on the row under the pointer, not on the select
 
 test('`M218` `C2`: the preview names the files the apply writes, and nothing else (`D1150`)', async () => {
   await withProjectFixture(IMPORTED, async (p, base, dir) => {
-    const preview = await (await fetch(`${base}/api/refactor?op=move&from=shared%2Flogin.tflw&to=shared%2Fsignin.tflw`)).json() as { edits: { path: string }[]; removes: string[] };
+    const preview = await (await api(`${base}/api/refactor?op=move&from=shared%2Flogin.tflw&to=shared%2Fsignin.tflw`)).json() as { edits: { path: string }[]; removes: string[] };
     const before = new Map<string, string>();
     for (const name of Object.keys(IMPORTED)) before.set(name, await readFile(join(dir, name), 'utf8'));
 
-    const applied = await fetch(`${base}/api/move`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: 'shared/login.tflw', to: 'shared/signin.tflw' }) });
+    const applied = await api(`${base}/api/move`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: 'shared/login.tflw', to: 'shared/signin.tflw' }) });
     assert.equal(applied.status, 200);
 
     // What actually changed on disk, asked of the bytes rather than of the response.
@@ -10519,7 +10584,7 @@ test('`M218` `C2`: the preview names the files the apply writes, and nothing els
 
 test('`M218` `D1`: deleting an imported file is refused and the file survives (`D1153`)', async () => {
   await withProjectFixture(IMPORTED, async (_p, base, dir) => {
-    const res = await fetch(`${base}/api/file?path=shared%2Flogin.tflw`, { method: 'DELETE' });
+    const res = await api(`${base}/api/file?path=shared%2Flogin.tflw`, { method: 'DELETE' });
     assert.equal(res.status, 409);
     const body = await res.json() as { importers: string[] };
     assert.deepEqual(body.importers, ['tests/basket.tflw', 'tests/checkout.tflw']);
@@ -10542,7 +10607,7 @@ test('`M218` `D2`: the recovery sentence is about this file, and degrades rather
   // back, which is exactly what a `.git`-directory check would have called recoverable.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m218-git-'));
   const git = (...args: string[]): void => { execFileSync('git', args, { cwd: dir, stdio: 'ignore' }); };
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', '  api "http://127.0.0.1:4799"', ''].join('\n'));
     const body = ['test "t"', '  api GET /x', '  expect status equals 200', ''].join('\n');
@@ -10550,7 +10615,7 @@ test('`M218` `D2`: the recovery sentence is about this file, and degrades rather
     await writeFile(join(dir, 'never-committed.tflw'), body);
     const port = await ui.listen(0);
     const ask = async (name: string): Promise<string> =>
-      ((await (await fetch(`http://127.0.0.1:${port}/api/refactor?op=delete&path=${encodeURIComponent(name)}`)).json()) as { recovery: string }).recovery;
+      ((await (await api(`http://127.0.0.1:${port}/api/refactor?op=delete&path=${encodeURIComponent(name)}`)).json()) as { recovery: string }).recovery;
 
     // 1. No repository at all — the flat "this cannot be undone".
     assert.equal(await ask('committed.tflw'), 'unknown', 'outside a repository the answer is `unknown`');
@@ -10585,7 +10650,7 @@ test('`M218` `B3`: `New file here` opens in the folder it was asked from (`D1159
     { 'suites/a.tflw': ['test "a"', '  api GET /a', '  expect status equals 200', ''].join('\n'),
       'flows/b.tflw': ['test "b"', '  api GET /b', '  expect status equals 200', ''].join('\n') },
     async (p, base) => {
-      await openClean(p, `${base}/#/api/compose/suites/a.tflw/L1`);
+      await openClean(p, `${base}/?token=${TOKEN}#/api/compose/suites/a.tflw/L1`);
 
       for (const folder of ['suites', 'flows']) {
         await openMenu(p, `[data-dir-toggle="${folder}"]`);
@@ -10608,7 +10673,7 @@ test('`M218` `B3`: `New file here` opens in the folder it was asked from (`D1159
 
 test('`M218` `E4`: a draft follows its file across a rename (`D1155`)', async () => {
   await withProjectFixture(IMPORTED, async (p, base) => {
-    await openClean(p, `${base}/#/api/compose/tests/lonely.tflw/L1`);
+    await openClean(p, `${base}/?token=${TOKEN}#/api/compose/tests/lonely.tflw/L1`);
     // Make a pending edit that exists only in the page.
     await p.locator('[data-seq-add="request"]').click();
     await p.locator('[data-file-unsaved="tests/lonely.tflw"]').waitFor({ state: 'visible' });
@@ -10628,7 +10693,7 @@ test('`M218` `E4`: a draft follows its file across a rename (`D1155`)', async ()
 
 test('`M218` `F1`: duplicating a request copies its statements with it (`D1156`)', async () => {
   await withProjectFixture({ 'a.tflw': CHAINED }, async (p, base) => {
-    await openClean(p, `${base}/#/api/compose/a.tflw/L1`);
+    await openClean(p, `${base}/?token=${TOKEN}#/api/compose/a.tflw/L1`);
     // Wait for the column before counting it: a count taken on an unrendered page is `0`, which
     // made this read `4 !== 1` and look like a duplicate that had added four requests.
     await p.locator('[data-seq-request]').first().waitFor();
@@ -10652,7 +10717,7 @@ test('`M218` `F1`: duplicating a request copies its statements with it (`D1156`)
 
 test('`M218` `F2`: duplicating changes no existing assertion’s response (`D1138`, `D1156`)', async () => {
   await withProjectFixture({ 'a.tflw': CHAINED }, async (p, base) => {
-    await openClean(p, `${base}/#/api/compose/a.tflw/L1`);
+    await openClean(p, `${base}/?token=${TOKEN}#/api/compose/a.tflw/L1`);
     const before = responseReaders(CHAINED);
     // Duplicate the FIRST request — the position where a copy landing without its statements
     // would re-point the originals, which is the whole hazard.
@@ -10685,8 +10750,8 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m225-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const p = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
     await writeFile(
@@ -10720,7 +10785,7 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
     const base = `http://127.0.0.1:${port}`;
 
     // ── The declaration address ───────────────────────────────────────────────────────────────
-    await p.goto(`${base}/#/api/compose/m225.tflw/L6`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/m225.tflw/L6`);
     await p.locator('[data-band-workload-edit]').waitFor();
 
     // **GATE 11 — every control in the composer speaks in the page's own voice.**
@@ -10904,7 +10969,7 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
     // Mutation: render a one-entry strip. This is the common case — the whole LOAD corpus but one
     // test, and every functional test in the sibling — so the ordinary path must not grow a
     // control for a press already on screen.
-    await p.goto(`${base}/#/api/compose/m225.tflw/L16`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/m225.tflw/L16`);
     await p.reload();
     await p.locator('[data-prefix]').waitFor();
     // A one-request test at its own declaration: `send all` alone, because there is no *this*.
@@ -10920,7 +10985,7 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
     // to the end of the body and `send this` stops at the request, so on a test whose last line is
     // an `expect` the two cuts differ by a step and issue the same request — two buttons, one
     // press. The comparison is the requests issued.
-    await p.goto(`${base}/#/api/compose/m225.tflw/L17`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/m225.tflw/L17`);
     await p.reload();
     await p.locator('[data-compose-send="this"]').waitFor();
     assert.equal(await p.locator('[data-compose-send]').count(), 1, 'a one-request test offers one press wherever you stand in it');
@@ -10929,7 +10994,7 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
     //
     // On the FIRST request the two presses differ, so both are offered: `this` runs the hook and
     // one request, `all` runs the hook and both.
-    await p.goto(`${base}/#/api/compose/m225.tflw/L8`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/m225.tflw/L8`);
     await p.reload();
     await p.locator('[data-prefix]').waitFor();
     assert.equal(await p.locator('[data-compose-send="this"]').count(), 1, 'a request address has a *this*');
@@ -10939,7 +11004,7 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
     // On the LAST request they coincide — same requests, same press — so `all` is suppressed and
     // the pane offers the one button it has always offered. **The run caught this assertion being
     // wrong before it caught any code being wrong**, which is the right order.
-    await p.goto(`${base}/#/api/compose/m225.tflw/L11`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/m225.tflw/L11`);
     await p.reload();
     await p.locator('[data-prefix]').waitFor();
     assert.equal(await p.locator('[data-compose-send="this"]').count(), 1);
@@ -10984,8 +11049,8 @@ test('`M225` `H`: region 2 never nests one scroller inside another, in any of it
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m225h-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const p = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
     await writeFile(
@@ -11042,7 +11107,7 @@ test('`M225` `H`: region 2 never nests one scroller inside another, in any of it
       });
 
     // ── state 1: the empty state, before anything has been sent ──────────────────────────────
-    await p.goto(`${base}/#/load/compose/m225h.tflw/L3`);
+    await p.goto(`${base}/?token=${TOKEN}#/load/compose/m225h.tflw/L3`);
     await p.locator('[data-prefix]').waitFor();
     let seen = await scan();
     assert.deepEqual(seen.nested, [], 'the empty state nests nothing');
@@ -11121,8 +11186,8 @@ test('`M226` `A`: a workload declaration puts region 2 at the foot of the pane, 
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m226-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const p = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
     /* **Both declarations in ONE file, on the API door.** Two files would let a mutation keyed on
@@ -11170,7 +11235,7 @@ test('`M226` `A`: a workload declaration puts region 2 at the foot of the pane, 
       });
 
     // ── GATES 1 + 2 — the workload declaration, on the API door ──────────────────────────────
-    await p.goto(`${base}/#/api/compose/m226.tflw/L1`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/m226.tflw/L1`);
     await p.locator('[data-compose-footer]').waitFor();
     const withLoad = await layout();
     assert.equal(withLoad.footer, 'yes', 'a declaration carrying a workload draws region 2 at the foot');
@@ -11183,7 +11248,7 @@ test('`M226` `A`: a workload declaration puts region 2 at the foot of the pane, 
     /* This is the assertion the round exists to make falsifiable. A branch reading `door === 'load'`
        satisfies every other line in this test and fails here, because here the door says LOAD-ish
        nothing and only the declaration differs. */
-    await p.goto(`${base}/#/api/compose/m226.tflw/L7`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/m226.tflw/L7`);
     await p.reload();
     await p.locator('[data-compose-footer]').waitFor();
     const without = await layout();
@@ -11202,7 +11267,7 @@ test('`M226` `A`: a workload declaration puts region 2 at the foot of the pane, 
     );
 
     // ── GATES 5 + 6 — a real send, in the footer layout ──────────────────────────────────────
-    await p.goto(`${base}/#/api/compose/m226.tflw/L3`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/m226.tflw/L3`);
     await p.reload();
     await p.locator('[data-compose-send]').first().click();
     await p.locator('[data-compose-response-body]').waitFor();
@@ -11274,8 +11339,8 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m227-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const p = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
     /* One file, five declarations, on the API door. **`41 across 4` is deliberate**: it divides
@@ -11385,7 +11450,7 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
       });
 
     const open = async (line: number, plan: string): Promise<void> => {
-      await p.goto(`${base}/#/api/compose/m227.tflw/L${line}`);
+      await p.goto(`${base}/?token=${TOKEN}#/api/compose/m227.tflw/L${line}`);
       await p.locator('[data-compose-footer]').waitFor();
       if (plan !== '') await p.locator(`[data-compose-plan="${plan}"]`).waitFor();
       await p.waitForTimeout(250);
@@ -11517,8 +11582,8 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
 // mutation that made it state-keyed, and the other way round.
 test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D1235`), and the scratch notice closes the region rather than leading it (`D1236`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m227d-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     /* The same arrangement `M223` `E` needs and for the same reason: with no `playwright-core`
        resolvable from the project there is no viewer to serve and no trace to put in it, so
@@ -11576,7 +11641,7 @@ test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D12
       });
 
     // ── BEFORE — nothing has been played, and the workload declaration takes the page's width ──
-    await fresh.goto(`${base}/#/browser/compose/d.tflw/L5`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/d.tflw/L5`);
     await fresh.locator('[data-compose-footer]').waitFor();
     await fresh.waitForTimeout(400);
     const before = await read();
@@ -11590,7 +11655,7 @@ test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D12
     assert.equal(before.notices, 0, `an empty stage has written no scratch and says nothing about one — found ${before.notices}`);
 
     // ── Play the browser test, in the same file, so `played` survives the trip back ────────────
-    await fresh.goto(`${base}/#/browser/compose/d.tflw/L2`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/d.tflw/L2`);
     await fresh.locator('[data-seq-play="test"]').first().waitFor();
     await fresh.locator('[data-seq-play="test"]').first().click();
     let m = await read();
@@ -11601,7 +11666,7 @@ test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D12
     assert.equal(m.stage, 'trace', `no trace landed in two minutes, so this gate measured nothing — ${JSON.stringify(m)}`);
 
     // ── AFTER — the same declaration, and the page has one full-width band again ───────────────
-    await fresh.goto(`${base}/#/browser/compose/d.tflw/L5`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/d.tflw/L5`);
     await fresh.locator('[data-compose-footer]').waitFor();
     await fresh.waitForTimeout(400);
     const after = await read();
@@ -11642,8 +11707,8 @@ test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D12
    file is a fact about the product rather than about the corpus. */
 test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (`D1239`), and `TF060` reaches the pane (`D1240`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m228a-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   const target = `http://127.0.0.1:${fixturePort}`;
   const config = (authorized: boolean): string =>
     [
@@ -11699,7 +11764,7 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
       });
 
     // ── Gate 1 — the scan-bearing declaration, on API ────────────────────────────────────────
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L1`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L1`);
     await fresh.locator('.compose-pane-grid').waitFor();
     await fresh.waitForTimeout(400);
     const scanning = await read();
@@ -11719,7 +11784,7 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
     assert.equal(scanning.probesNone, 1, 'no `probe` opt-in is declared, and the panel says so rather than leaving it blank');
 
     // ── Gate 2 — the unmutated control: same door, same file, no severity matcher ─────────────
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L6`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L6`);
     await fresh.waitForTimeout(400);
     const plain = await read();
     assert.deepEqual(plain.tabs, [], `a declaration with no scan assertion earns no segment at all — got ${JSON.stringify(plain.tabs)}`);
@@ -11728,7 +11793,7 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
     // ── Gate 4 — the authorized control for gate 3, taken FIRST so that the mutation is the ───
     //    config and nothing else. The draft has to differ from the file for the preview list to
     //    be drawn at all (`SourcePanel`), so the edit is made once and both readings share it.
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L4`);
     await fresh.locator('[data-expect-severity]').waitFor();
     await fresh.locator('[data-expect-severity]').selectOption('critical');
     await tabOn('source');
@@ -11746,7 +11811,7 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
        than vacuous: an instrument that never draws the list would pass gate 4 by saying nothing,
        and gate 3 is the proof that these exact bytes on this exact page can produce a row. */
     await writeFile(join(dir, 'tflw.config'), config(false));
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L4`);
     await fresh.reload();
     await fresh.locator('[data-expect-severity]').waitFor();
     await fresh.locator('[data-expect-severity]').selectOption('critical');
@@ -11759,7 +11824,7 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
     );
     /* And the panel is in its other state on the same reload — `M207` `S5`'s warning, which every
        project on this machine is too healthy to render. */
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L1`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L1`);
     await fresh.waitForTimeout(400);
     const unauthorized = await read();
     assert.deepEqual(unauthorized.tabs, ['scan', 'response'], 'the segment is earned by the construct, so losing the target does not remove it');
@@ -11778,8 +11843,8 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
    would fail the fourth reading while passing the first three. */
 test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, scaffolds a scan (`D1244`), and plays without sending (`D1241`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m228b-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(
       join(dir, 'tflw.config'),
@@ -11798,7 +11863,7 @@ test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, sca
     const base = `http://127.0.0.1:${port}`;
 
     // ── Gate 5 — the door renders the pane and no form ───────────────────────────────────────
-    await fresh.goto(`${base}/#/scan`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/scan`);
     await fresh.locator('.compose-pane-grid').waitFor();
     assert.equal(await fresh.locator('[data-scan-form]').count(), 0, '`ScanForm` is still on the screen, so the fork was narrowed rather than deleted');
     await fresh.locator(`[data-file-row="d.tflw"]`).click();
@@ -11842,7 +11907,7 @@ test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, sca
        so `[data-compose-send]` is absent there whatever the table says, and the `sends: true`
        mutation left this gate green. The control beside it is the same line on the API door,
        without which *absent* is satisfied by a send row that has stopped rendering anywhere. */
-    await fresh.goto(`${base}/#/scan/compose/d.tflw/L2`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/d.tflw/L2`);
     await fresh.locator('[data-seq-play="test"]').first().waitFor();
     await fresh.waitForTimeout(300);
     assert.equal(
@@ -11850,14 +11915,14 @@ test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, sca
       0,
       '`send` is on the SCANS door, and `D1241` refuses it: it strips the assertions this door exists for (`D1119`)',
     );
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L2`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L2`);
     await fresh.locator('[data-compose-send]').first().waitFor();
     assert.ok(
       (await fresh.locator('[data-compose-send]').count()) > 0,
       'the same request on the API door has no send either, so the SCANS reading above is about nothing',
     );
 
-    await fresh.goto(`${base}/#/scan/compose/d.tflw/L1`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/d.tflw/L1`);
     await fresh.locator('[data-seq-play="test"]').first().waitFor();
     const price = (await fresh.locator('[data-seq-play="test"]').first().getAttribute('data-tip')) ?? '';
     assert.ok(price.length > 0, '▶ states no price at all on the door where the press is most consequential (`D1212`)');
@@ -11883,7 +11948,7 @@ test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, sca
        the defect `M222` was scoped from. Asserted on the rows the create gesture just made, so
        it is about what landed rather than about what the vocabulary claims. */
     const line = written.split('\n').findIndex((l) => l.includes('what the door scaffolds')) + 1;
-    await fresh.goto(`${base}/#/scan/compose/d.tflw/L${line}`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/d.tflw/L${line}`);
     await fresh.locator('[data-seq-foot]').waitFor();
     const dead = await fresh.locator('[data-stmt-editable="no"]').count();
     assert.equal(dead, 0, `the SCANS scaffold wrote ${dead} row(s) its own pane draws dead (\`D1082\`, \`D1189\`)`);
@@ -11911,8 +11976,8 @@ test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, sca
    SCANS without also reaching API. */
 test('`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and saying why (`D1238`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m228c-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(
       join(dir, 'tflw.config'),
@@ -11941,14 +12006,14 @@ test('`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and 
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
 
-    const view = (await (await fetch(`${base}/api/project`)).json()) as { files: { path: string; tests: unknown[]; crawls: unknown[] }[] };
+    const view = (await (await api(`${base}/api/project`)).json()) as { files: { path: string; tests: unknown[]; crawls: unknown[] }[] };
     const entry = view.files.find((f) => f.path === 'c.tflw')!;
     const declared = entry.tests.length + entry.crawls.length;
     assert.equal(declared, 2, 'the fixture must hold a test and a crawl for either half of this to mean anything');
 
     // ── Gate 9 — every declaration the file has is drawn, on every door ──────────────────────
     for (const door of ['scan', 'api'] as const) {
-      await fresh.goto(`${base}/#/${door}/compose/c.tflw`);
+      await fresh.goto(`${base}/?token=${TOKEN}#/${door}/compose/c.tflw`);
       await fresh.locator('[data-outline]').waitFor();
       await fresh.waitForTimeout(300);
       const drawn = await fresh.locator('[data-outline-decl]').count();
@@ -11961,7 +12026,7 @@ test('`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and 
     }
 
     // ── Gate 10 — read-only, and the reason is the crawl's own rather than the block's ───────
-    await fresh.goto(`${base}/#/scan/compose/c.tflw/L5`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/c.tflw/L5`);
     await fresh.locator('[data-band-kind="crawl"]').waitFor();
     assert.equal(await fresh.locator('[data-crawl-name]').textContent(), 'walked again as a stranger');
     assert.deepEqual(
@@ -11985,7 +12050,7 @@ test('`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and 
     assert.equal(await fresh.locator('[data-seq-remove]').count(), 0, '`✕` is offered on a crawl and `onRemoveDecl` cannot address one');
     assert.equal(await fresh.locator('[data-seq-foot]').getAttribute('data-seq-adds'), '', 'the foot offers `+` gestures that would splice into a crawl');
 
-    await fresh.goto(`${base}/#/scan/compose/c.tflw/L7`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/c.tflw/L7`);
     await fresh.locator('[data-stmt-editable]').first().waitFor();
     assert.equal(await fresh.locator('[data-stmt-editable="yes"]').count(), 0, "a crawl's own assertion is live, so its address is reachable after all");
     const reason = (await fresh.locator('.editor-body .stmt-line p').textContent()) ?? '';
@@ -11994,7 +12059,7 @@ test('`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and 
     /* **The control**, and it is the one `M224` cost us: the same pane, the same door, one file
        away, still fully live. Without it every assertion above is satisfied by a pane that has
        stopped editing anything. */
-    await fresh.goto(`${base}/#/scan/compose/c.tflw/L3`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/c.tflw/L3`);
     await fresh.locator('[data-expect-matcher]').first().waitFor();
     assert.equal(await fresh.locator('[data-seq-play]').count(), 1, 'the test beside the crawl lost ▶, so the crawl rule is keyed too wide');
     assert.equal(await fresh.locator('[data-seq-foot]').getAttribute('data-seq-adds'), 'request,let,wait', 'and its `+` gestures with it');
@@ -12019,8 +12084,8 @@ test('`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and 
    another file and answered about a row with neither. `M210` `S3`'s own gates cover both. */
 test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` refuses are disabled and say so (`D1243`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m228d-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
     await writeFile(
@@ -12041,7 +12106,7 @@ test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` 
 
     // ── Gate 13 — a `status` subject: everything drawn, the ones that need a page or a response
     //    greyed, and the sentence is the checker's own.
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L3`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L3`);
     await fresh.locator('[data-expect-matcher]').first().waitFor();
     const onStatus = await options(3);
     assert.equal(onStatus.total, 23, `the select filtered instead of disabling — ${onStatus.total} options against the language's 23 (\`D1076\`)`);
@@ -12058,7 +12123,7 @@ test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` 
     );
 
     // …and the mirror: on `response` the scan families are the live ones.
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L4`);
     await fresh.locator('[data-expect-matcher]').first().waitFor();
     const onResponse = await options(4);
     assert.equal(onResponse.total, 23);
@@ -12091,8 +12156,8 @@ test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` 
    a build that had simply removed the session panel everywhere. */
 test('`M228` `F`: SCANS offers no recorder and BROWSER still does (`D1245`), every segment says what it is (`D1246`), and the env half is labelled (`D1247`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m228f-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   const target = `http://127.0.0.1:${fixturePort}`;
   try {
     await writeFile(
@@ -12176,7 +12241,7 @@ test('`M228` `F`: SCANS offers no recorder and BROWSER still does (`D1245`), eve
     };
 
     // ── Gate 1 — the scan declaration on SCANS: no recorder anywhere in the region ────────────
-    await fresh.goto(`${base}/#/scan/compose/d.tflw/L1`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/d.tflw/L1`);
     await fresh.locator('.compose-pane-grid').waitFor();
     await fresh.waitForTimeout(400);
     const scanArrival = await read();
@@ -12199,7 +12264,7 @@ test('`M228` `F`: SCANS offers no recorder and BROWSER still does (`D1245`), eve
     assert.equal(scanResponse.startBtn, 0, '`record a session` is offered on SCANS, which would splice steps this door’s vocabulary cannot construct');
 
     // ── Gate 2 — the control: same file, same `sends: false`, BROWSER ────────────────────────
-    await fresh.goto(`${base}/#/browser/compose/d.tflw/L6`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/browser/compose/d.tflw/L6`);
     await fresh.waitForTimeout(400);
     const browserPane = await read();
     /* This declaration earns ONE tenant, so there is no nav here and no tip to read — asserted
@@ -12211,7 +12276,7 @@ test('`M228` `F`: SCANS offers no recorder and BROWSER still does (`D1245`), eve
     assert.equal(browserPane.startBtn, 1, 'and the press that starts one is offered');
 
     // ── Gate 3 — all three tenants at once, which is where `D1246` is observable ─────────────
-    await fresh.goto(`${base}/#/load/compose/d.tflw/L10`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/load/compose/d.tflw/L10`);
     await fresh.waitForTimeout(400);
     const three = await read();
     assert.deepEqual(three.tabs, ['plan', 'scan', 'response'], `a workload-bearing test with a severity matcher earns all three — got ${JSON.stringify(three.tabs)}`);
@@ -12240,8 +12305,8 @@ test('`M228` `F`: SCANS offers no recorder and BROWSER still does (`D1245`), eve
    env the page asked for. */
 test('`M228` `F4`: the `scan` segment and the pane’s `TF060` preview both follow the env picker (`D1248`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m228f4-'));
-  const ui = new UiServer({ root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   const target = `http://127.0.0.1:${fixturePort}`;
   try {
     await writeFile(
@@ -12286,7 +12351,7 @@ test('`M228` `F4`: the `scan` segment and the pane’s `TF060` preview both foll
       }));
 
     // ── The control: the default env, which authorizes the target ────────────────────────────
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L1`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L1`);
     await fresh.locator('.compose-pane-grid').waitFor();
     await fresh.waitForTimeout(400);
     const clean = await scan();
@@ -12298,7 +12363,7 @@ test('`M228` `F4`: the `scan` segment and the pane’s `TF060` preview both foll
        the file (`SourcePanel`, `D1052` — it is a preview of what you are about to WRITE), so the
        edit is what makes the list drawable at all; `deepEqual([])` rather than `!includes`,
        because a negative on an empty list is the vacuity `M228` `A`'s gate 4 was rewritten for. */
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L4`);
     await fresh.locator('[data-expect-severity]').waitFor();
     await fresh.locator('[data-expect-severity]').selectOption('critical');
     await tabOn('source');
@@ -12313,7 +12378,7 @@ test('`M228` `F4`: the `scan` segment and the pane’s `TF060` preview both foll
     await fresh.locator('[data-env-select]').selectOption('staging');
     await fresh.waitForTimeout(500);
 
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L1`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L1`);
     await fresh.waitForTimeout(400);
     const gap = await scan();
     assert.equal(gap.env, 'staging', `the panel followed the pick — got ${gap.env}`);
@@ -12321,7 +12386,7 @@ test('`M228` `F4`: the `scan` segment and the pane’s `TF060` preview both foll
     assert.deepEqual(gap.reach, [`${target}=no`], `the same origin, now uncovered — got ${JSON.stringify(gap.reach)}`);
 
     // ── …and the preview, which is the half that contradicted `D1052` ────────────────────────
-    await fresh.goto(`${base}/#/api/compose/d.tflw/L4`);
+    await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L4`);
     await fresh.locator('[data-expect-severity]').waitFor();
     await fresh.locator('[data-expect-severity]').selectOption('critical');
     await tabOn('source');
@@ -12354,7 +12419,7 @@ test('the create dialog shows the lines it is about to write, on every door', as
   const file = `${header}\ntest "the one that was already here"\n  api GET /a\n  expect status equals 200\n`;
   await withProjectFixture({ 'one.tflw': file }, async (p, base) => {
     for (const door of ['api', 'browser', 'load', 'scan']) {
-      await p.goto(`${base}/#/${door}/compose/one.tflw`);
+      await p.goto(`${base}/?token=${TOKEN}#/${door}/compose/one.tflw`);
       await p.reload();
       await p.locator('[data-compose-new-test]').click();
       await p.locator('[data-new-name]').fill(`written on ${door}`);
@@ -12408,7 +12473,7 @@ test('an address that resolves to something else is corrected to what is on scre
     async (p, base) => {
       const historyLength = (): Promise<number> => p.locator('body').evaluate((el) => el.ownerDocument.defaultView!.history.length);
       const settle = async (hash: string, want: string): Promise<{ hash: string; entries: number }> => {
-        await p.goto(`${base}/#/api/compose/one.tflw`);
+        await p.goto(`${base}/?token=${TOKEN}#/api/compose/one.tflw`);
         await p.reload();
         await p.locator('[data-tabstrip]').waitFor();
         const before = await historyLength();
@@ -12418,7 +12483,9 @@ test('an address that resolves to something else is corrected to what is on scre
         // machine. The wait is a string expression because this package compiles with no DOM lib
         // (`ui-appearance.test.ts` states the rule), and it is allowed to time out: the control
         // cases below expect the address NOT to move, and a timeout there is the pass.
-        await p.waitForFunction(`location.hash === ${JSON.stringify(want)}`, undefined, { timeout: 4000 }).catch(() => {});
+        // `M239` `C`: a string predicate is `eval` in the page, which its policy refuses — so the
+        // wait reads the address from outside the page.
+        await p.waitForURL((u) => u.hash === want, { timeout: 4000 }).catch(() => {});
         return { hash: new URL(p.url()).hash, entries: (await historyLength()) - before };
       };
 
@@ -12473,7 +12540,7 @@ test('the run list marks the open report, counts `current` as a property, and ke
     // `report/` is the newer run copied — the same bytes, which is exactly what `keepReport` does.
     await writeFile(join(dir, 'report', 'results.json'), results(3, 3));
 
-    await p.goto(`${base}/#/api/run/one.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/run/one.tflw`);
     await p.reload();
     await p.locator('[data-runs]').waitFor();
 
@@ -12544,7 +12611,7 @@ test('the reading placeholder is not a pane: `[data-compose-pane]` answers only 
       'second.tflw': 'test "it also answers"\n  api GET /b\n  expect status equals 200\n',
     },
     async (p, base) => {
-      await p.goto(`${base}/#/api/compose/first.tflw`);
+      await p.goto(`${base}/?token=${TOKEN}#/api/compose/first.tflw`);
       await p.reload();
       await p.locator('[data-compose-pane]').waitFor();
 
@@ -12568,7 +12635,7 @@ test('the reading placeholder is not a pane: `[data-compose-pane]` answers only 
       try {
         // Open the other file. The read is now outstanding and `outline` is null, so the pane is
         // the placeholder — for as long as this test wants it to be.
-        await p.goto(`${base}/#/api/compose/second.tflw`);
+        await p.goto(`${base}/?token=${TOKEN}#/api/compose/second.tflw`);
         await p.locator('[data-compose-placeholder]').waitFor();
 
         assert.equal(
@@ -12593,7 +12660,7 @@ test('the reading placeholder is not a pane: `[data-compose-pane]` answers only 
       // pane that has rows. Without this the assertion above is satisfiable by a broken marker.
       await p.locator('[data-compose-pane]').waitFor();
       assert.equal(await p.locator('[data-compose-placeholder]').count(), 0, 'the placeholder went away when the file arrived');
-      await p.waitForFunction(`document.querySelectorAll('[data-seq-row]').length > 0`, undefined, { timeout: 5000 });
+      await p.locator('[data-seq-row]').first().waitFor({ timeout: 5000 });
     },
   );
 });
@@ -12611,7 +12678,7 @@ test('an address ahead of a project read is not an address that contradicts it',
   // timing that happened to occur is not gated at all — it is the same class as `M213-12`, whose
   // hash-only navigation raced a React commit and was latent until the box was slow enough to lose.
   await withProjectFixture({ 'first.tflw': 'test "it answers"\n  api GET /a\n  expect status equals 200\n' }, async (p, base) => {
-    await p.goto(`${base}/#/api/compose/first.tflw`);
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/first.tflw`);
     await p.reload();
     await p.locator('[data-files]').waitFor();
     // Only now: the first read must land normally, or the page has no project to be ahead of.
@@ -12630,7 +12697,8 @@ test('an address ahead of a project read is not an address that contradicts it',
       assert.match(new URL(p.url()).hash, /compose\/tests\/second\.tflw/, 'the address was corrected off the file that had just been made');
       // …and it is still naming it once the read lands, which is the half that says the guard
       // released rather than merely stuck.
-      await p.waitForFunction(`document.querySelectorAll('[data-file-row]').length === 2`, undefined, { timeout: 5000 });
+      await p.locator('[data-file-row]').nth(1).waitFor({ timeout: 5000 });
+      assert.equal(await p.locator('[data-file-row]').count(), 2);
       assert.match(new URL(p.url()).hash, /compose\/tests\/second\.tflw/, 'the address moved once the project caught up');
     } finally {
       await p.unroute('**/api/project**');

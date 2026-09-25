@@ -109,6 +109,38 @@ steps, and skipping the first is a `TF060` and skipping the last is why scanners
 Step 3 is the one people skip, and it is the one that decides whether any of this is still running
 in a month.
 
+## What tflw itself does, and does not
+
+A tool that scans other people's software should say what it does on yours. Five things, each of
+them a claim you can check:
+
+- **No telemetry.** Nothing tflw runs reports anything to anyone — no usage collection, no update
+  check, no crash reporting.
+- **No network beyond the targets you name.** A run talks to the hosts your config and your tests
+  name, and to nothing else; `allow hosts` in `tflw.config` refuses anything outside the list
+  before a request is made. `tflw install-browsers` is the one command that downloads anything,
+  and it says so.
+- **A `use` loads from where you said.** The JS/TS escape hatch is arbitrary code, so
+  `tflw.config`'s `helpers` directive names the directories it may come from — `./helpers` and
+  `./tests/helpers` when you declare none. A `use` that resolves anywhere else is `TF083` from
+  `tflw check` and from the editor, and the run does not start. `tflw check` prints one line per
+  module a run would load, so a review sees the suite's code without opening every file, and
+  `tflw run --no-helpers` refuses every `use` for that run. See [Config](/guide/config#where-a-use-may-load-from-helpers).
+- **The page is yours.** `tflw ui` binds to loopback, requires a per-start token that is in the
+  URL it prints and nowhere else, checks `Host` and `Origin` on every request, takes JSON bodies
+  only and caps them, runs only files inside the project, and serves every document under a
+  Content-Security-Policy with `X-Content-Type-Options: nosniff` and `Referrer-Policy:
+  no-referrer` — the same headers its own `sec/*` rules ask of anyone else's page, and the page
+  suite grades them with those rules. Reaching a remote page is `ssh -L`; the token travels in
+  the URL you paste. See [What the page will not do](/ui/limits).
+- **Secrets stay out of the artefacts.** Values resolved from environment variables are redacted
+  from every file a run writes and from the console.
+
+**Supported versions.** tflw is pre-1.0: the latest release is the only one that receives fixes,
+on Node 22 and Node 24, which are the two versions CI tests on. Vulnerability reports go through
+GitHub's private reporting on the repository and are acknowledged within 72 hours — the policy is
+[`SECURITY.md`](https://github.com/deepak-tuteja/tflw/blob/main/SECURITY.md).
+
 ## Where to go next
 
 - **Start here:** [Hygiene scanning](/guide/security-scanning) — the smallest thing that works, and

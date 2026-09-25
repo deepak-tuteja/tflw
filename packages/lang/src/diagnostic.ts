@@ -516,6 +516,18 @@ export const Codes = {
    * to would be the same overreach in the other direction.
    */
   AUTHORIZED_TARGET_REASON_EMPTY: 'TF082',
+
+  /**
+   * `TF083` — **a `use` outside the directories `helpers` allows** (`M239` `D`, `D1279`).
+   *
+   * The escape hatch is unrestricted code execution and, until `M239`, nothing in a project said
+   * where that code may come from. `tflw.config`'s `helpers` names the directories; a config that
+   * declares none gets `./helpers` and `./tests/helpers`. Judged as text against the checked
+   * file's own location — the same resolution the runtime performs — so the checker and the run
+   * agree about which module a `use` names. `tflw run --no-helpers` reports every `use` under this
+   * code and names the flag, because *no module at all* is the same policy with an empty list.
+   */
+  HELPER_OUTSIDE_DIRS: 'TF083',
 } as const;
 
 // ---------------------------------------------------------------------------

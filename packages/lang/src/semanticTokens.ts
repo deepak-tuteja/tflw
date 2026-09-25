@@ -88,6 +88,8 @@ const KEYWORDS = new Set([
   // `--browser chromium|firefox|webkit`, already the reader's word for this axis.
   'browser',
   'parallel', 'sequential', 'exclude',
+  // `M239` `D` (`D1279`) — the config dialect's `helpers` directive, `exclude`'s shape one line down.
+  'helpers',
   // M137c (D432/D450) — the crawl's four words. `exclude` is already above it, added by D127 for the
   // config dialect and shared here because a crawl means the same verb over a different set (D466).
   // All four are test-dialect and unambiguous in it: `crawl`/`seed` are leading keywords, `openapi`

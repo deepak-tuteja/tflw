@@ -14,7 +14,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseConfigSource } from '@tflw/lang';
+import { parseConfigSource, DEFAULT_HELPER_DIRS } from '@tflw/lang';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 
 /** `workers` and `report` are `defaults`-only keys (`TF025`), so the varying lines go there; the
@@ -44,4 +44,14 @@ test('`workers N` resolves to N — not to the default the flag would apply (M18
 test('`report "<dir>"` resolves to that directory — not to the default (M189b)', () => {
   assert.equal(resolved(['report "artifacts/custom"']).reportDir, 'artifacts/custom');
   assert.equal(resolved([]).reportDir, './report', 'the control: the default, so the line above is the key being read');
+});
+
+test('`helpers` resolves to the declared directories, flattened across lines, and to `DEFAULT_HELPER_DIRS` — the same array — when a config declares none (`M239` `D`, `D1279`)', () => {
+  const declared = parseConfigSource('helpers "./lib", "./shared"\nhelpers "./more"\nenv local default\n  api "http://127.0.0.1:1"\n');
+  const r = resolveConfig(declared.config, selectEnv(declared.config, { flag: undefined, envVar: undefined }));
+  assert.deepEqual(r.helpers, ['./lib', './shared', './more']);
+  const none = parseConfigSource('env local default\n  api "http://127.0.0.1:1"\n');
+  const d = resolveConfig(none.config, selectEnv(none.config, { flag: undefined, envVar: undefined }));
+  assert.equal(d.helpers, DEFAULT_HELPER_DIRS, 'identity, not equality: the checker\'s hint reads it to say "the default"');
+  assert.deepEqual([...d.helpers], ['./helpers', './tests/helpers']);
 });

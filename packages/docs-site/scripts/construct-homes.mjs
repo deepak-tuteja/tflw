@@ -135,6 +135,7 @@ export const CONSTRUCT_HOMES = new Map(Object.entries({
   // draft of this round got wrong about `teardown`, in the other direction.
   'config:directive:defaults': ['config'], 'config:directive:env': ['config'],
   'config:directive:require': ['config'], 'config:directive:exclude': ['config'],
+  'config:directive:helpers': ['config'],
   'config:directive:session': ['sessions'],
   'config:key:header': ['config'], 'config:key:timeout': ['config'],
   'config:key:workers': ['config'], 'config:key:web': ['config'], 'config:key:api': ['config'],

@@ -35,11 +35,11 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readFile, readdir, stat, cp, mkdir, writeFile, rename, unlink } from 'node:fs/promises';
+import { readFile, readdir, stat, cp, mkdir, writeFile, rename, unlink, realpath } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, relative, dirname, extname, sep } from 'node:path';
 import { createRequire } from 'node:module';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, pageOpening, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
 import { parseBaseline, resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
@@ -58,7 +58,150 @@ export interface UiServerOptions {
   readonly execArgv?: readonly string[];
   /** Where the page's static bundle is; defaults to `ui/` beside `cliEntry`. */
   readonly staticDir?: string;
+  /** The session token (`D1276`). Minted at construction when absent; a test passes one so the
+   *  URLs it builds are known before the server is. */
+  readonly token?: string;
 }
+
+// ── `M239` `A`–`C` (`D1276`, `D1277`, `D1278`) — the boundary ────────────────────────────────
+//
+// `tflw ui` binds to loopback and, until `M239`, that was the whole of its security: any page in
+// the user's browser could `POST /api/run` with a `text/plain` body, any name an attacker's DNS
+// pointed at 127.0.0.1 was accepted as `Host`, and a request body of any size was read whole. The
+// review (`REVIEW_ENTERPRISE_READINESS.md` S1–S3, S5–S8) forged all three by hand. Four layers,
+// each a different claim, so that none is load-bearing alone:
+//
+//   1. `Host` names a loopback host (`127.0.0.1`, `localhost`, `::1`) — else 421. This is the
+//      DNS-rebinding check, and it is on the HOSTNAME only: `ssh -L 9000:127.0.0.1:4141` is the
+//      documented way to reach a remote `tflw ui`, and the browser's `Host` is then `127.0.0.1:9000`
+//      while the server listens on 4141. A port check here would refuse exactly that reader.
+//   2. `Origin`, when a request carries one, equals `http://<Host>` — else 403. Every fetch and
+//      every form post carries it; a page on another loopback PORT (a compromised dev server) is
+//      the same site to a cookie and a different origin here, which is why the token has two
+//      carriers rather than one (below).
+//   3. A per-start token. The page is opened with `?token=` in the URL `tflw ui` prints, which is
+//      what `ssh -L` users paste anyway. The page's own `fetch` sends it as `Authorization: Bearer`
+//      and the two `EventSource` streams as `?token=` (an `EventSource` cannot set a header). The
+//      token-bearing page load also sets a `SameSite=Strict; HttpOnly` cookie, accepted on the two
+//      surfaces the browser fetches on its own with no way to add a header: the report files a
+//      reader opens in a tab or downloads (`report.html`'s own screenshots and trace link resolve
+//      relatively), and the trace viewer's own assets under `/trace/`. Everything else under
+//      `/api/` refuses the cookie, so a same-site page cannot spend it: `GET /api/pick` spawns a
+//      browser, and an `<img src>` from another port must not be able to.
+//   4. A body is JSON or it is 415 before a byte is read; a body over 1 MiB is 413.
+//
+// Deliberately NOT a `--host` mode: the page spawns processes and reads files, and the answer to
+// "serve it to the team" is `ssh -L`, not TLS in front of this (`PLAN_M239` decision 1).
+
+const TOKEN_COOKIE = 'tflw-ui-token';
+/** One MiB — a `PUT /api/file` of the largest `.tflw` in either repository is under 100 KiB. */
+export const BODY_CAP = 1 << 20;
+/** Runs the server remembers (`D1277`); the report directories on disk are the durable record. */
+export const RUNS_KEPT = 50;
+/** Stdout lines buffered per run for late subscribers; a workload prints one event per sample. */
+export const LINES_KEPT = 50_000;
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+/** The hostname of a `Host` header, without its port; `null` when there is no usable one. */
+export function hostnameOf(host: string | undefined): string | null {
+  if (host === undefined) return null;
+  const m = /^(\[[^\]]*\]|[^:\s]+)(?::\d{1,5})?$/.exec(host.trim());
+  return m ? m[1]!.toLowerCase() : null;
+}
+
+function sameToken(candidate: string | null | undefined, token: string): boolean {
+  if (typeof candidate !== 'string') return false;
+  const a = Buffer.from(candidate);
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** How the request proved it is the page's — or `null`. Query and header are the page's own doing;
+ *  the cookie is the browser's, which is why callers ask *which*. */
+export function credentialOf(req: IncomingMessage, url: URL, token: string): 'header' | 'query' | 'cookie' | null {
+  const auth = req.headers.authorization;
+  if (typeof auth === 'string' && auth.startsWith('Bearer ') && sameToken(auth.slice('Bearer '.length).trim(), token)) return 'header';
+  if (sameToken(url.searchParams.get('token'), token)) return 'query';
+  for (const part of (req.headers.cookie ?? '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === TOKEN_COOKIE && sameToken(part.slice(eq + 1).trim(), token)) return 'cookie';
+  }
+  return null;
+}
+
+/** The refusal the boundary makes before any route runs, or `null`. Pure over the request's
+ *  headers so a test can enumerate the forgeries without a socket. */
+export function boundaryRefusal(req: IncomingMessage, url: URL, token: string): { status: number; error: string } | null {
+  const host = hostnameOf(req.headers.host);
+  if (host === null || !LOOPBACK.has(host)) return { status: 421, error: 'tflw ui answers to 127.0.0.1 or localhost only' };
+  const origin = req.headers.origin;
+  if (origin !== undefined && origin.toLowerCase() !== `http://${req.headers.host!.trim().toLowerCase()}`) {
+    return { status: 403, error: 'this request came from another page — tflw ui takes requests from its own page only' };
+  }
+  const path = url.pathname;
+  const method = req.method ?? 'GET';
+  const api = path.startsWith('/api/');
+  if (api || path === '/trace' || path.startsWith('/trace/')) {
+    const credential = credentialOf(req, url, token);
+    // A navigation is a GET: the viewer's assets, a report file. Nothing the browser does on its
+    // own posts, so the cookie buys no verb but that one.
+    const navigational = (method === 'GET' || method === 'HEAD') && (!api || /^\/api\/reports\/[^/]+\/.+$/.test(path));
+    if (credential === null || (credential === 'cookie' && !navigational)) {
+      return { status: 401, error: 'this session\'s token is missing — open the URL `tflw ui` printed, which carries it' };
+    }
+  }
+  if (api && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+    const length = Number(req.headers['content-length'] ?? '0');
+    if (Number.isFinite(length) && length > BODY_CAP) return { status: 413, error: `a request body is at most ${BODY_CAP >> 10} KiB` };
+    const hasBody = length > 0 || req.headers['transfer-encoding'] !== undefined;
+    if (hasBody && !/^application\/json\s*(;|$)/i.test(String(req.headers['content-type'] ?? ''))) {
+      return { status: 415, error: 'a request body is `application/json`' };
+    }
+  }
+  return null;
+}
+
+/** A `Content-Security-Policy` for an HTML document this server serves: `'self'` for what the
+ *  page loads, and each inline `<script>` admitted by its hash rather than by `'unsafe-inline'`
+ *  (`D1278`). `nonce` is for the one inline script the page's own `index.html` carries.
+ *
+ *  `workers` is the trace viewer's shape, and it is looser in exactly one place, measured rather
+ *  than assumed (`M239` `C`, the page suite's trace test): the viewer renders every DOM snapshot
+ *  in an `<iframe>` whose document is **synthesised by its service worker**, and Chromium checks
+ *  `frame-src` against the response's URL, which for a synthesised response is the empty string —
+ *  *"Framing '' violates … frame-src 'self' blob:"*. No source expression matches an empty URL, so
+ *  the viewer's policy names no `frame-src` and no `default-src` for it to fall back to, and says
+ *  the rest (`object-src`, `media-src`, `manifest-src`) explicitly instead. Script, connect and
+ *  worker sources stay `'self'`, which is what the policy is for. */
+export function documentPolicy(html: string, opts: { readonly nonce?: string; readonly framedBy: 'none' | 'self'; readonly workers?: boolean }): string {
+  const hashes: string[] = [];
+  for (const m of html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)) {
+    hashes.push(`'sha256-${createHash('sha256').update(m[1]!).digest('base64')}'`);
+  }
+  const script = ["'self'", ...(opts.nonce ? [`'nonce-${opts.nonce}'`] : []), ...hashes, ...(opts.workers ? ['blob:'] : [])].join(' ');
+  return [
+    ...(opts.workers ? [`object-src 'none'`, `media-src 'self' blob:`, `manifest-src 'self'`] : [`default-src 'self'`, `frame-src 'self'`]),
+    `script-src ${script}`,
+    `style-src 'self' 'unsafe-inline'`,
+    `img-src 'self' data: blob:`,
+    `font-src 'self' data:`,
+    `connect-src 'self'${opts.workers ? ' blob: data:' : ''}`,
+    `worker-src ${opts.workers ? "'self' blob:" : "'none'"}`,
+    `frame-ancestors '${opts.framedBy}'`,
+    `base-uri 'none'`,
+    `form-action 'none'`,
+  ].join('; ');
+}
+
+const NONCE_PLACEHOLDER = '__TFLW_NONCE__';
+
+/** The page a token-less visit gets: one sentence, no path, and the way in. */
+const NEEDS_TOKEN_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>tflw</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:40em;margin:4em auto;padding:0 1em}code{font-family:ui-monospace,monospace}</style></head>
+<body><h1>tflw ui</h1><p>This page opens from the URL <code>tflw ui</code> printed, which carries this session's token.
+Copy that URL from the terminal — or restart <code>tflw ui</code> and let it open the browser.</p></body></html>
+`;
 
 export interface ProjectTest {
   readonly name: string;
@@ -199,6 +342,9 @@ export interface ProjectView {
   readonly root: string;
   readonly envs: readonly { name: string; isDefault: boolean }[];
   readonly reportDir: string;
+  /** `resolved.helpers` (`D1279`) — the directories a `use` may load from, so the page's checker
+   *  judges a `use` the way `tflw check` will. */
+  readonly helpers: readonly string[];
   readonly files: readonly ProjectFile[];
   /** Whether `/trace/` serves Playwright's trace viewer — true when `playwright-core` resolves
    * from the project (`M192` U3). The page shows *open trace* when it does and the
@@ -452,6 +598,8 @@ export interface RunRecord {
   endedAt: string | null;
   /** Where the run's report directory was kept, relative to the root, once it ended. */
   kept: string | null;
+  /** Stdout lines this server no longer holds for replay (`D1277`); absent until the first one. */
+  dropped?: number;
 }
 
 export interface ReportEntry {
@@ -666,7 +814,7 @@ export async function readProject(root: string, envName?: string | null): Promis
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
     sessions: sessionViews(parsed.config, resolved),
   };
-  return { root, envs, reportDir: resolved.reportDir, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: isIgnored(root, SCRATCH_PATH), playScratch: PLAY_SCRATCH, playIgnored: isIgnored(root, PLAY_SCRATCH), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
+  return { root, envs, reportDir: resolved.reportDir, helpers: resolved.helpers, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: isIgnored(root, SCRATCH_PATH), playScratch: PLAY_SCRATCH, playIgnored: isIgnored(root, PLAY_SCRATCH), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
 }
 
 /**
@@ -1253,13 +1401,31 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+const PREREAD = new WeakMap<IncomingMessage, string>();
+
 async function readBody(req: IncomingMessage): Promise<string> {
+  const pre = PREREAD.get(req);
+  if (pre !== undefined) return pre;
+  return (await readBodyCapped(req)) ?? '';
+}
+
+/** The body, or `null` once it passes `BODY_CAP` — at which point the socket is dropped rather
+ *  than drained, because draining is the cost the cap exists to refuse. */
+async function readBodyCapped(req: IncomingMessage): Promise<string | null> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > BODY_CAP) {
+      req.destroy();
+      return null;
+    }
+    chunks.push(chunk as Buffer);
+  }
   return Buffer.concat(chunks).toString('utf8');
 }
 
-async function sendFile(res: ServerResponse, path: string): Promise<boolean> {
+async function sendFile(res: ServerResponse, path: string, headers: (body: Buffer) => Record<string, string> = () => ({})): Promise<boolean> {
   let s;
   try {
     s = await stat(path);
@@ -1268,9 +1434,16 @@ async function sendFile(res: ServerResponse, path: string): Promise<boolean> {
   }
   if (!s.isFile()) return false;
   const body = await readFile(path);
-  res.writeHead(200, { 'content-type': contentType(path), 'content-length': body.length, 'cache-control': 'no-store' });
+  res.writeHead(200, { 'content-type': contentType(path), 'content-length': body.length, 'cache-control': 'no-store', ...headers(body) });
   res.end(body);
   return true;
+}
+
+/** `report.html` and the trace viewer's documents: a policy admitting exactly their own inline
+ *  scripts, and nothing else on the report tree. */
+function reportHeaders(path: string): (body: Buffer) => Record<string, string> {
+  if (extname(path) !== '.html') return () => ({});
+  return (body) => ({ 'content-security-policy': documentPolicy(body.toString('utf8'), { framedBy: 'none' }) });
 }
 
 const REPORT_MEMBERS = ['results.json', 'report.html', 'junit.xml', 'events.ndjson', 'findings.sarif', '.last-run.json'];
@@ -1287,15 +1460,21 @@ interface LiveRun {
 
 export class UiServer {
   readonly server: Server;
+  /** This session's token (`D1276`) — in the URL `tflw ui` prints, and nowhere else. */
+  readonly token: string;
   private readonly runs = new Map<string, LiveRun>();
   private readonly staticDir: string;
 
   constructor(private readonly opts: UiServerOptions) {
     this.staticDir = opts.staticDir ?? join(dirname(opts.cliEntry), 'ui');
+    this.token = opts.token ?? randomBytes(32).toString('base64url');
     this.server = createServer((req, res) => {
       this.handle(req, res).catch((e: unknown) => {
-        const message = e instanceof Error ? e.message : String(e);
-        if (!res.headersSent) json(res, 500, { error: message });
+        // `D1278` — the page gets a sentence and the terminal gets the error. A Node message
+        // routinely carries an absolute path and a stack, and the review (S7) read both off the
+        // page of an empty directory.
+        process.stderr.write(`tflw ui: ${req.method ?? 'GET'} ${req.url ?? '/'} failed — ${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`);
+        if (!res.headersSent) json(res, 500, { error: 'tflw ui hit an error answering this; the terminal it runs in has the details' });
         else res.end();
       });
     });
@@ -1374,6 +1553,13 @@ export class UiServer {
     const record: RunRecord = { id, startedAt: new Date().toISOString(), request, argv, status: 'running', exitCode: null, signal: null, endedAt: null, kept: null };
     const live: LiveRun = { record, child, lines: [], stderr: [], subscribers: new Set(), ended: Promise.resolve() };
     this.runs.set(id, live);
+    // `D1277` — the last `RUNS_KEPT`, oldest ended run first; a running one is never dropped.
+    if (this.runs.size > RUNS_KEPT) {
+      for (const [oldId, old] of this.runs) {
+        if (this.runs.size <= RUNS_KEPT) break;
+        if (old.record.status !== 'running') this.runs.delete(oldId);
+      }
+    }
 
     let buffered = '';
     child.stdout!.setEncoding('utf8');
@@ -1417,7 +1603,73 @@ export class UiServer {
 
   private emit(live: LiveRun, line: string): void {
     live.lines.push(line);
+    // `D1277` — bounded. Spliced in blocks so a long workload does not pay a shift per line; the
+    // record on disk is whole, this buffer is what a late subscriber replays.
+    if (live.lines.length > LINES_KEPT + 1000) {
+      live.lines.splice(0, live.lines.length - LINES_KEPT);
+      live.record.dropped = (live.record.dropped ?? 0) + 1000;
+    }
     for (const res of live.subscribers) res.write(`data: ${line}\n\n`);
+  }
+
+  /** The page itself (`D1276`). `?token=` proves the visit and sets the cookie the navigational
+   *  surfaces spend; a cookie alone redirects to a URL that carries the token, so a reload of a
+   *  bare `http://127.0.0.1:4141/` works in a browser that has opened the page once; nothing at
+   *  all gets one sentence and no path. The nonce is per response, and the bundle's `index.html`
+   *  carries the placeholder on its one inline script. */
+  private async sendPage(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    const credential = credentialOf(req, url, this.token);
+    if (credential === 'cookie') {
+      res.writeHead(302, { location: `/?token=${this.token}`, 'cache-control': 'no-store' });
+      res.end();
+      return;
+    }
+    if (credential === null) {
+      res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'" });
+      res.end(NEEDS_TOKEN_PAGE);
+      return;
+    }
+    const file = join(this.staticDir, 'index.html');
+    let html: string;
+    try {
+      html = await readFile(file, 'utf8');
+    } catch {
+      res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(`tflw ui: the page's bundle is not built. \`npm run build\` in the tflw checkout produces it.\n`);
+      return;
+    }
+    const nonce = randomBytes(16).toString('base64url');
+    const body = Buffer.from(html.replaceAll(NONCE_PLACEHOLDER, nonce), 'utf8');
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'content-length': body.length,
+      'cache-control': 'no-store',
+      'set-cookie': `${TOKEN_COOKIE}=${this.token}; Path=/; HttpOnly; SameSite=Strict`,
+      'content-security-policy': documentPolicy(html, { nonce, framedBy: 'none' }),
+    });
+    res.end(body);
+  }
+
+  /** `D1277` — why a run request's `files` cannot be run, or `null`. Judged after `realpath`, so
+   *  a symlink out of the project is outside it. */
+  private async outsideRoot(files: readonly unknown[]): Promise<string | null> {
+    let root: string;
+    try {
+      root = await realpath(this.opts.root);
+    } catch {
+      return 'the project directory is gone';
+    }
+    for (const f of files) {
+      if (typeof f !== 'string') return '`files` is a list of paths';
+      let real: string;
+      try {
+        real = await realpath(resolve(this.opts.root, f));
+      } catch {
+        return `no \`${f}\` in the project`;
+      }
+      if (real !== root && !real.startsWith(root + sep)) return `\`${f}\` is outside the project — a run from the page stays inside it`;
+    }
+    return null;
   }
 
   /** Copy the report directory aside as `runs/<id>/` — the run's record, kept. Only the members
@@ -1548,9 +1800,32 @@ export class UiServer {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    // A request line starting `//` parses as protocol-relative and threw here, which the old catch
+    // turned into a 500 with Node's message; a browser sends one for a `//?x` link. Collapsed, and
+    // anything else that cannot be a URL is the client's 400.
+    let url: URL;
+    try {
+      url = new URL((req.url ?? '/').replace(/^\/{2,}/, '/'), 'http://127.0.0.1');
+    } catch {
+      return json(res, 400, { error: 'not a URL this server can read' });
+    }
     const path = url.pathname;
     const method = req.method ?? 'GET';
+
+    // `D1278` — on every response, JSON included; the documents below replace the policy with
+    // theirs. `setHeader` before `writeHead` so the routes' own header objects merge over these.
+    res.setHeader('x-content-type-options', 'nosniff');
+    res.setHeader('referrer-policy', 'no-referrer');
+    res.setHeader('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
+    const refusal = boundaryRefusal(req, url, this.token);
+    if (refusal !== null) return json(res, refusal.status, { error: refusal.error });
+    if (path.startsWith('/api/') && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+      // Read once, here, under the cap — so a route's own `catch { 400 }` cannot turn an over-cap
+      // body into "not JSON". `readBody` hands the routes this text.
+      const text = await readBodyCapped(req);
+      if (text === null) return json(res, 413, { error: `a request body is at most ${BODY_CAP >> 10} KiB` });
+      PREREAD.set(req, text);
+    }
 
     if (path === '/api/project' && method === 'GET') {
       // "There is no project here" is a different answer from "this project is broken", and the
@@ -1830,6 +2105,10 @@ export class UiServer {
       } catch {
         return json(res, 400, { error: 'the run request is not JSON' });
       }
+      // `D1277` — the page runs files of this project and nothing else. `tflw run` itself takes any
+      // path, which is right for a terminal and wrong for a route.
+      const outside = await this.outsideRoot(request.files ?? []);
+      if (outside !== null) return json(res, 400, { error: outside });
       const record = await this.startRun(request);
       return json(res, 202, record);
     }
@@ -1877,7 +2156,7 @@ export class UiServer {
       const base = id === 'current' ? reportDir : join(reportDir, 'runs', id);
       const file = safeJoin(base, decodeURIComponent(rest));
       if (file === null) return json(res, 400, { error: 'outside the report directory' });
-      if (await sendFile(res, file)) return;
+      if (await sendFile(res, file, reportHeaders(file))) return;
       return json(res, 404, { error: `no ${rest} in ${id}` });
     }
 
@@ -1937,12 +2216,33 @@ export class UiServer {
 
     // Playwright's trace viewer, from the project's own `playwright-core` (`traceViewerDir`).
     if (path === '/trace' || path.startsWith('/trace/')) {
+      // `D1277` (S8) — the viewer fetches whatever `?trace=` names, so the name is judged here,
+      // before anything else: a report file of this project, on this server, or nothing.
+      const trace = url.searchParams.get('trace');
+      if (trace !== null) {
+        let named: URL | null = null;
+        try {
+          named = new URL(trace, 'http://127.0.0.1');
+        } catch {
+          named = null;
+        }
+        if (named === null || !LOOPBACK.has(named.hostname) || !/^\/api\/reports\/[^/]+\/.+$/.test(named.pathname)) {
+          return json(res, 400, { error: 'the trace viewer opens this project\'s report files only' });
+        }
+      }
       const dir = traceViewerDir(this.opts.root);
       if (dir === null) return json(res, 404, { error: 'no playwright-core resolves from the project, so there is no trace viewer to serve; `npx playwright show-trace <archive>` opens one' });
       const wanted = path === '/trace' || path === '/trace/' ? 'index.html' : path.slice('/trace/'.length);
       const file = safeJoin(dir, decodeURIComponent(wanted));
       if (file === null) return json(res, 400, { error: 'outside the trace viewer' });
-      if (await sendFile(res, file)) return;
+      // The viewer runs a service worker over `blob:` snapshots, which is what `workers` admits;
+      // it is framed by the page, and by nothing else. **Every file under `/trace/` carries that
+      // policy, not only the documents** — a service worker takes its policy from ITS OWN
+      // SCRIPT'S response, and under the locked-down default (`default-src 'none'`) every
+      // `fetch` inside `sw.bundle.js` failed as `ERR_FAILED` and no snapshot ever rendered.
+      // Measured by the page suite's trace test before this line existed.
+      const viewerHeaders = (p: string) => (body: Buffer) => ({ 'content-security-policy': documentPolicy(extname(p) === '.html' ? body.toString('utf8') : '', { framedBy: 'self', workers: true }) });
+      if (await sendFile(res, file, viewerHeaders(file))) return;
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('not found\n');
       return;
@@ -1952,13 +2252,9 @@ export class UiServer {
     // index.html; everything else is a file under the bundle or a 404.
     if (method !== 'GET' && method !== 'HEAD') return json(res, 405, { error: `${method} ${path}` });
     const wanted = path === '/' || extname(path) === '' ? 'index.html' : path.slice(1);
+    if (wanted === 'index.html') return this.sendPage(req, res, url);
     const file = safeJoin(this.staticDir, wanted);
     if (file !== null && (await sendFile(res, file))) return;
-    if (wanted === 'index.html') {
-      res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end(`tflw ui: the page's bundle is not built (looked in ${this.staticDir}). \`npm run build\` in the tflw checkout produces it.\n`);
-      return;
-    }
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('not found\n');
   }

@@ -98,6 +98,14 @@ export interface ProgramCheckOptions {
    */
   readonly missingFiles?: ReadonlySet<string>;
   /**
+   * `TF083` (`M239` `D`, `D1279`) — where a `use` may load from. Both paths are relative to
+   * `tflw.config`'s directory and POSIX-separated, because the rule is about *text*: the checker
+   * resolves `use` the way the runtime does (against the file's own directory) and never stats
+   * anything. Absent means the pass is skipped — a caller with no config to read cannot say what
+   * the project allows, and `undefined` is the *world unknown* this file already uses.
+   */
+  readonly helpers?: HelperPolicy;
+  /**
    * Which of this file's `import` path literals name a file that **exists and does not parse**
    * (`M147c`, `M140-03`) — again the *answers*, computed by `@tflw/runtime`'s
    * `resolveImportedActions` on the same walk that produces `importedActions`.
@@ -324,6 +332,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkValueSubjects(program),
     ...checkMatcherSubjects(program),
     ...checkReferencedFiles(program, opts),
+    ...checkHelperDirs(program, opts),
     // `M147c` (`M140-03`) — `TF073`, wired beside `TF043` because they are one question asked of
     // one path literal: is the file there, and if it is, does it parse. Both are answered by the
     // caller and turned into diagnostics here.
@@ -3426,6 +3435,86 @@ export function checkReferencedFiles(program: Program, opts: ProgramCheckOptions
       hint: openedByTheChecker
         ? 'paths resolve against the directory of the file that names them, not the directory `tflw` runs in'
         : 'paths resolve against the directory of the file that names them, not the directory `tflw` runs in — a warning, not an error, because this file is opened during the run, so an earlier step or hook may still create it',
+    });
+  }
+  return diags;
+}
+
+/** The directories a `use` may load from when `tflw.config` declares no `helpers` (`D1279`). */
+export const DEFAULT_HELPER_DIRS: readonly string[] = ['./helpers', './tests/helpers'];
+
+/** See `ProgramCheckOptions.helpers`. */
+export interface HelperPolicy {
+  /** The allowed directories, as written in `tflw.config` (or the defaults), relative to it. */
+  readonly dirs: readonly string[];
+  /** The checked file's path relative to `tflw.config`'s directory, POSIX-separated. */
+  readonly file: string;
+  /** `tflw run --no-helpers`: every `use` is refused, and the message names the flag. */
+  readonly refuseAll?: boolean;
+}
+
+/** `a/./b/../c` → `a/c`; a path that climbs above the root keeps its leading `..`, which is how
+ *  the rule sees it as outside. Text only — no filesystem, no symlinks, which is the checker's
+ *  side of the bargain and the reason `tflw ui` judges `files` with `realpath` separately. */
+export function normalizePosixPath(path: string): string {
+  const out: string[] = [];
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') {
+      if (out.length > 0 && out[out.length - 1] !== '..') out.pop();
+      else out.push('..');
+      continue;
+    }
+    out.push(part);
+  }
+  return out.join('/');
+}
+
+function posixDirname(path: string): string {
+  const i = path.lastIndexOf('/');
+  return i === -1 ? '' : path.slice(0, i);
+}
+
+/**
+ * `TF083` (`M239` `D`, `D1279`) — a `use` that resolves outside the directories `helpers` allows.
+ *
+ * A `use` is arbitrary code, and until `M239` nothing in a project said where it may come from.
+ * The judgement is textual on purpose: `use "../../helpers/x.ts"` from `tests/api/a.tflw` is
+ * `helpers/x.ts`, which the runtime will also load, and a rule that stat'd or followed symlinks
+ * would be a second resolver that could disagree with the first. Allowed means *inside* one of
+ * the directories (or the directory itself); a module beside the directory is outside it.
+ */
+export function checkHelperDirs(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const policy = opts.helpers;
+  if (!policy || program.uses.length === 0) return [];
+  // Both sides arrive POSIX-separated: a `use` literal came through the lexer, where a backslash
+  // is an escape, and the callers build `file` with `sep` replaced. Nothing to convert here.
+  const allowed = policy.dirs.map((d) => normalizePosixPath(d));
+  const fileDir = posixDirname(normalizePosixPath(policy.file));
+  const diags: Diagnostic[] = [];
+  for (const u of program.uses) {
+    const literal = u.path.value;
+    if (policy.refuseAll) {
+      diags.push({
+        code: Codes.HELPER_OUTSIDE_DIRS,
+        severity: 'error',
+        message: `\`use "${literal}"\` is refused: this run was started with \`--no-helpers\``,
+        span: u.path.span,
+        hint: 'a run under `--no-helpers` executes no JS/TS module at all — drop the flag, or run the files that need no `use`',
+      });
+      continue;
+    }
+    const resolved = normalizePosixPath(`${fileDir}/${literal}`);
+    const inside = allowed.some((dir) => dir === '' || resolved === dir || resolved.startsWith(`${dir}/`));
+    if (inside) continue;
+    diags.push({
+      code: Codes.HELPER_OUTSIDE_DIRS,
+      severity: 'error',
+      message: `\`use "${literal}"\` loads a module outside the directories \`helpers\` allows — it resolves to \`${resolved}\``,
+      span: u.path.span,
+      // The directories as the config declares them (or the defaults as documented), not as
+      // normalised: the hint quotes a file the reader will open.
+      hint: `\`helpers\` allows ${policy.dirs.map((d) => `\`${d}\``).join(', ')}${policy.dirs === DEFAULT_HELPER_DIRS ? ' (the default when tflw.config declares none)' : ''} — move the module there, or name its directory in tflw.config: \`helpers "${posixDirname(resolved) === '' ? '.' : `./${posixDirname(resolved)}`}"\``,
     });
   }
   return diags;
