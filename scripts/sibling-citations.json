@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "refs/pull/106/head",
-  "sha": "05cf25b170e2fdcdaeb48bc2a5a0063f275a8ebc",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/05cf25b170e2fdcdaeb48bc2a5a0063f275a8ebc",
+  "ref": "refs/pull/107/head",
+  "sha": "fd1ec004ade728c2b1e23e3b944928b96ef2dd8e",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/fd1ec004ade728c2b1e23e3b944928b96ef2dd8e",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -23,7 +23,7 @@
     "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md",
     "tflw-acceptance/scan-door/README.md"
   ],
-  "codeFiles": 827,
+  "codeFiles": 830,
   "checkFixtures": [
     "TF001",
     "TF002",
@@ -242,6 +242,7 @@
       "VULNS.md",
       "apiV2/src/vuln/vuln-orders.controller.ts",
       "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
       "tests/.checkonly/authz-assertion-without-owner.tflw",
       "tests/.checkonly/authz-scan-public-target.tflw",
       "tests/.checkonly/security-without-authorized-target.tflw",
@@ -1528,6 +1529,7 @@
     ],
     "M134b": [
       "VULNS.md",
+      "scripts/lib/constructs.mjs",
       "scripts/verify-security-acceptance.mjs"
     ],
     "M134c": [
@@ -2309,6 +2311,13 @@
       "scripts/verify-contributing.mjs",
       "scripts/verify-tflw-resolution.mjs"
     ],
+    "M212": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.constructs/config-keys/baseline-leak.tflw",
+      "tflw-acceptance/conformance/arrival-server.mjs"
+    ],
     "M213": [
       "tflw-acceptance/load-door/README.md",
       "scripts/verify-ui.mjs"
@@ -2336,6 +2345,11 @@
       "tflw-acceptance/scan-door/crawls.tflw",
       "tflw-acceptance/scan-door/mixed.tflw",
       "tflw-acceptance/scan-door/tflw.config"
+    ],
+    "M234": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs"
     ],
     "M25": [
       "README.md",
@@ -3707,8 +3721,9 @@
     "M232": [
       "scripts/verify-ui.mjs"
     ],
-    "M234": [
-      "scripts/lib/constructs.mjs"
+    "M238": [
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-construct-acceptance.mjs"
     ],
     "M24": [
       "tests/api/orders/order-receipts.tflw"
