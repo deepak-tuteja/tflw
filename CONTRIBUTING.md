@@ -65,7 +65,7 @@ npm run build
 npm run typecheck
 xvfb-run -a npm test
 npm run verify:observability
-npm audit --audit-level=high
+npm audit --audit-level=high --omit=dev
 npm run verify:corpora
 npm run verify:fmt-roundtrip -- --check
 npm run verify:check-coverage
@@ -111,8 +111,10 @@ npm run verify:ledger                  # § never runs in CI, by decision
   401 without the token — so a route added tomorrow joins the walk that day — and `ui-headers.test.ts`
   grades the served page with tflw's own `sec/*` rules. A change to `ui-server.ts` that loosens
   either is a red in the suite, not a review comment.
-- **`npm audit --audit-level=high`** — nothing installed carries a known high-or-critical advisory
-  (`M239` `E`, `D1280`). CI's `supply-chain` job runs it and also publishes a CycloneDX SBOM of the
+- **`npm audit --audit-level=high --omit=dev`** — nothing a `tflw` install carries has a known
+  high-or-critical advisory (`M239` `E`, `D1280`). The development tree is left to Dependabot's
+  alerts, read by hand: the day the gate landed, all four open ones were about a development
+  server nothing here runs reachably, and the one in-range fix was an alpha. CI's `supply-chain` job runs it and also publishes a CycloneDX SBOM of the
   tree as an artefact; the SBOM is a record rather than a check and has no local form.
 - **`npm run verify:corpora`** — every guard states, as data, the corpus it reads, and this plants a
   violation inside each declared corpus to check the guard actually catches it. The point is the

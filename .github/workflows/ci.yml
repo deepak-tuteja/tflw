@@ -409,8 +409,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: No high or critical advisory in the installed tree
-        run: npm audit --audit-level=high
+      # `--omit=dev`: the tree a `tflw` install carries. The development tree's advisories are
+      # Dependabot alerts, read by hand — see SECURITY.md.
+      - name: No high or critical advisory in the tree a user installs
+        run: npm audit --audit-level=high --omit=dev
       - name: The installed tree, as a CycloneDX SBOM
         run: npm sbom --sbom-format cyclonedx --package-lock-only > sbom.cdx.json
       - uses: actions/upload-artifact@v4

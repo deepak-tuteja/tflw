@@ -60,7 +60,11 @@ but is triaged after those.
 
 ## Dependencies
 
-CI runs `npm audit --audit-level=high` on every push and pull request, publishes a CycloneDX SBOM
-of the workspace as a build artefact, and Dependabot opens a weekly grouped pull request for npm
-and for GitHub Actions. A dependency advisory that affects a shipped path is handled like any other
-report above.
+CI runs `npm audit --audit-level=high --omit=dev` on every push and pull request — the dependency
+tree a `tflw` install carries, which is the one a user runs — publishes a CycloneDX SBOM of the
+whole workspace as a build artefact, and Dependabot opens a weekly grouped pull request for npm
+and for GitHub Actions. The development tree (the bundler, the docs site's generator, the test
+runners) is not gated: its advisories are Dependabot alerts on the repository, read by hand, and
+the day this was written all four open ones were about a development server nothing here runs
+reachably. A dependency advisory that affects a shipped path is handled like any other report
+above.
