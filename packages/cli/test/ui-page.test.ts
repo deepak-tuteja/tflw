@@ -577,8 +577,10 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
   assert.equal((await api(pointedAt)).status, 200, 'and that URL serves');
   // The trace's own content, rendered by the viewer inside the pane: the page the test opened.
   const viewerViolations = async (): Promise<string[]> => {
-    const f = page.frames().find((fr) => fr.url().includes('/trace/index.html'));
+    const f = page.frame({ url: /\/trace\/index\.html/ });
     if (!f) return ['(no viewer frame in the page)'];
+    // one-shot: the list the viewer's init script keeps, read after the frame wait — a refusal
+    // during the render this test waited for is already in it, and this is not a DOM read.
     return f.locator('html').evaluate((el) => (el.ownerDocument.defaultView as unknown as { __cspViolations?: string[] }).__cspViolations ?? []).catch((e: Error) => [`(unreadable: ${e.message})`]);
   };
   try {
@@ -591,7 +593,12 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
   }
   // `M239` `C` (`D1278`) — the viewer runs under the narrower policy `/trace/` serves, and it
   // rendered a snapshot through its service worker without that policy refusing anything.
+  // one-shot: the frame wait directly above is the render whose fetches the policy would have
+  // refused — the service worker's, the snapshot's — so an empty list read after it is a claim
+  // about a drawn viewer, not about one that has not painted yet.
   assert.deepEqual(await viewerViolations(), [], 'the trace viewer\'s policy refused something it needs');
+  // one-shot: the same wait, read from the page's side — a refusal on the page while the frame
+  // filled would already be in the list the init script keeps.
   assert.deepEqual(await cspViolations(page), [], 'the page\'s policy refused something it needs');
   // …and back, because a pane you cannot leave is a tab with extra steps.
   await page.locator('[data-trace-close]').click();
@@ -605,17 +612,28 @@ test('`M239` `C`: every door draws under the page\'s Content-Security-Policy wit
     await page.goto(`${pageUrl}#/${door}`);
     await page.reload();
     await page.locator(`[data-doorbar="${door}"]`).waitFor();
+    // one-shot: the doorbar wait above is the door having drawn under the policy, and a refusal
+    // while it drew is already in the list the init script keeps — this reads the list, not the DOM.
     assert.deepEqual(await cspViolations(page), [], `on the ${door} door`);
   }
   // The inline theme script ran, which under `script-src 'self' 'nonce-…'` it can only have done
   // with the nonce: it is the one thing in the page that writes `data-tflw-theme` before React.
+  // one-shot: a write, not a read — `evaluate` on the root is the way to reach `localStorage`
+  // without the DOM lib, and the value it returns is discarded.
   await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.setItem('tflw.theme', 'paper'));
   await page.reload();
-  await page.locator('[data-doorbar]').waitFor();
-  assert.equal(await page.locator('html').getAttribute('data-tflw-theme'), 'paper');
+  // Wait for *a* theme on the root, assert *the* theme: the attribute is the inline script's only
+  // write, so its presence after a reload is that script having run at all.
+  const themed = page.locator('html[data-tflw-theme]');
+  await themed.waitFor();
+  assert.equal(await themed.getAttribute('data-tflw-theme'), 'paper');
+  // one-shot: the theme wait above is the inline script having run under the policy; a nonce that
+  // did not reach it would be a violation already in the list, not one still to come.
   assert.deepEqual(await cspViolations(page), []);
+  // one-shot: the same write, undone.
   await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.removeItem('tflw.theme'));
-  // The control: the response really carries the policy the assertions above ran under.
+  // one-shot: the control — a header on a fresh response, which no page event can settle and
+  // which the server computes the same way for every page load.
   const res = await api(`${baseUrl}/?token=${TOKEN}`);
   assert.match(res.headers.get('content-security-policy') ?? '', /script-src 'self' 'nonce-/);
 });
@@ -12697,8 +12715,10 @@ test('an address ahead of a project read is not an address that contradicts it',
       assert.match(new URL(p.url()).hash, /compose\/tests\/second\.tflw/, 'the address was corrected off the file that had just been made');
       // …and it is still naming it once the read lands, which is the half that says the guard
       // released rather than merely stuck.
-      await p.locator('[data-file-row]').nth(1).waitFor({ timeout: 5000 });
-      assert.equal(await p.locator('[data-file-row]').count(), 2);
+      const rows = await settle(() => p.locator('[data-file-row]').count(), untilEqual(2), { attempts: 20, delayMs: 250, page: p });
+      assert.equal(rows.value, 2, 'the delayed project read landed, and the tree has both files');
+      // one-shot: the rows above are the project read having landed, and the address is written by
+      // the same commit that draws them; a drift after that would be a second defect, not this one.
       assert.match(new URL(p.url()).hash, /compose\/tests\/second\.tflw/, 'the address moved once the project caught up');
     } finally {
       await p.unroute('**/api/project**');

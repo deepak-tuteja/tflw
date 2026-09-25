@@ -1,9 +1,9 @@
 {
   "comment": "GitHub's own heading anchors for SPEC.md, fetched from the ref below. Never hand-edit: the point of this file is that nothing in this repository computed it. Refresh with `node scripts/refresh-spec-anchors.mjs --ref <ref>`.",
   "repo": "deepak-tuteja/tflw",
-  "ref": "m208-security-triage",
-  "sha": "26abbb0bceed224c40b55b6bacd5780bb9b3b326",
-  "source": "https://github.com/deepak-tuteja/tflw/blob/26abbb0bceed224c40b55b6bacd5780bb9b3b326/SPEC.md",
+  "ref": "m239-boundary",
+  "sha": "687cd683fd170ee8e6a9dcbb74dea26ae36178e7",
+  "source": "https://github.com/deepak-tuteja/tflw/blob/687cd683fd170ee8e6a9dcbb74dea26ae36178e7/SPEC.md",
   "headings": [
     [
       "testFlow — SPEC",
@@ -72,6 +72,10 @@
     [
       "3.11 Accepted findings — `baseline` (M208, D387/D1060) ✅",
       "311-accepted-findings--baseline-m208-d387d1060-"
+    ],
+    [
+      "3.12 Helper directories — `helpers` (M239, D1279)",
+      "312-helper-directories--helpers-m239-d1279"
     ],
     [
       "4. Tests & structure ✅",
