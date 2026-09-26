@@ -9377,82 +9377,6 @@ walker git-aware — **cannot be taken**: `scripts/exec.mjs` rsyncs this tree to
 `verify-corpora.mjs`'s `repoOrNull` docblock already states this: *"a corpus declared over the
 tracked set has to be skipped by name there, not resolved to zero."*
 
-### D1276
-
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-cli-refusals.mjs +1 more · lifted from `PLAN_M230_M232_LEDGER_CLOSE.md`</sub>
-
-**`D1276` — `M222-02` is closed as repaired, and the row's own second option is what repaired it**
-
-**Measured 2026-09-22 on the served page, sampled every animation frame.** The scenario is the
-row's: `tests/catalog.tflw` open and settled (9 statements), then `tests/shop.tflw` clicked in the
-explorer.
-
-### D1277
-
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M233_DOCS_SITE.md`</sub>
-
-- **`D1277` — the page is a surface, not a chapter.** `/page/` joins the top nav beside Editor and
-  Playground with its own sidebar. The argument is structural rather than editorial: `config.ts`
-  says the nav names surfaces, Editor and Playground already hold top-level entries at a fraction of
-  19,000 lines, and filing an authoring environment under a sub-bullet of *Running & reporting* is
-  the navigation asserting something false. Five pages — what it is and opening it · the spine
-  (explorer, doors, run strip) · the four doors · reading a run · what the page will not do.
-
-### D1278
-
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M233_DOCS_SITE.md`</sub>
-
-- **`D1278` — the guide's pillars stay language-first, and gain one pointer paragraph each, never a
-  door chapter.** The four doors map exactly onto the four pillars, which makes a door chapter per
-  pillar look natural and is the trap: it produces two maintained explanations of one subject, which
-  is `D1094` — *two implementations of one picture is the failure this project keeps recording.* One
-  place teaches `load` and thresholds; `/page/`'s LOAD section says how that reaches the page and
-  links back.
-
-### D1279
-
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +8 more · lifted from `PLAN_M233_DOCS_SITE.md`</sub>
-
-- **`D1279` — a construct is documented in the chapter that owns it, and `spec-data.ts` says which
-  chapter that is.** An `owner` column beside `syntax`, held to `parser.ts` by `specManifest.test.ts`
-  the way the rest of the manifest is; `scripts/verify-construct-homes.mjs` fails when the owning
-  chapter does not document the construct. **It is deliberately not a wordlist in the gate** —
-  `verify-docs.mjs`'s docblock is explicit that *"nothing here is a wordlist this script maintains"*
-  — and putting the owner in the manifest is the same move `P#103` already made when four
-  hand-maintained copies became one: a construct cannot be added without naming its home.
-
-  **Re-founded on measurement 2026-09-22, and the column is smaller than the first draft thought.**
-  The original evidence, `teardown`, is not a defect at all (§1), so this decision would have shipped
-  on a false example. What replaces it is stronger, because the manifest contradicts the filing
-  rather than a reader's expectation doing it: **`step:pause` is a `family: 'browser'` step whose
-  only guide chapter is `guide/load-testing.md`**. And the mechanism question the first draft left
-  open is answered — the *matcher's* `family` is keyed on nothing (`step` spans 21 chapters), but the
-  **rows' own `family`** predicts the owner almost perfectly across the **51 constructs that already
-  carry it** (`workload` 4/4, `transform` 3/3, `unique` 3/3, `browser` 18/19, `pause` the sole miss).
-  So the `owner` column is **new for 78 constructs, not 129**, and for the 51 it is a *derivation to
-  be pinned* rather than a judgement to be entered — which is also the only reason §5's first
-  prediction can still discriminate: a column that is mostly derived cannot be filled by reading the
-  site.
-
-  **`pause` is added to a browser chapter, not moved out of `load-testing.md`.** Think-time in a load
-  test is a real use and the rule is *documented in the chapter that owns it*, not *documented
-  nowhere else*.
-
-### D1280
-
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M233_DOCS_SITE.md`</sub>
-
-- **`D1280` — a known limitation gets a sentence in the owning chapter, and no list and no gate.**
-  `M230`–`M232` took the ledger to zero — **confirmed at 0 open on 2026-09-22, not forecast** — so a
-  `DECLARED_LIMITATIONS` corpus would be **empty**, and a gate with an empty corpus is this arc's
-  recurring vacuity class (`M223` `F`, `M225`–`M227`, `M228` `F1`, `M229` `A`, `M231`'s `steps`,
-  `M232`'s `STEP_LENS`; `M215`'s *a mutation that narrows a range is invisible to a fixture whose
-  range is empty*). If a row is still open when this round runs, it earns prose in the chapter that
-  owns its construct and nothing more. **The mechanism is reconsidered the day the ledger holds three
-  open rows with user-visible symptoms at once**, which is this decision's expiry condition, stated
-  in advance rather than left to be noticed. **That condition is now properly armed**, because the
-  ledger it is measured against is empty rather than merely expected to be.
-
 ### D1309
 
 <sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
@@ -9551,6 +9475,36 @@ theme's face, and the gate is the computed `font-family` of every `button`, `inp
 review measured `Arial` and did not name the element, so the first act of the slice is to find it.
 Not taken: Terminal as default (a monospace product reads as a terminal to a stranger), and a
 stored default.
+
+### D1316
+
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-cli-refusals.mjs +1 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+
+**`D1316` — the page is opened by a token, and the token has three carriers because the browser has three ways of asking.** A 32-byte token minted per `tflw ui` start travels in the URL the command prints and nowhere else. The page's own `fetch` sends it as `Authorization: Bearer`; its two `EventSource` streams, which cannot set a header, send it as `?token=`; and the token-bearing page load sets a `SameSite=Strict; HttpOnly` cookie that only the two navigational surfaces accept — the report files a reader opens in a tab or downloads (whose own screenshots and trace link resolve relatively), and the trace viewer's assets under `/trace/`. Every other `/api/` route refuses the cookie, so a same-site page on another loopback port cannot spend it: `GET /api/pick` spawns a browser, and an `<img src>` must not be able to. Behind the token, `Host` must name a loopback host — judged on the hostname only, because `ssh -L 9000:127.0.0.1:4141` is the documented remote path and the browser's `Host` then carries the local port — and `Origin`, when sent, must equal `http://<Host>`. A body under `/api/` is `application/json` or 415 before a byte is read, and over 1 MiB it is 413. A bare `http://127.0.0.1:4141/` answers a one-sentence 401 page, or a 302 to the token URL when the browser holds the cookie, so a reload keeps working. Not taken: a `--host` team-serving mode (the page spawns processes and reads files; the answer to "serve it to the team" is `ssh -L`), and cookie-only carriage (a same-site neighbour would spend it on a side-effecting `GET`).
+
+### D1317
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+
+**`D1317` — the page runs what is inside the project, remembers fifty runs, and lets the viewer open report files only.** `files` in `POST /api/run` are resolved with `realpath` and refused with the offending entry unless inside the project root — so a symlink out of the root is outside it — while `tflw run` in a terminal keeps taking any path, because a terminal is the user and a route is not. `?trace=` on the viewer's document must name `/api/reports/<id>/<file>` on a loopback host, judged before the viewer directory is even resolved. The server keeps the last fifty runs (a running run is never evicted) and buffers fifty thousand stdout lines per run for late subscribers, dropping the oldest in blocks and counting what it dropped on the record; the report directory on disk stays whole. Not taken: an unbounded history (the review measured it growing per run for the life of the process) and confining `tflw run` itself.
+
+### D1318
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+
+**`D1318` — every response carries its headers, every document its own policy, and a Node error stays in the terminal.** `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` on every response; `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` on JSON and assets. The page is served under `default-src 'self'` with a per-response nonce that the bundle's one inline script carries via a placeholder the server substitutes; `report.html` and the trace viewer's documents admit exactly their own inline scripts by SHA-256, never `'unsafe-inline'` for script. The trace viewer's policy names no `frame-src` and no `default-src`, measured rather than assumed: it renders each DOM snapshot in a frame whose document its service worker synthesises, and Chromium checks `frame-src` against that response's URL, which is empty and matches no source — so the viewer's policy says `object-src`, `media-src` and `manifest-src` explicitly and leaves framing open, with script, connect and worker sources still `'self'`. The gate is tflw's own `sec/*` rules run over the served page, so the scanner and the product cannot disagree, plus a page suite that records every `securitypolicyviolation` in every frame. A route that throws answers one sentence and logs the stack to the terminal, because the review read an absolute path off the page of an empty directory. Not taken: `'unsafe-inline'` for the viewer (its one inline script hashes fine), and a Report-Only policy first (the page suite is the report).
+
+### D1319
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +9 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+
+**`D1319` — `helpers` names where a `use` may load from, the checker judges it as text, and `--no-helpers` is the same rule with an empty list.** A top-level `tflw.config` directive, `helpers "./lib"[, "./more"]`, relative to the config; a config declaring none allows `./helpers` and `./tests/helpers`, which is the dogfood's shape already. The checker resolves a `use` literal against the checked file's own directory — the runtime's rule — and requires the result inside one of the directories; outside is `TF083`, an error, because this is the one declaration that decides what code a run executes. Textual on purpose: no `stat`, no symlink following, so the checker keeps its no-I/O rule and cannot disagree with the runtime about which module a `use` names; a missing module stays `TF043`. The same policy reaches the editor (relative to the config it found) and the page (through `ProjectView.helpers` and the file's own path), so the three judge alike. `tflw check` prints one `helper <module> — \`use\` in <files>` line per module before its verdict; `tflw run --no-helpers` reports every `use` as `TF083` naming the flag. The field is absent-when-empty on `ConfigFile`, for the goldens' sake. Not taken: off by default (the escape hatch would stay unfenced for every existing project), and a per-env key (which code a suite may run does not vary by environment, and a per-env answer would be the loophole).
+
+### D1320
+
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+
+**`D1320` — the process: a policy, an audit, an SBOM, and a bot that opens pull requests.** `SECURITY.md` at both roots with GitHub private vulnerability reporting and a 72-hour acknowledgement; a `supply-chain` CI job running `npm audit --audit-level=high` and publishing a CycloneDX SBOM (`npm sbom`) as an artefact; Dependabot weekly, grouped, for npm and for GitHub Actions in both repositories, merged by hand. The security guide states what tflw itself does — no telemetry, no network beyond the named targets, the helper fence, the token model, the headers — and the support statement: Node 22 and 24, latest release only before 1.0. Turning on private vulnerability reporting is a repository setting, and Dependabot opens pull requests on its own schedule; both are outward-facing and land on the user's word, not the plan's. Not taken: `SECURITY.md` alone (a policy with no audit behind it is a promise), and auto-merge (a dependency bump in a testing tool changes what every user's run executes).
 
 ### D1325
 
@@ -13782,7 +13736,7 @@ graded. **`M234-04` closed 2026-09-25 when slice `C` merged there** (tflw-tests#
 
 ### M239
 
-<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONSTRUCTS.md +12 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONSTRUCTS.md +13 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **§3 `M239` — the boundary: token, origin, confinement, helpers, process**
 
