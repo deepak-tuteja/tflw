@@ -31,10 +31,10 @@
   "dependencies": {
     "@tflw/lang": "*",
     "@tflw/runtime": "*",
-    "vscode-languageserver": "^10.1.0",
-    "vscode-languageserver-textdocument": "^1.0.12"
+    "vscode-languageserver": "^10.1.1",
+    "vscode-languageserver-textdocument": "^1.0.14"
   },
   "devDependencies": {
-    "vscode-jsonrpc": "^9.0.1"
+    "vscode-jsonrpc": "^9.0.2"
   }
 }
