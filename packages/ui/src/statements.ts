@@ -164,3 +164,60 @@ export function buildStatement(next: StatementEdit, original: Step | null): Buil
     }
   })();
 }
+
+/**
+ * **The word a statement's chip carries** — `M240` `F` (`M239-03`).
+ *
+ * It was `kind.replace(/Stmt$/, '').toLowerCase()` in `ComposePane.tsx`, which put `closetab` and
+ * `switchtotab` on screen — the AST's type name, lowercased, where the file says `close tab` and
+ * `switch to tab`. The docs' own browser shot carried both (`REVIEW_ENTERPRISE_READINESS.md` P1).
+ * The rule the workload row already follows (`D1220`): **the language's own spelling, not the
+ * node's type name.** So the chip is the statement's fixed phrase before its first argument, taken
+ * from the node itself where the phrase depends on it — `double click` and `right click` are one
+ * `ClickStmt`, `check` and `expect` one `ExpectStmt` — and `afterLead` strips exactly this string
+ * off the printed line, so the two cannot disagree without the row reading twice.
+ *
+ * Held to the printer, not to this table: `statements.test.ts` prints every step in the corpus and
+ * asserts the printed line begins with the chip. A kind added to the language without a row here
+ * falls to the CamelCase split, which is right for one-word kinds and red for the rest.
+ */
+export function statementLead(node: Step): string {
+  switch (node.type) {
+    case 'ClickStmt':
+      return node.kind === 'double' ? 'double click' : node.kind === 'right' ? 'right click' : 'click';
+    case 'ExpectStmt':
+      return node.soft ? 'check' : 'expect';
+    case 'MalformedStep':
+      return node.head;
+    case 'CallStmt':
+      // A call is spelled by its action's name and has no keyword; `call` is the language's own
+      // word for the construct (`D1189`'s vocabulary), and `afterLead` leaves the text whole.
+      return 'call';
+    case 'ApiStep':
+      return 'api';
+    case 'WaitUntilApiStmt':
+      return 'wait until api';
+    case 'WaitUntilUiStmt':
+      return 'wait until';
+    case 'ScrollStmt':
+      return 'scroll to';
+    case 'DropFileStmt':
+      return 'drop file';
+    case 'FillFormStmt':
+      return 'fill form';
+    case 'AcceptDialogStmt':
+      return 'accept dialog';
+    case 'DismissDialogStmt':
+      return 'dismiss dialog';
+    case 'CloseTabStmt':
+      return 'close tab';
+    case 'SwitchToTabStmt':
+      return 'switch to tab';
+    case 'SwitchToNewTabBlock':
+      return 'switch to new tab';
+    case 'DownloadBlock':
+      return 'download as';
+    default:
+      return node.type.replace(/(Stmt|Block|Step)$/, '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+  }
+}

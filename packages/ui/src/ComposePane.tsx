@@ -88,6 +88,7 @@ import {
   type RequestEdit,
   type RowEditing,
 } from './parts';
+import { statementLead } from './statements';
 import { DOOR_BY_ID } from './doors';
 import { SessionPanel, type Session, type SessionLine } from './SessionPanel';
 import { holds, requestRemoval, statementRemoval } from './depends';
@@ -157,11 +158,10 @@ export function selectedAt(at: Addressed | null, line: number | null): Selected 
  * requests and their thirty assertions stop being a height problem: the column is a list, and the
  * thing being worked on is in the region next door at whatever size it needs.
  */
-/** The word a statement's chip carries. One spelling, because `afterLead` strips exactly what the
- *  chip shows — two copies of this expression is how a chip and its strip drift apart. */
-function seqLead(kind: string): string {
-  return kind === 'LetStmt' ? 'let' : kind.replace(/Stmt$/, '').toLowerCase();
-}
+/** The word a statement's chip carries — `statementLead`, the language's own spelling (`M239-03`).
+ *  One spelling, because `afterLead` strips exactly what the chip shows — two copies of this
+ *  expression is how a chip and its strip drift apart. */
+const seqLead = statementLead;
 
 /**
  * The text a row shows, given the keyword its own chip already carries (`M216`).
@@ -1305,8 +1305,8 @@ export function ComposePane(props: ComposePaneProps) {
             selected={selected.kind === 'statement' && selected.statement.line === s.line}
             onLine={onLine}
             indent
-            lead={<span className="seq-kind">{seqLead(s.kind)}</span>}
-            text={afterLead(seqLead(s.kind), s.text)}
+            lead={<span className="seq-kind">{seqLead(s.node)}</span>}
+            text={afterLead(seqLead(s.node), s.text)}
             statement={s}
             menu={seqMenu({ kind: 'step', statement: s, line: s.line }, s.text)}
             door={door}
@@ -1332,8 +1332,8 @@ export function ComposePane(props: ComposePaneProps) {
         selected={selected.kind === 'statement' && selected.statement.line === s.line}
         onLine={onLine}
         indent
-        lead={<span className="seq-kind">{seqLead(shown.kind)}</span>}
-        text={afterLead(seqLead(shown.kind), shown.text.split('\n')[0] ?? '')}
+        lead={<span className="seq-kind">{seqLead(shown.node)}</span>}
+        text={afterLead(seqLead(shown.node), shown.text.split('\n')[0] ?? '')}
         scope={one === null ? null : s.text}
         statement={s}
         menu={seqMenu({ kind: 'step', statement: s, line: s.line }, shown.text.split('\n')[0] ?? s.kind)}
@@ -1448,8 +1448,8 @@ export function ComposePane(props: ComposePaneProps) {
              not `.seq-pick` on purpose: `D1127` makes a row's hover DERIVED — the part the
              ellipsis took, at whatever width the grip is at — so an authored tip there would
              reopen that decision, while every chip and control beside it already carries one. */
-          lead={<span className="seq-kind" data-tip="everything below happens on this page — a new `open` starts the next one">{seqLead(s.kind)}</span>}
-          text={afterLead(seqLead(s.kind), s.text.split('\n')[0] ?? '')}
+          lead={<span className="seq-kind" data-tip="everything below happens on this page — a new `open` starts the next one">{seqLead(s.node)}</span>}
+          text={afterLead(seqLead(s.node), s.text.split('\n')[0] ?? '')}
           statement={s}
           menu={seqMenu({ kind: 'step', statement: s, line: s.line }, s.text.split('\n')[0] ?? s.kind)}
           door={door}
@@ -2228,7 +2228,7 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
       data-stmt-lens={statement.lens ?? 'none'}
     >
       <header className="editor-head">
-        <span className="seq-kind">{seqLead(statement.kind)}</span>
+        <span className="seq-kind">{seqLead(statement.node)}</span>
         <span className="ln muted">line {statement.line}</span>
         <VerdictMark verdict={verdict} />
         {onRemove === null ? null : <Remove what="statement" onGo={onRemove} refusal={refusal} onClear={onClearRefusal} />}
