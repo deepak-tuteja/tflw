@@ -1223,6 +1223,7 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .notices { position: fixed; top: calc(var(--unit) * 1.5); right: calc(var(--unit) * 1.5); z-index: 46; display: flex; flex-direction: column; gap: calc(var(--unit) * 0.6); max-width: min(480px, calc(100vw - 32px)); }
 .notice { display: flex; align-items: flex-start; gap: calc(var(--unit) * 0.8); padding: calc(var(--unit) * 0.8) calc(var(--unit) * 1.2); background: var(--panel2); border: var(--border) solid var(--fail); border-radius: var(--radius); font-size: 12px; }
 .notice > span { flex: 1; overflow-wrap: anywhere; }
+.notice.info { border-color: var(--line); color: var(--fg); }
 .notice > button { padding: 0 calc(var(--unit) * 0.5); }
 
 /* `M240` `A` (`D1290`) — a door with nothing behind it: one sentence and the gesture that changes

@@ -2762,7 +2762,7 @@ test('`M240` `F` (`M239-06`): two failures are two notices, top-right; one close
 test('`M240` `F` (`M239-07`): a dirty draft asks before the page unloads, and a clean page does not', async () => {
   // Dispatched by the test rather than through `page.close()`: Playwright runs no `beforeunload`
   // on close unless asked, and the claim is about the listener, which `defaultPrevented` reads.
-  const asks = (): Promise<boolean> => page.locator('html').evaluate((el) => {
+  const asks = (): Promise<boolean> => page.locator('html').evaluate((el) => { // one-shot: dispatches this test's own event and reads its `defaultPrevented` — no page state is sampled
     const e = new (el.ownerDocument.defaultView as unknown as { Event: new (t: string, i: { cancelable: boolean }) => Event }).Event('beforeunload', { cancelable: true });
     el.ownerDocument.defaultView!.dispatchEvent(e);
     return e.defaultPrevented;
@@ -2781,6 +2781,57 @@ test('`M240` `F` (`M239-07`): a dirty draft asks before the page unloads, and a 
   await page.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
   const clean = await settle(asks, untilMeasurable('the listener is gone', (v) => v === false), { attempts: 40, delayMs: 50, page });
   assert.equal(clean.value, false, 'a discarded draft still asks');
+});
+
+test('`M240` `F` (`M239-08`): a run started outside the page is followed without a click, and one that ends while another tab is open is announced', async () => {
+  // The page learns of a run it did not start from its five-second list poll, so the claim is
+  // *a run that is running when the list is re-read is followed*. The poll is a timer, and the
+  // test owns the clock: it advances five seconds itself, right after the run starts, rather than
+  // racing a real interval against a run that may be over in one poll window. The load file is
+  // API-only — a browser run in this harness ends inside a second — and runs for several seconds.
+  const view = await fullProject();
+  const target = view.files.find((f) => f.path.endsWith('load.tflw'))!.path;
+  const start = async (): Promise<string> => {
+    const res = await api(`${baseUrl}/api/run`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ files: [target] }) }); // one-shot: a write, not a read
+    assert.equal(res.status, 202, `POST /api/run answered ${res.status}`);
+    return ((await res.json()) as { id: string }).id;
+  };
+  const stateOf = async (id: string): Promise<string | null> => ((await (await api(`${baseUrl}/api/runs`)).json()) as { id: string; status: string }[]).find((r) => r.id === id)?.status ?? null; // one-shot: read through `settle` by `ended`, and as a precondition straight after this test's own POST
+  const ended = (id: string): Promise<void> => settle(() => stateOf(id), untilMeasurable('the run has left the running state', (v) => v !== null && v !== 'running'), { attempts: 240, delayMs: 250, page }).then(() => undefined);
+
+  await page.goto(`${pageUrl}${API_RUN}`);
+  await page.clock.install();
+  await page.reload();
+  await page.locator('[data-report-row="full"]').waitFor();
+  try {
+    // 1. On the Run tab, looking at a report: the next list read finds the run running, and the
+    //    pane follows it — no click.
+    const first = await start();
+    assert.equal(await stateOf(first), 'running', 'the run must still be running when the list is re-read, or there is nothing to follow');
+    await page.clock.runFor(5_000);
+    const followed = await settle(() => page.locator(`[data-live="${first}"]`).count(), untilMeasurable('the pane draws the run', (n) => n > 0), { attempts: 40, delayMs: 250, page });
+    assert.ok(followed.value > 0, 'the list was re-read while the run was running, and the pane did not follow it');
+    await ended(first);
+
+    // 2. On Compose: a followed run's end is a notice naming the verdict, because the Run tab is
+    //    not the one open to say it.
+    await page.goto(`${pageUrl}#/api/compose/${target}`);
+    await page.locator('[data-compose-bar]').waitFor();
+    const second = await start();
+    assert.equal(await stateOf(second), 'running');
+    await page.clock.runFor(5_000);
+    const announced = await settle(
+      () => page.locator('[data-notice][data-notice-tone="info"]').first().textContent().catch(() => null),
+      untilMeasurable('the end notice is up', (v) => v !== null && v !== ''),
+      { attempts: 240, delayMs: 250, page },
+    );
+    assert.match(announced.value ?? '', /^the run (passed|failed)/, `the notice reads ${announced.value}`);
+    await ended(second);
+  } finally {
+    // The fake clock would otherwise hold every later test's timers still.
+    await page.clock.setSystemTime(Date.now());
+    await page.reload();
+  }
 });
 
 // ---------------------------------------------------------------------------
