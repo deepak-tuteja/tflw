@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "refs/pull/108/head",
-  "sha": "9cd9f60a238c8f19c02ef60470655b444e36b0ff",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/9cd9f60a238c8f19c02ef60470655b444e36b0ff",
+  "ref": "refs/pull/112/head",
+  "sha": "17e9f07fafe05719bc6490e50a304623f1c6bacd",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/17e9f07fafe05719bc6490e50a304623f1c6bacd",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -155,7 +155,7 @@
       "scripts/regression.mjs",
       "tflw.config"
     ],
-    "D1279": [
+    "D1319": [
       "CONSTRUCTS.md",
       "scripts/lib/constructs.mjs",
       "scripts/regression.mjs",
@@ -164,6 +164,7 @@
       "scripts/verify-construct-acceptance.mjs",
       "tests/.checkonly/config-directives/helpers-default.config",
       "tests/.checkonly/helper-outside-dirs.tflw",
+      "tflw-acceptance/perf/tflw/tflw.config",
       "tflw.config"
     ],
     "D17": [
@@ -2377,6 +2378,7 @@
       "tests/.checkonly/fmt/unformatted.tflw",
       "tests/.checkonly/helper-outside-dirs.tflw",
       "tests/.checkonly/migrate/deprecated.tflw",
+      "tflw-acceptance/perf/tflw/tflw.config",
       "tflw.config"
     ],
     "M25": [
@@ -2705,15 +2707,15 @@
     "D1271": [
       "scripts/verify-ui.mjs"
     ],
-    "D1276": [
+    "D13": [],
+    "D1316": [
       "scripts/regression.mjs",
       "scripts/verify-cli-refusals.mjs",
       "scripts/verify-ui.mjs"
     ],
-    "D1280": [
+    "D1320": [
       "scripts/verify-contributing.mjs"
     ],
-    "D13": [],
     "D137": [
       "tests/.checkonly/action-call-cycle.tflw",
       "tests/.checkonly/invalid-literal-operand.tflw",

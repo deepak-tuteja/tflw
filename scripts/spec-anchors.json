@@ -1,9 +1,9 @@
 {
   "comment": "GitHub's own heading anchors for SPEC.md, fetched from the ref below. Never hand-edit: the point of this file is that nothing in this repository computed it. Refresh with `node scripts/refresh-spec-anchors.mjs --ref <ref>`.",
   "repo": "deepak-tuteja/tflw",
-  "ref": "m239-boundary",
-  "sha": "687cd683fd170ee8e6a9dcbb74dea26ae36178e7",
-  "source": "https://github.com/deepak-tuteja/tflw/blob/687cd683fd170ee8e6a9dcbb74dea26ae36178e7/SPEC.md",
+  "ref": "m240-04-renumber",
+  "sha": "05bc4ee6febdee5c484f20fdd9b2a44a7b6ce4f6",
+  "source": "https://github.com/deepak-tuteja/tflw/blob/05bc4ee6febdee5c484f20fdd9b2a44a7b6ce4f6/SPEC.md",
   "headings": [
     [
       "testFlow — SPEC",
@@ -74,8 +74,8 @@
       "311-accepted-findings--baseline-m208-d387d1060-"
     ],
     [
-      "3.12 Helper directories — `helpers` (M239, D1279)",
-      "312-helper-directories--helpers-m239-d1279"
+      "3.12 Helper directories — `helpers` (M239, D1319)",
+      "312-helper-directories--helpers-m239-d1319"
     ],
     [
       "4. Tests & structure ✅",
