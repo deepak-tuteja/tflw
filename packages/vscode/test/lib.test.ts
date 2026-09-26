@@ -4,14 +4,17 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { findProjectRoot, resolveTflwBin, parseTestDeclarationLine } from '../src/lib.js';
 
 test('findProjectRoot walks up until it finds a directory containing tflw.config', () => {
-  const fakeFs = new Set(['/home/user/project/tflw.config']);
+  // Built with the host's own path functions (`M243-16`): `findProjectRoot` joins with `node:path`,
+  // so on Windows it asks the fake fs for `\\home\\user\\…`, which a POSIX literal never matches.
+  const project = resolve('/home/user/project');
+  const fakeFs = new Set([join(project, 'tflw.config')]);
   const exists = (p: string) => fakeFs.has(p);
-  assert.equal(findProjectRoot('/home/user/project/tests/nested', exists), '/home/user/project');
-  assert.equal(findProjectRoot('/home/user/project', exists), '/home/user/project');
+  assert.equal(findProjectRoot(join(project, 'tests', 'nested'), exists), project);
+  assert.equal(findProjectRoot(project, exists), project);
 });
 
 test('findProjectRoot returns undefined when no tflw.config exists anywhere above', () => {
@@ -20,8 +23,9 @@ test('findProjectRoot returns undefined when no tflw.config exists anywhere abov
 });
 
 test('resolveTflwBin prefers a project-local node_modules/.bin/tflw when it exists', () => {
-  const exists = (p: string) => p === '/proj/node_modules/.bin/tflw';
-  assert.equal(resolveTflwBin('/proj', 'linux', exists), '/proj/node_modules/.bin/tflw');
+  const local = join('/proj', 'node_modules', '.bin', 'tflw');
+  const exists = (p: string) => p === local;
+  assert.equal(resolveTflwBin('/proj', 'linux', exists), local);
 });
 
 test('resolveTflwBin falls back to a bare "tflw" (PATH lookup) when no local install exists', () => {

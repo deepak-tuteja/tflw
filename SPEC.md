@@ -667,8 +667,11 @@ mechanism.
   where it prints an `UNDICI-EHPA` experimental warning (`M243-13`). An older Node 22 has no
   built-in env-var proxy path for `fetch`; that is not worked around with an `undici`/proxy-agent
   runtime dependency (P#43's zero-dependency bundle stays zero), so update Node, or reach for the
-  JS escape hatch (§11) to route a single problematic request differently. The sibling repository
-  runs its suite through a real proxy on every sweep (`proxy-check`).
+  JS escape hatch (§11) to route a single problematic request differently. **Node tunnels plain HTTP
+  too**: its proxy agent sends `CONNECT host:port` for an `http://` URL, never a proxied `GET`, and
+  keeps one tunnel for the run — so the proxy must allow `CONNECT` to the target's port, and adds no
+  `Via` the server could see. The sibling repository runs its suite through a real proxy on every
+  sweep (`proxy-check`).
 - **Teaching errors, not a bare `fetch failed`.** `http.ts` unwraps the real cause Node already
   attaches to the error (`err.cause.code`) into a named hint appended to the failure message:
   a self-signed/expired/altname-mismatched cert names `insecure true` and `NODE_EXTRA_CA_CERTS` as

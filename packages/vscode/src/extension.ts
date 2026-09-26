@@ -24,7 +24,7 @@
 
 import * as vscode from 'vscode';
 import { LanguageClient, TransportKind, type LanguageClientOptions, type ServerOptions } from 'vscode-languageclient/node';
-import { dirname, relative } from 'node:path';
+import { dirname, relative, sep } from 'node:path';
 import { findProjectRoot, resolveTflwBin, parseTestDeclarationLine } from './lib.js';
 
 let client: LanguageClient | undefined;
@@ -105,7 +105,9 @@ function runInTerminal(uri: vscode.Uri | undefined, testName?: string): void {
     return;
   }
   const bin = resolveTflwBin(root);
-  const relFile = relative(root, uri.fsPath);
+  // `M243-16`: `/` on every OS — the form tflw's own reports name files in (`M243-07`), and one
+  // every shell a terminal can open accepts.
+  const relFile = relative(root, uri.fsPath).split(sep).join('/');
   const args = [bin, 'run', JSON.stringify(relFile)];
   if (testName !== undefined) args.push('--only', JSON.stringify(testName));
   const terminal = getOrCreateTerminal();
