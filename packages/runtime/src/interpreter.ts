@@ -145,6 +145,10 @@ import { LatencyHistogram } from './histogram.js';
 import { Timeline } from './timeline.js';
 import { startSelfDiagnosis, mergeSelfDiagnosis } from './selfDiagnosis.js';
 
+/** The matchers that read how MANY elements a locator resolves to, so a count other than one is the
+ *  answer rather than an ambiguity — `has count` since `M3`, its two bounds since `M242` (`D1326`). */
+const COUNT_MATCHERS: ReadonlySet<string> = new Set(['hasCount', 'hasCountAtLeast', 'hasCountAtMost']);
+
 /** A JS/TS helper export, called `(ctx, ...args)` — "test context in, values out" (P#11). */
 type HelperFn = (ctx: { readonly env: NodeJS.ProcessEnv }, ...args: unknown[]) => unknown;
 
@@ -438,6 +442,9 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     // `finalizeScenario` a second time — one finalization per test, and the streamed result is
     // `===` the report entry rather than a look-alike rebuilt from the same accumulator.
     const workloadResults = new Map<TestDecl, WorkloadTestResult>();
+    // `D1327`: a skipped test's one result, whatever its kind — it runs nothing (no hooks, no row,
+    // no virtual user), so a `with each` table or a workload is one skipped entry, not N.
+    const skippedResults = new Map<TestDecl, TestResult>();
     const batches = partitionIntoBatches(program.tests);
     for (const batch of batches) {
       // D114: a multi-member `parallel` batch's live events would otherwise interleave mid-block
@@ -458,6 +465,13 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
       const batchRunStart = performance.now();
       const batchScenarioCtx: ScenarioRunCtx = { ...scenarioCtx, runStart: batchRunStart };
       const tasks: Promise<void>[] = batch.map((test) => {
+        if (test.skip !== undefined) {
+          const result: TestResult = { kind: 'functional', name: test.name.value, ok: true, durationMs: 0, steps: [], skipped: test.skip.value };
+          skippedResults.set(test, result);
+          emit({ type: 'test:start', name: test.name.value });
+          emit({ type: 'test:end', result });
+          return Promise.resolve();
+        }
         if (test.workload) {
           // M88d (review finding `B3-11`): a workload-bearing test used to emit *nothing* on the
           // live stream — no `test:start`, no `test:end` — while still being counted in
@@ -537,6 +551,11 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     // provisional, since the real, merged result only exists once the CLI combines every shard via
     // `mergeLoadShardReports` and splices it in (`spliceLoadReportIntoRunReport`).
     for (const test of program.tests) {
+      const skipped = skippedResults.get(test);
+      if (skipped) {
+        results.push({ ...skipped, concurrency: test.concurrency });
+        continue;
+      }
       if (test.workload) {
         // M88d: finalized by this test's own task the moment it finished (above), so what the
         // report holds is the identical object its `test:end` already streamed.
@@ -599,7 +618,10 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     selfDiag?.stop();
   }
 
-  const passed = results.filter((r) => r.ok).length;
+  // `D1327`: a skipped test is `ok` but is not a pass — it is counted on its own, and `failed` is
+  // what failed rather than whatever did not pass.
+  const skipped = results.filter((r) => r.kind === 'functional' && r.skipped !== undefined).length;
+  const passed = results.filter((r) => r.ok).length - skipped;
   const unmaskableSecrets = redactor.unmaskableNames();
   const rawReport: RunReport = finalizeVerdict({
     ok: results.every((r) => r.ok),
@@ -609,7 +631,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     durationMs: Math.round(performance.now() - runStart),
     total: results.length,
     passed,
-    failed: results.length - passed,
+    failed: results.filter((r) => !r.ok).length,
+    ...(skipped > 0 ? { skipped } : {}),
     tests: results,
     seed: runSeed,
     now: runClock.toISOString(),
@@ -861,7 +884,9 @@ export type LoadTest = TestDecl & { readonly workload: Workload };
 
 /** Every workload-bearing `test` in `tests`, any kind. */
 function filterWorkloadTests(tests: readonly TestDecl[]): LoadTest[] {
-  return tests.filter((t): t is LoadTest => t.workload !== null);
+  // `D1327`: a skipped workload runs no virtual user, so it has no accumulator, no share of a
+  // sharded load report and no self-diagnosis window — its one result is the skipped entry.
+  return tests.filter((t): t is LoadTest => t.workload !== null && t.skip === undefined);
 }
 
 /** One mutable accumulator per scenario, filled in by that scenario's own `runIteration` closure
@@ -4145,6 +4170,16 @@ async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promis
       const text = String(evalValue(body.value, ctx));
       return { sendBody: text, traceText: text };
     }
+    // `D1328`: GraphQL-over-HTTP's POST shape. `variables`/`operationName` are left out when not
+    // written, rather than sent as `null`, because a server may treat an explicit null differently.
+    case 'GraphqlBody': {
+      // The query is raw (`D1328`): its braces are GraphQL's, and values arrive in `variables`.
+      const doc: Record<string, unknown> = { query: body.query.value };
+      if (body.variables) doc['variables'] = evalValue(body.variables, ctx);
+      if (body.operation) doc['operationName'] = String(evalValue(body.operation, ctx));
+      const text = JSON.stringify(doc);
+      return { sendBody: text, traceText: text, contentType: 'application/json' };
+    }
     case 'FileBody': {
       const filePath = String(evalValue(body.path, ctx));
       const abs = resolvePath(baseDir, filePath);
@@ -4231,7 +4266,7 @@ async function execUiExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start: 
     const { pwLocator, via, count } = await resolveLocatorSnapshot(scope, subject.locator, ctx);
     // `has count` is the one UI matcher meaningful against more than one element (SPEC §9.4) — for
     // every other matcher, matching several elements is still ambiguous (D7), same as an action.
-    if (step.matcher.name !== 'hasCount') await requireSingleMatch(subject.locator, name, { pwLocator, via }, count);
+    if (!COUNT_MATCHERS.has(step.matcher.name)) await requireSingleMatch(subject.locator, name, { pwLocator, via }, count);
     const label = locatorDetail(subject.locator, name, via);
     const outcome = await evalUiMatcherOnce(label, pwLocator, step.matcher, ctx, count);
     if (outcome.ok || performance.now() >= deadline) {
@@ -4325,7 +4360,7 @@ function waitUntilReader(
     const name = String(evalValue(locator.value, ctx));
     return async () => {
       const { pwLocator, via, count } = await resolveLocatorSnapshot(scope, locator, ctx);
-      if (step.matcher.name !== 'hasCount') await requireSingleMatch(locator, name, { pwLocator, via }, count);
+      if (!COUNT_MATCHERS.has(step.matcher.name)) await requireSingleMatch(locator, name, { pwLocator, via }, count);
       const outcome = await evalUiMatcherOnce(locatorDetail(locator, name, via), pwLocator, step.matcher, ctx, count);
       return { outcome, diagnose: () => diagnoseIfNothingMatched(scope, locator, name, count) };
     };
@@ -5798,7 +5833,24 @@ function execCsrf(step: CsrfStmt, response: ResponseTrace | null, ctx: EvalCtx, 
 }
 
 function execCapture(step: CaptureStmt, response: ResponseTrace | null, ctx: EvalCtx, src: string, start: number, redactor: Redactor, config: ResolvedConfig): StepResult {
-  const { value, label } = resolveSubject(step.subject, response, ctx);
+  const resolved = resolveSubject(step.subject, response, ctx);
+  const { label } = resolved;
+  let { value } = resolved;
+  // `D1329`: `matching "<regex>"` captures the first group, or the whole match when the pattern has
+  // no group. A pattern that finds nothing fails the step, for `A4-06`'s reason below: binding
+  // `undefined` would send the text "undefined" wherever the name is read.
+  if (step.pattern !== undefined && value !== undefined) {
+    const pattern = String(evalValue(step.pattern, ctx));
+    let re: RegExp;
+    try {
+      re = new RegExp(pattern);
+    } catch {
+      throw new RuntimeError(`invalid regex in \`capture … matching\`: ${repr(pattern)}`);
+    }
+    const m = re.exec(stringify(value));
+    if (m === null) throw new RuntimeError(`nothing to capture at ${label} matching ${repr(pattern)} — the value was ${repr(value)}`);
+    value = m[1] ?? m[0];
+  }
   // `A4-06` (M95) — the half the checker can never reach. A subject that resolves to nothing
   // (`response.headers[…]` for an absent header, `navigate`'s final segment for an absent JSON key
   // or an out-of-range index) used to bind `undefined` and report `✓`: the run then interpolated

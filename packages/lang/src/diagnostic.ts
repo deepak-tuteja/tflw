@@ -528,6 +528,21 @@ export const Codes = {
    * code and names the flag, because *no module at all* is the same policy with an empty list.
    */
   HELPER_OUTSIDE_DIRS: 'TF083',
+  /**
+   * `TF085` — **a `body graphql` on a `GET`** (`M242` `C`, `D1328`). GraphQL-over-GET carries the
+   * query in the URL's query string, which is a different request from the POST body this kind
+   * sends; a `GET` with a body is one most servers ignore, so the query would never arrive and the
+   * response would be the server's answer to nothing. An error, because the request as written
+   * cannot do what it says.
+   */
+  GRAPHQL_ON_GET: 'TF085',
+  /**
+   * `TF084` — **a `skip` whose reason says nothing** (`M242` `B`, `D1327`). A skipped test is a
+   * test the suite has stopped running, and the reason is the only thing that says whether it is
+   * coming back — so a blank one is `TF082`'s checkbox again. Whitespace-only is blank; nothing
+   * else about the text is judged.
+   */
+  SKIP_REASON_EMPTY: 'TF084',
 } as const;
 
 // ---------------------------------------------------------------------------

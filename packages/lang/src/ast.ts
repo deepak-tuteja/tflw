@@ -118,6 +118,10 @@ export interface TestDecl extends Node {
    * silently green (SPEC §4.4, P#10). `0` (the default) means no retry. Checker-rejected
    * (D96) alongside a non-null `workload`. */
   readonly retry: number;
+  /** `skip "reason"` (`M242` `B`, `D1327`) — the test is reported `skipped` with this reason and runs
+   *  nothing, not even its hooks. Absent when not written, so every earlier tree keeps its shape.
+   *  A blank reason is `TF084`: a skip nobody explained is a checkbox. */
+  readonly skip?: StringLit;
   /** `with each` — one reported case per row, or null for an ordinary single-case test
    * (SPEC §4.3, P#10/24). Checker-rejected (D96) alongside a non-null `workload`. */
   readonly table: DataTable | null;
@@ -691,7 +695,7 @@ export interface PathExpr extends Node {
 
 // ---- Request bodies (SPEC §5.2 — four forms + raw text) --------------------
 
-export type ApiBody = InlineBody | FileBody | FormBody | TextBody | UploadBody;
+export type ApiBody = InlineBody | FileBody | FormBody | TextBody | UploadBody | GraphqlBody;
 
 export interface InlineBody extends Node {
   readonly type: 'InlineBody';
@@ -727,6 +731,19 @@ export interface FormField extends Node {
 export interface TextBody extends Node {
   readonly type: 'TextBody';
   readonly value: StringLit;
+}
+
+/** `body graphql "<query>" [variables {…}] [operation "<name>"]` (`M242` `C`, `D1328`) — sent as
+ *  `{"query", "variables", "operationName"}` with `content-type: application/json`, which is
+ *  GraphQL-over-HTTP's POST shape. A body kind of its own rather than a JSON body the author spells
+ *  out, so its content type, its fields' names and `TF085` (no GraphQL body on a `GET`) all key on
+ *  the kind. `variables`/`operation` are `null` when not written, and absent from what is sent. */
+export interface GraphqlBody extends Node {
+  readonly type: 'GraphqlBody';
+  /** Raw: one text part, never interpolated — `{ id }` is GraphQL's selection syntax here. */
+  readonly query: StringLit;
+  readonly variables: ObjectLit | null;
+  readonly operation: StringLit | null;
 }
 
 /** `upload "./f" as "field"` (+ optional `type "mime/type"`, + optional `form k=v, …`) —
@@ -1016,6 +1033,9 @@ export type MatcherName =
   | 'greaterThan'
   | 'lessThan'
   | 'hasCount'
+  | 'hasCountAtLeast'
+  | 'hasCountAtMost'
+  | 'isEmpty'
   | 'hasValue'
   | 'visible'
   | 'hidden'
@@ -1330,6 +1350,10 @@ export interface CaptureStmt extends Node {
   readonly type: 'CaptureStmt';
   readonly subject: Subject;
   readonly name: string;
+  /** `capture <subject> matching "<regex>" as n` (`M242` `D`, `D1329`): the value captured is the
+   *  pattern's first group, or the whole match when it has none, and the step fails when nothing
+   *  matches. Absent on a plain capture, so every earlier tree keeps its shape. */
+  readonly pattern?: StringLit;
 }
 
 // ---- Logging (M27, PLAN_LOG.md) --------------------------------------------
@@ -1377,6 +1401,8 @@ export type Value =
   | FormatExpr
   | GeneratorExpr
   | TransformExpr
+  | LengthExpr
+  | JoinExpr
   | CallExpr;
 
 /** A call to an `action` or a `use`d JS/TS helper function — `create order("Widget")` or
@@ -1442,6 +1468,23 @@ export interface TransformExpr extends Node {
   readonly kind: 'base64' | 'hex' | 'url';
   readonly direction: 'encode' | 'decode';
   readonly value: Value;
+}
+
+/** `length of <value>` (`M242` `D`, `D1329`) — the length of a string or a list, spelled as words.
+ *  Evaluates exactly as `.length` does on the same value; it exists because the page's value picker
+ *  and a reader both reach for the words, and `{name}.length` is not a thing you can pick. */
+export interface LengthExpr extends Node {
+  readonly type: 'LengthExpr';
+  readonly value: Value;
+}
+
+/** `<list> joined with <separator>` (`M242` `D`, `D1329`) — a list of scalars as one string. The
+ *  loosest-binding value form: `{a} + 1 joined with ","` joins the sum, which is only a list if it
+ *  was one, and the runtime says so. */
+export interface JoinExpr extends Node {
+  readonly type: 'JoinExpr';
+  readonly list: Value;
+  readonly separator: Value;
 }
 
 // ---- Generators: `unique`/`random` (P#19, P#21–23, SPEC §7.2–7.4) ----------

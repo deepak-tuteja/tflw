@@ -130,6 +130,10 @@ function maskValue(v: Value, literals: Literals, hint: string): unknown {
       return { t: 'FormatExpr', value: maskValue(v.value, literals, hint), pattern: v.pattern.value };
     case 'TransformExpr':
       return { t: 'TransformExpr', kind: v.kind, direction: v.direction, value: maskValue(v.value, literals, hint) };
+    case 'LengthExpr':
+      return { t: 'LengthExpr', value: maskValue(v.value, literals, hint) };
+    case 'JoinExpr':
+      return { t: 'JoinExpr', list: maskValue(v.list, literals, hint), separator: maskValue(v.separator, literals, hint) };
     case 'CallExpr':
       return { t: 'CallExpr', name: v.name, args: v.args.map((a) => maskValue(a, literals, hint)) };
     default:
@@ -271,6 +275,8 @@ function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | nul
                 ? { t: 'FileBody', path: body.path.value }
                 : body.type === 'TextBody'
                   ? { t: 'TextBody', value: body.value.value }
+                  : body.type === 'GraphqlBody'
+                    ? { t: 'GraphqlBody', query: body.query.value, variables: body.variables === null ? null : maskValue(body.variables, literals, 'variables'), operation: body.operation?.value ?? null }
                   : {
                       t: 'UploadBody',
                       filePath: body.filePath.value,

@@ -2521,8 +2521,9 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
                     to switch *to*: `ApiBodySpec` cannot construct a multipart upload, so the card
                     shows it, keeps it, and says so. Twelve requests in the sibling carry one. */}
                 {v.bodyKind === 'upload' ? <option value="upload">upload (multipart) — kept as written</option> : null}
+                {v.bodyKind === 'graphql' ? <option value="graphql">GraphQL — kept as written, edited in Source</option> : null}
               </select>
-              {v.bodyKind === 'upload' && r.body !== null ? <pre className="preview body-preview" data-request-body-text><BodyText text={bodyText(r.body)} problem={null} /></pre> : null}
+              {(v.bodyKind === 'upload' || v.bodyKind === 'graphql') && r.body !== null ? <pre className="preview body-preview" data-request-body-text><BodyText text={bodyText(r.body)} problem={null} /></pre> : null}
               {v.bodyKind === 'json' ? <BodyEdit text={v.bodyText} onText={(bodyText) => change({ bodyText })} /> : null}
               {v.bodyKind === 'text' || v.bodyKind === 'file' ? (
                 <textarea value={v.bodyText} onChange={(e) => change({ bodyText: e.target.value })} data-body-edit-text rows={8} aria-label="body" />

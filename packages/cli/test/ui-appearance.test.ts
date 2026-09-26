@@ -765,7 +765,7 @@ test('no region of the Compose pane overflows the window, on a thirteen-request 
       await showWrittenFile(`${pageUrl}#/${door}/compose/tests/thirteen.tflw`, 'tests/thirteen.tflw');
       // A file the parser only RECOVERED draws fewer rows than it has statements, and a height gate
       // reading a salvage is a height gate reading a smaller file. The first draft of this fixture
-      // wrote `expect body.name is not empty`, which is not a matcher this language has.
+      // wrote `expect body.name is not empty`, which was not a matcher this language had until `M242`.
       // **`data-recovered` and not `data-diagnostics`**: the badge carrying the second is also the
       // WARNING badge, so the first draft of this line read a file that parses perfectly and a
       // missing tag as the same failure. A height gate reading a salvage is a height gate reading a

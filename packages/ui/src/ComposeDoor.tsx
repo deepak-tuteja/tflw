@@ -648,7 +648,8 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         // that answer would delete a `multipart/form-data` payload from a request whose path
         // somebody edited. Widening the body spec is its own slice; widening the request spec was
         // `A2`.
-        body: next.bodyKind === 'upload' ? original.spec.body : built.node.body,
+        // `M242` `C` (`D1328`): a GraphQL body is kept the same way — shown, carried, edited in Source.
+        body: next.bodyKind === 'upload' || next.bodyKind === 'graphql' ? original.spec.body : built.node.body,
       };
       /**
        * **A polling request is the same request in a different node** (`M210` `S4`).
@@ -804,6 +805,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
           tags: next.tags.split(/\s+/).map((t) => t.replace(/^@/, '')).filter((t) => t !== ''),
           sessions: next.sessions.split(',').map((x) => x.trim()).filter((x) => x !== ''),
           retry,
+          skip: next.skip,
           table: table === null ? null : table.node,
           concurrency: next.parallel ? 'parallel' : 'sequential',
           workload: decl.node.workload,

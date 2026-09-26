@@ -186,10 +186,12 @@ function Functional({ test, context }: { test: TestResult; context?: ReportConte
   const browser = test.steps.some((s) => BROWSER_KINDS.has(s.kind));
   const withheld = browser && context !== undefined && context.evidenceLevel !== undefined && context.evidenceLevel !== 'full';
   return (
-    <section className={`test ${test.ok ? 'ok' : 'fail'}`} data-test data-kind="functional" data-name={test.name} data-ok={test.ok}>
+    <section className={`test ${test.skipped !== undefined ? 'skip' : test.ok ? 'ok' : 'fail'}`} data-test data-kind="functional" data-name={test.name} data-ok={test.ok} data-skipped={test.skipped === undefined ? undefined : ''}>
       <h3>
-        <span className={`dot ${test.ok ? 'ok' : 'fail'}`} />
+        <span className={`dot ${test.skipped !== undefined ? 'skip' : test.ok ? 'ok' : 'fail'}`} />
         <span data-test-name>{test.name}</span>
+        {/* `D1327` — a skip is its own outcome here as in report.html: a grey dot, a badge, the reason. */}
+        {test.skipped !== undefined ? <span className="badge" data-skip-badge data-tip={`skipped: ${test.skipped}`}>skipped</span> : null}
         {test.flaky ? <span className="badge warn" data-flaky>flaky</span> : null}
         {test.concurrency === 'parallel' ? <span className="badge">parallel</span> : null}
         <span className="tms" data-ms>

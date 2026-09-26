@@ -78,6 +78,38 @@ checking that it answered *correctly*. And `{productId}` is used twice — once 
 once as an expected value — because a captured name is an ordinary value and not a special
 request-building thing.
 
+### Capturing part of a value
+
+When the value you want is inside a string — the id at the end of a `location` header, say — add
+`matching` and a regular expression. The first group is captured, or the whole match when the
+pattern has no group, and a pattern that finds nothing fails the step:
+
+```tflw
+test "a created order is found at the address the server gave"
+  api POST /orders body { productId: 1, qty: 2 }
+  expect status equals 201
+  capture header "location" matching "/orders/(\\d+)" as orderId
+  api GET /orders/{orderId}
+  expect status equals 200
+```
+
+### A GraphQL request
+
+`body graphql` sends a query as GraphQL-over-HTTP's POST body — `{"query", "variables",
+"operationName"}` as JSON — with `variables` and `operation` optional, in that order:
+
+```tflw
+test "an order is read back through the GraphQL endpoint"
+  let orderId = 7
+  api POST /graphql body graphql "query O($id: ID!) { order(id: $id) { id total } }" variables { id: {orderId} } operation "O"
+  expect status equals 200
+  expect body.data.order.id equals "7"
+```
+
+The query is sent exactly as written: its braces are GraphQL's selection sets, never tflw's
+`{name}`, so values go in `variables` — which is also GraphQL's own advice. A `body graphql` on a
+`GET` is `TF085`.
+
 ## What a failure looks like
 
 Say the API returns the unit price where the test expects a line total. Only the failing step
@@ -127,7 +159,8 @@ test "pay for an order" as admin
 ```
 
 `--tag <name>[,<name>...]` on `tflw run` filters to tests carrying any of the listed `@name`s
-(comma-separated OR; combines with `--only` as AND).
+(comma-separated OR; combines with `--only` as AND). A `!` excludes: `--tag !slow` runs everything
+not tagged `@slow`, and `--tag smoke,!slow` the smoke tests that are not slow.
 
 Secrets (`env(NAME)`) are redacted from every report automatically — see
 [CI, reporting & safety](/guide/ci-and-reporting). For what a run actually prints, `--verbose`,

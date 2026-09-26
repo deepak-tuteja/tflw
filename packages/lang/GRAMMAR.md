@@ -113,6 +113,7 @@ TestDecl    := TAG* DataTable? 'test' STRING TestModifier* NEWLINE Block
 TestModifier := 'as' IDENT (',' IDENT)*      # sessions this test opts into (§3.3)
               | 'retry' NUMBER               # §4.4
               | 'parallel' | 'sequential'    # D105-D107, §4.5
+              | 'skip' STRING                # M242/D1327 — reported skipped, runs nothing; blank is TF084
               # Order-independent, each at most once (A2-06). `test "x" retry 2 as admin` and
               # `test "x" as admin retry 2` are the same test. A repeat is an error rather than
               # last-one-wins — list several sessions in one `as` clause, comma-separated.
@@ -268,6 +269,8 @@ BodyForm        := 'body' JsonDoc                                # inline JSON (
                                                                     # is the form for one)
                  | 'body' 'from' STRING                          # file-backed JSON
                  | 'body' 'text' STRING                          # raw payload, any content-type
+                 | 'body' 'graphql' STRING                       # M242/D1328 — POSTed as JSON
+                    ('variables' Object)? ('operation' STRING)?   #   {query, variables, operationName}
                  | 'form' FormField (',' FormField)*              # application/x-www-form-urlencoded
                  | 'upload' STRING 'as' STRING ('type' STRING)?   # multipart file upload; `type`
                     ('form' FormField (',' FormField)*)?          # overrides extension-based MIME
@@ -341,6 +344,11 @@ MatcherCore := 'equals' Value
                                                                   #   `is` comes from `Matcher`, above
              | 'has' 'count' Value                                # (FS-07) any value, not just a
                                                                   #   NUMBER literal: `has count {n}`
+             | 'has' 'count' 'at' ('least' | 'most') Value        # (§6.2, M242/D1326) a bound on the
+                                                                  #   same count `has count` pins
+             | 'empty'                                            # (§6.2, M242/D1326) canonically
+                                                                  #   `is empty`/`is not empty`; a
+                                                                  #   string, list or object
              | 'has' 'value' Value                                # 🔮 UI subjects only
              | StateWord                                          # 🔮 UI subjects only; canonically
                                                                   #   `is visible`/`is not visible`
@@ -400,7 +408,7 @@ for one example per matcher.
 
 ```
 LetStmt     := 'let' IDENT '=' Value NEWLINE
-CaptureStmt := 'capture' Subject 'as' IDENT NEWLINE
+CaptureStmt := 'capture' Subject ('matching' STRING)? 'as' IDENT NEWLINE   # `matching`: M242/D1329
               # `request` parses here syntactically (it's the same Subject production) but is a
               # runtime error — it carries no value to capture (§6.2.2, `PLAN_ENTERPRISE.md` decision 18).
               # `request to "…"` and any `of request to "…"` clause parse here too (same Subject
@@ -420,7 +428,7 @@ LogLevel       := 'debug' | 'info' | 'warn' | 'error'              # default 'in
 LogDestination := 'console' | 'html' | 'both'                      # default: `tflw.config`'s
                                                                      # `log destination` key
 
-Value       := AddSub
+Value       := AddSub ('joined' 'with' AddSub)?                    # M242/D1329 — loosest; no chaining
 AddSub      := MulDiv (('+' | '-') MulDiv)*
 MulDiv      := Atom (('*' | '/') Atom)*
 Atom        := STRING | NUMBER | 'true' | 'false' | 'null'
@@ -433,6 +441,7 @@ Atom        := STRING | NUMBER | 'true' | 'false' | 'null'
              | 'base64' ('encode' | 'decode') '(' Value ')'
              | 'hex' ('encode' | 'decode') '(' Value ')'
              | 'url' ('encode' | 'decode') '(' Value ')'
+             | 'length' 'of' Atom                                 # M242/D1329 — what `.length` reads
              | UniqueExpr | RandomExpr
              | CallName '(' (Value (',' Value)*)? ')'             # action/JS-helper call (§8)
              | IDENT                                              # variable/capture reference

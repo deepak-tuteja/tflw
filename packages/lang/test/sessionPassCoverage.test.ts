@@ -150,6 +150,10 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     verdict: 'n/a',
     reason: 'M156b/D778. Walks a `Program`, so unreachable from a session for `checkDeclaredEnvRefs`\' reason exactly; `checkConfigBracedEnvRefs` is the half that sees a `session` body',
   },
+  checkSkipReasons: {
+    verdict: 'n/a',
+    reason: '`M242` `B` (`D1327`). Walks `program.tests` for the header clause `skip "reason"`, and a session has no header clauses and is never skipped: it is established when a test that opts into it runs, so a skipped test simply never establishes it',
+  },
   checkAuthorizedTargets: {
     verdict: 'n/a',
     reason:

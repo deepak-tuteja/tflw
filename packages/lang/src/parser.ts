@@ -136,6 +136,7 @@ import type {
   CrawlDecl,
   CrawlSeed,
   TextBody,
+  GraphqlBody,
   ThresholdDecl,
   ThresholdMetric,
   ThresholdOp,
@@ -143,6 +144,8 @@ import type {
   TimeoutDecl,
   TimeoutTarget,
   TransformExpr,
+  LengthExpr,
+  JoinExpr,
   UniqueEmailExpr,
   UniqueLikeExpr,
   UniqueNumberExpr,
@@ -455,14 +458,15 @@ const MATCHER_VOCABULARY = [...MATCHER_KEYWORDS, 'greater', 'less', ...STATE_WOR
 const MATCHER_VOCABULARY_HELP =
   `expected a value matcher (${MATCHER_KEYWORDS.join(', ')}), \`greater than\`/\`less than\`, or a state ` +
   `(${STATE_WORDS.join('/')}) — any of them optionally prefixed with \`${MATCHER_PREFIX_KEYWORDS.join('`/`')}\``;
-/** FU-09 — the two spellings that actually assert a collection's size, named wherever a user
- * reaches for one of the three that don't (`is not empty`, `has at least 1`,
- * `has count greater than 0`). Both work in both directions at runtime; the gap was never
- * capability, it was that no diagnostic pointed at either one. */
+/** FU-09, re-founded by `M242` `A` (`D1326`). FU-09 answered three first reaches (`is not empty`,
+ * `has at least 1`, `has count greater than 0`) with a teaching error, because the language had no
+ * bound on a count and no emptiness test. It has both now, so `is [not] empty` and `has count at
+ * least|at most N` parse, and what is left to refuse is the two spellings that are still not the
+ * language's — a `than` comparison after `has count`, and a bound with no `count` — each pointed at
+ * the form that works. */
 const COUNT_BOUND_HELP =
-  'write `not has count 0` for "at least one" (`has count 0` for the empty case), or put the ' +
-  'comparison on the length instead — `expect body.items.length is greater than 0`, which takes ' +
-  '`greater than`/`less than`/`equals` alike';
+  'a count takes `at least` or `at most` — `has count at least 1`, `has count at most 50` — and ' +
+  '`is empty` / `is not empty` says none or some';
 /**
  * The size comparisons a user writes after `has count`/`has value`, where the grammar wants a value.
  * `at` takes `least`/`most`; the rest take `than`. Rendered back as the whole phrase the user typed,
@@ -2876,8 +2880,17 @@ class Parser {
     let concurrency: 'parallel' | 'sequential' | null = null;
     let sawAs = false;
     let sawRetry = false;
+    let skip: StringLit | undefined;
     for (;;) {
       const tok = this.peek();
+      // `D1327`: `skip "reason"`, anywhere among the other header clauses, once.
+      if (this.isKw(tok, 'skip')) {
+        if (skip !== undefined) this.error(Codes.UNEXPECTED_TOKEN, 'this test is already skipped', tok.span, 'one `skip "reason"` says it — keep the reason you meant');
+        this.advance();
+        const reason = this.expectString('the reason as a string, e.g. `skip "the payments sandbox is down until the 3rd"`');
+        if (reason && skip === undefined) skip = reason;
+        continue;
+      }
       if (this.isKw(tok, 'as')) {
         const duplicate = sawAs;
         if (duplicate) {
@@ -2943,7 +2956,7 @@ class Parser {
     // same layering as D19's browser-step rejection (checker.ts's `checkWorkloadTests`), since
     // it's a semantic rule about the fully-formed node, not a grammar ambiguity.
     const { workload, thresholds, body } = this.parseTestBody('test', headerSpan);
-    return { type: 'TestDecl', name, tags, sessions, retry, table, workload, thresholds, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
+    return { type: 'TestDecl', name, tags, sessions, retry, ...(skip === undefined ? {} : { skip }), table, workload, thresholds, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
   }
 
   private tagsContinue(): boolean {
@@ -3578,6 +3591,38 @@ class Parser {
       const value = this.expectString('a raw payload string, e.g. `body text "plain payload"`');
       if (!value) return null;
       return { type: 'TextBody', value, span: this.spanFrom(start) };
+    }
+    // `D1328`: `body graphql "<query>" [variables {…}] [operation "<name>"]`, the two clauses in
+    // that order — one spelling, as every other clause order in the language is.
+    if (this.isKw(this.peek(), 'graphql')) {
+      this.advance();
+      const written = this.expectString('the GraphQL document as a string, e.g. `body graphql "query { orders { id } }"`');
+      if (!written) return null;
+      // **The query is raw text** (`D1328`, amended when it was built). A selection set is
+      // `{ id }`, which is exactly an interpolation's spelling, so an interpolated query would
+      // read every one-field selection as a variable. Values reach a GraphQL document through its
+      // `variables`, which is GraphQL's own rule too — so the query's braces are always GraphQL's.
+      const query: StringLit = { ...written, parts: [{ kind: 'text', value: written.value }] };
+      let variables: ObjectLit | null = null;
+      if (this.isKw(this.peek(), 'variables')) {
+        this.advance();
+        if (!this.startsObjectLiteral() && !this.check('lbrace')) {
+          this.error(Codes.UNEXPECTED_TOKEN, `expected an object after \`variables\`, found ${describeToken(this.peek())}`, this.peek().span, 'e.g. `variables { id: {orderId} }`');
+          return null;
+        }
+        const obj = this.parseObject();
+        if (!obj || obj.type !== 'ObjectLit') return null;
+        variables = obj;
+      }
+      let operation: StringLit | null = null;
+      if (this.isKw(this.peek(), 'operation')) {
+        this.advance();
+        const op = this.expectString('the operation name, e.g. `operation "GetOrder"`');
+        if (!op) return null;
+        operation = op;
+      }
+      const body: GraphqlBody = { type: 'GraphqlBody', query, variables, operation, span: this.spanFrom(start) };
+      return body;
     }
     const value = this.parseJsonDocument('the request body');
     if (!value) return null;
@@ -4333,6 +4378,14 @@ class Parser {
           // parser fell into rather than the thing the user got wrong. Caught here, where the
           // parser still knows the user was writing a *count* matcher and can name the two
           // spellings that work.
+          // `D1326`: `at least` / `at most` are the bounds a count takes. Checked before the
+          // refusal below, which now answers only the `than` family.
+          if (this.isKw(this.peek(), 'at') && (this.isKw(this.peek(1), 'least') || this.isKw(this.peek(1), 'most'))) {
+            this.advance();
+            const bound = this.advance().value;
+            const v = this.parseValue();
+            return v ? mk(bound === 'least' ? 'hasCountAtLeast' : 'hasCountAtMost', v) : null;
+          }
           const countBound = boundPhrase(this.peek(), this.peek(1));
           if (countBound) {
             this.error(Codes.UNKNOWN_MATCHER, `\`has count\` compares for equality — it cannot be followed by \`${countBound}\``, this.peek().span, COUNT_BOUND_HELP);
@@ -4394,13 +4447,12 @@ class Parser {
           this.advance();
           return mk(tok.value as MatcherName, null);
         }
-        // FU-09's first spelling, and the one a user is likeliest to try: `is not empty`. Answered
-        // before `suggest` for the same reason `negatedState` is — the vocabulary line below is
-        // true but useless here, because the answer isn't a near-miss on any matcher name, it's a
-        // different construction. Both directions are named, since `is empty` is the same reach.
+        // `is empty` / `is not empty` (`D1326`) — FU-09's first spelling, the one a user is likeliest
+        // to try, and a teaching error until `M242`. Dispatched here rather than as a state word
+        // because it reads a value, never a locator (`MATCHERS`' `is-empty` row says so).
         if (tok.value === 'empty') {
-          this.error(Codes.UNKNOWN_MATCHER, `unknown matcher \`empty\``, tok.span, `there is no \`empty\` matcher — ${COUNT_BOUND_HELP}`);
-          return null;
+          this.advance();
+          return mk('isEmpty', null);
         }
         // A3-02: answered *before* `suggest`, because for exactly these words edit distance gives a
         // confident, fluent and meaning-inverting answer. `invisible`/`unchecked`/`unhidden` are
@@ -4931,11 +4983,19 @@ class Parser {
       );
       return null;
     }
+    // `D1329`: `matching "<regex>"` narrows what is captured to the pattern's first group.
+    let pattern: StringLit | undefined;
+    if (this.isKw(this.peek(), 'matching')) {
+      this.advance();
+      const p = this.expectString('a regex string, e.g. `capture header "location" matching "/orders/(\\d+)" as id`');
+      if (!p) return null;
+      pattern = p;
+    }
     if (!this.expectKw('as')) return null;
     const name = this.expect('ident', 'a variable name after `as`');
     if (!name) return null;
     this.endLine();
-    const stmt: CaptureStmt = { type: 'CaptureStmt', subject, name: name.value, span: this.spanFrom(start) };
+    const stmt: CaptureStmt = { type: 'CaptureStmt', subject, name: name.value, ...(pattern === undefined ? {} : { pattern }), span: this.spanFrom(start) };
     return stmt;
   }
 
@@ -5000,7 +5060,19 @@ class Parser {
   // used to be all there was in M0/M1. No parens — the closed grammar has none (P#25).
 
   private parseValue(): Value | null {
-    return this.parseAddSub();
+    const left = this.parseAddSub();
+    if (!left) return null;
+    // `D1329`: `joined with` binds loosest of all, so its list and its separator are each a whole
+    // arithmetic expression — and it does not chain, because a joined string is not a list.
+    if (this.isKw(this.peek(), 'joined') && this.isKw(this.peek(1), 'with')) {
+      this.advance();
+      this.advance();
+      const separator = this.parseAddSub();
+      if (!separator) return null;
+      const expr: JoinExpr = { type: 'JoinExpr', list: left, separator, span: { start: left.span.start, end: separator.span.end } };
+      return expr;
+    }
+    return left;
   }
 
   /**
@@ -5147,6 +5219,17 @@ class Parser {
         if (tok.value === 'random') return this.parseRandomExpr();
         if (tok.value === 'format') return this.parseFormatExpr();
         if (tok.value === 'base64' || tok.value === 'hex' || tok.value === 'url') return this.parseTransformExpr(tok.value);
+        // `D1329`: `length of <atom>`. The operand is an atom, so `length of {a} + 1` is the length
+        // plus one — the reading every other language gives `len(a) + 1`.
+        if (tok.value === 'length' && this.isKw(this.peek(1), 'of')) {
+          const start = tok.span.start;
+          this.advance();
+          this.advance();
+          const value = this.parseAtom();
+          if (!value) return null;
+          const expr: LengthExpr = { type: 'LengthExpr', value, span: this.spanFrom(start) };
+          return expr;
+        }
         if (tok.value === 'today' || tok.value === 'now') {
           this.advance();
           const atom: DateAtom = { type: 'DateAtom', which: tok.value, span: tok.span };

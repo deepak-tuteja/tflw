@@ -74,6 +74,10 @@ const KEYWORDS = new Set([
   'test', 'action', 'before', 'after', 'session', 'import', 'use', 'api', 'expect', 'check', 'let', 'capture',
   'log', 'wait', 'until', 'give', 'require', 'env', 'default', 'defaults', 'workers', 'report', 'timeout', 'retry',
   'with', 'each', 'from', 'as', 'without', 'redirects', 'upload', 'form', 'header', 'body', 'type',
+  // `M242` `C` (`D1328`). Its two clause words are `DELIBERATELY_UNCOLOURED` — see there.
+  'graphql',
+  // `M242` `B` (`D1327`): the header clause, beside `retry`.
+  'skip',
   'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS',
   'open', 'click', 'double', 'right', 'fill', 'select', 'tick', 'untick', 'uncheck', 'press', 'hover', 'scroll', 'within',
   'accept', 'dismiss', 'switch', 'close', 'download', 'drag', 'drop', 'screenshot', 'stub',
@@ -200,6 +204,9 @@ const CONFIG_KEYWORDS = new Set([
  * shared with a11y and needed nothing. */
 const OPERATORS = new Set([
   'equals', 'contains', 'matches', 'subset', 'file', 'has', 'is', 'not', 'count', 'value', 'greater', 'less', 'than',
+  // `M242` `A` (`D1326`) — the count's two bounds and the emptiness test, which were in
+  // `REFUSED_ON_PURPOSE` below until they became matchers.
+  'at', 'least', 'most', 'empty',
   'visible', 'hidden', 'enabled', 'disabled', 'checked', 'any', 'all', 'connects', 'fails', 'matching',
   // M134a adds `input`/`handling` — the third scan's two words (`has no [<severity>] input handling
   // violations`, D366). Caught up **in the milestone that ships the grammar**, which is the whole
@@ -226,6 +233,9 @@ const PERCENTILE_RE = /^p([1-9][0-9]?)$/;
 const FUNCTIONS = new Set([
   'unique', 'random', 'like', 'of', 'number', 'decimal', 'date', 'in', 'past', 'future', 'between', 'and',
   'string', 'email', 'today', 'now', 'format', 'uuid', 'password', 'base64', 'hex', 'url', 'encode', 'decode',
+  // `M242` `D` (`D1329`): `joined with`'s first word. `with` is already painted; `length` is not, on purpose
+  // (`DELIBERATELY_UNCOLOURED`).
+  'joined',
 ]);
 
 /** Duration unit suffixes the lexer splits off a number — `parser.ts`'s `DURATION_UNITS`, and
@@ -294,6 +304,9 @@ export const COLOURED_VOCABULARY: ReadonlySet<string> = new Set<string>([
 export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
   ['max', "D442 — `max pages`/`max depth` are position-dependent, and `max` alone is an ordinary identifier"],
   ['pages', 'D442 — plausible as an identifier: `capture body.pages as pages` is ordinary tflw'],
+  ['variables', 'D1328 — `body graphql`\'s clause word, and an ordinary name for a captured value (`capture body.variables as variables`)'],
+  ['operation', 'D1328 — same: `capture body.operation as operation` is ordinary tflw'],
+  ['length', "D1329 — `length of x` is a value form, but `length` is also the commonest path segment in the language (`body.items.length`), and a flat set would paint every one of those"],
   ['depth', 'D442 — same, and this list cannot say "only after `max`"'],
   // M142 (`M136b-01`), the three of that row's four words that fail D427a's test. Their sibling
   // `honoring` is coloured; these are not, and the asymmetry is the row's answer rather than a
@@ -362,16 +375,11 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
 export const REFUSED_ON_PURPOSE: ReadonlyMap<string, string> = new Map([
   ['scenario', 'removed by M50/D93 — parser.ts:616 answers it with a D103 migration diagnostic'],
   ['tests', 'never a keyword: parser.ts:641 recognises it only to answer "did you mean `test`?"'],
-  ['empty', 'never a matcher: parser.ts:3471 answers `is not empty` with the construction that works'],
-  // `M142` commit 5. These five look like the comparison family and are not in it: `has at least 1`
-  // is an ERROR (`parser.ts:3441`), and the words exist only so that reaching for a size comparison
-  // gets `COUNT_BOUND_HELP` instead of a bare vocabulary line. Their two real siblings `greater` and
-  // `less` parse, and are coloured — the half of the family that works is painted and the half that
-  // does not is not, which is the distinction a flat wordlist could never have drawn.
-  ['at', 'never a matcher: `has at least 1` is an error — parser.ts:3441 recognises it to hint'],
-  ['least', 'never a matcher: same'],
-  ['most', 'never a matcher: same'],
-  ['more', 'never a matcher: same — `has more than 1` is an error, unlike `greater than`'],
+  // `M142` commit 5, narrowed by `M242` `A` (`D1326`): `at`/`least`/`most` became the bounds of
+  // `has count` and are coloured with the operators. These two still look like the comparison
+  // family and are not in it — `has more than 1` is an error that exists only so that reaching for
+  // a size comparison gets `COUNT_BOUND_HELP` instead of a bare vocabulary line.
+  ['more', 'never a matcher: `has more than 1` is an error, unlike `has count at least 2`'],
   ['fewer', 'never a matcher: same'],
 ]);
 

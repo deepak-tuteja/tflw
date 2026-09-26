@@ -67,9 +67,17 @@ async function rawUiMatch(pwLocator: PWLocator, matcher: Matcher, ctx: EvalCtx, 
       const expected = Number(evalValue(matcher.value!, ctx));
       return { ok: count === expected, phrase: 'to have count', expected: String(expected), gotOverride: String(count) };
     }
+    case 'hasCountAtLeast': {
+      const expected = Number(evalValue(matcher.value!, ctx));
+      return { ok: count >= expected, phrase: 'to have count at least', expected: String(expected), gotOverride: String(count) };
+    }
+    case 'hasCountAtMost': {
+      const expected = Number(evalValue(matcher.value!, ctx));
+      return { ok: count <= expected, phrase: 'to have count at most', expected: String(expected), gotOverride: String(count) };
+    }
     default:
       throw new RuntimeError(
-        `matcher \`${matcher.name}\` is not supported on a UI locator subject — only the state/value/count matchers (visible, hidden, enabled, disabled, checked, has value, has count) are valid here (https://deepak-tuteja.github.io/tflw/guide/browser-basics)`,
+        `matcher \`${matcher.name}\` is not supported on a UI locator subject — only the state/value/count matchers (visible, hidden, enabled, disabled, checked, has value, has count [at least|at most]) are valid here (https://deepak-tuteja.github.io/tflw/guide/browser-basics)`,
       );
   }
 }

@@ -533,7 +533,7 @@ export interface RequestEdit {
    * `without redirects` are, and the control that would change it is the one control this card
    * refuses to offer.
    */
-  readonly bodyKind: 'none' | 'json' | 'text' | 'file' | 'form' | 'upload';
+  readonly bodyKind: 'none' | 'json' | 'text' | 'file' | 'form' | 'upload' | 'graphql';
   readonly bodyText: string;
   readonly formFields: readonly { readonly name: string; readonly value: string }[];
   /**
@@ -585,6 +585,7 @@ export function editOf(r: OutlineRequest): RequestEdit {
       : body.type === 'FileBody' ? 'file'
       : body.type === 'FormBody' ? 'form'
       : body.type === 'UploadBody' ? 'upload'
+      : body.type === 'GraphqlBody' ? 'graphql'
       : 'none',
     bodyText:
       body === null ? '{ }'
@@ -616,7 +617,8 @@ export function specOf(edit: RequestEdit): ApiStepSpec {
       case 'file': return { kind: 'file', path: edit.bodyText };
       case 'form': return { kind: 'form', fields: edit.formFields.map((f) => ({ key: f.name, value: f.value })) };
       // The builder has no upload spec; the caller carries the original node across instead.
-      case 'upload': return null;
+      case 'upload':
+      case 'graphql': return null;
     }
   })();
   return {
@@ -653,6 +655,7 @@ const BAND_CLAUSES: readonly { key: string; label: string; title: string }[] = [
   { key: 'tags', label: 'tags', title: '`@name` — labels this test can be selected by' },
   { key: 'sessions', label: 'as', title: '`as “…”` — the session this test runs under' },
   { key: 'retry', label: 'retry / parallel', title: '`retry N` and `parallel` — how the runner treats this test’s cases' },
+  { key: 'skip', label: 'skip', title: '`skip "reason"` — the test is reported skipped, with this reason, and runs nothing' },
   { key: 'table', label: 'with each', title: '`with each` — run this test once per row of a table' },
   { key: 'workload', label: 'workload', title: '`ramp`/`hold`/`step`/`spike`/`run` — a shape of work over time' },
   { key: 'thresholds', label: 'thresholds', title: 'a bound the whole run is graded against, after it finishes' },
@@ -669,6 +672,9 @@ export const MATCHER_LABEL: Record<MatcherName, string> = {
   greaterThan: 'is greater than',
   lessThan: 'is less than',
   hasCount: 'has count',
+  hasCountAtLeast: 'has count at least',
+  hasCountAtMost: 'has count at most',
+  isEmpty: 'is empty',
   hasValue: 'has value',
   visible: 'is visible',
   hidden: 'is hidden',
@@ -688,7 +694,7 @@ export const MATCHERS = Object.entries(MATCHER_LABEL) as readonly (readonly [Mat
 /** The matchers that compare against a value. `fails` is here and its operand is optional — the
  *  one matcher in the language whose value may be present or absent (`SPEC` §6.2.2). */
 export const VALUE_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>([
-  'equals', 'contains', 'matches', 'matchesSubset', 'greaterThan', 'lessThan', 'hasCount', 'hasValue', 'fails',
+  'equals', 'contains', 'matches', 'matchesSubset', 'greaterThan', 'lessThan', 'hasCount', 'hasCountAtLeast', 'hasCountAtMost', 'hasValue', 'fails',
 ]);
 /** The four that grade a whole subject against a rule family, and take a severity floor. */
 export const SCAN_MATCHERS: ReadonlySet<MatcherName> = new Set<MatcherName>([
@@ -1005,6 +1011,8 @@ export interface HeaderEdit {
   readonly sessions: string;
   readonly retry: string;
   readonly parallel: boolean;
+  /** `skip "reason"`'s reason — blank is not skipped (`D1327`). */
+  readonly skip: string;
   /** A hook's whole header is these two words — `each` has no keyword, so `before` alone is the
    *  per-test one and `before file` the once-per-file one. */
   readonly when: HookDecl['when'];
@@ -1024,6 +1032,7 @@ export function headerEditOf(decl: OutlineHook | OutlineTest): HeaderEdit {
     sessions: (test?.sessions ?? []).join(', '),
     retry: String(test?.retry ?? 0),
     parallel: test?.node.concurrency === 'parallel',
+    skip: test?.node.skip?.value ?? '',
     when: decl.kind === 'hook' ? decl.when : 'before',
     scope: decl.kind === 'hook' ? decl.scope : 'each',
     tableKind: table === null ? 'none' : table.type === 'InlineDataTable' ? 'inline' : 'file',
@@ -2427,6 +2436,7 @@ export function TestBand({ decl, door, editing, lastRun }: {
       case 'tags': return test.tags.length > 0;
       case 'sessions': return test.sessions.length > 0;
       case 'retry': return test.retry !== 0 || v.parallel;
+      case 'skip': return test.node.skip !== undefined || v.skip !== '';
       case 'table': return test.table !== null;
       case 'workload': return test.workload !== null;
       case 'thresholds': return test.thresholds.length > 0;
@@ -2537,6 +2547,16 @@ export function TestBand({ decl, door, editing, lastRun }: {
               <span className="muted">anonymous</span>
             ) : (
               test.sessions.join(', ')
+            )}
+          </li>
+          ) : null}
+          {shows('skip') ? (
+          <li data-band-skip={test.node.skip === undefined ? 'no' : 'yes'}>
+            skip{' '}
+            {live ? (
+              <input value={v.skip} onChange={(e) => change({ skip: e.target.value })} data-band-skip-edit aria-label="skip reason" placeholder="why, and until when" />
+            ) : (
+              <span className="skip-reason">{test.node.skip?.value}</span>
             )}
           </li>
           ) : null}

@@ -145,4 +145,21 @@ test "transforms a value with base64/hex/url encoding"
 Pure transforms — unlike generators, these consume an existing value rather than manufacture a
 fresh one.
 
+Two more work on strings and lists:
+
+```tflw
+test "a list's length, and the list as one string"
+  api GET /orders
+  capture body.ids as ids
+  let count = length of {ids}
+  let csv = {ids} joined with ","
+  api GET /orders/summary?ids={csv}
+  expect body.count equals {count}
+```
+
+`length of` reads what `.length` reads, on a string or a list, and binds tighter than arithmetic —
+`length of {ids} + 1` is the length plus one. `joined with` turns a list of strings and numbers into
+one string and binds loosest of all. That is the whole of it: there is no `+` on strings, because
+interpolation already puts two together — `"{first}{last}"`.
+
 Full reference: [SPEC.md §7](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md#7-variables-data--expressions-p19-p2125-).

@@ -5741,3 +5741,42 @@ test('`tflw ui` on an empty directory serves a blank project, and refuses only a
     await rm(parent, { recursive: true, force: true });
   }
 });
+
+test('`M242` `F` (`D1331`): `tflw export otlp` sends a finished run to a collector as one trace', async () => {
+  // A real run in an empty directory, then the export against a local server standing in for a
+  // collector: what arrives is read, not what was meant to be sent. The negative control is the
+  // same export answered 503, which must exit 1 and say nothing was recorded.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-otlp-'));
+  const { createServer } = await import('node:http');
+  const bodies: { auth: string | undefined; doc: { resourceSpans: { scopeSpans: { spans: { name: string; parentSpanId?: string; spanId: string; attributes: { key: string }[] }[] }[] }[] } }[] = [];
+  let status = 200;
+  const server = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c: Buffer) => (raw += c.toString()));
+    req.on('end', () => {
+      bodies.push({ auth: req.headers['authorization'] as string | undefined, doc: JSON.parse(raw) });
+      res.writeHead(status).end('{}');
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const endpoint = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1/traces`;
+  try {
+    await execFileAsync('node', [cliEntry, 'init'], { cwd: dir });
+    await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    const { stdout } = await execFileAsync('node', [cliEntry, 'export', 'otlp', '--endpoint', endpoint, '--header', 'authorization=Bearer t'], { cwd: dir });
+    assert.match(stdout, /exported \d+ spans \(one trace\)/);
+    const spans = bodies[0]!.doc.resourceSpans[0]!.scopeSpans[0]!.spans;
+    assert.equal(bodies[0]!.auth, 'Bearer t');
+    const root = spans.filter((s) => s.parentSpanId === undefined);
+    assert.deepEqual(root.map((s) => s.name), ['tflw run'], 'one root, the run');
+    const ids = new Set(spans.map((s) => s.spanId));
+    assert.ok(spans.every((s) => s.parentSpanId === undefined || ids.has(s.parentSpanId)), 'every parent is in the trace');
+    assert.ok(spans.every((s) => s.attributes.some((a) => a.key === 'tflw.timing')), 'every span says its times are reconstructed');
+    status = 503;
+    await assert.rejects(execFileAsync('node', [cliEntry, 'export', 'otlp', '--endpoint', endpoint], { cwd: dir }), (e: { code: number; stderr: string }) => e.code === 1 && /answered 503/.test(e.stderr));
+  } finally {
+    server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+

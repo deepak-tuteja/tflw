@@ -160,6 +160,9 @@ export interface TestSpec {
   readonly retry?: number;
   readonly table?: DataTable | null;
   readonly concurrency?: TestDecl['concurrency'];
+  /** `skip "reason"` (`M242` `B`, `D1327`) — carried for `S5a`'s reason: a rebuild that dropped it
+   *  would un-skip a test whose name somebody edited. Absent or blank means not skipped. */
+  readonly skip?: string;
 }
 
 /** A whole `test`. `sessions` stopped being a hardcoded default in `A2-3`, and `retry`, `table` and
@@ -185,6 +188,7 @@ export function buildTest(spec: TestSpec): BuildResult<TestDecl> {
       tags: spec.tags,
       sessions: spec.sessions ?? [],
       retry: spec.retry ?? 0,
+      ...(spec.skip === undefined || spec.skip.trim() === '' ? {} : { skip: stringLit(spec.skip) }),
       table: spec.table ?? null,
       workload: spec.workload,
       thresholds: spec.thresholds,

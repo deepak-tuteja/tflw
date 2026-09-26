@@ -12995,7 +12995,8 @@ test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` 
     await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L3`);
     await fresh.locator('[data-expect-matcher]').first().waitFor();
     const onStatus = await options(3);
-    assert.equal(onStatus.total, 23, `the select filtered instead of disabling — ${onStatus.total} options against the language's 23 (\`D1076\`)`);
+    // 26 since `M242` `A` (`D1326`) added `has count at least`/`at most` and `is empty`.
+    assert.equal(onStatus.total, 26, `the select filtered instead of disabling — ${onStatus.total} options against the language's 26 (\`D1076\`)`);
     for (const m of ['hasNoA11yViolations', 'hasNoSecurityViolations', 'visible', 'wasMade']) {
       assert.ok(onStatus.refused.includes(m), `\`${m}\` is offered live on a \`status\` subject`);
     }
@@ -13012,7 +13013,7 @@ test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` 
     await fresh.goto(`${base}/?token=${TOKEN}#/api/compose/d.tflw/L4`);
     await fresh.locator('[data-expect-matcher]').first().waitFor();
     const onResponse = await options(4);
-    assert.equal(onResponse.total, 23);
+    assert.equal(onResponse.total, 26);
     assert.ok(!onResponse.refused.includes('hasNoSecurityViolations'), 'a security scan is refused on `response`, the only subject it takes');
     assert.ok(onResponse.refused.includes('equals'), '`equals` is live on `response`, which carries no value to compare');
 
@@ -13023,7 +13024,7 @@ test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` 
     await fresh.locator(`[data-assert-line="4"] [data-expect-subject]`).selectOption('value');
     await fresh.waitForTimeout(300);
     const onValue = await options(4);
-    assert.equal(onValue.total, 23);
+    assert.equal(onValue.total, 26);
     assert.deepEqual(onValue.refused, [], `\`{value}\` greys out ${JSON.stringify(onValue.refused)} — \`TF041\` owns that pairing (\`D1243\`)`);
   } finally {
     await fresh.close();

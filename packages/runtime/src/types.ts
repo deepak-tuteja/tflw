@@ -462,6 +462,10 @@ export interface TestResult {
   /** `true` when this test failed at least once before passing on a `retry` attempt — reported
    * as passed but flagged, never silently green (SPEC §4.4, P#10). */
   readonly flaky?: boolean;
+  /** `skip "reason"` (`M242` `B`, `D1327`): the test was not run, and this is why. A skipped test is
+   *  `ok` — a run whose only non-passes are skips passes — and carries no steps; every reporter reads
+   *  this field to show it as its own outcome rather than a pass. Absent on every test that ran. */
+  readonly skipped?: string;
   /** Every attempt actually run, in order, only present when more than one attempt ran. A
    * single-attempt test has no `attempts` field at all — same shape as before this field existed.
    * When present, `attempts[attempts.length - 1].steps === steps` (SPEC §4.4, PLAN decision 86). */
@@ -626,6 +630,9 @@ export interface RunReport {
   readonly total: number;
   readonly passed: number;
   readonly failed: number;
+  /** `D1327` — tests not run because they are `skip`ped; `total` is `passed + failed + skipped`.
+   *  Omitted when none were, so a report from a run with no skips keeps its earlier shape. */
+  readonly skipped?: number;
   readonly tests: readonly ReportEntry[];
   /** The `random`/`unique` run seed — reproduce this exact run with `tflw run --seed <n>` (P#23). */
   readonly seed: number;

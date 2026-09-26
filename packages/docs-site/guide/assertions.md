@@ -89,6 +89,8 @@ error rather than an empty string that would quietly satisfy `not contains`.
 api GET /products
 expect status equals 200
 expect body.items has count 3
+expect body.items has count at least 1
+expect body.errors is empty
 expect body.items[0].name contains "Widget"
 expect header "content-type" matches "application/json"
 expect body.items[0].price is greater than 0
@@ -99,7 +101,10 @@ expect body.items[0].price is greater than 0
 - `contains` reads substrings on a string and membership on an array.
 - `matches "<regex>"` is a regular expression against a string subject, unanchored — `matches
   "json"` is satisfied by `application/json; charset=utf-8`.
-- `has count` is the length of an array, a UI list, or a `body bytes` subject.
+- `has count` is the length of an array, a UI list, or a `body bytes` subject, and `has count at
+  least N` / `has count at most N` bound it.
+- `is empty` / `is not empty` read a string, an array or an object. `null` is neither — a missing
+  field is not an empty list — so ask it with `equals null`.
 - `is greater than` / `is less than` take numbers and durations.
 
 `not` negates every one of them, and `any`/`all` (below) quantify the ones that apply to an array

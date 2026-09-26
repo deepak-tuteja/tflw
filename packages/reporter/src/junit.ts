@@ -48,7 +48,10 @@ function countsOf(entries: readonly ReportEntry[], noVerdict: NoVerdictReason | 
   return {
     tests: entries.reduce((n, t) => n + testCaseCount(t), 0),
     failures: entries.reduce((n, t) => n + testCaseFailureCount(t, noVerdict), 0),
-    skipped: noVerdict !== null ? entries.filter((t) => t.kind === 'workload').reduce((n, t) => n + testCaseCount(t), 0) : 0,
+    skipped:
+      (noVerdict !== null ? entries.filter((t) => t.kind === 'workload').reduce((n, t) => n + testCaseCount(t), 0) : 0) +
+      // `D1327` — a `skip`ped test is one `<skipped>` testcase.
+      entries.filter((t) => t.kind === 'functional' && t.skipped !== undefined).length,
   };
 }
 
@@ -162,6 +165,7 @@ function renderEntry(entry: ReportEntry, file: string, report: RunReport, noVerd
 function renderTestCase(test: TestResult, file: string): string {
   const time = (test.durationMs / 1000).toFixed(3);
   const attrs = `name="${esc(test.name)}" classname="${esc(file)}" time="${time}"`;
+  if (test.skipped !== undefined) return `    <testcase ${attrs}>\n      <skipped message="${esc(test.skipped)}"/>\n    </testcase>`;
   if (test.ok) {
     if (!test.flaky) return `    <testcase ${attrs}/>`;
     const priorCount = test.attempts ? test.attempts.length - 1 : undefined;
