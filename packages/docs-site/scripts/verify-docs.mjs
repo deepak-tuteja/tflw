@@ -27,10 +27,10 @@ import { execFile } from 'node:child_process';
 import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, relative } from 'node:path';
+import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { census, findMarkdownFiles, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, INCLUDED_RECORDS, ROADMAP_PHRASES } from './doc-blocks.mjs';
+import { census, relKey, findMarkdownFiles, roadmapFiles, scanRoadmapClaims, scanConstructCoverage, scanPrivateNotation, DECLARED_ROADMAP, DECLARED_UNCHECKED, DECLARED_UNDOCUMENTED, INCLUDED_RECORDS, ROADMAP_PHRASES } from './doc-blocks.mjs';
 import { JSON_RULES as CITATION_RULES } from '../../../scripts/citation-rules.mjs';
 import { CLI_FLAGS } from '@tflw/lang';
 // The whole namespace, because the *page* decides which manifest it renders: `constructCorpus`
@@ -412,7 +412,7 @@ function checkFlagProse() {
  */
 function checkConstructCoverage() {
   if (process.env.TFLW_DOCS_ROOT !== undefined) return null;
-  const files = findMarkdownFiles(ROOT).map((path) => ({ key: relative(ROOT, path), text: readFileSync(path, 'utf8') }));
+  const files = findMarkdownFiles(ROOT).map((path) => ({ key: relKey(ROOT, path), text: readFileSync(path, 'utf8') }));
   const constructs = manifests.specConstructs();
   // `D538`'s class: a consumer that reads a manifest without pinning its shape is a gate that goes
   // quietly empty when the shape changes. The version is the pin; the count is not, and must not be.
@@ -453,7 +453,7 @@ function checkConstructCoverage() {
  * could not do.
  */
 function checkPrivateNotation() {
-  const files = findMarkdownFiles(ROOT).map((path) => ({ key: relative(ROOT, path), text: readFileSync(path, 'utf8') }));
+  const files = findMarkdownFiles(ROOT).map((path) => ({ key: relKey(ROOT, path), text: readFileSync(path, 'utf8') }));
   const { problems: found, scanned } = scanPrivateNotation(files);
   for (const p of found) fail(p.where, p.message, p.detail);
   return { scanned, pages: files.length };

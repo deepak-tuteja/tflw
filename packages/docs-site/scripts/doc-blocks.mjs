@@ -9,8 +9,16 @@
 // it — 31 of 89 blocks checked behind a line reading `31/31 … parse cleanly`. See PLAN_DOC_TRUTH.md.
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { JSON_RULES as CITATION_RULES } from '../../../scripts/citation-rules.mjs';
+
+/** `M243-16`: a repo-relative key with `/` on every OS. Every declaration this file compares a key
+ *  against (`DECLARED_ROADMAP`, the shim names) is written with `/`, and on Windows `relative`
+ *  answers with `\`, so an exemption keyed `packages/lang/GRAMMAR.md` matched nothing there. */
+export function relKey(from, to) {
+  return relative(from, to).split(sep).join('/');
+}
+
 
 /** Fence tags whose contents are `.tflw` source, keyed to how a sample is made checkable. */
 export const TFLW_LANGS = new Set(['tflw', 'tflw-config']);
@@ -123,7 +131,7 @@ export function census(root) {
   const out = [];
   for (const file of findMarkdownFiles(root)) {
     for (const block of extractBlocks(readFileSync(file, 'utf8'))) {
-      out.push({ ...block, ...classify(block), file: relative(root, file) });
+      out.push({ ...block, ...classify(block), file: relKey(root, file) });
     }
   }
   return out;
@@ -431,7 +439,7 @@ export function roadmapFiles(root, included = INCLUDED_RECORDS) {
   // updated exactly one of them, silently. The verdicts stay opposite; the *set* is now shared.
   for (const { include } of included.values()) {
     const path = join(root, include);
-    if (existsSync(path)) files.push({ key: relative(repo, path), path });
+    if (existsSync(path)) files.push({ key: relKey(repo, path), path });
   }
   // `README.md` is hand-added and stays that way, because it is a different case wearing the same
   // shape: it is unreachable because the site `srcExclude`s it, not because it is a stub. Nothing
