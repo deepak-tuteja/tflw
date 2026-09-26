@@ -2834,6 +2834,26 @@ test('`M240` `F` (`M239-08`): a run started outside the page is followed without
   }
 });
 
+test('`M240` `F` (`M239-10`): the door bar names which tflw this is, and links the docs in a new tab', async () => {
+  const view = (await (await api(`${baseUrl}/api/project`)).json()) as { version: { version: string; source: string } }; // one-shot: the build stamp is a constant of this process, read once as the oracle for the corner
+  assert.match(view.version.version, /^\d+\.\d+\.\d+/, `the wire carries no version: ${JSON.stringify(view.version)}`);
+  assert.equal(view.version.source, 'dev', 'this suite runs the source under tsx, and the stamp must say so rather than invent provenance');
+  await page.goto(`${pageUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-doorbar] [data-version]').waitFor();
+  const corner = page.locator('[data-doorbar] [data-version]');
+  assert.equal(await corner.getAttribute('data-version'), view.version.version);
+  assert.equal(((await corner.textContent()) ?? '').trim(), `tflw ${view.version.version}`);
+  assert.equal(await corner.getAttribute('href'), 'https://deepak-tuteja.github.io/tflw/');
+  assert.equal(await corner.getAttribute('target'), '_blank');
+  assert.equal(await corner.getAttribute('rel'), 'noreferrer', 'the docs link leaks the page’s address');
+  // On every door — it is the bar's, not a door's.
+  for (const door of ['browser', 'load', 'scan']) {
+    await page.goto(`${pageUrl}#/${door}`);
+    await page.locator(`[data-doorbar="${door}"] [data-version="${view.version.version}"]`).waitFor();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // `M224` — the LOAD door stops being a form and starts being a door (`D1205`–`D1214`).
 //

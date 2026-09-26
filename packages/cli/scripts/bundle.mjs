@@ -88,8 +88,10 @@ const builtAt = new Date(epoch ? Number(epoch) * 1000 : Date.now()).toISOString(
 // is re-printed and throws. Net: quieter for the three false positives, and strictly louder than
 // esbuild's own warning for a real one, which was only ever advisory.
 const IMPORT_META_ALLOWED = new Map([
-  // `getVersion()`'s fallback — unreachable in the bundle, `__TFLW_VERSION__` is a `define`.
-  ['src/cli.ts', 1],
+  // `getVersion()`'s fallback — unreachable in the bundle, `__TFLW_VERSION__` is a `define`. In
+  // `buildStamp.ts` since `M240` `F` (`M239-10`), where the stamp moved so the page's server can
+  // put it on the wire.
+  ['src/buildStamp.ts', 1],
   // `resolveWorkerEntryPath()` — prefers the real `__dirname`, reaching `import.meta.url` only under
   // real ESM. Reached through the runtime's compiled `dist` from the CLI entry and through its `src`
   // from the worker entry, so both spellings are the same guarded site.

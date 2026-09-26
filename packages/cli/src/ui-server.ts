@@ -43,6 +43,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, pageOpening, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
 import { parseBaseline, resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
+import { buildStamp, type BuildStamp } from './buildStamp.js';
 import { importersOf, planDelete, planMove, resolveSpecifier, type RefactorPlan } from './ui-refactor.js';
 
 export const UI_DEFAULT_PORT = 4141;
@@ -340,6 +341,12 @@ export interface ProjectAction {
 
 export interface ProjectView {
   readonly root: string;
+  /**
+   * **Which tflw this is** — `M240` `F` (`M239-10`). The same stamp `tflw spec` prints, so the
+   * page's corner, a report and a bug filed against a docs page all name one build. Additive: the
+   * sibling's `verify-ui.mjs` reads this route and ignores fields it does not know.
+   */
+  readonly version: BuildStamp;
   readonly envs: readonly { name: string; isDefault: boolean }[];
   readonly reportDir: string;
   /** `resolved.helpers` (`D1279`) — the directories a `use` may load from, so the page's checker
@@ -716,6 +723,11 @@ export function initArgv(door: Lens): string[] {
 }
 
 /** The project as the page sees it: config envs, the discovered files, the tests in each. */
+/** The build stamp, read once per process: under a bundle it is constants, under `tsx` one read of
+ *  `package.json`, and a project read should not pay it again. */
+let stampOnce: Promise<BuildStamp> | null = null;
+const stamp = (): Promise<BuildStamp> => (stampOnce ??= buildStamp());
+
 export async function readProject(root: string, envName?: string | null): Promise<ProjectView> {
   const configText = await readFile(join(root, CONFIG_PATH), 'utf8');
   const parsed = parseConfigSource(configText);
@@ -814,7 +826,7 @@ export async function readProject(root: string, envName?: string | null): Promis
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
     sessions: sessionViews(parsed.config, resolved),
   };
-  return { root, envs, reportDir: resolved.reportDir, helpers: resolved.helpers, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: isIgnored(root, SCRATCH_PATH), playScratch: PLAY_SCRATCH, playIgnored: isIgnored(root, PLAY_SCRATCH), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
+  return { root, version: await stamp(), envs, reportDir: resolved.reportDir, helpers: resolved.helpers, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: isIgnored(root, SCRATCH_PATH), playScratch: PLAY_SCRATCH, playIgnored: isIgnored(root, PLAY_SCRATCH), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
 }
 
 /**

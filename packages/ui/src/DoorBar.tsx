@@ -60,6 +60,21 @@ export function DoorBar({ project, door, onDoor, themePick }: DoorBarProps) {
           </span>
         </button>
       ))}
+      {/* **Which tflw this is, and where the docs are** — `M240` `F` (`M239-10`). The spare corner
+          held nothing; a stranger comparing this page to a docs page had no way to know which
+          tflw they were on (review U16). The version is the wire's (`ProjectView.version`, the same
+          stamp `tflw spec` prints), and the link is the docs site. `rel="noreferrer"` is belt and
+          braces beside the page's own `Referrer-Policy` (`D1277`). */}
+      <a
+        className="doorbar-version muted"
+        href="https://deepak-tuteja.github.io/tflw/"
+        target="_blank"
+        rel="noreferrer"
+        data-version={project.version.version}
+        data-tip={`tflw ${project.version.version}${project.version.commit ? ` · ${project.version.commit.slice(0, 7)}${project.version.dirty ? ' (uncommitted changes)' : ''}` : ''}${project.version.builtAt ? ` · built ${project.version.builtAt}` : ' · a dev build'} — the docs site opens in a new tab`}
+      >
+        tflw {project.version.version}
+      </a>
       {themePick}
     </nav>
   );
