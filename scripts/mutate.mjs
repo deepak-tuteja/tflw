@@ -3638,6 +3638,7 @@ const REGISTRY = [
        painted the head's roles (the keyword as a keyword, the name as the string the file writes),
        `M219` `A` deleted the pane that held the copy this quoted, and `M228` `C` (`D1238`) gave
        the non-test arm a third case, because a `crawl` is a declaration this head can now name.
+       `M241` `B` (`D1322`) re-quoted it a fourth time: an action is named on the head too.
        The claim is untouched each time — what the head says is still *which declaration you are
        looking at*, and the mutation still replaces it with the file. */
     find:
@@ -3647,7 +3648,7 @@ const REGISTRY = [
       '                    <span className="t-kw">test</span> <span className="t-str">&quot;{at.decl.name}&quot;</span>\n' +
       '                  </>\n' +
       '                ) : (\n' +
-      '                  <span className="t-kw">{at.decl.kind === \'crawl\' ? \'crawl\' : at.decl.label}</span>\n' +
+      '                  <span className="t-kw">{at.decl.kind === \'crawl\' || at.decl.kind === \'action\' ? `${at.decl.kind} ${at.decl.name}` : at.decl.label}</span>\n' +
       '                )}\n' +
       '              </code>',
     replace: '              <code data-compose-subject-what>{path}</code>',
