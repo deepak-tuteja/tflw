@@ -434,28 +434,9 @@ export function VerdictMark({ verdict }: { readonly verdict: Verdict | null }) {
   );
 }
 
-/**
- * How long ago a report was produced, in the shortest true form — `M213` `S2`.
- *
- * **`now` is a parameter and the caller passes `Date.now()` at render**, so the string ages only
- * when something else re-renders the card. That is deliberate rather than overlooked: a ticking
- * clock in a pane would repaint every request once a second for a figure whose whole job is to be
- * read at a glance, and the absolute time is in the `title` for anyone who needs it exactly.
- *
- * A date is what `D956` is about: *a claim carries the evidence it rests on*, and the evidence
- * here is a run that happened at a particular moment. An absolute clock time would make a reader
- * do the subtraction, and the subtraction is the whole question — *is this about the code in front
- * of me?* So the relative form leads, and the absolute one stays in the `title`.
- */
-export function ago(iso: string, now: number): string {
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return 'at an unrecorded time';
-  const seconds = Math.max(0, Math.round((now - then) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
-  return `${Math.round(seconds / 86400)}d ago`;
-}
+/** `ago` lives in `format.ts` since `M240` `F` (`M239-05`); re-exported so its callers here keep
+ *  one import. */
+export { ago } from './format';
 
 /** A statement's address as one string, for keying the row being typed into. `null` for a row no
  *  index pair can name. */

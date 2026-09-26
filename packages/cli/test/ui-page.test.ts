@@ -2701,7 +2701,7 @@ test('`M240` `F` (`M239-05`): a run chip is relative, its tip is the absolute fo
   assert.match(tip, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{2}:\d{2}$/, `the tip is ${tip}`);
   // No named inner function inside the callback: `tsx` wraps one in a `__name` helper that does
   // not exist in the page, and the evaluate dies with `__name is not defined`.
-  const spelled = (s: string): Promise<string> => page.locator('html').evaluate((_el, iso) => {
+  const spelled = (s: string): Promise<string> => page.locator('html').evaluate((_el, iso) => { // one-shot: a computation over an ISO string in the browser's zone — nothing on the page is read
     const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZoneName: 'longOffset' }).formatToParts(new Date(iso)).map((x) => [x.type, x.value])) as Record<string, string>;
     return `${p['year']}-${p['month']}-${p['day']} ${p['hour']}:${p['minute']}:${p['second']} ${(p['timeZoneName'] ?? '').replace(/^GMT/, '') || '+00:00'}`;
   }, s);
