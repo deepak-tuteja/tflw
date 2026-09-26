@@ -60,6 +60,8 @@ const GUIDE_SIDEBAR = [
       { text: 'Actions, imports & the JS/TS escape hatch', link: '/guide/actions' },
       { text: 'Browser testing: interacting with a UI', link: '/guide/browser-basics' },
       { text: 'Browser testing: advanced scenarios', link: '/guide/browser-advanced' },
+      // `M242` `G` (`D1332`) — what to write instead of an `if`.
+      { text: 'Patterns: what to write instead of an `if`', link: '/guide/patterns' },
     ],
   },
   {
