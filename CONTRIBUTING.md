@@ -81,6 +81,8 @@ npm run verify:settled-reads:oracle
 npm run verify:settled-reads:self-test
 npm run verify:zero-match
 npm run verify:zero-match:self-test
+npm run verify:no-internal-refs
+npm run verify:no-internal-refs:self-test
 npm run refresh:own-identifiers -- --check   # § needs the records
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI

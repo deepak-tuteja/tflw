@@ -43,6 +43,8 @@
     "verify:anchors": "node scripts/verify-anchors.mjs",
     "verify:zero-match": "node scripts/verify-zero-match.mjs",
     "verify:zero-match:self-test": "node scripts/verify-zero-match.mjs --self-test",
+    "verify:no-internal-refs": "node scripts/verify-no-internal-refs.mjs",
+    "verify:no-internal-refs:self-test": "node scripts/verify-no-internal-refs.mjs --self-test",
     "verify:sibling-pin": "node scripts/verify-sibling-pin.mjs",
     "verify:sibling-pin:self-test": "node scripts/verify-sibling-pin.mjs --self-test",
     "verify:own-identifiers": "node scripts/verify-own-identifiers.mjs",

@@ -413,7 +413,7 @@ function Plus({ onGo, after }: {
       className="seq-plus"
       onClick={onGo}
       data-seq-plus={after}
-      data-tip={`a new request after ${after} — below everything that reads its response, so nothing here changes what it asserts about`}
+      data-tip={`a new request after ${after}, below everything that reads its response`}
       aria-label={`add a request after ${after}`}
     >
       +
@@ -828,7 +828,7 @@ const planWorkloadOf = (at: Addressed | null): Workload | null =>
 const unaddressableWhy = (nested: boolean): string =>
   nested
     ? 'inside the block above — an index pair names a step of a body, and this is not one'
-    : 'part of a `crawl` — drawn here, edited in the file (`D1238`)';
+    : 'part of a `crawl` — drawn here, edited in the file';
 
 const LOWER_MIN = 112;
 /**
@@ -2103,8 +2103,8 @@ function SendButtons(props: {
             data-compose-send={form}
             data-tip={
               form === 'this'
-                ? 'issues this request and the ones above it that feed it, and shows what came back — nothing is graded and nothing is kept. The assertions under it are read by run, next door.'
-                : 'issues every request in this test once, in order — one iteration, which is what a single virtual user does. Nothing is graded and nothing is kept, and the workload and the thresholds are dropped: ▶ next door is the run.'
+                ? 'sends this request and those that feed it, and shows the response — nothing is graded'
+                : 'sends every request once, in order, as one virtual user would — nothing is graded'
             }
           >
             {sending ? 'sending…' : compact ? `${name} · ${n}` : `${name} — ${n} request${n === 1 ? '' : 's'}`}

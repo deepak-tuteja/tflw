@@ -15,6 +15,7 @@ import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, ha
 import { Landing } from './Landing';
 import { EmptyDoor } from './EmptyDoor';
 import { Legend } from './Legend';
+import { LEGEND_PANELS } from './legendPanels';
 import { shortcutFor } from './shortcuts';
 import { landingFor, projectHash, rememberLanding, rememberedLanding } from './landingRule';
 import { Grip, SIDEBAR, storedSize } from './Grip';
@@ -1237,7 +1238,7 @@ export function App() {
           <ReportHeader report={report.data} />
           {exitNote && exitNote.id === report.id ? (
             <div className="warn run-exit" data-run-exit={exitNote.run.exitCode ?? ''} data-run-status={exitNote.run.status}>
-              ⚠ the run behind this directory {exitNote.run.status === 'cancelled' ? 'was cancelled from this page' : 'ended'} with{' '}
+              ⚠ the run that wrote this report {exitNote.run.status === 'cancelled' ? 'was cancelled from this page' : 'ended'} with{' '}
               {exitNote.run.exitCode !== null ? `exit ${exitNote.run.exitCode}` : `signal ${exitNote.run.signal}`} — the report is what it had written by then, and its verdict does not say so.
               {exitNote.stderr ? (
                 <pre className="stderr" data-run-stderr>
@@ -1342,7 +1343,7 @@ export function App() {
           menuFor={menuFor} onMenu={setMenu} /> : <div className="sidebar muted">{error ?? 'reading the project…'}</div>}
       <Grip spec={SIDEBAR} size={sidebarWidth} onSize={setSidebarWidth} />
       </aside>
-      <Legend open={legendOpen} onClose={closeLegend} />
+      <Legend open={legendOpen} onClose={closeLegend} entries={LEGEND_PANELS} />
       {/* Moving and deleting, both through the server's own plan (`M218` `D`/`E`, `D1150`). */}
       {fileAction === null ? null : (
         <FileAction

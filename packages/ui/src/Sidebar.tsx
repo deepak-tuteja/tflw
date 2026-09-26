@@ -469,7 +469,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
               className={`count${state === 'none' ? ' muted' : ''}`}
               data-door-count={behind}
               data-door-count-state={state}
-              data-tip={state === 'fragment' ? 'declares no test — a fragment other files resolve against' : `${behind} behind ${DOOR_BY_ID[door].label}`}
+              data-tip={state === 'fragment' ? 'declares no test — a fragment other files resolve against' : `${behind} test${behind === 1 ? '' : 's'} at the ${DOOR_BY_ID[door].label} door`}
             >
               {state === 'fragment' ? '—' : behind}
             </span>
@@ -535,8 +535,8 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           {project.root.split('/').filter(Boolean).pop() ?? project.root}
         </h1>
         <div className="muted" data-project-counts>
-          {project.files.length} file{project.files.length === 1 ? '' : 's'} · {testCount} behind {DOOR_BY_ID[door].label}
-          {otherCount > 0 ? <span data-project-elsewhere={otherCount}> · {otherCount} behind another door</span> : null}
+          {project.files.length} file{project.files.length === 1 ? '' : 's'} · {testCount} test{testCount === 1 ? '' : 's'} here
+          {otherCount > 0 ? <span data-project-elsewhere={otherCount}> · {otherCount} at another door</span> : null}
         </div>
       </div>
 
@@ -551,8 +551,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           aria-label="search this project"
           list="tflw-tags"
           data-search
-          data-tip="narrows the project — and narrows the run button with it. A bare word lights up the FILES whose path or test name contains it and runs them whole; `@tag` runs the TESTS carrying that tag, wherever they live (`D1064`)."
-
+          data-tip="a name narrows the run to whole files; @tag to the tests carrying the tag"
         />
         <datalist id="tflw-tags">
           {allTags.map((t) => (

@@ -229,7 +229,7 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
         aria-label={doc === null ? 'tflw.config' : 'the accepted-findings document'}
         data-tip={
           doc === null
-            ? 'tflw.config — the declaration-only dialect; `tflw check` reads it the same way this page does'
+            ? 'tflw.config — declarations only, read by `tflw check` as this page reads it'
             : 'the accepted-findings document — the match is on `fingerprint` alone, and `rule`/`endpoint` are there for you'
         }
       />
@@ -253,7 +253,7 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
           onClick={onSave}
           disabled={busy || !unsaved || errors.length > 0}
           data-api-config-save
-          data-tip={`write ${current?.label ?? 'tflw.config'} back, under the version this page read — every file in this project resolves its bases, envs and timeouts against it, and the page re-reads it the moment this lands`}
+          data-tip={`write ${current?.label ?? 'tflw.config'} back, under the version this page read`}
         >
           save
         </button>

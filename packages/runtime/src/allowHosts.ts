@@ -96,7 +96,7 @@ export function absoluteUrlNeedsAllowHosts(url: string): string {
     `this step names an absolute URL ("${url}"), and the config declares no \`allow hosts\` — refusing to send it. ` +
     `An absolute URL can reach a host \`tflw.config\` never mentions, so writing one opts the suite into saying where it may reach: ` +
     `add \`allow hosts "${hostname}"\` to the env (or to \`defaults\`). ` +
-    `If this host is where the suite normally talks, giving it an \`api\` base URL and writing a path is the other way round (SPEC §3.1, §3.7).`
+    `If this host is where the suite normally talks, giving it an \`api\` base URL and writing a path is the other way round (https://deepak-tuteja.github.io/tflw/guide/config).`
   );
 }
 

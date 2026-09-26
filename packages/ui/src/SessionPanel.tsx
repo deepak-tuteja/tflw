@@ -76,7 +76,7 @@ export function SessionPanel({ session, onKeep, onKeepAll, onPlay, playing, onDr
   if (session === null) {
     return (
       <div className="response-none session-none" data-session="none">
-        <button className="run" onClick={() => onStart?.()} disabled={!canStart || onStart === null} data-session-start data-tip="open the page and use it — every action becomes a line here, and the ones you keep become steps">
+        <button className="run" onClick={() => onStart?.()} disabled={!canStart || onStart === null} data-session-start data-tip="open the page and use it — each action becomes a line, and those you keep, steps">
           record a session
         </button>
         <p className="muted" data-session-why>

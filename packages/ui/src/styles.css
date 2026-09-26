@@ -581,6 +581,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .door-blurb { font-size: 13px; }
 .door-count { font-size: 12px; margin-top: 4px; }
 .landing-foot { margin-top: 24px; font-size: 12px; }
+.landing-door-def { margin: 12px 0 0; font-size: 12px; }
 
 .doorbar { display: flex; align-items: center; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
 .doorbar-home {

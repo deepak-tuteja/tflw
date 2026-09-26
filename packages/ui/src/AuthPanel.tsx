@@ -85,9 +85,10 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
     <div className="authoring auth-panel" data-api-auth={file ? file.path : ''}>
       <header className="authoring-head">
         <h2>who this file runs as</h2>
+        {/* `M240` `D` (`D1293`) — the fact, not the tour: which env, and where it is edited. How to
+            switch env is the legend's (`?`), with its docs link. */}
         <p className="muted">
-          The project facts <code>{path || 'this file'}</code> resolves against, in env <code>{envName}</code> — read here, edited in{' '}
-          <em>Config</em>. Switch env with <code>--env</code> or <code>TFLW_ENV</code> and this page answers for that one.
+          env <code>{envName}</code> · edited in <em>Config</em>
         </p>
       </header>
 
@@ -144,8 +145,8 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
         {door === 'browser' && pageSteps > 0 ? (
           <p className="muted" data-auth-no-bridge>
             <strong>A session does not log the browser in.</strong> Its cached state is never applied to the test's fresh browser
-            context — a cookie jar and a browser context's storage state are two representations <code>D10</code> deliberately never
-            bridges (SPEC §3.3). Whatever this file runs <em>as</em> below is a fact about its api steps only.
+            context — a cookie jar and a browser context's storage state are two representations tflw deliberately never
+            bridges. Whatever this file runs <em>as</em> below is a fact about its api steps only.
             {mixed.length === 0 ? null : (
               <>
                 {' '}
@@ -170,11 +171,10 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
           <p className="muted" data-auth-load-caveat>
             <strong>Many users, one identity.</strong> A named session is established once, before the VUs are scheduled, so{' '}
             <code>across 50 users as admin</code> is fifty virtual users sharing a single login. Each iteration re-reads it fresh
-            from the shared cache (<code>D44</code>), so a mid-run refresh reaches every VU and racing VUs dedupe to at most one
-            real re-login (<code>M37</code>/<code>D45</code>).{' '}
+            from the shared cache, so a mid-run refresh reaches every VU and racing VUs dedupe to at most one
+            real re-login.{' '}
             <strong>A re-login's own requests are absent from this run's numbers.</strong> The decision to re-establish is in the
-            report and the requests it sent are not — their latencies are missing and their endpoints have no bucket
-            (<code>M146a</code>) — so a <code>threshold p95 duration</code> here is computed over a set that excludes them.
+            report and the requests it sent are not — their latencies are missing and their endpoints have no bucket — so a <code>threshold p95 duration</code> here is computed over a set that excludes them.
           </p>
         ) : null}
 
@@ -186,11 +186,10 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
             literally what this block is for. Both sets are named. */}
         {door === 'scan' ? (
           <p className="muted" data-auth-scan-caveat data-auth-probe-set={probeSet.length} data-auth-probe-excluded={excluded.length}>
-            <strong>Here the identity in force is not one — it is all of them.</strong>{' '}
-            <code>has no authorization violations</code> replays each request as every principal in the probe set:{' '}
+            <strong>Every request is replayed as each of:</strong>{' '}
             {probeSet.map((n) => <code key={n}>{n}</code>).reduce<ReactNode[]>((acc, el, i) => (i === 0 ? [el] : [...acc, ', ', el]), [])}.
             {excluded.length === 0 ? (
-              <> No session here is <code>privileged</code>, so the probe set is every session this env declares.</>
+              null
             ) : (
               <>
                 {' '}
@@ -199,7 +198,7 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
                 </strong>
                 : {excluded.map((n) => <code key={n}>{n}</code>).reduce<ReactNode[]>((acc, el, i) => (i === 0 ? [el] : [...acc, ', ', el]), [])} —{' '}
                 <code>privileged</code> means this principal is <em>supposed</em> to reach other principals' resources, so reporting
-                the access it is entitled to would be a false finding (<code>D307</code>/<code>D310</code>). The consequence is the
+                the access it is entitled to would be a false finding. The consequence is the
                 one worth reading here: <strong>a green result says nothing about what those principals could reach.</strong>
               </>
             )}
@@ -235,12 +234,8 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
         <h3>
           <code>{RESERVED_PRINCIPAL}</code> — the principal nobody declares
         </h3>
-        <p className="muted">
-          Built in, and reserved: <code>tflw check</code> refuses a session by this name, because one would either shadow it or be
-          shadowed by it in silence. It is the identity a test with no <code>as</code> clause runs as, and the one every{' '}
-          <code>has no authorization violations</code> assertion probes with — which is how that assertion tests authorization
-          rather than authentication.
-        </p>
+        {/* `M240` `D` (`D1293`) — why `anonymous` is reserved, and what probes with it, is the
+            legend's Auth entry now: a paragraph every file drew, whatever the file. */}
         <p className="muted" data-auth-anonymous-tests>
           {file === null
             ? 'no file open'

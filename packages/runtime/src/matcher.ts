@@ -99,7 +99,7 @@ function rawMatch(actual: unknown, matcher: Matcher, ctx: EvalCtx): RawMatch {
     }
     case 'connects':
     case 'fails':
-      throw new RuntimeError(`matcher \`${matcher.name}\` is only valid on a \`request\` subject (\`expect request ${matcher.name}\`, SPEC §6.2.2)`);
+      throw new RuntimeError(`matcher \`${matcher.name}\` is only valid on a \`request\` subject (\`expect request ${matcher.name}\`, https://deepak-tuteja.github.io/tflw/guide/assertions)`);
     default:
       throw new RuntimeError(`matcher \`${matcher.name}\` is not supported on an API subject (it is UI-only, added in M3)`);
   }

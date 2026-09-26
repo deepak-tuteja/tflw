@@ -69,7 +69,7 @@ async function rawUiMatch(pwLocator: PWLocator, matcher: Matcher, ctx: EvalCtx, 
     }
     default:
       throw new RuntimeError(
-        `matcher \`${matcher.name}\` is not supported on a UI locator subject — only the state/value/count matchers (visible, hidden, enabled, disabled, checked, has value, has count) are valid here (SPEC §9.4)`,
+        `matcher \`${matcher.name}\` is not supported on a UI locator subject — only the state/value/count matchers (visible, hidden, enabled, disabled, checked, has value, has count) are valid here (https://deepak-tuteja.github.io/tflw/guide/browser-basics)`,
       );
   }
 }

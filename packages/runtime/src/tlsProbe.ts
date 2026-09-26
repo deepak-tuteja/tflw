@@ -234,7 +234,7 @@ export class TlsProber {
         ok: false,
         reason:
           `no \`authorized target\` covers ${parsed.origin} — refusing to open the TLS probe connection. ` +
-          `The run ended up here (a redirect, or a base URL that resolves differently than it reads), and the probe is a second connection tflw makes on its own initiative, so it needs its own affirmation: add \`authorized target "${parsed.origin}" reason "…"\` (SPEC §3.10, D291)`,
+          `The run ended up here (a redirect, or a base URL that resolves differently than it reads), and the probe is a second connection tflw makes on its own initiative, so it needs its own affirmation: add \`authorized target "${parsed.origin}" reason "…"\` (https://deepak-tuteja.github.io/tflw/guide/security-scanning)`,
       };
     }
 

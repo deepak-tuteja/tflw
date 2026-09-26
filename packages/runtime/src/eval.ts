@@ -574,7 +574,7 @@ function uniqueLike(pattern: string, counter: number, namespace: number): string
     throw new RuntimeError(
       `unique like ${JSON.stringify(pattern)} can encode at most ${capacity} distinct value${capacity === 1n ? '' : 's'}, ` +
         `and this run's \`unique\` counter has already reached ${counter} (it is shared with every other \`unique\` ` +
-        `generator, SPEC §7.5). Widen the pattern, or use \`random like\` if collisions are acceptable.`,
+        `generator, https://deepak-tuteja.github.io/tflw/guide/variables). Widen the pattern, or use \`random like\` if collisions are acceptable.`,
     );
   }
   let code = permuteIndex(BigInt(counter), capacity, pattern, namespace);
@@ -697,9 +697,9 @@ function uniqueNumber(counter: number, namespace: number): number {
   if (counter >= UNIQUE_NUMBER_CAPACITY) {
     throw new RuntimeError(
       `unique number can encode at most ${UNIQUE_NUMBER_CAPACITY} distinct values in one run (the other ` +
-        `${RUN_NAMESPACE_BITS} bits of a safe integer carry the run namespace, SPEC §7.2), and this run's ` +
+        `${RUN_NAMESPACE_BITS} bits of a safe integer carry the run namespace, https://deepak-tuteja.github.io/tflw/guide/variables), and this run's ` +
         `\`unique\` counter has already reached ${counter} (it is shared with every other \`unique\` generator, ` +
-        `SPEC §7.5). Use \`unique("prefix")\` or \`unique uuid\`, which have no such ceiling.`,
+        `https://deepak-tuteja.github.io/tflw/guide/variables). Use \`unique("prefix")\` or \`unique uuid\`, which have no such ceiling.`,
     );
   }
   return namespace * UNIQUE_NUMBER_CAPACITY + counter;

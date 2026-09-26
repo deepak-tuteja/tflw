@@ -356,7 +356,7 @@ test('D436: every row of the reachability table, including the two the fixture c
   }
   for (const [status, expected] of [
     [401, /refused \(401\) before the route's code ran/],
-    [403, /`M130-01`/],
+    [403, /never exercised/],
     [400, /indistinguishable from a hardened endpoint/],
     [422, /nothing behind the validator ran/],
     [404, /the value tflw invented for a path parameter does not exist/],

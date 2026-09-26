@@ -37,7 +37,7 @@ async function loadAxeSource(): Promise<string> {
             : fileURLToPath(import.meta.resolve('axe-core/axe.min.js'));
       } catch (err) {
         throw new RuntimeError(
-          `this test uses \`expect page has no … a11y violations\`, but the optional \`axe-core\` peer dependency isn't installed. Run \`npm install -D axe-core\` (SPEC §9.8). (${(err as Error).message})`,
+          `this test uses \`expect page has no … a11y violations\`, but the optional \`axe-core\` peer dependency isn't installed. Run \`npm install -D axe-core\` (https://deepak-tuteja.github.io/tflw/guide/browser-advanced). (${(err as Error).message})`,
         );
       }
       return readFile(path, 'utf8');

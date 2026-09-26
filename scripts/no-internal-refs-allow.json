@@ -1,0 +1,5 @@
+{
+  "allow": [
+    { "file": "packages/ui/src/Wordmark.tsx", "match": "^M\\d", "reason": "SVG path data — `M20,25.9` is a moveto, not a milestone" }
+  ]
+}

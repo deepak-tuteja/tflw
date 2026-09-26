@@ -3,7 +3,7 @@
 // mutated request look like*. No I/O, no clock, no network. `inputProbe.ts` sends; `inputRules.ts`
 // judges; this file only knows what a payload is and where one can go.
 //
-// ## Fixed and enumerable, and "fuzzing" is retired for it (D368)
+// ## Fixed and enumerable, and "fuzzing" is retired for it
 //
 // Every payload below is applied to every mutable input, in a defined order, with no sampling and no
 // RNG. The same suite against the same target produces byte-identical findings. That property is
@@ -12,7 +12,7 @@
 // depends on a draw is not a gate. The arc plan's word *fuzzing* (§3.1) describes something else and
 // is not what ships here.
 //
-// ## Every payload carries its own invariants, and one with none cannot be constructed (D368)
+// ## Every payload carries its own invariants, and one with none cannot be constructed
 //
 // A payload with no invariant attached is a payload that cannot fail — D291's vacuity shape, one
 // tier later. `INPUT_CORPUS` is therefore built through `defineCorpus`, which throws at module load
@@ -77,18 +77,18 @@ function defineCorpus(payloads: readonly Payload[]): readonly Payload[] {
   const seen = new Set<string>();
   for (const p of payloads) {
     if (!p.invariants.length) {
-      throw new Error(`input corpus: payload "${p.id}" declares no invariant, so nothing could ever read its response (D368)`);
+      throw new Error(`input corpus: payload "${p.id}" declares no invariant, so nothing could ever read its response`);
     }
     if (!p.targets.length) {
-      throw new Error(`input corpus: payload "${p.id}" declares no target site, so it can never be delivered (D368)`);
+      throw new Error(`input corpus: payload "${p.id}" declares no target site, so it can never be delivered`);
     }
     if (p.text === undefined && p.json === undefined) {
-      throw new Error(`input corpus: payload "${p.id}" carries neither \`text\` nor \`json\`, so there is nothing to send (D368)`);
+      throw new Error(`input corpus: payload "${p.id}" carries neither \`text\` nor \`json\`, so there is nothing to send`);
     }
     if (p.targets.some((t) => t !== 'body') && p.text === undefined) {
-      throw new Error(`input corpus: payload "${p.id}" targets a path or query site but carries no \`text\`; only a body leaf can carry a JSON value (D371)`);
+      throw new Error(`input corpus: payload "${p.id}" targets a path or query site but carries no \`text\`; only a body leaf can carry a JSON value`);
     }
-    if (seen.has(p.id)) throw new Error(`input corpus: duplicate payload id "${p.id}" — ids key the report and M134b's baseline`);
+    if (seen.has(p.id)) throw new Error(`input corpus: duplicate payload id "${p.id}" — ids key the report and the scan baseline`);
     seen.add(p.id);
   }
   return payloads;
@@ -288,7 +288,7 @@ export const CLASS_OPT_IN: Readonly<Partial<Record<MutationClass, 'oversized' | 
 };
 
 // ---------------------------------------------------------------------------
-// Mutation sites — where an observed request can be mutated (D371)
+// Mutation sites — where an observed request can be mutated
 // ---------------------------------------------------------------------------
 
 export interface MutationSite {
@@ -358,7 +358,7 @@ function isLeafScalar(v: unknown): boolean {
 /**
  * Every leaf scalar in a parsed JSON body, as a dotted path.
  *
- * **Leaves only, one at a time** (D371). Nested objects and arrays are walked; a whole object is
+ * **Leaves only, one at a time**. Nested objects and arrays are walked; a whole object is
  * never replaced. Mutating two fields at once makes attribution impossible, and attribution is the
  * first thing a differential oracle loses.
  *
@@ -378,7 +378,7 @@ function bodyLeaves(node: unknown, prefix: string, out: MutationSite[]): void {
 }
 
 /**
- * Every place this observed request can be mutated (D371), in a fixed order: path, then query, then
+ * Every place this observed request can be mutated, in a fixed order: path, then query, then
  * body — which is also the order they appear in the request, so a reader walking the report walks
  * the request.
  *
