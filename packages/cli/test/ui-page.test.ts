@@ -3607,13 +3607,13 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
         // `M243-09`: read once the height has SETTLED. Config holds a CodeMirror editor since `M241`,
         // and its measured height lands a frame or two after the strip does — this read took 948 or
         // 900 on the same tree, API on one run and LOAD on the next, on Linux and on Windows alike.
-        // Two consecutive frames that agree are the reading; a height that never settles is a fail.
+        // Two consecutive readings 50 ms apart that agree are the reading; a height that never settles
+        // is a fail. (A timer, not `requestAnimationFrame`: this file type-checks without the DOM lib.)
         out[tab] = await sized.locator('.main').evaluate(async (el) => {
-          const frame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => r()));
+          const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 50));
           let last = -1;
           for (let i = 0; i < 60; i++) {
-            await frame();
-            await frame();
+            await tick();
             if (el.scrollHeight === last) return last;
             last = el.scrollHeight;
           }
