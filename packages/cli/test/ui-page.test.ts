@@ -440,7 +440,7 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
   assert.equal(await page.locator('[data-search]').count(), 1);
   assert.equal(await page.locator('#tflw-tags option').count(), allTags.size, 'every tag in the project is a completion');
   assert.equal(await page.locator('[data-search-hint]').getAttribute('data-search-kind'), 'none');
-  assert.match((await page.locator('[data-search-hint]').textContent())!, new RegExp(`^${allTags.size} tags? in this project`));
+  assert.match((await page.locator('[data-search-hint]').textContent())!, new RegExp(`^${allTags.size} tags? · type @`));
   // U7: the tab has the docs site's mark, and the page's own load logs no 404 for it.
   const icon = await api(`${baseUrl}/favicon.svg`);
   assert.equal(icon.status, 200);
