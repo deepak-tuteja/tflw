@@ -1500,29 +1500,50 @@ test('the explorer’s create keeps its place on a project with a real file coun
  * `font-family` of every native control — `button`, `input`, `select`, `textarea`, `option`,
  * `summary`, `dialog`, `label` — is the body's own. Not "contains no `Arial`": Paper's stack
  * carries `system-ui` by design, so the claim is *inherits the theme*, whatever the theme says.
+ *
+ * **One control is a code surface and wears the theme's other face.** The Config tab's editor
+ * (`.config-text`) is `tflw.config`'s text, set in `var(--mono)` like every other place the page
+ * shows source; the claim for it is *the theme's mono*, read off a probe carrying that token, so a
+ * theme that changes its mono stack changes the expectation with it. This gate first went green
+ * without ever meeting that editor: `at` waits for the tab strip, the config text is fetched after
+ * it, and on a fast machine the read ran before the textarea existed. CI's slower runner met it and
+ * went red on all twelve config views. So the Config tab now waits for its editor, and the gate
+ * asserts it measured one.
  */
 test('every native control on every view computes the body’s own font-family, in every theme', async () => {
   const off: string[] = [];
+  let codeSurfaces = 0;
   const views = DOORS.flatMap((d) => ['compose', 'source', 'run', 'auth', 'config'].map((t) => [d, t] as const));
   for (const [door, tab] of views) {
     await at(door, tab);
+    if (tab === 'config') await page.locator('textarea[data-api-config-text]').first().waitFor();
     for (const theme of THEMES) {
       await wear(theme);
-      const strays = await page.evaluate(() => { // one-shot: computed styles after `wear`'s synchronous attribute write — the view was waited for by `at`, and a font-family needs no paint to compute
+      const read = await page.evaluate(() => { // one-shot: computed styles after `wear`'s synchronous attribute write — the view was waited for by `at` (and the config editor above), and a font-family needs no paint to compute
         const body = getComputedStyle(document.body).fontFamily;
+        const probe = document.createElement('span');
+        probe.style.fontFamily = 'var(--mono)';
+        document.body.appendChild(probe);
+        const mono = getComputedStyle(probe).fontFamily;
+        probe.remove();
         const out: string[] = [];
+        let code = 0;
         for (const el of document.querySelectorAll('button, input, select, textarea, option, summary, dialog, label')) {
           const f = getComputedStyle(el).fontFamily;
-          if (f !== body) {
+          const isCode = el.matches('textarea.config-text');
+          if (isCode) code++;
+          if (f !== (isCode ? mono : body)) {
             const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme');
             out.push(`${el.tagName.toLowerCase()}${data ? `[${data.name}]` : ''}${el.className ? '.' + String(el.className).split(' ')[0] : ''} → ${f}`);
           }
         }
-        return [...new Set(out)];
+        return { strays: [...new Set(out)], code };
       });
-      for (const s of strays) off.push(`${door}/${tab} ${theme}: ${s}`);
+      codeSurfaces += read.code;
+      for (const s of read.strays) off.push(`${door}/${tab} ${theme}: ${s}`);
     }
   }
+  assert.ok(codeSurfaces >= DOORS.length * THEMES.length, `the config editor was measured ${codeSurfaces} time(s) — the Config tab was read before its editor existed`);
   assert.deepEqual([...new Set(off)], [], `${new Set(off).size} native control(s) fall out of the theme's face`);
 });
 
