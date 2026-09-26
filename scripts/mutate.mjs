@@ -3878,7 +3878,7 @@ const REGISTRY = [
     pkg: 'tflw',
     file: "packages/ui/src/ContextMenu.tsx",
     what: "`D1146` undone: an item that cannot run is still shown and still disabled, and no longer carries its reason \u2014 which is `M214`'s frozen `the-add-menu-hides-what-it-cannot-add` in its quieter form. *Delete* on an imported file becomes a greyed word with no explanation anywhere on screen.",
-    find: "            {it.run === null ? <p className=\"ctx-why\" data-menu-why={it.id}>{it.why}</p> : null}",
+    find: "            {it.run === null ? <p className=\"ctx-why\" id={`ctx-why-${i}`} data-menu-why={it.id} role=\"none\">{it.why}</p> : null}",
     replace: "            {null}",
   },
   {
