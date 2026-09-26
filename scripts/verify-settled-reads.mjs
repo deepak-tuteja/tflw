@@ -75,7 +75,7 @@
 import ts from 'typescript';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -748,7 +748,7 @@ function check(result, { update }) {
 }
 
 const args = process.argv.slice(2);
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const result = args.includes('--self-test') ? { findings: [], stats: {} } : classify();
   if (args.includes('--json')) {
     console.log(JSON.stringify(result, null, 2));

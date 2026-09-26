@@ -54,7 +54,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -141,7 +141,8 @@ function walk(dir, out = []) {
     if (SKIP_DIRS.has(e.name)) continue;
     const f = join(dir, e.name);
     if (e.isDirectory()) walk(f, out);
-    else if (e.isFile()) out.push(relative(ROOT, f));
+    // `git ls-files` spells a path with `/` on every platform; the walk agrees with it.
+    else if (e.isFile()) out.push(relative(ROOT, f).split(sep).join('/'));
   }
   return out;
 }
@@ -269,11 +270,11 @@ test('the scan set is real, and reaches all three of the surfaces D600 names', (
   assert.ok(files.length > 50, `${source} produced only ${files.length} in-scope files — too few to be a real scan`);
   assert.ok(files.includes('SPEC.md'), `SPEC.md is not in the scan set produced by ${source}`);
   assert.ok(
-    files.includes(join('packages', 'lang', 'src', 'ast.ts')),
+    files.includes('packages/lang/src/ast.ts'),
     `packages/lang/src/ast.ts — the file A2-16 was filed against — is not in the set produced by ${source}`,
   );
   assert.ok(
-    files.some((f) => f.startsWith(join('packages', 'docs-site')) && f.endsWith('.md')),
+    files.some((f) => f.startsWith('packages/docs-site/') && f.endsWith('.md')),
     `no docs-site markdown is in the set produced by ${source}`,
   );
   // The docs-site currently holds ZERO occurrences, so its coverage is correct-but-vacuous today.

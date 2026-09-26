@@ -282,7 +282,12 @@ test('an unreadable journal stops the run rather than being treated as "nothing 
   }
 });
 
-test('Ctrl-C during a sweep puts the source back and clears the journal', async (t) => {
+// `M243-19` — Windows has no process groups and no POSIX `SIGINT`: `process.kill(-pid)` is ESRCH
+// there, and a console Ctrl-C is a different event. The sweep is a box tool (`M194`), so the
+// property is held where the sweep runs.
+const NO_PROCESS_GROUPS = process.platform === 'win32' ? 'M243-19: Windows has no process groups to signal' : false;
+
+test('Ctrl-C during a sweep puts the source back and clears the journal', { skip: NO_PROCESS_GROUPS }, async (t) => {
   t.diagnostic('this one really mutates packages/lang/src/lexer.ts and really signals the run');
   const { file, cleanup } = sandboxJournal();
   const pristine = readFileSync(LEXER, 'utf8');
