@@ -9548,7 +9548,7 @@ the report header.
 
 ### D1326
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +4 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1326` — `has count at least|at most N`, `is empty`, `is not empty` are matchers.** `is empty`
   holds for `""`, `[]`, `{}` and nothing else (not `null`, which has `is null`); on any other type
@@ -9557,7 +9557,7 @@ the report header.
 
 ### D1327
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +6 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1327` — `skip "reason"` is a header clause, and skipped is a third outcome.** Written after the
   name, beside `retry`/tags. An empty or blank reason is `TF084` (error), for `TF082`'s reason: a
@@ -9569,7 +9569,7 @@ the report header.
 
 ### D1328
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/apiV2/src/graphql/graphql.controller.ts +3 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1328` — `body graphql` is a request body kind.** `body graphql """…"""` with optional
   `variables { … }` and `operationName "…"` lines under it; sent as
@@ -9583,7 +9583,7 @@ the report header.
 
 ### D1329
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +3 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1329` — `length of x`, `x joined with y`, and `capture <subject> matching /re/ as n`.**
   `length of` is sugar evaluating exactly as `.length`; `joined with` takes a list and a string
@@ -9591,9 +9591,18 @@ the report header.
   match when the pattern has none, and fails the step when nothing matches. SPEC's "no
   concatenation" sentence is rewritten to say what is and is not allowed.
 
+### D1330
+
+<sub>cited from tflw-tests/scripts/verify-cli-flags.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+
+- **`D1330` — `--shard i/n`** partitions the sorted discovered list by index modulo `n` (file `k`
+  runs in shard `k mod n + 1`), prints `shard i/n: F of T files` in the header, and refuses
+  `i > n`, `n < 1` and non-integers by name. It composes with `--tag` and `--failed` (the filter
+  runs first, then the shard). `--failed` is documented where it was not.
+
 ### D1331
 
-<sub>cited from SPEC.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/ops/otel/config.yaml, tflw-tests/scripts/regression.mjs +2 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1331` — `tflw export otlp <report-dir> --endpoint URL`** reads `results.json` and posts
   OTLP/HTTP JSON: one trace per run, spans run → file → test → step, a failed step's span status
@@ -9603,6 +9612,15 @@ the report header.
   started, and `results.json` carries the run's `startedAt`; spans are laid end to end from it and
   every span carries `tflw.timing = "reconstructed"`. Ids are hashed from the run, so a re-export is
   the same trace.
+
+### D1332
+
+<sub>cited from tflw-tests/scripts/verify-provenance.mjs, tflw-tests/tests/cookbook/feature-flag.tflw · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+
+- **`D1332` — the cookbook is `guide/patterns.md`**, the three hard-fence patterns the sibling's
+  `S-4a` plants — a feature flag, a per-env value, branching on a response — each citing the plant
+  that keeps it true. (This line first named three other patterns; the sibling plan's list is the
+  arc's and wins.)
 
 ### M0
 
@@ -13853,7 +13871,7 @@ having a documented fallback it does not have.
 
 ### M242
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +14 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 **`M242` — the language: matchers, skip, GraphQL, strings, shard, exporter, cookbook**
 
