@@ -151,6 +151,8 @@ interface ElLike {
    *  paints with — a container and the span inside it are two readings, not one. */
   readonly childNodes: ArrayLike<{ readonly nodeType: number; readonly nodeValue: string | null }> & Iterable<{ readonly nodeType: number; readonly nodeValue: string | null }>;
   closest(selector: string): ElLike | null;
+  /** The font gate asks whether a control is the config editor, the one code surface it names. */
+  matches(selector: string): boolean;
   querySelectorAll(selector: string): ArrayLike<ElLike> & Iterable<ElLike>;
   querySelector(selector: string): ElLike | null;
   appendChild(child: ElLike): void;
