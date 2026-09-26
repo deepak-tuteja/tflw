@@ -163,6 +163,10 @@ declare const document: ElLike & { readonly body: ElLike; readonly documentEleme
 declare const getComputedStyle: (el: ElLike) => CssLike;
 declare const window: { readonly localStorage: { getItem(key: string): string | null }; readonly innerHeight: number };
 declare const requestAnimationFrame: (cb: () => void) => void;
+/** axe-core's global once injected (`M240` `E`); only the fields the gate reads. */
+interface AxeNode { readonly target: readonly unknown[]; readonly html: string }
+interface AxeViolation { readonly id: string; readonly impact: string | null; readonly help: string; readonly nodes: readonly AxeNode[] }
+declare const axe: { run(ctx: unknown, opts: unknown): Promise<{ readonly violations: readonly AxeViolation[] }> };
 
 let scratch: string;
 let baseUrl: string;
@@ -1652,4 +1656,76 @@ test('control: the census names the control a mutation strips', async () => {
     document.querySelector('[data-env-select]')!.closest('[data-tip]')!.removeAttribute('data-tip');
   });
   assert.deepEqual(await untipped(), ['select[data-env-select]'], 'the census did not name the control whose label lost its tip');
+});
+
+// ── `M240` `E` — the page answers axe with nothing (review P6) ────────────────────────────────
+//
+// Here rather than in a file of its own because every state it needs — the landing, each door's
+// tabs, a theme stamped in place — is already this file's, and a second harness would be a second
+// place for them to drift. axe is the one the language's own `expect no a11y violations` injects
+// (`packages/runtime/src/a11y.ts`), read from the same package, and evaluated through the
+// debugger protocol, which the page's CSP does not govern. **Zero at every impact**, including
+// `minor`: a floor at `serious` is a list that grows by the impacts nobody reads. A red names the
+// rule, its impact, how many nodes and the first one, so it reads without re-running.
+
+const axeSource = (): Promise<string> => readFile(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8');
+
+const axeOn = async (where: string): Promise<string[]> => {
+  const injected = await page.evaluate(() => typeof (globalThis as unknown as { axe?: unknown }).axe !== 'undefined'); // one-shot: a fact about this script context, not about the rendered page
+  if (!injected) await page.evaluate(await axeSource());
+  const found = await page.evaluate(() => axe.run(document, { resultTypes: ['violations'] }).then((r) => r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, count: v.nodes.length, first: `${v.nodes.slice(0, 3).map((n) => JSON.stringify(n.target)).join(' ')} ${(v.nodes[0]?.html ?? '').slice(0, 140)}` })))); // one-shot: axe walks the document the caller has already waited for
+  return found.map((v) => `${where}: ${v.id} (${v.impact}) ×${v.count} — ${v.help} — ${v.first}`);
+};
+
+const A11Y_TABS = ['compose', 'source', 'run', 'auth', 'config'] as const;
+
+test('`M240` `E`: axe finds nothing on the landing, on every door’s every tab, in a light and a dark theme', async () => {
+  const found: string[] = [];
+  let states = 0;
+  const views: Array<[string, string]> = [['', 'landing'], ...DOORS.flatMap((d) => A11Y_TABS.map((t): [string, string] => [d, t]))];
+  for (const [door, tab] of views) {
+    await visit(door, tab);
+    for (const theme of ['paper', 'terminal'] as const) {
+      await wear(theme);
+      found.push(...(await axeOn(`${door || '/'} ${tab} ${theme}`)));
+      states += 1;
+    }
+  }
+  assert.equal(states, views.length * 2, 'the walk is not vacuous');
+  assert.deepEqual(found, [], `${found.length} violation(s):\n${found.join('\n')}`);
+});
+
+test('`M240` `E`: axe finds nothing over the legend, the context menu and the create dialog', async () => {
+  const found: string[] = [];
+  await at('api', 'compose');
+  await page.locator('[data-legend-open]').click();
+  await page.locator('[data-legend]').waitFor();
+  found.push(...(await axeOn('legend')));
+  await page.keyboard.press('Escape');
+  await page.locator('[data-legend]').waitFor({ state: 'detached' });
+  await page.locator('[data-file-row]').first().click({ button: 'right' });
+  await page.locator('.ctx-menu').waitFor();
+  found.push(...(await axeOn('context menu')));
+  await page.keyboard.press('Escape');
+  await page.locator('.ctx-menu').waitFor({ state: 'detached' });
+  await page.locator('[data-compose-new-file]').click();
+  await page.locator('.new-thing').waitFor();
+  found.push(...(await axeOn('create dialog')));
+  assert.deepEqual(found, [], `${found.length} violation(s):\n${found.join('\n')}`);
+});
+
+test('control: axe names an unlabelled `<nav>` when there is one', async () => {
+  await at('api', 'compose');
+  // Two navigation landmarks with no name are indistinguishable in a landmark list — the defect
+  // the door bar and tab strip carried before `M240` `C` named them. Made in the live DOM, then
+  // the page is reloaded so nothing leaks into the next test.
+  await page.evaluate(() => { // one-shot: a write into the live DOM; nothing is read back
+    for (const nav of [document.createElement('nav'), document.createElement('nav')]) {
+      (nav as unknown as { textContent: string }).textContent = 'somewhere';
+      (document.body as unknown as { append(n: unknown): void }).append(nav);
+    }
+  });
+  const found = await axeOn('control');
+  await page.reload();
+  assert.ok(found.length > 0, 'axe found nothing on a page carrying two unnamed navs and a stray one outside main — the instrument is blind');
 });

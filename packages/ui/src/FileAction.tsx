@@ -72,7 +72,7 @@ export function FileAction({ kind, path, unsaved, onClose, onDone }: FileActionP
   return (
     <div className="new-thing" role="dialog" aria-modal="true" aria-label={kind === 'delete' ? `delete ${path}` : `move ${path}`} data-file-action={kind}>
       <div className="new-thing-card">
-        <h3>{kind === 'delete' ? `delete ${path}?` : `move or rename ${path}`}</h3>
+        <h2>{kind === 'delete' ? `delete ${path}?` : `move or rename ${path}`}</h2>
 
         {kind === 'move' ? (
           <label className="field">

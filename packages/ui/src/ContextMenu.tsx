@@ -224,10 +224,13 @@ export function ContextMenuLayer({ menu, onClose }: { readonly menu: MenuRequest
       aria-activedescendant={`ctx-item-${active}`}
       style={{ left: `${spot?.left ?? 0}px`, top: `${spot?.top ?? 0}px`, visibility: spot === null ? 'hidden' : 'visible' }}
     >
-      <p className="ctx-subject" data-menu-header>{menu.subject}</p>
-      <ul>
+      {/* `M240` `E` — a `menu` owns `menuitem`s and nothing else, so the list, its items and the
+          two paragraphs are presentation: the name is the menu's `aria-label`, and a refusal's
+          reason is the item's description. */}
+      <p className="ctx-subject" data-menu-header role="none">{menu.subject}</p>
+      <ul role="none">
         {menu.items.map((it, i) => (
-          <li key={it.id}>
+          <li key={it.id} role="none">
             <button
               type="button"
               id={`ctx-item-${i}`}
@@ -236,6 +239,7 @@ export function ContextMenuLayer({ menu, onClose }: { readonly menu: MenuRequest
               disabled={it.run === null}
               data-menu-item={it.id}
               data-menu-state={it.run === null ? 'disabled' : 'enabled'}
+              {...(it.run === null ? { 'aria-describedby': `ctx-why-${i}` } : {})}
               onPointerEnter={() => { if (it.run !== null) setActive(i); }}
               onClick={() => { if (it.run !== null) { const go = it.run; close(true); go(); } }}
             >
@@ -243,7 +247,7 @@ export function ContextMenuLayer({ menu, onClose }: { readonly menu: MenuRequest
             </button>
             {/* `D1146` — the reason travels with the item that refused, on its own line, the way
                 `.clause-refusal` already says a refused removal on the row that refused it. */}
-            {it.run === null ? <p className="ctx-why" data-menu-why={it.id}>{it.why}</p> : null}
+            {it.run === null ? <p className="ctx-why" id={`ctx-why-${i}`} data-menu-why={it.id} role="none">{it.why}</p> : null}
           </li>
         ))}
       </ul>
