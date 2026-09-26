@@ -12,7 +12,9 @@
 // job wearing this one's clothes — and since `M209` `S4` that job has an owner, `Sidebar.tsx`,
 // rather than being a name this comment used to delegate to.
 
+import { useRef } from 'react';
 import { TABS, type TabId } from './doors';
+import { useRovingFocus } from './useRovingFocus';
 
 export interface TabStripProps {
   readonly tab: TabId;
@@ -22,8 +24,11 @@ export interface TabStripProps {
 }
 
 export function TabStrip({ tab, onTab, marked = {} }: TabStripProps) {
+  /* `M240` `C` (`D1292`) — the five tabs are one Tab stop, ←/→ between them. */
+  const strip = useRef<HTMLElement | null>(null);
+  useRovingFocus(strip, { orientation: 'row', selector: ':scope > button' });
   return (
-    <nav className="tabstrip" data-tabstrip={tab}>
+    <nav className="tabstrip" data-tabstrip={tab} aria-label="this file" ref={strip}>
       {TABS.map((t) => (
         <button
           key={t.id}

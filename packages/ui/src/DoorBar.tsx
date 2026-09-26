@@ -6,10 +6,11 @@
 // door you are in narrows what the project pane lists and what "new test" will scaffold; it never
 // narrows what a test shows (`D1044`).
 
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { DOORS, countByDoor } from './doors';
 import { Wordmark } from './Wordmark';
 import type { Lens, ProjectView } from './contract';
+import { useRovingFocus } from './useRovingFocus';
 
 export interface DoorBarProps {
   readonly project: ProjectView;
@@ -22,12 +23,18 @@ export interface DoorBarProps {
    * while BROWSER's stayed at 900. Chrome that pushes the product down the page is not free, and
    * the cheapest place to put a control is a row that is already there. */
   readonly themePick?: ReactNode;
+  /** Opens the legend (`M240` `C`, `D1292`) — the same list the `?` key opens. */
+  readonly onLegend?: () => void;
 }
 
-export function DoorBar({ project, door, onDoor, themePick }: DoorBarProps) {
+export function DoorBar({ project, door, onDoor, themePick, onLegend }: DoorBarProps) {
   const counts = countByDoor(project);
+  /* `M240` `C` (`D1292`) — one Tab stop, arrows inside: the home mark, the four doors, the version
+     and `?` are one strip. The theme picker is not in it — a `<select>` answers the arrows itself. */
+  const strip = useRef<HTMLElement | null>(null);
+  useRovingFocus(strip, { orientation: 'row', selector: ':scope > button, :scope > a' });
   return (
-    <nav className="doorbar" data-doorbar={door}>
+    <nav className="doorbar" data-doorbar={door} aria-label="doors" ref={strip}>
       {/* `M233` `H` (`D1288`) — the same mark as the landing's, at 18 rather than a second asset.
           The glyph was the alternative and is deliberately not used: its heavier strokes (3.0/3.4
           against the wordmark's 2.6/3.0) exist for a 16px favicon, where the generator's own note
@@ -75,6 +82,11 @@ export function DoorBar({ project, door, onDoor, themePick }: DoorBarProps) {
       >
         tflw {project.version.version}
       </a>
+      {onLegend ? (
+        <button type="button" className="doorbar-legend muted" onClick={onLegend} data-legend-open aria-label="keys and panels" data-tip="what the keys do here, and what each panel is for — or press ?">
+          ?
+        </button>
+      ) : null}
       {themePick}
     </nav>
   );

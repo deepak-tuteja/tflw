@@ -64,11 +64,12 @@
 // the session. The one thing that is forced is the open file's own path: an address naming a file
 // inside a folder somebody collapsed must still show it, or the link is broken.
 
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { menuTrigger, type MenuItem, type MenuRequest } from './ContextMenu';
 import type { Lens, ProjectFile, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
 import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
+import { useRovingFocus } from './useRovingFocus';
 import type { FileOutline, OutlineCrawl, OutlineHook, OutlineTest } from './outline';
 
 /**
@@ -266,6 +267,10 @@ export function filesUnder(node: TreeNode): string[] {
 
 export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew, menuFor, onMenu }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  /* `M240` `C` (`D1292`) — the whole list is one Tab stop and ↑/↓ walk it, so the pane is not a
+     row's-worth of presses away. Tab lands on the open file's row, else the first. */
+  const treeRef = useRef<HTMLUListElement | null>(null);
+  useRovingFocus(treeRef, { orientation: 'column', selector: 'button' });
   /** Where a `shift` range starts. A gesture detail and not a fact about the project, so it is
    *  neither in the address nor anywhere durable — `D1066` addresses what changes a run. */
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -564,7 +569,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
         </p>
       </div>
 
-      <ul className="files tree" data-files={project.files.length}>
+      <ul className="files tree" data-files={project.files.length} ref={treeRef}>
         {tree.map(renderNode)}
       </ul>
 

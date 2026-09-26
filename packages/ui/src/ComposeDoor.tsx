@@ -72,6 +72,7 @@ import {
 } from '@tflw/lang';
 import { pickLocators, recordActions, putFile, getFile, dropScratch, startRun, subscribe, getReports, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
+import { matches, SHORTCUTS } from './shortcuts';
 import { indexFromReport, indexFromSend, belongsTo, playScratchOf } from './ran';
 import { VOCABULARY } from './vocabulary';
 import { TabStrip } from './TabStrip';
@@ -2337,6 +2338,19 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     setNoting(null);
     onWritten(path);
   }, [file, draft, path, onFileWritten, onDraft, onWritten]);
+
+  /* `M240` `C` (`D1292`) — ⌘S/Ctrl+S writes the draft from anywhere on the page, a field included,
+     and never opens the browser's own *save page* dialog, even with nothing to write. */
+  useEffect(() => {
+    const save = SHORTCUTS.find((sc) => sc.id === 'save')!;
+    const onKey = (e: KeyboardEvent): void => {
+      if (!matches(e, save.keys)) return;
+      e.preventDefault();
+      if (!busy) void writeDraft();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [writeDraft, busy]);
 
   /**
    * What a tab you are not looking at has to say (`M205` S5).
