@@ -222,8 +222,10 @@ ${slots.map((s) => renderTestLink(s)).join('\n')}
 }
 
 function renderTestLink(slot: TestSlot): string {
-  const status = slot.test.ok ? 'ok' : 'fail';
-  return `        <li><button type="button" class="testlink ${status}" data-target="${slot.id}">${slot.test.ok ? '✓' : '✗'} ${esc(slot.test.name)}</button></li>`;
+  // `D1327` — the sidebar says skipped too, or a skip would be a green tick one pane over.
+  const skipped = slot.test.kind === 'functional' && slot.test.skipped !== undefined;
+  const status = skipped ? 'skip' : slot.test.ok ? 'ok' : 'fail';
+  return `        <li><button type="button" class="testlink ${status}" data-target="${slot.id}">${skipped ? '–' : slot.test.ok ? '✓' : '✗'} ${esc(slot.test.name)}</button></li>`;
 }
 
 // D462 — exhaustive, because this is the point where an entry kind decides its whole layout. Read

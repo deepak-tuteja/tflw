@@ -16,6 +16,7 @@ const recordFlags = CLI_FLAGS.filter((f) => f.command === 'record');
 const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
 const migrateFlags = CLI_FLAGS.filter((f) => f.command === 'migrate');
 const fmtFlags = CLI_FLAGS.filter((f) => f.command === 'fmt');
+const exportFlags = CLI_FLAGS.filter((f) => f.command === 'export');
 const uiFlags = CLI_FLAGS.filter((f) => f.command === 'ui');
 const specFlags = CLI_FLAGS.filter((f) => f.command === 'spec');
 const globalFlags = CLI_FLAGS.filter((f) => f.command === 'global');
@@ -301,6 +302,25 @@ block structure, and formats to itself on a second pass. That property is what l
 this opinionated: nothing the formatter does can change what a file means. The same function
 answers the editor's *Format Document* through `tflw lsp`, so format-on-save in VS Code needs no
 setting beyond the extension.
+
+## `tflw export otlp [report-dir]`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in exportFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+Sends a finished run to an OpenTelemetry collector as one trace — a span for the run, each file,
+each test and each step — over OTLP/HTTP's JSON encoding. It reads `results.json` from the report
+directory (`report/` when none is named). A report records the run's start and every duration but
+not when each test started, so the spans are laid end to end and each carries `tflw.timing =
+"reconstructed"`. Exits 0 when the collector answers 2xx, 1 when it answers anything else, and 2
+for a usage problem. See [CI, reporting & safety](/guide/ci-and-reporting#otlp).
 
 ## `tflw ui [dir]`
 

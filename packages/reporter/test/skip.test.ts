@@ -33,10 +33,13 @@ test('JUnit: one `<skipped>` testcase carrying the reason, and the suite counts 
 
 test('report.html: a grey row with a `skipped` badge and the reason, never a green dot', () => {
   const html = renderReportHtml(report);
-  const section = html.slice(html.indexOf('waits for the sandbox') - 400, html.indexOf('waits for the sandbox') + 400);
+  const at = html.indexOf('<section class="test skip');
+  assert.ok(at > 0, 'a section for the skipped test');
+  const section = html.slice(at, at + 600);
   assert.match(section, /class="test skip/);
   assert.match(section, /<span class="skipped">skipped<\/span>/);
   assert.match(html, /skipped: down until the 3rd/);
+  assert.match(html, /class="testlink skip" data-target="t1">– waits for the sandbox/, 'the sidebar too');
 });
 
 test('the summary line counts a skip on its own', () => {

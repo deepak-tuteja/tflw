@@ -7012,7 +7012,7 @@ test('a clause the file does not write is not a field — it is in a menu that n
     const bandOptions = await fresh
       .locator('[data-add-clause="test"] [data-add-option]')
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-add-option')));
-    assert.deepEqual(bandOptions, ['tags', 'sessions', 'retry', 'table', 'workload', 'thresholds']);
+    assert.deepEqual(bandOptions, ['tags', 'sessions', 'retry', 'skip', 'table', 'workload', 'thresholds']);
     await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/api/compose/bare.tflw/L2`);
     await fresh.locator('[data-editor-tab="more"]').click();
 
