@@ -598,7 +598,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
         </datalist>
         <p className="muted hint" data-search-hint data-search-kind={parsed.kind}>
           {parsed.kind === 'none'
-            ? `${allTags.length} tag${allTags.length === 1 ? '' : 's'} in this project — type @ to narrow the run by one`
+            ? `${allTags.length} tag${allTags.length === 1 ? '' : 's'} · type @ to narrow the run`
             : parsed.kind === 'tag'
               ? parsed.tags.length === 0
                 ? `no tag starts with ${parsed.typed} — nothing to run`
