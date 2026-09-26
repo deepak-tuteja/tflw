@@ -1827,7 +1827,7 @@ test('`M240` `D` (`D1312`): words at rest stay inside each view’s budget, and 
  * name and no `reason` from `tflw.config` is in the text it counts — and each is shown somewhere,
  * or the check met nothing. Notes (a comment the author wrote) are marked by `NoteBlock` itself. */
 test('`M240` `D` (`M240-05`): the budget counts the page’s words — no test name or target reason is counted', async () => {
-  const view = (await (await fetch(`${baseUrl}/api/project`, { headers: { authorization: `Bearer ${TOKEN}` } })).json()) as { files: { tests: { name: string }[] }[] };
+  const view = (await (await fetch(`${baseUrl}/api/project`, { headers: { authorization: `Bearer ${TOKEN}` } })).json()) as { files: { tests: { name: string }[] }[] }; // one-shot: the fixture project is copied once in `setup` and nothing in this suite writes a test file, so its names are fixed
   const names = [...new Set(view.files.flatMap((f) => f.tests.map((t) => t.name)))].filter((n) => n.split(' ').length >= 2);
   const reasons = [...(await readFile(join(projectRoot, 'tflw.config'), 'utf8')).matchAll(/reason "([^"]+)"/g)].map((m) => m[1]!);
   assert.ok(names.length > 0 && reasons.length > 0, `the fixture has ${names.length} test name(s) and ${reasons.length} reason(s) — nothing to check`);
