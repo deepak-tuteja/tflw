@@ -76,10 +76,13 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+// `M243-02`: `npm` is `npm.cmd` on Windows, and Node refuses to spawn a `.cmd` without a shell
+// (`EINVAL`, since its fix for CVE-2024-27980). The arguments are this file's own script names, so the
+// shell has nothing to interpret.
 const env = { ...process.env, TFLW_BUNDLE_SOURCEMAP: '1' };
 
 function run(command, args, extraEnv = {}) {
-  const { status, error } = spawnSync(command, args, { cwd: repoRoot, env: { ...env, ...extraEnv }, stdio: 'inherit' });
+  const { status, error } = spawnSync(command, args, { cwd: repoRoot, env: { ...env, ...extraEnv }, stdio: 'inherit', shell: process.platform === 'win32' && command === npm });
   if (error) throw error;
   return status ?? 1;
 }
