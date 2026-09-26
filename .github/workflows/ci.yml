@@ -44,9 +44,9 @@ jobs:
       matrix:
         node-version: [22, 24]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -358,7 +358,7 @@ jobs:
 
       - name: Upload coverage report
         if: matrix.node-version == 22
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-lcov
           path: coverage/lcov.info
@@ -411,8 +411,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -426,7 +426,7 @@ jobs:
       # wants a React the page's React 19 is not.
       - name: The tree a user installs, as a CycloneDX SBOM
         run: npm sbom --sbom-format cyclonedx --package-lock-only --omit=dev > sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: sbom.cdx.json
@@ -439,7 +439,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout tflw (this tree — on a pull request, the PR head)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: testFlow
 
@@ -449,12 +449,12 @@ jobs:
       # way. `tflw-tests` is the repository name; the directory it is checked out into must be
       # `testFlow-tests`, because that is the layout its own scripts resolve `../testFlow` from.
       - name: Checkout the sibling (tflw-tests)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: deepak-tuteja/tflw-tests
           path: testFlow-tests
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
