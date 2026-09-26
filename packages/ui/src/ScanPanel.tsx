@@ -142,7 +142,9 @@ export function ScanPanel({ authorization, matchers, onAuth, onConfig }: {
         {/* `Q1`'s link, outside the branch above on purpose: Auth answers *what is in force*, and
             **none** is an answer to that question. A link that appeared only once something was
             authorized would be missing in exactly the state a reader most needs to go and look. */}
-        <button className="linkish" onClick={onAuth} data-compose-scan-auth-link>
+        {/* Tipped since `M240` `A`: the census (`D1256`) reached this control for the first time when
+            SCANS stopped landing on the first file and landed on a scan test. */}
+        <button className="linkish" onClick={onAuth} data-compose-scan-auth-link data-tip="the Auth tab — which targets this project may scan, and the reason each was authorized">
           what is in force here
         </button>
       </p>

@@ -4,21 +4,26 @@
  * because the four differ in density and letterform as much as in hue, and a "theme" that only
  * swapped colours would have made the choice between them unreadable.
  *
- * `Terminal` is the default and sits on the bare `:root`, so a page that has never been told
+ * `Paper` is the default and sits on the bare `:root`, so a page that has never been told
  * anything renders it. The other three are `:root[data-tflw-theme='…']` — (0,2,0) against
  * `:root`'s (0,1,0), so the attribute always wins and the source order of these blocks does not
  * matter. `index.html` stamps the attribute before first paint; `ThemePick` sets it afterwards.
  *
- * **THE DEFAULT MOVED, AND NOTHING BUT THESE TWO SELECTORS MOVED WITH IT.** `D1097` shipped
- * `Instrument` as the default; the user judged the four on the real app on 2026-09-19 (which is
- * what `D1105` held `S1`–`S6` back for) and chose `Terminal`. The change is the two selectors
- * swapping bodies — the token sets themselves are untouched, and every consumer reads tokens. A
- * default that costs one selector to move is the evidence that the theme layer is a theme layer;
- * if this had needed a component edit, the themes would not have been tokens. See `D1107`.
+ * **THE DEFAULT HAS MOVED TWICE, AND EACH TIME NOTHING BUT TWO SELECTORS MOVED WITH IT.** `D1097`
+ * shipped `Instrument`; the user judged the four on the real app on 2026-09-19 (which is what
+ * `D1105` held `S1`–`S6` back for) and chose `Terminal`; `M240` `F` (`D1296`, the enterprise
+ * review's P8) moved it to `Paper` — a monospace product reads as a terminal to a stranger, and
+ * the first five minutes are a stranger's. Each move is the two selectors swapping bodies — the
+ * token sets themselves are untouched, and every consumer reads tokens. A default that costs one
+ * selector to move is the evidence that the theme layer is a theme layer; if this had needed a
+ * component edit, the themes would not have been tokens. See `D1107`. `Terminal` is now a choice
+ * like the other three: `index.html` stamps it when the reader chose it, so a first visit and a
+ * stored choice stay distinguishable.
  *
  * `color-scheme` is a declaration and not a decoration: it is what makes the browser's own
  * scrollbars, focus rings and date pickers match the page. `Paper` is the only light one, and
- * without this line it would have painted a dark scrollbar down a white page.
+ * without this line it would have painted a dark scrollbar down a white page — and now that it is
+ * the root, the other three are what would paint a light scrollbar down a dark one.
  *
  * WHAT IS DELIBERATELY ABSENT. The workbench also carried seven syntax tokens — keyword, string,
  * number, type, variable, comment, operator. None of them is here, because **nothing on this page
@@ -29,29 +34,24 @@
  * paints them and not before. Recorded as `M213-10`.
  */
 :root {
-  color-scheme: dark;
-  --bg: #08090b;   --panel: #08090b;  --panel2: #0d0f12;  --input: #0e1114;
-  --line: #1b1f24; --fg: #c9d1d9;     --muted: #8b949e;
-  --accent: #56d4dd; --on-accent: #04191b;
-  --pass: #8fbf6b; --pass-bg: transparent; --pass-bd: transparent; --pass-on: #8fbf6b;
-  --fail: #f07178; --fail-bg: transparent; --fail-bd: transparent; --fail-on: #f07178;
-  --warn: #d9a441; --warn-bg: transparent; --warn-bd: transparent; --warn-on: #d9a441;
-  --m-get: #56d4dd; --m-post: #c3e88d; --m-write: #f78c6c; --m-delete: #f07178;
-  --radius: 0px; --ctl-radius: 0px; --border: 1px; --unit: 7px;
-  --label-transform: lowercase; --label-spacing: 0.02em;
-  --title-size: 13px; --title-weight: 700; --kw-weight: 700;
+  color-scheme: light;
+  --bg: #f7f8fa;   --panel: #ffffff;  --panel2: #eef1f5;  --input: #ffffff;
+  --line: #dde2e9; --fg: #161a20;     --muted: #5b6572;
+  --accent: #2b59c3; --on-accent: #ffffff;
+  --pass: #14532d; --pass-bg: #dcfce7; --pass-bd: #a7e3bd; --pass-on: #14532d;
+  --fail: #7f1d1d; --fail-bg: #fee2e2; --fail-bd: #f2b4b4; --fail-on: #7f1d1d;
+  --warn: #713f12; --warn-bg: #fef3c7; --warn-bd: #e8d08a; --warn-on: #713f12;
+  --m-get: #2b59c3; --m-post: #0f766e; --m-write: #9c5f07; --m-delete: #b91c1c;
+  --radius: 6px; --ctl-radius: 4px; --border: 1px; --unit: 9px;
+  --label-transform: uppercase; --label-spacing: 0.1em;
+  --title-size: 15px; --title-weight: 600; --kw-weight: 600;
   /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
      is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
-  --syn-kw: #56d4dd; --syn-str: #c3e88d; --syn-num: #f78c6c; --syn-typ: #c792ea;
-  --syn-var: #c9d1d9; --syn-com: #737d8d; --syn-op: #8b949e; --syn-com-style: italic;
-  /* `M213` `S1` — the two colours that were painted as literals until the palette-closure gate
-     asked where they came from. A scrim and a mat under a transparent screenshot are theme
-     decisions like any other: `Paper` cannot use the dark three's black scrim, and `#fff`
-     under a screenshot is invisible on a white page. They were `rgba(0,0,0,0.45)` and
-     `#fff` written in place, which is exactly `§1.5`'s finding one level down. */
-  --scrim: rgba(0, 0, 0, 0.55); --shot-mat: #ffffff;
-  --sans: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --syn-kw: #2b59c3; --syn-str: #0f766e; --syn-num: #7c3aed; --syn-typ: #0369a1;
+  --syn-var: #161a20; --syn-com: #656e7b; --syn-op: #5b6572; --syn-com-style: normal;
+  --scrim: rgba(22, 26, 32, 0.35); --shot-mat: #ffffff;
+  --sans: 'Public Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 :root[data-tflw-theme='instrument'] {
   color-scheme: dark;
@@ -107,25 +107,30 @@
   --sans: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-:root[data-tflw-theme='paper'] {
-  color-scheme: light;
-  --bg: #f7f8fa;   --panel: #ffffff;  --panel2: #eef1f5;  --input: #ffffff;
-  --line: #dde2e9; --fg: #161a20;     --muted: #5b6572;
-  --accent: #2b59c3; --on-accent: #ffffff;
-  --pass: #14532d; --pass-bg: #dcfce7; --pass-bd: #a7e3bd; --pass-on: #14532d;
-  --fail: #7f1d1d; --fail-bg: #fee2e2; --fail-bd: #f2b4b4; --fail-on: #7f1d1d;
-  --warn: #713f12; --warn-bg: #fef3c7; --warn-bd: #e8d08a; --warn-on: #713f12;
-  --m-get: #2b59c3; --m-post: #0f766e; --m-write: #9c5f07; --m-delete: #b91c1c;
-  --radius: 6px; --ctl-radius: 4px; --border: 1px; --unit: 9px;
-  --label-transform: uppercase; --label-spacing: 0.1em;
-  --title-size: 15px; --title-weight: 600; --kw-weight: 600;
+:root[data-tflw-theme='terminal'] {
+  color-scheme: dark;
+  --bg: #08090b;   --panel: #08090b;  --panel2: #0d0f12;  --input: #0e1114;
+  --line: #1b1f24; --fg: #c9d1d9;     --muted: #8b949e;
+  --accent: #56d4dd; --on-accent: #04191b;
+  --pass: #8fbf6b; --pass-bg: transparent; --pass-bd: transparent; --pass-on: #8fbf6b;
+  --fail: #f07178; --fail-bg: transparent; --fail-bd: transparent; --fail-on: #f07178;
+  --warn: #d9a441; --warn-bg: transparent; --warn-bd: transparent; --warn-on: #d9a441;
+  --m-get: #56d4dd; --m-post: #c3e88d; --m-write: #f78c6c; --m-delete: #f07178;
+  --radius: 0px; --ctl-radius: 0px; --border: 1px; --unit: 7px;
+  --label-transform: lowercase; --label-spacing: 0.02em;
+  --title-size: 13px; --title-weight: 700; --kw-weight: 700;
   /* syntax — `M213` `S0b`. Seven hues for the nine kinds the language produces; the collapse
      is stated in `highlight.ts`. Values are the workbench's, which `§3` makes the source of truth. */
-  --syn-kw: #2b59c3; --syn-str: #0f766e; --syn-num: #7c3aed; --syn-typ: #0369a1;
-  --syn-var: #161a20; --syn-com: #656e7b; --syn-op: #5b6572; --syn-com-style: normal;
-  --scrim: rgba(22, 26, 32, 0.35); --shot-mat: #ffffff;
-  --sans: 'Public Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --syn-kw: #56d4dd; --syn-str: #c3e88d; --syn-num: #f78c6c; --syn-typ: #c792ea;
+  --syn-var: #c9d1d9; --syn-com: #737d8d; --syn-op: #8b949e; --syn-com-style: italic;
+  /* `M213` `S1` — the two colours that were painted as literals until the palette-closure gate
+     asked where they came from. A scrim and a mat under a transparent screenshot are theme
+     decisions like any other: `Paper` cannot use the dark three's black scrim, and `#fff`
+     under a screenshot is invisible on a white page. They were `rgba(0,0,0,0.45)` and
+     `#fff` written in place, which is exactly `§1.5`'s finding one level down. */
+  --scrim: rgba(0, 0, 0, 0.55); --shot-mat: #ffffff;
+  --sans: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 /* ── THE BASE LAYER (`M213` `S0`, `D1097`). ────────────────────────────────────────────────────
@@ -178,7 +183,11 @@ input, select, textarea {
   min-width: 0;
 }
 input:disabled, select:disabled, textarea:disabled { color: var(--muted); background: var(--panel); }
-input[type='checkbox'], input[type='radio'] { all: revert; flex: none; accent-color: var(--accent); }
+input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: none; accent-color: var(--accent); }
+/* `font: inherit` AFTER the revert (`M240` `F`, `M239-12`): `all: revert` hands the box back to the
+   user agent, whose face is `Arial` — the one element the review measured out of the theme on
+   every view and could not name. A tick draws no text, so nothing visible moves; what moves is the
+   computed font list, which is what the appearance gate reads for every native control. */
 /* The keyboard's own affordance. `:focus-visible` and not `:focus`, so a pointer press does not
    leave a ring behind it — the page had neither before this slice. */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
