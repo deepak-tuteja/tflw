@@ -1,4 +1,4 @@
-// The legend — `M240` `C` (`D1292`): what the keyboard does here, and (from slice `D`) what each
+// The legend — `M240` `C` (`D1311`): what the keyboard does here, and (from slice `D`) what each
 // panel is for, one short entry with its docs link. Opened by `?` and by the door bar's `?`,
 // closed by `Escape`, its ✕, or a click outside. One dialog for both because a reader who asks
 // *what can I press* and one who asks *what is this panel* are the same reader five seconds apart.

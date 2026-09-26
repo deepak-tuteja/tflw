@@ -1,4 +1,4 @@
-// Where a door lands (`M240` `A`, `D1290`, `M239-09`) — the pure half, asked every shape here so
+// Where a door lands (`M240` `A`, `D1309`, `M239-09`) — the pure half, asked every shape here so
 // the page gate only has to show that `App` calls it. Each case names the answer the old rule
 // (`files[0]`, `declarations[0]`) would have given, so a regression to it is red by name.
 import { test } from 'node:test';

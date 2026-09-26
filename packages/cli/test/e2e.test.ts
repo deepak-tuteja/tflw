@@ -5673,7 +5673,7 @@ test('`tflw ui` on an empty directory serves a blank project, and refuses only a
 
     // And the project route says what it was built to say, through the binary this time.
     const before = await api(`${base}api/project`);
-    // `M240` `B` (`D1291`) — a 200 carrying the unconfigured shape, not a 404: a directory with no
+    // `M240` `B` (`D1310`) — a 200 carrying the unconfigured shape, not a 404: a directory with no
     // `tflw.config` is a project that has not started, and the body carries the basename only.
     assert.equal(before.status, 200);
     const shape = (await before.json()) as { noProject?: boolean; configured?: boolean; root?: string };

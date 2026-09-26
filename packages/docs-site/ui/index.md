@@ -50,13 +50,14 @@ depends on which door you came through — see [The four doors](/ui/doors).
 ## What you are looking at
 
 The landing surface offers four doors — **API**, **BROWSER**, **LOAD** and **SCANS** — and a count
-beside each. The count is the tests in this project that door's work describes, so a project with no
-load tests shows nothing behind LOAD, and one test can be counted behind more than one door.
+beside each. A door is a way into the same project: the count is the tests in this project that do
+that door's kind of work, so a project with no load tests shows nothing here for LOAD, and one test
+can be counted at more than one door.
 
-The line under the doors is the other half of that rule, and the project above is showing it: **one
-test behind no door**. A door is earned by the constructs a test carries, so a test built only out
-of constructs no door is about — a call, a binding, an assertion on its result — is behind none of
-them, and the page says so rather than filing it somewhere plausible:
+The footer is the other half of that rule, and the project above is showing it: **one test at no
+door**. A door is earned by the statements a test carries, so a test built only out of statements no
+door is about — a call, a binding, an assertion on its result — is at none of them, and the page
+says so rather than filing it somewhere plausible:
 
 ```tflw
 action signIn(email, password)
@@ -71,11 +72,31 @@ test "signing in is one line, because the shop does it in every other test"
 ```
 
 The `action` carries the `api` step, so the API door counts *it* — and the test below, which is a
-call, a binding and an assertion, is behind nothing. It still runs, and it is still in the file
+call, a binding and an assertion, is at no door. It still runs, and it is still in the file
 list. It is just not what any of the four doors are for.
 
 Past the landing, every surface is the same three things: a file list, a door, and five tabs over
 whichever file you picked. That shape does not change, which is what [the spine](/ui/spine) means.
+
+**Which file a door opens on.** A door you open with no file in the address lands on the file with
+the most of that door's work in it — ties broken by path — and it lands on that file's first test,
+not on a hook above it. Once you have picked a file, the door remembers it, per project, in your
+browser; a door with nothing behind it says so and offers a new file instead.
+
+**The keyboard.** The file list, the door bar and the tab strip are one Tab stop each, and the
+arrow keys move inside them. Press `?` for the legend, which also says what each panel is for.
+
+| keys | does |
+|---|---|
+| ⌘S / Ctrl+S | write the file — works inside a field too |
+| ⌘↩ / Ctrl+Enter | run this file — works inside a field too |
+| ⌘⇧↩ / Ctrl+Shift+Enter | run what is selected |
+| ⌘P / Ctrl+P | go to the file list |
+| `/` | search the project |
+| `?` | the legend |
+
+The pictures here are the **Paper** theme, which is what the page opens in until you pick another;
+the dark pictures are Terminal.
 
 ## What it is for
 

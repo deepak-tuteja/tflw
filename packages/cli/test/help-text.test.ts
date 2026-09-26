@@ -1,6 +1,6 @@
-// `tflw --help` carries the reason, never the record's identifier — `M240` `D` (`D1294`).
+// `tflw --help` carries the reason, never the record's identifier — `M240` `D` (`D1313`).
 //
-// The help text is the third surface `D1294` names, beside the runtime's strings and the page, and
+// The help text is the third surface `D1313` names, beside the runtime's strings and the page, and
 // the one `scripts/verify-no-internal-refs.mjs` cannot reach: it is assembled at run time, so the
 // gate reads what the command prints. Its lines used to cite `SPEC §9.12`, `(M200, D1053)` and
 // `decision 38/45`, and ended in a footer pointing at `SPEC.md` so a reader could follow them —

@@ -9411,6 +9411,105 @@ explorer.
 
 **`D1280` — the process: a policy, an audit, an SBOM, and a bot that opens pull requests.** `SECURITY.md` at both roots with GitHub private vulnerability reporting and a 72-hour acknowledgement; a `supply-chain` CI job running `npm audit --audit-level=high` and publishing a CycloneDX SBOM (`npm sbom`) as an artefact; Dependabot weekly, grouped, for npm and for GitHub Actions in both repositories, merged by hand. The security guide states what tflw itself does — no telemetry, no network beyond the named targets, the helper fence, the token model, the headers — and the support statement: Node 22 and 24, latest release only before 1.0. Turning on private vulnerability reporting is a repository setting, and Dependabot opens pull requests on its own schedule; both are outward-facing and land on the user's word, not the plan's. Not taken: `SECURITY.md` alone (a policy with no audit behind it is a promise), and auto-merge (a dependency bump in a testing tool changes what every user's run executes).
 
+### D1309
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+
+**`D1309` — a door lands on the file with the most of what the door is about, and remembers
+where you were.** `landingFor(door, project, remembered)` is a pure function: first visit lands on
+the file with the most tests whose `lensesOfTest` includes the door's lens, ties broken by path;
+later visits land on the file last opened under that door, read from
+`localStorage['tflw.ui.<projectHash>.lastFile.<door>']` where `projectHash` is eight hex of an
+FNV-1a over `ProjectView.root`, so two projects on one browser do not share a memory. (Amended in
+`A` from SHA-256: `crypto.subtle` is asynchronous, and a landing resolved on a later tick paints the
+rule's file and then jumps to the remembered one; the hash is a namespace, not a secret, and a
+collision shares a memory the first rule already tolerates.) A file
+that no longer exists falls back to the first rule. A door with nothing behind it renders
+`EmptyDoor` **where the file's stage would be** — the strip and the Run, Auth and Config tabs stay,
+because those are about the project and a door with nothing behind it still has runs to read (found
+by two standing tests that open `#/api/run` on a project with no files) — one sentence and a
+`+ new file` that opens the create dialog, which scaffolds for the door (`VOCABULARY[door].scaffold`,
+`D1189`; the plan's `initArgv(door)` was the CLI's name for the same fact). Within the landed file, the first declaration that is a `test` is the landing
+declaration; a file of hooks alone lands on its first hook (`M239-09`). Not taken: deterministic-only
+landing (a reload drops you off your file), and a door index page.
+
+### D1310
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+
+**`D1310` — a directory with no `tflw.config` is a project that has not started, not an error.**
+`GET /api/project` answers `{configured: false, root: <basename only>}`; `/api/reports` and the
+tree answer empty; the page renders the existing init landing; every other route answers 409 with
+one sentence until `init` has run. No response body carries an absolute path (`D1278` already says
+so for errors; this extends it to the unconfigured shape). Not taken: refusing to start, and a
+"not a project" screen whose only content is an instruction to leave.
+
+### D1311
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+
+**`D1311` — every control has a ring, three strips rove, five keys.**
+*Amended by the build:* the DOM order stays sidebar-first. The app grid is `sidebar | grip | main`
+with the door bar and run strip *inside* `main`, so the "no visual change" reorder the draft named
+does not exist — the explorer is the page's left column and Tab reaching it first is visual order.
+What the review measured (twenty-five presses to the pane) was the explorer's rows being stops,
+and roving is what repairs that. The keys are one table (`shortcuts.ts`) read by two listeners —
+`App` for the page's five and `ComposeDoor` for *save*, where the draft and its etag live — and by
+the legend. Shift is ignored for a punctuation key, since `?` only arrives with it held. Every control, grips included, is focusable and
+shows `:focus-visible` (the three `outline: none` rules go; grips draw the same ring as buttons).
+`useRovingFocus(ref, orientation)` makes the door bar, the explorer and the tab strip one Tab stop
+each with arrows inside. Five shortcuts on `App`: `Mod+S` save, `Mod+Enter` run file, `Mod+Shift+Enter`
+run selection, `Mod+P` open file, `/` focus search; `?` opens the legend that lists them, and the
+legend is also where every panel's `?` opens its short explanation. A shortcut never
+fires while an input, textarea or `contenteditable` has focus except `Mod+S` and `Mod+Enter`. Not
+taken: reachable-only, and shortcuts without roving (25 stops to the pane).
+
+### D1312
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+
+**`D1312` — words at rest are budgeted per view, and the budget is a gate.** Excluding statement
+text, file text and the reader's own data (test names, paths, counts): Compose 250, Auth 200, Run
+150, Landing 120, measured from the rendered DOM's `innerText` after the view has painted. A
+sentence that repeats per row draws once or never; permanent footers go; a tooltip is one sentence
+of at most 90 characters; one `?` per panel opens the explanation with its docs link. Not taken:
+`<details>` folds with no budget (the number drifts again on the next panel), and tooltips-only.
+
+### D1313
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+
+**`D1313` — product text carries the reason or a docs link, never the record's identifier.**
+Runtime strings that reach a report, the page's rendered text and attributes, and `tflw --help`
+carry no `M<n>`, `D<n>`, `§`, `SPEC.md`; where a reader needs the long form, the string ends in a
+docs URL. Comments and `DECISIONS.md` are untouched. The gate walks string constants in
+`packages/runtime/src` and `packages/ui/src` (by AST, not grep, so a template literal counts and a
+comment does not), the page's rendered text per view, and `--help` output. Not taken: docs-anchor
+links in place of codes (plain text and SARIF still carry a bare code), and page-and-help-only.
+
+### D1314
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+
+**`D1314` — `door` stays, defined once; `behind`, `construct` and `lens` leave the product.**
+The landing defines *door* in one line under the four doors. Counts read *17 tests here*, not *17
+behind*; *construct* is *statement*; *lens* never renders. `D1313`'s gate gains the three words.
+Not taken: renaming `door` (four docs pages, the landing shots, the scaffolds, the tests), and a
+glossary over unchanged sentences.
+
+### D1315
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+
+**`D1315` — Paper is what a stranger meets; the rest is one click away.** The unstamped root
+carries Paper's tokens; the bootstrap stamps whatever the reader chose, `terminal` included, so the
+picker keeps four choices and a first visit is not a stored choice. Native controls inherit the
+theme's face, and the gate is the computed `font-family` of every `button`, `input`, `select`,
+`textarea`, `option`, `summary` and `dialog` on every view carrying no `Arial`/`system-ui` — the
+review measured `Arial` and did not name the element, so the first act of the slice is to find it.
+Not taken: Terminal as default (a monospace product reads as a terminal to a stranger), and a
+stored default.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -13633,5 +13732,17 @@ graded. **`M234-04` closed 2026-09-25 when slice `C` merged there** (tflw-tests#
 
 The first milestone because S1–S3 decide whether the page can be recommended at all, and because
 everything after it re-shoots and re-measures a page whose server should already be the final one.
+
+### M240
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+
+**`M240` — the first five minutes: landing, copy, keyboard, a11y, the twelve bugs**
+
+**Scoped 2026-09-26.** Nothing built. The second milestone of `PLAN_M239_ENTERPRISE_READINESS.md`
+(its §4 is the outline this plan expands; its §2 decisions 2, 3, 4, 5, 6, 7 and 22's `P8` half are
+the decisions this plan lands; `REVIEW_ENTERPRISE_READINESS.md` U1, U3–U9, U13–U16, P1–P6, P8 are
+the measurements). The sibling's `S-2` (`testFlow-tests/PLAN_M239_DOGFOOD_EXPANSION.md` §3) waits
+on this milestone and is not built here.
 
 <!-- GENERATED:decisions:end -->

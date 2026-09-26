@@ -24,7 +24,7 @@ export interface TabStripProps {
 }
 
 export function TabStrip({ tab, onTab, marked = {} }: TabStripProps) {
-  /* `M240` `C` (`D1292`) — the five tabs are one Tab stop, ←/→ between them. */
+  /* `M240` `C` (`D1311`) — the five tabs are one Tab stop, ←/→ between them. */
   const strip = useRef<HTMLElement | null>(null);
   useRovingFocus(strip, { orientation: 'row', selector: ':scope > button' });
   return (

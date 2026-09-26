@@ -1,4 +1,4 @@
-// One Tab stop per strip, arrows inside it — `M240` `C` (`D1292`).
+// One Tab stop per strip, arrows inside it — `M240` `C` (`D1311`).
 //
 // The review counted the keyboard's surface at four `onKeyDown`s and three `tabIndex`es in 21 000
 // lines (U5): every door, every explorer row and every tab was its own Tab stop, so the pane was

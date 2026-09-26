@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `M240` `D` (`D1294`, `D1295`) — product text carries the reason or a docs link, never the
+// `M240` `D` (`D1313`, `D1314`) — product text carries the reason or a docs link, never the
 // record's identifier; and the page speaks the reader's words, not the builder's.
 //
 // A reader who meets `(SPEC §9.8)` or `(D285)` in an error has been handed a pointer into a
@@ -13,7 +13,7 @@
 // Two things that are strings but never text are skipped — an import specifier and a property or
 // attribute *name* (`'data-stmt-lens'` names an attribute; nobody reads it).
 //
-// `behind`, `construct` and `lens` are the page's vocabulary (`D1295`), so they are judged in
+// `behind`, `construct` and `lens` are the page's vocabulary (`D1314`), so they are judged in
 // `packages/ui/src` only: in the runtime *behind a load balancer* is English, not jargon.
 //
 // Every docs URL a string carries must name a page the docs site has, or the pointer that replaced
@@ -161,7 +161,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url) && !process.argv.includes
   if (bad.length > 0) {
     console.error(`verify:no-internal-refs: ${bad.length} string(s) a reader can see carry the builder's words:\n`);
     for (const b of bad) console.error(`  ${b}`);
-    console.error(`\nSay why, or end the string in a ${DOCS} page (D1294); on the page, *here* / *at a door* / *statement* (D1295).`);
+    console.error(`\nSay why, or end the string in a ${DOCS} page (D1313); on the page, *here* / *at a door* / *statement* (D1314).`);
     process.exit(1);
   }
   console.log(`verify:no-internal-refs: clean — ${docsPages.length} docs page(s) linked, every one on the site.`);

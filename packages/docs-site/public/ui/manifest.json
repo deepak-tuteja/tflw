@@ -1,16 +1,16 @@
 {
-  "inputs": "b50f901fb3842be35fc276e0201eca7e6bfd73f151b3355c5ed78d11b8dca7c7",
-  "inputCount": 95,
+  "inputs": "29310061202f0a454511f42d5894ef8f918603389186a6f9540e4020c8600b50",
+  "inputCount": 102,
   "shots": [
     {
       "name": "landing-terminal.png",
       "width": 2152,
-      "height": 652
+      "height": 710
     },
     {
       "name": "landing-paper.png",
       "width": 2152,
-      "height": 616
+      "height": 676
     },
     {
       "name": "spine-terminal.png",
@@ -55,22 +55,22 @@
     {
       "name": "browser-menu-terminal.png",
       "width": 2880,
-      "height": 2380
+      "height": 2102
     },
     {
       "name": "browser-menu-paper.png",
       "width": 2880,
-      "height": 2388
+      "height": 2002
     },
     {
       "name": "compose-load-terminal.png",
       "width": 2144,
-      "height": 1410
+      "height": 1048
     },
     {
       "name": "compose-load-paper.png",
       "width": 2120,
-      "height": 1380
+      "height": 1082
     },
     {
       "name": "compose-scan-terminal.png",
@@ -136,5 +136,5 @@
     }
   },
   "deviceScaleFactor": 2,
-  "cutAt": "2026-09-25T20:00:16.799Z"
+  "cutAt": "2026-09-26T10:29:20.233Z"
 }

@@ -1,4 +1,4 @@
-// What each panel is for, one entry per panel — `M240` `D` (`D1293`).
+// What each panel is for, one entry per panel — `M240` `D` (`D1312`).
 //
 // The paragraphs every view used to draw at rest, moved behind the legend's `?` with the docs page
 // that says the rest. A panel's own prose is now its facts; its explanation is here, once.

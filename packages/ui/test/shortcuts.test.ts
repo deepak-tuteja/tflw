@@ -1,4 +1,4 @@
-// The shortcut table and its rule — `M240` `C` (`D1292`).
+// The shortcut table and its rule — `M240` `C` (`D1311`).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SHORTCUTS, matches } from '../src/shortcuts.ts';

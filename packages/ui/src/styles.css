@@ -11,7 +11,7 @@
  *
  * **THE DEFAULT HAS MOVED TWICE, AND EACH TIME NOTHING BUT TWO SELECTORS MOVED WITH IT.** `D1097`
  * shipped `Instrument`; the user judged the four on the real app on 2026-09-19 (which is what
- * `D1105` held `S1`–`S6` back for) and chose `Terminal`; `M240` `F` (`D1296`, the enterprise
+ * `D1105` held `S1`–`S6` back for) and chose `Terminal`; `M240` `F` (`D1315`, the enterprise
  * review's P8) moved it to `Paper` — a monospace product reads as a terminal to a stranger, and
  * the first five minutes are a stranger's. Each move is the two selectors swapping bodies — the
  * token sets themselves are untouched, and every consumer reads tokens. A default that costs one
@@ -219,7 +219,7 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
    sit together at the right; the picker follows it with the bar's own gap. */
 .doorbar-version { margin-left: auto; font-size: 11px; text-decoration: none; padding: 0 6px; }
 .doorbar-version:hover { color: var(--fg); text-decoration: underline; }
-/* `M240` `C` (`D1292`) — the legend's door: `?` opens the same list the `?` key does. */
+/* `M240` `C` (`D1311`) — the legend's door: `?` opens the same list the `?` key does. */
 .doorbar-legend { font-size: 11px; padding: 0 6px; min-width: 0; }
 .legend h2 { margin: 0; font-size: var(--title-size); font-weight: var(--title-weight); }
 .legend dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
@@ -267,7 +267,7 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
 .row-grip:hover::before, .row-grip.dragging::before, .row-grip:focus-visible::before { background: var(--accent); }
 .col-grip:hover, .col-grip.dragging, .col-grip:focus-visible,
 .row-grip:hover, .row-grip.dragging, .row-grip:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-/* `M240` `C` (`D1292`) — a grip reached by Tab says so with a ring, not only a tint the eye can miss. */
+/* `M240` `C` (`D1311`) — a grip reached by Tab says so with a ring, not only a tint the eye can miss. */
 .row-grip:focus-visible, .split:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .col-grip:focus-visible::before { height: 100%; }
 .row-grip:focus-visible::before { width: 100%; }
@@ -1254,7 +1254,7 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .notice.info { border-color: var(--line); color: var(--fg); }
 .notice > button { padding: 0 calc(var(--unit) * 0.5); }
 
-/* `M240` `A` (`D1290`) — a door with nothing behind it: one sentence and the gesture that changes
+/* `M240` `A` (`D1309`) — a door with nothing behind it: one sentence and the gesture that changes
    the answer. Sized like `.empty`, so it sits where a pane would and does not read as a page. */
 .empty-door { padding: 24px 0; max-width: 60ch; }
 .empty-door p { margin: 0 0 calc(var(--unit) * 1.5); }

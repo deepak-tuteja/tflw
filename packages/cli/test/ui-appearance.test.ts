@@ -435,7 +435,7 @@ test('a page told nothing renders Terminal — the default is the bare `:root` b
       const cs = getComputedStyle(document.documentElement);
       return { bg: getComputedStyle(document.body).backgroundColor, unit: cs.getPropertyValue('--unit').trim(), radius: cs.getPropertyValue('--radius').trim() };
     });
-    // Paper's three most recognisable tokens (`M240` `F`, `D1296` — the default was Terminal's
+    // Paper's three most recognisable tokens (`M240` `F`, `D1315` — the default was Terminal's
     // `rgb(8, 9, 11)` / `7px` / `0px` until then). `--unit: 9px` is the one no other theme has, so
     // it alone separates this from the dark three; the ground and the radius are here because a
     // gate that rests on one token is a gate one typo away from passing on the wrong theme.
@@ -1491,7 +1491,7 @@ test('the explorer’s create keeps its place on a project with a real file coun
   }
 });
 
-/* ── Native controls wear the theme's face — `M240` `F` (`M239-12`, `D1296`) ──────────────────
+/* ── Native controls wear the theme's face — `M240` `F` (`M239-12`, `D1315`) ──────────────────
  *
  * The review measured `Arial` in the computed font list on every project view (P8) and did not
  * name the element: `styles.css` sets `font: inherit` on `button, input, select, textarea`, so
@@ -1730,14 +1730,14 @@ test('control: axe names an unlabelled `<nav>` when there is one', async () => {
   assert.ok(found.length > 0, 'axe found nothing on a page carrying two unnamed navs and a stray one outside main — the instrument is blind');
 });
 
-// ── `M240` `D` — words at rest are budgeted per view (`D1293`) ───────────────────────────────
+// ── `M240` `D` — words at rest are budgeted per view (`D1312`) ───────────────────────────────
 //
 // Counted from what the reader can see after the view has painted, minus what is theirs: statement
 // and file text, paths and names (every `<code>`), form values, and a run's own rows — each test
 // and each finding is the run's data, and a report of 13 tests is not 13 times the chrome. Hidden
 // text does not count, and `checkVisibility` is the instrument rather than `getClientRects`,
 // because Chrome lays out a closed `<details>`'s content and rects would count a fold nobody
-// opened. The budgets are `D1293`'s; measured before the pass, Auth was 239 (276 on SCANS) and
+// opened. The budgets are `D1312`'s; measured before the pass, Auth was 239 (276 on SCANS) and
 // every other view already fit once the fold was honoured.
 
 const BUDGET: Readonly<Record<string, number>> = { landing: 120, compose: 250, auth: 200, run: 150 };
@@ -1759,7 +1759,7 @@ const wordsAtRest = (): Promise<{ readonly n: number; readonly text: string }> =
     return { n: text.split(' ').filter((w) => /[A-Za-z]/.test(w)).length, text };
   }, THEIRS); // one-shot: every caller waits for its view's own subject first
 
-/** A tip is one sentence of at most 90 characters (`D1293`). */
+/** A tip is one sentence of at most 90 characters (`D1312`). */
 const tipProblem = (tip: string): string | null =>
   tip.length > 90 ? `${tip.length} characters` : /[.!?]\s+\S/.test(tip) ? 'two sentences' : null;
 
@@ -1773,7 +1773,7 @@ const COPY_VIEWS: ReadonlyArray<readonly [string, string, string | null]> = [
 ];
 const COPY_READY: Readonly<Record<string, string>> = { landing: '[data-doors]', compose: '[data-seq-col]', run: '[data-runs]', auth: '[data-api-auth]', config: '[data-api-config="saved"], [data-api-config="unsaved"]' };
 
-test('`M240` `D` (`D1293`): words at rest stay inside each view’s budget, and every tip is one sentence of at most 90 characters', async () => {
+test('`M240` `D` (`D1312`): words at rest stay inside each view’s budget, and every tip is one sentence of at most 90 characters', async () => {
   const over: string[] = [];
   const tips = new Map<string, string>();
   let judged = 0;

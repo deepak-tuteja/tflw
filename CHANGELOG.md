@@ -1132,6 +1132,30 @@ multi-word call name. The parser always guessed "call", and reported the variabl
 - Sixteen findings from a review of the page itself, including a contrast floor re-solved across
   all four themes and a drag that died at a same-origin iframe (M229).
 
+### Changed — the page's first five minutes (M240)
+
+- **A door opens on the file with its work in it**, not the file that sorts first, and on that
+  file's first test rather than a hook above it; after that it remembers where you were, per door
+  and per project, in your browser. A door with nothing behind it says so and offers a new file
+  (`D1309`).
+- **A directory with no `tflw.config` is a project that has not started**, not an error: the page
+  names the directory and the tflw it is, and every route answers — reads with their empty shapes,
+  writes with a sentence saying to init first (`D1310`).
+- **The keyboard reaches the page.** The file list, the door bar and the tab strip are one Tab stop
+  each with the arrows inside them; ⌘S, ⌘↩, ⌘⇧↩, ⌘P, `/` and `?` do what the legend says, and the
+  legend also says what each panel is for (`D1311`). axe finds nothing on any view in a light and a
+  dark theme.
+- **Fewer words, and none of them ours.** Every view holds a word budget, a tip is one sentence,
+  and no string a reader sees — an error, a report line, the page, `tflw --help` — points at a
+  SPEC section or a decision id any more; where the long form is needed it is a docs-site link
+  (`D1312`, `D1313`). The page says *here* and *at another door*, and defines *door* once (`D1314`).
+- **Paper is what a first visit sees**; Terminal and the other two are one click away, and native
+  controls wear the theme's face (`D1315`).
+- Twelve smaller repairs from the same review: an empty field in the new-step dialog is refused
+  rather than written, run times carry their zone, failures stack as notices, a dirty draft asks
+  before the tab closes, a run started elsewhere is followed, and the corner says which tflw this
+  is and links the docs.
+
 ## [0.1.0] — 2026-07-06
 
 First public draft. API-only — the browser half lands in `0.2.0`.

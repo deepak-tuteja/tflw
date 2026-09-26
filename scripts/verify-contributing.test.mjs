@@ -241,7 +241,7 @@ const CLASSIFIED = [
     cmd: 'npm run verify:no-internal-refs',
     class: 'gate',
     local: 'npm run verify:no-internal-refs',
-    why: "`M240` `D`/`D1294`/`D1295`. The review counted 22 runtime strings and a page's worth of text pointing a reader at "
+    why: "`M240` `D`/`D1313`/`D1314`. The review counted 22 runtime strings and a page's worth of text pointing a reader at "
       + "`SPEC §9.8`, `(D285)` or `M146a` — identifiers into plans and a ledger that are gitignored on a public repository, so "
       + "every one was a pointer to a document the reader cannot open. The rule: say why, or end in a docs-site URL, and every "
       + "such URL must name a page the site has. By AST over `packages/runtime/src` and `packages/ui/src`, so a comment is free "

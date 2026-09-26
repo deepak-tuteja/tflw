@@ -242,7 +242,7 @@ export interface ComposeDoorProps {
    */
   readonly reportsStamp: string;
   /**
-   * **What the Compose tab draws when the door has no file to draw** — `M240` `A` (`D1290`).
+   * **What the Compose tab draws when the door has no file to draw** — `M240` `A` (`D1309`).
    *
    * `path` is `''` exactly when `landingFor` answered empty and the address names no file; the
    * strip and the three project-fact tabs still render, because Run, Auth and Config are about
@@ -2339,7 +2339,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     onWritten(path);
   }, [file, draft, path, onFileWritten, onDraft, onWritten]);
 
-  /* `M240` `C` (`D1292`) — ⌘S/Ctrl+S writes the draft from anywhere on the page, a field included,
+  /* `M240` `C` (`D1311`) — ⌘S/Ctrl+S writes the draft from anywhere on the page, a field included,
      and never opens the browser's own *save page* dialog, even with nothing to write. */
   useEffect(() => {
     const save = SHORTCUTS.find((sc) => sc.id === 'save')!;

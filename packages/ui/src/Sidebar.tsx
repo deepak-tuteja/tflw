@@ -267,7 +267,7 @@ export function filesUnder(node: TreeNode): string[] {
 
 export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew, menuFor, onMenu }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  /* `M240` `C` (`D1292`) — the whole list is one Tab stop and ↑/↓ walk it, so the pane is not a
+  /* `M240` `C` (`D1311`) — the whole list is one Tab stop and ↑/↓ walk it, so the pane is not a
      row's-worth of presses away. Tab lands on the open file's row, else the first. */
   const treeRef = useRef<HTMLUListElement | null>(null);
   useRovingFocus(treeRef, { orientation: 'column', selector: 'button' });

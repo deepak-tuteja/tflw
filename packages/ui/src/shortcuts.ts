@@ -1,4 +1,4 @@
-// The page's five shortcuts, as data — `M240` `C` (`D1292`).
+// The page's five shortcuts, as data — `M240` `C` (`D1311`).
 //
 // One table, read twice: by the listeners that fire the actions and by the legend that lists them,
 // so the legend cannot describe a key the page does not answer. `Mod` is ⌘ on a Mac and Ctrl

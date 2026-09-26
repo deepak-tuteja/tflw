@@ -28,7 +28,7 @@ export async function getProject(env?: string | null): Promise<ProjectView | Unc
      predicting `TF060` against a different env than the one it was about to run. `null` means
      *whatever the config calls default*, which is what the page sends until somebody picks. */
   const res = await fetch(env == null ? '/api/project' : `/api/project?env=${encodeURIComponent(env)}`, authed({ cache: 'no-store' }));
-  // `M240` `B` (`D1291`) — a directory with no `tflw.config` is a 200 carrying `configured: false`,
+  // `M240` `B` (`D1310`) — a directory with no `tflw.config` is a 200 carrying `configured: false`,
   // the directory's basename and the build stamp; the 404 this replaces carried the absolute path.
   if (!res.ok) throw new Error(`/api/project: ${res.status} ${(await res.json() as { error?: string }).error ?? ''}`);
   return (await res.json()) as ProjectView | UnconfiguredView;

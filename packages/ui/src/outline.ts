@@ -728,7 +728,7 @@ export interface Addressed {
  */
 export function addressed(outline: FileOutline, line: number | null): Addressed | null {
   if (outline.declarations.length === 0) return null;
-  // `M240` `A` (`D1290`, `M239-09`) — with no line named, the landing is the first `test`, not the
+  // `M240` `A` (`D1309`, `M239-09`) — with no line named, the landing is the first `test`, not the
   // first declaration. A file opening with a hook landed on the hook, and the pane's first words
   // were *a request cannot be added to a hook from here*. With a line named, the rule below is
   // unchanged: the last declaration at or before it, hooks included, because the line named it.
