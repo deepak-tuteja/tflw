@@ -20,7 +20,7 @@
 //   directory is in the tip, which is where a value you might want to copy belongs.
 
 import type { ReportDir, RunRecord } from './contract';
-import { when } from './format';
+import { ago, when } from './format';
 
 export type Selection = { readonly kind: 'run'; readonly id: string } | { readonly kind: 'report'; readonly id: string } | null;
 
@@ -32,6 +32,8 @@ export interface RunListProps {
 }
 
 export function RunList({ runs, reports, selected, onSelect }: RunListProps) {
+  /** Read once per render, so every chip ages against the same instant (`format.ts` `ago`). */
+  const now = Date.now();
   const live = runs.filter((r) => r.status === 'running');
   // U7: a run that ended with no directory — a usage error, a cancel before any report — has no
   // row among the reports and would vanish from the list; it stays as its own row, its exit the
@@ -52,7 +54,7 @@ export function RunList({ runs, reports, selected, onSelect }: RunListProps) {
         >
           <span className="dot running" />
           <span>running</span>
-          <span className="muted">{when(r.startedAt)}</span>
+          <span className="muted" data-run-when={r.startedAt} data-tip={when(r.startedAt)}>{ago(r.startedAt, now)}</span>
         </button>
       ))}
       {unkept.map((r) => (
@@ -68,7 +70,7 @@ export function RunList({ runs, reports, selected, onSelect }: RunListProps) {
         >
           <span className={`dot ${r.status === 'cancelled' ? 'none' : 'fail'}`} />
           <span>{r.status === 'cancelled' ? 'cancelled' : `exit ${r.exitCode ?? r.signal}`} · no report</span>
-          <span className="muted">{when(r.startedAt)}</span>
+          <span className="muted" data-run-when={r.startedAt} data-tip={when(r.startedAt)}>{ago(r.startedAt, now)}</span>
         </button>
       ))}
       {reports.map((r) => {
@@ -93,7 +95,10 @@ export function RunList({ runs, reports, selected, onSelect }: RunListProps) {
             {/* The date leads, because it is the one thing that tells two runs apart at a glance.
                 A directory with no `results.json` has no date to lead with, and falls back to its
                 own name rather than to an empty row. */}
-            <span>{r.at ? when(r.at) : r.id}</span>
+            {/* Relative, with the absolute form and its zone in the tip (`M239-05`): the chip is read
+                at a glance and the question is *is this about the code in front of me*. The
+                directory name is the id, not a date, and stays as it is in the compare select. */}
+            <span data-run-when={r.at ?? ''} data-tip={r.at ? when(r.at) : undefined}>{r.at ? ago(r.at, now) : r.id}</span>
             {r.current === true ? (
               <span className="badge also" data-row-current>
                 current
