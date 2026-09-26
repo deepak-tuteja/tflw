@@ -403,7 +403,7 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
   const counts = await page.locator('[data-project-counts]').textContent();
   const behindApi = project.files.reduce((n, f) => n + f.tests.filter((t) => t.lenses.includes('api')).length, 0);
   const elsewhere = project.files.reduce((n, f) => n + f.tests.length, 0) - behindApi;
-  assert.equal(counts, `${project.files.length} files · ${behindApi} behind API · ${elsewhere} behind another door`);
+  assert.equal(counts, `${project.files.length} files · ${behindApi} tests here · ${elsewhere} at another door`);
   assert.ok(elsewhere > 0, 'the fixture must hold a test behind some other door, or the clause above is never rendered');
   // `M209` `S5` folded the tag cloud into the search box (`M205` Q12) — U7's fold existed because
   // the sibling's 84 chips pushed every file below the first screen, and a control that has to be
@@ -5868,11 +5868,12 @@ test('the affirmation this door refuses to make is one the author can make on th
       await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/scan.tflw`);
       await fresh.locator('[data-compose-scan-unauthorized]').waitFor();
 
-      // 1. THE PROSE, both halves. `D291` is named as the standing reason, and the claim that the
+      // 1. THE PROSE, both halves. `D291`'s reason is stated in words (`M240` `D`, `D1294` — the
+      //    identifier left the page), and the claim that the
       //    page cannot write `tflw.config` is gone — asserted as an absence, because the repair of a
       //    two-reason sentence that lost one reason is not complete while the false half survives.
       const notice = (await fresh.locator('[data-compose-scan-unauthorized]').textContent()) ?? '';
-      assert.match(notice, /D291/, 'the standing reason is not named');
+      assert.match(notice, /nobody but you can write it/, 'the standing reason is not stated');
       assert.doesNotMatch(notice, /D1049/, 'the half `M205` `Q5` falsified is still stated');
       assert.doesNotMatch(notice, /does not write|cannot write/i, 'the notice still claims this page cannot write tflw.config');
       assert.match(notice, /Config/, 'the notice does not say where the affirmation is made');

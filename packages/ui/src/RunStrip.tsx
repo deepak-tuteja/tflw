@@ -91,7 +91,7 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, headed, onHe
             half of `D1130`'s pair: `send` and `run` sit inches apart on the Compose tab and do
             different things, which is a confusion with a milestone named after it — `M215` exists
             because pressing `send` was read as running the test. */}
-        <label data-tip="which `env` block of `tflw.config` this run reads — its base URLs, its timeouts, and whatever credentials that block names">
+        <label data-tip="the `env` block of tflw.config this run reads — base URLs, timeouts, credentials">
           env
           <select value={env} onChange={(e) => onEnv(e.target.value)} data-env-select disabled={running}>
             {project.envs.map((e) => (
@@ -110,7 +110,7 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, headed, onHe
             second half, which no condition can say: file concurrency is a different axis with a
             different name, and it lives in `tflw.config`. */}
         {takesWorkers ? (
-          <label data-tip="how many processes fork to generate load — for the workload-bearing tests in this run, and a no-op on a test with no `workload`. How many FILES run at once is `tflw.config`'s own `workers N`.">
+          <label data-tip="processes forked to generate load for workload tests — files at once is the config's">
             workers
             <input type="number" min={1} placeholder="default" value={workers} onChange={(e) => onWorkers(e.target.value)} data-workers disabled={running} />
           </label>
@@ -121,7 +121,7 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, headed, onHe
             already on the label — what a reader needs is that the trace is the better answer and
             this is here for the two engines that cannot have one. */}
         {takesHeaded ? (
-          <label className="check" data-tip="opens a real browser window instead of running headless. The trace `▶` keeps is usually the better way to see what happened — this is for watching it move, and it is the only answer on firefox and webkit.">
+          <label className="check" data-tip="a visible browser window instead of headless — to watch it move; the trace keeps more">
             <input type="checkbox" checked={headed} onChange={(e) => onHeaded(e.target.checked)} data-headed disabled={running} />
             headed
           </label>
@@ -132,7 +132,7 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, headed, onHe
           cancel
         </button>
       ) : (
-        <button className="run" onClick={() => onRun(request())} data-run disabled={nothing} data-tip="runs these tests and grades them — every assertion is judged and the whole run is kept as a report you can reopen. `send`, on the Compose tab, only shows you a response." data-run-narrowing={nothing ? 'none' : selection.length > 0 ? 'selection' : parsed.kind}>
+        <button className="run" onClick={() => onRun(request())} data-run disabled={nothing} data-tip="runs and grades these tests, and keeps the run as a report you can reopen" data-run-narrowing={nothing ? 'none' : selection.length > 0 ? 'selection' : parsed.kind}>
           {label}
         </button>
       )}

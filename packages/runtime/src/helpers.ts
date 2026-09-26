@@ -25,7 +25,7 @@ async function importHelper(absPath: string): Promise<Record<string, unknown>> {
     const message = err instanceof Error ? err.message : String(err);
     if (/not supported in strip-only mode/.test(message)) {
       throw new Error(
-        `${absPath}: ${message}. JS/TS helpers (SPEC §11) load via Node's native type stripping, ` +
+        `${absPath}: ${message}. JS/TS helpers load via Node's native type stripping, ` +
           'which only erases type syntax — it cannot compile enums, namespaces, or parameter ' +
           'properties. Rewrite the construct in erasable-syntax TS (e.g. a plain object instead of ' +
           'an enum, a regular constructor assignment instead of a parameter property).',
@@ -82,7 +82,7 @@ export function interceptTypelessModuleWarning(): () => void {
       process.stderr.write(
         '⚠ tflw: a JS/TS helper was loaded as an ES module because the nearest `package.json` sets no `"type"` — ' +
           'it works, and Node re-parses the file to get there. Add `"type": "module"` to `package.json` to drop that ' +
-          'overhead (`tflw init` now scaffolds one; SPEC.md §11).\n',
+          'overhead (`tflw init` now scaffolds one; https://deepak-tuteja.github.io/tflw/guide/actions).\n',
       );
       return;
     }

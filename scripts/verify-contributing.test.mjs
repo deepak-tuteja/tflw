@@ -238,6 +238,30 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:no-internal-refs',
+    class: 'gate',
+    local: 'npm run verify:no-internal-refs',
+    why: "`M240` `D`/`D1294`/`D1295`. The review counted 22 runtime strings and a page's worth of text pointing a reader at "
+      + "`SPEC §9.8`, `(D285)` or `M146a` — identifiers into plans and a ledger that are gitignored on a public repository, so "
+      + "every one was a pointer to a document the reader cannot open. The rule: say why, or end in a docs-site URL, and every "
+      + "such URL must name a page the site has. By AST over `packages/runtime/src` and `packages/ui/src`, so a comment is free "
+      + "and a template literal is not; the page's vocabulary (`behind`, `construct`, `lens`) is judged in the UI only, where it "
+      + "is jargon — in the runtime *behind a load balancer* is English. Static, under a second",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
+    cmd: 'npm run verify:no-internal-refs:self-test',
+    class: 'gate',
+    local: 'npm run verify:no-internal-refs:self-test',
+    why: "`D922`. One temp tree with four defects the gate must name — a `(D1)` in a runtime string, a docs link to a page the "
+      + "site does not have, `behind` and `SPEC §3.3` on the page — and four look-alikes it must leave alone: an import path, "
+      + "an attribute name, a comment, and *behind a load balancer* in the runtime. The look-alikes are the half that keeps the "
+      + "gate cheap to obey. Static, milliseconds",
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'npm run verify:settled-reads:self-test',
     class: 'gate',
     local: 'npm run verify:settled-reads:self-test',

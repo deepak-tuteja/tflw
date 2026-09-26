@@ -145,7 +145,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
         withheldMutating++;
         deps.decline(
           `${plan.method} ${plan.template}`,
-          'a synthesized write, and this origin\'s `authorized target` does not declare `probe mutating` — affirming a scan is not affirming writes (`D330`/`D465`)',
+          'a synthesized write, and this origin\'s `authorized target` does not declare `probe mutating` — affirming a scan is not affirming writes ',
         );
         continue;
       }
@@ -186,7 +186,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
       ok: false,
       error:
         `crawl "${crawl.name.value}" has nothing to crawl — its seeds resolved to no sendable request (${why}). ` +
-        'Every assertion in its body would pass whatever the application did, so the crawl fails rather than reporting green over an empty surface (SPEC §9.15, `TF068`, D285)',
+        'Every assertion in its body would pass whatever the application did, so the crawl fails rather than reporting green over an empty surface (`TF068`, https://deepak-tuteja.github.io/tflw/guide/crawling)',
       surface: { discovered, withheld, sent: 0, reached: 0, seeds: surfaceSeeds, ...walkFigures },
     };
   }
@@ -252,7 +252,7 @@ export async function runCrawl(crawl: CrawlDecl, config: ResolvedConfig, deps: C
         `crawl "${crawl.name.value}" sent ${sent} request${sent === 1 ? '' : 's'} and none of them reached your application. ` +
         'Every assertion in its body passed having judged no response, so the crawl fails rather than reporting green over a surface it never touched. ' +
         "The blind-spot declines say why each one was turned away; if they are `404`s, check that your `api` base and the document's own `servers` agree " +
-        '(SPEC §9.15, `TF068`, D285)',
+        '(`TF068`, https://deepak-tuteja.github.io/tflw/guide/crawling)',
       surface: { discovered, withheld, sent, reached, seeds: surfaceSeeds, ...walkFigures },
     };
   }
@@ -277,7 +277,7 @@ export function reachability(status: number, invented = true): { readonly reache
   if (status >= 500) return { reached: true };
   if (status >= 200 && status < 400) return { reached: true };
   if (status === 401 || status === 403) {
-    return { reached: false, reason: `the crawl's own principal was refused (${status}) before the route's code ran, so there is no behaviour to compare against — reading that as clean is \`M130-01\`` };
+    return { reached: false, reason: `the crawl's own principal was refused (${status}) before the route's code ran, so there is no behaviour to compare against — reading that as clean would call a route safe that was never exercised` };
   }
   if (status === 400 || status === 422) {
     return { reached: false, reason: `the synthesized request was rejected as invalid (${status}), so nothing behind the validator ran — a validator's refusal is indistinguishable from a hardened endpoint` };

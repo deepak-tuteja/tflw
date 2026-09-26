@@ -102,7 +102,7 @@ export function ScanPanel({ authorization, matchers, onAuth, onConfig }: {
             {f.count === 1 ? '' : ` ×${f.count}`}
           </span>
         ))}
-        {families.length === 1 ? ' — and that is what puts it behind SCANS.' : ' — and those are what put it behind SCANS.'}
+        {families.length === 1 ? ' — and that is what puts it at the SCANS door.' : ' — and those are what put it at the SCANS door.'}
       </p>
 
       {/* **The env's half, said to be the env's** — `M228` `F` (`D1247`).
@@ -153,7 +153,7 @@ export function ScanPanel({ authorization, matchers, onAuth, onConfig }: {
         <p className="warn" data-compose-scan-unauthorized>
           env <code>{authorization.envName}</code> declares no <code>authorized target</code>, so every assertion above is{' '}
           <code>TF060</code> until <code>tflw.config</code> declares one. That line is an affirmation that you are permitted to scan
-          this host, so nobody but you can write it (<code>D291</code>) — <code>tflw init --scan</code> leaves it commented out for
+          this host, so nobody but you can write it — <code>tflw init --scan</code> leaves it commented out for
           exactly that reason.{' '}
           <button className="linkish" onClick={onConfig} data-compose-scan-config-link>
             add it in Config

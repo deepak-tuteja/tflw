@@ -205,8 +205,8 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     constructs: new Set<Step['type']>([...NEUTRAL_CONSTRUCTS, 'ApiStep', 'WaitUntilApiStmt']),
     adds: [
       { key: 'request', label: '+ request', title: 'an `api` step and the assertion that reads it, at the end of this test' },
-      { key: 'let', label: '+ let', title: '`let name = value` — a binding the requests below can interpolate; it goes at the top of the body, where 97 of the corpus’ 100 preamble statements are' },
-      { key: 'wait', label: '+ wait until', title: '`wait until api …` — re-issues a request until the assertions under it pass, instead of sleeping and hoping' },
+      { key: 'let', label: '+ let', title: '`let name = value` — a binding the requests below can use, at the top of the body' },
+      { key: 'wait', label: '+ wait until', title: '`wait until api …` — repeats a request until the assertions under it pass' },
     ],
     sends: true,
     plays: false,
@@ -261,7 +261,7 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
          into the body it is pressed on, the same as the three above it — what is different is only
          that a browser supplies them instead of a default. A recorder that opened its own surface
          would be the staging form again, wearing a camera. */
-      { key: 'record', label: '+ record', title: 'open the page and use it — every action becomes a step in this test. Expectations are yours to add afterwards' },
+      { key: 'record', label: '+ record', title: 'open the page and use it — every action becomes a step; expectations are yours to add' },
     ],
     sends: false,
     plays: true,
@@ -297,8 +297,8 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     constructs: new Set<Step['type']>([...NEUTRAL_CONSTRUCTS, 'ApiStep', 'WaitUntilApiStmt']),
     adds: [
       { key: 'request', label: '+ request', title: 'an `api` step and the assertion that reads it, at the end of this test' },
-      { key: 'let', label: '+ let', title: '`let name = value` — a binding the requests below can interpolate; it goes at the top of the body, where 97 of the corpus’ 100 preamble statements are' },
-      { key: 'wait', label: '+ wait until', title: '`wait until api …` — re-issues a request until the assertions under it pass, instead of sleeping and hoping' },
+      { key: 'let', label: '+ let', title: '`let name = value` — a binding the requests below can use, at the top of the body' },
+      { key: 'wait', label: '+ wait until', title: '`wait until api …` — repeats a request until the assertions under it pass' },
     ],
     sends: true,
     plays: true,
@@ -335,8 +335,8 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     constructs: new Set<Step['type']>([...NEUTRAL_CONSTRUCTS, 'ApiStep', 'WaitUntilApiStmt']),
     adds: [
       { key: 'request', label: '+ request', title: 'an `api` step and the assertion that reads it, at the end of this test' },
-      { key: 'let', label: '+ let', title: '`let name = value` — a binding the requests below can interpolate; it goes at the top of the body, where 97 of the corpus’ 100 preamble statements are' },
-      { key: 'wait', label: '+ wait until', title: '`wait until api …` — re-issues a request until the assertions under it pass, instead of sleeping and hoping' },
+      { key: 'let', label: '+ let', title: '`let name = value` — a binding the requests below can use, at the top of the body' },
+      { key: 'wait', label: '+ wait until', title: '`wait until api …` — repeats a request until the assertions under it pass' },
     ],
     sends: false,
     plays: true,

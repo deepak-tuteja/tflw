@@ -61,7 +61,7 @@ export interface SpiderSurface {
   /** True when the walk stopped on a bound rather than on running out of links. `D435` requires that
    *  truncation is reported *as* truncation, so this is a field and not a log line. */
   readonly walkCapped: boolean;
-  /** Set when the walk found no link and no form at all — the SPA case (`D442`). Not an error: an
+  /** Set when the walk found no link and no form at all — the SPA case. Not an error: an
    *  origin that needs rendering to crawl is a real limitation, and the honest treatment is a graded
    *  visible gap rather than a silent zero. */
   readonly blindSpot?: string;
@@ -172,7 +172,7 @@ export async function walkSpiderSurface(
     ...(walked > 0 && !sawAnyLink
       ? {
           blindSpot:
-            'the walk fetched pages but found no link and no form — this origin is very likely client-rendered, and a fetching spider cannot see routes that only exist after JavaScript runs (`D442`). ' +
+            'the walk fetched pages but found no link and no form — this origin is very likely client-rendered, and a fetching spider cannot see routes that only exist after JavaScript runs. ' +
             'Recorded as a gap rather than reported as an empty surface, because a scan that saw nothing and a site that has nothing are different facts',
         }
       : {}),

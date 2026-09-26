@@ -132,7 +132,7 @@ export async function evaluateSnapshot(paths: SnapshotPaths, name: string, actua
     return {
       ok: false,
       updated: false,
-      message: `snapshot "${name}": baseline was captured on platform "${baseline.platformKey}", this run is "${platformKey}" — comparing across platforms is a hard error, not a tolerance knob (SPEC §9.9, D15); regenerate the baseline with \`--update-snapshots\` in a matching environment`,
+      message: `snapshot "${name}": baseline was captured on platform "${baseline.platformKey}", this run is "${platformKey}" — comparing across platforms is a hard error, not a tolerance knob (https://deepak-tuteja.github.io/tflw/guide/browser-advanced); regenerate the baseline with \`--update-snapshots\` in a matching environment`,
       diff: { baseline: toBase64(baseline.png), actual: toBase64(actualPng) },
     };
   }

@@ -136,6 +136,10 @@ export function Landing({ project, unconfigured = null, error, noProject, onOpen
           </button>
         ))}
       </div>
+      {/* `M240` `D` (`D1295`) — the one word the page keeps, defined once, where it is first met. */}
+      <p className="muted landing-door-def" data-door-definition>
+        A door is a way into the same project: each shows the tests that do its kind of work.
+      </p>
 
       {/* `D1291` — a directory that is not a project yet still says where it is and which tflw
           this is, in the same footer a project gets; the absolute path is nobody's business. */}
@@ -153,7 +157,7 @@ export function Landing({ project, unconfigured = null, error, noProject, onOpen
           {lensless > 0 ? (
             <span data-lensless={lensless}>
               {' '}
-              · {lensless} test{lensless === 1 ? '' : 's'} behind no door — {lensless === 1 ? 'it carries' : 'they carry'} no construct any door is about
+              · {lensless} test{lensless === 1 ? '' : 's'} at no door — no statement in {lensless === 1 ? 'it' : 'them'} is one a door is about
             </span>
           ) : null}
           {/* `M211` `S2` (`M202-01`) — the counts above leave out files that did not parse, and this

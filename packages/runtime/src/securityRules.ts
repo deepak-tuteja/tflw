@@ -554,7 +554,7 @@ const tlsWeakCipher = tlsRule('sec/tls-weak-cipher', 'serious', 'host offers a b
   if (tls.offered === undefined) {
     return {
       findings,
-      note: `${tlsWeakCipher.id} judged only the suite this host gave tflw's own client — a host that still offers a broken suite alongside a modern one negotiates the modern one and reads clean here. Add \`probe ciphers\` under this origin's \`authorized target\` to enumerate what it offers (SPEC §9.14, D485)`,
+      note: `${tlsWeakCipher.id} judged only the suite this host gave tflw's own client — a host that still offers a broken suite alongside a modern one negotiates the modern one and reads clean here. Add \`probe ciphers\` under this origin's \`authorized target\` to enumerate what it offers (https://deepak-tuteja.github.io/tflw/guide/security-scanning)`,
     };
   }
 
@@ -573,7 +573,7 @@ const tlsWeakCipher = tlsRule('sec/tls-weak-cipher', 'serious', 'host offers a b
   if (unaskable.length > 0) {
     return {
       findings,
-      note: `${tlsWeakCipher.id} could not offer ${unaskable.length} of its ${unaskable.length + accepted.length + tls.offered.refused.length} candidate suites (${unaskable.join(', ')}) — this stack's OpenSSL will not put them in a ClientHello, so nothing was learned about them either way. A host offering only those reads clean here (D486)`,
+      note: `${tlsWeakCipher.id} could not offer ${unaskable.length} of its ${unaskable.length + accepted.length + tls.offered.refused.length} candidate suites (${unaskable.join(', ')}) — this stack's OpenSSL will not put them in a ClientHello, so nothing was learned about them either way. A host offering only those reads clean here`,
     };
   }
   return findings;

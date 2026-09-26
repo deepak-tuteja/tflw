@@ -77,7 +77,7 @@ async function loadPlaywright(): Promise<PWModule> {
     pwModulePromise = import('playwright').catch((err) => {
       pwModulePromise = undefined;
       throw new RuntimeError(
-        `this test uses a browser step, but the optional \`playwright\` peer dependency isn't installed. Run \`npm install -D playwright && tflw install-browsers\` (SPEC §9, §12). (${(err as Error).message})`,
+        `this test uses a browser step, but the optional \`playwright\` peer dependency isn't installed. Run \`npm install -D playwright && tflw install-browsers\` (https://deepak-tuteja.github.io/tflw/guide/browser-basics). (${(err as Error).message})`,
       );
     });
   }
@@ -850,7 +850,7 @@ async function describeAmbiguousMatches(pwLocator: PWLocator): Promise<Ambiguous
 /** Pure, so the degenerate branch below is reachable from a unit test rather than only from a race
  * nobody can stage on demand. */
 export function formatAmbiguity(described: string, via: string, observedCount: number, matches: readonly AmbiguousMatch[]): string {
-  const tail = 'narrow it with `within <container>`, or make the name more specific (SPEC §9.3)';
+  const tail = 'narrow it with `within <container>`, or make the name more specific (https://deepak-tuteja.github.io/tflw/guide/browser-basics)';
   // The caller counted N>1 and threw; if the single describing query then sees fewer than two, the
   // page settled in between. Saying "matched 1 elements" would be internally consistent and
   // actively misleading, so the race is named instead of smoothed over.

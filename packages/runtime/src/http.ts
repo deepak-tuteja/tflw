@@ -164,7 +164,7 @@ export function fetchErrorHint(err: unknown, url: string): string {
     case 'UNABLE_TO_VERIFY_LEAF_SIGNATURE':
     case 'CERT_HAS_EXPIRED':
     case 'ERR_TLS_CERT_ALTNAME_INVALID':
-      return ` — self-signed or private-CA certificate? set \`insecure true\` in tflw.config, or point NODE_EXTRA_CA_CERTS at your CA bundle (see SPEC.md §3.5 "corporate networks")`;
+      return ` — self-signed or private-CA certificate? set \`insecure true\` in tflw.config, or point NODE_EXTRA_CA_CERTS at your CA bundle (see https://deepak-tuteja.github.io/tflw/guide/config)`;
     case 'ENOTFOUND':
       return ` — DNS lookup failed for this host; check the URL and your network/DNS`;
     case 'ECONNREFUSED':

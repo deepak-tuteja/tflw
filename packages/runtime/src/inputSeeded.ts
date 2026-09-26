@@ -185,7 +185,7 @@ export function seededPayloads(granted: readonly MutationClass[], n: number, see
   }
   if (n > MAX_SEEDED_PER_CLASS) {
     throw new Error(
-      `--probe-seeded ${n} exceeds the ${MAX_SEEDED_PER_CLASS}-per-class bound; probes are strictly sequential (D381), ` +
+      `--probe-seeded ${n} exceeds the ${MAX_SEEDED_PER_CLASS}-per-class bound; probes are strictly sequential, ` +
         'so this is wall-clock a single assertion pays — narrow the run with `--tags` instead of widening the corpus',
     );
   }

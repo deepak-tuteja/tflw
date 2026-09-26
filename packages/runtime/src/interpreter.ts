@@ -3300,7 +3300,7 @@ export function resolveWebUrl(path: string, config: ResolvedConfig): string {
     return path;
   }
   if (!config.webBaseUrl) {
-    throw new RuntimeError('no `web` base URL is configured for the active env — add `web "http://localhost:..."` to `tflw.config` (SPEC §3.1, §9.1)');
+    throw new RuntimeError('no `web` base URL is configured for the active env — add `web "http://localhost:..."` to `tflw.config` (https://deepak-tuteja.github.io/tflw/guide/config)');
   }
   return `${config.webBaseUrl}${ensureLeadingSlash(path)}`;
 }
@@ -3428,7 +3428,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           // syntactically legal after any matcher (parser.ts's `parseSnapshotMasks`), but a stray
           // one elsewhere is a clear authoring mistake, caught here rather than silently ignored.
           if (step.masks.length > 0 && step.matcher.name !== 'matchesSnapshot') {
-            throw new RuntimeError('`mask <locator>` only applies alongside `matches snapshot "…"` (SPEC §9.9)');
+            throw new RuntimeError('`mask <locator>` only applies alongside `matches snapshot "…"` (https://deepak-tuteja.github.io/tflw/guide/browser-advanced)');
           }
           // UI locator subjects (SPEC §9.4), network-observation subjects (`request to "…"`/`of
           // request to "…"`, M3d, SPEC §9.7), the `page` a11y subject (M3e, SPEC §9.8), and
@@ -4315,7 +4315,7 @@ function waitUntilReader(
   }
   if (subject.type === 'PageSubject') {
     if (step.matcher.name !== 'hasNoA11yViolations') {
-      throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`page\` — only \`has no [<severity>] a11y violations\` (SPEC §9.8)`);
+      throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`page\` — only \`has no [<severity>] a11y violations\` (https://deepak-tuteja.github.io/tflw/guide/browser-advanced)`);
     }
     const floor = step.matcher.severityFloor ?? null;
     return async () => ({ outcome: describeA11yOutcome(step.matcher.negated, floor, filterBySeverity(await runA11yScan(page), floor)) });
@@ -4336,7 +4336,7 @@ function waitUntilReader(
   // half of that contract rather than dead code: `tflw run` is not obliged to have passed `tflw
   // check`, and the same reasoning keeps the throw in `evaluateNetworkExpect`.
   throw new RuntimeError(
-    `\`${subject.type}\` reads the last \`api\` response, which cannot change between polls — \`wait until\` needs a UI locator, \`page\`, or \`request to "…"\` (SPEC §9.5)`,
+    `\`${subject.type}\` reads the last \`api\` response, which cannot change between polls — \`wait until\` needs a UI locator, \`page\`, or \`request to "…"\` (https://deepak-tuteja.github.io/tflw/guide/retry-and-polling)`,
   );
 }
 
@@ -4419,7 +4419,7 @@ async function execWaitUntilUi(step: WaitUntilUiStmt, ctx: EvalCtx, src: string,
  * piece of work. */
 async function execNetworkExpect(step: ExpectStmt, ref: NetworkRequestRef, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
   if (step.quantifier) {
-    throw new RuntimeError('`any`/`all` are not supported against a `request to "…"` subject (SPEC §9.7)');
+    throw new RuntimeError('`any`/`all` are not supported against a `request to "…"` subject (https://deepak-tuteja.github.io/tflw/guide/browser-advanced)');
   }
   const browser = requireBrowserCtx(ctx);
   const urlPattern = String(evalValue(ref.urlPattern, ctx));
@@ -4462,7 +4462,7 @@ function evaluateNetworkExpect(subject: Subject, matcher: AstMatcher, matched: C
     // throw stays: `checkMatcherSubjects` is the checker's half of one rule, and the runtime does
     // not assume it ran (a `tflw run` on a suite is not obliged to have passed `tflw check` first).
     if (matcher.name !== 'wasMade') {
-      throw new RuntimeError(`\`${matcher.name}\` isn't valid against \`request to "…"\` — only \`was made\` (SPEC §9.7)`);
+      throw new RuntimeError(`\`${matcher.name}\` isn't valid against \`request to "…"\` — only \`was made\` (https://deepak-tuteja.github.io/tflw/guide/browser-advanced)`);
     }
     const made = matched !== undefined;
     const ok = matcher.negated ? !made : made;
@@ -4541,7 +4541,7 @@ function subjectNetworkRef(subject: Subject): NetworkRequestRef | null {
  * for its locator, not a performance shortcut. */
 async function execA11yExpect(step: ExpectStmt, ctx: EvalCtx, src: string, start: number, config: ResolvedConfig): Promise<StepResult> {
   if (step.matcher.name !== 'hasNoA11yViolations') {
-    throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`page\` — only \`has no [<severity>] a11y violations\` (SPEC §9.8)`);
+    throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`page\` — only \`has no [<severity>] a11y violations\` (https://deepak-tuteja.github.io/tflw/guide/browser-advanced)`);
   }
   const browser = requireBrowserCtx(ctx);
   const page = await browser.page.ensurePage(browser.manager);
@@ -4805,7 +4805,7 @@ async function execSecurityExpect(
   tc: TestCtx,
 ): Promise<StepResult> {
   if (step.matcher.name !== 'hasNoSecurityViolations') {
-    throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`response\` — only \`has no [<severity>] security violations\` (SPEC §9.10)`);
+    throw new RuntimeError(`\`${step.matcher.name}\` isn't valid against \`response\` — only \`has no [<severity>] security violations\` (https://deepak-tuteja.github.io/tflw/guide/security)`);
   }
   // `TF039`'s runtime half. `checkResponseScopes` already rejects this statically (`readsResponse`
   // lists `ResponseSubject`), so reaching here means the file was run without a check pass.
@@ -4908,7 +4908,7 @@ function describeSecurityOutcome(
       message:
         `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}security rule applied to this response (${counts}).\n` +
         `${why.join('\n')}\n` +
-        `  Point it at a response one of these rules can judge${floor ? ', or lower the severity floor' : ''} (SPEC §9.10, D285).`,
+        `  Point it at a response one of these rules can judge${floor ? ', or lower the severity floor' : ''} (https://deepak-tuteja.github.io/tflw/guide/security).`,
     };
   }
   const negated = step.matcher.negated;
@@ -5236,7 +5236,7 @@ async function execAuthzExpect(
   // `before`/`after` hook because the executing test is a late-bound fact; here it is in hand.
   if (ctx.sessionNames.length === 0) {
     throw new RuntimeError(
-      '`authorization violations` needs an owner, and the running test declares none — the oracle re-issues this request under every *other* declared principal and compares, so with no `as <session>` there is nothing to compare against (SPEC §3.3, `TF063`)',
+      '`authorization violations` needs an owner, and the running test declares none — the oracle re-issues this request under every *other* declared principal and compares, so with no `as <session>` there is nothing to compare against (https://deepak-tuteja.github.io/tflw/guide/sessions, `TF063`)',
     );
   }
   // `TF062`'s runtime half (D328), and it runs **before any probe is sent**: a request carrying a
@@ -5245,7 +5245,7 @@ async function execAuthzExpect(
   const named = stepNamedOwnCredential(request, ownerIdentity);
   if (named) {
     throw new RuntimeError(
-      `the \`api\` step this asserts on carries a \`${named}\` header that none of its owning session${ctx.sessionNames.length === 1 ? '' : 's'} (${ctx.sessionNames.join(', ')}) supplied — move the credential into a \`session\` block and name it with \`as <session>\` (SPEC §3.3, \`TF062\`)`,
+      `the \`api\` step this asserts on carries a \`${named}\` header that none of its owning session${ctx.sessionNames.length === 1 ? '' : 's'} (${ctx.sessionNames.join(', ')}) supplied — move the credential into a \`session\` block and name it with \`as <session>\` (https://deepak-tuteja.github.io/tflw/guide/sessions, \`TF062\`)`,
     );
   }
 
@@ -5359,7 +5359,7 @@ function probeNote(probes: readonly ProbeResult[], privileged: readonly string[]
   // and a reader comparing two suites' green lines has no other way to see that one of them tested
   // fewer identities than the other.
   if (privileged.length > 0) {
-    lines.push(`\n  note: not probed as ${privileged.map((p) => `\`${p}\``).join(', ')} — declared \`privileged\` (SPEC §3.3)`);
+    lines.push(`\n  note: not probed as ${privileged.map((p) => `\`${p}\``).join(', ')} — declared \`privileged\` (https://deepak-tuteja.github.io/tflw/guide/sessions)`);
   }
   // D482, and it is here for the same reason the line above is: this one changes a verdict, and
   // without it the report contradicts itself. `anonymous` having `leaked` is what tells the two leak
@@ -5375,7 +5375,7 @@ function probeNote(probes: readonly ProbeResult[], privileged: readonly string[]
   if (anonymous?.outcome.kind === 'leaked') {
     lines.push(
       `\n  note: \`${ANONYMOUS}\` received the same resources, so this is public data with no owner — ` +
-        'the leak rules found nothing to violate rather than finding a boundary intact (D482)',
+        'the leak rules found nothing to violate rather than finding a boundary intact',
     );
   }
   return lines.join('');
@@ -5418,7 +5418,7 @@ function describeAuthzOutcome(
       message:
         `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}authorization rule applied (${counts}; ${probeLine}).\n` +
         `${why.join('\n')}\n` +
-        `  Point it at a response whose body carries a root \`id\`, and at a probe set that can answer${floor ? ', or lower the severity floor' : ''} (SPEC §9.11, D285).${note}`,
+        `  Point it at a response whose body carries a root \`id\`, and at a probe set that can answer${floor ? ', or lower the severity floor' : ''} (https://deepak-tuteja.github.io/tflw/guide/authorization-testing).${note}`,
     };
   }
 
@@ -5616,7 +5616,7 @@ function mutationNote(probes: readonly MutationResult[], withheld: readonly stri
   // the half of `M128-01` this milestone can afford to answer — not *which rules stood down* in
   // general, but *which of mine did, and what would turn them on*.
   if (withheld.length > 0) {
-    lines.push(`\n  note: not probed for ${withheld.join(' or ')} — add ${withheld.map((w) => `\`probe ${w}\``).join(' / ')} under that \`authorized target\` (SPEC §9.12)`);
+    lines.push(`\n  note: not probed for ${withheld.join(' or ')} — add ${withheld.map((w) => `\`probe ${w}\``).join(' / ')} under that \`authorized target\` (https://deepak-tuteja.github.io/tflw/guide/input-handling)`);
   }
   return lines.join('');
 }
@@ -5665,7 +5665,7 @@ function describeInputOutcome(
       message:
         `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}input-handling rule applied (${counts}; ${probeLine}).\n` +
         `${why.join('\n')}\n` +
-        `  ${repair}${floor ? ', or lower the severity floor' : ''} (SPEC §9.12, D285).${note}`,
+        `  ${repair}${floor ? ', or lower the severity floor' : ''} (https://deepak-tuteja.github.io/tflw/guide/input-handling).${note}`,
     };
   }
 
@@ -6240,13 +6240,13 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null, ctx: E
   // of request to "…" as x`, which isn't a defined operation — a clear error beats silently
   // capturing the *unrelated* last-`api`-step response instead.
   if (subjectNetworkRef(subject)) {
-    throw new RuntimeError('`capture` does not support a `request to "…"`/`of request to "…"` subject (SPEC §9.7) — only `expect`/`check` against it');
+    throw new RuntimeError('`capture` does not support a `request to "…"`/`of request to "…"` subject (https://deepak-tuteja.github.io/tflw/guide/browser-advanced) — only `expect`/`check` against it');
   }
   // Same reasoning, same ordering (before the response-null guard below, which is meaningless for
   // a subject that was never going to read `response` in the first place): `execA11yExpect`
   // intercepts every `PageSubject` expect/check (SPEC §9.8); reached only via `capture page as x`.
   if (subject.type === 'PageSubject') {
-    throw new RuntimeError('`page` is not a capturable value — only `expect`/`check page has no … a11y violations` (SPEC §9.8)');
+    throw new RuntimeError('`page` is not a capturable value — only `expect`/`check page has no … a11y violations` (https://deepak-tuteja.github.io/tflw/guide/browser-advanced)');
   }
   // M128b, same shape one subject over: `execSecurityExpect` intercepts every `ResponseSubject`
   // expect/check, so this is reached only via `capture response as x`. Named separately from `page`
@@ -6254,7 +6254,7 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null, ctx: E
   // who wrote this wanted *part* of the response, and the parts have names.
   if (subject.type === 'ResponseSubject') {
     throw new RuntimeError(
-      '`response` is not a capturable value — only `expect`/`check response has no … security violations` (SPEC §9.10). To bind part of it, name the part: `capture body.…`, `capture status`, `capture header "…"`',
+      '`response` is not a capturable value — only `expect`/`check response has no … security violations` (https://deepak-tuteja.github.io/tflw/guide/security). To bind part of it, name the part: `capture body.…`, `capture status`, `capture header "…"`',
     );
   }
   // `M159`/`D798`/`D799`. A dialog subject reads the browser page state, never the last `api`
@@ -6268,7 +6268,7 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null, ctx: E
       // as a string, which reports `expected "confirm", got null` — a sentence that reads like the
       // page said the wrong thing rather than like nothing was asked.
       throw new RuntimeError(
-        `no dialog has been raised in this test yet — \`${subject.type === 'DialogMessageSubject' ? 'dialog message' : 'dialog type'}\` reads the last native dialog of this attempt (SPEC §9.1). Arm one with \`accept dialog\`/\`dismiss dialog\` and take the action that raises it first.`,
+        `no dialog has been raised in this test yet — \`${subject.type === 'DialogMessageSubject' ? 'dialog message' : 'dialog type'}\` reads the last native dialog of this attempt (https://deepak-tuteja.github.io/tflw/guide/browser-basics). Arm one with \`accept dialog\`/\`dismiss dialog\` and take the action that raises it first.`,
       );
     }
     return subject.type === 'DialogMessageSubject'
@@ -6312,17 +6312,17 @@ function resolveSubject(subject: Subject, response: ResponseTrace | null, ctx: E
       // already does for `matchesSchema`) and dispatches to `evalRequestMatcher` instead — reached
       // here only for a use `checkRequestAssertions` doesn't (yet) statically forbid, e.g.
       // `capture request as x` (SPEC §6.2.2, decision 18: `request` carries no value to capture).
-      throw new RuntimeError('`request` is not a capturable/comparable value — only `expect`/`check request connects`/`fails` (SPEC §6.2.2)');
+      throw new RuntimeError('`request` is not a capturable/comparable value — only `expect`/`check request connects`/`fails` (https://deepak-tuteja.github.io/tflw/guide/assertions)');
     case 'LocatorSubject':
       // `execUiExpect` intercepts every `LocatorSubject` expect/check before `resolveSubject` is
       // ever called (see the `ExpectStmt` case in `execSteps`) — reached only via `capture
       // button "…" as x`, which isn't a defined operation (SPEC §9.4: locators are asserted, not
       // captured as values).
-      throw new RuntimeError('a UI locator is not a capturable value — only `expect`/`check` against it (SPEC §9.4)');
+      throw new RuntimeError('a UI locator is not a capturable value — only `expect`/`check` against it (https://deepak-tuteja.github.io/tflw/guide/browser-basics)');
     case 'NetworkRequestSubject':
       // Unreachable in practice — the `subjectNetworkRef` guard above already throws before this
       // switch runs for any network-observation subject. Kept for exhaustiveness.
-      throw new RuntimeError('`capture` does not support a `request to "…"` subject (SPEC §9.7) — only `expect`/`check` against it');
+      throw new RuntimeError('`capture` does not support a `request to "…"` subject (https://deepak-tuteja.github.io/tflw/guide/browser-advanced) — only `expect`/`check` against it');
     // `PageSubject` is excluded from this switch's domain entirely — the guard above already threw
     // for it, so TS's narrowing means it's not a case this switch needs (or is allowed) to handle.
   }

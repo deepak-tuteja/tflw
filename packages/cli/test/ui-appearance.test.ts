@@ -1729,3 +1729,88 @@ test('control: axe names an unlabelled `<nav>` when there is one', async () => {
   await page.reload();
   assert.ok(found.length > 0, 'axe found nothing on a page carrying two unnamed navs and a stray one outside main — the instrument is blind');
 });
+
+// ── `M240` `D` — words at rest are budgeted per view (`D1293`) ───────────────────────────────
+//
+// Counted from what the reader can see after the view has painted, minus what is theirs: statement
+// and file text, paths and names (every `<code>`), form values, and a run's own rows — each test
+// and each finding is the run's data, and a report of 13 tests is not 13 times the chrome. Hidden
+// text does not count, and `checkVisibility` is the instrument rather than `getClientRects`,
+// because Chrome lays out a closed `<details>`'s content and rects would count a fold nobody
+// opened. The budgets are `D1293`'s; measured before the pass, Auth was 239 (276 on SCANS) and
+// every other view already fit once the fold was honoured.
+
+const BUDGET: Readonly<Record<string, number>> = { landing: 120, compose: 250, auth: 200, run: 150 };
+const THEIRS = 'code, pre, kbd, input, textarea, select, option, .seq-text, [data-files], [data-user-data], .tip, [data-legend], [data-test], [data-finding], [data-finding-gone]';
+
+const wordsAtRest = (): Promise<{ readonly n: number; readonly text: string }> =>
+  page.evaluate((skip) => {
+    const out: string[] = [];
+    const walkEl = (el: unknown): void => {
+      const e = el as { nodeType: number; matches?: (s: string) => boolean; childNodes: ArrayLike<unknown>; textContent: string | null; checkVisibility?: () => boolean };
+      if (e.nodeType === 3) { out.push(e.textContent ?? ''); return; }
+      if (e.nodeType !== 1) return;
+      if (e.matches!(skip)) return;
+      if (!e.checkVisibility!()) return;
+      for (let i = 0; i < e.childNodes.length; i++) walkEl(e.childNodes[i]);
+    };
+    walkEl(document.body);
+    const text = out.join(' ').replace(/\s+/g, ' ').trim();
+    return { n: text.split(' ').filter((w) => /[A-Za-z]/.test(w)).length, text };
+  }, THEIRS); // one-shot: every caller waits for its view's own subject first
+
+/** A tip is one sentence of at most 90 characters (`D1293`). */
+const tipProblem = (tip: string): string | null =>
+  tip.length > 90 ? `${tip.length} characters` : /[.!?]\s+\S/.test(tip) ? 'two sentences' : null;
+
+const tipsOnPage = (): Promise<string[]> => page.locator('[data-tip]').evaluateAll((els) => els.map((e) => e.getAttribute('data-tip') ?? '')); // one-shot: every caller waits for its view's own subject first
+
+/** The views the budget and the tip rule walk: the landing, and each door's Compose (at a
+ *  declaration, where the add-row tips are), Auth and Run. */
+const COPY_VIEWS: ReadonlyArray<readonly [string, string, string | null]> = [
+  ['', 'landing', null],
+  ...DOORS.flatMap((d) => [[d, 'compose', 'tests/catalog.tflw/L2'], [d, 'auth', null], [d, 'run', null], [d, 'config', null]] as Array<[string, string, string | null]>),
+];
+const COPY_READY: Readonly<Record<string, string>> = { landing: '[data-doors]', compose: '[data-seq-col]', run: '[data-runs]', auth: '[data-api-auth]', config: '[data-api-config="saved"], [data-api-config="unsaved"]' };
+
+test('`M240` `D` (`D1293`): words at rest stay inside each view’s budget, and every tip is one sentence of at most 90 characters', async () => {
+  const over: string[] = [];
+  const tips = new Map<string, string>();
+  let judged = 0;
+  for (const [door, tab, where] of COPY_VIEWS) {
+    if (where === null) await visit(door, tab);
+    else { await page.goto(`${pageUrl}#/${door}/${tab}/${where}`); await page.reload(); }
+    await page.locator(COPY_READY[tab]!).first().waitFor();
+    const budget = BUDGET[tab];
+    if (budget !== undefined) {
+      const { n, text } = await wordsAtRest();
+      judged += 1;
+      if (n > budget) over.push(`${door || '/'} ${tab}: ${n} words > ${budget} — “${text.slice(0, 300)}…”`);
+    }
+    for (const t of await tipsOnPage()) if (!tips.has(t)) tips.set(t, `${door || '/'} ${tab}`);
+  }
+  const badTips = [...tips].flatMap(([t, where]) => { const p = tipProblem(t); return p === null ? [] : [`${where}: ${p} — “${t}”`]; });
+  assert.ok(judged >= 13 && tips.size > 40, `the walk is vacuous: ${judged} views judged, ${tips.size} tips seen`);
+  assert.deepEqual(over, [], over.join('\n'));
+  assert.deepEqual(badTips, [], badTips.join('\n'));
+});
+
+test('control: the copy instruments count a paragraph put back and refuse a 91-character tip', async () => {
+  await at('api', 'auth');
+  await page.locator(COPY_READY.auth!).first().waitFor();
+  const before = (await wordsAtRest()).n;
+  const para = 'Built in and reserved the checker refuses a session by this name because one would either shadow it or be shadowed by it in silence';
+  await page.evaluate((text) => { // one-shot: a write into the live DOM; the reads below are the instruments under test
+    const p = document.createElement('p') as unknown as { textContent: string; setAttribute(n: string, v: string): void };
+    p.textContent = text;
+    p.setAttribute('data-tip', 'x'.repeat(91));
+    (document.body as unknown as { append(n: unknown): void }).append(p);
+  }, para);
+  const after = (await wordsAtRest()).n;
+  const tips = await tipsOnPage();
+  await page.reload();
+  assert.equal(after - before, para.split(' ').length, 'the paragraph put back is not counted word for word');
+  assert.ok(tips.some((t) => tipProblem(t) === '91 characters'), 'a 91-character tip passed the tip rule');
+  assert.equal(tipProblem('one. Two'), 'two sentences');
+  assert.equal(tipProblem('`tflw.config` for this env'), null, 'a dotted name is not a second sentence');
+});

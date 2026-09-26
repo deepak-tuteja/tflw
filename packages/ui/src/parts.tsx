@@ -2320,7 +2320,7 @@ export function TestBand({ decl, door, editing, lastRun }: {
                 onChange={(e) => change({ name: e.target.value })}
                 data-band-name={v.name}
                 aria-label="test name"
-                data-tip="what a run reports this test under, and what `--only` selects it by — so it is the one thing in the file another person reads out loud"
+                data-tip="what a run reports this test under, and what `--only` selects it by"
               />
             ) : (
               <strong data-band-name={test!.name}>{test!.name}</strong>
@@ -2358,7 +2358,7 @@ export function TestBand({ decl, door, editing, lastRun }: {
                 data-band-tags-edit
                 aria-label="tags"
                 placeholder="crud slow"
-                data-tip="space-separated, and **no `@`** — the file writes the sigil for you. Tags are what `--tag` selects a run by and what the door badges count."
+                data-tip="space-separated, without `@` — what `--tag` selects a run by"
               />
             ) : test.tags.length === 0 ? (
               <span className="muted">none</span>
@@ -2841,8 +2841,8 @@ function PathRows({ what, paths, onChange }: {
         data-file-path-add={what}
         data-tip={
           what === 'import'
-            ? 'another `.tflw` file whose declarations this one may use — actions, sessions and hooks written once and resolved here'
-            : 'a JavaScript module this file’s `action`s can call — the escape hatch, named so a reader can see what a test reaches for'
+            ? 'another `.tflw` file whose actions, sessions and hooks this one may use'
+            : 'a JavaScript module this file’s actions can call — the escape hatch'
         }
       >
         + {what}

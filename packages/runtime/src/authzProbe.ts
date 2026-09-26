@@ -210,8 +210,8 @@ export function publicTargetRefusal(url: string, allowPublicTargets: readonly st
   if (allowPublicTargets.some((t) => originOf(t) === origin)) return null;
   return (
     `\`TF065\`: ${origin} is outside the private address ranges and no \`--allow-public-target ${origin}\` was given — ` +
-    `${scan} originates requests your suite did not write, so D21 requires that affirmation on the command line, ` +
-    'where a committed `tflw.config` cannot supply it (SPEC §3.10)'
+    `${scan} originates requests your suite did not write, so tflw requires that affirmation on the command line, ` +
+    'where a committed `tflw.config` cannot supply it (https://deepak-tuteja.github.io/tflw/guide/security-scanning)'
   );
 }
 

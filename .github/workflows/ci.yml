@@ -289,6 +289,14 @@ jobs:
       # command that exits 0 over a tree nobody has seen it judge.
       - run: npm run verify:zero-match:self-test
 
+      # `M240` `D` (`D1294`/`D1295`). A string a reader can see — an error, a report line, the
+      # page — carries the reason or a docs-site URL, never `SPEC §9.8` or `(D285)`: the plans and
+      # the ledger are not published, so an identifier there is a pointer into a document the
+      # reader cannot open. By AST, so a comment is free. Every docs URL must name a page the site
+      # has. Static, under a second; its controls follow it (`D922`).
+      - run: npm run verify:no-internal-refs
+      - run: npm run verify:no-internal-refs:self-test
+
       # The other half of `D666`. `verify:decisions` keeps every *canonical* citation pointed at an
       # entry that exists; this keeps prose from writing the older spelling, `decision 57`, which
       # names a number without saying which of nine numbered sequences indexes it (`M152b`/`D691`).
