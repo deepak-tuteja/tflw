@@ -440,11 +440,18 @@ test('the prefix of a request is the hooks and its own declaration up to it — 
   /** Requests that have something attached — the population on which the old rule and the new one
    *  differ. Counted so the assertion above cannot pass because the corpus never exercises it. */
   let reached = 0;
+  /** Hooks with a request, addressed as the declaration — the population `M239-01` is about. */
+  let hooksAddressed = 0;
   for (const path of corpus(repoRoot)) {
     const outline = fileOutline(path, readFileSync(path, 'utf8'));
     if (outline.diagnostics.some((d) => d.severity === 'error')) continue;
-    const hookRequests = outline.declarations.filter((d) => d.kind === 'hook').flatMap((d) => d.body.requests);
     for (const decl of outline.declarations) {
+      /* `M239-01` — the hooks that run first are the OTHER hooks: a hook addressed as the
+         declaration is listed once, as itself. This counted every hook's requests and then the
+         declaration's own, which for a hook is the same set twice — and it was green on every
+         corpus file that has one because the implementation double-counted the same way. */
+      const hookRequests = outline.declarations.filter((d) => d.kind === 'hook' && d !== decl).flatMap((d) => d.body.requests);
+      if (decl.kind === 'hook' && decl.body.requests.length > 0) hooksAddressed += 1;
       for (const request of decl.body.requests) {
         const at = addressed(outline, request.line);
         assert.ok(at, path);
@@ -456,7 +463,7 @@ test('the prefix of a request is the hooks and its own declaration up to it — 
         const last = prefix.requests[prefix.requests.length - 1]!;
         assert.deepEqual({ method: last.method, path: last.path }, { method: request.method, path: request.path }, `${path}: the prefix ends on the selected request`);
         // Every hook request is in it, before any of the declaration's own.
-        assert.equal(prefix.requests.length, hookRequests.length + decl.body.requests.filter((r) => r.stepPath.step <= request.stepPath.step).length);
+        assert.equal(prefix.requests.length, hookRequests.length + decl.body.requests.filter((r) => r.stepPath.step <= request.stepPath.step).length, `${path}: ${decl.kind === 'hook' ? decl.label : decl.name} — a request listed twice, or one missing`);
         for (const [i, hook] of hookRequests.entries()) {
           assert.equal(prefix.requests[i]!.path, hook.path, `${path}: the hooks run first`);
         }
@@ -484,6 +491,23 @@ test('the prefix of a request is the hooks and its own declaration up to it — 
   }
   assert.ok(checked > 20, `expected the corpus's requests, checked ${checked}`);
   assert.ok(reached > 20, `the narrower cut is only a claim where something IS attached; ${reached} such requests is not a corpus`);
+  assert.ok(hooksAddressed >= 1, 'no hook with a request was addressed, so the double count above was never exercised');
+});
+
+test('`M239-01`: `send all` on a hook lists the hook’s requests once, and the head’s count is the same number', () => {
+  const outline = fileOutline('h.tflw', 'before\n  api GET /a\n  expect status equals 200\n  api GET /b\n  expect status equals 200\n\ntest "one"\n  api GET /c\n  expect status equals 200\n');
+  const hook = outline.declarations[0]!;
+  assert.equal(hook.kind, 'hook');
+  const at = addressed(outline, hook.line);
+  assert.ok(at && at.decl === hook);
+  const all = prefixOf(outline, at, 'all');
+  assert.ok(all);
+  assert.deepEqual(all.requests.map((r) => r.path), ['/a', '/b'], 'the old rule listed /a /b /a /b');
+  assert.equal(all.requests.length, hook.body.requests.length, 'the button and the head disagree');
+  // And from the test, the hook still runs first, once.
+  const test_ = outline.declarations[1]!;
+  const fromTest = prefixOf(outline, addressed(outline, test_.line)!, 'all');
+  assert.deepEqual(fromTest!.requests.map((r) => r.path), ['/a', '/b', '/c']);
 });
 
 test('a declaration with no request has no prefix, because there is nothing to send', () => {
@@ -510,10 +534,11 @@ test('`send all` runs every request in the declaration and `send this` still run
   for (const path of corpus(repoRoot)) {
     const outline = fileOutline(path, readFileSync(path, 'utf8'));
     if (outline.diagnostics.some((d) => d.severity === 'error')) continue;
-    const hookRequests = outline.declarations.filter((d) => d.kind === 'hook').flatMap((d) => d.body.requests);
     for (const decl of outline.declarations) {
       const own = decl.body.requests;
       if (own.length === 0) continue;
+      // The OTHER hooks (`M239-01`): a hook addressed as the declaration lists itself once.
+      const hookRequests = outline.declarations.filter((d) => d.kind === 'hook' && d !== decl).flatMap((d) => d.body.requests);
       const first = own[0]!;
       const at = addressed(outline, first.line);
       assert.ok(at);
