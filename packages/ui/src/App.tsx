@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getFile, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, putFile, reportFileUrl, startRun, subscribe } from './api';
 import type { DocumentView, FileView } from './api';
 import { EMPTY_BASELINE, stageFingerprint } from './baseline';
-import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding } from './contract';
+import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding, UnconfiguredView } from './contract';
 import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { EmptyDoor } from './EmptyDoor';
@@ -294,6 +294,9 @@ export function App() {
   /** `null` until the project probe has answered — `false` is one of the two answers, not a
    *  neutral default, and shipping it as the default is `M235-08`. */
   const [noProject, setNoProject] = useState<boolean | null>(null);
+  /** The unconfigured answer, when that is what the probe got (`D1291`): the directory's name and
+   *  the build stamp, for the landing to say where it is and which tflw this is. */
+  const [unconfigured, setUnconfigured] = useState<UnconfiguredView | null>(null);
 
   /**
    * The open file's bytes, read **once for the page** (`M210` `S1`).
@@ -424,8 +427,9 @@ export function App() {
     return getProject(envPick).then(
       (p) => {
         settled();
-        setProject(p);
-        setNoProject(p === null);
+        setProject(p.configured ? p : null);
+        setUnconfigured(p.configured ? null : p);
+        setNoProject(!p.configured);
       },
       (e: unknown) => {
         settled();
@@ -1129,7 +1133,7 @@ export function App() {
   if (door === null || noProject === true) {
     // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back
     // to the landing, which is where a project can be made (`A0-5`).
-    return <Landing project={project} error={error} noProject={noProject} onOpen={setDoor} onCreated={() => void readProjectView()} />;
+    return <Landing project={project} unconfigured={unconfigured} error={error} noProject={noProject} onOpen={setDoor} onCreated={() => void readProjectView()} />;
   }
 
   /**

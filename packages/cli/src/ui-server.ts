@@ -37,7 +37,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile, readdir, stat, cp, mkdir, writeFile, rename, unlink, realpath } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve, relative, dirname, extname, sep } from 'node:path';
+import { join, resolve, relative, dirname, extname, sep, basename } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, pageOpening, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
@@ -339,7 +339,25 @@ export interface ProjectAction {
   readonly opensPage: boolean;
 }
 
+/**
+ * **A directory with no `tflw.config` is a project that has not started, not an error** — `M240`
+ * `B` (`D1291`). `GET /api/project` answers this shape with a 200: the directory's basename only —
+ * never the absolute path, which the 404 this replaces carried in its body (`D1278` said errors
+ * carry none; this extends it to the unconfigured answer) — and the build stamp, so the landing can
+ * still say which tflw this is. `noProject` stays beside `configured` for the readers that asked
+ * it by that name (`e2e.test.ts`, the page's own probe).
+ */
+export interface UnconfiguredView {
+  readonly configured: false;
+  readonly noProject: true;
+  /** The directory's basename. */
+  readonly root: string;
+  readonly version: BuildStamp;
+}
+
 export interface ProjectView {
+  /** `true` on every project; the unconfigured answer is `UnconfiguredView`. */
+  readonly configured: true;
   readonly root: string;
   /**
    * **Which tflw this is** — `M240` `F` (`M239-10`). The same stamp `tflw spec` prints, so the
@@ -826,7 +844,7 @@ export async function readProject(root: string, envName?: string | null): Promis
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
     sessions: sessionViews(parsed.config, resolved),
   };
-  return { root, version: await stamp(), envs, reportDir: resolved.reportDir, helpers: resolved.helpers, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: isIgnored(root, SCRATCH_PATH), playScratch: PLAY_SCRATCH, playIgnored: isIgnored(root, PLAY_SCRATCH), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
+  return { configured: true, root, version: await stamp(), envs, reportDir: resolved.reportDir, helpers: resolved.helpers, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: isIgnored(root, SCRATCH_PATH), playScratch: PLAY_SCRATCH, playIgnored: isIgnored(root, PLAY_SCRATCH), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
 }
 
 /**
@@ -1839,14 +1857,25 @@ export class UiServer {
       PREREAD.set(req, text);
     }
 
-    if (path === '/api/project' && method === 'GET') {
-      // "There is no project here" is a different answer from "this project is broken", and the
-      // landing has to tell them apart to know whether to offer to create one (`M200` `A0-5`).
-      // Until now both arrived as a 400 carrying a raw `ENOENT` with an absolute path in it,
-      // which is neither a usable signal nor a sentence to show anyone.
-      if (!existsSync(join(this.opts.root, CONFIG_PATH))) {
-        return json(res, 404, { error: 'no tflw.config here — this directory is not a tflw project yet', noProject: true, root: this.opts.root });
+    /* **An unconfigured directory, route by route** — `M240` `B` (`D1291`). "There is no project
+       here" is a different answer from "this project is broken", and the landing has to tell them
+       apart to know whether to offer to create one (`M200` `A0-5`). It used to be a 404 on
+       `/api/project` alone, carrying the absolute root in its body, while `/api/reports` reached
+       `readProject` and died with an `ENOENT` (logged on every landing over an empty directory).
+       Now: the project route answers the unconfigured shape with a 200, the lists answer empty,
+       `/api/init` and the in-memory run list work, and every route that would read or write the
+       project answers 409 with one sentence — until `init` has run. */
+    const unconfigured = !existsSync(join(this.opts.root, CONFIG_PATH));
+    if (unconfigured && path.startsWith('/api/')) {
+      if (path === '/api/project' && method === 'GET') {
+        const view: UnconfiguredView = { configured: false, noProject: true, root: basename(this.opts.root), version: await stamp() };
+        return json(res, 200, view);
       }
+      if (path === '/api/reports' && method === 'GET') return json(res, 200, []);
+      const allowed = path === '/api/init' || path === '/api/runs' || path.startsWith('/api/runs/') || path === '/api/config';
+      if (!allowed) return json(res, 409, { error: 'this directory has no tflw.config yet — init first' });
+    }
+    if (path === '/api/project' && method === 'GET') {
       try {
         // `?env=` — `D1248`. Absent means *whatever the config calls default*, which is what every
         // caller before `M228` `F` got and what the page sends until somebody picks one.

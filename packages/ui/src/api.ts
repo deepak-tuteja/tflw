@@ -1,6 +1,6 @@
 // The page's only door to the server (`M192` U2): one function per route, and the stream.
 
-import type { EndEvent, ProjectView, ReportDir, RunEvent, RunRecord, RunReport, RunRequest } from './contract';
+import type { EndEvent, ProjectView, ReportDir, RunEvent, RunRecord, RunReport, RunRequest, UnconfiguredView } from './contract';
 
 /**
  * This session's token (`M239` `A`, `D1276`) — read off the URL `tflw ui` printed and opened. Every
@@ -22,15 +22,16 @@ async function getJson<T>(url: string): Promise<T> {
 
 /** `null` when this directory holds no `tflw.config` — which the landing offers to fix, and which
  *  is a different answer from a project that does not read (`M200` `A0-5`). */
-export async function getProject(env?: string | null): Promise<ProjectView | null> {
+export async function getProject(env?: string | null): Promise<ProjectView | UnconfiguredView> {
   /* **`?env=` — `M228` `F` (`D1248`).** `authorization` is a per-env fact and the pane hands it to
      the checker (`D1240`), so a page whose env select moved while this route ignored the pick was
      predicting `TF060` against a different env than the one it was about to run. `null` means
      *whatever the config calls default*, which is what the page sends until somebody picks. */
   const res = await fetch(env == null ? '/api/project' : `/api/project?env=${encodeURIComponent(env)}`, authed({ cache: 'no-store' }));
-  if (res.status === 404) return null;
+  // `M240` `B` (`D1291`) — a directory with no `tflw.config` is a 200 carrying `configured: false`,
+  // the directory's basename and the build stamp; the 404 this replaces carried the absolute path.
   if (!res.ok) throw new Error(`/api/project: ${res.status} ${(await res.json() as { error?: string }).error ?? ''}`);
-  return (await res.json()) as ProjectView;
+  return (await res.json()) as ProjectView | UnconfiguredView;
 }
 
 /** Create a project here, by spawning `tflw init` — the terminal's own scaffolds (`D1051`). */

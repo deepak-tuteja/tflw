@@ -13,7 +13,7 @@ import { createServer, type Server } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CLI_FLAGS, SPEC_MANIFEST_VERSION, specConstructs } from '@tflw/lang';
 import { ARTIFACT_CONTRACT } from '@tflw/reporter';
@@ -5673,8 +5673,13 @@ test('`tflw ui` on an empty directory serves a blank project, and refuses only a
 
     // And the project route says what it was built to say, through the binary this time.
     const before = await api(`${base}api/project`);
-    assert.equal(before.status, 404);
-    assert.deepEqual(((await before.json()) as { noProject?: boolean }).noProject, true);
+    // `M240` `B` (`D1291`) — a 200 carrying the unconfigured shape, not a 404: a directory with no
+    // `tflw.config` is a project that has not started, and the body carries the basename only.
+    assert.equal(before.status, 200);
+    const shape = (await before.json()) as { noProject?: boolean; configured?: boolean; root?: string };
+    assert.deepEqual(shape.noProject, true);
+    assert.equal(shape.configured, false);
+    assert.equal(shape.root, basename(dir), 'the body carries the directory by name, never by absolute path');
 
     // The create affordance now reaches something: `POST /api/init` spawns `tflw init` and the
     // directory becomes a project the same route can then describe. This is the half that was
