@@ -13788,8 +13788,9 @@ on this milestone and is not built here.
 **`M241` — authoring completeness: the Source editor, actions, crawls, the strip, scale**
 
 The fourth milestone of `PLAN_M239_ENTERPRISE_READINESS.md` (§5 there), written on 2026-09-26
-from a measurement of the tree at `78aa376` (tflw `main` after `M240` merged). The arc's
-decisions 8, 9, 10, 11, 21 and the E4 half of 22 land here. The milestone where the page stops
+from a measurement of the tree at `78aa376` (tflw `main` after `M240` merged). The review
+decisions `PLAN_M239_ENTERPRISE_READINESS.md` numbers 8, 9, 10, 11, 21 and the E4 half of 22 land
+here. The milestone where the page stops
 having a documented fallback it does not have.
 
 <!-- GENERATED:decisions:end -->
