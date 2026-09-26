@@ -159,8 +159,9 @@ release.
 
 ## Platform support
 
-Tested on Linux/macOS, on Node 22 and Node 24 — the two versions CI runs. Windows works via WSL;
-there is no native-Windows CI for `0.1` yet — a deliberate trade-off (P#79), revisited on demand.
+CI runs the whole suite on Linux under Node 22 and Node 24, and on native Windows under Node 22
+(`M243`, `D1333`, which revisits P#79's Linux-only trade-off). macOS is where tflw is written, but
+no CI job runs on it.
 
 tflw is pre-1.0: the latest release is the only one that receives fixes. Security reports go
 through GitHub's private vulnerability reporting — see [`SECURITY.md`](SECURITY.md).
