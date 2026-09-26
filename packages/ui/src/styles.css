@@ -694,6 +694,11 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .editor .cm-selectionBackground, .editor .cm-editor.cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 28%, transparent); }
 .config-text .cm-editor { min-height: 320px; }
 .config-text .cm-scroller { min-height: 320px; }
+/* `M243-14`: capped, as Source's is. Without a cap the editor was as tall as the file, and the
+   fixture project's config put the Config tab 48 px past one screen at 1440×900 — which the
+   parity pin only missed because it read before CodeMirror had laid out. Source's `60vh`, less the
+   96 px the Config panel's head and its note take above the editor that Source's does not. */
+.config-text .cm-scroller { max-height: calc(60vh - 96px); overflow: auto; }
 .source-editor { margin-top: 12px; }
 /* The cap is on the scroller, not the editor: CodeMirror's scroller is `height: 100%`, and a
    percentage height under a `max-height` parent does not resolve, so capping the editor grew the

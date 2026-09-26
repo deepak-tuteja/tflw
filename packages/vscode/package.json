@@ -43,7 +43,7 @@
   "scripts": {
     "build": "node scripts/bundle.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "TSX_TSCONFIG_PATH=./tsconfig.test.json node --import tsx --test \"test/**/*.test.ts\"",
+    "test": "tsx --tsconfig ./tsconfig.test.json --test \"test/**/*.test.ts\"",
     "vscode:prepublish": "npm run build",
     "package": "vsce package --no-dependencies"
   },

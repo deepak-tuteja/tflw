@@ -125,9 +125,9 @@ fix:
   warning banner, never a silent trade-off.
 - **Private/internal CA:** prefer `NODE_EXTRA_CA_CERTS=/path/to/ca.pem npx tflw run` over
   `insecure true` — verification stays on, only your org's CA is added.
-- **Corporate HTTP(S) proxy:** `NODE_USE_ENV_PROXY=1` on Node ≥ 24 makes `fetch` honor
-  `HTTP_PROXY`/`HTTPS_PROXY`. Node 22 has no built-in env-var proxy path for `fetch` — an honest
-  limitation, not worked around with a proxy-agent dependency.
+- **Corporate HTTP(S) proxy:** `NODE_USE_ENV_PROXY=1` makes `fetch` honor `HTTP_PROXY`/`HTTPS_PROXY`
+  on Node 24 and on current Node 22 (measured on 22.22.0). An older Node 22 has no built-in env-var
+  proxy path for `fetch` — update Node; it is not worked around with a proxy-agent dependency.
 
 Network failures name the likely cause instead of a bare `fetch failed` — a cert problem points at
 `insecure true`/`NODE_EXTRA_CA_CERTS`, `ENOTFOUND` names a DNS failure, `ECONNREFUSED` asks whether
