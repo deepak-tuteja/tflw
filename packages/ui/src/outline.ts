@@ -834,6 +834,12 @@ export function prefixOf(outline: FileOutline, at: Addressed, form: SendForm = '
   const requests: { where: string; method: string; path: string }[] = [];
   for (const hook of outline.declarations) {
     if (hook.kind !== 'hook') continue;
+    /* **A hook is not a prefix of itself** — `M240` `F` (`M239-01`). With a hook as the addressed
+       declaration this loop listed its requests as the file's hooks and the loop below listed them
+       again as its own, so `send all` on `before each` said *4 requests* against the head's *2*
+       and named each one twice (review U4). The header counted `decl.body.requests`; this counted
+       the same set twice. One set now: the other hooks first, then the declaration's own. */
+    if (hook === decl) continue;
     for (const r of hook.body.requests) requests.push({ where: hook.label, method: r.method, path: r.path });
   }
   const lines: number[] = [];

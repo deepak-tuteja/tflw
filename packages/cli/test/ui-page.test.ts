@@ -2854,6 +2854,57 @@ test('`M240` `F` (`M239-10`): the door bar names which tflw this is, and links t
   }
 });
 
+test('`M240` `F` (`M239-01`): `send all` on a hook counts and lists the hook’s requests once — head, button and list agree', async () => {
+  const view = await fullProject();
+  const hooked = view.files.find((f) => f.path.endsWith('hook-first.tflw'))!;
+  const text = await readFile(join(root, hooked.path), 'utf8');
+  const hookLine = text.split('\n').findIndex((l) => l === 'before') + 1;
+  const testLine = text.split('\n').findIndex((l) => l.startsWith('test ')) + 1;
+  const hookRequests = text.split('\n').slice(hookLine, testLine - 1).filter((l) => /^\s+api /.test(l)).length;
+  assert.equal(hookRequests, 2, 'the fixture’s hook carries two requests');
+  await page.goto(`${pageUrl}#/api/compose/${hooked.path}/L${hookLine}`);
+  await page.reload();
+  await page.locator('[data-compose-summary][data-compose-decl-kind="hook"]').waitFor();
+  await page.locator('[data-compose-send="all"]').waitFor();
+  await page.locator('[data-prefix]').waitFor();
+  const head = (await page.locator('[data-compose-summary]').textContent()) ?? ''; // one-shot: the summary was waited for by kind above, on a page loaded by this test's own reload
+  assert.match(head, /\b2 requests\b/, `the head reads ${head}`);
+  const button = (await page.locator('[data-compose-send="all"]').textContent()) ?? ''; // one-shot: waited for above, same page load
+  assert.match(button, /\b2\b/, `the button reads ${button} — the old rule said 4`);
+  assert.equal(await page.locator('[data-prefix]').getAttribute('data-prefix'), '2', 'the list under the button is not the head’s set'); // one-shot: waited for above
+  // Each listed once, each naming the hook it belongs to (`where`), and nothing listed twice.
+  assert.deepEqual(await page.locator('[data-prefix-request]').allTextContents().then((xs) => xs.map((x) => x.replace(/\s+/g, ' ').trim().replace(/\s*before each$/, ''))), ['GET /items', 'GET /items/1']); // one-shot: population established by `[data-prefix="2"]` above
+});
+
+test('`M240` `F` (`M239-11`): with no remembered width, the sequence column is as wide as the file needs; a remembered 220 still clips', async () => {
+  // A file with one row longer than the 300 px the column used to open at, written into the
+  // served project for this test and removed after it.
+  const long = 'tests/zz-long-row.tflw';
+  // Longer than 300 px of 12 px mono and shorter than the 60 %-of-pane cap the fit stops at.
+  await writeFile(join(root, long), 'test "a long path"\n  api GET /a/path/past/three/hundred/px/of/column\n  expect status equals 200\n');
+  const clipped = (): Promise<number> => page.locator('.seq-col .seq-text').evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth).length); // one-shot: read only through `settle` below, at both widths
+  try {
+    await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.removeItem('tflw.compose.width')); // one-shot: a write, not a read
+    await page.goto(`${pageUrl}#/api/compose/${long}`);
+    await page.reload();
+    await page.locator('.seq-col .seq-text').first().waitFor();
+    const width = await settle(() => page.locator('[data-compose-footer]').evaluate((el) => (el as unknown as { style: { getPropertyValue: (n: string) => string } }).style.getPropertyValue('--seq-w')), untilMeasurable('the column has a fitted width', (v) => v !== '' && v !== '300px'), { attempts: 40, delayMs: 50, page });
+    assert.notEqual(width.value, '300px', 'the column opened at the builder’s 300 px');
+    const fitted = await settle(clipped, untilMeasurable('the rows have laid out', (n) => n === 0), { attempts: 40, delayMs: 50, page });
+    assert.equal(fitted.value, 0, `${fitted.value} row(s) still ellipsised at the fitted default (${width.value})`);
+    // The negative control: the same file under a remembered 220 clips, so the measurement above
+    // is of the width and not of a row that fits anything.
+    await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.setItem('tflw.compose.width', '220')); // one-shot: a write
+    await page.reload();
+    await page.locator('.seq-col .seq-text').first().waitFor();
+    const narrow = await settle(clipped, untilMeasurable('the rows have laid out at 220', (n) => n > 0), { attempts: 40, delayMs: 50, page });
+    assert.ok(narrow.value > 0, 'a 220 px column did not clip the long row, so the instrument sees nothing');
+  } finally {
+    await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.removeItem('tflw.compose.width')); // one-shot: a write
+    await rm(join(root, long), { force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // `M224` — the LOAD door stops being a form and starts being a door (`D1205`–`D1214`).
 //
@@ -10123,10 +10174,14 @@ test('`M216` `E`: the Compose columns are the reader’s too, by the same grip (
     // **One mechanism, so the same claims hold without being reimplemented**: a separator role, a
     // keyboard, a clamp at both ends, and a memory that survives a reload.
     assert.equal(await grip.getAttribute('role'), 'separator');
-    assert.equal(await seqWidth(), 300, 'the default is the ceiling the grid used to hold');
+    /* `M239-11` — the default is no longer the grid's old 300 px ceiling: with nothing remembered
+       the column opens as wide as the file needs, inside the grip's own range. The claim here is
+       the grip's, and it holds from wherever the column opened. */
+    const opened = await seqWidth();
+    assert.ok(opened >= 220 && opened <= 620, `the column opened at ${opened}px, outside the grip's range`);
     await grip.focus();
     await p.keyboard.press('ArrowRight');
-    assert.equal(await seqWidth(), 316);
+    assert.equal(await seqWidth(), Math.min(620, opened + 16));
 
     const box = (await grip.boundingBox())!;
     await p.mouse.move(box.x + box.width / 2, box.y + 60);
