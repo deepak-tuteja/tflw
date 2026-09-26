@@ -1304,7 +1304,12 @@ test('a real degrading server triggers a genuine backOff warning on a closed-mod
 // Both shapes are asserted in one test on purpose. `assert.equal(backOff, undefined)` alone is
 // satisfied by any change that stops the diagnostic running at all, so the `hold` half is the
 // control that says the diagnostic is still alive and still quiet on a healthy target.
-test('a rising target against a healthy finite-capacity server produces no diagnosis, while the same server under `hold` still gets one (M107-01)', async () => {
+// `M243-17`: excluded on Windows by name. The fixture's latency is `setTimeout` in 5 ms steps, and
+// Windows' default timer granularity (~15.6 ms) quantises them, so the healthy server's ratio lands
+// either side of the warning line by luck (0.207 on one run, a pass on the one before). A fact about
+// this fixture's clock on that runner, not about the diagnostic, which Linux holds every run.
+const WINDOWS_TIMERS = process.platform === 'win32' ? 'M243-17: Windows timer granularity quantises the fixture\'s 5 ms steps' : false;
+test('a rising target against a healthy finite-capacity server produces no diagnosis, while the same server under `hold` still gets one (M107-01)', { skip: WINDOWS_TIMERS }, async () => {
   let inflight = 0;
   const server = await startFixtureServer({
     '/work': (_req, res) => {
