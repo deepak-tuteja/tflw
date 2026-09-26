@@ -47,7 +47,7 @@
 // because `setFile` drops the focus line by design. No new grammar, no second answer to *where am
 // I*.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, useLayoutEffect } from 'react';
 import { PlanPanel } from './PlanPanel';
 import { workloadEditOf, workloadSeconds } from './workloadEdit';
 import { menuTrigger, type MenuItem, type MenuRequest, type MenuTrigger } from './ContextMenu';
@@ -1047,6 +1047,35 @@ export function ComposePane(props: ComposePaneProps) {
    *  reason recorded there: a remembered 620 px on a 700 px window is a response with no editor. */
   const [seqWidth, setSeqWidth] = useState<number>(() => storedSize(COMPOSE));
   const column = useRef<HTMLDivElement | null>(null);
+  /**
+   * **With no remembered width, the column is as wide as the file needs** — `M240` `F`
+   * (`M239-11`). `COMPOSE.fallback` is 300 px, and on the dogfood 25–35 rows per view were
+   * ellipsised at it (review P5): a builder's number for a column whose content is the reader's.
+   * Measured once per file open, from the rows as drawn — a row's need is its own width plus
+   * whatever its text overflows by — then `min(need + 24, 0.6 × pane)`, clamped to the grip's
+   * range. Never after the reader has dragged: a stored width is a choice, and this runs only
+   * while there is none. Retried on the next outline until rows exist to measure.
+   */
+  const fitted = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (fitted.current === path) return;
+    let stored: string | null = null;
+    try { stored = window.localStorage.getItem(COMPOSE.key); } catch { /* a browser that will not remember still gets a fitted default */ }
+    if (stored !== null) { fitted.current = path; return; }
+    // `column` is the editor's ref; the sequence column is the grid's first region.
+    const col = stack.current?.querySelector<HTMLElement>('.seq-col') ?? null;
+    if (col === null) return;
+    let need = 0;
+    for (const row of col.querySelectorAll<HTMLElement>('.seq-row')) {
+      const text = row.querySelector<HTMLElement>('.seq-text');
+      need = Math.max(need, text === null ? row.scrollWidth : row.clientWidth - text.clientWidth + text.scrollWidth);
+    }
+    if (need === 0) return;
+    fitted.current = path;
+    const pane = stack.current?.clientWidth ?? 0;
+    const cap = pane > 0 ? Math.round(pane * 0.6) : COMPOSE.max;
+    setSeqWidth(Math.min(COMPOSE.max, Math.max(COMPOSE.min, Math.min(need + 24, cap))));
+  }, [path, outline]);
   /** The footer layout's container: the pane grid, which owns the rows when `.editor-col` has been
    *  flattened into it. `fitEditor` clamps against whichever of the two is live (`D1227`). */
   const stack = useRef<HTMLDivElement | null>(null);
