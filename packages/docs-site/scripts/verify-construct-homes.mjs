@@ -17,9 +17,9 @@
 // step, and a rule forbidding it would make the site worse to read. The claim is a floor in the
 // other direction — the owning chapter must not be silent.
 import { readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { constructCorpus, constructMatchers, findMarkdownFiles } from './doc-blocks.mjs';
+import { constructCorpus, relKey, constructMatchers, findMarkdownFiles } from './doc-blocks.mjs';
 import { CONSTRUCT_HOMES, homesAreComplete } from './construct-homes.mjs';
 import * as manifests from '@tflw/lang';
 
@@ -70,7 +70,7 @@ export function scanConstructHomes({ files, constructs, manifests: mans, homes =
 }
 
 // ── run ──────────────────────────────────────────────────────────────────────────────────────
-const files = findMarkdownFiles(ROOT).map((path) => ({ key: relative(ROOT, path), text: readFileSync(path, 'utf8') }));
+const files = findMarkdownFiles(ROOT).map((path) => ({ key: relKey(ROOT, path), text: readFileSync(path, 'utf8') }));
 const constructs = manifests.specConstructs();
 const missing = homesAreComplete(constructs);
 const { problems, checked, unmatchable } = scanConstructHomes({ files, constructs, manifests });
