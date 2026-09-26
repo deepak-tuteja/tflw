@@ -141,6 +141,10 @@ export function SourcePanel({ file, pending, diagnostics, project, door }: {
       <pre
         className="preview source-text"
         data-preview
+        /* `M240` `E` — a scrolling region the keyboard cannot reach cannot be read past its first
+           screen without a mouse; one Tab stop and a name make it a place. */
+        tabIndex={0}
+        aria-label="the file's source"
         data-source-gutter={String(shown === '' ? 1 : shown.split('\n').length).length}
         style={{ ['--gutter-ch' as string]: `${String(shown === '' ? 1 : shown.split('\n').length).length}ch` }}
         ref={pre}

@@ -151,7 +151,8 @@ export function Workload({ test, other }: { test: WorkloadTestResult; other?: Co
       <table className="stats" data-stats>
         <thead>
           <tr>
-            <th />
+            {/* `M240` `E` — the corner names its column for a screen reader and draws nothing. */}
+            <th><span className="sr-only">measure</span></th>
             <th>this run</th>
             {b ? (
               <>

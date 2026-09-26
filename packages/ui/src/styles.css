@@ -221,6 +221,7 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
 .doorbar-version:hover { color: var(--fg); text-decoration: underline; }
 /* `M240` `C` (`D1292`) — the legend's door: `?` opens the same list the `?` key does. */
 .doorbar-legend { font-size: 11px; padding: 0 6px; min-width: 0; }
+.legend h2 { margin: 0; font-size: var(--title-size); font-weight: var(--title-weight); }
 .legend dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
 .legend dl > div { display: contents; }
 .legend dt { font-weight: 600; }
@@ -292,13 +293,17 @@ body:has(.split.dragging) .stage-frame { pointer-events: none; }
    hover — without this the file tree highlights row by row as the pane is widened. */
 body:has(.col-grip.dragging) { cursor: col-resize; user-select: none; }
 .sidebar { border-right: var(--border) solid var(--line); background: var(--panel); overflow: auto; padding: calc(var(--unit) * 2); }
+/* `M240` `E` — the explorer and its grip in one `<aside>`, spanning the page's first two tracks. */
+.sidebar-col { grid-column: 1 / 3; display: grid; grid-template-columns: minmax(0, 1fr) 6px; min-width: 0; min-height: 0; }
 .main { overflow: auto; padding: calc(var(--unit) * 2) calc(var(--unit) * 3) 40px; }
 .muted { color: var(--muted); }
 .error { color: var(--fail); }
 .warn { color: var(--warn); }
 .empty { padding: 24px 0; }
 
-.project .root { font-weight: 600; font-size: 15px; }
+.project .root { font-weight: 600; font-size: 15px; margin: 0; }
+/* `M240` `E` — present to a screen reader, absent to the eye. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* The run strip (`M205` Q12, built by `M209` `S1`). It sits between the doorbar and the tabs, and
    it is a ROW because it is one sentence: run this env, this wide, over this much. In the sidebar
    these were a stacked grid 160 px wide, which is what a column does to a command. */
@@ -452,7 +457,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .thresholds { border-collapse: collapse; font-size: 13px; }
 .thresholds td { padding: 2px 10px 2px 0; }
 .thresholds tr.fail td { color: var(--fail); }
-@media (max-width: 900px) { .app { grid-template-columns: 1fr; } .col-grip { display: none; } .sidebar { border-right: 0; border-bottom: 1px solid var(--line); } .trace { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar-col { grid-column: auto; grid-template-columns: minmax(0, 1fr); } .col-grip { display: none; } .sidebar { border-right: 0; border-bottom: 1px solid var(--line); } .trace { grid-template-columns: 1fr; } }
 
 /* Binary evidence (U3). */
 .screenshot { margin: 6px 0; }
@@ -995,7 +1000,7 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .authoring-new { display: flex; gap: 6px; margin: 0 0 8px; }
 .new-thing { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 40; }
 .new-thing-card { background: var(--panel); border: var(--border) solid var(--line); border-radius: var(--radius); padding: calc(var(--unit) * 2.6); width: min(560px, 92vw); max-height: 88vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
-.new-thing-card h3 { margin: 0; font-size: var(--title-size); font-weight: var(--title-weight); }
+.new-thing-card h2, .new-thing-card h3 { margin: 0; font-size: var(--title-size); font-weight: var(--title-weight); }
 .new-thing-card .row { display: flex; gap: 8px; align-items: flex-end; }
 .new-thing-card .preview { max-height: 180px; overflow: auto; }
 
@@ -1725,8 +1730,10 @@ p.scan-probes::before { content: ''; }
 }
 /* `.on` rather than `:hover`: the active item is driven by the keyboard as well as the pointer,
  * and a rule that only answered to hover would leave arrow-key navigation invisible. */
-.ctx-item.on:not(:disabled) { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
-.ctx-item.danger.on:not(:disabled) { background: color-mix(in srgb, var(--fail) 18%, transparent); color: var(--fail); }
+/* `M240` `E` — the lit item keeps its tint and reads in the body ink: accent on an accent tint was
+   under 4.5:1 on Paper, which axe found the first time it looked at an open menu. */
+.ctx-item.on:not(:disabled) { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--fg); }
+.ctx-item.danger.on:not(:disabled) { background: var(--fail-bg); color: var(--fail-on); }
 .ctx-item:disabled { color: var(--muted); }
 
 /* `D1146` — the reason a disabled item gives, in the menu, under the item that refused. The same

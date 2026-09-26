@@ -117,9 +117,9 @@ export function ScanPanel({ authorization, matchers, onAuth, onConfig }: {
           needs, and `M207` `S5`'s measurement is that every project on this machine renders only
           the healthy branch — folding it away by default would trade `D1076` for tidiness against
           the one reader it is written for. */}
-      <h3 className="scan-env" data-compose-scan-env={authorization.envName}>
+      <h2 className="scan-env" data-compose-scan-env={authorization.envName}>
         env <code>{authorization.envName}</code>
-      </h3>
+      </h2>
 
       {/* **`M207` `S5`'s reason, IN BOTH STATES, and the wording is the form's moved verbatim.**
           Not a paraphrase, and the first draft of this panel made it one — which would have been

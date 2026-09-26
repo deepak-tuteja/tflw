@@ -193,7 +193,7 @@ export type SeqTarget =
   | { readonly kind: 'request'; readonly decl: OutlineTest; readonly request: OutlineRequest; readonly line: number }
   | { readonly kind: 'step'; readonly statement: OutlineStatement; readonly line: number };
 
-function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, indent, statement, door, band, refusal, menu, scope }: {
+function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, indent, statement, door, band, refusal, menu, scope, head }: {
   readonly line: number;
   readonly selected: boolean;
   readonly onLine: (line: number) => void;
@@ -234,10 +234,15 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
    *  what the row says as the gesture is — `review-submission.tflw:29` is the file that proves it
    *  by carrying a comment about the assertion that read the field it had just typed into. */
   readonly scope?: string | null;
+  /** **The head of a group** (`M240` `E`): the row that opens a `.seq-group` `<li>` is that item's
+   *  first line, not an item of its own, so it draws as a `<div>` — an `<li>` directly inside an
+   *  `<li>` is a list item with no list, which is what axe found on every Compose. */
+  readonly head?: boolean;
 }) {
   const foreign = statement !== undefined && door !== undefined && isForeign(statement.lens, door);
+  const Row = head === true ? 'div' : 'li';
   return (
-    <li
+    <Row
       className={`seq-row${selected ? ' on' : ''}${indent ? ' under' : ''}${foreign ? ' locked' : ''}`}
       data-seq-row={kind}
       data-seq-line={line}
@@ -276,7 +281,7 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
       {plus}
       {trailing}
       {refusal === undefined || refusal === null ? null : <Refusal held={refusal} onLine={onLine} />}
-    </li>
+    </Row>
   );
 }
 
@@ -1047,6 +1052,17 @@ export function ComposePane(props: ComposePaneProps) {
    *  reason recorded there: a remembered 620 px on a 700 px window is a response with no editor. */
   const [seqWidth, setSeqWidth] = useState<number>(() => storedSize(COMPOSE));
   const column = useRef<HTMLDivElement | null>(null);
+  /* `M240` `E` — a focusable `separator` is a control with a value, and axe holds it to one: the
+     editor's height in px, the same number the arrows move. While the track is content-sized
+     (`D1195`) no state holds it, so it is read off the editor's box after every render. */
+  const splitEl = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = splitEl.current;
+    const editor = el?.previousElementSibling ?? null;
+    if (el === null || editor === null) return;
+    el.setAttribute('aria-valuenow', String(Math.round(editor.getBoundingClientRect().height)));
+    el.setAttribute('aria-valuemin', String(EDITOR_MIN));
+  });
   /**
    * **With no remembered width, the column is as wide as the file needs** — `M240` `F`
    * (`M239-11`). `COMPOSE.fallback` is 300 px, and on the dogfood 25–35 rows per view were
@@ -1329,6 +1345,7 @@ export function ComposePane(props: ComposePaneProps) {
       return (
         <li key={`${keyPrefix}-blk-${s.line}`} className="seq-group scoped" data-seq-scope={s.line} data-seq-scope-kind={s.kind} data-seq-scope-holds={s.body.length}>
           <SeqRow
+          head
             line={s.line}
             kind={s.kind}
             selected={selected.kind === 'statement' && selected.statement.line === s.line}
@@ -1401,6 +1418,7 @@ export function ComposePane(props: ComposePaneProps) {
     return (
       <li key={`req-${r.line}`} className="seq-group" data-seq-request={r.line} data-seq-method={r.method}>
         <SeqRow
+          head
           line={r.line}
           kind={r.kind === 'WaitUntilApiStmt' ? 'wait' : 'request'}
           {...(decl.kind === 'test' ? { menu: seqMenu({ kind: 'request', decl, request: r, line: r.line }, `${r.method} ${r.path}`) } : {})}
@@ -1467,6 +1485,7 @@ export function ComposePane(props: ComposePaneProps) {
     return (
       <li key={`ses-${s.line}`} className="seq-group session" data-seq-session={s.line} data-seq-session-kind={s.kind}>
         <SeqRow
+          head
           line={s.line}
           kind="session"
           selected={selected.kind === 'statement' && selected.statement.line === s.line}
@@ -1776,6 +1795,7 @@ export function ComposePane(props: ComposePaneProps) {
               control: the keyboard moves it too, which a `<div>` with a pointer handler cannot. */}
           <div
             className={`split${splitting ? ' dragging' : ''}`}
+            ref={splitEl}
             role="separator"
             aria-orientation="horizontal"
             aria-label="how tall the editor above this line is"

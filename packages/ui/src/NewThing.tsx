@@ -294,7 +294,7 @@ export function NewThing({ mode, door, openPath, openText, existing, onStage, on
   return (
     <div className="new-thing" role="dialog" aria-modal="true" aria-label={mode === 'file' ? 'a new test file' : 'a new test'} data-new-thing={mode}>
       <div className="new-thing-card">
-        <h3>{mode === 'file' ? 'a new test file' : `a new test in ${openPath}`}</h3>
+        <h2>{mode === 'file' ? 'a new test file' : `a new test in ${openPath}`}</h2>
         {mode === 'file' ? (
           <label className="field">
             file

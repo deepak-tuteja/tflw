@@ -1331,21 +1331,18 @@ export function App() {
        grip moves one number and the media query below 900 px, where the pane stops being a column
        at all, goes on overriding it untouched. */
     <div className="app" style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}>
+      {/* `M240` `E` — the explorer and its grip are one landmark. The grip is a control, and a
+          control outside every landmark is content a screen reader's landmark list never reaches;
+          the column pair is laid out as a nested grid so the page's own tracks do not move. */}
+      <aside className="sidebar-col" aria-label="the project">
       {project ? <Sidebar project={project} door={door} openFile={path === '' ? null : path} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} unsaved={unsavedPaths}
           onNewIn={(p) => { setFile(p); startCreating('test'); }}
           onAddRequest={(declIndex) => setAddIntent((prev) => ({ path, declIndex, n: (prev?.n ?? 0) + 1 }))}
           focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={(m) => startCreating(m)}
-          menuFor={menuFor} onMenu={setMenu} /> : <aside className="sidebar muted">{error ?? 'reading the project…'}</aside>}
+          menuFor={menuFor} onMenu={setMenu} /> : <div className="sidebar muted">{error ?? 'reading the project…'}</div>}
       <Grip spec={SIDEBAR} size={sidebarWidth} onSize={setSidebarWidth} />
-      {/* One layer for the whole page (`M216` `B1`). It draws nothing until something is hovered
-          or focused, and it is here rather than inside a pane because the shell's own chrome asks
-          for a tooltip too — one of the three screenshots that started this round is a door bar. */}
-      <TooltipLayer />
-      <Notices notices={notices} onDismiss={dismiss} />
+      </aside>
       <Legend open={legendOpen} onClose={closeLegend} />
-      {/* Beside the tooltip and for the same reason (`M218` `A`): the shell owns the floating
-          layers, because a menu opened from a sidebar row must be able to paint over the pane. */}
-      <ContextMenuLayer menu={menu} onClose={() => setMenu(null)} />
       {/* Moving and deleting, both through the server's own plan (`M218` `D`/`E`, `D1150`). */}
       {fileAction === null ? null : (
         <FileAction
@@ -1423,6 +1420,14 @@ export function App() {
           `adds.length > 0`, the qualifier `D1189`'s docblock calls this table's own way of saying
           so. `D1198`, one rule, no door conditional, held twice. */}
       <main className={`main${composes && tab === 'compose' ? ' main-fill' : ''}`}>
+        {/* The floating layers — tip, notices, context menu — are `position: fixed`, so where they
+            sit in the DOM moves nothing on screen; they sit HERE because content outside every
+            landmark is content a landmark walk never reaches (`M240` `E`, axe `region`). One layer
+            for the whole page (`M216` `B1`), and the shell owns the menu (`M218` `A`) because one
+            opened from a sidebar row must be able to paint over the pane. */}
+        <TooltipLayer />
+        <Notices notices={notices} onDismiss={dismiss} />
+        <ContextMenuLayer menu={menu} onClose={() => setMenu(null)} />
         {/* The theme is a fact about the reader and not about the project, so it is reachable from
             every door, from the landing, and from the pane that says the project could not be read
             (`M213` `S0`). It rides IN the doorbar rather than above it, because a row of its own

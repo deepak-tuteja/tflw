@@ -30,7 +30,7 @@ export function Legend({ open, onClose, entries = [] }: { readonly open: boolean
   return (
     <div className="new-thing" data-legend onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="new-thing-card legend" role="dialog" aria-modal="true" aria-label="keys and panels" tabIndex={-1} ref={box}>
-        <h3>keys</h3>
+        <h2>keys</h2>
         <dl className="legend-keys" data-legend-keys={SHORTCUTS.length}>
           {SHORTCUTS.map((s) => (
             <div key={s.id} data-legend-key={s.id}>
@@ -41,7 +41,7 @@ export function Legend({ open, onClose, entries = [] }: { readonly open: boolean
         </dl>
         {entries.length > 0 ? (
           <>
-            <h3>panels</h3>
+            <h2>panels</h2>
             <dl className="legend-panels" data-legend-panels={entries.length}>
               {entries.map((en) => (
                 <div key={en.title} data-legend-panel={en.title}>

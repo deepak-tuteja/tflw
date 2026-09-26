@@ -528,11 +528,12 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
   };
 
   return (
-    <aside className="sidebar">
+    <div className="sidebar">
       <div className="project" data-project>
-        <div className="root" data-tip-derived="">
+        {/* `M240` `E` — the project's name is the page's one `<h1>`: it is what every view is about. */}
+        <h1 className="root" data-tip-derived="">
           {project.root.split('/').filter(Boolean).pop() ?? project.root}
-        </div>
+        </h1>
         <div className="muted" data-project-counts>
           {project.files.length} file{project.files.length === 1 ? '' : 's'} · {testCount} behind {DOOR_BY_ID[door].label}
           {otherCount > 0 ? <span data-project-elsewhere={otherCount}> · {otherCount} behind another door</span> : null}
@@ -583,6 +584,6 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           </button>
         </div>
       )}
-    </aside>
+    </div>
   );
 }

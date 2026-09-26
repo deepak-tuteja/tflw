@@ -66,7 +66,8 @@ export function Landing({ project, unconfigured = null, error, noProject, onOpen
   const version = project?.version ?? unconfigured?.version ?? null;
 
   return (
-    <div className="landing" data-landing>
+    /* `M240` `E` — the landing is the whole page when it is drawn, so it is the page's `<main>`. */
+    <main className="landing" data-landing>
       <header className="landing-head">
         {/* `M233` `H` (`D1288`/`D1289`) — the drawn mark, not the word set in the theme's own face.
             It was `<h1>tflw</h1>` at 28px/700, measuring 66.1 × 37 of ink; the mark is asked for at
@@ -171,6 +172,6 @@ export function Landing({ project, unconfigured = null, error, noProject, onOpen
           ) : null}
         </footer>
       ) : null}
-    </div>
+    </main>
   );
 }

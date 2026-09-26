@@ -1664,7 +1664,7 @@ test('the run strip carries env, workers and the button on all five tabs of all 
       const tabsBox = (await page.locator(`[data-tabstrip="${tab}"]`).boundingBox())!;
       assert.ok(stripBox.y + stripBox.height <= tabsBox.y, `the strip sits above the tabs on ${where} (${stripBox.y} + ${stripBox.height} vs ${tabsBox.y})`);
       // And the sidebar has dropped the second job entirely.
-      assert.equal(await page.locator('aside.sidebar [data-env-select], aside.sidebar [data-workers], aside.sidebar [data-run], aside.sidebar [data-cancel]').count(), 0, `the sidebar assembles no command on ${where}`);
+      assert.equal(await page.locator('.sidebar-col [data-env-select], .sidebar-col [data-workers], .sidebar-col [data-run], .sidebar-col [data-cancel]').count(), 0, `the sidebar assembles no command on ${where}`);
     }
   }
 });
@@ -10765,7 +10765,7 @@ test('`M217` `D1`: a `+` on a file row opens THAT file’s dialog (`D1139`)', as
     await p.goto(`${base}/?token=${TOKEN}#/api/compose/a.tflw`);
     await p.locator('li[data-file="b.tflw"] [data-row-plus="test"]').click();
     await p.locator('[data-new-thing="test"]').waitFor();
-    assert.match((await p.locator('[data-new-thing] h3').textContent())!, /b\.tflw$/, 'the dialog names the file the `+` was on');
+    assert.match((await p.locator('[data-new-thing] h2').textContent())!, /b\.tflw$/, 'the dialog names the file the `+` was on');
 
     await p.locator('[data-new-name]').fill('made from the explorer');
     // The whole file, for `D1251`'s reason — see the note on the staging test above. The claim is
