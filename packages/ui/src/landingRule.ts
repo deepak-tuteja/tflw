@@ -35,7 +35,7 @@
 
 import type { Lens, ProjectFile, ProjectView } from './contract';
 import { countsHonestly, DOOR_BY_ID } from './doors';
-import type { FileOutline, OutlineCrawl, OutlineHook, OutlineTest } from './outline';
+import type { FileOutline, OutlineDecl } from './outline';
 
 /** Where a door lands: a path, or nothing — a door with no test or crawl behind it in this project. */
 export type Landing = { readonly path: string; readonly empty?: undefined } | { readonly empty: true; readonly path?: undefined };
@@ -83,7 +83,7 @@ export function landingFor(door: Lens, project: ProjectView, remembered: string 
  * first crawl, which the SCANS door draws; a file of hooks alone lands on its first hook, because
  * landing on nothing in a file that holds something would be the worse answer.
  */
-export function landingDecl(outline: FileOutline): OutlineHook | OutlineTest | OutlineCrawl | null {
+export function landingDecl(outline: FileOutline): OutlineDecl | null {
   const decls = outline.declarations;
   return decls.find((d) => d.kind === 'test') ?? decls.find((d) => d.kind === 'crawl') ?? decls[0] ?? null;
 }

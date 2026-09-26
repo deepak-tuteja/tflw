@@ -23,7 +23,7 @@ import { buildClick, insertIntoSource, print, STEP_LENS, type Step, type StepPat
 import { ScriptRow, type RowEditing, type StatementEdit } from './parts';
 import { SourceText } from './Source';
 import { buildStatement } from './statements';
-import type { OutlineStatement, OutlineTest } from './outline';
+import { appendInto, type BodiedDecl, type OutlineStatement } from './outline';
 
 /** What each kind is called in the list, and the one line that says when you would reach for it.
  *  The order is the corpus's, commonest first — a list sorted alphabetically puts `accept dialog`
@@ -188,7 +188,7 @@ export const BLOCK_SEED: Step = (() => {
 })();
 
 export function AddStep({ decl, into, anchor, offers, pick, onStage, onCancel }: {
-  readonly decl: OutlineTest;
+  readonly decl: BodiedDecl;
   /** The file **as the author has it** — the buffer, never the disk (`D1141`). */
   readonly into: string;
   /** Where the step lands: under a statement, or at the foot of the body when there is none. */
@@ -213,9 +213,9 @@ export function AddStep({ decl, into, anchor, offers, pick, onStage, onCancel }:
   const result = useMemo(() => {
     if (!built.ok) return { ok: false as const, reason: built.reason };
     return anchor === null
-      ? insertIntoSource(into, { kind: 'steps', testName: decl.name, nodes: [built.node] })
+      ? insertIntoSource(into, appendInto(decl, [built.node]))
       : insertIntoSource(into, { kind: 'stepsAfter', path: anchor, nodes: [built.node] });
-  }, [built, into, anchor, decl.name]);
+  }, [built, into, anchor, decl]);
 
   /** A stand-in row, so the fields are the same controls the editor draws — `D1087` again: two
    *  field sets for one kind is how a dialog starts spelling a `press` the row cannot read back. */

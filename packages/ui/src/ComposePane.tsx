@@ -92,7 +92,7 @@ import { statementLead } from './statements';
 import { DOOR_BY_ID } from './doors';
 import { SessionPanel, type Session, type SessionLine } from './SessionPanel';
 import { holds, requestRemoval, statementRemoval } from './depends';
-import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type OutlineCrawl, type OutlineHook, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
+import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type BodiedDecl, type OutlineCrawl, type OutlineDecl, type OutlineHook, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
 import type { Prefix, SendForm } from './outline';
 import { VOCABULARY, type AddGesture } from './vocabulary';
 import { groupFor } from './ran';
@@ -111,7 +111,7 @@ import { ScanPanel, type Authorization } from './ScanPanel';
 /** The declaration an address can land on — `M228` `C` (`D1238`) added the third. `'test'` is
  *  still the name of the *position* (the declaration's own run of lines, header and all) rather
  *  than of the kind under it, which is what it has always meant here. */
-export type SelectedDecl = OutlineHook | OutlineTest | OutlineCrawl;
+export type SelectedDecl = OutlineDecl;
 
 export type Selected =
   | { readonly kind: 'file' }
@@ -621,6 +621,9 @@ export interface ComposePaneProps {
   readonly onLine: (line: number) => void;
   /** `+ new test` at the foot of the sequence column (`D1118`). `+ new file` is the explorer's. */
   readonly onNew: ((mode: 'test' | 'file') => void) | null;
+  /** `+ new action` everywhere, `+ new crawl` on a door whose vocabulary has one — `M241` `B`/`C`. */
+  readonly onNewDecl: ((kind: 'action' | 'crawl') => void) | null;
+  readonly crawls: boolean;
   readonly scratchUnignored: string | null;
   readonly edit: RequestEdit | null;
   readonly onEdit: ((next: RequestEdit) => void) | null;
@@ -645,7 +648,7 @@ export interface ComposePaneProps {
   readonly ran: RanIndex;
   readonly onVerify: ((request: OutlineRequest, spec: ExpectSpec) => void) | null;
   readonly onCapture: ((request: OutlineRequest, specs: readonly CaptureSpec[]) => void) | null;
-  readonly onAdd: ((decl: OutlineTest, key: string) => void) | null;
+  readonly onAdd: ((decl: BodiedDecl, key: string) => void) | null;
   readonly adds: readonly AddGesture[];
   /** The declaration a recording is writing into, by its line — `null` when none is running
    *  (`M213` `S5`, `D1095`). The foot reads it; nothing else does. */
@@ -655,7 +658,7 @@ export interface ComposePaneProps {
    * the statements attached to it*. The foot's `+ request` still means *at the end*, and on the
    * last request of a body the two are the same edit.
    */
-  readonly onAddAfter: ((decl: OutlineTest, request: OutlineRequest) => void) | null;
+  readonly onAddAfter: ((decl: BodiedDecl, request: OutlineRequest) => void) | null;
   /** **Duplicate a request with its attachments** — `M218` `F` (`D1156`). */
   readonly onDuplicate: ((decl: OutlineTest, request: OutlineRequest) => void) | null;
   /** What a right-clicked sequence row can do, and where to put the menu (`M218` `F`). Built by
@@ -667,8 +670,8 @@ export interface ComposePaneProps {
   readonly made: number;
   /** `D1117` — take these steps out of this declaration. The pane runs the dependency scan and
    *  never calls this while anything is holding one of them. */
-  readonly onRemoveSteps: ((decl: OutlineHook | OutlineTest, steps: readonly number[]) => void) | null;
-  readonly onRemoveDecl: ((decl: OutlineHook | OutlineTest) => void) | null;
+  readonly onRemoveSteps: ((decl: OutlineDecl, steps: readonly number[]) => void) | null;
+  readonly onRemoveDecl: ((decl: OutlineDecl) => void) | null;
   /** **▶ on the declaration head** — `M220` `A` (`D1168`). `null` on a door whose `vocabulary.ts`
    *  row says it does not play, and on a hook, which `--only` cannot name. */
   readonly onPlay: ((decl: OutlineTest) => void) | null;
@@ -817,18 +820,27 @@ const planWorkloadOf = (at: Addressed | null): Workload | null =>
   at?.decl != null && at.decl.kind === 'test' ? at.decl.workload : null;
 
 /**
+ * **A crawl's one gesture** — `M241` `C` (`D1323`). A crawl's body is assertions over responses it
+ * did not write (`TF070` refuses an `api` step there), so no door's `adds` fits it: SCANS offers
+ * requests, which a crawl cannot hold. One gesture of its own, writing the scan assertion a crawl
+ * exists for, which the row then edits like any other.
+ */
+const CRAWL_ADDS: readonly AddGesture[] = [
+  { key: 'assert', label: '+ assertion', title: '`expect response has no … violations` — graded on every response the crawl reaches' },
+];
+
+/**
  * **Why a row cannot be edited, when its address is missing** — `M228` `C` (`D1238`).
  *
- * Two populations have no `stepPath`, and until this round there was one, so the sentence was a
- * constant. `nested` tells them apart and is already on the row rather than derived: an `expect`
- * inside a `wait until api` block is not a step of the body's own list, and a crawl's statements
- * are a whole declaration outside `replaceInSource`'s numbering. Saying the block's sentence about
- * a crawl would be a true-shaped sentence about the wrong thing, which is worse than none.
+ * `M228` had two populations with no `stepPath`: an `expect` inside a `wait until api` block, which
+ * is not a step of the body's own list, and a crawl's statements. `M241` `C` (`D1323`) gave a crawl
+ * an address, so a nested row is the one population left; the other sentence is kept for any row
+ * that reaches here some new way, because a true-shaped sentence about the wrong thing is worse.
  */
 const unaddressableWhy = (nested: boolean): string =>
   nested
     ? 'inside the block above — an index pair names a step of a body, and this is not one'
-    : 'part of a `crawl` — drawn here, edited in the file';
+    : 'this statement has no address this pane can edit — change it in Source';
 
 const LOWER_MIN = 112;
 /**
@@ -862,7 +874,10 @@ const fitEditor = (px: number, column: number, lower: number = LOWER_MIN): numbe
   Math.max(EDITOR_MIN, Math.min(Math.round(px), Math.max(EDITOR_MIN, column - 6 - lower)));
 
 export function ComposePane(props: ComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, stage, authorization, onProjectTab, tab, onEditorTab: setTab } = props;
+  const { path, outline, at, focusLine, onLine, onNew, onNewDecl, crawls, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, stage, authorization, onProjectTab, tab, onEditorTab: setTab } = props;
+  /** The foot's gestures for the declaration in hand — see the foot's own comment. */
+  const footAdds: readonly AddGesture[] =
+    at === null || at.decl.kind === 'hook' ? [] : at.decl.kind === 'test' ? adds : at.decl.kind === 'action' ? adds.filter((a) => a.key !== 'record') : CRAWL_ADDS;
 
   /** One call per sequence row kind — `M218` `F`. `{}` when the door wired no menu, so the rows
    *  behave exactly as they did before this round. */
@@ -958,11 +973,9 @@ export function ComposePane(props: ComposePaneProps) {
 
   const remove = useCallback(
     (decl: SelectedDecl, at_line: number, target: { lines: number[]; steps: number[] } | null): void => {
-      /* **A crawl's steps cannot be removed, because they cannot be addressed** — `M228` `C`
-         (`D1238`). `onRemoveSteps` names a declaration by `replaceInSource`'s index and a crawl
-         carries `-1`, so this is the same refusal the null `stepPath`s make on the row: stated
-         once here rather than left to every call site to remember. */
-      if (decl.kind === 'crawl' || target === null || onRemoveSteps === null) return;
+      /* A crawl's steps were unremovable here from `M228` `C` (`D1238`) until `M241` `C` (`D1323`)
+         gave a crawl an address; every declaration's statements are removable now. */
+      if (target === null || onRemoveSteps === null) return;
       const held = holds(decl.body, target.lines);
       if (held !== null) {
         setRefused({ line: at_line, held });
@@ -973,11 +986,9 @@ export function ComposePane(props: ComposePaneProps) {
     },
     [onRemoveSteps],
   );
-  /** **Whether this declaration's steps can be removed at all** — `M228` `C` (`D1238`). A crawl's
-   *  cannot: `onRemoveSteps` names a declaration by `replaceInSource`'s index and a crawl carries
-   *  `-1`. Named once rather than repeated at each `✕`, because a control that is drawn and does
-   *  nothing is the shape `D1082` refuses and the miss would be silent. */
-  const removable = onRemoveSteps === null || at?.decl.kind === 'crawl' ? null : onRemoveSteps;
+  /** Whether this declaration's steps can be removed — every declaration's can since `M241` `C`
+   *  (`D1323`); `M228` `C` (`D1238`) had refused a crawl's, which carried no address. */
+  const removable = onRemoveSteps;
   const refusalFor = (line: number): { name: string; line: number; text: string } | null => (refused !== null && refused.line === line ? refused.held : null);
   const clearRefusal = useCallback(() => setRefused(null), []);
 
@@ -1449,7 +1460,7 @@ export function ComposePane(props: ComposePaneProps) {
           text={r.path}
           refusal={refusalFor(r.line)}
           plus={
-            onAddAfter === null || decl.kind !== 'test' ? null : (
+            onAddAfter === null || decl.kind === 'hook' ? null : (
               <Plus onGo={() => onAddAfter(decl, r)} after={`${r.method} ${r.path}`} />
             )
           }
@@ -1558,7 +1569,7 @@ export function ComposePane(props: ComposePaneProps) {
                     <span className="t-kw">test</span> <span className="t-str">&quot;{at.decl.name}&quot;</span>
                   </>
                 ) : (
-                  <span className="t-kw">{at.decl.kind === 'crawl' ? 'crawl' : at.decl.label}</span>
+                  <span className="t-kw">{at.decl.kind === 'crawl' || at.decl.kind === 'action' ? `${at.decl.kind} ${at.decl.name}` : at.decl.label}</span>
                 )}
               </code> · line {at.decl.line} ·{' '}
               {at.decl.body.requests.length} request{at.decl.body.requests.length === 1 ? '' : 's'} —{' '}
@@ -1626,7 +1637,7 @@ export function ComposePane(props: ComposePaneProps) {
                 {...(decl.kind === 'test' ? { menu: seqMenu({ kind: 'test', decl, line: decl.line }, decl.name) } : {})}
                 selected={selected.kind === 'test'}
                 onLine={onLine}
-                lead={<span className="seq-kind">{decl.kind === 'test' ? 'test' : decl.kind === 'crawl' ? 'crawl' : decl.label}</span>}
+                lead={<span className="seq-kind">{decl.kind === 'hook' ? decl.label : decl.kind}</span>}
                 text={decl.kind === 'hook' ? '' : decl.name}
                 refusal={refusalFor(decl.line)}
                 trailing={
@@ -1638,14 +1649,11 @@ export function ComposePane(props: ComposePaneProps) {
                     {onPlay === null || decl.kind !== 'test' ? null : (
                       <Play what="test" running={playing} onGo={() => onPlay(decl)} price={playPrice(decl.workload)} />
                     )}
-                    {/* **A crawl is skipped for the same reason a hook skips ▶** — `M228` `C`
-                        (`D1238`). `onRemoveDecl` addresses a declaration by `replaceInSource`'s
-                        index and a crawl carries `-1`, so a `✕` here could only ever be a control
-                        that does nothing — which is worse than its absence, and is the shape
-                        `D1082` refuses. The band below says why in words. */}
-                    {onRemoveDecl === null || decl.kind === 'crawl' ? null : (
+                    {/* Every declaration has a `✕` since `M241` `C` (`D1323`) gave a crawl an
+                        address; `M228` `C` (`D1238`) had to skip one, whose index was `-1`. */}
+                    {onRemoveDecl === null ? null : (
                       <Remove
-                        what="test"
+                        what={decl.kind === 'hook' ? 'hook' : decl.kind}
                         onGo={() => {
                           setRefused(null);
                           onRemoveDecl(decl);
@@ -1679,18 +1687,22 @@ export function ComposePane(props: ComposePaneProps) {
               attribute it can wait on. Reading the buttons themselves is a snapshot of a list that
               is redrawn whenever the address moves, which is a race a gate loses about one run in
               three. */}
-          <div className="seq-foot" data-seq-foot data-seq-adds={decl !== null && decl.kind === 'test' ? adds.map((a) => a.key).join(',') : ''}>
+          {/* **What the foot offers is what the declaration can hold** — `M241` `B`/`C`. A test takes
+              every gesture; an action takes every one but `+ record`, which writes into a test by
+              name (`D1095`); a crawl's body is assertions over responses it did not write, so it
+              takes `+ step…` alone. A hook still takes none (`D1144`). */}
+          <div className="seq-foot" data-seq-foot data-seq-adds={footAdds.map((a) => a.key).join(',')}>
             {/* A hook has no name for the splice to address, which is a fact about the language
                 rather than a limit of this door — so the column says so where the buttons would be,
                 rather than drawing nothing and leaving a reader to guess. */}
-            {onAdd !== null && decl !== null && decl.kind !== 'test' ? (
+            {onAdd !== null && decl !== null && decl.kind === 'hook' ? (
               <span className="muted" data-seq-add-hook>
                 a request cannot be added to a hook from here — the splice names a test by name, and a hook has none
               </span>
             ) : null}
-            {onAdd === null || decl === null || decl.kind !== 'test'
+            {onAdd === null || decl === null || decl.kind === 'hook'
               ? null
-              : adds.map((a) => {
+              : footAdds.map((a) => {
                   /* **`+ record` is the one gesture that is also a state** (`D1095`): it opens a
                      real browser that writes into this declaration until it is stopped, so the
                      button that started it says `stop recording` and every other `+` on the foot
@@ -1722,6 +1734,16 @@ export function ComposePane(props: ComposePaneProps) {
             {onNew === null ? null : (
               <button type="button" className="seq-add new" onClick={() => onNew('test')} data-compose-new-test data-tip="another test in this file">
                 + new test
+              </button>
+            )}
+            {onNewDecl === null ? null : (
+              <button type="button" className="seq-add new" onClick={() => onNewDecl('action')} data-compose-new-action data-tip="steps other tests run by name with `call`">
+                + new action
+              </button>
+            )}
+            {onNewDecl === null || !crawls ? null : (
+              <button type="button" className="seq-add new" onClick={() => onNewDecl('crawl')} data-compose-new-crawl data-tip="a walk over the whole surface, asserting on every response">
+                + new crawl
               </button>
             )}
           </div>
@@ -2238,7 +2260,7 @@ function InnerRow({ statement, door, editing, onLine, onClearRefusal, phase }: {
           />
         </ul>
       ) : (
-        <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit(statement, next)} trailing={null} pick={editing.pick} phase={phase} />
+        <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit(statement, next)} trailing={null} pick={editing.pick} phase={phase} onOpenAction={editing.onOpenAction} />
       )}
     </div>
   );
@@ -2316,7 +2338,7 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
           </ul>
         ) : (
           <>
-            <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit(statement, next)} trailing={null} pick={editing.pick} phase={phase} />
+            <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit(statement, next)} trailing={null} pick={editing.pick} phase={phase} onOpenAction={editing.onOpenAction} />
             {statement.body === null || statement.body.length !== 1 ? null : (
               <InnerRow statement={statement.body[0]!} door={door} editing={editing} onLine={onLine} onClearRefusal={onClearRefusal} phase={phase} />
             )}
@@ -2581,7 +2603,7 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
                     <div className="row">
                       <span className="ln muted">{s.line}</span>
                       {editable && values.kind !== 'expect' ? (
-                        <ScriptRow statement={s} edit={values} onEdit={(next) => editing.onRow!(s, next)} trailing={verdict} pick={editing.pick} phase={phase} />
+                        <ScriptRow statement={s} edit={values} onEdit={(next) => editing.onRow!(s, next)} trailing={verdict} pick={editing.pick} phase={phase} onOpenAction={editing.onOpenAction} />
                       ) : (
                         <>
                           <code className="stmt-text">{s.text.split('\n')[0]}</code>

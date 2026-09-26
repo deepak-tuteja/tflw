@@ -29,7 +29,7 @@
 // here to drift from it. That matters most for the rows this door cannot edit: a locked row shows
 // what the step *is*, in the spelling `tflw fmt` would write.
 
-import { lex, parseSource, print, STEP_LENS, type Lens, type Step, type StepLens, type StepPath } from '@tflw/lang';
+import { declarationsIn, lex, parseSource, print, STEP_LENS, type DeclSpace, type Insertion, type Lens, type Step, type StepLens, type StepPath } from '@tflw/lang';
 import { landingDecl } from './landingRule';
 import type {
   ActionDecl,
@@ -234,35 +234,18 @@ export interface OutlineTest {
 }
 
 /**
- * **A `crawl`, drawn and not built** — `M228` `C` (`D1238`).
+ * **A `crawl`** — drawn since `M228` `C` (`D1238`), built and edited since `M241` `C` (`D1323`).
  *
- * `outline.ts` said in as many words until this round that *`crawl` declarations are the SCANS
- * door's own root and are not here*, and what that cost was measured rather than argued: on
- * `examples/storefront/tests/scan.tflw` the sidebar badge read **1** and the tree drew **2** rows,
- * because `Sidebar.tsx:424` counts `f.crawls` while `:363` maps `o.declarations`. So one row
- * disagreed with itself, and only on this door — a crawl is the only construct that reaches SCANS
- * without also reaching API, which makes the door's exclusive content exactly the thing it could
- * not show.
- *
- * **`index` is `-1` and every statement's `stepPath` is `null`, both on purpose.** `index` is
- * `replaceInSource`'s own index over hooks-and-tests sorted by line, and a crawl folded into that
- * numbering would shift every declaration below it — silently rewriting the wrong test. `-1` is a
- * value that function cannot resolve, and the null step paths are what make that unreachable
- * rather than merely unlikely: the pane's editable test is `stepPath !== null`, so a crawl's rows
- * take the read-only branch by the same rule a nested row does.
- *
- * **Drawn read-only, saying why**, which is this table's own written rule rather than a
- * compromise — `DoorVocabulary.constructs`: *"A kind this door owns and cannot construct is drawn,
- * disabled, saying why; a pane that is half live and silent about which half is what `D1082`
- * refuses."* Making a crawl first-class needs `buildCrawl` (three seed kinds, sessions, body), an
- * `Insertion` member, `Edit` members for the header and each seed, and it touches every consumer
- * of `declarations` — a language round and a UI round in one, for **14 real crawls in the whole
- * corpus**. `D1190`'s deferral stands, now with a reason rather than an absence.
+ * `M228` drew it read-only with `index: -1` and every statement's address stripped, because the
+ * only numbering there was, `replaceInSource`'s hooks-and-tests one, would have shifted every test
+ * below a crawl counted in it. `M241` gave the language a space per kind (`StepPath.space`,
+ * `declarationsIn`), so a crawl's index is its own and its statements carry real addresses.
  */
 export interface OutlineCrawl {
   readonly kind: 'crawl';
-  /** Always `-1` — see the docblock. A crawl is outside `replaceInSource`'s numbering. */
-  readonly index: -1;
+  /** Its index in the crawl space (`D1323`). It was always `-1` until `M241`, which is what kept a
+   *  crawl out of `replaceInSource`'s hooks-and-tests numbering; the space does that now. */
+  readonly index: number;
   readonly node: CrawlDecl;
   readonly name: string;
   readonly line: number;
@@ -275,6 +258,42 @@ export interface OutlineCrawl {
 }
 
 /** The declarations above the tests — one pinned row (`D1074`). */
+/**
+ * An `action` — `M241` `B` (`D1322`). A declaration like the other three: a header (its name and
+ * parameters) and a body of the same statements a test holds, addressed in the action space.
+ */
+export interface OutlineAction {
+  readonly kind: 'action';
+  readonly index: number;
+  readonly node: ActionDecl;
+  readonly name: string;
+  readonly params: readonly string[];
+  readonly line: number;
+  readonly note: Note | null;
+  readonly body: OutlineBody;
+}
+
+/** Every declaration the outline draws. */
+export type OutlineDecl = OutlineHook | OutlineTest | OutlineCrawl | OutlineAction;
+
+/** A declaration with a body a gesture can append to — every kind but a hook, whose splice has no
+ *  name to address it by (`D1144`). */
+export type BodiedDecl = OutlineTest | OutlineAction | OutlineCrawl;
+
+/** Where a statement appended to `decl` goes — `M241` `B` (`D1322`). A test is still reached by its
+ *  name, as every gesture written before this milestone reached it; an action or a crawl by its
+ *  address, because a name reaches neither. */
+export function appendInto(decl: BodiedDecl, nodes: readonly Step[]): Insertion {
+  return decl.kind === 'test'
+    ? { kind: 'steps', testName: decl.name, nodes }
+    : { kind: 'stepsAtEnd', decl: decl.index, space: decl.kind, nodes };
+}
+
+/** The address space a drawn declaration's index is in — what every edit to it passes along. */
+export function spaceOfDecl(d: OutlineDecl): DeclSpace | undefined {
+  return d.kind === 'action' || d.kind === 'crawl' ? d.kind : undefined;
+}
+
 export interface OutlineFileRow {
   readonly imports: readonly ImportDecl[];
   readonly uses: readonly UseDecl[];
@@ -290,7 +309,7 @@ export interface FileOutline {
   readonly file: OutlineFileRow;
   /** Hooks, tests and — since `M228` `C` (`D1238`) — crawls, in line order. A file does not sort
    *  its declarations by kind, and neither does the outline. */
-  readonly declarations: readonly (OutlineHook | OutlineTest | OutlineCrawl)[];
+  readonly declarations: readonly OutlineDecl[];
   readonly diagnostics: readonly Diagnostic[];
 }
 
@@ -517,12 +536,14 @@ export function groupBody(
   notes: FileNotes,
   decl = 0,
   opensPage: ReadonlySet<string> = NO_ACTIONS,
+  /** The address space `decl` is in — `M241` `B` (`D1322`). Absent is hooks-and-tests. */
+  space?: DeclSpace,
 ): OutlineBody {
   const setup = emptyFold();
   const sessions: { head: OutlineStatement; fold: Fold }[] = [];
   const into = (): Fold => sessions[sessions.length - 1]?.fold ?? setup;
   for (const [index, step] of steps.entries()) {
-    const path: StepPath = { decl, step: index };
+    const path: StepPath = space === undefined ? { decl, step: index } : { decl, step: index, space };
     if (startsSession(step, opensPage)) {
       sessions.push({ head: statement(step, notes, path), fold: emptyFold() });
       continue;
@@ -622,7 +643,7 @@ export function fileOutline(path: string, source: string, opensPage: ReadonlySet
    * two orderings that agree on every file anybody has written so far is exactly the arrangement
    * that breaks on the first file where a hook comes after a test.
    */
-  const declared = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+  const declared = declarationsIn(program) as readonly (HookDecl | TestDecl)[];
   const indexed = declared.map((d, decl): OutlineHook | OutlineTest =>
     d.type === 'HookDecl'
       ? {
@@ -653,17 +674,18 @@ export function fileOutline(path: string, source: string, opensPage: ReadonlySet
         },
   );
   /**
-   * **The crawls are folded in AFTER the indexing, never into it** — `M228` `C` (`D1238`).
+   * **Crawls and actions are counted in their own spaces** — `M241` `B`/`C` (`D1322`, `D1323`).
    *
-   * `indexed` is `replaceInSource`'s numbering and the sort above is that function's own, so a
-   * crawl taking a position in it would renumber every declaration below it and send an edit to
-   * the wrong test. They join the list by **line** and carry `index: -1`, which is a value
-   * `replaceInSource` cannot resolve; and every statement under one is stripped of its
-   * `stepPath`, which is what turns *cannot be addressed* from a convention into a property.
+   * `M228` `C` (`D1238`) folded crawls in after the indexing with `index: -1` and every statement's
+   * address stripped, because a crawl counted in `replaceInSource`'s hooks-and-tests numbering would
+   * shift every declaration below it and send an edit to the wrong test. That hazard is now closed
+   * in the language rather than here: a path names its space, and each space is indexed by
+   * `declarationsIn` — the function `replaceInSource` itself resolves by — so the numbering on this
+   * page and the one in the language cannot be two orderings.
    */
-  const crawls: OutlineCrawl[] = (program.crawls ?? []).map((c) => ({
+  const crawls: OutlineCrawl[] = (declarationsIn(program, 'crawl') as readonly CrawlDecl[]).map((c, index) => ({
     kind: 'crawl',
-    index: -1,
+    index,
     node: c,
     name: c.name.value,
     line: c.span.start.line,
@@ -672,9 +694,19 @@ export function fileOutline(path: string, source: string, opensPage: ReadonlySet
     seeds: c.seeds,
     excludes: c.excludes,
     note: notes.byOwner.get(c.span.start.line) ?? null,
-    body: unaddressable(groupBody(c.body, notes, -1, opensPage)),
+    body: groupBody(c.body, notes, index, opensPage, 'crawl'),
   }));
-  const declarations = [...indexed, ...crawls].sort((a, b) => a.line - b.line);
+  const actions: OutlineAction[] = (declarationsIn(program, 'action') as readonly ActionDecl[]).map((a, index) => ({
+    kind: 'action',
+    index,
+    node: a,
+    name: a.name,
+    params: a.params,
+    line: a.span.start.line,
+    note: notes.byOwner.get(a.span.start.line) ?? null,
+    body: groupBody(a.body, notes, index, opensPage, 'action'),
+  }));
+  const declarations: OutlineDecl[] = [...indexed, ...crawls, ...actions].sort((a, b) => a.line - b.line);
   return {
     path,
     file: { imports: program.imports, uses: program.uses, actions: program.actions, header: notes.header, tail: notes.tail },
@@ -683,28 +715,11 @@ export function fileOutline(path: string, source: string, opensPage: ReadonlySet
   };
 }
 
-/** Every statement in a body with its address removed — the other half of `D1238`'s *drawn, not
- *  built*. One walk over the same three lists `statementsOf` knows about, so a fourth place a
- *  statement can hide would break this and that function together rather than only this one. */
-function unaddressable(body: OutlineBody): OutlineBody {
-  const strip = (s: OutlineStatement): OutlineStatement => ({
-    ...s,
-    stepPath: null,
-    body: s.body === null ? null : s.body.map(strip),
-  });
-  return {
-    ...body,
-    preamble: body.preamble.map(strip),
-    requests: body.requests.map((r) => ({ ...r, stepPath: r.stepPath, attached: r.attached.map(strip) })),
-    sessions: body.sessions.map((sn) => ({ head: strip(sn.head), body: unaddressable(sn.body) })),
-  };
-}
-
 /** What an address resolves to (`D1080`) — the declaration it names, and the request inside it. */
 export interface Addressed {
   /** `M228` `C` (`D1238`) — a crawl is a declaration an address can name, like the other two. The
    *  pane draws it read-only; nothing else about resolving an address changes. */
-  readonly decl: OutlineHook | OutlineTest | OutlineCrawl;
+  readonly decl: OutlineDecl;
   /** `null` for a declaration that issues no request — a browser test seen from the API door. */
   readonly request: OutlineRequest | null;
 }
@@ -850,3 +865,21 @@ export function prefixOf(outline: FileOutline, at: Addressed, form: SendForm = '
   }
   return { form, decl: decl.index, upTo, requests, lines };
 }
+
+/**
+ * The project path an `import` names, from the file that writes it — `M241` `B` (`D1322`), for
+ * *open action*. Relative to the importing file's directory, as `tflw run` resolves it; `null` for a
+ * path that climbs out of the project, which the server would refuse anyway.
+ */
+export function resolveImport(from: string, rel: string): string | null {
+  const parts = from.split('/').slice(0, -1);
+  for (const seg of rel.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') {
+      if (parts.length === 0) return null;
+      parts.pop();
+    } else parts.push(seg);
+  }
+  return parts.join('/');
+}
+

@@ -1,14 +1,14 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 967,
-    "atRisk": 885,
-    "high": 333,
-    "medium": 65,
-    "low": 487,
+    "reads": 928,
+    "atRisk": 844,
+    "high": 332,
+    "medium": 61,
+    "low": 451,
     "declared": 58,
     "inPage": 107,
-    "inRetry": 32
+    "inRetry": 46
   },
   "tests": {
     "packages/cli/test/ui-page.test.ts": {
@@ -105,7 +105,7 @@
       "an index row scrolls the text to its own line, and puts that line in the middle": {
         "high": 4,
         "medium": 0,
-        "low": 3
+        "low": 1
       },
       "the tree is byte-identical behind all four doors — the door is a count and narrows nothing": {
         "high": 0,
@@ -115,7 +115,7 @@
       "a fragment file is in the tree, reads `—`, and is not dimmed": {
         "high": 1,
         "medium": 0,
-        "low": 9
+        "low": 8
       },
       "a long name at depth is one line and an ellipsis, with the whole path in reach": {
         "high": 1,
@@ -195,29 +195,14 @@
       "`M213` `S2`: one tick writes a path assertion, under the request it is about (`D1100`)": {
         "high": 1,
         "medium": 0,
-        "low": 2
+        "low": 1
       },
       "`M213` `S2`: several ticks write ONE `matches subset`, and a subset ignores what was not ticked": {
         "high": 1,
         "medium": 0,
         "low": 1
       },
-      "`M213` `S3`: a ticked value becomes a `capture`, bound by the name the response already gives it": {
-        "high": 0,
-        "medium": 0,
-        "low": 1
-      },
       "`M213` `S3`: several ticks are several captures in ONE edit — a capture binds one name to one value": {
-        "high": 0,
-        "medium": 0,
-        "low": 2
-      },
-      "`M213` `S3`: `+ let` writes a binding at the TOP of the body, where the requests that read it can": {
-        "high": 0,
-        "medium": 0,
-        "low": 1
-      },
-      "`M213` `S3`: `+ wait until` writes a poll with an assertion in it — the block, not a bare request": {
         "high": 0,
         "medium": 0,
         "low": 1
@@ -322,25 +307,20 @@
         "medium": 0,
         "low": 0
       },
-      "an unsaved tflw.config edit survives a door change, because a project fact is not one door’s": {
-        "high": 0,
-        "medium": 1,
-        "low": 0
-      },
       "Config shows the documents this project declares, addressed by `@env`": {
         "high": 2,
-        "medium": 3,
+        "medium": 0,
         "low": 1
       },
       "an unsaved edit in one document survives a trip to another, and the mark says so": {
         "high": 1,
         "medium": 0,
-        "low": 2
+        "low": 0
       },
       "[accept] stages a finding into the baseline and opens it — and writes nothing until you save": {
         "high": 3,
         "medium": 0,
-        "low": 2
+        "low": 0
       },
       "[accept] under an env with no baseline says what to declare, rather than failing quietly": {
         "high": 0,
@@ -350,17 +330,12 @@
       "`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the rows are the file’s own": {
         "high": 0,
         "medium": 0,
-        "low": 4
+        "low": 3
       },
       "`M221` `A`+`B`: the stage is under the columns with room for the viewer, and ▶ no longer refuses an unsaved buffer": {
         "high": 2,
         "medium": 5,
         "low": 2
-      },
-      "`M213` `S4`: adding a gesture to a test that already opened a page writes no second `open`": {
-        "high": 0,
-        "medium": 0,
-        "low": 1
       },
       "`M219` `B`: an `open` starts a session, and so does a `call` the project index says opens a page": {
         "high": 2,
@@ -370,12 +345,12 @@
       "`M219` `D`: one statement in a `within` is one row carrying both; more than one is a group": {
         "high": 5,
         "medium": 0,
-        "low": 3
+        "low": 2
       },
       "`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer follows the phase": {
         "high": 4,
         "medium": 2,
-        "low": 8
+        "low": 7
       },
       "a pick session outlives a tab switch and dies with the door — asserted on the process, not the DOM": {
         "high": 1,
@@ -385,17 +360,12 @@
       "`M213` `S5`: a recording writes statements into the test it was started on, as they happen": {
         "high": 3,
         "medium": 1,
-        "low": 3
+        "low": 1
       },
       "`M213` `S4`: `pick` fixes the locator on the row it is pressed on, from a live session": {
         "high": 1,
         "medium": 0,
-        "low": 4
-      },
-      "the SCANS door grades a response a test already fetches, and the three independent words all land": {
-        "high": 0,
-        "medium": 0,
-        "low": 1
+        "low": 3
       },
       "a project with no `authorized target`: the SCANS door says so, shows the TF060 it will get, and writes anyway": {
         "high": 5,
@@ -406,11 +376,6 @@
         "high": 1,
         "medium": 0,
         "low": 3
-      },
-      "the API door adds work to a test the LOAD door started, above its workload’s thresholds": {
-        "high": 0,
-        "medium": 0,
-        "low": 1
       },
       "the page says when the scratch file is not ignored, rather than editing .gitignore itself": {
         "high": 2,
@@ -440,7 +405,7 @@
       "the affirmation this door refuses to make is one the author can make on this page (M207-02)": {
         "high": 2,
         "medium": 1,
-        "low": 2
+        "low": 1
       },
       "the reason for authorized targets lives on the door that owns it, in both states, and not in Auth": {
         "high": 1,
@@ -454,7 +419,7 @@
       },
       "the Config tab makes the edit the product had been telling the author to make": {
         "high": 4,
-        "medium": 1,
+        "medium": 0,
         "low": 3
       },
       "a test written from Compose appears in the Source index without a reload": {
@@ -510,7 +475,7 @@
       "a clause the file does not write is not a field — it is in a menu that names all of them": {
         "high": 6,
         "medium": 0,
-        "low": 5
+        "low": 4
       },
       "a clause the file DOES write is drawn without being asked for": {
         "high": 1,
@@ -557,15 +522,10 @@
         "medium": 0,
         "low": 1
       },
-      "`M210` `S2`: a field edit becomes bytes, and every other byte of the file survives": {
-        "high": 0,
-        "medium": 0,
-        "low": 1
-      },
       "`M210` `S2`: the three clauses `ApiStepSpec` used to have no room for survive an edit — and are editable": {
         "high": 0,
         "medium": 0,
-        "low": 3
+        "low": 2
       },
       "`M210` `S2`: discard puts the file back and leaves nothing on disk": {
         "high": 0,
@@ -575,7 +535,7 @@
       "`M210` `S2`: an edit that is not yet a request says so and leaves the buffer where it was": {
         "high": 0,
         "medium": 1,
-        "low": 2
+        "low": 0
       },
       "`M210` `S2`: the address keeps the request across a tab trip, and Config does not inherit its line": {
         "high": 2,
@@ -596,16 +556,6 @@
         "high": 2,
         "medium": 0,
         "low": 1
-      },
-      "`M210` `S3`: `not` is a control, and an edit that does not touch it cannot drop it": {
-        "high": 0,
-        "medium": 0,
-        "low": 2
-      },
-      "`M210` `S3`: the subset editor is the operand, and a clause matcher keeps its clause": {
-        "high": 0,
-        "medium": 0,
-        "low": 3
       },
       "`M210` `S3`: two identical assertions, and the edit lands on the one that was asked": {
         "high": 1,
@@ -708,9 +658,9 @@
         "low": 1
       },
       "`M216` `B0`/`A1`: Source numbers every line, and the text under the numbers is still the file byte for byte (`D985`)": {
-        "high": 2,
+        "high": 1,
         "medium": 0,
-        "low": 4
+        "low": 2
       },
       "`M216` `B0`/`A2`: the project pane is the reader’s width — nudged, dragged, clamped at both ends, and remembered": {
         "high": 2,
@@ -770,7 +720,7 @@
       "`M216` `D1`: removing a clause unwrites it, and the bytes say so": {
         "high": 0,
         "medium": 0,
-        "low": 2
+        "low": 1
       },
       "`M216` `D2`: the last part takes its clause with it, and the lock that made that impossible is gone (`D1132`)": {
         "high": 2,
@@ -785,7 +735,7 @@
       "`M216` `D4`: the request scope removes the same way, and an added-but-unwritten clause just stops being drawn": {
         "high": 1,
         "medium": 0,
-        "low": 2
+        "low": 1
       },
       "`M224` `G`: no text in the workload editor reads below the AA floor, and its labels are a step keyword's ink": {
         "high": 0,
@@ -810,17 +760,12 @@
       "`M217` `B1`: inserting a request changes no reader’s response — asked of every request (`D1138`)": {
         "high": 1,
         "medium": 0,
-        "low": 2
+        "low": 1
       },
       "`M217` `B2`: the `+` is on requests and nowhere else (`D1137`, `D1144`)": {
         "high": 1,
         "medium": 0,
         "low": 0
-      },
-      "`M217` `B3`: the last request’s `+` and the foot’s `+ request` write the same bytes": {
-        "high": 0,
-        "medium": 0,
-        "low": 1
       },
       "`M217` `C1`: the create dialog previews the bytes that land, pending edits included (`D1141`)": {
         "high": 1,
@@ -902,11 +847,6 @@
         "medium": 0,
         "low": 0
       },
-      "`M218` `F2`: duplicating changes no existing assertion’s response (`D1138`, `D1156`)": {
-        "high": 0,
-        "medium": 0,
-        "low": 1
-      },
       "`M225` `A`/`B`: send all issues every request, indexes every one, and the panel stops denying it": {
         "high": 18,
         "medium": 2,
@@ -942,10 +882,20 @@
         "medium": 1,
         "low": 1
       },
-      "`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and saying why (`D1238`)": {
+      "`M241` `B` (`D1322`): an action is a declaration — its band renames it, `call` opens it here and across an import, and `+ new action`/`+ new crawl` land on one": {
+        "high": 0,
+        "medium": 1,
+        "low": 3
+      },
+      "`M241` `E` (`D1325`): the explorer scales — virtualised past its threshold, `collapse all` keeps the open file's folder, and `this door only` changes the view and never the run": {
+        "high": 0,
+        "medium": 0,
+        "low": 3
+      },
+      "`M228` `C` / `M241` `C`: a `crawl` is drawn in the tree and in the pane, and its band and rows edit it (`D1238`, `D1323`)": {
         "high": 8,
         "medium": 0,
-        "low": 6
+        "low": 3
       },
       "`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` refuses are disabled and say so (`D1243`)": {
         "high": 0,

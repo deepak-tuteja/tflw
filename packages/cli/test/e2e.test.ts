@@ -782,6 +782,25 @@ test('FU-04: `tflw init` then `tflw run` is green in an empty directory — the 
   }
 });
 
+test('`M241` `E` (`D1325`, review E4): a report says who ran it, on which host, with which tflw', async () => {
+  // Through the built CLI in an empty directory, for the quickstart test's reason above: the claim is
+  // about the artifact a stranger's run leaves behind. The three facts are compared with the OS's own
+  // answers rather than with a shape, so a field filled with the wrong value fails too.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-ran-by-'));
+  try {
+    await execFileAsync('node', [cliEntry, 'init'], { cwd: dir });
+    await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    const report = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { ranBy?: { user: string; host: string; version: string } };
+    const { hostname, userInfo } = await import('node:os');
+    const pkg = JSON.parse(await readFile(join(dirname(cliEntry), '..', 'package.json'), 'utf8')) as { version: string };
+    assert.deepEqual(report.ranBy, { user: userInfo().username, host: hostname(), version: pkg.version });
+    const html = await readFile(join(dir, 'report', 'report.html'), 'utf8');
+    assert.match(html, /data-ran-by>by <code>[^<]+<\/code> on <code>[^<]+<\/code> · tflw <code>[^<]+<\/code>/, 'and the report header says so');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('FU-04: the demo service dies with the run that started it (M118, D203)', async () => {
   // What this proves is the `disconnect` half (`demo-service.ts`): the child's IPC channel is its
   // lifetime, so a demo cannot survive a crash, a `kill -9`, or any exit path that never reaches a

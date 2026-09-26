@@ -3443,6 +3443,10 @@ export function checkReferencedFiles(program: Program, opts: ProgramCheckOptions
 /** The directories a `use` may load from when `tflw.config` declares no `helpers` (`D1319`). */
 export const DEFAULT_HELPER_DIRS: readonly string[] = ['./helpers', './tests/helpers'];
 
+/** How many runs `tflw ui` keeps when `tflw.config` says nothing (`M241` `E`, `D1325`) — the
+ *  `50` `M239`'s `D1317` chose, now a default a project can change with `runs keep N`. */
+export const DEFAULT_RUNS_KEPT = 50;
+
 /** See `ProgramCheckOptions.helpers`. */
 export interface HelperPolicy {
   /** The allowed directories, as written in `tflw.config` (or the defaults), relative to it. */

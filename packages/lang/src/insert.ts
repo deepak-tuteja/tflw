@@ -14,7 +14,7 @@
 // AND IT LIVES HERE BECAUSE BOTH SIDES NEED IT. `@tflw/lang` has no dependencies and no Node
 // builtins, so the page runs this in the browser and a test runs it in Node — the same function,
 // which is why `A0-4` can be gated without a browser at all.
-import type { HookDecl, ImportDecl, Program, Step, TestDecl, ThresholdDecl, UseDecl, Workload } from './ast.js';
+import type { ActionDecl, CrawlDecl, HookDecl, ImportDecl, Program, Step, TestDecl, ThresholdDecl, UseDecl, Workload } from './ast.js';
 import type { Span } from './token.js';
 import { format, INDENT } from './format.js';
 import { print } from './print.js';
@@ -33,6 +33,9 @@ function parseSource(source: string): { program: Program; diagnostics: ReturnTyp
 export type Insertion =
   /** A whole new `test`, appended after everything the file already holds. */
   | { readonly kind: 'test'; readonly node: TestDecl }
+  /** A whole new `action` or `crawl`, appended the same way — `M241` `B`/`C` (`D1322`, `D1323`). */
+  | { readonly kind: 'action'; readonly node: ActionDecl }
+  | { readonly kind: 'crawl'; readonly node: CrawlDecl }
   /** `ramp`/`hold`/`step`/`spike`/`run` — turning a functional test into a workload-bearing one. */
   | { readonly kind: 'workload'; readonly testName: string; readonly node: Workload }
   /** `threshold …` — `D1044`'s case, legal on a test whose workload line is not written yet. */
@@ -65,6 +68,13 @@ export type Insertion =
    * move under it.
    */
   | { readonly kind: 'stepsAfter'; readonly path: StepPath; readonly nodes: readonly Step[] }
+  /**
+   * Steps appended to the end of ANY declaration, named by its address rather than a test's name —
+   * `M241` `B`/`C` (`D1322`, `D1323`). `steps` finds its test by name, and an action's name is
+   * a different namespace while a crawl's statements are reached by no name at all. Same placement
+   * as `steps`: under the last statement, or under the header when the body is empty.
+   */
+  | { readonly kind: 'stepsAtEnd'; readonly decl: number; readonly space?: DeclSpace; readonly nodes: readonly Step[] }
   /**
    * Steps spliced directly **above** one that is already there (`M213` `S3`, `D1102`).
    *
@@ -120,6 +130,11 @@ export function insertIntoSource(source: string, insertion: Insertion): InsertRe
    * and the level it prints at is read off that step. So the printing happens where the anchor is
    * resolved, and `printedText` below stays the single-level case it was written as.
    */
+  if (insertion.kind === 'stepsAtEnd') {
+    const spliced = appendToDeclaration(text, program, insertion.decl, insertion.space, insertion.nodes);
+    return typeof spliced === 'string' ? settleSplice(spliced) : spliced;
+  }
+
   if (insertion.kind === 'stepsAfter' || insertion.kind === 'stepsBefore') {
     const spliced = insertBesideStep(text, program, insertion.path, insertion.nodes, insertion.kind === 'stepsBefore' ? 'before' : 'after');
     return typeof spliced === 'string' ? settleSplice(spliced) : spliced;
@@ -137,12 +152,16 @@ export function insertIntoSource(source: string, insertion: Insertion): InsertRe
     }
     printedText = parts.join('\n');
   } else {
-    const printed = print(insertion.node, { indent: insertion.kind === 'test' ? 0 : 1 });
+    const whole = insertion.kind === 'test' || insertion.kind === 'action' || insertion.kind === 'crawl';
+    const printed = print(insertion.node, { indent: whole ? 0 : 1 });
     if (!printed.ok) return { ok: false, reason: printed.reason ?? 'the node cannot be printed' };
     printedText = printed.text;
   }
 
-  const spliced = insertion.kind === 'test' ? appendTest(text, printedText) : insertInTest(text, program, insertion, printedText);
+  const spliced =
+    insertion.kind === 'test' || insertion.kind === 'action' || insertion.kind === 'crawl'
+      ? appendTest(text, printedText)
+      : insertInTest(text, program, insertion, printedText);
   if (typeof spliced !== 'string') return spliced;
 
   // The splice should already be formatted — the source was normalised above and the fragment is
@@ -236,6 +255,31 @@ function afterLineContaining(source: string, offset: number): number {
  *   Caught by the test for that case; it is why the empty-body branch names the workload rather
  *   than treating "no steps" as "nothing before me".
  */
+function appendToDeclaration(source: string, program: Program, index: number, space: DeclSpace | undefined, nodes: readonly Step[]): string | InsertResult {
+  if (nodes.length === 0) return { ok: false, reason: 'no steps to insert' };
+  const decl = declarationsIn(program, space)[index];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${index}` };
+  const level = Math.round((decl.span.start.column - 1) / INDENT.length) + 1;
+  const parts: string[] = [];
+  for (const node of nodes) {
+    const one = print(node, { indent: level });
+    if (!one.ok) return { ok: false, reason: one.reason ?? 'the node cannot be printed' };
+    parts.push(one.text);
+  }
+  const anchor = ((): number => {
+    if (decl.type === 'TestDecl') return stepAnchor(source, decl);
+    if (decl.body.length > 0) return backOverWhitespace(source, Math.max(...decl.body.map((b) => b.span.end.offset)));
+    // A body-less crawl: under its last seed or exclude, which is the last line its header wrote.
+    if (decl.type === 'CrawlDecl') {
+      const header = [...decl.seeds, ...decl.excludes].map((n) => n.span.end.offset);
+      return backOverWhitespace(source, header.length > 0 ? Math.max(...header) : decl.name.span.end.offset);
+    }
+    return backOverWhitespace(source, decl.span.end.offset);
+  })();
+  const at = afterLineContaining(source, anchor);
+  return source.slice(0, at) + parts.join('\n') + '\n' + source.slice(at);
+}
+
 function stepAnchor(source: string, test: TestDecl): number {
   if (test.body.length > 0) return backOverWhitespace(source, Math.max(...test.body.map((b) => b.span.end.offset)));
   if (test.workload) return backOverWhitespace(source, test.workload.span.end.offset);
@@ -260,7 +304,7 @@ function stepAnchor(source: string, test: TestDecl): number {
  */
 function insertBesideStep(source: string, program: Program, path: StepPath, nodes: readonly Step[], side: 'before' | 'after'): string | InsertResult {
   if (nodes.length === 0) return { ok: false, reason: 'no steps to insert' };
-  const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+  const declarations = declarationsIn(program, path.space);
   const decl = declarations[path.decl];
   if (!decl) return { ok: false, reason: `this file has no declaration ${path.decl}` };
   const target = decl.body[path.step];
@@ -413,6 +457,44 @@ function endOfTestText(source: string, test: TestDecl): number {
 export interface StepPath {
   readonly decl: number;
   readonly step: number;
+  /**
+   * Which declarations `decl` counts — `M241` `B` (`D1322`). Absent is the hooks-and-tests space
+   * every path written before this milestone names, so none of them changes meaning. An action and
+   * a crawl are counted **in their own arrays**, never folded into that one: folding a crawl in is
+   * what `M228` `C` (`D1238`) refused, because every declaration below it would shift by one and an
+   * edit would land on the wrong test.
+   */
+  readonly space?: DeclSpace;
+}
+
+/** The address spaces a declaration index can be in, beside the default hooks-and-tests one. */
+export type DeclSpace = 'action' | 'crawl';
+
+/** Every declaration kind a body can be edited in. */
+export type Declaration = TestDecl | HookDecl | ActionDecl | CrawlDecl;
+
+/** The declarations of one address space, in the order the file declares them. */
+export function declarationsIn(program: Program, space?: DeclSpace): readonly Declaration[] {
+  const byLine = (a: Declaration, b: Declaration): number => a.span.start.line - b.span.start.line;
+  if (space === 'action') return [...program.actions].sort(byLine);
+  if (space === 'crawl') return [...(program.crawls ?? [])].sort(byLine);
+  return [...program.hooks, ...program.tests].sort(byLine);
+}
+
+/** The space a replacement's declaration index is in. */
+function spaceOf(r: Replacement): DeclSpace | undefined {
+  switch (r.kind) {
+    case 'step':
+      return r.path.space;
+    case 'note':
+      return r.owner.on === 'step' ? r.owner.path.space : r.owner.on === 'declaration' ? r.owner.space : undefined;
+    case 'header':
+    case 'remove':
+    case 'removeDecl':
+      return r.space;
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -435,7 +517,7 @@ export type Replacement =
    * corpus is 1247 notes. What is replaced is the run of lines from the declaration's first line
    * down to its own keyword line, and the body below is not touched at all.
    */
-  | { readonly kind: 'header'; readonly decl: number; readonly node: TestDecl | HookDecl }
+  | { readonly kind: 'header'; readonly decl: number; readonly node: Declaration; readonly space?: DeclSpace }
   /** One `threshold` line of a test. `index` at the end of the list appends; `null` removes. */
   | { readonly kind: 'threshold'; readonly decl: number; readonly index: number; readonly node: ThresholdDecl | null }
   /**
@@ -478,10 +560,10 @@ export type Replacement =
    * note whose owner has been deleted explains nothing and belongs to whatever moves up into its
    * place — which is the one outcome worse than losing it.
    */
-  | { readonly kind: 'remove'; readonly decl: number; readonly steps: readonly number[] }
+  | { readonly kind: 'remove'; readonly decl: number; readonly steps: readonly number[]; readonly space?: DeclSpace }
   /** A whole declaration, its header, its tags, its body and its note. `D1117`'s other half: the
    *  sequence column's first row is the test, so the test has a `✕` like everything under it. */
-  | { readonly kind: 'removeDecl'; readonly decl: number };
+  | { readonly kind: 'removeDecl'; readonly decl: number; readonly space?: DeclSpace };
 
 /**
  * What a note is a note **on** (`D1077`, widened by `M210` `S5`).
@@ -502,7 +584,7 @@ export type Replacement =
  */
 export type NoteOwner =
   | { readonly on: 'step'; readonly path: StepPath }
-  | { readonly on: 'declaration'; readonly decl: number }
+  | { readonly on: 'declaration'; readonly decl: number; readonly space?: DeclSpace }
   | { readonly on: 'file' };
 
 /**
@@ -525,7 +607,7 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
   const fatal = diagnostics.find((d) => d.severity === 'error');
   if (fatal) return { ok: false, reason: `the file does not parse: ${fatal.code} at line ${fatal.span.start.line}` };
 
-  const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
+  const declarations = declarationsIn(program, spaceOf(replacement));
 
   // The three members that do not name a step at all (`M210` `S5a`). Each one splices a run of
   // whole lines and then goes through the same format-and-parse gate as the rest of this module.
@@ -589,7 +671,7 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
  * touch it either. What this controls is the `#` and the indent, which are the two things that
  * make a line a comment of this block rather than of the file.
  */
-function replaceNote(text: string, declarations: readonly (TestDecl | HookDecl)[], owner: NoteOwner, lines: readonly string[]): InsertResult {
+function replaceNote(text: string, declarations: readonly Declaration[], owner: NoteOwner, lines: readonly string[]): InsertResult {
   const located = ((): { at: number; floor: number; column: number; top?: boolean } | string => {
     if (owner.on === 'file') {
       // **The file's note is the block that STARTS ON LINE 1** — `readNotes`' rule, not a walk up
@@ -672,20 +754,58 @@ function headerLines(node: TestDecl | HookDecl, level: number): { ok: true; line
   return { ok: true, lines: lines.slice(0, index + 1) };
 }
 
-function replaceHeader(text: string, declarations: readonly (TestDecl | HookDecl)[], index: number, node: TestDecl | HookDecl): InsertResult {
+const KIND_WORD: Record<Declaration['type'], string> = { TestDecl: 'test', HookDecl: 'hook', ActionDecl: 'action', CrawlDecl: 'crawl' };
+
+function replaceHeader(text: string, declarations: readonly Declaration[], index: number, node: Declaration): InsertResult {
   const decl = declarations[index];
   if (!decl) return { ok: false, reason: `this file has no declaration ${index}` };
-  if (decl.type !== node.type) return { ok: false, reason: `declaration ${index} is a ${decl.type === 'TestDecl' ? 'test' : 'hook'} and this is not` };
+  if (decl.type !== node.type) return { ok: false, reason: `declaration ${index} is a ${KIND_WORD[decl.type]} and this is not` };
   const level = Math.round((decl.span.start.column - 1) / INDENT.length);
-  const written = headerLines(node, level);
-  if (!written.ok) return written;
-  // A test's own line is where its NAME is, which is the one position the header's length cannot
-  // move: tags above it are one line, a `with each` table is as many as it has rows.
-  const keyword = decl.type === 'TestDecl' ? decl.name.span.start.line : decl.span.start.line;
-  return spliceLines(text, decl.span.start.line, keyword + 1, written.lines);
+  if (decl.type === 'TestDecl' || decl.type === 'HookDecl') {
+    const written = headerLines(node as TestDecl | HookDecl, level);
+    if (!written.ok) return written;
+    const keyword = decl.type === 'TestDecl' ? decl.name.span.start.line : decl.span.start.line;
+    return spliceLines(text, decl.span.start.line, keyword + 1, written.lines);
+  }
+  return replaceBlockHeader(text, decl, node as ActionDecl | CrawlDecl, level);
 }
 
-function replaceThreshold(text: string, declarations: readonly (TestDecl | HookDecl)[], replacement: { readonly decl: number; readonly index: number; readonly node: ThresholdDecl | null }): InsertResult {
+/**
+ * An action's or a crawl's header — `M241` `B`/`C` (`D1322`, `D1323`). An action's is its one
+ * `action name(params)` line; a crawl's is its tags, its `crawl "…" as …` line and every `seed` and
+ * `exclude` under it, which are header rather than body because they say what the crawl walks
+ * rather than what it asserts.
+ *
+ * **Printed over the declaration's own body, and the body's lines are then dropped**, because the
+ * printer refuses an action with no steps and the header alone has no printable shape. What is
+ * replaced in the file runs from the declaration's first line down to its first statement, **less
+ * the comments and blank lines directly above that statement**, which are its note (`readNotes`) and
+ * not the header's.
+ */
+function replaceBlockHeader(text: string, decl: ActionDecl | CrawlDecl, node: ActionDecl | CrawlDecl, level: number): InsertResult {
+  const printed = print({ ...node, body: decl.body } as ActionDecl | CrawlDecl, { indent: level });
+  if (!printed.ok) return { ok: false, reason: printed.reason ?? 'the printer refused this declaration' };
+  const bodyLines = decl.body.reduce((n, step) => {
+    const one = print(step, { indent: level + 1 });
+    return n + (one.ok ? one.text.split('\n').length : 0);
+  }, 0);
+  const all = printed.text.split('\n');
+  const written = all.slice(0, all.length - bodyLines);
+  if (written.length === 0) return { ok: false, reason: 'the printed declaration has no header, which cannot happen and did' };
+
+  const { lines: records } = lex(text);
+  const byLine = new Map(records.map((r) => [r.line, r.kind as string]));
+  const first = decl.body[0];
+  const keyword = decl.span.start.line + (decl.type === 'CrawlDecl' && decl.tags.length > 0 ? 1 : 0);
+  // A span runs to the start of whatever follows it, so the last line a body-less crawl WROTE is
+  // the one its last non-blank character is on — not its span's end line.
+  const lastWritten = text.slice(0, backOverWhitespace(text, decl.span.end.offset)).split('\n').length;
+  let end = first === undefined ? lastWritten + 1 : first.span.start.line;
+  while (end - 1 > keyword && (byLine.get(end - 1) === 'comment' || byLine.get(end - 1) === 'blank')) end -= 1;
+  return spliceLines(text, decl.span.start.line, end, written);
+}
+
+function replaceThreshold(text: string, declarations: readonly Declaration[], replacement: { readonly decl: number; readonly index: number; readonly node: ThresholdDecl | null }): InsertResult {
   const decl = declarations[replacement.decl];
   if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.decl}` };
   if (decl.type !== 'TestDecl') return { ok: false, reason: 'a hook carries no thresholds' };
@@ -716,7 +836,7 @@ function replaceThreshold(text: string, declarations: readonly (TestDecl | HookD
  * follows it — the same correction `replaceInSource`'s step branch carries, which a one-line
  * workload would never have shown.
  */
-function replaceWorkload(text: string, declarations: readonly (TestDecl | HookDecl)[], replacement: { readonly decl: number; readonly node: Workload | null }): InsertResult {
+function replaceWorkload(text: string, declarations: readonly Declaration[], replacement: { readonly decl: number; readonly node: Workload | null }): InsertResult {
   const decl = declarations[replacement.decl];
   if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.decl}` };
   if (decl.type !== 'TestDecl') return { ok: false, reason: 'a hook carries no workload' };
@@ -819,7 +939,7 @@ function dropLines(text: string, ranges: readonly { from: number; to: number }[]
   return { ok: true, text: out.formatted };
 }
 
-function removeSteps(text: string, declarations: readonly (TestDecl | HookDecl)[], index: number, steps: readonly number[]): InsertResult {
+function removeSteps(text: string, declarations: readonly Declaration[], index: number, steps: readonly number[]): InsertResult {
   const decl = declarations[index];
   if (!decl) return { ok: false, reason: `this file has no declaration ${index}` };
   if (steps.length === 0) return { ok: false, reason: 'nothing was named for removal' };
@@ -837,7 +957,7 @@ function removeSteps(text: string, declarations: readonly (TestDecl | HookDecl)[
   return dropLines(text, ranges);
 }
 
-function removeDeclaration(text: string, declarations: readonly (TestDecl | HookDecl)[], index: number): InsertResult {
+function removeDeclaration(text: string, declarations: readonly Declaration[], index: number): InsertResult {
   const decl = declarations[index];
   if (!decl) return { ok: false, reason: `this file has no declaration ${index}` };
   const { lines: records } = lex(text);

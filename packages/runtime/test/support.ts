@@ -140,6 +140,7 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     evidenceLevel: 'full',
     keepTrace: false,
     helpers: DEFAULT_HELPER_DIRS,
+    runsKeep: 50,
     // `D781`/`M157d` — the shipped default, stated rather than inherited. `interpreter.ts`'s
     // predicate is written so an *absent* value still runs teardown, but a fixture config claiming
     // to be a complete `ResolvedConfig` should carry every field it has, and a harness that quietly

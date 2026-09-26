@@ -37,10 +37,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile, readdir, stat, cp, mkdir, writeFile, rename, unlink, realpath } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
+import { pageRunFlags } from './run-flags.js';
 import { join, resolve, relative, dirname, extname, sep, basename } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, pageOpening, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
+import { DEFAULT_RUNS_KEPT, parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, pageOpening, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
 import { parseBaseline, resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 import { buildStamp, type BuildStamp } from './buildStamp.js';
@@ -97,8 +98,8 @@ export interface UiServerOptions {
 const TOKEN_COOKIE = 'tflw-ui-token';
 /** One MiB — a `PUT /api/file` of the largest `.tflw` in either repository is under 100 KiB. */
 export const BODY_CAP = 1 << 20;
-/** Runs the server remembers (`D1317`); the report directories on disk are the durable record. */
-export const RUNS_KEPT = 50;
+/** Runs the server remembers (`D1277`); the report directories on disk are the durable record. */
+export const RUNS_KEPT = DEFAULT_RUNS_KEPT;
 /** Stdout lines buffered per run for late subscribers; a workload prints one event per sample. */
 export const LINES_KEPT = 50_000;
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
@@ -370,6 +371,11 @@ export interface ProjectView {
   /** `resolved.helpers` (`D1319`) — the directories a `use` may load from, so the page's checker
    *  judges a `use` the way `tflw check` will. */
   readonly helpers: readonly string[];
+  /**
+   * The `tflw run` flags the page may set — `M241` `D` (`D1324`). Rows of `RUN_FLAGS`, read from the
+   * table the CLI parses by, so the strip's `more…` never keeps a second list of what the CLI takes.
+   */
+  readonly runFlags: readonly PageRunFlag[];
   readonly files: readonly ProjectFile[];
   /** Whether `/trace/` serves Playwright's trace viewer — true when `playwright-core` resolves
    * from the project (`M192` U3). The page shows *open trace* when it does and the
@@ -607,6 +613,40 @@ export interface RunRequest {
    * this one field. It is run-level, exactly as the flag is.
    */
   readonly headed?: boolean;
+  /**
+   * The strip's `more…` — `M241` `D` (`D1324`). Keyed by the flag's own spelling (`--bail`), each a
+   * row the server offered in `ProjectView.runFlags`; a boolean for a switch, text for a value.
+   */
+  readonly flags?: Readonly<Record<string, string | boolean>>;
+}
+
+/** One row of `RUN_FLAGS` as the page reads it. */
+export interface PageRunFlag {
+  readonly flag: string;
+  readonly shape: 'bool' | 'value' | 'list';
+  readonly subject: 'always' | 'scan' | 'browser' | 'workload' | 'cli';
+  readonly label: string;
+  readonly hint: string;
+}
+
+/**
+ * Why a request's `flags` cannot be run, or `null` — `D1324`. Only the rows the server offered, and
+ * each in its own shape: a switch is `true` or `false`, a value is text on one line. Anything else
+ * is refused with its name rather than dropped, because a flag the page believed it sent and the
+ * run never saw is a run that answered a different question.
+ */
+export function runFlagsProblem(flags: unknown): string | null {
+  if (flags === undefined) return null;
+  if (typeof flags !== 'object' || flags === null || Array.isArray(flags)) return '`flags` is an object of flag to value';
+  const rows = new Map(pageRunFlags().map((f) => [f.flag, f]));
+  for (const [flag, value] of Object.entries(flags)) {
+    const row = rows.get(flag);
+    if (row === undefined) return `\`${flag}\` is not a flag the page can set`;
+    if (row.shape === 'bool' ? typeof value !== 'boolean' : typeof value !== 'string' || /[\r\n]/.test(value)) {
+      return `\`${flag}\` takes ${row.shape === 'bool' ? 'true or false' : 'one line of text'}`;
+    }
+  }
+  return null;
 }
 
 export type RunStatus = 'running' | 'done' | 'cancelled';
@@ -681,6 +721,13 @@ export function runArgv(req: RunRequest): string[] {
   // which is what keeps an ordinary run's argv byte-identical to what it was before `M220`.
   if (req.trace) argv.push('--trace');
   if (req.headed) argv.push('--headed');
+  // `D1324` — the `more…` rows, from the table the CLI parses by. A value is written `--flag=value`,
+  // the spelling the CLI keeps for exactly this: a value that starts with `--` stays a value.
+  for (const row of pageRunFlags()) {
+    const v = req.flags?.[row.flag];
+    if (v === undefined || v === false || v === '') continue;
+    argv.push(row.shape === 'bool' ? row.flag : `${row.flag}=${String(v)}`);
+  }
   for (const f of req.files ?? []) argv.push(f);
   return argv;
 }
@@ -844,7 +891,7 @@ export async function readProject(root: string, envName?: string | null): Promis
     services: Object.entries(resolved.services).map(([name, url]) => ({ name, url })),
     sessions: sessionViews(parsed.config, resolved),
   };
-  return { configured: true, root, version: await stamp(), envs, reportDir: resolved.reportDir, helpers: resolved.helpers, files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: isIgnored(root, SCRATCH_PATH), playScratch: PLAY_SCRATCH, playIgnored: isIgnored(root, PLAY_SCRATCH), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
+  return { configured: true, root, version: await stamp(), envs, reportDir: resolved.reportDir, helpers: resolved.helpers, runFlags: pageRunFlags().map(({ flag, shape, subject, label, hint }) => ({ flag, shape, subject, label: label!, hint: hint ?? '' })), files: indexed, traceViewer: traceViewerDir(root) !== null, scratchPath: SCRATCH_PATH, scratchIgnored: isIgnored(root, SCRATCH_PATH), playScratch: PLAY_SCRATCH, playIgnored: isIgnored(root, PLAY_SCRATCH), scratchEtag: scratchEtagOf(root), authorization, webBaseUrl: resolved.webBaseUrl ?? null };
 }
 
 /**
@@ -1572,7 +1619,20 @@ export class UiServer {
     return { ok: exitCode === 0, created, output: output.trim(), exitCode };
   }
 
+  /** `runs keep N` from this project's `tflw.config` (`M241` `E`, `D1325`), read at each run so an
+   *  edit in Config takes effect on the next one; the default when the file says nothing or cannot
+   *  be read — a run is never refused over how much history to keep. */
+  private async runsKept(): Promise<number> {
+    try {
+      const text = await readFile(join(this.opts.root, 'tflw.config'), 'utf8');
+      return parseConfigSource(text).config.runs?.keep.value ?? DEFAULT_RUNS_KEPT;
+    } catch {
+      return DEFAULT_RUNS_KEPT;
+    }
+  }
+
   async startRun(request: RunRequest): Promise<RunRecord> {
+    const keep = await this.runsKept();
     const id = new Date().toISOString().replace(/[:.]/g, '-');
     const argv = runArgv(request);
     const child = spawn(process.execPath, [...(this.opts.execArgv ?? []), this.opts.cliEntry, ...argv], {
@@ -1583,10 +1643,11 @@ export class UiServer {
     const record: RunRecord = { id, startedAt: new Date().toISOString(), request, argv, status: 'running', exitCode: null, signal: null, endedAt: null, kept: null };
     const live: LiveRun = { record, child, lines: [], stderr: [], subscribers: new Set(), ended: Promise.resolve() };
     this.runs.set(id, live);
-    // `D1317` — the last `RUNS_KEPT`, oldest ended run first; a running one is never dropped.
-    if (this.runs.size > RUNS_KEPT) {
+    // `D1317` — the last `keep` (`runs keep N`, `D1325`; 50 by default), oldest ended run first; a
+    // running one is never dropped.
+    if (this.runs.size > keep) {
       for (const [oldId, old] of this.runs) {
-        if (this.runs.size <= RUNS_KEPT) break;
+        if (this.runs.size <= keep) break;
         if (old.record.status !== 'running') this.runs.delete(oldId);
       }
     }
@@ -2150,6 +2211,8 @@ export class UiServer {
       // path, which is right for a terminal and wrong for a route.
       const outside = await this.outsideRoot(request.files ?? []);
       if (outside !== null) return json(res, 400, { error: outside });
+      const flagProblem = runFlagsProblem(request.flags);
+      if (flagProblem !== null) return json(res, 400, { error: flagProblem });
       const record = await this.startRun(request);
       return json(res, 202, record);
     }

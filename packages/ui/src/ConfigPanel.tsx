@@ -21,8 +21,9 @@
 // config that does not parse takes `GET /api/project` down with it, and a page allowed to write
 // one could lock itself out of the project it is editing.
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { parseConfigSource } from '@tflw/lang';
+import { Editor } from './Editor';
 
 /**
  * One entry in the Config tab's document switcher (`M208` `S2`).
@@ -98,8 +99,6 @@ export interface ConfigPanelProps {
 }
 
 export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, problem, saved, focusLine, documents, doc, onDoc, absentPath }: ConfigPanelProps) {
-  const area = useRef<HTMLTextAreaElement | null>(null);
-
   // The config dialect's diagnostics belong to the config dialect. A baseline document is JSON in
   // `D387`'s shape, and running the config parser over it would report a wall of `TF001`s about a
   // file that is not wrong — so the editor shows nothing here for a baseline and lets the server's
@@ -109,29 +108,9 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
   const errors = diagnostics.filter((d) => d.severity === 'error');
   const unsaved = text !== null && disk !== null && text !== disk;
 
-  /**
-   * Land on the line an `[edit]` link named.
-   *
-   * It selects the whole line rather than placing a caret at its start, because the promise Auth
-   * makes is *"focused on that block"* — a caret in a 40-line file is not visibly anywhere, and a
-   * reader who followed a link needs to see that they arrived. The scroll is computed from the
-   * line height rather than from a DOM measurement: a textarea has no per-line boxes to measure.
-   *
-   * Keyed on the tab as well as the line (the parent remounts nothing, so this effect is the only
-   * thing that fires) — which means clicking the same `[edit]` twice from Auth focuses twice, and
-   * clicking it once and then scrolling away does not snatch the view back.
-   */
-  useEffect(() => {
-    const el = area.current;
-    if (el === null || focusLine === null || text === null) return;
-    const lines = text.split('\n');
-    const index = Math.min(Math.max(focusLine, 1), lines.length) - 1;
-    const start = lines.slice(0, index).reduce((n, l) => n + l.length + 1, 0);
-    el.focus();
-    el.setSelectionRange(start, start + (lines[index]?.length ?? 0));
-    const lineHeight = el.scrollHeight / Math.max(lines.length, 1);
-    el.scrollTop = Math.max(0, lineHeight * index - el.clientHeight / 2);
-  }, [focusLine, text]);
+  // Landing on the line an `[edit]` link named is the editor's `focusLine` (`D1321`): it selects
+  // the whole line — Auth promises *focused on that block*, and a caret in a 40-line file is not
+  // visibly anywhere — and it fires when the line asked for changes, never on a keystroke.
 
   const current = documents.find((d) => d.doc === doc) ?? documents[0];
   const switcher =
@@ -168,17 +147,12 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
             project adopting triage starts. <code>[accept]</code> on a finding writes the first entry; so does saving here.
           </p>
         </header>
-        <textarea
-          ref={area}
+        <Editor
           className="config-text"
           value={''}
-          onChange={(e) => onChange(e.target.value)}
-          spellCheck={false}
-          rows={20}
-          data-api-config-text
-          placeholder={'{\n  "version": 1,\n  "accepted": []\n}'}
-          aria-label="the accepted-findings document"
-          data-tip="the accepted-findings document — version 1, and an `accepted` array of fingerprints"
+          onChange={onChange}
+          dialect={null}
+          contentAttributes={{ 'data-api-config-text': '', 'aria-label': 'the accepted-findings document' }}
         />
       </div>
     );
@@ -218,20 +192,14 @@ export function ConfigPanel({ text, disk, onChange, onSave, onReload, busy, prob
           is (*"the project facts every file here resolves against"*); the editor said nothing a
           screen reader could use, and said the rest in the OS's voice after a one-second hover,
           which is `M216` `B`'s whole finding on a surface that round did not reach. */}
-      <textarea
-        ref={area}
+      <Editor
         className="config-text"
         value={text}
-        onChange={(e) => onChange(e.target.value)}
-        spellCheck={false}
-        rows={20}
-        data-api-config-text
-        aria-label={doc === null ? 'tflw.config' : 'the accepted-findings document'}
-        data-tip={
-          doc === null
-            ? 'tflw.config — declarations only, read by `tflw check` as this page reads it'
-            : 'the accepted-findings document — the match is on `fingerprint` alone, and `rule`/`endpoint` are there for you'
-        }
+        onChange={onChange}
+        dialect={doc === null ? 'config' : null}
+        diagnostics={doc === null ? diagnostics : []}
+        focusLine={focusLine}
+        contentAttributes={{ 'data-api-config-text': '', 'aria-label': doc === null ? 'tflw.config' : 'the accepted-findings document' }}
       />
 
       {/* `D1052` — shown, not blocking. An error also stops the save, because the server refuses

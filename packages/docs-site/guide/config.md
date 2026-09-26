@@ -258,6 +258,19 @@ review of a suite sees its code without opening every file.
 
 `tflw run --no-helpers` refuses every `use` for that run, whatever this directive allows.
 
+## How many runs the page keeps: `runs keep`
+
+`tflw ui` lists the runs you start from it, and forgets the oldest one that has ended once the list
+is full. Fifty by default; one line changes it:
+
+```tflw-config fragment
+runs keep 20
+```
+
+It bounds the page's list and nothing else — every run still writes its own report directory, and
+this never deletes one. The page reads it at each run, so an edit in the Config tab applies to the
+next run.
+
 ## Overriding `workers` for one test — `parallel` and `sequential`
 
 `workers` above sets how many test files run at once for the whole project. A single test can

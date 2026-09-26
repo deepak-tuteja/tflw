@@ -241,6 +241,33 @@ test('`files` in a run request stay inside the project: `../x.tflw` and a symlin
   }
 });
 
+test('`runs keep 3` in `tflw.config` leaves three runs, read at each run (`M241` `E`, `D1325`)', async () => {
+  const { dir } = await fixture();
+  await writeFile(join(dir, 'tflw.config'), 'runs keep 3\nenv local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+  const stub = join(dir, 'stub.mjs');
+  await writeFile(stub, 'process.stdout.write(JSON.stringify({ type: "run:end" }) + "\\n");\n', 'utf8');
+  const ui = new UiServer({ root: dir, cliEntry: stub, execArgv: [], staticDir: join(dir, 'no-static'), token: TOKEN });
+  try {
+    const port = await ui.listen(0);
+    const base = `http://127.0.0.1:${port}`;
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const record = await ui.startRun({});
+      ids.push(record.id);
+      for (let waited = 0; waited < 200; waited++) {
+        const runs = (await (await fetch(`${base}/api/runs`, { headers: bearer })).json()) as RunRecord[];
+        if (runs.find((r) => r.id === record.id)?.status !== 'running') break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    }
+    const runs = (await (await fetch(`${base}/api/runs`, { headers: bearer })).json()) as RunRecord[];
+    assert.deepEqual(runs.map((r) => r.id), ids.slice(-3).reverse(), 'the newest three, newest first');
+  } finally {
+    await ui.close();
+    await rm(dirname(dir), { recursive: true, force: true });
+  }
+});
+
 test(`the server remembers the last ${RUNS_KEPT} runs — the ${RUNS_KEPT + 1}st evicts the first`, async () => {
   const { dir } = await fixture();
   const stub = join(dir, 'stub.mjs');

@@ -61,6 +61,7 @@ export function renderReportHtml(report: RunReport, assetHrefs: ReadonlyMap<stri
     <span>now <code>${esc(report.now)}</code></span>
     <span>${report.durationMs} ms</span>
     <span>${esc(report.startedAt)}</span>
+    ${report.ranBy === undefined ? '' : `<span data-ran-by>by <code>${esc(report.ranBy.user)}</code> on <code>${esc(report.ranBy.host)}</code> · tflw <code>${esc(report.ranBy.version)}</code></span>`}
   </div>
   ${report.insecure ? '<div class="insecure-warning">⚠ insecure: true — TLS certificate verification was disabled for this run</div>' : ''}
   ${report.demo ? '<div class="demo-badge">ℹ demo run — this targeted tflw\'s built-in demo service, not a service of yours. Point <code>api</code> at your own in <code>tflw.config</code>.</div>' : ''}

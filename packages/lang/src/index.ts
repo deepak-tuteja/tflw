@@ -17,8 +17,8 @@ export { lex, type LexResult, type LineInfo } from './lexer.js';
 export { format, roundTrip, compareTexts, joinTokens, INDENT, type FormatResult } from './format.js';
 export { print, PRINTABLE, CONTEXT_BOUND, REFUSES_BY_CONSTRUCTION, type PrintResult } from './print.js';
 export { lensesOfTest, lensesOfCrawl, stepLensCounts, pageOpening, LENSES, STEP_LENS, SUBJECT_LENS, MATCHER_LENS, type Lens, type StepLens } from './lenses.js';
-export { insertIntoSource, replaceInSource, type Insertion, type InsertResult, type Replacement, type StepPath, type NoteOwner } from './insert.js';
-export { buildWorkload, buildThreshold, buildTest, buildApiStep, buildExpect, buildWaitUntilApi, buildSelect, buildCheck, buildPress, buildLocator, buildOpen, buildClick, buildFill, buildWithin, buildHover, buildScroll, buildDismissDialog, buildCloseTab, buildAcceptDialog, buildSwitchToTab, buildScreenshot, buildDropFile, buildDrag, buildSwitchToNewTab, buildDownload, buildFillForm, buildStub, buildWaitUntilUi, buildCapture, buildLet, buildLog, buildCall, buildGive, buildPause, buildDataTable, LOCATOR_KINDS, stringLit, SYNTHETIC, type BuildResult, type WorkloadSpec, type ThresholdSpec, type TestSpec, type StageSpec, type ApiStepSpec, type ApiBodySpec, type ExpectSpec, type SubjectSpec, type LocatorSpec, type ClickSpec, type FillSpec, type WithinSpec, type DropFileSpec, type DragSpec, type DownloadSpec, type FillFormSpec, type StubSpec, type WaitUntilUiSpec, type CaptureSpec, type SelectSpec, type PressSpec, type LetSpec, type LogSpec, type CallSpec, type PauseSpec, type DataTableSpec } from './build.js';
+export { insertIntoSource, replaceInSource, declarationsIn, type Insertion, type InsertResult, type Replacement, type StepPath, type NoteOwner, type DeclSpace, type Declaration } from './insert.js';
+export { buildWorkload, buildThreshold, buildTest, buildAction, buildCrawl, buildApiStep, buildExpect, buildWaitUntilApi, buildSelect, buildCheck, buildPress, buildLocator, buildOpen, buildClick, buildFill, buildWithin, buildHover, buildScroll, buildDismissDialog, buildCloseTab, buildAcceptDialog, buildSwitchToTab, buildScreenshot, buildDropFile, buildDrag, buildSwitchToNewTab, buildDownload, buildFillForm, buildStub, buildWaitUntilUi, buildCapture, buildLet, buildLog, buildCall, buildGive, buildPause, buildDataTable, LOCATOR_KINDS, stringLit, SYNTHETIC, type BuildResult, type WorkloadSpec, type ThresholdSpec, type TestSpec, type ActionSpec, type CrawlSpec, type CrawlSeedSpec, type StageSpec, type ApiStepSpec, type ApiBodySpec, type ExpectSpec, type SubjectSpec, type LocatorSpec, type ClickSpec, type FillSpec, type WithinSpec, type DropFileSpec, type DragSpec, type DownloadSpec, type FillFormSpec, type StubSpec, type WaitUntilUiSpec, type CaptureSpec, type SelectSpec, type PressSpec, type LetSpec, type LogSpec, type CallSpec, type PauseSpec, type DataTableSpec } from './build.js';
 export {
   parse as parseTokens,
   parseConfig as parseConfigTokens,
@@ -82,6 +82,7 @@ export {
   checkHelperDirs,
   normalizePosixPath,
   DEFAULT_HELPER_DIRS,
+  DEFAULT_RUNS_KEPT,
   type HelperPolicy,
   checkImportsParse,
   checkActionCycles,

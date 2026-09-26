@@ -65,12 +65,13 @@
 // inside a folder somebody collapsed must still show it, or the link is broken.
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { menuTrigger, type MenuItem, type MenuRequest } from './ContextMenu';
 import type { Lens, ProjectFile, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
 import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
 import { useRovingFocus } from './useRovingFocus';
-import type { FileOutline, OutlineCrawl, OutlineHook, OutlineTest } from './outline';
+import type { FileOutline, OutlineDecl } from './outline';
 
 /**
  * **`+` on a row of the explorer** — `M217` `D` (`D1139`, `D1140`).
@@ -265,8 +266,18 @@ export function filesUnder(node: TreeNode): string[] {
   return node.file ? [node.path] : node.children.flatMap(filesUnder);
 }
 
+/** The row count past which the explorer is virtualised (`D1325`). */
+export const VIRTUAL_AT = 300;
+
 export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew, menuFor, onMenu }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  /**
+   * **This door only** — `M241` `E` (`D1325`). A VIEW of the tree, never a run filter: it hides the
+   * files with nothing behind this door, and the strip's run is exactly what it was — `D1063`'s
+   * *the door is a count, never a filter* is about the run, and this toggle says on its face that it
+   * only changes what you see.
+   */
+  const [doorOnly, setDoorOnly] = useState(false);
   /* `M240` `C` (`D1311`) — the whole list is one Tab stop and ↑/↓ walk it, so the pane is not a
      row's-worth of presses away. Tab lands on the open file's row, else the first. */
   const treeRef = useRef<HTMLUListElement | null>(null);
@@ -275,7 +286,19 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
    *  neither in the address nor anywhere durable — `D1066` addresses what changes a run. */
   const [anchor, setAnchor] = useState<string | null>(null);
 
-  const tree = useMemo(() => buildTree(project.files), [project.files]);
+  const fullTree = useMemo(() => buildTree(project.files), [project.files]);
+  const tree = useMemo(() => {
+    if (!doorOnly) return fullTree;
+    const behindHere = (f: ProjectFile): boolean => f.tests.some((x) => x.lenses.includes(door)) || f.crawls.some((x) => x.lenses.includes(door));
+    const prune = (nodes: readonly TreeNode[]): TreeNode[] =>
+      nodes.flatMap((n) => {
+        if (n.file) return behindHere(n.file) || n.path === openFile ? [n] : [];
+        const children = prune(n.children);
+        return children.length === 0 ? [] : [{ ...n, children }];
+      });
+    return prune(fullTree);
+  }, [fullTree, doorOnly, door, openFile]);
+  const dirsOf = (nodes: readonly TreeNode[]): string[] => nodes.flatMap((n) => (n.file ? [] : [n.path, ...dirsOf(n.children)]));
 
   /** The address wins over a collapse: opening a file inside a folder somebody closed opens it. */
   useEffect(() => {
@@ -365,7 +388,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
    */
   const renderOutline = (o: FileOutline): ReactElement => (
     <ul className="tree outline" data-outline={o.declarations.length}>
-      {o.declarations.map((decl: OutlineHook | OutlineTest | OutlineCrawl) => (
+      {o.declarations.map((decl: OutlineDecl) => (
         <li key={`${decl.kind}-${decl.line}`} data-outline-decl={decl.kind} data-outline-line={decl.line}>
           <div className="row-pair">
           <button
@@ -425,7 +448,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
     </ul>
   );
 
-  const renderNode = (node: TreeNode): ReactElement => {
+  const renderNode = (node: TreeNode, recurse = true): ReactElement => {
     if (node.file) {
       const f = node.file;
       const total = f.tests.length + f.crawls.length;
@@ -522,10 +545,25 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           </span>
           {node.name}
         </button>
-        {open ? <ul className="tree">{node.children.map(renderNode)}</ul> : null}
+        {open && recurse ? <ul className="tree">{node.children.map((n) => renderNode(n))}</ul> : null}
       </li>
     );
   };
+
+  /** The tree in reading order with each row's depth — what the virtualised list draws. */
+  const rows = useMemo(() => {
+    const out: { node: TreeNode; depth: number }[] = [];
+    const walk = (nodes: readonly TreeNode[], depth: number): void => {
+      for (const n of nodes) {
+        out.push({ node: n, depth });
+        if (!n.file && !collapsed.has(n.path)) walk(n.children, depth + 1);
+      }
+    };
+    walk(tree, 0);
+    return out;
+  }, [tree, collapsed]);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const virtual = useVirtualizer({ count: rows.length, getScrollElement: () => scrollRef.current, estimateSize: () => 28, overscan: 12 });
 
   return (
     <div className="sidebar">
@@ -569,9 +607,57 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
         </p>
       </div>
 
-      <ul className="files tree" data-files={project.files.length} ref={treeRef}>
-        {tree.map(renderNode)}
-      </ul>
+      {rows.length >= VIRTUAL_AT ? (
+        /* **Past `VIRTUAL_AT` rows the tree is virtualised** — `D1325`, `@tanstack/react-virtual`. The
+           rows are the same rows, flattened in tree order with their depth as an indent; only the
+           ones near the scroll position are in the DOM. Below the threshold the tree stays the
+           nested list every gate reads — a project that fits on a screen gains nothing from it. */
+        <div className="tree-scroll" ref={scrollRef} data-tree-virtual={rows.length}>
+          <ul className="files tree" data-files={project.files.length} ref={treeRef} style={{ height: virtual.getTotalSize(), position: 'relative' }}>
+            {virtual.getVirtualItems().map((item) => {
+              const row = rows[item.index]!;
+              return (
+                <li
+                  key={row.node.path}
+                  data-index={item.index}
+                  ref={virtual.measureElement}
+                  className="virtual-row"
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, transform: `translateY(${item.start}px)`, paddingLeft: `${row.depth * 12}px` }}
+                >
+                  <ul className="tree">{renderNode(row.node, false)}</ul>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : (
+        <ul className="files tree" data-files={project.files.length} ref={treeRef}>
+          {tree.map((n) => renderNode(n))}
+        </ul>
+      )}
+
+      {/* `M241` `E` (`D1325`) — the two view controls, at the foot beside `+ new file` for
+          `D1118`'s reason: they are what you reach for after reading the list, and above it they would
+          be two Tab stops between the search and the tree `D1311` puts next to each other. Neither
+          changes a run. */}
+      <div className="tree-tools" data-tree-tools>
+        <button
+          type="button"
+          onClick={() => {
+            // The open file's own folders stay open: collapsing the folder you are reading would
+            // hide the row the page is about, and the address would re-open it on the next render.
+            const parts = openFile === null ? [] : openFile.split('/').slice(0, -1);
+            const keep = new Set(parts.map((_, i) => parts.slice(0, i + 1).join('/')));
+            setCollapsed(new Set(dirsOf(fullTree).filter((d) => !keep.has(d))));
+          }}
+          data-collapse-all data-tip="fold every folder — the open file's own folders stay open">
+          collapse all
+        </button>
+        <label className="check" data-tip={`show only the files with tests at the ${DOOR_BY_ID[door].label} door — what runs is unchanged`}>
+          <input type="checkbox" checked={doorOnly} onChange={(e) => setDoorOnly(e.target.checked)} data-door-only />
+          this door only
+        </label>
+      </div>
 
       {/* At the FOOT of the list and not above it (`D1118`). The list is what the pane is for and a
           create is what you reach for after reading it; a button above 84 file rows is chrome

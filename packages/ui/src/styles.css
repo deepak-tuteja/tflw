@@ -220,7 +220,7 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
 .doorbar-version { margin-left: auto; font-size: 11px; text-decoration: none; padding: 0 6px; }
 .doorbar-version:hover { color: var(--fg); text-decoration: underline; }
 /* `M240` `C` (`D1311`) — the legend's door: `?` opens the same list the `?` key does. */
-.doorbar-legend { font-size: 11px; padding: 0 6px; min-width: 0; }
+.doorbar-legend { font-size: 11px; padding: 0 6px; min-width: 24px; } /* `D1325` — was `min-width: 0`, the one class that undercut the floor */
 .legend h2 { margin: 0; font-size: var(--title-size); font-weight: var(--title-weight); }
 .legend dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
 .legend dl > div { display: contents; }
@@ -293,6 +293,11 @@ body:has(.split.dragging) .stage-frame { pointer-events: none; }
    hover — without this the file tree highlights row by row as the pane is widened. */
 body:has(.col-grip.dragging) { cursor: col-resize; user-select: none; }
 .sidebar { border-right: var(--border) solid var(--line); background: var(--panel); overflow: auto; padding: calc(var(--unit) * 2); }
+/* `M241` `E` (`D1325`) — the explorer's two view controls, and the list that scrolls itself once it is
+   virtualised (a virtualiser needs one element whose scroll position it reads). */
+.tree-tools { display: flex; align-items: center; gap: 12px; margin: 6px 0; font-size: 12px; color: var(--muted); }
+.tree-scroll { max-height: 70vh; overflow: auto; }
+.virtual-row { list-style: none; }
 /* `M240` `E` — the explorer and its grip in one `<aside>`, spanning the page's first two tracks. */
 .sidebar-col { grid-column: 1 / 3; display: grid; grid-template-columns: minmax(0, 1fr) 6px; min-width: 0; min-height: 0; }
 .main { overflow: auto; padding: calc(var(--unit) * 2) calc(var(--unit) * 3) 40px; }
@@ -308,6 +313,17 @@ body:has(.col-grip.dragging) { cursor: col-resize; user-select: none; }
    it is a ROW because it is one sentence: run this env, this wide, over this much. In the sidebar
    these were a stacked grid 160 px wide, which is what a column does to a command. */
 .runstrip { display: flex; align-items: center; gap: 16px; margin: 0 0 12px; }
+/* `M241` `D` (`D1324`) — `more…`: the rest of `tflw run`'s flags this run can spend, opened as a
+   panel under its summary so the strip keeps its one line at rest. */
+.run-more { position: relative; }
+.run-more > summary { cursor: pointer; color: var(--muted); list-style: none; }
+.run-more > summary::-webkit-details-marker { display: none; }
+.run-more[open] > summary { color: var(--fg); }
+.run-more-rows {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; display: grid; gap: 8px; min-width: 240px;
+  padding: 10px 12px; background: var(--panel); border: var(--border) solid var(--line); border-radius: var(--radius);
+}
+.run-more-rows label { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .controls { display: flex; align-items: center; gap: 16px; }
 .controls label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 /* A fixed width is a guess about a typeface, and there are four of them now — `Terminal`'s
@@ -370,7 +386,7 @@ button.cancel { background: var(--warn); }
 .file-row.unmatched { opacity: 0.38; }
 /* `M217` `C` (`D1143`) — unsaved edits, in the warn hue because it is a state to resolve rather
    than a fault. `flex: none` so it never competes with the file name for width. */
-.unsaved-dot { color: var(--warn); font-size: 10px; line-height: 1; flex: none; }
+.unsaved-dot { color: var(--warn); font-size: 11px; line-height: 1; flex: none; }
 .file-row.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .file-row.open { box-shadow: inset 2px 0 0 var(--accent); }
 .file-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
@@ -383,7 +399,7 @@ button.cancel { background: var(--warn); }
 .file-row > code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .dir-row { background: none; border: 0; padding: 1px 0; color: var(--muted); font: inherit; display: flex; align-items: center; gap: 4px; width: 100%; text-align: left; }
 .dir-row:hover { color: var(--fg); }
-.twisty { display: inline-block; width: 10px; font-size: 10px; }
+.twisty { display: inline-block; width: 11px; font-size: 11px; }
 .file-row .count { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
 /* A TREE ROW IS ONE LINE — and `M209` `D1061` had written that rule for the file NAME alone. A
    file that does not parse carries a `does not parse · …` badge beside the name, and the badge is
@@ -441,7 +457,7 @@ button.cancel { background: var(--warn); }
 .sms { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .detail { margin: 0 0 2px 1.6em; font-size: 13px; color: var(--muted); }
 .detail.baddetail { color: var(--fail); }
-.log-badge { font-size: 10px; padding: 0 5px; border-radius: var(--ctl-radius); background: var(--line); color: var(--muted); }
+.log-badge { font-size: 11px; padding: 0 5px; border-radius: var(--ctl-radius); background: var(--line); color: var(--muted); }
 .log-warn { color: var(--warn); }
 .log-error { color: var(--fail); }
 .evidence { margin: 2px 0 4px 1.6em; font-size: 12px; }
@@ -603,7 +619,7 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .doorbar-tab:hover { color: var(--fg); }
 .doorbar-tab.on { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .doorbar-count { margin-left: 6px; font-size: 11px; }
-.badge.also { background: none; border: 1px solid var(--line); color: var(--muted); font-size: 10px; letter-spacing: 0.04em; }
+.badge.also { background: none; border: 1px solid var(--line); color: var(--muted); font-size: 11px; letter-spacing: 0.04em; }
 .elsewhere { font-size: 12px; font-style: italic; }
 
 /* The strip over one file (`M205` §2). It sits UNDER the doorbar and is deliberately quieter than
@@ -662,12 +678,29 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    have to round-trip comments. `resize: vertical` because the one thing an author reliably wants
    from it is more of it — and `min-height` rather than a fixed height, so a four-line scaffold and
    a sixty-line enterprise config both open at a usable size. */
-.config-text {
-  display: block; width: 100%; box-sizing: border-box; min-height: 320px; resize: vertical;
-  font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
-  border-radius: var(--radius); padding: 10px 12px;
+/* `M241` `A` (`D1321`): the config is the page's editor now (`Editor.tsx`), and so is Source. The
+   editor is themed from the same tokens as the rest of the page — CodeMirror's own theme sets
+   layout, not colour — and the text keeps `var(--mono)`, which the appearance suite's font gate
+   holds every code surface to. */
+.editor .cm-editor {
+  font-size: 12.5px; background: var(--input); color: var(--fg);
+  border: var(--border) solid var(--line); border-radius: var(--radius);
 }
-.config-text:focus { outline: 1px solid var(--accent); }
+.editor .cm-scroller { font-family: var(--mono); line-height: 1.5; }
+.editor .cm-content { font-family: var(--mono); caret-color: var(--fg); }
+.editor .cm-editor.cm-focused { outline: 1px solid var(--accent); }
+.editor .cm-gutters { background: var(--panel2); color: var(--muted); border-color: var(--line); border-right: var(--border) solid var(--line); }
+.editor .cm-activeLineGutter { background: transparent; color: var(--fg); }
+.editor .cm-selectionBackground, .editor .cm-editor.cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.config-text .cm-editor { min-height: 320px; }
+.config-text .cm-scroller { min-height: 320px; }
+.source-editor { margin-top: 12px; }
+/* The cap is on the scroller, not the editor: CodeMirror's scroller is `height: 100%`, and a
+   percentage height under a `max-height` parent does not resolve, so capping the editor grew the
+   scroller to the whole file and the PAGE scrolled instead — measured by the index's centring gate. */
+.source-editor .cm-scroller { max-height: 60vh; overflow: auto; }
+/* A warning is not a refusal: the editor underlines both, and says which by colour. */
+.editor .squiggle.warning { background-image: linear-gradient(to right, var(--warn) 0 2px, transparent 2px 4px); }
 
 /* The document switcher (M208 S2). Deliberately NOT a second `.tabstrip`: the strip above it is
    the file's five stages and this is a choice *inside* one of them, so painting them alike would
@@ -893,7 +926,7 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
    longer appears; inside the strip the summary is already the separator. */
 .file-strip { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; margin-bottom: 10px; background: var(--panel); }
 .file-strip > summary { cursor: pointer; font-size: 12px; list-style-position: outside; }
-.file-strip > summary .scope-tag { font-size: 10px; letter-spacing: var(--label-spacing); text-transform: var(--label-transform); color: var(--muted); border: var(--border) solid var(--line); border-radius: var(--ctl-radius); padding: 1px 4px; }
+.file-strip > summary .scope-tag { font-size: 11px; letter-spacing: var(--label-spacing); text-transform: var(--label-transform); color: var(--muted); border: var(--border) solid var(--line); border-radius: var(--ctl-radius); padding: 1px 4px; }
 .file-strip .file-facts { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
 
 /* `M212` `S2` (`D1086`) — the body as a sequence. The list is the test's own order, so it gets no
@@ -1347,7 +1380,7 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 }
 .editor-tab.on { color: var(--fg); border-bottom-color: var(--accent); }
 .editor-tab:hover { color: var(--fg); }
-.tab-count { font-size: 10px; color: var(--muted); background: var(--panel2); border-radius: 999px; padding: 0 5px; }
+.tab-count { font-size: 11px; color: var(--muted); background: var(--panel2); border-radius: 999px; padding: 0 5px; }
 .editor-tab.on .tab-count { color: var(--accent); }
 .tabpane { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); }
 .tabpane textarea { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 12px; }
@@ -1785,3 +1818,22 @@ p.scan-probes::before { content: ''; }
    flex column, and the region already spaces its children with `gap`. */
 .stage-foot { margin: 0; font-size: 12px; }
 .stage-frame { width: 100%; min-height: 620px; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
+
+/* ── `M241` `E` (`D1325`): every control at least 24 px on a side, and no text under 11 px ──────────
+   Last in the file on purpose: these are floors every earlier rule keeps its own padding and fonts
+   under, and a floor written before them would be overridden by the first rule that sets a height.
+   The census in `ui-appearance.test.ts` judges it on every view, and the sibling's `S-2b` on its own
+   project. Measured before: 698 small things on this fixture — 22 px tree rows, an 18×14 row `+`,
+   20 px summaries, a 14 px list of report files.
+
+   **The resize grips are the one exception, and it is named rather than hidden.** They are a 6 px
+   seam the length of the pane, reachable by keyboard (`D1311`), and `M216` kept them that narrow so
+   they cover neither pane's scrollbar; a 24 px hit area would cover both. */
+button, [role=button], select, summary { min-height: 24px; }
+button, [role=button] { min-width: 24px; }
+summary { box-sizing: border-box; padding-block: 2px; }
+label.check { min-height: 24px; display: inline-flex; align-items: center; gap: 6px; }
+a[data-report-file], a[data-trace-download], a[data-version], a[data-open-trace] { display: inline-flex; align-items: center; min-height: 24px; }
+.row-plus, .seq-plus, .seq-x { display: inline-flex; align-items: center; justify-content: center; }
+/* `M241` `E` (`D1325`) — the report's filter strip: one line above the tests. */
+.report-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 12px; font-size: 12px; }

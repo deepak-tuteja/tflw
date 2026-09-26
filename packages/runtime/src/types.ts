@@ -107,6 +107,9 @@ export interface ResolvedConfig {
    * config's own directory, a `use` may load from; `DEFAULT_HELPER_DIRS` when the file declares
    * none. Always present, so a consumer never re-derives the default. */
   readonly helpers: readonly string[];
+  /** `runs keep N` (`M241` `E`, `D1325`) — how many runs `tflw ui` keeps; `DEFAULT_RUNS_KEPT` when
+   * the file says nothing. Always present, like `helpers`. */
+  readonly runsKeep: number;
   /** `session <name> ... ` blocks declared in `tflw.config`, by name (SPEC §3.3, P#42). */
   readonly sessions: ReadonlyMap<string, SessionDecl>;
   /** `M147d`/`M137f-02` (D642) — the declared sessions this env does **not** get, mapped to the envs
@@ -630,6 +633,13 @@ export interface RunReport {
    * exact same absolute dates alongside `--seed` with `tflw run --seed <n> --now <iso>`
    * (decision 52). */
   readonly now: string;
+  /**
+   * **Who ran this, where, with which tflw** — `M241` `E` (`D1325`, the review's E4). The OS user,
+   * the host name and the tflw version, so a report read later — or beside another team's — says
+   * whose machine produced it. Set by the CLI when it writes the report; optional, so every report
+   * written before this and every fixture keeps its shape.
+   */
+  readonly ranBy?: { readonly user: string; readonly host: string; readonly version: string };
   /** True when this run had `insecure true` active (TLS verification disabled) — surfaced as a
    * visible warning in the CLI summary and report header, never silently (decision 78). */
   readonly insecure: boolean;

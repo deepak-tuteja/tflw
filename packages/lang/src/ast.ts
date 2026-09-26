@@ -1628,6 +1628,9 @@ export interface ConfigFile extends Node {
    * reason `Program.crawls` gives: a required field would put `"helpers": []` into every config
    * golden in the corpus. Absent is *the defaults apply*, which `resolveConfig` spells out. */
   readonly helpers?: readonly HelpersDecl[];
+  /** `runs keep N` (`M241` `E`, `D1325`) — how many runs `tflw ui` remembers. Optional and omitted
+   * when absent, like `helpers`; absent is the default, which `resolveConfig` spells out. */
+  readonly runs?: RunsDecl;
   /** `session <name> ... ` blocks — the single auth concept (SPEC §3.3, P#20/31/42). */
   readonly sessions: readonly SessionDecl[];
 }
@@ -2032,6 +2035,14 @@ export interface ExcludeDecl extends Node {
  * config's own directory, that a `use` may load a JS/TS module from. A config that declares none
  * gets the two defaults, `./helpers` and `./tests/helpers` (`DEFAULT_HELPER_DIRS`). Top-level like
  * `exclude`, and string paths for the same reason: a directory is a path, not a name. */
+/** `runs keep 3` (`M241` `E`, `D1325`) — the number of runs the page's server keeps in memory,
+ * past which it forgets the oldest ended one. The report directories on disk are untouched: they
+ * are the durable record (`D1317`), and this bounds only what the page lists. */
+export interface RunsDecl extends Node {
+  readonly type: 'RunsDecl';
+  readonly keep: NumberLit;
+}
+
 export interface HelpersDecl extends Node {
   readonly type: 'HelpersDecl';
   readonly paths: readonly StringLit[];

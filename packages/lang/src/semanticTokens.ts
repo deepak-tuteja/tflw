@@ -147,6 +147,8 @@ const KEYWORDS = new Set([
 const CONFIG_KEYWORDS = new Set([
   'web', 'insecure', 'cert', 'key', 'allow', 'hosts', 'evidence', 'teardown', 'redact', 'viewport',
   'baseline',
+  // `M241` `E` (`D1325`) — `runs keep N`. Config-only: in a `.tflw` file both are plausible names.
+  'runs', 'keep',
   'oauth2', 'token', 'client', 'id', 'secret', 'scope',
   'destination', 'level', 'query',
   // `M147b` (`A2-14`/`D623`/`D628`) — the enumerated values of `evidence`, `log destination` and

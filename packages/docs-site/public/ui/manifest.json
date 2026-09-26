@@ -1,6 +1,6 @@
 {
-  "inputs": "37ffd250303c318f609ce8b7087e7a331a48961a9586f11a759a086e3fd84596",
-  "inputCount": 102,
+  "inputs": "9f341517365655493eae694d402477cf89aff49fb91c59a4326875c0dc0b4714",
+  "inputCount": 104,
   "shots": [
     {
       "name": "landing-terminal.png",
@@ -15,12 +15,12 @@
     {
       "name": "spine-terminal.png",
       "width": 2880,
-      "height": 1738
+      "height": 1800
     },
     {
       "name": "spine-paper.png",
       "width": 2880,
-      "height": 1764
+      "height": 1800
     },
     {
       "name": "doors-terminal.png",
@@ -65,12 +65,12 @@
     {
       "name": "compose-load-terminal.png",
       "width": 2144,
-      "height": 1048
+      "height": 1410
     },
     {
       "name": "compose-load-paper.png",
       "width": 2120,
-      "height": 1082
+      "height": 1084
     },
     {
       "name": "compose-scan-terminal.png",
@@ -136,5 +136,5 @@
     }
   },
   "deviceScaleFactor": 2,
-  "cutAt": "2026-09-26T15:22:47.939Z"
+  "cutAt": "2026-09-26T14:38:28.273Z"
 }

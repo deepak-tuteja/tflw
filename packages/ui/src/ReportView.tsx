@@ -62,11 +62,61 @@ export function ReportHeader({ report }: { report: RunReport }) {
   );
 }
 
-/** Tests grouped by file in declaration order — the order the report holds them in. */
+/**
+ * Tests grouped by file in declaration order — the order the report holds them in.
+ *
+ * **With a filter strip** — `M241` `E` (`D1325`, the review's U12): a report of three hundred tests
+ * is read by narrowing it, and the page had no way to. Failed only, one file, and a name to match;
+ * *skipped* joins them when a report holds a skipped test, which is `M242`'s outcome. It narrows
+ * what is DRAWN, and says so with a count, so a reader never mistakes a narrowed report for a
+ * short run.
+ */
 export function ReportBody({ tests, context }: { tests: readonly ReportEntry[]; context?: ReportContext }) {
-  const byFile = groupByFile(tests.map((t) => ({ file: t.file, entry: t })));
+  const [failedOnly, setFailedOnly] = useState(false);
+  const [skippedOnly, setSkippedOnly] = useState(false);
+  const [fileOnly, setFileOnly] = useState('');
+  const [text, setText] = useState('');
+  const skippedAny = tests.some((t) => (t as { status?: string }).status === 'skipped');
+  const files = [...new Set(tests.map((t) => t.file ?? ''))];
+  const needle = text.trim().toLowerCase();
+  const shown = tests.filter(
+    (t) =>
+      (!failedOnly || !t.ok) &&
+      (!skippedOnly || (t as { status?: string }).status === 'skipped') &&
+      (fileOnly === '' || (t.file ?? '') === fileOnly) &&
+      (needle === '' || t.name.toLowerCase().includes(needle)),
+  );
+  const byFile = groupByFile(shown.map((t) => ({ file: t.file, entry: t })));
   return (
     <div className="tests">
+      <div className="report-filter" data-report-filter data-report-shown={shown.length} data-report-total={tests.length}>
+        <label className="check" data-tip="only the tests that failed">
+          <input type="checkbox" checked={failedOnly} onChange={(e) => setFailedOnly(e.target.checked)} data-filter-failed />
+          failed
+        </label>
+        {skippedAny ? (
+          <label className="check" data-tip="only the tests that were skipped">
+            <input type="checkbox" checked={skippedOnly} onChange={(e) => setSkippedOnly(e.target.checked)} data-filter-skipped />
+            skipped
+          </label>
+        ) : null}
+        {files.length < 2 ? null : (
+          <select value={fileOnly} onChange={(e) => setFileOnly(e.target.value)} data-filter-file aria-label="one file" data-tip="the tests of one file">
+            <option value="">every file</option>
+            {files.map((f) => (
+              <option key={f} value={f}>
+                {f || '(no file)'}
+              </option>
+            ))}
+          </select>
+        )}
+        <input type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder="a test name" aria-label="a test name" data-filter-text data-tip="tests whose name holds this text" />
+        {shown.length === tests.length ? null : (
+          <span className="muted" data-report-narrowed>
+            showing {shown.length} of {tests.length}
+          </span>
+        )}
+      </div>
       {byFile.map(([file, entries]) => (
         <section className="file" key={file} data-file-group={file}>
           <h2 className="file-name">{file}</h2>
