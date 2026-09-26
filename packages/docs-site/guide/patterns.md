@@ -12,7 +12,7 @@ Do not test the flag inside the test. Tag the tests that need the flag on, and l
 the jobs where it is off:
 
 ```tflw
-@flag-giftMessage
+@flag_giftMessage
 test "a gift message is printed on the receipt"
   api POST /orders body { productId: 1, qty: 1, giftMessage: "happy birthday" }
   expect status equals 201
@@ -20,7 +20,7 @@ test "a gift message is printed on the receipt"
 ```
 
 ```sh
-npx tflw run --tag !flag-giftMessage   # the job where the flag is off
+npx tflw run --tag !flag_giftMessage   # the job where the flag is off
 ```
 
 When the flag goes away, so does the tag. Kept true by `tests/cookbook/feature-flag.tflw`, and the
@@ -30,21 +30,22 @@ exclusion itself by `scripts/verify-cli-flags.mjs`, which compares the run with 
 
 A value that depends on where the suite runs is an environment variable, read with `env(NAME)`.
 `require env` in `tflw.config` makes a run without it stop before the first request instead of
-sending an empty value:
+sending an empty value, and a session is where a credential is read once for every test that
+signs in:
 
 ```tflw-config fragment
 require env ADMIN_EMAIL, ADMIN_PW
-```
 
-```tflw
-test "the admin signs in"
+session admin
   api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }
-  expect status equals 200
+  capture body.token as token
+  header "Authorization" is "Bearer {token}"
 ```
 
 A URL that differs by environment belongs in the config instead, as a base URL that names the
 variable overriding it — `api env API_BASE default "http://localhost:4001/v1"` — so every step
-moves with `--env`. Kept true by every login in `tests/api/`, and by the project's `tflw.config`.
+moves with `--env`. Kept true by the sessions in the project's `tflw.config`, which every
+signed-in test uses.
 
 ## Acting on what the response said
 
