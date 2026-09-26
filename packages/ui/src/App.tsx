@@ -125,7 +125,24 @@ export function App() {
   /** What the search box holds (`M209` `S5`, `D1064`). In the address for `D1066`'s reason: it is
    *  the other thing that changes what a run does. */
   const [query, setQueryState] = useState<string>(() => queryFromHash(window.location.hash));
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * **What went wrong, as a list that expires** — `M240` `F` (`M239-06`).
+   *
+   * This was one `error: string | null` with seven `setError` sites and no clearing site, so a
+   * failed read sat in the run pane under a later, healthy state until the same path happened to
+   * succeed again (review U15). A notice is about what happened, not where you are: it draws
+   * top-right, closes on its ✕ or after ten seconds, and a route change does not clear it. Two
+   * failures are two notices — the second no longer overwrites the first.
+   */
+  const [notices, setNotices] = useState<readonly Notice[]>([]);
+  const noticeSeq = useRef(0);
+  const notify = useCallback((text: string) => {
+    noticeSeq.current += 1;
+    setNotices((prev) => [...prev, { id: noticeSeq.current, text, at: Date.now() }]);
+  }, []);
+  const dismiss = useCallback((id: number) => setNotices((prev) => prev.filter((n) => n.id !== id)), []);
+  /** The one slot the landing and the sidebar's fallback still read: the newest notice's text. */
+  const error = notices.length === 0 ? null : notices[notices.length - 1]!.text;
   const [runs, setRuns] = useState<readonly RunRecord[]>([]);
   const [reports, setReports] = useState<readonly ReportDir[]>([]);
   const [selected, setSelected] = useState<Selection>(null);
@@ -408,7 +425,7 @@ export function App() {
       },
       (e: unknown) => {
         settled();
-        setError(e instanceof Error ? e.message : String(e));
+        notify(e instanceof Error ? e.message : String(e));
       },
     );
   }, [envPick]);
@@ -613,7 +630,7 @@ export function App() {
         // gate did exactly that) would otherwise be unselected by the page's own first load.
         if (p[0]) setSelected((s) => s ?? { kind: 'report', id: p[0]!.id });
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
   }, [refreshLists, readProjectView]);
 
   // A selected report directory is read once — `results.json` is the merged `RunReport`.
@@ -623,7 +640,7 @@ export function App() {
     setCompareId(null);
     getResults(id)
       .then((data) => setReport({ id, data }))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
   }, [selected]);
 
   useEffect(() => {
@@ -647,7 +664,7 @@ export function App() {
     const id = compareId;
     getResults(id)
       .then((data) => setCompare({ id, data }))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
   }, [compareId]);
 
   const watch = useCallback(
@@ -719,7 +736,7 @@ export function App() {
         await refreshLists();
         watch(record.id);
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        notify(e instanceof Error ? e.message : String(e));
       }
     },
     [refreshLists, watch, runLevel],
@@ -908,11 +925,11 @@ export function App() {
       const src = await getFile(p);
       const target = copyNameFor(p);
       const put = await putFile(target, src.text, null);
-      if (!put.ok) { setError(`could not duplicate ${p}: ${put.error}`); return; }
+      if (!put.ok) { notify(`could not duplicate ${p}: ${put.error}`); return; }
       await readProjectView();
       openAt(target, 'compose');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      notify(e instanceof Error ? e.message : String(e));
     }
   }, [copyNameFor, openAt, readProjectView]);
 
@@ -1072,11 +1089,6 @@ export function App() {
   const runPane = (
     <>
       <RunList runs={runs} reports={reports} selected={selected} onSelect={setSelected} />
-      {error ? (
-        <p className="error" data-error>
-          {error}
-        </p>
-      ) : null}
       {selected?.kind === 'run' && live && live.id === selected.id ? <LivePane live={live} /> : null}
       {/* **The trace viewer, in the page** — `M220` `C` (`D1179`).
           It is an `<iframe>` and that is *not* §2.1's refused idea: the viewer is served by this
@@ -1221,6 +1233,7 @@ export function App() {
           or focused, and it is here rather than inside a pane because the shell's own chrome asks
           for a tooltip too — one of the three screenshots that started this round is a door bar. */}
       <TooltipLayer />
+      <Notices notices={notices} onDismiss={dismiss} />
       {/* Beside the tooltip and for the same reason (`M218` `A`): the shell owns the floating
           layers, because a menu opened from a sidebar row must be able to paint over the pane. */}
       <ContextMenuLayer menu={menu} onClose={() => setMenu(null)} />
@@ -1376,6 +1389,42 @@ export function App() {
           />
         ) : null}
       </main>
+    </div>
+  );
+}
+
+interface Notice {
+  readonly id: number;
+  readonly text: string;
+  readonly at: number;
+}
+
+/** How long a notice stays before it goes on its own. Long enough to read, short enough that a
+ *  page left open does not pile up a morning's worth of them. */
+const NOTICE_MS = 10_000;
+
+/**
+ * The notices, top-right — `M239-06`. One timer per notice, cleared on unmount, so ten seconds is
+ * ten seconds from each one's own arrival and a burst does not vanish together.
+ */
+function Notices({ notices, onDismiss }: { readonly notices: readonly Notice[]; readonly onDismiss: (id: number) => void }) {
+  useEffect(() => {
+    if (notices.length === 0) return;
+    const now = Date.now();
+    const timers = notices.map((n) => setTimeout(() => onDismiss(n.id), Math.max(0, NOTICE_MS - (now - n.at))));
+    return () => { for (const t of timers) clearTimeout(t); };
+  }, [notices, onDismiss]);
+  if (notices.length === 0) return null;
+  return (
+    <div className="notices" data-notices={notices.length} role="status" aria-live="polite">
+      {notices.map((n) => (
+        <div key={n.id} className="notice error" data-notice={n.id}>
+          <span>{n.text}</span>
+          <button type="button" onClick={() => onDismiss(n.id)} data-notice-close aria-label="dismiss this notice">
+            ✕
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

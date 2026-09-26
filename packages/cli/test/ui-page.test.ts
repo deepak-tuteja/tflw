@@ -2671,10 +2671,14 @@ test('`M240` `F` (`M239-04`): the new-step dialog refuses an empty field, and wr
   // The default is empty, so the build refuses: the button is disabled and the reason is under
   // the preview — `change me` used to build, preview, and land in the file.
   await page.locator('[data-add-step-problem]').waitFor();
-  assert.equal(await page.locator('[data-add-step-go]').isDisabled(), true, '`add it` is live over an empty locator');
-  assert.notEqual(((await page.locator('[data-add-step-problem]').textContent()) ?? '').trim(), '', 'the refusal says nothing');
-  assert.equal(await page.locator('[data-add-step] [data-locator-value]').inputValue(), '', 'the field holds a placeholder value rather than being empty');
-  assert.notEqual(await page.locator('[data-add-step] [data-locator-value]').getAttribute('placeholder'), null, 'and the input carries no placeholder to say what goes there');
+  await page.locator('[data-add-step-go][disabled]').waitFor();
+  // one-shot, the three reads below: the dialog was opened by this test's own click and its
+  // initial state — the refusal, the empty field, the placeholder — is what `[data-add-step-go][disabled]`
+  // above has established is on screen; nothing on the page changes it until the fill further down.
+  assert.notEqual(((await page.locator('[data-add-step-problem]').textContent()) ?? '').trim(), '', 'the refusal says nothing'); // one-shot: see above
+  const field = page.locator('[data-add-step] [data-locator-value]');
+  assert.equal(await field.inputValue(), '', 'the field holds a placeholder value rather than being empty'); // one-shot: see above
+  assert.notEqual(await field.getAttribute('placeholder'), null, 'and the input carries no placeholder to say what goes there'); // one-shot: see above
   // Filling it is what enables the button, and the bytes are still untouched until it is pressed.
   await page.locator('[data-add-step] [data-locator-value]').fill('Menu');
   await page.locator('[data-add-step-go]:not([disabled])').waitFor();
@@ -2714,6 +2718,45 @@ test('`M240` `F` (`M239-05`): a run chip is relative, its tip is the absolute fo
   const headExpected = await spelled(oracle['full']!.startedAt);
   assert.ok(head.includes(headExpected), `the report head (${head.trim().slice(0, 120)}) does not carry ${headExpected}`);
   assert.doesNotMatch(head, /\d\/\d+\/\d{4}, |[AP]M\b/, 'the head still spells the locale form');
+});
+
+test('`M240` `F` (`M239-06`): two failures are two notices, top-right; one closes on its ✕ and the other after ten seconds; a route change clears neither', async () => {
+  // Two report directories that exist when the list is read and are gone when they are opened —
+  // the shape `M235` measured: a read that fails after a healthy state.
+  const dirs = ['gone-a', 'gone-b'].map((id) => join(root, 'report', 'runs', id));
+  for (const d of dirs) {
+    await mkdir(d, { recursive: true });
+    await writeFile(join(d, 'results.json'), JSON.stringify(oracle['full']));
+  }
+  const fresh = await newPage();
+  try {
+    await fresh.clock.install();
+    await fresh.goto(`${pageUrl}${API_RUN}`);
+    await fresh.locator('[data-report-row="gone-b"]').waitFor();
+    for (const d of dirs) await rm(d, { recursive: true, force: true });
+    await fresh.locator('[data-report-row="gone-a"]').click();
+    await fresh.locator('[data-notice]').first().waitFor();
+    await fresh.locator('[data-report-row="gone-b"]').click();
+    await fresh.locator('[data-notices="2"]').waitFor();
+    // Neither overwrote the other, and the layer is the page's, not the run pane's.
+    assert.equal(await fresh.locator('[data-notice]').count(), 2); // one-shot: `[data-notices="2"]` above has established the population
+    assert.equal(await fresh.locator('[data-runs] [data-notice], .runpane [data-notice]').count(), 0, 'a notice is drawn inside the run pane'); // one-shot: same population
+    // A route change clears nothing: a notice is about what happened, not where you are.
+    await fresh.goto(`${pageUrl}#/api/compose`);
+    await fresh.locator('[data-compose-bar]').waitFor();
+    await fresh.locator('[data-notices="2"]').waitFor();
+    // ✕ closes one, and only that one.
+    await fresh.locator('[data-notice]').first().locator('[data-notice-close]').click();
+    await fresh.locator('[data-notices="1"]').waitFor();
+    // The other goes on its own at ten seconds — not before.
+    await fresh.clock.fastForward(9_000);
+    await fresh.locator('[data-notices="1"]').waitFor();
+    await fresh.clock.fastForward(1_500);
+    await fresh.locator('[data-notices]').waitFor({ state: 'detached' });
+  } finally {
+    for (const d of dirs) await rm(d, { recursive: true, force: true });
+    await fresh.close();
+  }
 });
 
 // ---------------------------------------------------------------------------

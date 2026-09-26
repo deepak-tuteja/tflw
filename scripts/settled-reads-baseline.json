@@ -1,12 +1,12 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 965,
-    "atRisk": 889,
+    "reads": 961,
+    "atRisk": 885,
     "high": 333,
-    "medium": 66,
-    "low": 490,
-    "declared": 25,
+    "medium": 65,
+    "low": 487,
+    "declared": 30,
     "inPage": 106,
     "inRetry": 26
   },
@@ -251,11 +251,6 @@
         "high": 1,
         "medium": 0,
         "low": 1
-      },
-      "`M240` `F` (`M239-04`): the new-step dialog refuses an empty field, and writes nothing until it is filled": {
-        "high": 0,
-        "medium": 1,
-        "low": 3
       },
       "`M224` `D`: the LOAD door draws the Compose sequence, and its address selects a declaration": {
         "high": 4,
