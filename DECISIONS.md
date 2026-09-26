@@ -9028,7 +9028,7 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
 
 ### D1024
 
-<sub>cited from SPEC.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/stack-ports.mjs +4 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/lib/stack-ports.mjs +5 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
 
 - **D1024 — a config URL may name a non-secret environment override with the literal as its
   default.** `api [service] env NAME default "<url>"`, `web env NAME default "<url>"`,
@@ -9379,7 +9379,7 @@ tracked set has to be skipped by name there, not resolved to zero."*
 
 ### D1309
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/doors.tflw · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
 
 **`D1309` — a door lands on the file with the most of what the door is about, and remembers
 where you were.** `landingFor(door, project, remembered)` is a pure function: first visit lands on
@@ -9412,7 +9412,7 @@ so for errors; this extends it to the unconfigured shape). Not taken: refusing t
 
 ### D1311
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/ui-budgets.mjs, tflw-tests/tests/.tflw-ui/keyboard.tflw · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
 
 **`D1311` — every control has a ring, three strips rove, five keys.**
 *Amended by the build:* the DOM order stays sidebar-first. The app grid is `sidebar | grip | main`
@@ -9432,7 +9432,7 @@ taken: reachable-only, and shortcuts without roving (25 stops to the pane).
 
 ### D1312
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/ui-budgets.mjs · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
 
 **`D1312` — words at rest are budgeted per view, and the budget is a gate.** Excluding statement
 text, file text and the reader's own data (test names, paths, counts): Compose 250, Auth 200, Run
@@ -9455,7 +9455,7 @@ links in place of codes (plain text and SARIF still carry a bare code), and page
 
 ### D1314
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/doors.tflw · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
 
 **`D1314` — `door` stays, defined once; `behind`, `construct` and `lens` leave the product.**
 The landing defines *door* in one line under the four doors. Counts read *17 tests here*, not *17
@@ -9506,9 +9506,35 @@ stored default.
 
 **`D1320` — the process: a policy, an audit, an SBOM, and a bot that opens pull requests.** `SECURITY.md` at both roots with GitHub private vulnerability reporting and a 72-hour acknowledgement; a `supply-chain` CI job running `npm audit --audit-level=high` and publishing a CycloneDX SBOM (`npm sbom`) as an artefact; Dependabot weekly, grouped, for npm and for GitHub Actions in both repositories, merged by hand. The security guide states what tflw itself does — no telemetry, no network beyond the named targets, the helper fence, the token model, the headers — and the support statement: Node 22 and 24, latest release only before 1.0. Turning on private vulnerability reporting is a repository setting, and Dependabot opens pull requests on its own schedule; both are outward-facing and land on the user's word, not the plan's. Not taken: `SECURITY.md` alone (a policy with no audit behind it is a promise), and auto-merge (a dependency bump in a testing tool changes what every user's run executes).
 
+### D1322
+
+<sub>cited from tflw-tests/tests/.tflw-ui/authoring.tflw · lifted from `PLAN_M241_AUTHORING.md`</sub>
+
+**`D1322` — an action is a declaration with an address.** `StepPath` gains `space: 'decl' |
+'action' | 'crawl'` (absent means `'decl'`, so every existing caller is unchanged), each space
+indexed by line within its own array — never folded into the hooks-and-tests numbering, which is
+the reason `D1238` refused. `Insertion` gains `{ kind: 'action', node }`, `Replacement` an action
+header (`name`, `params`), and `buildAction` joins `buildTest`. Compose draws an action as a
+third declaration shape: header row (name, parameters — addable, renamable), body rows through
+the existing `ScriptRow`; `+ new action`. A `call` row's *open action* resolves the name through
+the file's own actions then its imports, opens that file's tab and scrolls to the header.
+**Renaming an action does not rewrite its callers** — the checker's unknown-action error names
+each one, which is a diagnostic the author reads rather than an edit the page makes in other files.
+
+### D1323
+
+<sub>cited from tflw-tests/tests/.tflw-ui/authoring.tflw · lifted from `PLAN_M241_AUTHORING.md`</sub>
+
+**`D1323` — a crawl is a declaration with an address, and SCANS can make one.** The `'crawl'`
+space of `D1322`; `buildCrawl` (seeds `openapi` / `traffic` / `spider`, sessions, excludes, limits,
+the body's assertions); `Insertion` `{ kind: 'crawl', node }`; header and seed `Replacement`s.
+SCANS gets `+ new crawl` (start URL or spec, depth, limits, severity matcher) and a crawl's
+statements are editable rows. `D1238`'s read-only sentence and its remove-guard are retired; the
+limits page's *does not write every construct* shrinks to the config-only pair.
+
 ### D1325
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M241_AUTHORING.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +5 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
 
 **`D1325` — the explorer scales, the census is judged, and a run says who ran it.** The tree is
 virtualised with `@tanstack/react-virtual`; collapse-all; a *this door only* view toggle that
@@ -13374,7 +13400,7 @@ running the extracted actions against the stack.
 
 ### M197
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +26 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +27 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
 
 **`M197` — the sweep runs its four groups at once**
 
@@ -13454,7 +13480,7 @@ in four steps agreed with the user, one of which had to be reordered for a reaso
 
 ### M205
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M205_API_DOOR_READABLE.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/tabs.tflw · lifted from `PLAN_M205_API_DOOR_READABLE.md`</sub>
 
 **`M205` — the API door learns to be read: five tabs over one file**
 
@@ -13745,7 +13771,7 @@ everything after it re-shoots and re-measures a page whose server should already
 
 ### M240
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/ui-budgets.mjs, tflw-tests/scripts/regression.mjs +6 more · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
 
 **`M240` — the first five minutes: landing, copy, keyboard, a11y, the twelve bugs**
 
@@ -13757,7 +13783,7 @@ on this milestone and is not built here.
 
 ### M241
 
-<sub>cited from SPEC.md · lifted from `PLAN_M241_AUTHORING.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +6 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
 
 **`M241` — authoring completeness: the Source editor, actions, crawls, the strip, scale**
 
