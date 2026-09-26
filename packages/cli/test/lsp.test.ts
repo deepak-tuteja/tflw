@@ -17,7 +17,7 @@ const repoRoot = join(here, '..', '..', '..');
 const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'cli.cjs');
 
 before(() => {
-  execFileSync('npm', ['run', 'build'], { cwd: repoRoot, stdio: 'pipe' });
+  execFileSync('npm', ['run', 'build'], { cwd: repoRoot, stdio: 'pipe', shell: process.platform === 'win32' });  // `M243-02`: `npm` is `npm.cmd` on Windows, found only through a shell
 });
 
 function frame(message: unknown): Buffer {

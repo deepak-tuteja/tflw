@@ -296,7 +296,10 @@ test('`key` without a matching `cert` is rejected too', () => {
 });
 
 test('a `cert` in `defaults` paired with `key` only in one `env` still resolves correctly (merge, not per-block pairing)', () => {
-  const configSource = `defaults\n  cert "${clientCertPath}"\n\nenv staging default\n  api "${baseUrl}"\n  key "${clientKeyPath}"\n`;
+  // A path written into a tflw string is written as a user writes it: a Windows path's backslashes
+  // doubled, since `\U` in `C:\Users` is an escape the lexer refuses (`TF047`, found by `M243`).
+  const lit = (p: string): string => p.replaceAll('\\', '\\\\');
+  const configSource = `defaults\n  cert "${lit(clientCertPath)}"\n\nenv staging default\n  api "${baseUrl}"\n  key "${lit(clientKeyPath)}"\n`;
   const parsed = parseConfigSource(configSource);
   assert.deepEqual(parsed.diagnostics, []);
   const env = selectEnv(parsed.config, {});

@@ -45,7 +45,7 @@ export type CliOutcome = { code: number; stdout: string; stderr: string };
 const withCode = (r: { stdout: string; stderr: string }): CliOutcome => ({ code: 0, ...r });
 
 before(() => {
-  execFileSync('npm', ['run', 'build'], { cwd: repoRoot, stdio: 'pipe' });
+  execFileSync('npm', ['run', 'build'], { cwd: repoRoot, stdio: 'pipe', shell: process.platform === 'win32' });  // `M243-02`: `npm` is `npm.cmd` on Windows, found only through a shell
 });
 
 /** GitHub Actions itself sets `GITHUB_ACTIONS=true` in every workflow run's own environment —

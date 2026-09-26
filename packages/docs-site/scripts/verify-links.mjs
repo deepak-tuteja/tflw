@@ -11,7 +11,7 @@
 // have had the same em-dash bug, and agreed with itself.
 
 import { readdir, readFile } from 'node:fs/promises';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Both overridable so this script's own tests can run it against a fixture site (see DT-08).
@@ -48,7 +48,9 @@ if (pages.length === 0) {
 /** route ('/guide/config') → the set of element ids on that page. */
 const ids = new Map();
 for (const page of pages) {
-  const route = '/' + relative(DIST, page).replace(/\.html$/, '').replace(/\/?index$/, '');
+  // A route is a URL, so its separator is `/` whatever the filesystem's is (`M243-03`: on Windows
+  // `relative` answers `guide\ci.html`, and every link to that page read as a page that does not exist).
+  const route = '/' + relative(DIST, page).split(sep).join('/').replace(/\.html$/, '').replace(/\/?index$/, '');
   const html = await readFile(page, 'utf8');
   ids.set(route === '/' ? '/' : route, new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])));
 }
@@ -57,7 +59,7 @@ const problems = [];
 const sources = await walk(ROOT, (n) => n.endsWith('.md'));
 
 for (const source of sources) {
-  const rel = relative(ROOT, source);
+  const rel = relative(ROOT, source).split(sep).join('/');
   const lines = (await readFile(source, 'utf8')).split('\n');
   const self = '/' + rel.replace(/\.md$/, '').replace(/\/?index$/, '');
   for (let i = 0; i < lines.length; i++) {

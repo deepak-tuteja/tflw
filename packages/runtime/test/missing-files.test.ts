@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { parseSource } from '@tflw/lang';
 import { resolveMissingFiles } from '../src/imports.js';
 
@@ -69,7 +69,8 @@ test('the existence probe is injectable, so the language server can answer from 
     return true;
   });
   assert.deepEqual([...missing], [], 'a probe that says "yes" must produce no diagnostics');
-  assert.deepEqual(asked, ['/project/tests/shared/orders.tflw'], 'and it must be asked the resolved absolute path');
+  // `resolve`, not a literal: on Windows the absolute form of `/project/…` carries the drive (`M243`).
+  assert.deepEqual(asked, [resolve('/project/tests/shared/orders.tflw')], 'and it must be asked the resolved absolute path');
 });
 
 test('a path named five times is probed once', async () => {

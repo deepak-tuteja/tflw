@@ -48,7 +48,7 @@ const setup = stagedSetup(async () => {
   // `npm pack` runs `prepack` for us: rm -rf dist, rebuild @tflw/lang+runtime+reporter, then
   // esbuild-bundle src/cli.ts into one dist/cli.cjs.
   scratchDir = await mkdtemp(join(tmpdir(), 'tflw-pack-'));
-  execFileSync('npm', ['pack', '--pack-destination', scratchDir], { cwd: cliRoot, stdio: 'pipe', env: publishEnv() });
+  execFileSync('npm', ['pack', '--pack-destination', scratchDir], { cwd: cliRoot, stdio: 'pipe', env: publishEnv(), shell: process.platform === 'win32' });  // `M243-02`: `npm` is `npm.cmd` on Windows, found only through a shell
   const entries = await readdir(scratchDir);
   const tgz = entries.find((f) => f.endsWith('.tgz'));
   if (!tgz) throw new Error('npm pack did not produce a .tgz in ' + scratchDir);

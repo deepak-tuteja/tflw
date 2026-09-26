@@ -142,7 +142,8 @@ test('a relative mTLS `cert`/`key` resolves against the config, not against each
     // says it looked in. That string is the bug, and it is also what a user would file a report about.
     const message = JSON.stringify(report.tests[0]);
     assert.ok(
-      message.includes(join(configDir, 'certs', 'client.pem')),
+      // The needle is JSON-escaped like the haystack: a Windows path's backslashes are doubled there (`M243`).
+      message.includes(JSON.stringify(join(configDir, 'certs', 'client.pem')).slice(1, -1)),
       `mTLS cert resolved against the test file's directory, not the config's:\n${message}`,
     );
   } finally {

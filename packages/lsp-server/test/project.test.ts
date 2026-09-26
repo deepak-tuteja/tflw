@@ -8,7 +8,8 @@ import { findProjectRoot } from '../src/workspace/project.js';
 
 test('findProjectRoot walks up until it finds a directory containing tflw.config', () => {
   const fakeFs = new Set(['/home/user/project/tflw.config']);
-  const exists = (p: string) => fakeFs.has(p);
+  // The walk joins with the platform's separator, so on Windows it asks for `\home\user\…` (`M243`).
+  const exists = (p: string) => fakeFs.has(p.replaceAll('\\', '/'));
   assert.equal(findProjectRoot('/home/user/project/tests/nested', exists), '/home/user/project');
   assert.equal(findProjectRoot('/home/user/project', exists), '/home/user/project');
 });

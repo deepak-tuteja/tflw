@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { inputsOf, metafilePlugin, METAFILE } from '../scripts/metafile-plugin.ts';
 
@@ -49,11 +49,12 @@ test('inputsOf attributes an asset to the package it was copied from, resolved a
     'assets/index-abc.css': { type: 'asset', source: '' },
   };
   const { inputs } = inputsOf(bundle, '/repo/packages/ui');
+  // Resolved as the code resolves them: on Windows an absolute `/repo/…` carries the drive (`M243`).
   assert.deepEqual(Object.keys(inputs).sort(), [
     '/repo/node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2',
     '/repo/node_modules/a/f.woff2',
     '/repo/node_modules/b/f.woff2',
-  ]);
+  ].map((p) => resolve(p)));
 });
 
 test('control: a bundle with no chunks yields no inputs; the plugin resolves outDir against root and creates it', () => {
