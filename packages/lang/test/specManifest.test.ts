@@ -187,6 +187,7 @@ test('every test-header clause the manifest offers parses on a real header', () 
     'with-each': 'with each\n  | name |\n  | a    |\ntest "t"\n  api GET /a\n',
     as: 'test "t" as shopper\n  api GET /a\n',
     retry: 'test "t" retry 2\n  api GET /a\n',
+    skip: 'test "t" skip "the sandbox is down"\n  api GET /a\n',
     concurrency: 'test "t" sequential\n  api GET /a\n',
   };
   // No parser-side array to compare against, on purpose (see `DECLARATION_KEYWORDS`' neighbour
