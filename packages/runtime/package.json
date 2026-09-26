@@ -29,7 +29,7 @@
     "ajv": "^8.17.1",
     "pixelmatch": "^7.2.0",
     "pngjs": "^7.0.0",
-    "undici": "^8.7.0"
+    "undici": "^8.11.0"
   },
   "peerDependencies": {
     "playwright": ">=1.40.0",
@@ -44,9 +44,9 @@
     }
   },
   "devDependencies": {
-    "@types/pixelmatch": "^5.2.6",
+    "@types/pixelmatch": "^7.1.0",
     "@types/pngjs": "^6.0.5",
-    "axe-core": "^4.12.1",
-    "playwright": "^1.62.0"
+    "axe-core": "^4.13.0",
+    "playwright": "^1.63.0"
   }
 }

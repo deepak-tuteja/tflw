@@ -1,7 +1,7 @@
 {
   "name": "tflw",
   "version": "0.1.0",
-  "description": "testFlow CLI \u2014 an external DSL (.tflw files) for API, browser and load testing in one language: config as tflw itself, sessions, capture-chaining, hooks/retry/tags, actions+JS escape hatch, real Playwright browser automation, ramp/hold/step/spike workloads with thresholds, teaching-quality diagnostics, a Language Server, and a self-contained report.html + junit.xml + results.json.",
+  "description": "testFlow CLI — an external DSL (.tflw files) for API, browser and load testing in one language: config as tflw itself, sessions, capture-chaining, hooks/retry/tags, actions+JS escape hatch, real Playwright browser automation, ramp/hold/step/spike workloads with thresholds, teaching-quality diagnostics, a Language Server, and a self-contained report.html + junit.xml + results.json.",
   "keywords": [
     "testing",
     "api-testing",
@@ -27,8 +27,8 @@
     "THIRD-PARTY-NOTICES.md"
   ],
   "peerDependencies": {
-    "playwright": ">=1.40.0",
-    "axe-core": ">=4.0.0"
+    "axe-core": "^4.13.0",
+    "playwright": ">=1.40.0"
   },
   "peerDependenciesMeta": {
     "playwright": {
@@ -64,10 +64,10 @@
   },
   "devDependencies": {
     "@tflw/lang": "*",
-    "@tflw/runtime": "*",
-    "@tflw/reporter": "*",
     "@tflw/lsp-server": "*",
-    "esbuild": "^0.28.1",
-    "playwright": "^1.62.0"
+    "@tflw/reporter": "*",
+    "@tflw/runtime": "*",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.63.0"
   }
 }
