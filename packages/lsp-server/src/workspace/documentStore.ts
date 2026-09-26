@@ -187,7 +187,7 @@ export class DocumentStore {
         envTimeouts = { envName: project.resolved.envName, wait: project.resolved.timeouts.wait };
         envAllowHosts = { envName: project.resolved.envName, hosts: project.resolved.allowHosts ?? [] };
         requiredEnv = project.resolved.requiredEnv;
-        // `TF083` (`M239` `D`, `D1279`) — the same policy `tflw check` applies, against the same
+        // `TF083` (`M239` `D`, `D1319`) — the same policy `tflw check` applies, against the same
         // file path relative to the config the CLI would read. A pathless buffer has no location
         // to judge a `use` from, so it gets no policy (`undefined`, world unknown), not an empty one.
         if (doc.absPath !== undefined) helpers = { dirs: project.resolved.helpers, file: relative(dirname(project.configPath), doc.absPath).split(sep).join('/') };

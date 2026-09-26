@@ -16,6 +16,6 @@ export interface EndEvent {
   readonly exitCode: number | null;
   /** `report/runs/<id>`, or null when the run wrote no report. */
   readonly kept: string | null;
-  /** Stdout lines the server no longer holds for replay (`D1277`); absent until the first. */
+  /** Stdout lines the server no longer holds for replay (`D1317`); absent until the first. */
   readonly dropped?: number;
 }

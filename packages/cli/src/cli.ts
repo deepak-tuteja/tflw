@@ -987,7 +987,7 @@ interface RunArgs {
   /** `--headed` (M3c) — headless by default; this opts into a visible browser window (only
    * meaningful locally, never in CI). */
   readonly headed: boolean;
-  /** `--no-helpers` (`M239` `D`, `D1279`) — refuse every `use` before the first request; each is
+  /** `--no-helpers` (`M239` `D`, `D1319`) — refuse every `use` before the first request; each is
    * reported as `TF083` naming the flag. */
   readonly noHelpers: boolean;
   /**
@@ -1207,7 +1207,7 @@ interface ValidatedProject {
   readonly environ: NodeJS.ProcessEnv;
   readonly parsedFiles: { file: string; source: string; program: Program }[];
   /** Every module a `use` names, once, with the files naming it — what `tflw check` prints
-   *  (`D1279`), so a reviewer sees the code a run would execute without opening a file. */
+   *  (`D1319`), so a reviewer sees the code a run would execute without opening a file. */
   readonly helpersUsed: readonly { readonly module: string; readonly files: readonly string[] }[];
   /** How many `severity: 'warning'` diagnostics were printed on the way here (M97e, D147). Carried
    * out because `checkCommand`'s summary line is otherwise written from `parsedFiles.length` alone
@@ -1242,7 +1242,7 @@ async function loadAndValidate(
    *  here that comes from the command line rather than from the project: `migrate` and the load
    *  worker have no such affirmation to pass, and `[]` states that truthfully. */
   allowPublicTargets: readonly string[] = [],
-  /** `--no-helpers` (`D1279`): `'none'` reports every `use` as `TF083`; `'config'` judges each
+  /** `--no-helpers` (`D1319`): `'none'` reports every `use` as `TF083`; `'config'` judges each
    *  against `tflw.config`'s `helpers` (or the defaults). */
   helperPolicy: 'config' | 'none' = 'config',
 ): Promise<ValidatedProject | number> {
@@ -1446,7 +1446,7 @@ async function loadAndValidate(
       // `resolve.ts` flattens every line in the file into one env-independent list. There is no
       // per-env variant of this fact and therefore no way to derive it per file.
       requiredEnv: resolved.requiredEnv,
-      // `M239` `D` (`D1279`) — `TF083`. `cwd` IS the config's directory (`M97c-03`, above), so the
+      // `M239` `D` (`D1319`) — `TF083`. `cwd` IS the config's directory (`M97c-03`, above), so the
       // file's path relative to it is the path the rule judges the `use` literal against.
       helpers: { dirs: resolved.helpers, file: relative(cwd, file).split(sep).join('/'), refuseAll: helperPolicy === 'none' },
     });
@@ -2715,7 +2715,7 @@ async function uiCommand(argv: string[]): Promise<number> {
     err(`could not listen on 127.0.0.1:${parsed.port}: ${e instanceof Error ? e.message : String(e)}`);
     return EXIT_USAGE;
   }
-  // `D1276` — the token is in the URL and nowhere else: what a reader pastes through `ssh -L` is
+  // `D1316` — the token is in the URL and nowhere else: what a reader pastes through `ssh -L` is
   // what proves the page is theirs.
   const url = `http://127.0.0.1:${port}/?token=${server.token}`;
   process.stdout.write(`tflw ui — ${relative(process.cwd(), parsed.root) || '.'} at ${url} (loopback only, this URL carries the session token; Ctrl-C to stop)\n`);
@@ -2807,7 +2807,7 @@ async function checkCommand(argv: string[]): Promise<number> {
   if (typeof loaded === 'number') return loaded;
 
   const n = loaded.parsedFiles.length;
-  // `M239` `D` (`D1279`) — the modules a run would execute, one line each, before the verdict:
+  // `M239` `D` (`D1319`) — the modules a run would execute, one line each, before the verdict:
   // a `use` is the one construct that runs code the language did not write, and a reviewer
   // reading `check`'s output should not have to open a file to learn that it is there.
   for (const h of loaded.helpersUsed) process.stdout.write(`helper ${h.module} — \`use\` in ${h.files.join(', ')}\n`);

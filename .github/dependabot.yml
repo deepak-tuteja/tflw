@@ -1,4 +1,4 @@
-# `M239` `E` (`D1280`). One grouped pull request a week for npm, one for the actions this
+# `M239` `E` (`D1320`). One grouped pull request a week for npm, one for the actions this
 # workflow pins — merged by hand, never auto-merged, because a dependency bump in a testing tool
 # is a change to what every user's run executes. The group keeps it to two reviews a week rather
 # than one per package.

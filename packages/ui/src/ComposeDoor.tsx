@@ -2305,7 +2305,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
    * assembles a second account of what the config says.
    */
   const diagnostics = useMemo(
-    // `helpers` (`M239` `D`, `D1279`): the file's own path is what a `use` is judged from, and it
+    // `helpers` (`M239` `D`, `D1319`): the file's own path is what a `use` is judged from, and it
     // is the same path the server read the file by, so the page and `tflw check` agree.
     () => (draft !== null ? diagnose(draft, { envAuthorizedTargets: project.authorization, helpers: { dirs: project.helpers, file: path } }) : []),
     [draft, project.authorization, project.helpers, path],

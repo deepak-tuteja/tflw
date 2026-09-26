@@ -43,7 +43,7 @@ import { DEFAULT_VIEWPORT, VIEWS, DOCS_PAGE_DIR, DOOR_FILES, MANIFEST, REPO, SHO
 // `M234` `E` — the window is per view now (`D1304`, `viewportFor`), and this is the one every view
 // is shot in unless it names its own. It stays 1440 wide for the reason above: that is the width
 // every appearance gate measures at.
-// `M239` `A` (`D1276`) — the server takes a known token; the page URL carries it, the cookie covers the trace viewer.
+// `M239` `A` (`D1316`) — the server takes a known token; the page URL carries it, the cookie covers the trace viewer.
 const TOKEN = 'm239-test-token-0123456789abcdef';
 const VIEWPORT = DEFAULT_VIEWPORT;
 const SCALE = 2;

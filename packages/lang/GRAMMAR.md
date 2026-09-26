@@ -616,7 +616,7 @@ ExcludeDecl     := 'exclude' STRING (',' STRING)* NEWLINE         # file-discove
                                                                    # ConfigEntry; string paths, not
                                                                    # bare idents like `require env`
 HelpersDecl     := 'helpers' STRING (',' STRING)* NEWLINE         # directories a `use` may load from
-                                                                   # (§3.12, D1279); same shape as
+                                                                   # (§3.12, D1319); same shape as
                                                                    # ExcludeDecl, absent = the two
                                                                    # defaults
 DefaultsBlock   := 'defaults' NEWLINE INDENT ConfigEntry* DEDENT

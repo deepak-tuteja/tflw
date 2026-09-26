@@ -83,7 +83,7 @@ const fixtures = join(uiRoot, 'fixtures');
 const cliEntry = join(here, '..', 'src', 'cli.ts');
 const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
 
-// `M239` `A` (`D1276`) — every server here takes one known token, so a URL can be built before the
+// `M239` `A` (`D1316`) — every server here takes one known token, so a URL can be built before the
 // server is; `api` sends it the way the page does, and `newPage` plants the cookie the browser
 // spends on the navigational surfaces (report files, the trace viewer's assets).
 const TOKEN = 'm239-test-token-0123456789abcdef';
@@ -91,7 +91,7 @@ const api = (url: string, init: RequestInit = {}): Promise<Response> => fetch(ur
 const newPage = async (options?: Parameters<Browser['newPage']>[0]): Promise<Page> => {
   const p = await browser.newPage(options);
   await p.context().addCookies([{ name: 'tflw-ui-token', value: TOKEN, domain: '127.0.0.1', path: '/' }]);
-  // `M239` `C` (`D1278`) — every frame records what its `Content-Security-Policy` refused, so a
+  // `M239` `C` (`D1318`) — every frame records what its `Content-Security-Policy` refused, so a
   // policy that broke the page or the trace viewer is a red assertion and not a blank pane.
   // As a string: this file keeps the browser's globals out of its type space on purpose (see the
   // `declare const` note beside `ui-appearance.test.ts`), so the reads below go through an element.
@@ -108,7 +108,7 @@ let root: string;
 let fixturePort: number;
 let server: UiServer;
 let baseUrl: string;
-/** `${baseUrl}/?token=…` — what a `goto` opens (`M239` `A`, `D1276`): the page needs the token on
+/** `${baseUrl}/?token=…` — what a `goto` opens (`M239` `A`, `D1316`): the page needs the token on
  *  its own URL, and a `goto` differing only in the hash stays a same-document navigation. */
 let pageUrl: string;
 
@@ -596,7 +596,7 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
     page.off('console', onConsole);
     page.off('pageerror', onPageError);
   }
-  // `M239` `C` (`D1278`) — the viewer runs under the narrower policy `/trace/` serves, and it
+  // `M239` `C` (`D1318`) — the viewer runs under the narrower policy `/trace/` serves, and it
   // rendered a snapshot through its service worker without that policy refusing anything.
   // one-shot: the frame wait directly above is the render whose fetches the policy would have
   // refused — the service worker's, the snapshot's — so an empty list read after it is a claim

@@ -1,4 +1,4 @@
-// `tflw ui`'s boundary (`M239` `A`–`B`, `D1276`/`D1277`) — what a request the page did NOT make
+// `tflw ui`'s boundary (`M239` `A`–`B`, `D1316`/`D1317`) — what a request the page did NOT make
 // gets. The review (`REVIEW_ENTERPRISE_READINESS.md` S1–S3, S6, S8) forged three of these by hand
 // against the served page and each was answered; this file is those forgeries, kept.
 //

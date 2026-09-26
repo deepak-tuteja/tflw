@@ -402,7 +402,7 @@ jobs:
   # It is deliberately a separate job from `test`: it needs a second checkout and nothing else here
   # does, and a cross-repo red must be legible as one rather than folded into a matrix leg. The
   # sibling's own copy of this dance measures at 0:27.
-  # `M239` `E` (`D1280`). Two facts about the dependency tree, on every push: nothing installed
+  # `M239` `E` (`D1320`). Two facts about the dependency tree, on every push: nothing installed
   # carries a known high-or-critical advisory, and what IS installed is written down as a CycloneDX
   # SBOM anyone can diff. Its own job because it needs one `npm ci` and no browser, and a
   # supply-chain red should read as one rather than as a leg of the matrix.

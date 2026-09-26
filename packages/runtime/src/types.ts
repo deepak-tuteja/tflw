@@ -103,7 +103,7 @@ export interface ResolvedConfig {
    * (no-file-args) discovery must never descend into (SPEC §3, D127, PLAN_DISCOVERY_EXCLUDE.md).
    * `[]` = never declared, no exclusion. Doesn't affect explicit file args. */
   readonly exclude: readonly string[];
-  /** `helpers "<dir>"[, "<dir>"...]` (`M239` `D`, `D1279`) — the directories, relative to this
+  /** `helpers "<dir>"[, "<dir>"...]` (`M239` `D`, `D1319`) — the directories, relative to this
    * config's own directory, a `use` may load from; `DEFAULT_HELPER_DIRS` when the file declares
    * none. Always present, so a consumer never re-derives the default. */
   readonly helpers: readonly string[];

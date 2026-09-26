@@ -1,4 +1,4 @@
-// `helpers` and `--no-helpers` through the CLI (`M239` `D`, `D1279`): the policy `tflw check`
+// `helpers` and `--no-helpers` through the CLI (`M239` `D`, `D1319`): the policy `tflw check`
 // applies, the line it prints per module, the refusal `tflw run --no-helpers` makes before its
 // first request, and the project view that hands the same policy to the page.
 //

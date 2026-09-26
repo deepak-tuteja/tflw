@@ -59,12 +59,12 @@ export interface UiServerOptions {
   readonly execArgv?: readonly string[];
   /** Where the page's static bundle is; defaults to `ui/` beside `cliEntry`. */
   readonly staticDir?: string;
-  /** The session token (`D1276`). Minted at construction when absent; a test passes one so the
+  /** The session token (`D1316`). Minted at construction when absent; a test passes one so the
    *  URLs it builds are known before the server is. */
   readonly token?: string;
 }
 
-// ── `M239` `A`–`C` (`D1276`, `D1277`, `D1278`) — the boundary ────────────────────────────────
+// ── `M239` `A`–`C` (`D1316`, `D1317`, `D1318`) — the boundary ────────────────────────────────
 //
 // `tflw ui` binds to loopback and, until `M239`, that was the whole of its security: any page in
 // the user's browser could `POST /api/run` with a `text/plain` body, any name an attacker's DNS
@@ -97,7 +97,7 @@ export interface UiServerOptions {
 const TOKEN_COOKIE = 'tflw-ui-token';
 /** One MiB — a `PUT /api/file` of the largest `.tflw` in either repository is under 100 KiB. */
 export const BODY_CAP = 1 << 20;
-/** Runs the server remembers (`D1277`); the report directories on disk are the durable record. */
+/** Runs the server remembers (`D1317`); the report directories on disk are the durable record. */
 export const RUNS_KEPT = 50;
 /** Stdout lines buffered per run for late subscribers; a workload prints one event per sample. */
 export const LINES_KEPT = 50_000;
@@ -165,7 +165,7 @@ export function boundaryRefusal(req: IncomingMessage, url: URL, token: string): 
 
 /** A `Content-Security-Policy` for an HTML document this server serves: `'self'` for what the
  *  page loads, and each inline `<script>` admitted by its hash rather than by `'unsafe-inline'`
- *  (`D1278`). `nonce` is for the one inline script the page's own `index.html` carries.
+ *  (`D1318`). `nonce` is for the one inline script the page's own `index.html` carries.
  *
  *  `workers` is the trace viewer's shape, and it is looser in exactly one place, measured rather
  *  than assumed (`M239` `C`, the page suite's trace test): the viewer renders every DOM snapshot
@@ -342,7 +342,7 @@ export interface ProjectAction {
 /**
  * **A directory with no `tflw.config` is a project that has not started, not an error** — `M240`
  * `B` (`D1310`). `GET /api/project` answers this shape with a 200: the directory's basename only —
- * never the absolute path, which the 404 this replaces carried in its body (`D1278` said errors
+ * never the absolute path, which the 404 this replaces carried in its body (`D1318` said errors
  * carry none; this extends it to the unconfigured answer) — and the build stamp, so the landing can
  * still say which tflw this is. `noProject` stays beside `configured` for the readers that asked
  * it by that name (`e2e.test.ts`, the page's own probe).
@@ -367,7 +367,7 @@ export interface ProjectView {
   readonly version: BuildStamp;
   readonly envs: readonly { name: string; isDefault: boolean }[];
   readonly reportDir: string;
-  /** `resolved.helpers` (`D1279`) — the directories a `use` may load from, so the page's checker
+  /** `resolved.helpers` (`D1319`) — the directories a `use` may load from, so the page's checker
    *  judges a `use` the way `tflw check` will. */
   readonly helpers: readonly string[];
   readonly files: readonly ProjectFile[];
@@ -623,7 +623,7 @@ export interface RunRecord {
   endedAt: string | null;
   /** Where the run's report directory was kept, relative to the root, once it ended. */
   kept: string | null;
-  /** Stdout lines this server no longer holds for replay (`D1277`); absent until the first one. */
+  /** Stdout lines this server no longer holds for replay (`D1317`); absent until the first one. */
   dropped?: number;
 }
 
@@ -1490,7 +1490,7 @@ interface LiveRun {
 
 export class UiServer {
   readonly server: Server;
-  /** This session's token (`D1276`) — in the URL `tflw ui` prints, and nowhere else. */
+  /** This session's token (`D1316`) — in the URL `tflw ui` prints, and nowhere else. */
   readonly token: string;
   private readonly runs = new Map<string, LiveRun>();
   private readonly staticDir: string;
@@ -1500,7 +1500,7 @@ export class UiServer {
     this.token = opts.token ?? randomBytes(32).toString('base64url');
     this.server = createServer((req, res) => {
       this.handle(req, res).catch((e: unknown) => {
-        // `D1278` — the page gets a sentence and the terminal gets the error. A Node message
+        // `D1318` — the page gets a sentence and the terminal gets the error. A Node message
         // routinely carries an absolute path and a stack, and the review (S7) read both off the
         // page of an empty directory.
         process.stderr.write(`tflw ui: ${req.method ?? 'GET'} ${req.url ?? '/'} failed — ${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`);
@@ -1583,7 +1583,7 @@ export class UiServer {
     const record: RunRecord = { id, startedAt: new Date().toISOString(), request, argv, status: 'running', exitCode: null, signal: null, endedAt: null, kept: null };
     const live: LiveRun = { record, child, lines: [], stderr: [], subscribers: new Set(), ended: Promise.resolve() };
     this.runs.set(id, live);
-    // `D1277` — the last `RUNS_KEPT`, oldest ended run first; a running one is never dropped.
+    // `D1317` — the last `RUNS_KEPT`, oldest ended run first; a running one is never dropped.
     if (this.runs.size > RUNS_KEPT) {
       for (const [oldId, old] of this.runs) {
         if (this.runs.size <= RUNS_KEPT) break;
@@ -1633,7 +1633,7 @@ export class UiServer {
 
   private emit(live: LiveRun, line: string): void {
     live.lines.push(line);
-    // `D1277` — bounded. Spliced in blocks so a long workload does not pay a shift per line; the
+    // `D1317` — bounded. Spliced in blocks so a long workload does not pay a shift per line; the
     // record on disk is whole, this buffer is what a late subscriber replays.
     if (live.lines.length > LINES_KEPT + 1000) {
       live.lines.splice(0, live.lines.length - LINES_KEPT);
@@ -1642,7 +1642,7 @@ export class UiServer {
     for (const res of live.subscribers) res.write(`data: ${line}\n\n`);
   }
 
-  /** The page itself (`D1276`). `?token=` proves the visit and sets the cookie the navigational
+  /** The page itself (`D1316`). `?token=` proves the visit and sets the cookie the navigational
    *  surfaces spend; a cookie alone redirects to a URL that carries the token, so a reload of a
    *  bare `http://127.0.0.1:4141/` works in a browser that has opened the page once; nothing at
    *  all gets one sentence and no path. The nonce is per response, and the bundle's `index.html`
@@ -1680,7 +1680,7 @@ export class UiServer {
     res.end(body);
   }
 
-  /** `D1277` — why a run request's `files` cannot be run, or `null`. Judged after `realpath`, so
+  /** `D1317` — why a run request's `files` cannot be run, or `null`. Judged after `realpath`, so
    *  a symlink out of the project is outside it. */
   private async outsideRoot(files: readonly unknown[]): Promise<string | null> {
     let root: string;
@@ -1842,7 +1842,7 @@ export class UiServer {
     const path = url.pathname;
     const method = req.method ?? 'GET';
 
-    // `D1278` — on every response, JSON included; the documents below replace the policy with
+    // `D1318` — on every response, JSON included; the documents below replace the policy with
     // theirs. `setHeader` before `writeHead` so the routes' own header objects merge over these.
     res.setHeader('x-content-type-options', 'nosniff');
     res.setHeader('referrer-policy', 'no-referrer');
@@ -2146,7 +2146,7 @@ export class UiServer {
       } catch {
         return json(res, 400, { error: 'the run request is not JSON' });
       }
-      // `D1277` — the page runs files of this project and nothing else. `tflw run` itself takes any
+      // `D1317` — the page runs files of this project and nothing else. `tflw run` itself takes any
       // path, which is right for a terminal and wrong for a route.
       const outside = await this.outsideRoot(request.files ?? []);
       if (outside !== null) return json(res, 400, { error: outside });
@@ -2257,7 +2257,7 @@ export class UiServer {
 
     // Playwright's trace viewer, from the project's own `playwright-core` (`traceViewerDir`).
     if (path === '/trace' || path.startsWith('/trace/')) {
-      // `D1277` (S8) — the viewer fetches whatever `?trace=` names, so the name is judged here,
+      // `D1317` (S8) — the viewer fetches whatever `?trace=` names, so the name is judged here,
       // before anything else: a report file of this project, on this server, or nothing.
       const trace = url.searchParams.get('trace');
       if (trace !== null) {
