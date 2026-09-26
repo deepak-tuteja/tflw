@@ -3610,10 +3610,11 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
         // Two consecutive readings 50 ms apart that agree are the reading; a height that never settles
         // is a fail. (A timer, not `requestAnimationFrame`: this file type-checks without the DOM lib.)
         out[tab] = await sized.locator('.main').evaluate(async (el) => {
-          const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 50));
+          // No named function in here: tsx compiles one to a `__name(...)` call, and the page has no
+          // `__name` — the evaluate throws a ReferenceError before it reads anything.
           let last = -1;
           for (let i = 0; i < 60; i++) {
-            await tick();
+            await new Promise((r) => setTimeout(r, 50));
             if (el.scrollHeight === last) return last;
             last = el.scrollHeight;
           }
@@ -9570,7 +9571,9 @@ test('`M241` `A` (`D1321`): Source is an editor — an edit is the draft Compose
     await p.keyboard.press('ControlOrMeta+z');
     await p.locator('[data-source="written"]').waitFor();
     assert.equal(await editorText(content), onDisk, 'undo took the edit back to the file');
-    await p.keyboard.press('ControlOrMeta+Shift+z');
+    // `M243-11`: CodeMirror's redo is Mod-Shift-z on a Mac, Ctrl-Shift-z on Linux, and Ctrl-y on
+    // Windows, where Ctrl-Shift-z is bound to nothing.
+    await p.keyboard.press(process.platform === 'win32' ? 'Control+y' : 'ControlOrMeta+Shift+z');
     await p.locator('[data-source="pending"]').waitFor();
 
     // **One buffer**: Compose holds what Source wrote, with no save between them — its own

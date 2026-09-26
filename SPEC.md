@@ -661,13 +661,14 @@ mechanism.
   disabling verification outright: `NODE_EXTRA_CA_CERTS=/path/to/ca.pem npx tflw run`. Verification
   stays on; only your organization's own CA is trusted in addition to the public ones.
   `NODE_EXTRA_CA_CERTS` is a standard Node mechanism, not a `tflw`-specific one.
-- **Corporate HTTP(S) proxy — `NODE_USE_ENV_PROXY=1` on Node ≥ 24.** Node's `fetch` only honors
-  `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` when explicitly opted in via `NODE_USE_ENV_PROXY=1`,
-  supported from Node 24 on. **On Node 22 (this tool's floor, P#43) there is no built-in env-var
-  proxy path for `fetch` at all** — an honest, stated limitation, not worked around with an
-  `undici`/proxy-agent runtime dependency (P#43's zero-dependency bundle stays zero). If your
-  network requires a proxy, run on Node ≥ 24, or reach for the JS escape hatch (§11) to route a
-  single problematic request differently.
+- **Corporate HTTP(S) proxy — `NODE_USE_ENV_PROXY=1`.** Node's `fetch` only honors
+  `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` when explicitly opted in via `NODE_USE_ENV_PROXY=1`. Node
+  24 supports it, and so does current Node 22 (this tool's floor, P#43) — measured on 22.22.0,
+  where it prints an `UNDICI-EHPA` experimental warning (`M243-13`). An older Node 22 has no
+  built-in env-var proxy path for `fetch`; that is not worked around with an `undici`/proxy-agent
+  runtime dependency (P#43's zero-dependency bundle stays zero), so update Node, or reach for the
+  JS escape hatch (§11) to route a single problematic request differently. The sibling repository
+  runs its suite through a real proxy on every sweep (`proxy-check`).
 - **Teaching errors, not a bare `fetch failed`.** `http.ts` unwraps the real cause Node already
   attaches to the error (`err.cause.code`) into a named hint appended to the failure message:
   a self-signed/expired/altname-mismatched cert names `insecure true` and `NODE_EXTRA_CA_CERTS` as
