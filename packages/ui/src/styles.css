@@ -219,6 +219,13 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
    sit together at the right; the picker follows it with the bar's own gap. */
 .doorbar-version { margin-left: auto; font-size: 11px; text-decoration: none; padding: 0 6px; }
 .doorbar-version:hover { color: var(--fg); text-decoration: underline; }
+/* `M240` `C` (`D1292`) — the legend's door: `?` opens the same list the `?` key does. */
+.doorbar-legend { font-size: 11px; padding: 0 6px; min-width: 0; }
+.legend dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+.legend dl > div { display: contents; }
+.legend dt { font-weight: 600; }
+.legend dd { margin: 0; color: var(--muted); }
+.legend kbd { font-family: var(--mono); font-size: 11px; border: var(--border) solid var(--line); border-radius: 3px; padding: 0 4px; }
 .theme-pick select { font-size: 11px; }
 .theme-pick label { text-transform: var(--label-transform); letter-spacing: var(--label-spacing); }
 
@@ -258,7 +265,9 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
 .col-grip:hover::before, .col-grip.dragging::before, .col-grip:focus-visible::before,
 .row-grip:hover::before, .row-grip.dragging::before, .row-grip:focus-visible::before { background: var(--accent); }
 .col-grip:hover, .col-grip.dragging, .col-grip:focus-visible,
-.row-grip:hover, .row-grip.dragging, .row-grip:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); outline: none; }
+.row-grip:hover, .row-grip.dragging, .row-grip:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* `M240` `C` (`D1292`) — a grip reached by Tab says so with a ring, not only a tint the eye can miss. */
+.row-grip:focus-visible, .split:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .col-grip:focus-visible::before { height: 100%; }
 .row-grip:focus-visible::before { width: 100%; }
 body:has(.row-grip.dragging) { cursor: row-resize; user-select: none; }
@@ -1358,7 +1367,7 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .split { background: var(--line); cursor: row-resize; border: 0; position: relative; }
 .split::before { left: 50%; top: 50%; width: 26px; height: 2px; transform: translate(-50%, -50%); }
 .split:hover::before, .split:focus-visible::before { background: var(--accent); }
-.split:hover, .split:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); outline: none; }
+.split:hover, .split:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .split:focus-visible::before { width: 100%; }
 /* **NO SCROLLER IN REGION 2 SITS INSIDE ANOTHER ONE** — `M225` `H` (`D1224`).
    This box scrolled, and so did the two things it holds: `.preview` caps itself at `40vh` and
@@ -1696,7 +1705,7 @@ p.scan-probes::before { content: ''; }
   box-shadow: 0 6px 24px var(--scrim);
   font: 12px/1.45 var(--sans);
 }
-.ctx-menu:focus { outline: none; }
+.ctx-menu:focus:not(:focus-visible) { outline: none; }
 .ctx-menu ul { list-style: none; margin: 0; padding: 0; }
 
 /* The subject line — `D1149` made visible. The menu says what it acts on before it says what it

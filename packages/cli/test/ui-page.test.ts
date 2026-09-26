@@ -2936,6 +2936,137 @@ test('`M240` `B` (`D1291`): over a directory with no tflw.config the landing nam
   }
 });
 
+/** What has focus, named by the first `data-*` this suite addresses controls by — or its tag. */
+const FOCUS_NAMES = ['data-file-row', 'data-dir-toggle', 'data-door-tab', 'data-door-home', 'data-version', 'data-legend-open', 'data-tab', 'data-search', 'data-compose-new-file', 'data-legend', 'data-locator-value'];
+const focusedOn = (p: Page): Promise<string> =>
+  p.locator('html').evaluate((el, names) => {
+    const a = el.ownerDocument.activeElement as unknown as { getAttribute(n: string): string | null; hasAttribute(n: string): boolean; tagName: string } | null;
+    if (a === null) return '';
+    // React spells a boolean `data-*` as `"true"`; the name alone is the fact for those.
+    for (const n of names) if (a.hasAttribute(n)) { const v = a.getAttribute(n) ?? ''; return `${n}=${v === 'true' ? '' : v}`; }
+    return a.tagName.toLowerCase();
+  }, FOCUS_NAMES);
+const focusSettles = (p: Page, what: string, ok: (v: string) => boolean) => settle(() => focusedOn(p), untilMeasurable(what, ok), { attempts: 40, delayMs: 25, page: p });
+
+test('`M240` `C` (`D1292`): the explorer, the door bar and the tab strip are one Tab stop each, and arrows walk inside them', async () => {
+  const view = await fullProject();
+  const open = ruleLanding(view, 'api')!;
+  await page.goto(`${pageUrl}#/api`);
+  await freshLanding(page);
+  await page.reload();
+  await page.locator(`[data-file-row="${open}"][data-open="yes"]`).waitFor();
+  // Each strip offers exactly one stop: its current control.
+  for (const strip of ['.files.tree', '[data-doorbar]', '[data-tabstrip]']) {
+    const stops = await settle(
+      () => page.locator(strip).first().evaluate((el) => [...el.querySelectorAll('button, a')].filter((b) => (b as unknown as { tabIndex: number }).tabIndex === 0).length),
+      untilMeasurable(`${strip} has roved`, (n) => n === 1),
+      { attempts: 40, delayMs: 25, page },
+    );
+    assert.equal(stops.value, 1, `${strip} offers ${stops.value} Tab stops`);
+  }
+  // Search → Tab lands on the open file, not on the first row and not on a row's own `+`.
+  await page.locator('[data-search]').focus();
+  const start = await focusSettles(page, 'search has focus', (v) => v === 'data-search=');
+  assert.equal(start.value, 'data-search=', 'the walk starts at search');
+  await page.keyboard.press('Tab');
+  assert.equal((await focusSettles(page, 'Tab reached the open file', (v) => v === `data-file-row=${open}`)).value, `data-file-row=${open}`);
+  // ↓ walks inside; Tab leaves the whole list in one press.
+  await page.keyboard.press('ArrowDown');
+  const moved = await focusSettles(page, '↓ moved inside the tree', (v) => v !== `data-file-row=${open}`);
+  assert.notEqual(moved.value, `data-file-row=${open}`, '↓ did not move');
+  await page.keyboard.press('Tab');
+  const left = await focusSettles(page, 'Tab left the tree', (v) => !v.startsWith('data-file-row') && !v.startsWith('data-dir-toggle'));
+  assert.ok(!left.value.startsWith('data-file-row') && !left.value.startsWith('data-dir-toggle'), `Tab stayed in the tree: ${left.value}`);
+  // The door bar: Tab lands on the door you are in, → moves to the next, and wraps from the last.
+  await page.locator('[data-door-tab="api"]').focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal((await focusSettles(page, '→ moved', (v) => v === 'data-door-tab=browser')).value, 'data-door-tab=browser');
+  await page.keyboard.press('End');
+  const end = await focusSettles(page, 'End reached the last', (v) => v === 'data-legend-open=');
+  assert.equal(end.value, 'data-legend-open=', 'the strip ends at `?`');
+  await page.keyboard.press('ArrowRight');
+  assert.equal((await focusSettles(page, 'wrapped to home', (v) => v === 'data-door-home=')).value, 'data-door-home=');
+  // The tab strip: ← from Compose wraps to the last tab.
+  await page.locator('[data-tab="compose"]').focus();
+  await page.keyboard.press('ArrowRight');
+  const next = await focusSettles(page, '→ moved in the tab strip', (v) => v.startsWith('data-tab=') && v !== 'data-tab=compose');
+  assert.notEqual(next.value, 'data-tab=compose');
+});
+
+test('`M240` `C` (`D1292`): `?` opens the legend of the keys the page answers, Escape closes it, and `/` and ⌘P reach search and the list', async () => {
+  await page.goto(`${pageUrl}#/api`);
+  await page.reload();
+  await page.locator('[data-doorbar] [data-legend-open]').waitFor();
+  await page.locator('[data-door-tab="api"]').focus();
+  await page.keyboard.press('Shift+?');
+  await page.locator('[data-legend]').waitFor();
+  assert.equal(await page.locator('[data-legend-keys]').getAttribute('data-legend-keys'), '6'); // one-shot: the legend is drawn whole in one render, waited for above
+  assert.deepEqual(await page.locator('[data-legend-key]').evaluateAll((els) => els.map((e) => e.getAttribute('data-legend-key'))), ['save', 'run-file', 'run-selection', 'open-file', 'search', 'legend']); // one-shot: population established by `[data-legend-keys="6"]` above
+  await page.keyboard.press('Escape');
+  await page.locator('[data-legend]').waitFor({ state: 'detached' });
+  // The door bar's `?` is the same dialog.
+  await page.locator('[data-legend-open]').click();
+  await page.locator('[data-legend]').waitFor();
+  await page.locator('[data-legend-close]').click();
+  await page.locator('[data-legend]').waitFor({ state: 'detached' });
+  // `/` focuses the search box and types nothing into it.
+  await page.locator('[data-door-tab="api"]').focus();
+  await page.keyboard.press('/');
+  assert.equal((await focusSettles(page, '`/` reached search', (v) => v === 'data-search=')).value, 'data-search=');
+  assert.equal(await page.locator('[data-search]').inputValue(), '', 'the `/` was typed into the box'); // one-shot: the key has been handled, since focus moved in response to it
+  // …and `?` inside the box is a character, not the legend.
+  await page.keyboard.press('Shift+?');
+  await settle(() => page.locator('[data-search]').inputValue(), untilEqual('?'), { attempts: 40, delayMs: 25, page });
+  assert.equal(await page.locator('[data-legend]').count(), 0, 'the legend opened over a field'); // one-shot: the character has landed, so the key has been fully handled
+  await page.locator('[data-search]').fill('');
+  // ⌘P / Ctrl+P reaches the file list, outside a field.
+  await page.locator('[data-door-tab="api"]').focus();
+  await page.keyboard.press('ControlOrMeta+p');
+  const tree = await focusSettles(page, '⌘P reached the list', (v) => v.startsWith('data-file-row') || v.startsWith('data-dir-toggle'));
+  assert.ok(tree.value.startsWith('data-file-row') || tree.value.startsWith('data-dir-toggle'), `⌘P focused ${tree.value}`);
+});
+
+test('`M240` `C` (`D1292`): ⌘S writes a dirty draft from inside a field, and ⌘↩ runs the open file', async () => {
+  const view = await fullProject();
+  const target = view.files.find((f) => f.path.endsWith('shop.tflw'))!.path;
+  const before = await readFile(join(root, target), 'utf8');
+  try {
+    await page.goto(`${pageUrl}#/browser/compose/${target}`);
+    await page.reload();
+    await page.locator('[data-seq-add="click"]').first().click();
+    await page.locator('[data-script="click"]').waitFor();
+    const row = page.locator('[data-script="click"]');
+    await row.locator('[data-locator-kind]').selectOption('text');
+    await row.locator('[data-locator-value]').fill('Saved by key');
+    await page.locator('[data-compose-dirty]').waitFor();
+    await row.locator('[data-locator-value]').focus();
+    await page.keyboard.press('ControlOrMeta+s');
+    await page.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    assert.match(await readFile(join(root, target), 'utf8'), /click text "Saved by key"/, '⌘S did not write the file');
+  } finally {
+    await writeFile(join(root, target), before, 'utf8');
+  }
+  // ⌘↩ sends the open file, whole, through the page's one run funnel. The request is caught and
+  // refused at the route, so the claim is what the page asked for and no run is started.
+  const asked: string[] = [];
+  await page.route('**/api/run', async (route) => {
+    if (route.request().method() === 'POST') asked.push(route.request().postData() ?? '');
+    await route.abort().catch(() => {});
+  });
+  try {
+    await page.goto(`${pageUrl}#/api/compose/${ruleLanding(view, 'api')!}`);
+    await page.reload();
+    await page.locator('[data-compose-pane]').waitFor();
+    await page.locator('[data-door-tab="api"]').focus();
+    await page.keyboard.press('ControlOrMeta+Enter');
+    const sent = await settle(async () => asked.length, untilMeasurable('the run was asked for', (n) => n > 0), { attempts: 40, delayMs: 50, page });
+    assert.equal(sent.value, 1, 'one key, one run');
+    assert.deepEqual((JSON.parse(asked[0]!) as { files?: string[] }).files, [ruleLanding(view, 'api')!]);
+  } finally {
+    await page.unroute('**/api/run');
+  }
+});
+
 // ---------------------------------------------------------------------------
 // `M224` — the LOAD door stops being a form and starts being a door (`D1205`–`D1214`).
 //

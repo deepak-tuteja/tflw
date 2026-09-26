@@ -14,6 +14,8 @@ import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunR
 import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { EmptyDoor } from './EmptyDoor';
+import { Legend } from './Legend';
+import { shortcutFor } from './shortcuts';
 import { landingFor, projectHash, rememberLanding, rememberedLanding } from './landingRule';
 import { Grip, SIDEBAR, storedSize } from './Grip';
 import { TooltipLayer } from './Tooltip';
@@ -1060,6 +1062,49 @@ export function App() {
     return () => window.removeEventListener('beforeunload', ask);
   }, [unsavedPaths]);
 
+  /**
+   * **The page's keys** — `M240` `C` (`D1292`). One table (`shortcuts.ts`), two listeners: this one
+   * answers the five that are about the page, and `ComposeDoor` answers *save*, because the draft
+   * and its etag live there. A shortcut already handled below (the legend's `Escape`, a roving
+   * strip's arrows) arrives here prevented and is left alone.
+   */
+  const [legendOpen, setLegendOpen] = useState(false);
+  const closeLegend = useCallback(() => setLegendOpen(false), []);
+  useEffect(() => {
+    if (project === null) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented) return;
+      const s = shortcutFor(e);
+      if (s === null) return;
+      switch (s.id) {
+        case 'legend':
+          e.preventDefault();
+          setLegendOpen((o) => !o);
+          return;
+        case 'search':
+          e.preventDefault();
+          document.querySelector<HTMLElement>('[data-search]')?.focus();
+          return;
+        case 'open-file':
+          e.preventDefault();
+          (document.querySelector<HTMLElement>('.files.tree button[tabindex="0"]') ?? document.querySelector<HTMLElement>('.files.tree button'))?.focus();
+          return;
+        case 'run-file':
+          e.preventDefault();
+          if (path !== '' && !running) runJust(path);
+          return;
+        case 'run-selection':
+          e.preventDefault();
+          if (!running) void onRun(request());
+          return;
+        case 'save':
+          return;
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [project, path, running, runJust, onRun, request]);
+
   /** This file's unsaved bytes, or `null`. See `drafts` above for why it is keyed by path. */
   const draft = drafts.get(path) ?? null;
   const setDraft = useCallback(
@@ -1297,6 +1342,7 @@ export function App() {
           for a tooltip too — one of the three screenshots that started this round is a door bar. */}
       <TooltipLayer />
       <Notices notices={notices} onDismiss={dismiss} />
+      <Legend open={legendOpen} onClose={closeLegend} />
       {/* Beside the tooltip and for the same reason (`M218` `A`): the shell owns the floating
           layers, because a menu opened from a sidebar row must be able to paint over the pane. */}
       <ContextMenuLayer menu={menu} onClose={() => setMenu(null)} />
@@ -1382,7 +1428,7 @@ export function App() {
             (`M213` `S0`). It rides IN the doorbar rather than above it, because a row of its own
             cost every page ~20 px — see `DoorBar`'s own note. The second call site is the one case
             there is no doorbar to ride in. */}
-        {project ? <DoorBar project={project} door={door} onDoor={setDoor} themePick={<ThemePick />} /> : <ThemePick />}
+        {project ? <DoorBar project={project} door={door} onDoor={setDoor} themePick={<ThemePick />} onLegend={() => setLegendOpen(true)} /> : <ThemePick />}
         {/* Above the tabs and below the doorbar (`M205` Q12): one strip per page, so every control
             it carries is reachable from all five tabs and all four doors rather than from whichever
             pane happened to own it. */}
