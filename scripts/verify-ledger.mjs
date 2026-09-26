@@ -66,7 +66,7 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = process.env.TFLW_LEDGER_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '..')
 const LEDGER = join(ROOT, 'REVIEW_FINDINGS.md')
@@ -1332,4 +1332,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main()
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) main()

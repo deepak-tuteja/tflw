@@ -24,7 +24,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, dirname, extname, relative } from 'node:path';
+import { join, dirname, extname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -42,7 +42,8 @@ function walk(dir, out = []) {
     if (SKIP_DIRS.has(e.name)) continue;
     const f = join(dir, e.name);
     if (e.isDirectory()) walk(f, out);
-    else if (e.isFile()) out.push(relative(ROOT, f));
+    // `git ls-files` spells a path with `/` on every platform; the walk agrees with it.
+    else if (e.isFile()) out.push(relative(ROOT, f).split(sep).join('/'));
   }
   return out;
 }
@@ -115,7 +116,7 @@ test('the scan reaches the file the defect lived in, by either route', () => {
   const { files, source } = scanSet();
   assert.ok(files.length > 100, `${source} produced only ${files.length} files — too few to be a real scan`);
   assert.ok(
-    files.includes(join('packages', 'runtime', 'src', 'interpreter.ts')),
+    files.includes('packages/runtime/src/interpreter.ts'),
     `interpreter.ts — the file M130-03 was found in — is not in the set produced by ${source}`,
   );
   assert.ok(!BINARY_EXT.has('.ts'), '.ts must never be treated as binary');

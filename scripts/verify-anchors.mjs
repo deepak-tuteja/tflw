@@ -29,7 +29,7 @@
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { anchorsOf } from './github-slug.mjs';
 import { committableFiles, describeCorpus } from './committable.mjs';
 import { inCodeSpan, scanLines } from './gen-decisions.mjs';
@@ -126,7 +126,7 @@ export function fromDisk(root = ROOT) {
   return { ...findDeadReferences(readFileSync(join(root, 'SPEC.md'), 'utf8'), files), corpus: paths.corpus };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { dead, references, anchors, collisions, corpus } = fromDisk();
 
   // A collision is an anchor this repository computed from a rule GitHub has never been asked to
