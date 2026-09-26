@@ -1969,7 +1969,10 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     runnable,
     parallel,
     async ({ file, source, program }, i): Promise<FileRunResult> => {
-      const fileLabel = relative(cwd, file);
+      // `M243-07`: a report names a file the same way on every OS — `results.json`, the event stream,
+      // report.html and `--failed`'s replay all carry it, and the page matches it against its own
+      // `/`-separated tree. `relative` answers with `\` on Windows.
+      const fileLabel = relative(cwd, file).split(sep).join('/');
       const buffered = useBufferedVerbose ? bufferedEmit(out, color, args.verbose, githubActions, timestamps, resolved.logLevel) : undefined;
       const rawSink = buffered?.sink ?? sharedHumanEmit ?? sharedNdjsonEmit;
       const fileEmit = rawSink ? withFileTag(rawSink, fileLabel) : undefined;

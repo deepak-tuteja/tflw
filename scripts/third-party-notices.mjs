@@ -27,7 +27,11 @@ import { dirname, join } from 'node:path';
  * `lastIndexOf` rather than `indexOf` — a nested `node_modules/` (npm's fallback when two
  * dependents want incompatible versions of the same transitive dep) must attribute to the *inner*
  * package, which is the copy actually inlined. */
-function packageOf(inputPath) {
+function packageOf(rawPath) {
+  // `M243-08`: the UI's metafile keys are platform paths, so a Windows build hands this `\`-separated
+  // ones — and a `node_modules/` search over them found nothing, shipping five typefaces with no
+  // notice. Every path is read with `/` first.
+  const inputPath = rawPath.split('\\').join('/');
   const marker = 'node_modules/';
   const at = inputPath.lastIndexOf(marker);
   if (at === -1) return null;
@@ -38,7 +42,8 @@ function packageOf(inputPath) {
 /** The directory of the copy that was actually bundled — resolved back from one of its own input
  * paths rather than from `require.resolve`, so the notice always describes the bytes that shipped
  * even when several versions of a package exist in the tree. */
-function packageDirOf(inputPath, name) {
+function packageDirOf(rawPath, name) {
+  const inputPath = rawPath.split('\\').join('/');
   const marker = 'node_modules/';
   const at = inputPath.lastIndexOf(marker);
   return join(inputPath.slice(0, at + marker.length), name);
