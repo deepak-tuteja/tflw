@@ -9525,6 +9525,9 @@ test('`M241` `A` (`D1321`): Source is an editor — an edit is the draft Compose
     const content = p.locator('[data-preview]');
     const onDisk = await editorText(content);
     await p.locator('[data-source="written"]').waitFor();
+    // axe does not count `contenteditable` as focusable, so a capped scroller around a long file was
+    // `scrollable-region-focusable` on the sibling's project; the content says `tabindex="0"`.
+    assert.equal(await content.getAttribute('tabindex'), '0', 'the editor is focusable in terms axe reads');
 
     // Typed at the end of the file, as one transaction — which is also one undo step.
     await content.click();

@@ -123,7 +123,12 @@ export function Editor({ value, onChange, dialect, diagnostics = [], contentAttr
           // CodeMirror's own rule for the keyboard trap this would otherwise be.
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           indentUnit.of('  '),
-          EditorView.contentAttributes.of({ ...contentAttributes, spellcheck: 'false' }),
+          // `tabindex="0"` names what is already true — the content is `contenteditable` and in the
+          // Tab order — for axe, which does not count `contenteditable` as focusable and so reports
+          // the capped scroller around a long file as a scrollable region nothing can reach
+          // (`scrollable-region-focusable`; found by the sibling's `ui-page` on its own project,
+          // whose files are long enough to scroll where this repo's fixture is not). No new stop.
+          EditorView.contentAttributes.of({ ...contentAttributes, spellcheck: 'false', tabindex: '0' }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) changed.current(u.state.doc.toString());
             if (u.docChanged || u.viewportChanged) u.view.contentDOM.setAttribute('data-editor-lines', String(u.state.doc.lines));
