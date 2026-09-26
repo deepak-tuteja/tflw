@@ -2658,6 +2658,64 @@ test('`M240` `A`: a door with nothing behind it says so and offers a file, inste
   }
 });
 
+test('`M240` `F` (`M239-04`): the new-step dialog refuses an empty field, and writes nothing until it is filled', async () => {
+  const view = await fullProject();
+  const target = view.files.find((f) => f.path.endsWith('shop.tflw'))!.path;
+  const before = await readFile(join(root, target), 'utf8');
+  await page.goto(`${pageUrl}#/browser/compose/${target}`);
+  await page.reload();
+  await page.locator('[data-seq-add="step"]').first().waitFor();
+  await page.locator('[data-seq-add="step"]').first().click();
+  await page.locator('[data-add-step]').waitFor();
+  await page.locator('[data-add-step-kind="HoverStmt"]').click();
+  // The default is empty, so the build refuses: the button is disabled and the reason is under
+  // the preview — `change me` used to build, preview, and land in the file.
+  await page.locator('[data-add-step-problem]').waitFor();
+  assert.equal(await page.locator('[data-add-step-go]').isDisabled(), true, '`add it` is live over an empty locator');
+  assert.notEqual(((await page.locator('[data-add-step-problem]').textContent()) ?? '').trim(), '', 'the refusal says nothing');
+  assert.equal(await page.locator('[data-add-step] [data-locator-value]').inputValue(), '', 'the field holds a placeholder value rather than being empty');
+  assert.notEqual(await page.locator('[data-add-step] [data-locator-value]').getAttribute('placeholder'), null, 'and the input carries no placeholder to say what goes there');
+  // Filling it is what enables the button, and the bytes are still untouched until it is pressed.
+  await page.locator('[data-add-step] [data-locator-value]').fill('Menu');
+  await page.locator('[data-add-step-go]:not([disabled])').waitFor();
+  assert.equal(await readFile(join(root, target), 'utf8'), before, 'the file changed before anything was accepted');
+  await page.locator('[data-add-step-cancel]').click();
+  await page.locator('[data-add-step]').waitFor({ state: 'detached' });
+  assert.equal(await readFile(join(root, target), 'utf8'), before, 'cancel wrote something');
+});
+
+test('`M240` `F` (`M239-05`): a run chip is relative, its tip is the absolute form with the zone, and the report head spells the same instant', async () => {
+  await page.goto(`${pageUrl}${API_RUN}`);
+  await page.reload();
+  await page.locator('[data-report-row="full"] [data-run-when]').waitFor();
+  const chip = page.locator('[data-report-row="full"] [data-run-when]');
+  // The row's instant is the directory's own `at` (this suite touches `results.json` at setup, so
+  // it is not the oracle's `startedAt`); the claim is about the spelling, not about which instant.
+  const iso = (await chip.getAttribute('data-run-when'))!;
+  assert.ok(!Number.isNaN(Date.parse(iso)), `the chip carries no parseable instant: ${iso}`);
+  assert.match((await chip.textContent()) ?? '', /^\d+[smhd] ago$/, 'the chip is not a relative time');
+  // The tip is the same instant, spelled `YYYY-MM-DD HH:mm:ss ±HH:MM` in the browser's zone: the
+  // clock is re-derived here from the same ISO stamp, so the assertion is about the rule and not
+  // about where the box happens to be.
+  const tip = (await chip.getAttribute('data-tip'))!;
+  assert.match(tip, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{2}:\d{2}$/, `the tip is ${tip}`);
+  // No named inner function inside the callback: `tsx` wraps one in a `__name` helper that does
+  // not exist in the page, and the evaluate dies with `__name is not defined`.
+  const spelled = (s: string): Promise<string> => page.locator('html').evaluate((_el, iso) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZoneName: 'longOffset' }).formatToParts(new Date(iso)).map((x) => [x.type, x.value])) as Record<string, string>;
+    return `${p['year']}-${p['month']}-${p['day']} ${p['hour']}:${p['minute']}:${p['second']} ${(p['timeZoneName'] ?? '').replace(/^GMT/, '') || '+00:00'}`;
+  }, s);
+  assert.equal(tip, await spelled(iso));
+  // And the report's own head spells ITS instant — `startedAt` — the same way: two places, one
+  // rule, no `7:56:44 PM`.
+  await page.locator('[data-report-row="full"]').click();
+  await page.locator('[data-report="full"]').waitFor();
+  const head = (await page.locator('[data-report="full"] .report-head').first().textContent()) ?? ''; // one-shot: the report's presence is established by the wait above and its head is part of that render
+  const headExpected = await spelled(oracle['full']!.startedAt);
+  assert.ok(head.includes(headExpected), `the report head (${head.trim().slice(0, 120)}) does not carry ${headExpected}`);
+  assert.doesNotMatch(head, /\d\/\d+\/\d{4}, |[AP]M\b/, 'the head still spells the locale form');
+});
+
 // ---------------------------------------------------------------------------
 // `M224` — the LOAD door stops being a form and starts being a door (`D1205`–`D1214`).
 //
@@ -4181,6 +4239,12 @@ test('`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer fol
       await fresh.locator('[data-compose-dirty]').waitFor();
       await fresh.locator('[data-seq-add="step"]').click();
       await fresh.locator('[data-add-step]').waitFor();
+      /* `M239-04` — the dialog's fields start empty and the build refuses until one is filled, so
+         the preview is blank at first. Filling the default kind's locator is what makes it build;
+         the claim below is about WHAT it builds over, which is unchanged. */
+      await fresh.locator('[data-add-step-kind="HoverStmt"]').click();
+      await fresh.locator('[data-add-step] [data-locator-value]').fill('Menu');
+      await fresh.locator('[data-add-step-go]:not([disabled])').waitFor();
       const preview = (await fresh.locator('[data-add-step-preview]').textContent())!;
       assert.match(preview, /expect status equals 201/, `the preview is built from the text the author has:\n${preview}`);
 
