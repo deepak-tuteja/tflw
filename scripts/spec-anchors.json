@@ -1,9 +1,9 @@
 {
   "comment": "GitHub's own heading anchors for SPEC.md, fetched from the ref below. Never hand-edit: the point of this file is that nothing in this repository computed it. Refresh with `node scripts/refresh-spec-anchors.mjs --ref <ref>`.",
   "repo": "deepak-tuteja/tflw",
-  "ref": "m241-authoring",
-  "sha": "dc4ab7083c72dfe7e676e9f031bbb1efc0a1e925",
-  "source": "https://github.com/deepak-tuteja/tflw/blob/dc4ab7083c72dfe7e676e9f031bbb1efc0a1e925/SPEC.md",
+  "ref": "m242-language",
+  "sha": "6e75b776b82df4dea60e51454e10c939b44dd0b0",
+  "source": "https://github.com/deepak-tuteja/tflw/blob/6e75b776b82df4dea60e51454e10c939b44dd0b0/SPEC.md",
   "headings": [
     [
       "testFlow — SPEC",
@@ -100,6 +100,10 @@
     [
       "4.4 `retry` (P#10)",
       "44-retry-p10"
+    ],
+    [
+      "4.4.1 `skip \"reason\"` (`M242`, `D1327`)",
+      "441-skip-reason-m242-d1327"
     ],
     [
       "4.5 Load testing — workload-bearing tests (M29/M30, M50-M56, D16-D19/D24a/D26/D70/D93-D122)",
