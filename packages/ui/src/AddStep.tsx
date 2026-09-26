@@ -91,23 +91,28 @@ export function stepCatalogue(constructs: ReadonlySet<Step['type']>, inFoot: rea
 }
 
 /**
- * A kind's starting values — the placeholders `+ click` has written since `M213` `S4`.
+ * A kind's starting values — **empty where the author has to choose** (`M240` `F`, `M239-04`).
  *
- * **`change me` reads as unfinished on purpose** (`M213` `S4`'s own finding): an empty locator is
- * refused outright by the builder, so the choice was never *blank or plausible* — it was
- * *plausible or obviously unfinished*, and a default reading `"Buy"` is a test that looks written
- * and asserts about an element nobody chose.
+ * These were `change me` (`M213` `S4`): an empty locator is refused outright by the builder, so the
+ * choice looked like *plausible or obviously unfinished*, and `change me` was the unfinished one.
+ * It was also a locator the builder accepts, so `select | field | change me | with | "change me"`
+ * built, previewed, and went into the file the moment *add it* was pressed (review P2). The
+ * builder's refusal is the right guard and it was being written around: with the field empty the
+ * build refuses, *add it* is disabled with the reason under the preview, and the input's own
+ * `placeholder` says what goes there. The foot's `+ click` still writes its placeholder into the
+ * buffer — the cursor lands in that field (`D1136`) and the row is the editor — which is a
+ * different gesture with a different guard.
  */
 export function defaultEdit(kind: Step['type']): StatementEdit | null {
   switch (kind) {
     case 'HoverStmt':
     case 'ScrollStmt':
-      return { kind: 'locatorOnly', of: kind, locatorKind: 'button', locator: 'change me' };
+      return { kind: 'locatorOnly', of: kind, locatorKind: 'button', locator: '' };
     case 'TickStmt':
     case 'UntickStmt':
-      return { kind: 'locatorOnly', of: kind, locatorKind: 'field', locator: 'change me' };
+      return { kind: 'locatorOnly', of: kind, locatorKind: 'field', locator: '' };
     case 'SelectStmt':
-      return { kind: 'select', locatorKind: 'field', locator: 'change me', value: '"change me"' };
+      return { kind: 'select', locatorKind: 'field', locator: '', value: '' };
     case 'PressStmt':
       return { kind: 'press', keys: 'Enter', locatorKind: 'field', locator: '' };
     case 'DismissDialogStmt':
@@ -118,21 +123,21 @@ export function defaultEdit(kind: Step['type']): StatementEdit | null {
     case 'SwitchToTabStmt':
       return { kind: 'switchToTab', index: '0' };
     case 'ScreenshotStmt':
-      return { kind: 'screenshot', name: 'change me' };
+      return { kind: 'screenshot', name: '' };
     case 'DropFileStmt':
-      return { kind: 'dropFile', filePath: './change-me', locatorKind: 'css', locator: 'change me' };
+      return { kind: 'dropFile', filePath: '', locatorKind: 'css', locator: '' };
     case 'DragStmt':
-      return { kind: 'drag', fromKind: 'css', from: 'change me', toKind: 'css', to: 'change me' };
+      return { kind: 'drag', fromKind: 'css', from: '', toKind: 'css', to: '' };
     case 'FillFormStmt':
-      return { kind: 'fillForm', rows: [{ field: 'change me', value: '"change me"' }] };
+      return { kind: 'fillForm', rows: [{ field: '', value: '' }] };
     case 'StubStmt':
-      return { kind: 'stub', method: 'GET', urlPattern: '**/change-me', status: '200', body: '' };
+      return { kind: 'stub', method: 'GET', urlPattern: '', status: '200', body: '' };
     case 'WaitUntilUiStmt':
       /* `text "…" is visible` is the shape 31 of the corpus's 34 `wait until` steps take. */
       return {
         kind: 'waitUntilUi',
         expect: {
-          soft: false, negated: false, quantifier: '', subject: 'locator', argument: 'change me',
+          soft: false, negated: false, quantifier: '', subject: 'locator', argument: '',
           locatorKind: 'text', matcher: 'visible', operand: '', subset: [], severityFloor: '',
           schemaName: '', schemaSource: '', schemaService: '', filePath: '', snapshotName: '',
         },
@@ -153,11 +158,11 @@ export function defaultEdit(kind: Step['type']): StatementEdit | null {
          constraint `+ click`'s `change me` meets by sitting in a string. */
       return { kind: 'capture', subject: 'body', argument: 'changeMe', locatorKind: 'button', name: 'changeMe' };
     case 'LogStmt':
-      return { kind: 'log', level: 'info', message: 'change me', destination: '' };
+      return { kind: 'log', level: 'info', message: '', destination: '' };
     case 'CallStmt':
-      return { kind: 'call', name: 'change me', args: [] };
+      return { kind: 'call', name: '', args: [] };
     case 'GiveStmt':
-      return { kind: 'give', value: '"change me"' };
+      return { kind: 'give', value: '' };
     case 'PauseStmt':
       /* Blank upper bound is a fixed pause, which all four in the corpus are. */
       return { kind: 'pause', min: '500ms', max: '' };
@@ -172,6 +177,9 @@ export function defaultEdit(kind: Step['type']): StatementEdit | null {
  * not parse back. A block offered and then refused on press is a control that does not work.
  */
 export const BLOCK_SEED: Step = (() => {
+  /* `change me` here still, deliberately (`M239-04` emptied the dialog's fields, not this): a block
+     needs a body to be a block, and this row is the one the author edits next — the same class as
+     the foot's `+ click`, where the cursor lands in the field. An empty body cannot be written. */
   const built = buildClick({ locator: { kind: 'button', value: 'change me' }, kind: 'single' });
   /* Through the builder, like everything else: this is a node the page writes into a file, and
      `D1087` does not have an exception for a seed. */
@@ -211,19 +219,26 @@ export function AddStep({ decl, into, anchor, offers, pick, onStage, onCancel }:
 
   /** A stand-in row, so the fields are the same controls the editor draws — `D1087` again: two
    *  field sets for one kind is how a dialog starts spelling a `press` the row cannot read back. */
-  const row: OutlineStatement | null = built.ok
+  /**
+   * The row's shape. With every field empty the build refuses (`M239-04`), and the row editor
+   * still has to draw the fields the author is about to fill — so the shape is taken from a copy
+   * with its empties filled, and the editor reads the VALUES from `values`. Nothing from the filled
+   * copy reaches the preview or the write: `result` above is built from `values` alone.
+   */
+  const shapeNode = built.ok ? built.node : values === null ? null : (() => { const b = buildStatement(withEmptiesFilled(values), seedFor(chosen)); return b.ok ? b.node : null; })();
+  const row: OutlineStatement | null = shapeNode !== null
     ? {
-        kind: built.node.type,
+        kind: shapeNode.type,
         line: 0,
-        lens: STEP_LENS[built.node.type],
-        text: print(built.node).ok ? (print(built.node) as { text: string }).text : '',
+        lens: STEP_LENS[shapeNode.type],
+        text: print(shapeNode).ok ? (print(shapeNode) as { text: string }).text : '',
         note: null,
         nested: false,
         stepPath: null,
         inner: null,
         body: null,
         owner: null,
-        node: built.node,
+        node: shapeNode,
       }
     : null;
 
@@ -285,6 +300,26 @@ export function AddStep({ decl, into, anchor, offers, pick, onStage, onCancel }:
 }
 
 /** A block needs a body before it can be built at all; everything else starts from nothing. */
+/**
+ * A copy of an edit with the fields an author MUST fill given a value the builder accepts, so a
+ * refused edit still has a shape to draw. Only the keys that name a required thing are touched —
+ * a locator, a name, a path, a pattern, a form row, a select's value, an assertion's argument —
+ * because every other blank is a spelling (`press` on whatever has focus, `accept dialog` with
+ * nothing, a `stub` with no body, a `wait until` with no hold). Used for the row's chrome and
+ * nothing else: the preview and the write read `values`.
+ */
+export function withEmptiesFilled(edit: StatementEdit): StatementEdit {
+  const QUOTED = new Set(['value', 'argument']);
+  const BARE = new Set(['locator', 'from', 'to', 'name', 'filePath', 'urlPattern', 'field']);
+  const fill = (v: unknown, key: string): unknown => {
+    if (typeof v === 'string') return v === '' ? (QUOTED.has(key) ? '"x"' : BARE.has(key) ? 'x' : v) : v;
+    if (Array.isArray(v)) return v.length === 0 && key === 'rows' ? [{ field: 'x', value: '"x"' }] : v.map((x) => fill(x, key));
+    if (v !== null && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, fill(x, k)]));
+    return v;
+  };
+  return fill(edit, '') as StatementEdit;
+}
+
 function seedFor(kind: Step['type']): Step | null {
   if (kind === 'SwitchToNewTabBlock') return { type: 'SwitchToNewTabBlock', body: [BLOCK_SEED], span: BLOCK_SEED.span } as Step;
   if (kind === 'DownloadBlock') return { type: 'DownloadBlock', name: 'file', body: [BLOCK_SEED], span: BLOCK_SEED.span } as Step;

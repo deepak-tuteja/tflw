@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource, print, STEP_LENS, type Step } from '@tflw/lang';
-import { defaultEdit, stepCatalogue } from '../src/AddStep.tsx';
+import { defaultEdit, stepCatalogue, withEmptiesFilled } from '../src/AddStep.tsx';
 import { buildStatement, statementLead } from '../src/statements.ts';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -73,12 +73,33 @@ test('`+ step…` offers every browser kind the foot does not, and none it canno
   for (const o of offers) assert.ok(VOCABULARY.browser.constructs.has(o.kind), `${o.label} is offered and not constructible`);
 });
 
-test('every offerable kind builds from its own default, prints, and parses back as itself', () => {
+test('every offerable kind has a default; one with a field to fill refuses until it is, and the filled edit prints and parses back as itself', () => {
+  /* `M240` `F` (`M239-04`). The defaults were `change me`, which the builder accepts, so a
+     dialog's *add it* wrote the placeholder into the file. Now a default with a required text
+     field is EMPTY and the builder refuses it — that refusal is what disables the button — and the
+     round trip is made on the same edit with its empties filled, which is the edit an author
+     produces by typing. Both halves are stated: a default that builds when it should not is the
+     old defect, and a filled edit that fails to build is a dialog that can never be accepted. */
+  /* The review's shot was `select`; the rest are every kind whose default carried `change me` in a
+     field the builder refuses when blank — a locator, a name, a path, a pattern, a form row. */
+  const MUST_REFUSE = new Set<Step['type']>(['HoverStmt', 'ScrollStmt', 'TickStmt', 'UntickStmt', 'SelectStmt', 'ScreenshotStmt', 'DropFileStmt', 'DragStmt', 'FillFormStmt', 'StubStmt', 'WaitUntilUiStmt']);
+  let refused = 0;
   for (const kind of [...BROWSER, ...AGNOSTIC]) {
     if (kind === 'OpenStmt' || kind === 'ClickStmt' || kind === 'FillStmt' || kind === 'WithinBlock') continue;
     const edit = defaultEdit(kind);
     assert.ok(edit, `\`${kind}\` has no default in \`AddStep\` — \`+ step…\` would offer a kind with nothing to put in the fields`);
-    const built = buildStatement(edit, seed(kind));
+    const asIs = buildStatement(edit, seed(kind));
+    const filled = withEmptiesFilled(edit);
+    /* Which empties are REQUIRED is the builder's to say, not this test's: `press` with no locator
+       is *whatever has focus* and `accept dialog` with no text is *accept with nothing* — both
+       spellings, not missing values — so a default may build. The kinds whose blank is a missing
+       value are named below, and those must refuse. */
+    if (!asIs.ok) {
+      assert.ok(asIs.reason.length > 0, `${kind}: the refusal carries no reason for the dialog to show`);
+      refused += 1;
+    }
+    if (MUST_REFUSE.has(kind)) assert.ok(!asIs.ok, `${kind}: a default with an empty field must not build — it built ${asIs.ok && print(asIs.node).ok ? (print(asIs.node) as { text: string }).text : ''}`);
+    const built = buildStatement(filled, seed(kind));
     assert.ok(built.ok, built.ok ? '' : `${kind}: ${built.reason}`);
     const printed = print(built.node);
     assert.ok(printed.ok, `${kind} did not print`);
@@ -86,6 +107,7 @@ test('every offerable kind builds from its own default, prints, and parses back 
     assert.deepEqual(back.diagnostics.filter((d) => d.severity === 'error'), [], `${kind} printed bytes the parser refuses: ${printed.text}`);
     assert.equal(back.program.tests[0]?.body[0]?.type, kind, `${kind} printed something that parses as a different kind: ${printed.text}`);
   }
+  assert.ok(refused >= 10, `the kinds with a field to fill must refuse their default: ${refused} did`);
 });
 
 test('an edit survives the file — read a node, change a field, and the change comes back', () => {
