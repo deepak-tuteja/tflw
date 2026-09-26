@@ -341,8 +341,10 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // write it against: 19 -> 26 files and 424 -> 560 nodes. The corpus there is now an equality
   // against what the PRINTER can emit (`exampleCoverage.test.ts`), which is why this pin and that
   // one move together: they are two readings of the same widening.
-  const EXPECTED_NODES = 560;
-  const EXPECTED_FILES = 26;
+  // `M240` `A` — the page fixture's two landing files, `aaa-shared.tflw` and `hook-first.tflw`:
+  // 26 -> 28 files and 560 -> 577 nodes.
+  const EXPECTED_NODES = 577;
+  const EXPECTED_FILES = 28;
   assert.equal(filesRead, EXPECTED_FILES, `the corpus read ${filesRead} files, expected ${EXPECTED_FILES} — a fixture was added or lost`);
   assert.equal(total, EXPECTED_NODES, `the corpus round-tripped ${total} nodes, expected ${EXPECTED_NODES} — move the number in the change that moved the corpus`);
   assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n\n')}\n`);
@@ -463,7 +465,8 @@ test('every clean file in the corpus round-trips through the printer whole', () 
   // `M203` `S4` — the example project (`examples/storefront/tests/`, 4 files, 11 tests + 1 crawl) joined this repository's corpus: 14 -> 18.
   // `M216` — `examples/storefront/tests/checkout.tflw`: 18 -> 19.
   // `M234` `C` — the example's seven new files, every one of which round-trips whole: 19 -> 26.
-  const EXPECTED_CORPUS_FILES = 26;
+  // `M240` `A` — the same two files, both round-tripping whole: 26 -> 28.
+  const EXPECTED_CORPUS_FILES = 28;
   assert.equal(
     corpusRoundTripped,
     EXPECTED_CORPUS_FILES,

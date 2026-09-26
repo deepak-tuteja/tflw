@@ -171,7 +171,9 @@ test('every test in the corpus classifies, and a third of them land in more than
   // emit, asserted as an equality by `exampleCoverage.test.ts` — it stood at **6 of 31** and the
   // docs photographed it. Nineteen of those thirty-one needed a page with controls on it to be
   // written against at all, which is what `examples/storefront/order.html` is for.
-  const EXPECTED_TESTS = 85;
+  // `M240` `A` — the page fixture gained two files that sort and land awkwardly on purpose: an
+  // action-only file (no test) and a file whose first declaration is a hook (one test). 85 -> 86.
+  const EXPECTED_TESTS = 86;
   assert.equal(mine.total, EXPECTED_TESTS,
     `the corpus classified ${mine.total} tests, expected ${EXPECTED_TESTS} — move the number in the change that moved the corpus`);
 
