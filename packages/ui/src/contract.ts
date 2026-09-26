@@ -4,7 +4,7 @@
 // page cannot drift into a second account of either (`D985`, `D986`). Nothing here reaches the
 // bundle; type imports are erased.
 
-export type { ProjectView, ProjectFile, ProjectTest, ProjectCrawl, RunRecord, RunRequest, RunStatus, ReportEntry as ReportDir } from '../../cli/src/ui-server.ts';
+export type { ProjectView, UnconfiguredView, ProjectFile, ProjectTest, ProjectCrawl, RunRecord, RunRequest, RunStatus, ReportEntry as ReportDir } from '../../cli/src/ui-server.ts';
 // `Lens` is the language's own (`D1043`): the page derives a lens with the same function the
 // server does, so the type has to be the same type too.
 export type { Lens } from '@tflw/lang';

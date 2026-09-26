@@ -26,6 +26,7 @@ const file = (path: string, tests: Array<{ name: string; tags: string[] }>): Pro
 });
 
 const project = (files: ProjectView['files']): ProjectView => ({
+  configured: true,
   root: '/p',
   version: { version: '0.0.0-test', source: 'dev', commit: null, dirty: null, builtAt: null },
   envs: [],

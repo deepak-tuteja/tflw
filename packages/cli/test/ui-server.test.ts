@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseConfigSource } from '@tflw/lang';
@@ -953,18 +953,47 @@ test('initArgv: a door scaffolds with the flag it has, and two doors now have on
   assert.deepEqual(initArgv('browser'), ['init']);
 });
 
-test('GET /api/project says "not a project here" as its own answer, not as an ENOENT', async () => {
+test('`M240` `B` (`D1291`): a directory with no tflw.config is a project that has not started — the project route says so with a 200, the lists are empty, and every other route is a 409 with no path in it', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-empty-'));
   const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
   try {
     const base = `http://127.0.0.1:${await ui.listen(0)}`;
     const res = await api(`${base}/api/project`);
-    assert.equal(res.status, 404);
-    const body = (await res.json()) as { noProject?: boolean; error: string };
-    assert.equal(body.noProject, true);
-    // The sentence a person reads, not a filesystem error with an absolute path in it.
-    assert.match(body.error, /not a tflw project yet/);
-    assert.doesNotMatch(body.error, /ENOENT/);
+    assert.equal(res.status, 200, 'the unconfigured answer is not an error');
+    const body = (await res.json()) as { configured: boolean; noProject?: boolean; root: string; version: { version: string } };
+    assert.equal(body.configured, false);
+    assert.equal(body.noProject, true, 'the name the page and `e2e.test.ts` already ask by');
+    assert.equal(body.root, basename(dir), 'the directory by name — the 404 this replaces carried the absolute path');
+    assert.deepEqual(body.version, await buildStamp(), 'the landing still says which tflw this is');
+    // The lists answer empty rather than reaching `readProject` and dying with an `ENOENT` — which
+    // `/api/reports` did on every landing over an empty directory, logged and unshown.
+    assert.deepEqual(await (await api(`${base}/api/reports`)).json(), []);
+    assert.deepEqual(await (await api(`${base}/api/runs`)).json(), []);
+    // Reads and writes of a project that is not there: one sentence, 409, until `init` has run.
+    const answers: Record<string, number> = {};
+    for (const [method, path, init] of [
+      ['GET', '/api/file?path=x.tflw', {}],
+      ['PUT', '/api/file', { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: 'x.tflw', text: 'test "a"\n', etag: null }) }],
+      ['POST', '/api/run', { headers: { 'content-type': 'application/json' }, body: '{}' }],
+      ['GET', '/api/baseline', {}],
+      ['GET', '/api/refactor?path=x.tflw', {}],
+    ] as const) {
+      const r = await api(`${base}${path}`, { method, ...init });
+      answers[`${method} ${path}`] = r.status;
+      const text = await r.text();
+      assert.match(text, /no tflw\.config yet/, `${method} ${path}: ${text}`);
+      assert.doesNotMatch(text, /\/(tmp|home|Users)\//, `${method} ${path} carries an absolute path: ${text}`);
+    }
+    assert.deepEqual(new Set(Object.values(answers)), new Set([409]), JSON.stringify(answers));
+    // `/api/config` keeps its own 404 — the sentence a person reads, with no path in it — because
+    // the Config tab asks for the file by name and that file is what is missing.
+    const config = await api(`${base}/api/config`);
+    assert.equal(config.status, 404);
+    const configBody = (await config.json()) as { error: string };
+    assert.match(configBody.error, /not a tflw project yet/);
+    assert.doesNotMatch(configBody.error, /ENOENT|\/(tmp|home|Users)\//);
+    // And nothing above wrote anything into the directory.
+    assert.deepEqual(await readdir(dir), []);
   } finally {
     await ui.close();
     await rm(dir, { recursive: true, force: true });

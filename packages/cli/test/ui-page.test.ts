@@ -63,7 +63,7 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { mkdtemp, cp, rm, readFile, writeFile, mkdir, symlink, utimes, readdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
@@ -2902,6 +2902,37 @@ test('`M240` `F` (`M239-11`): with no remembered width, the sequence column is a
   } finally {
     await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.removeItem('tflw.compose.width')); // one-shot: a write
     await rm(join(root, long), { force: true });
+  }
+});
+
+test('`M240` `B` (`D1291`): over a directory with no tflw.config the landing names the directory and the tflw, shows no absolute path, and no route fails', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-unconfigured-'));
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage();
+  const failed: string[] = [];
+  fresh.on('response', (r) => { if (r.url().includes('/api/') && r.status() >= 400) failed.push(`${r.status()} ${new URL(r.url()).pathname}`); }); // one-shot: a response's own URL inside its event, not a page read
+  try {
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    await fresh.goto(`${base}/?token=${TOKEN}`);
+    await fresh.locator('[data-landing-unconfigured]').waitFor();
+    assert.equal(await fresh.locator('[data-landing-unconfigured]').getAttribute('data-landing-unconfigured'), basename(dir));
+    const version = (await (await api(`${base}/api/project`)).json()) as { version: { version: string } }; // one-shot: the build stamp is a constant of this process
+    await fresh.locator('[data-landing-unconfigured] [data-version]').waitFor();
+    assert.equal(await fresh.locator('[data-landing-unconfigured] [data-version]').getAttribute('data-version'), version.version.version); // one-shot: waited for just above, on a page this test loaded and has not touched since
+    const decided = await settle(
+      () => fresh.locator('[data-door="api"] [data-door-state]').getAttribute('data-door-state'),
+      untilMeasurable('the landing has finished asking', (v) => v !== null && v !== 'asking'),
+      { attempts: 40, delayMs: 50, page: fresh },
+    );
+    assert.equal(decided.value, 'create');
+    const text = (await fresh.locator('body').textContent()) ?? ''; // one-shot: read after the door has decided, the last thing the landing waits on
+    assert.doesNotMatch(text, /\/(tmp|private|home|Users)\//, 'the page shows an absolute path');
+    assert.ok(text.includes(basename(dir)), 'the page does not say which directory it is over');
+    assert.deepEqual(failed, [], 'a route failed while the landing drew'); // one-shot: the responses recorded up to this point
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

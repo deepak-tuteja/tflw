@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { DOORS, countByDoor, lenslessCount, unparsedCount } from './doors';
 import { Wordmark } from './Wordmark';
 import { initProject } from './api';
-import type { Lens, ProjectView } from './contract';
+import type { Lens, ProjectView, UnconfiguredView } from './contract';
 
 export interface LandingProps {
   readonly project: ProjectView | null;
@@ -30,11 +30,14 @@ export interface LandingProps {
    * finished asking* is measurable, and *what it answered* is the claim (`M141`).
    */
   readonly noProject: boolean | null;
+  /** `D1291` — the unconfigured answer, when that is what the page got: the directory's name and
+   *  the build stamp, said on the landing that offers to make a project there. */
+  readonly unconfigured?: UnconfiguredView | null;
   readonly onOpen: (door: Lens) => void;
   readonly onCreated: () => void;
 }
 
-export function Landing({ project, error, noProject, onOpen, onCreated }: LandingProps) {
+export function Landing({ project, unconfigured = null, error, noProject, onOpen, onCreated }: LandingProps) {
   const [creating, setCreating] = useState<Lens | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -59,7 +62,8 @@ export function Landing({ project, error, noProject, onOpen, onCreated }: Landin
   const counts = countByDoor(project);
   const lensless = lenslessCount(project);
   const unparsed = unparsedCount(project);
-  const name = project ? (project.root.split('/').filter(Boolean).pop() ?? project.root) : null;
+  const name = project ? (project.root.split('/').filter(Boolean).pop() ?? project.root) : (unconfigured?.root ?? null);
+  const version = project?.version ?? unconfigured?.version ?? null;
 
   return (
     <div className="landing" data-landing>
@@ -132,6 +136,16 @@ export function Landing({ project, error, noProject, onOpen, onCreated }: Landin
         ))}
       </div>
 
+      {/* `D1291` — a directory that is not a project yet still says where it is and which tflw
+          this is, in the same footer a project gets; the absolute path is nobody's business. */}
+      {unconfigured ? (
+        <footer className="landing-foot muted" data-landing-unconfigured={unconfigured.root}>
+          <code>{name}</code> · no tflw.config here yet ·{' '}
+          <a href="https://deepak-tuteja.github.io/tflw/" target="_blank" rel="noreferrer" data-version={version?.version}>
+            tflw {version?.version}
+          </a>
+        </footer>
+      ) : null}
       {project ? (
         <footer className="landing-foot muted" data-landing-project>
           <code>{name}</code> · {project.files.length} file{project.files.length === 1 ? '' : 's'}
