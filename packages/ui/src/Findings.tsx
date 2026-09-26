@@ -112,7 +112,7 @@ export function Findings({
       <h2>Security findings</h2>
       {targets.map((t) => (
         <p className="muted" key={t.target} data-authorized-target={t.target}>
-          ℹ authorized target <code>{t.target}</code> — {t.reason}
+          ℹ authorized target <code>{t.target}</code> — <span data-user-data>{t.reason}</span>
           {grantedProbeClauses(t).map((p) => (
             <code key={p}> {p}</code>
           ))}

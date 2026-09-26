@@ -2011,7 +2011,7 @@ export function ComposePane(props: ComposePaneProps) {
                     <ol className="prefix-list">
                       {sendPrefix.requests.map((r, i) => (
                         <li key={i} data-prefix-request={i}>
-                          <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span> <code>{r.path}</code> <span className="muted">{r.where}</span>
+                          <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span> <code>{r.path}</code> <span className="muted" data-user-data>{r.where}</span>
                         </li>
                       ))}
                     </ol>

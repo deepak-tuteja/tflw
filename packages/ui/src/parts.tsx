@@ -149,13 +149,13 @@ export function NoteBlock({ note, what, onNote }: {
   const text = noteText(note);
   if (note.lines.length === 1 && onNote === undefined) {
     return (
-      <p className="muted note" data-note={what} data-note-lines={1}>
+      <p className="muted note" data-note={what} data-note-lines={1} data-user-data>
         {note.first}
       </p>
     );
   }
   return (
-    <details className="note" data-note={what} data-note-lines={note.lines.length}>
+    <details className="note" data-note={what} data-note-lines={note.lines.length} data-user-data>
       <summary className="muted">
         {note.first} {note.lines.length > 1 ? <span className="count">+{note.lines.length - 1}</span> : null}
       </summary>

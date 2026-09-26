@@ -1818,6 +1818,56 @@ test('`M240` `D` (`D1312`): words at rest stay inside each view’s budget, and 
   assert.deepEqual(badTips, [], badTips.join('\n'));
 });
 
+/* **The budget counts the page's words, never the project's** — `M240-05`. The budget above held on
+ * this fixture and failed on the first real project it met (the sibling's `S-2b`: BROWSER's Auth at
+ * 592 words against 200), because Auth lists the file's test names and quotes each target's
+ * `reason`, and neither was marked as the project's own. `THEIRS` already excluded
+ * `[data-user-data]`; nothing carried it. A budget cannot see this on a fixture whose names are
+ * three words long, so the claim is made structurally: on every view the budget walks, no test
+ * name and no `reason` from `tflw.config` is in the text it counts — and each is shown somewhere,
+ * or the check met nothing. Notes (a comment the author wrote) are marked by `NoteBlock` itself. */
+test('`M240` `D` (`M240-05`): the budget counts the page’s words — no test name or target reason is counted', async () => {
+  const view = (await (await fetch(`${baseUrl}/api/project`, { headers: { authorization: `Bearer ${TOKEN}` } })).json()) as { files: { tests: { name: string }[] }[] };
+  const names = [...new Set(view.files.flatMap((f) => f.tests.map((t) => t.name)))].filter((n) => n.split(' ').length >= 2);
+  const reasons = [...(await readFile(join(projectRoot, 'tflw.config'), 'utf8')).matchAll(/reason "([^"]+)"/g)].map((m) => m[1]!);
+  assert.ok(names.length > 0 && reasons.length > 0, `the fixture has ${names.length} test name(s) and ${reasons.length} reason(s) — nothing to check`);
+  const counted: string[] = [];
+  const shown = new Set<string>();
+  for (const [door, tab, where] of COPY_VIEWS) {
+    if (where === null) await visit(door, tab);
+    else { await page.goto(`${pageUrl}#/${door}/${tab}/${where}`); await page.reload(); }
+    await page.locator(COPY_READY[tab]!).first().waitFor();
+    const { text } = await wordsAtRest();
+    const all = await page.evaluate(() => (document.body as unknown as { innerText: string }).innerText); // one-shot: the view's subject was waited for above
+    for (const t of [...names, ...reasons]) {
+      if (all.includes(t)) shown.add(t);
+      if (!text.includes(t)) continue;
+      // Name the element that carries it, so the repair is one line away.
+      const where = await page.evaluate(([needle, skip]) => { // one-shot: same view, same frame
+        const out: string[] = [];
+        const walk = (n: unknown): void => {
+          const e = n as { nodeType: number; textContent: string | null; parentElement: ElLike | null; childNodes: ArrayLike<unknown>; matches?: (s: string) => boolean; checkVisibility?: () => boolean };
+          if (e.nodeType === 3) {
+            if ((e.textContent ?? '').includes(needle!.slice(0, 20)) && e.parentElement !== null) {
+              const p = e.parentElement;
+              const data = [...p.attributes].find((a) => a.name.startsWith('data-'));
+              out.push(`${p.tagName.toLowerCase()}${data ? `[${data.name}]` : ''}${p.className ? '.' + String(p.className).split(' ')[0] : ''}`);
+            }
+            return;
+          }
+          if (e.nodeType !== 1 || e.matches!(skip!) || !e.checkVisibility!()) return;
+          for (let i = 0; i < e.childNodes.length; i++) walk(e.childNodes[i]);
+        };
+        walk(document.body);
+        return out.join(', ');
+      }, [t, THEIRS] as const);
+      counted.push(`${door || '/'} ${tab}: “${t}” in ${where || 'text split across elements'}`);
+    }
+  }
+  assert.ok(names.some((n) => shown.has(n)) && reasons.some((r) => shown.has(r)), `the walk never showed a test name and a reason, so it checked nothing (${shown.size} shown)`);
+  assert.deepEqual([...new Set(counted)], [], 'the project’s own words are counted against the page’s budget');
+});
+
 test('control: the copy instruments count a paragraph put back and refuse a 91-character tip', async () => {
   await at('api', 'auth');
   await page.locator(COPY_READY.auth!).first().waitFor();

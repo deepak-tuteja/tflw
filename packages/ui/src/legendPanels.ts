@@ -18,7 +18,7 @@ export const LEGEND_PANELS: readonly LegendEntry[] = [
   {
     title: 'Auth',
     text:
-      'Who each test runs as, in the env this page reads — switch it with --env or TFLW_ENV. anonymous is built in and reserved: a test with no `as` runs as it, and has no authorization violations probes with it. On SCANS every request is replayed as each declared session; a privileged one is left out, because reaching others’ resources is its job.',
+      'Who each test runs as, in the env this page reads — switch it with --env or TFLW_ENV. anonymous is built in and reserved: a test with no `as` runs as it, and has no authorization violations probes with it. A session does not log the browser in: its cookie jar is never applied to a test’s browser context. A target with no probe opt-in gets read-only probes: no mutating request, oversized input, traversal payload or cipher handshake. On SCANS every request is replayed as each declared session; a privileged one is left out, because reaching others’ resources is its job.',
     href: `${DOCS}guide/sessions`,
   },
   { title: 'Config', text: 'tflw.config for this env: base URLs, timeouts, and the credentials the env names.', href: `${DOCS}guide/config` },

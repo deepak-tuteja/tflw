@@ -188,7 +188,7 @@ export function ScanPanel({ authorization, matchers, onAuth, onConfig }: {
                 </p>
               ) : (
                 <p className="muted scan-reason">
-                  authorized at <code>{target.block === 'defaults' ? 'defaults' : `env ${target.block}`}</code> line {target.line} — {target.reason}
+                  authorized at <code>{target.block === 'defaults' ? 'defaults' : `env ${target.block}`}</code> line {target.line} — <span data-user-data>{target.reason}</span>
                 </p>
               )}
               {/* **The opt-ins, and their absence said out loud.** `probe oversized` and
