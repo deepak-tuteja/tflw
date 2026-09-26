@@ -15,7 +15,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSource, print, STEP_LENS, type Step } from '@tflw/lang';
 import { defaultEdit, stepCatalogue } from '../src/AddStep.tsx';
-import { buildStatement } from '../src/statements.ts';
+import { buildStatement, statementLead } from '../src/statements.ts';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { tflwFiles } from '../../../scripts/tflw-corpus.mjs';
 import { statementEditOf } from '../src/parts.tsx';
 import { VOCABULARY } from '../src/vocabulary.ts';
 
@@ -170,4 +174,50 @@ test('a `wait until` refuses a subject that cannot change, and takes one that ca
     wait: '10s',
   }, null);
   assert.equal(tooLong.ok, false);
+});
+
+// ── The chip is the language's own spelling — `M240` `F` (`M239-03`) ─────────────────────────────
+//
+// Held to the PRINTER over the whole corpus rather than to a list written here: for every step the
+// repository's `.tflw` files hold, the printed line must begin with the chip. A chip that read the
+// node's type name (`closetab`) fails on the first `close tab`; a kind added to the language whose
+// phrase is two words fails the day the corpus first spells it.
+test('`M239-03`: every statement chip is the phrase the printed statement begins with — never the lowercased node kind', () => {
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  const kinds = new Map<string, string>();
+  let steps = 0;
+  const walk = (body: readonly Step[], path: string): void => {
+    for (const step of body) {
+      const printed = print(step);
+      if (!printed.ok) continue; // `MalformedStep` and the context-bound kinds refuse to print alone
+      const lead = statementLead(step);
+      const line = printed.text.trim().split('\n')[0] ?? '';
+      // A call is the one statement with no keyword — it begins with the action's own name — so
+      // its chip is the language's word for the construct, and `afterLead` leaves its text whole.
+      if (step.type === 'CallStmt') assert.equal(lead, 'call');
+      else assert.ok(line === lead || line.startsWith(`${lead} `), `${path}: the chip \`${lead}\` is not how \`${line}\` begins (${step.type})`);
+      kinds.set(step.type, lead);
+      steps += 1;
+      const inner = (step as { body?: readonly Step[] }).body;
+      if (Array.isArray(inner)) walk(inner, path);
+    }
+  };
+  for (const path of tflwFiles(repoRoot)) {
+    const { program, diagnostics } = parseSource(readFileSync(path, 'utf8'));
+    if (diagnostics.some((d) => d.severity === 'error')) continue;
+    for (const t of program.tests) walk(t.body, path);
+    for (const h of program.hooks) walk(h.body, path);
+    for (const a of program.actions) walk(a.body, path);
+  }
+  // Measured 2026-09-26: 364 steps over 31 kinds. The floor is under both so a corpus edit does
+  // not move this gate, and above the point where a walker that skipped every block would land.
+  assert.ok(steps >= 300 && kinds.size >= 25, `the corpus must exercise the vocabulary: ${steps} steps over ${kinds.size} kinds`);
+  // The two the review photographed, by name — and the control: on these the old rule's answer
+  // is a word nobody wrote.
+  assert.equal(kinds.get('CloseTabStmt'), 'close tab');
+  assert.equal(kinds.get('SwitchToTabStmt'), 'switch to tab');
+  for (const [type, lead] of kinds) {
+    const oldRule = type === 'LetStmt' ? 'let' : type.replace(/Stmt$/, '').toLowerCase();
+    if (lead.includes(' ')) assert.notEqual(lead, oldRule, `${type}'s chip is the old rule's slug`);
+  }
 });
