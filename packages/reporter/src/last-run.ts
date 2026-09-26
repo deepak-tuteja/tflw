@@ -23,8 +23,10 @@ export interface LastRun {
 
 /** `undefined` for a full run — so `renderLastRun` omits the key entirely and an unfiltered record
  * stays byte-identical to what every version before this one wrote. */
-export function describeRunFilter(f: { readonly tags?: readonly string[]; readonly only?: string; readonly failed?: boolean }): string | undefined {
+export function describeRunFilter(f: { readonly tags?: readonly string[]; readonly only?: string; readonly failed?: boolean; readonly shard?: string }): string | undefined {
   const parts: string[] = [];
+  // `D1330` — a shard is a filter too: the next `--failed` replays what failed in this shard.
+  if (f.shard) parts.push(`--shard ${f.shard}`);
   if (f.tags?.length) parts.push(`--tag ${f.tags.join(',')}`);
   if (f.only) parts.push(`--only ${f.only}`);
   if (f.failed) parts.push('--failed');

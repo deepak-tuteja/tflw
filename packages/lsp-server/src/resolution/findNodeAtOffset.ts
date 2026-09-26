@@ -82,7 +82,10 @@ import type {
   SwitchToNewTabBlock,
   TestDecl,
   TextBody,
+  GraphqlBody,
   TransformExpr,
+  LengthExpr,
+  JoinExpr,
   UntickStmt,
   UniqueLikeExpr,
   UniquePrefixExpr,
@@ -180,6 +183,10 @@ function children(node: Node): readonly Node[] {
       return [(node as FormField).value];
     case 'TextBody':
       return [(node as TextBody).value];
+    case 'GraphqlBody': {
+      const g = node as GraphqlBody;
+      return [g.query, ...(g.variables ? [g.variables] : []), ...(g.operation ? [g.operation] : [])];
+    }
     case 'UploadBody': {
       const n = node as UploadBody;
       return [n.filePath, n.fieldName, ...(n.contentType ? [n.contentType] : []), ...n.extra];
@@ -330,6 +337,10 @@ function children(node: Node): readonly Node[] {
     }
     case 'TransformExpr':
       return [(node as TransformExpr).value];
+    case 'LengthExpr':
+      return [(node as LengthExpr).value];
+    case 'JoinExpr':
+      return [(node as JoinExpr).list, (node as JoinExpr).separator];
     case 'UniquePrefixExpr':
       return [(node as UniquePrefixExpr).prefix];
     case 'UniqueLikeExpr':

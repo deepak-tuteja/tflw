@@ -788,6 +788,9 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     id: 'capture-found-nothing',
     file: 'interpreter.ts',
     excerpt: 'nothing to capture at',
+    // The second is `capture … matching` finding no match (`M242` `D`, `D1329`) — the same rule,
+    // one step narrower: whether the response carried a value the pattern matches.
+    sites: 2,
     decidable: 'needs-values',
     note: 'whether the response carried the path',
   },
@@ -1036,6 +1039,51 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     excerpt: '\\`contains\\` expects a string or array subject',
     decidable: 'needs-values',
     note: 'the load-bearing counter-example in D140: reading `contains`’ documented "strings, arrays" as a *static* claim about `body.msg` is how the fix for `A4-11` would reintroduce `A4-05`. Shape stays here',
+  },
+  // `M242` (`D1326`, `D1329`) — shape, not kind, each of them, for `D140`'s reason: what a subject or
+  // a variable holds is known when the response arrives and not before.
+  {
+    id: 'is-empty-subject-shape',
+    file: 'matcher.ts',
+    excerpt: '\\`is empty\\` expects a string, list or object subject',
+    decidable: 'needs-values',
+    note: 'shape, not kind — D140. `null` is named in the message because it is the reach a reader makes',
+  },
+  {
+    id: 'length-of-operand-shape',
+    file: 'eval.ts',
+    excerpt: '\\`length of\\` expects a string or a list',
+    decidable: 'needs-values',
+    note: 'shape, not kind — D140; the same answer `.length` gives',
+  },
+  {
+    id: 'joined-with-list-shape',
+    file: 'eval.ts',
+    excerpt: '\\`joined with\\` expects a list on its left',
+    decidable: 'needs-values',
+    note: 'shape, not kind — D140',
+  },
+  {
+    id: 'joined-with-separator-shape',
+    file: 'eval.ts',
+    excerpt: '\\`joined with\\` expects a string separator',
+    decidable: 'needs-values',
+    note: 'a literal separator is always a string by grammar only when written as one; an interpolated one is a value',
+  },
+  {
+    id: 'joined-with-element-shape',
+    file: 'eval.ts',
+    excerpt: '\\`joined with\\` joins strings and numbers',
+    decidable: 'needs-values',
+    note: 'shape, not kind — D140: which elements a list holds is the response\'s',
+  },
+  {
+    id: 'capture-matching-invalid-regex',
+    file: 'interpreter.ts',
+    excerpt: 'invalid regex in \\`capture … matching\\`',
+    decidable: 'static-if-literal',
+    checkerCode: 'TF054',
+    note: '`M242` `D` — a literal pattern compiles or does not at check time, the `invalid-regex-operand` row\'s argument; an interpolated one is skipped',
   },
   {
     id: 'has-count-subject-shape',

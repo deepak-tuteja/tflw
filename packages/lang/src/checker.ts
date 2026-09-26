@@ -17,6 +17,7 @@ import type {
   ApiBody,
   ApiRequestSpec,
   CallExpr,
+  CaptureStmt,
   ConfigEntry,
   DefaultsBlock,
   ConfigFile,
@@ -361,6 +362,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     // skip-without-a-config decision is made *inside* the pass, from `opts.envAuthorizedTargets`,
     // because "a config was resolved and authorizes nothing" is a case with a diagnostic to emit.
     ...checkAuthorizedTargets(program, opts),
+    ...checkSkipReasons(program),
     // M131a (D340–D345) — D21 §3.2(3)'s static door. Wired next to the declaration pass because the
     // two are the two halves of one design and read as one message when both fire: `TF060` says
     // this origin is not declared, `TF065` says it is not affirmed for the command line. Neither
@@ -2510,7 +2512,12 @@ function directCalls(steps: readonly Step[]): CallSite[] {
         break;
       case 'FormatExpr':
       case 'TransformExpr':
+      case 'LengthExpr':
         fromValue(value.value);
+        break;
+      case 'JoinExpr':
+        fromValue(value.list);
+        fromValue(value.separator);
         break;
       default:
         // Every other `Value` is a literal, a `{var}`/`env()` reference, or a generator — none of
@@ -3009,6 +3016,11 @@ function checkApiBody(body: ApiBody, bound: Set<string>, diags: Diagnostic[]): v
     case 'TextBody':
       checkStringLit(body.value, bound, diags);
       break;
+    case 'GraphqlBody':
+      checkStringLit(body.query, bound, diags);
+      if (body.variables) checkValue(body.variables, bound, diags);
+      if (body.operation) checkStringLit(body.operation, bound, diags);
+      break;
     case 'UploadBody':
       checkStringLit(body.filePath, bound, diags);
       checkStringLit(body.fieldName, bound, diags);
@@ -3071,7 +3083,12 @@ function checkValue(value: Value, bound: Set<string>, diags: Diagnostic[]): void
       if (value.length) checkValue(value.length, bound, diags);
       break;
     case 'TransformExpr':
+    case 'LengthExpr':
       checkValue(value.value, bound, diags);
+      break;
+    case 'JoinExpr':
+      checkValue(value.list, bound, diags);
+      checkValue(value.separator, bound, diags);
       break;
     case 'CallExpr':
       for (const arg of value.args) checkValue(arg, bound, diags);
@@ -3882,6 +3899,18 @@ function checkLiteralOperandsInSteps(steps: unknown, diags: Diagnostic[]): void 
       return;
     }
     const node = value as Record<string, unknown>;
+    // `TF085` (`D1328`). Read off any request spec the walk meets — an `api` step and the request a
+    // `wait until api` carries are the same shape — so no request position can be missed.
+    const body = node['body'] as { type?: string; span?: Span } | null | undefined;
+    if (node['method'] === 'GET' && body?.type === 'GraphqlBody') {
+      diags.push({
+        code: Codes.GRAPHQL_ON_GET,
+        severity: 'error',
+        message: 'a `body graphql` is sent as a POST body, and this request is a `GET`',
+        span: body.span!,
+        hint: 'write `api POST …` — GraphQL-over-HTTP sends a query and its variables as a POST body; a GET would put them in the URL, which this body kind does not do',
+      });
+    }
     switch (node['type']) {
       case 'RandomNumberExpr':
       case 'RandomDecimalExpr':
@@ -3902,6 +3931,16 @@ function checkLiteralOperandsInSteps(steps: unknown, diags: Diagnostic[]): void 
       case 'ExpectStmt':
         checkRegexOperand((node as unknown as ExpectStmt).matcher, diags);
         break;
+      case 'CaptureStmt': {
+        // `D1329`: a `capture … matching` pattern is a regex exactly as `matches`' operand is.
+        const pattern = (node as unknown as CaptureStmt).pattern;
+        const text = pattern === undefined ? null : literalText(pattern);
+        const why = text === null ? null : regexCompileError(text);
+        if (why !== null) {
+          diags.push({ code: Codes.INVALID_LITERAL_OPERAND, severity: 'error', message: `invalid regex in \`capture … matching\`: ${JSON.stringify(text)}`, span: pattern!.span, hint: `${why} — \`(\`, \`[\` and \`\\\` are regex syntax; escape one to match it literally (SPEC §6.2)` });
+        }
+        break;
+      }
       default:
         break;
     }
@@ -4145,6 +4184,27 @@ const DECODE_HINTS: Readonly<Record<'base64' | 'hex' | 'url', string>> = {
 
 /** `matches "…"` and `fails matching "…"` — the two matchers whose operand is compiled as a regular
  *  expression (`matcher.ts`, both sites). */
+/** `TF084` (`M242` `B`, `D1327`) — a `skip` whose reason is blank. `TF082`'s rule for `TF082`'s
+ *  reason: the text is not judged beyond being there, and an interpolated reason is accepted without
+ *  inspection, since what it resolves to is not knowable here. */
+export function checkSkipReasons(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const test of program.tests) {
+    const reason = test.skip;
+    if (reason === undefined) continue;
+    if (reason.parts.some((p) => p.kind !== 'text')) continue;
+    if (reason.value.trim().length > 0) continue;
+    diags.push({
+      code: Codes.SKIP_REASON_EMPTY,
+      severity: 'error',
+      message: `\`skip\` on "${test.name.value}" gives no reason`,
+      span: reason.span,
+      hint: 'say why it is skipped and when it comes back — `skip "the payments sandbox is down until the 3rd"`. A skip nobody explained is a test nobody will turn back on',
+    });
+  }
+  return diags;
+}
+
 function checkRegexOperand(matcher: ExpectStmt['matcher'], diags: Diagnostic[]): void {
   if (matcher.name !== 'matches' && matcher.name !== 'fails') return;
   const pattern = matcher.value ? literalText(matcher.value) : null;

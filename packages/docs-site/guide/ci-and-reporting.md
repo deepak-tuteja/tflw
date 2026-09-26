@@ -187,6 +187,25 @@ Two consequences for a pipeline:
 A `has no security violations` assertion needs no flag at all — it inspects a response your suite
 already asked for, so there is no extra packet to authorize.
 
+## Skipping a test — `skip "reason"` {#skip}
+
+```tflw
+test "refunds settle" skip "the payments sandbox is down until the 3rd"
+  api POST /refunds body { orderId: 7 }
+  expect status equals 202
+```
+
+A skipped test stays in the file and runs nothing — not its hooks, not its steps. Every report
+shows it as its own outcome: a `-` line with the reason on the console, `N skipped` on the summary
+line, a grey `skipped` row in `report.html`, and a `<skipped message="…"/>` testcase in
+`junit.xml`, so a CI dashboard counts it as skipped rather than passed. A run whose only non-passes
+are skips still passes. The reason is required — `skip ""` is `TF084` — because it is the only record
+of why the test stopped and when it comes back.
+
+Leaving a test out of one CI job is a different thing, and it belongs on the command line:
+`--tag !slow` runs everything not tagged `@slow`. Inclusions OR together, exclusions AND together,
+and an exclusion beats an inclusion on the same test.
+
 ## Replaying failures — `--failed` and `--bail`
 
 ```sh
@@ -198,6 +217,37 @@ npx tflw run --bail     # stop at the first failing test
 tests — nothing failed last time, or no state file yet: falls back to the full suite with a note,
 never a silent zero-test run. `--bail` stops after the first failing test's final verdict; under
 `--parallel > 1` it stops starting new files, but files already in flight finish normally.
+
+## Splitting a suite across CI jobs — `--shard` {#shard}
+
+```sh
+npx tflw run --shard 1/4   # in job 1 of 4
+npx tflw run --shard 2/4   # in job 2 of 4, and so on
+```
+
+`--shard i/n` runs every `n`th file of the sorted suite, starting at the `i`th, so the `n` jobs of a
+matrix are disjoint and together run everything exactly once. Files are dealt round-robin rather
+than in blocks, so a directory of slow files is spread over the jobs. `--tag`, `--only` and
+`--failed` narrow within the shard, and every shard still checks the whole suite before running its
+part — no job passes a file another would refuse. The header names the shard: `shard 2/4: 31 of 124
+files`.
+
+## Sending a run to your tracing backend — `tflw export otlp` {#otlp}
+
+```sh
+npx tflw export otlp --endpoint http://localhost:4318/v1/traces
+npx tflw export otlp report --endpoint https://otel.example.com/v1/traces --header authorization=Bearer…
+```
+
+A finished run becomes one OpenTelemetry trace — a span for the run, one per file, one per test, one
+per step — sent over OTLP/HTTP's JSON encoding to any collector that accepts it. A failed test or step
+is an `ERROR` span carrying its message; a skipped test is an `OK` span whose `tflw.outcome` is
+`skipped`. Exporting the same run twice sends the same ids, so a collector shows one trace.
+
+**The times are laid end to end, and every span says so.** A report records the run's start and every
+duration, not when each test started, so the spans are placed one after another from the run's start.
+That is exact for a sequential run and a layout for a `--parallel` one; each span carries
+`tflw.timing = "reconstructed"` so nobody reads a waterfall the run never measured.
 
 ## Structured logs — `--format ndjson`
 

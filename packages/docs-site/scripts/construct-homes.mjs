@@ -54,6 +54,7 @@ export const CONSTRUCT_HOMES = new Map(Object.entries({
   'declaration:with-each': ['data-and-hooks'], // a row per case is what data-driven means
   'declaration:as': ['sessions'],
   'declaration:retry': ['retry-and-polling'],
+  'declaration:skip': ['ci-and-reporting'], // `M242` `B` (`D1327`) — beside `--tag`, which it is the opposite of
   'declaration:concurrency': ['config'], //      a per-test override of the `workers` subject
 
   // ── steps ───────────────────────────────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ export const CONSTRUCT_HOMES = new Map(Object.entries({
   'matcher:equals': ['assertions'], 'matcher:contains': ['assertions'],
   'matcher:matches-regex': ['assertions'], 'matcher:matches-subset': ['assertions'],
   'matcher:matches-schema': ['assertions'], 'matcher:matches-file': ['assertions'],
-  'matcher:greater-less-than': ['assertions'], 'matcher:has-count': ['assertions'],
+  'matcher:greater-less-than': ['assertions'], 'matcher:has-count': ['assertions'], 'matcher:has-count-at-least': ['assertions'], 'matcher:has-count-at-most': ['assertions'], 'matcher:is-empty': ['assertions'],
   'matcher:connects': ['assertions'], 'matcher:fails': ['assertions'],
   'matcher:has-value': BROWSER, 'matcher:state-word': BROWSER,
   'matcher:was-made': BROWSER, 'matcher:has-no-a11y-violations': BROWSER,
@@ -121,7 +122,7 @@ export const CONSTRUCT_HOMES = new Map(Object.entries({
   'generator:unique-number': ['variables'], 'generator:unique-uuid': ['variables'],
   'generator:unique-like': ['variables'], 'generator:unique-prefix': ['variables'],
   'generator:unique-email': ['variables'],
-  'generator:transform-base64': ['variables'], 'generator:transform-hex': ['variables'],
+  'generator:transform-base64': ['variables'], 'generator:transform-length': ['variables'], 'generator:transform-join': ['variables'], 'generator:transform-hex': ['variables'],
   'generator:transform-url': ['variables'],
 
   // ── locators ────────────────────────────────────────────────────────────────────────────────

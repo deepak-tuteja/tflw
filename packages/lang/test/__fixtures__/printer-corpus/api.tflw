@@ -29,6 +29,13 @@ test "the four body shapes that are not inline JSON"
   api POST /v1/uploads upload "./payloads/avatar.png" as "avatar" type "image/png"
   expect status equals 201
 
+# `M242` `C` (`D1328`): a GraphQL body, its query raw and its values in `variables`.
+@printer
+test "a GraphQL query with its variables and operation"
+  let orderId = 7
+  api POST /graphql body graphql "query O($id: ID!) { order(id: $id) { id total } }" variables { id: {orderId} } operation "O"
+  expect status equals 200
+
 @printer
 test "the response subjects that are not a JSON path"
   api GET /v1/exports/latest

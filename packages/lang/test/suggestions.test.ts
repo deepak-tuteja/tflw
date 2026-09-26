@@ -148,49 +148,45 @@ test('a missing log message still reports the message, not a bogus level (A3-16)
   assert.match(onlyDiagnostic(inTest('log to console')), /expected a log message/);
 });
 
-// --- FU-09: three natural spellings for "this collection is not empty", none of them answered ---
+// --- FU-09, re-founded by `M242` `A` (`D1326`) ------------------------------------------------
 //
-// The row was filed S2 ("no way to assert an array is non-empty") and re-probed to S3: two
-// spellings work, and *no* diagnostic named either one. The third spelling was worse than silent —
-// it fell out of the matcher grammar into call-parsing and blamed the user's parens, the same
-// mis-blame `M84` fixed elsewhere.
+// FU-09 answered three natural spellings for "this collection is not empty" with a teaching error,
+// because the language had no bound on a count and no emptiness test. It has both now: those
+// spellings are success cases, and what is still refused is the `than` family after `has count`
+// and a bound with no `count`, each pointed at the form that works.
 
-test('FU-09: `has count greater than 0` names the mistake it is, not a missing paren', () => {
-  const d = onlyDiagnostic(inTest('expect body.items has count greater than 0'));
-  assert.match(d, /`has count` compares for equality/, d);
-  assert.match(d, /`greater than`/, d);
-  // The whole defect: the parser used to answer for a construct the user never wrote.
-  assert.doesNotMatch(d, /call|paren/i, `a count matcher has nothing to do with calls: ${d}`);
-});
-
-test('FU-09: all three natural spellings point at a working one', () => {
+test('`D1326`: the spellings FU-09 refused are matchers now, and parse clean', () => {
   for (const step of [
     'expect body.items is not empty',
     'expect body.items is empty',
+    'expect body.items not empty',
+    'expect body.items has count at least 1',
+    'expect body.items has count at most 50',
+    'expect body.items not has count at least 1',
+    'expect body.items.length is greater than 0',
+    'expect body.items has count 0',
+  ]) {
+    assert.deepEqual(diagnose(inTest(step)), [], step);
+  }
+});
+
+test('`D1326`: `has count greater than 0` names the mistake it is, not a missing paren', () => {
+  const d = onlyDiagnostic(inTest('expect body.items has count greater than 0'));
+  assert.match(d, /`has count` compares for equality/, d);
+  assert.match(d, /`greater than`/, d);
+  assert.doesNotMatch(d, /call|paren/i, `a count matcher has nothing to do with calls: ${d}`);
+});
+
+test('`D1326`: what is still not the language points at the bounds and at `is empty`', () => {
+  for (const step of [
     'expect body.items has at least 1',
     'expect body.items has more than 1',
     'expect body.items has count greater than 0',
     'expect body.items has count less than 5',
-    'expect body.items has count at least 1',
   ]) {
     const d = onlyDiagnostic(inTest(step));
-    assert.match(d, /not has count 0/, `${step}: ${d}`);
-    assert.match(d, /\.length is greater than 0/, `${step}: ${d}`);
-  }
-});
-
-test('FU-09: and the spellings it points at parse clean — the hint is executable advice', () => {
-  // The file's thesis (see header): a diagnostic is only fixed when what it recommends is true.
-  // The runtime half — that both forms actually *evaluate*, in both directions — lives in
-  // `runtime/test/matcher.test.ts`, since this package cannot run a test.
-  for (const step of [
-    'expect body.items not has count 0',
-    'expect body.items has count 0',
-    'expect body.items.length is greater than 0',
-    'expect body.items.length is less than 5',
-    'expect body.items.length equals 3',
-  ]) {
-    assert.deepEqual(diagnose(inTest(step)), [], `following the hint must parse clean: ${step}`);
+    assert.match(d, /has count at least 1/, `${step}: ${d}`);
+    assert.match(d, /is not empty/, `${step}: ${d}`);
   }
 });
 
@@ -201,7 +197,7 @@ test('FU-09: the same misfire on the neighboring `has value` branch is answered 
   const d = onlyDiagnostic(inTest('expect body.items has value greater than 3'));
   assert.match(d, /`has value` compares for equality/, d);
   assert.doesNotMatch(d, /call|paren/i, d);
-  assert.doesNotMatch(d, /not has count 0/, `no count advice on a value matcher: ${d}`);
+  assert.doesNotMatch(d, /has count at least/, `no count advice on a value matcher: ${d}`);
 });
 
 test('FU-09: `greater than` as a matcher in its own right is untouched', () => {

@@ -16,7 +16,8 @@ import { createRequire } from 'node:module';
 import { hostname, userInfo } from 'node:os';
 import { join, resolve, relative, dirname, basename, sep } from 'node:path';
 import { discoverTests } from './project.js';
-import { readRunFlags } from './run-flags.js';
+import { inShard, parseShard, readRunFlags, tagsKeep } from './run-flags.js';
+import { parseHeader, reportToOtlp } from './otlp.js';
 import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH, PLAY_SCRATCH } from './ui-server.js';
 import { buildStamp, getVersion, type BuildStamp } from './buildStamp.js';
 import { recordedLine } from './record.js';
@@ -363,6 +364,8 @@ async function main(argv: string[]): Promise<number> {
       return migrateCommand(rest);
     case 'fmt':
       return fmtCommand(rest);
+    case 'export':
+      return exportCommand(rest);
     case 'ui':
       return uiCommand(rest);
     case '--version':
@@ -377,7 +380,7 @@ async function main(argv: string[]): Promise<number> {
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
       err(
-        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw spec\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, \`tflw migrate\`, \`tflw fmt\`, or \`tflw ui\`.`,
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw spec\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, \`tflw migrate\`, \`tflw fmt\`, \`tflw export otlp\`, or \`tflw ui\`.`,
       );
       return EXIT_USAGE;
   }
@@ -968,6 +971,8 @@ interface RunArgs {
    * read from `report/.last-run.json`. Composes with `--tag`/`--only` as AND, same as they
    * already compose with each other. */
   readonly failed: boolean;
+  /** `--shard i/n` as typed (`M242` `E`, `D1330`); parsed where it is applied. */
+  readonly shardRaw?: string;
   /** `--bail` (PLAN decision 111, M17) — stop the run after the first failing test's final
    * (post-retry) verdict. Under `--workers > 1`, stops the pool from pulling new files; files
    * already in flight finish normally. */
@@ -1103,6 +1108,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     evidenceRaw: str('evidenceRaw'),
     teardownRaw: str('teardownRaw'),
     failed: bool('failed'),
+    shardRaw: str('shardRaw'),
     bail: bool('bail'),
     formatRaw: str('formatRaw'),
     noTimestamps: bool('noTimestamps'),
@@ -1733,7 +1739,21 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // green CI (P#46). `--tag` itself is OR across its comma-separated list (decision 97: a test
   // runs if it carries *any* listed tag); that OR-list then combines with `--only`/`--failed` as
   // AND, same as `--tag`/`--only` already combined before this.
-  const runnable = parsedFiles
+  // `D1330` — the shard is taken first, over the sorted discovered list, so `--tag`/`--only`/
+  // `--failed` narrow within it and the shards of one `n` stay disjoint whatever the filters are.
+  // Every shard has already validated the whole suite above, so no shard passes a file another
+  // shard would refuse.
+  let sharded = parsedFiles;
+  if (args.shardRaw !== undefined) {
+    const shard = parseShard(args.shardRaw);
+    if (typeof shard === 'string') {
+      err(shard);
+      return EXIT_USAGE;
+    }
+    sharded = parsedFiles.filter((_, i) => inShard(i, shard));
+    if (!ndjsonActive) out.write(withTimestamps(`shard ${shard.index}/${shard.count}: ${sharded.length} of ${parsedFiles.length} file${parsedFiles.length === 1 ? '' : 's'}`, !args.noTimestamps) + '\n');
+  }
+  const runnable = sharded
     .map(({ file, source, program: fileProgram }) => {
       const relFile = relative(cwd, file);
       // M137c — the same three filters over `crawls`, and they have to be the same three. A crawl is a
@@ -1743,7 +1763,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
       // reaches a crawl, because its tags sit above the header the way a test's do. `--skip-workload`
       // is the one that does not apply: a crawl has no workload clause to skip.
       const keep = <T extends { readonly tags: readonly string[]; readonly name: { readonly value: string } }>(d: T): boolean =>
-        (!args.tags || args.tags.some((tag) => d.tags.includes(tag))) &&
+        tagsKeep(args.tags, d.tags) &&
         (!args.only || d.name.value === args.only) &&
         (!failedSet || failedSet.has(`${relFile}::${d.name.value}`));
       // Destructured out of the spread rather than overwritten in it: `crawls` is absent-when-empty
@@ -2152,7 +2172,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const narrowedBy = [
     ...(args.files.length > 0 ? ['files named on the command line'] : []),
     // Wrapped, not spread: `describeRunFilter` returns a string, and spreading one yields its characters.
-    ...[describeRunFilter({ tags: args.tags, only: args.only, failed: args.failed })].filter((d) => d !== undefined),
+    ...[describeRunFilter({ tags: args.tags, only: args.only, failed: args.failed, shard: args.shardRaw })].filter((d) => d !== undefined),
     ...(args.skipWorkload ? ['--skip-workload'] : []),
   ].join(', ');
   const merged: RunReport = {
@@ -2228,7 +2248,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // it is replaying. Still unconditional and still always overwritten: not writing on a filtered
   // run was rejected for introducing a second silence (run `--tag smoke`, then `--failed`, and
   // replay something unrelated to what you just watched fail).
-  await writeLastRun(merged, reportDir, describeRunFilter({ tags: args.tags, only: args.only, failed: args.failed }));
+  await writeLastRun(merged, reportDir, describeRunFilter({ tags: args.tags, only: args.only, failed: args.failed, shard: args.shardRaw }));
   // M63 (V2-02): the persisted event log gets the same final redaction pass as every other
   // artifact. It is written after the whole run, so — unlike the live stdout stream, which is gone
   // by the time a late `env()` reveals a secret — the redactor here is fully populated. Skipping
@@ -2525,6 +2545,64 @@ interface CheckArgs {
  * and counts as a failure — a formatter that silently skips a broken file is a check that says
  * "clean" about a file it never read.
  */
+/**
+ * `tflw export otlp [report-dir] --endpoint <url> [--header name=value]…` — `M242` `F` (`D1331`).
+ * Reads the run's `results.json` and POSTs it as one trace; see `otlp.ts` for the shape and for why
+ * the times are reconstructed. Exits 0 when the collector answers 2xx, 1 when it answers anything
+ * else (naming the status), and 2 for a usage problem.
+ */
+async function exportCommand(argv: string[]): Promise<number> {
+  const [format, ...rest] = argv;
+  if (format !== 'otlp') {
+    err(`\`tflw export\` takes one format today, \`otlp\` — e.g. \`tflw export otlp report --endpoint http://localhost:4318/v1/traces\``);
+    return EXIT_USAGE;
+  }
+  let dir = 'report';
+  let endpoint: string | undefined;
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === '--endpoint') endpoint = rest[++i];
+    else if (a.startsWith('--endpoint=')) endpoint = a.slice('--endpoint='.length);
+    else if (a === '--header' || a.startsWith('--header=')) {
+      const raw = a === '--header' ? (rest[++i] ?? '') : a.slice('--header='.length);
+      const h = parseHeader(raw);
+      if (typeof h === 'string') {
+        err(h);
+        return EXIT_USAGE;
+      }
+      headers[h[0].toLowerCase()] = h[1];
+    } else if (a.startsWith('--')) unknownFlag('export', a);
+    else dir = a;
+  }
+  if (endpoint === undefined || endpoint === '') {
+    err('`tflw export otlp` needs `--endpoint <url>` — the collector\'s OTLP/HTTP traces address, e.g. http://localhost:4318/v1/traces');
+    return EXIT_USAGE;
+  }
+  let report: RunReport;
+  try {
+    report = JSON.parse(await readFile(join(resolve(process.cwd(), dir), 'results.json'), 'utf8')) as RunReport;
+  } catch (e) {
+    err(`no run to export: could not read ${join(dir, 'results.json')} (${(e as Error).message}) — run \`tflw run\` first, or name the report directory`);
+    return EXIT_USAGE;
+  }
+  const doc = reportToOtlp(report, await getVersion());
+  const spans = doc.resourceSpans[0]!.scopeSpans[0]!.spans.length;
+  let res: Response;
+  try {
+    res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(doc) });
+  } catch (e) {
+    err(`the collector at ${endpoint} could not be reached: ${(e as Error).message}`);
+    return EXIT_FAIL;
+  }
+  if (!res.ok) {
+    err(`the collector at ${endpoint} answered ${res.status} ${res.statusText} — nothing was recorded`);
+    return EXIT_FAIL;
+  }
+  process.stdout.write(`exported ${spans} span${spans === 1 ? '' : 's'} (one trace) to ${endpoint}\n`);
+  return EXIT_OK;
+}
+
 async function fmtCommand(argv: string[]): Promise<number> {
   const paths: string[] = [];
   let check = false;
@@ -3447,7 +3525,9 @@ function mergeReports(
   scan?: { readonly findings: readonly ScanFinding[]; readonly coverage: readonly ScanRuleCensus[] },
 ): RunReport {
   const tests: ReportEntry[] = reports.flatMap((r) => r.tests);
-  const passed = tests.filter((t) => t.ok).length;
+  // `D1327` — the same three-way split `runProgram` makes, over the merged list.
+  const skipped = tests.filter((t) => t.kind === 'functional' && t.skipped !== undefined).length;
+  const passed = tests.filter((t) => t.ok).length - skipped;
   const diagnoses = reports.map((r) => r.selfDiagnosis).filter((d): d is SelfDiagnosis => d !== undefined);
   const abortedReport = reports.find((r) => r.aborted);
   // `A12-01`: union, not first-wins. The CLI shares one `Redactor` across every file, so in practice
@@ -3465,7 +3545,8 @@ function mergeReports(
     durationMs: reports.reduce((sum, r) => sum + r.durationMs, 0),
     total: tests.length,
     passed,
-    failed: tests.length - passed,
+    failed: tests.filter((t) => !t.ok).length,
+    ...(skipped > 0 ? { skipped } : {}),
     tests,
     seed,
     now,
@@ -3582,6 +3663,8 @@ function formatEvent(ev: RunEvent, color: boolean, verbose: boolean, githubActio
     // progress line. The stream itself is unaffected: `--format ndjson` serializes `RunEvent`s
     // directly and never reaches `formatEvent`, and that consumer is the whole of the finding.
     if (ev.result.kind === 'workload') return undefined;
+    // `D1327`: a skip says so, and why, on its own line — never a green tick for a test that ran nothing.
+    if (ev.result.kind === 'functional' && ev.result.skipped !== undefined) return `  ${color ? '\x1b[2m' : ''}- ${ev.result.name} (skipped: ${ev.result.skipped})${color ? '\x1b[0m' : ''}`;
     const durSuffix = verbose ? ` (${formatDurationMs(ev.result.durationMs)}ms)` : '';
     const closeGroup = grouping ? '\n::endgroup::' : '';
     if (!ev.result.ok) {
@@ -4073,7 +4156,7 @@ function printUsage(): void {
       '',
       'usage:',
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
-      '            [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots] [--no-helpers]',
+      '            [--failed] [--shard <i>/<n>] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots] [--no-helpers]',
       '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
       '            [--teardown always|on-success|never]',
       '            [--log-output console|html|both|none]',
@@ -4086,7 +4169,8 @@ function printUsage(): void {
       '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
       '                                                      --verbose prints one line per step, not just per test',
       '                                                      --only runs a single test by its exact declared name',
-      '                                                      --tag a,b runs a test carrying any of the listed tags (OR)',
+      '                                                      --tag a,b runs a test carrying any of the listed tags (OR); --tag !x leaves out every test tagged x',
+      '                                                      --shard i/n runs every nth file of the sorted suite from the ith, so n jobs run it all once',
       '                                                      --failed re-runs only the previous run\'s failing tests',
       '                                                      --bail stops after the first failing test',
       '                                                      --format ndjson streams the event log as JSON lines',
@@ -4160,6 +4244,10 @@ function printUsage(): void {
       '                                                      a directory is walked, no path means the current directory. --check writes',
       '                                                      nothing, lists the files that would change and exits 1. A file that does not',
       '                                                      lex is reported and left alone',
+      '  tflw export otlp [report-dir] --endpoint <url> [--header <name=value>]',
+      '                                                      send a finished run to an OpenTelemetry collector as one trace (run →',
+      '                                                      file → test → step) over OTLP/HTTP JSON; report-dir defaults to report/.',
+      '                                                      Times are laid end to end from the run\'s start and every span says so',
       '  tflw ui [dir] [--port <n>] [--no-open]             serve the page for a project on 127.0.0.1: the files and their',
       '                                                      tests, a run started from the page as `tflw run --format ndjson` with',
       '                                                      its stream relayed live, and every report directory the project holds.',
@@ -4189,3 +4277,4 @@ main(process.argv.slice(2))
     await shutdownMtlsWorker();
     process.exit(EXIT_USAGE);
   });
+

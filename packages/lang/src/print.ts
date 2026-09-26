@@ -136,6 +136,7 @@ export const PRINTABLE = new Set<string>([
   'FileBody',
   'FormBody',
   'TextBody',
+  'GraphqlBody',
   'UploadBody',
   'WaitUntilApiStmt',
   'InlineDataTable',
@@ -237,6 +238,8 @@ export const PRINTABLE = new Set<string>([
   'DateOffsetLit',
   'FormatExpr',
   'TransformExpr',
+  'LengthExpr',
+  'JoinExpr',
   'CallExpr',
   'UniquePrefixExpr',
   'UniqueEmailExpr',
@@ -446,6 +449,7 @@ function printNode(node: Node, level: number): string {
     case 'FileBody':
     case 'FormBody':
     case 'TextBody':
+    case 'GraphqlBody':
     case 'UploadBody':
       return pad(level) + printBody(node as ApiBody);
     case 'InlineDataTable':
@@ -503,6 +507,8 @@ function printNode(node: Node, level: number): string {
     case 'DateOffsetLit':
     case 'FormatExpr':
     case 'TransformExpr':
+    case 'LengthExpr':
+    case 'JoinExpr':
     case 'CallExpr':
     case 'UniquePrefixExpr':
     case 'UniqueEmailExpr':
@@ -708,6 +714,7 @@ function printTest(t: TestDecl, level: number): string {
   let header = pad(level) + 'test ' + printString(t.name);
   if (t.sessions.length > 0) header += ' as ' + t.sessions.join(', ');
   if (t.retry > 0) header += ' retry ' + String(t.retry);
+  if (t.skip) header += ' skip ' + printString(t.skip);
   if (t.concurrency === 'parallel') header += ' parallel';
   // `with each` sits between the tags and the header — outside the declaration it belongs to,
   // which is why it is emitted here and not from the body loop (`A1-2`).
@@ -951,6 +958,12 @@ function printBody(b: ApiBody): string {
       return 'body from ' + printString(b.path);
     case 'TextBody':
       return 'body text ' + printString(b.value);
+    case 'GraphqlBody': {
+      let out = 'body graphql ' + printString(b.query);
+      if (b.variables) out += ' variables ' + printValue(b.variables);
+      if (b.operation) out += ' operation ' + printString(b.operation);
+      return out;
+    }
     case 'FormBody':
       return 'form ' + printFormFields(b.fields);
     case 'UploadBody': {
@@ -1176,6 +1189,14 @@ function printMatcher(m: Matcher): string {
       return `is ${not}greater than ${operand(m)}`;
     case 'hasCount':
       return `${not}has count ${operand(m)}`;
+    case 'hasCountAtLeast':
+      return `${not}has count at least ${operand(m)}`;
+    case 'hasCountAtMost':
+      return `${not}has count at most ${operand(m)}`;
+    // `is` is written, as for the state words below: `is not empty` is the spelling a reader
+    // reaches for, and the copula is not in the tree to preserve (`FS-08`).
+    case 'isEmpty':
+      return `is ${not}empty`;
     case 'hasValue':
       return `${not}has value ${operand(m)}`;
     // `A3-3` — the five state words, printed by one branch because the parser holds them in one
@@ -1235,7 +1256,8 @@ function printMatcher(m: Matcher): string {
 function printCapture(c: CaptureStmt): string {
   if (c.subject.type === 'ValueSubject') refuse('CaptureStmt', '`capture` reads a value out of a response, so its subject cannot be a `{variable}` (`D130`)');
   if (!isBareIdent(c.name)) refuse('CaptureStmt', `\`${c.name}\` is not a variable name this language can write`);
-  return `capture ${printSubject(c.subject)} as ${c.name}`;
+  const matching = c.pattern === undefined ? '' : ` matching ${printString(c.pattern)}`;
+  return `capture ${printSubject(c.subject)}${matching} as ${c.name}`;
 }
 
 /**
@@ -1339,6 +1361,10 @@ function printValue(v: Value, need = 1): string {
       return `format ${printValue(v.value)} as ${printString(v.pattern)}`;
     case 'TransformExpr':
       return `${v.kind} ${v.direction}(${printValue(v.value)})`;
+    case 'LengthExpr':
+      return `length of ${printValue(v.value)}`;
+    case 'JoinExpr':
+      return `${printValue(v.list)} joined with ${printValue(v.separator)}`;
     case 'CallExpr':
       return printCall(v);
     default:

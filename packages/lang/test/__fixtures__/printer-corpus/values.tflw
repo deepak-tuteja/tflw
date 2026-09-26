@@ -77,3 +77,13 @@ test "an environment read, and a call that spends two of them"
   signIn(env(USER_A_EMAIL), env(USER_A_PW))
   let who = env(USER_A_EMAIL)
   log "signed in as {who}"
+
+# `M242` `D` (`D1329`): the two string forms, each a value — `length of` binds tighter than `+` and
+# `joined with` looser than everything.
+@printer
+test "a list's length, and the list as one string"
+  api GET /v1/orders
+  capture body.items as items
+  let count = length of {items} + 1
+  let listed = {items} joined with ", "
+  log "{count} {listed}"

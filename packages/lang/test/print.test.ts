@@ -343,7 +343,8 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // one move together: they are two readings of the same widening.
   // `M240` `A` — the page fixture's two landing files, `aaa-shared.tflw` and `hook-first.tflw`:
   // 26 -> 28 files and 560 -> 577 nodes.
-  const EXPECTED_NODES = 577;
+  // `M242` (`D1328`, `D1329`): a GraphQL body with its variables, and the two string forms. 577 -> 587.
+  const EXPECTED_NODES = 587;
   const EXPECTED_FILES = 28;
   assert.equal(filesRead, EXPECTED_FILES, `the corpus read ${filesRead} files, expected ${EXPECTED_FILES} — a fixture was added or lost`);
   assert.equal(total, EXPECTED_NODES, `the corpus round-tripped ${total} nodes, expected ${EXPECTED_NODES} — move the number in the change that moved the corpus`);
@@ -1630,6 +1631,11 @@ const ASSERTION_SPELLINGS: readonly string[] = [
   'expect request fails',
   'expect request fails matching "certificate"',
   'expect body.items has count 3',
+  // `D1326` (`M242` `A`)
+  'expect body.items has count at least 1',
+  'expect body.items has count at most 50',
+  'expect body.errors is empty',
+  'expect body.items is not empty',
   'expect body has value "x"',
   'expect body matches subset { id: 1 }',
   'expect body text matches "json"',
@@ -1645,6 +1651,7 @@ const ASSERTION_SPELLINGS: readonly string[] = [
   'capture body.accessToken as token',
   'capture header "X-Trace" as trace',
   'capture status as code',
+  'capture header "location" matching "/orders/(\\\\d+)" as id',
   'login("a", "b")',
   'create order(env(K))',
   'log "first item is {firstId}"',

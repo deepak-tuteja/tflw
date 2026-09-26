@@ -97,6 +97,18 @@ function rawMatch(actual: unknown, matcher: Matcher, ctx: EvalCtx): RawMatch {
       const len = count(actual);
       return { ok: len === expected, phrase: 'to have count', expected: String(expected) };
     }
+    // `D1326` — the bounds a count takes, read by the same `count()` so `body bytes` and a string
+    // are bounded exactly as they are counted.
+    case 'hasCountAtLeast': {
+      const expected = num(evalValue(matcher.value!, ctx), 'has count at least');
+      return { ok: count(actual) >= expected, phrase: 'to have count at least', expected: String(expected) };
+    }
+    case 'hasCountAtMost': {
+      const expected = num(evalValue(matcher.value!, ctx), 'has count at most');
+      return { ok: count(actual) <= expected, phrase: 'to have count at most', expected: String(expected) };
+    }
+    case 'isEmpty':
+      return { ok: isEmpty(actual), phrase: 'to be empty', expected: '' };
     case 'connects':
     case 'fails':
       throw new RuntimeError(`matcher \`${matcher.name}\` is only valid on a \`request\` subject (\`expect request ${matcher.name}\`, https://deepak-tuteja.github.io/tflw/guide/assertions)`);
@@ -243,6 +255,16 @@ function count(actual: unknown): number {
   // `ResponseTrace.bodyBytes` directly, no `Buffer`-specific branch needed.
   if (actual instanceof Uint8Array) return actual.length;
   throw new RuntimeError(`\`has count\` expects an array (or string, or \`body bytes\`) subject, got ${describe(actual)}`);
+}
+
+/** `D1326`: `""`, `[]` and `{}` are empty, and nothing else is a question this matcher answers.
+ *  `null` is refused rather than called empty, because "the field is absent" and "the list has no
+ *  items" are different facts and a matcher that conflated them would pass on both. */
+function isEmpty(actual: unknown): boolean {
+  if (typeof actual === 'string' || Array.isArray(actual)) return actual.length === 0;
+  if (actual instanceof Uint8Array) return actual.length === 0;
+  if (actual !== null && typeof actual === 'object' && Object.getPrototypeOf(actual) === Object.prototype) return Object.keys(actual).length === 0;
+  throw new RuntimeError(`\`is empty\` expects a string, list or object subject, got ${describe(actual)}${actual === null ? ' — `equals null` asks whether it is null' : ''}`);
 }
 
 function num(value: unknown, matcher: string): number {

@@ -293,9 +293,12 @@ function renderWarnings(warnings: TestResult['warnings']): string {
 
 function renderFunctionalTest(slot: TestSlot, test: TestResult, active: boolean, assetHrefs: ReadonlyMap<string, string>, logLevelThreshold: LogLevel): string {
   const priorAttempts = test.attempts ? test.attempts.slice(0, -1) : [];
-  return `<section class="test ${test.ok ? 'ok' : 'fail'}${active ? ' active' : ''}" id="${slot.id}" data-file="${esc(slot.file)}">
-  <h2><span class="dot ${test.ok ? 'ok' : 'fail'}"></span>${esc(test.name)}${test.flaky ? ' <span class="flaky">flaky</span>' : ''}${parallelBadge(test.concurrency)} <span class="tms">${test.durationMs} ms</span></h2>
-  ${test.error ? `<p class="error">${esc(test.error)}</p>` : ''}
+  // `D1327`: a skipped test is its own outcome — a grey dot, a `skipped` badge, and the reason where
+  // an error would be — never a green one that ran nothing.
+  const outcome = test.skipped !== undefined ? 'skip' : test.ok ? 'ok' : 'fail';
+  return `<section class="test ${outcome}${active ? ' active' : ''}" id="${slot.id}" data-file="${esc(slot.file)}">
+  <h2><span class="dot ${outcome}"></span>${esc(test.name)}${test.skipped !== undefined ? ' <span class="skipped">skipped</span>' : ''}${test.flaky ? ' <span class="flaky">flaky</span>' : ''}${parallelBadge(test.concurrency)} <span class="tms">${test.durationMs} ms</span></h2>
+  ${test.error ? `<p class="error">${esc(test.error)}</p>` : test.skipped !== undefined ? `<p class="skip-reason">skipped: ${esc(test.skipped)}</p>` : ''}
   ${renderWarnings(test.warnings)}
   ${priorAttempts.map((a) => renderAttempt(a, assetHrefs, logLevelThreshold)).join('\n')}
   ${test.attempts ? `<p class="attempt-final-label"><span class="attempt-badge ${test.ok ? 'ok' : 'fail'}">attempt ${test.attempts.length} of ${test.attempts.length} — ${test.ok ? 'passed' : 'failed'}</span></p>` : ''}
@@ -546,8 +549,10 @@ main{flex:1;min-width:0;padding:16px 24px;max-width:1000px}
 .test{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line);border-radius:8px;margin:0 0 16px;padding:12px 16px}
 .test.ok{border-left-color:var(--ok)}.test.fail{border-left-color:var(--fail)}
 h2{font-size:15px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
-.dot{width:9px;height:9px;border-radius:50%;display:inline-block}.dot.ok{background:var(--ok)}.dot.fail{background:var(--fail)}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}.dot.ok{background:var(--ok)}.dot.fail{background:var(--fail)}.dot.skip{background:var(--mut)}
 .flaky{color:var(--warn);border:1px solid var(--warn);border-radius:10px;padding:0 8px;font-size:11px;font-weight:700;text-transform:uppercase}
+.skipped{color:var(--mut);border:1px solid var(--mut);border-radius:10px;padding:0 8px;font-size:11px;font-weight:700;text-transform:uppercase}
+.skip-reason{color:var(--mut)}
 .parallel{color:var(--info);border:1px solid var(--info);border-radius:10px;padding:0 8px;font-size:11px;font-weight:700;text-transform:uppercase}
 .generator-line{margin:0 0 8px;color:var(--mut);font-size:12px}
 .generator-line.saturated{color:var(--warn);font-weight:700}

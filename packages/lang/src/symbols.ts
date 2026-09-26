@@ -469,6 +469,11 @@ function walkApiBody(body: ApiBody, bound: Map<string, Span>, scopeId: string, s
     case 'TextBody':
       walkStringLit(source, body.value, bound, scopeId, refs);
       break;
+    case 'GraphqlBody':
+      walkStringLit(source, body.query, bound, scopeId, refs);
+      if (body.variables) walkValue(body.variables, bound, scopeId, source, actionDefs, refs);
+      if (body.operation) walkStringLit(source, body.operation, bound, scopeId, refs);
+      break;
     case 'UploadBody':
       walkStringLit(source, body.filePath, bound, scopeId, refs);
       walkStringLit(source, body.fieldName, bound, scopeId, refs);
@@ -528,7 +533,12 @@ function walkValue(value: Value, bound: Map<string, Span>, scopeId: string, sour
       if (value.length) walkValue(value.length, bound, scopeId, source, actionDefs, refs);
       break;
     case 'TransformExpr':
+    case 'LengthExpr':
       walkValue(value.value, bound, scopeId, source, actionDefs, refs);
+      break;
+    case 'JoinExpr':
+      walkValue(value.list, bound, scopeId, source, actionDefs, refs);
+      walkValue(value.separator, bound, scopeId, source, actionDefs, refs);
       break;
     case 'CallExpr': {
       const nameEndTok = findTokenSpan(source, value.span, 'lparen');

@@ -259,6 +259,22 @@ export function evalValue(value: Value, ctx: EvalCtx): unknown {
       const input = stringify(evalValue(value.value, ctx));
       return applyTransform(value.kind, value.direction, input);
     }
+    // `D1329`. `length of` reads what `.length` reads and nothing more, so the two spellings can
+    // never disagree; `joined with` takes a list of scalars and says what it got otherwise.
+    case 'LengthExpr': {
+      const v = evalValue(value.value, ctx);
+      if (typeof v === 'string' || Array.isArray(v)) return v.length;
+      throw new RuntimeError(`\`length of\` expects a string or a list, got ${describe(v)}`);
+    }
+    case 'JoinExpr': {
+      const list = evalValue(value.list, ctx);
+      const separator = evalValue(value.separator, ctx);
+      if (!Array.isArray(list)) throw new RuntimeError(`\`joined with\` expects a list on its left, got ${describe(list)}`);
+      if (typeof separator !== 'string') throw new RuntimeError(`\`joined with\` expects a string separator, got ${describe(separator)}`);
+      const bad = list.find((el) => el !== null && typeof el === 'object');
+      if (bad !== undefined) throw new RuntimeError(`\`joined with\` joins strings and numbers, and the list holds ${describe(bad)}`);
+      return list.map((el) => stringify(el)).join(separator);
+    }
   }
 }
 

@@ -43,6 +43,7 @@ export const RUN_FLAGS: readonly RunFlag[] = [
   { flag: '--evidence', key: 'evidenceRaw', shape: 'value', subject: 'always', label: 'evidence', hint: 'what a run keeps for each request — `failed`, `all` or `none`' },
   { flag: '--teardown', key: 'teardownRaw', shape: 'value', subject: 'cli' },
   { flag: '--failed', key: 'failed', shape: 'bool', subject: 'cli' },
+  { flag: '--shard', key: 'shardRaw', shape: 'value', subject: 'cli' },
   { flag: '--bail', key: 'bail', shape: 'bool', subject: 'always', label: 'bail', hint: 'stop at the first failure' },
   { flag: '--format', key: 'formatRaw', shape: 'value', subject: 'cli' },
   { flag: '--no-timestamps', key: 'noTimestamps', shape: 'bool', subject: 'cli' },
@@ -97,4 +98,41 @@ export function readRunFlags(
     else values[row.key] = v;
   }
   return { files, values };
+}
+
+/**
+ * `--tag` as a selection (`M242` `B`, `D1327`). A plain tag includes and the includes are an OR —
+ * `--tag smoke,api` runs what carries either, as it always has. A `!`-prefixed tag excludes and the
+ * exclusions are an AND — `--tag !slow,!flaky` runs what carries neither — so a skip that is really
+ * "not in this job" is written on the command line and never as a `skip` in the file. Only
+ * exclusions means "everything, less these".
+ */
+export function tagsKeep(selected: readonly string[] | undefined, carried: readonly string[]): boolean {
+  if (!selected) return true;
+  const include = selected.filter((t) => !t.startsWith('!'));
+  const exclude = selected.filter((t) => t.startsWith('!')).map((t) => t.slice(1));
+  if (exclude.some((t) => carried.includes(t))) return false;
+  return include.length === 0 || include.some((t) => carried.includes(t));
+}
+
+/**
+ * `--shard i/n` (`M242` `E`, `D1330`): this run takes every `n`th file of the sorted discovered
+ * list, starting at the `i`th — file `k` (from 0) runs in shard `k mod n + 1`. Round-robin rather
+ * than contiguous blocks, so a directory of slow files is spread across shards instead of landing
+ * in one. The shards of one `n` are disjoint and together are the whole list, which is the one
+ * property a CI matrix needs. Returns the refusal as a sentence when the value is not that shape.
+ */
+export function parseShard(raw: string): { readonly index: number; readonly count: number } | string {
+  const m = /^(\d+)\/(\d+)$/.exec(raw.trim());
+  if (!m) return `--shard takes \`i/n\` — e.g. \`--shard 2/4\` for the second of four — and was given \`${raw}\``;
+  const index = Number(m[1]);
+  const count = Number(m[2]);
+  if (count < 1) return `--shard ${raw}: there is no zeroth way to split a suite — n is at least 1`;
+  if (index < 1 || index > count) return `--shard ${raw}: i counts from 1 to n, so a shard of ${count} is 1/${count} to ${count}/${count}`;
+  return { index, count };
+}
+
+/** Whether the file at `position` in the sorted list belongs to this shard. */
+export function inShard(position: number, shard: { readonly index: number; readonly count: number }): boolean {
+  return position % shard.count === shard.index - 1;
 }

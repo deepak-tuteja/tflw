@@ -994,7 +994,11 @@ test "an admin acting on a shopper's behalf" as admin, userA
 ```
 
 - `@tags` filter via `tflw run --tag smoke` (P#10), or `tflw run --tag smoke,critical` for
-  comma-separated OR across several tags — a test runs if it carries *any* listed tag (M2.21). No exclusion syntax (`--tag !x`).
+  comma-separated OR across several tags — a test runs if it carries *any* listed tag (M2.21). A
+  `!`-prefixed tag excludes (`M242`, `D1327`): `--tag !slow,!flaky` runs every test carrying neither,
+  and `--tag smoke,!slow` the smoke tests that are not slow — inclusions OR, exclusions AND, and an
+  exclusion beats an inclusion on the same test. "Not in this job" is a command-line choice; `skip`
+  (§4.4.1) is for a test the suite has stopped running.
 - `as <session>` opts into a cached session (§3.3); `as <session>, <session>...` opts into several
   independent, unrelated sessions at once — a comma-separated list, same shape as `require env A,
   B, C` (§3.4). Omitted → anonymous fresh state.
@@ -1098,6 +1102,18 @@ The CLI summary says how many attempts ran whenever more than one did: `✗ alwa
 It is suppressed on a `flaky` pass, where `(flaky)` already states the same fact more usefully — that
 a retry *saved* this test, rather than merely that retries happened (`FU-25`, M125d). A test that ran
 once carries no count at all.
+
+#### 4.4.1 `skip "reason"` (`M242`, `D1327`)
+
+`test "refunds settle" skip "the payments sandbox is down until the 3rd"` keeps the test in the file
+and runs none of it — no hooks, no steps, no row of its `with each` table, no virtual user of its
+workload. It is reported as its own outcome everywhere a result is written: a `-` line with the
+reason on the console, `N skipped` on the summary line (`3/5 passed, 2 skipped`), a grey row with a
+`skipped` badge and the reason in `report.html` and on the page's Run tab, a `<skipped message="…"/>`
+testcase in `junit.xml` with the suite's `skipped` count, and `"skipped": "<reason>"` on the test in
+`results.json` with a run-level `skipped` count (absent when there were none). It raises no SARIF
+finding, and a run whose only non-passes are skips passes. The reason is required: a blank one is
+`TF084`, for `TF082`'s reason — a skip nobody explained is a test nobody turns back on.
 
 ### 4.5 Load testing — workload-bearing tests (M29/M30, M50-M56, D16-D19/D24a/D26/D70/D93-D122)
 
@@ -1401,8 +1417,12 @@ interpolate the raw value, unencoded, since that's JSON/text content, not a URL.
 | Form-encoded | `form user={u}, pass=env(PW)` | `application/x-www-form-urlencoded` |
 | Multipart upload | `upload "./files/img.png" as "avatar"` | Content-Type inferred from the file extension by default (small curated table — images/documents/archives/web text; unrecognized extensions fall back to `application/octet-stream`); optional `type "…"` overrides the inference; may combine with `form` fields (M19) |
 | Raw text | `body text "plain payload"` | sets no JSON content-type |
+| GraphQL | `body graphql "query O($id: ID!) { order(id: $id) { id } }" variables { id: {orderId} } operation "O"` | GraphQL-over-HTTP's POST shape: `{"query", "variables", "operationName"}` as `application/json`, the two optional fields absent when not written; `TF085` on a `GET` (`M242`, `D1328`) |
 
-Out of v1: binary bodies, GraphQL blocks, XML helpers (P#32).
+Out of v1, each for its own reason (`M242` §8 of the enterprise arc): binary request bodies, which
+need a byte literal the language does not have; XML, which needs a parser and its own subjects;
+WebSocket, SSE and gRPC, which are transports rather than bodies. Each is written today as a `use`
+helper (§11) and reopens on a named ask.
 
 **`upload`'s Content-Type** (M19): `upload "./files/img.png" as "avatar" type "image/png"`
 places the optional `type "…"` clause after `as "field"` and before any `form k=v, …` fields. Left
@@ -1506,9 +1526,13 @@ itself, not the response).
 api POST /orders body { … }
 capture body.id as orderId
 capture header "location" as orderUrl
+capture header "location" matching "/orders/(\\d+)" as orderId
 ```
 
-Binds response values to variables usable in later API **and** browser steps.
+Binds response values to variables usable in later API **and** browser steps. `matching
+"<regex>"` (`M242`, `D1329`) narrows what is bound to the pattern's first group, or to the whole
+match when the pattern has no group; a pattern that finds nothing fails the step, for the reason
+the next paragraph gives.
 
 **A `capture` that finds nothing fails the step** (`A4-06`). An absent header, an absent object key,
 an out-of-range index — anything that resolves to no value at all — is an error at the `capture`
@@ -1692,6 +1716,9 @@ them callable.
 | `matches file "<path>"` | `body bytes` | `expect body bytes matches file "expected-receipt.pdf"` |
 | `is greater than` / `is less than` | numbers, `duration` | `expect body.total is less than 100` |
 | `has count <value>` | arrays, UI lists, `body bytes` | `expect body.items has count 3` |
+| `has count at least <value>` | arrays, UI lists, `body bytes` | `expect body.items has count at least 1` |
+| `has count at most <value>` | arrays, UI lists, `body bytes` | `expect body.items has count at most 50` |
+| `is empty` / `is not empty` | strings, arrays, objects | `expect body.errors is empty` |
 | `has value` | UI fields | `expect field "Email" has value "a@b.c"` |
 | `is visible/hidden/enabled/disabled/checked` | UI locators | `expect button "Pay" is enabled` |
 | `connects` | `request` | `expect request connects` |
@@ -1726,15 +1753,14 @@ produced a green test asserting the exact opposite of what was written. Edit dis
 meaning; the negation prefix is detected outright instead. If a `not` was already typed, the advice
 inverts accordingly: `is not invisible` is told to write `visible`, not to add a second `not`.
 
-**There is no `empty` matcher, and `has count` is equality only** (`FU-09`). "This collection is
-not empty" has two spellings, both of which work in both directions: `expect body.items not has
-count 0`, or the comparison moved onto the length — `expect body.items.length is greater than 0`,
-which takes `greater than`/`less than`/`equals` alike. The three spellings a user reaches for
-first (`is not empty`, `has at least 1`, `has count greater than 0`) are all errors, and the third
-used to be the worst kind: it fell out of the matcher grammar into call-parsing and answered with
-advice about **parens**, for a mistake that has nothing to do with calls. All three now name a
-working form. This was filed as a capability gap and re-probed as a discoverability one — the
-language could always express it, nothing pointed the way.
+**Emptiness and bounds on a count** (`FU-09`, re-founded by `M242`, `D1326`). `is empty` holds
+for `""`, `[]` and `{}`, and `is not empty` for anything else of those three types; any other
+subject fails naming its type, and `null` is refused rather than called empty, because a missing
+field and an empty list are different facts (`equals null` asks the first). `has count at least N`
+and `has count at most N` bound a count the way `has count N` pins it, on the same subjects: arrays,
+strings, `body bytes` and UI locators. What is still not the language is answered with a pointer to
+what is: `has count greater than 0` (a count takes `at least`/`at most`, not `than`) and `has at
+least 1` (the bound needs `count`).
 
 ### 6.2.1 Contract validation — `matches schema "Name" from "src"` (P#102a,
 enterprise arc cluster 3, closes TFLW-GAPS.md gap #6)
@@ -2136,6 +2162,8 @@ the same anchor (`today - 10 days` against `today`) are ordered without a clock,
 | random | `random password [N]` | default length 12, min 4; satisfies a validation policy, not fake-identity realism | `random password 16` |
 | transform | `base64 encode(...)` / `base64 decode(...)` | pure deterministic value transform, not a fresh-value generator (M18) | `base64 encode("{email}:{password}")` |
 | transform | `hex encode(...)` / `hex decode(...)` | pure deterministic value transform, not a fresh-value generator (M18) | `hex encode("{token}")` |
+| transform | `length of <value>` | the length of a string or a list — what `.length` reads; binds tighter than arithmetic (`M242`, `D1329`) | `let n = length of {items}` |
+| transform | `<list> joined with <separator>` | a list of strings and numbers as one string; binds loosest of all (`M242`, `D1329`) | `let csv = {ids} joined with ","` |
 | transform | `url encode(...)` / `url decode(...)` | pure deterministic value transform, not a fresh-value generator (M18) | `url encode("{query}")` |
 <!-- GENERATED:generators:end -->
 
@@ -2184,6 +2212,13 @@ Closed grammar, usable in `let`, fills, api bodies, table cells, expect values:
 
 - Arithmetic on numbers: `{price} * {qty}`, `+ - * /`.
 - Interpolation in strings: `"Order {orderId} for {name}"`.
+- Strings and lists (`M242`, `D1329`): `length of {x}` is the length of a string or a list — the same
+  number `{x}.length` reads — and binds tighter than arithmetic, so `length of {x} + 1` is the length
+  plus one. `{list} joined with ", "` joins a list of strings and numbers into one string and binds
+  loosest of all. Joining is the only operator on strings: `+` is arithmetic, and two strings are
+  put together by interpolation, `"{a}{b}"`. `capture <subject> matching "<regex>" as n` (§5.4)
+  captures the pattern's first group, or the whole match when it has none, and fails the step when
+  nothing matches.
 - Date math: `today`, `now`, `today + 3 days`, `now - 2 hours`;
   `format {d} as "yyyy-MM-dd"` (project default format in config).
 - **Hard fence:** no conditionals, no loops, no boolean operators.
@@ -4088,7 +4123,7 @@ Mobile/unit testing, DB assertions (P#3) — **not** performance or security/pen
 which are committed in-scope arcs per `PLAN_BROWSER_PERF_SECURITY.md` (decisions D1/D16–D22),
 gating `1.0.0` rather than parked; recorder, dashboards
 (P#6, v2 list); faker realism (P#22); `dataset` construct
-(P#24); binary/GraphQL/XML bodies (P#32); response downloads (P#33 — cookie subjects, P#33's other
+(P#24); binary/XML bodies (P#32; GraphQL shipped in `M242`, §5.2); response downloads (P#33 — cookie subjects, P#33's other
 half, shipped: §3.3's automatic cookie jar); `dependsOn` stays rejected (P#10); standalone binary,
 Docker image, official GitHub Action,
 docs site, separately published `@tflw/lang` (P#36–39); `tflw fmt` canonical formatter (P#83 —
@@ -4192,6 +4227,8 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF081` | Checker (config, `M165a`, D829-D832): **a single-valued config key declared twice in the same block.** `resolveConfig` applies a block's entries in order and most of them assign, so the second `timeout step` overwrites the first and the first line is read, discarded and never mentioned — `tflw check` reporting *no problems found* on a file that gives two answers to one question. **An error**, matching `TF024`, `TF029` and `TF072`: every duplicate-declaration rule here is an error, because the program states two things and the tool must not be the one that picks. **`header`, `allow hosts`, `authorized target` and `redact` are exempt** — those four accumulate by design, and the exemption is a list of names held to `resolve.ts` rather than a heuristic over the shape of its code, because `allow hosts` accumulates by spread-assignment and any shape heuristic reads it as an override. **Keyed at the resolver's granularity**: `timeouts[target]` and `services[service]` are maps, so `timeout step` does not collide with `timeout expect`, nor `api` with `api payments`. **Per block** — a key set in `defaults` and again in an `env` is the reason both blocks exist and is not reported — and **once per extra occurrence, at the occurrence**, which is `TF072`'s rule for `TF072`'s reason: the later line is the one to delete. | a `defaults` block setting `timeout step` twice → `` duplicate config key `timeout step` `` |
 | `TF082` | Checker (config, `M200`/`A2-4`, `M200-01`, D21/D291): **an `authorized target` whose `reason` says nothing.** `reason` has been required by the GRAMMAR since `M128b` and by nothing else, so `authorized target "…" reason ""` checked green and every scan behind it went green with it — putting an EMPTY CLAIM into the run summary and the report, which is strictly worse than an absent one: an absent declaration is refused by `TF060`, and an empty one is indistinguishable in the artifact from a considered affirmation. `D291` states the purpose in as many words — *a declaration with no reason would be a checkbox, and a checkbox is what `D21` exists instead of*. **Whitespace-only is blank too**, because `reason "   "` fails for exactly the reason `reason ""` does and a rule that accepted it would be pointing at the loophole. **Nothing else about the text is judged** — one character passes. A checker cannot grade a justification, and pretending to would be the same overreach pointed the other way. **An interpolated reason is accepted without inspection**, the treatment `TF071` gives an interpolated URL: what it resolves to is not knowable here. **Its own code rather than `TF061`'s** (D419): `TF061` says *this target does not name one origin* and its repair is to rewrite the URL; this says *this claim is blank* and its repair is to write a sentence. A declaration wrong in both halves reports both, address first. | an `authorized target` whose reason is the empty string → `has no reason` |
 | `TF083` | Checker (`M239` `D`, `D1319`): **a `use` that resolves outside the directories `helpers` allows.** A `use` is arbitrary code — SPEC §11 says so and the security guide repeats it — and until `M239` nothing in a project said WHERE that code may come from: a test three directories deep could `use "../../../anything.ts"` and the run would import it. `tflw.config`'s `helpers` directive names the directories, relative to its own; a config declaring none gets `./helpers` and `./tests/helpers`. The path is judged as text against the checked file's own location, exactly as the runtime resolves it, so `tests/api/a.tflw` writing `use "../../helpers/x.ts"` lands in `helpers/` and passes, and `use "../lib/x.ts"` from `tests/` lands in `lib/` and does not. **An error, not a warning**: this is the one declaration that decides what the run executes. `tflw run --no-helpers` reports every `use` under this code, naming the flag. **Deliberately not `TF043`**: that says the file is not there; this says it is somewhere the project did not allow, and the repairs differ — move the module, or widen `helpers`. | a `use` in `tests/a.tflw` naming `../lib/sign.ts`, in a project whose `tflw.config` declares no `helpers` → `outside the directories` |
+| `TF084` | Checker (`M242` `B`, `D1327`): **a `skip` whose reason says nothing.** A skipped test is one the suite has stopped running, and its reason is the only record of whether and when it comes back — so `skip ""` is `TF082`'s checkbox again: an artifact that says *skipped* with nothing behind it. **Whitespace-only is blank too; nothing else about the text is judged**, and an interpolated reason is accepted without inspection. **An error**, matching `TF082`. | a test header carrying `skip ""` → `gives no reason` |
+| `TF085` | Checker (`M242` `C`, `D1328`): **a `body graphql` on a `GET`.** This body kind is GraphQL-over-HTTP's POST shape — `{"query", "variables", "operationName"}` as JSON — and a `GET` carries its query in the URL instead, so on a `GET` the query is a body most servers ignore and the response answers nothing that was asked. **An error**: the request cannot do what it says. The repair is the method, `api POST …`. | an `api GET` whose body is `body graphql` → `` this request is a `GET` `` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —
