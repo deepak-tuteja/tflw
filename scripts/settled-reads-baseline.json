@@ -1,11 +1,11 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 928,
-    "atRisk": 844,
+    "reads": 929,
+    "atRisk": 845,
     "high": 332,
     "medium": 61,
-    "low": 451,
+    "low": 452,
     "declared": 58,
     "inPage": 107,
     "inRetry": 46
@@ -661,6 +661,11 @@
         "high": 1,
         "medium": 0,
         "low": 2
+      },
+      "`M241` `A` (`D1321`): Source is an editor — an edit is the draft Compose holds, undo takes it back, the checker underlines it, and ⌘S writes it": {
+        "high": 0,
+        "medium": 0,
+        "low": 1
       },
       "`M216` `B0`/`A2`: the project pane is the reader’s width — nudged, dragged, clamped at both ends, and remembered": {
         "high": 2,
