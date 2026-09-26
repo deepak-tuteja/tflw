@@ -12,12 +12,19 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// `M243-06`: Windows delivers no signal from one process to another — `child.kill('SIGINT')` there
+// terminates the child outright, so what a test proves by sending SIGINT (a flush, exit 130, a clean
+// browser close) cannot be observed. A user pressing Ctrl+C in a Windows console does reach Node as
+// SIGINT; the page's Cancel does not, which is the open half of `M243-06`. Skipped on Windows only.
+const SIGNALS_UNOBSERVABLE = process.platform === 'win32' ? 'M243-06: no inter-process signals on Windows' : false;
+
+
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
 const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'cli.cjs');
 
 before(() => {
-  execFileSync('npm', ['run', 'build'], { cwd: repoRoot, stdio: 'pipe' });
+  execFileSync('npm', ['run', 'build'], { cwd: repoRoot, stdio: 'pipe', shell: process.platform === 'win32' });  // `M243-02`: `npm` is `npm.cmd` on Windows, found only through a shell
 });
 
 const PAGE_HTML = `<!doctype html><html><body>
@@ -190,7 +197,7 @@ test('saving tflw.config re-runs the full suite, not just one file', async () =>
   });
 });
 
-test('Ctrl+C (SIGINT) stops cleanly, closing the shared browser (no chromium process survives)', async () => {
+test('Ctrl+C (SIGINT) stops cleanly, closing the shared browser (no chromium process survives)', { skip: SIGNALS_UNOBSERVABLE }, async () => {
   await withPageServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-watch-sigint-'));
     const watch = startWatch(dir);

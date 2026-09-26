@@ -161,6 +161,10 @@ const EXPECTED = {
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+// `M243-02`: `npm` is `npm.cmd` on Windows, and Node refuses to spawn a `.cmd` without a shell
+// (`EINVAL`, since its fix for CVE-2024-27980). The arguments are this file's own script names, so the
+// shell has nothing to interpret.
+const viaShell = process.platform === 'win32';
 
 // M123 (`M111-02`) — refuse to run against a tree `scripts/mutate.mjs` is deliberately holding
 // wrong.
@@ -214,7 +218,7 @@ if (langBuild !== null) {
 
 /** Run one npm script, forwarding its output here as it arrives, and return what it printed. */
 async function runScript(script) {
-  const child = spawn(npm, ['run', script], { cwd: repoRoot, env: process.env });
+  const child = spawn(npm, ['run', script], { cwd: repoRoot, env: process.env, shell: viaShell });
   let captured = '';
   for (const stream of ['stdout', 'stderr']) {
     child[stream].on('data', (chunk) => {

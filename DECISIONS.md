@@ -9622,6 +9622,17 @@ the report header.
   that keeps it true. (This line first named three other patterns; the sibling plan's list is the
   arc's and wins.)
 
+### D1333
+
+<sub>cited from README.md · lifted from `PLAN_M243_PLATFORM.md`</sub>
+
+- **`D1333` — Windows runs build, typecheck and the whole `npm test`, as its own job.** Not a leg of
+  the `test` matrix: every step below `npm test` there (coverage, the `verify:*` gates, the
+  screenshot manifest) reads the same sources on every OS, and running them twice buys minutes and
+  nothing else. `npm test` whole, headcount included, so a file that fails to load on Windows is a
+  red rather than a smaller number. No xvfb (a Windows runner has a desktop). Node 22 only — the
+  Node line is covered on Linux.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -13879,5 +13890,15 @@ The arc's language milestone (`PLAN_M239_ENTERPRISE_READINESS.md` §6, review de
 and 23). Scoped 2026-09-26 by measuring the tree first, as `M241` was; §1 is what the measurement
 changed. Decisions `D1326`–`D1332`, free by `collectAnchors` on the day (the corpus's highest was
 `M241`'s `D1325`).
+
+### M243
+
+<sub>cited from README.md · lifted from `PLAN_M243_PLATFORM.md`</sub>
+
+**`M243` — the platform: Windows, and the arc's close-out**
+
+The arc's last milestone (`PLAN_M239_ENTERPRISE_READINESS.md` §7, review decision 22 / row E2).
+Scoped 2026-09-26. Decisions from `D1333`, free by `collectAnchors` on the day (the corpus's highest
+was `M242`'s `D1332`).
 
 <!-- GENERATED:decisions:end -->

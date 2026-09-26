@@ -1,0 +1,6 @@
+# `M243` `A` (`D1333`, `M243-01`): every text file is LF on checkout, on every OS. Without this a
+# Windows checkout arrives CRLF (`core.autocrlf=true` on `windows-latest`), and every committed-vs-
+# generated comparison the build and the suite make — SPEC.md's generated regions first, then the
+# goldens, the screenshot manifest and DECISIONS.md — differs by a `\r` on every line. `text=auto`
+# leaves binaries (the screenshots, fonts) alone.
+* text=auto eol=lf
