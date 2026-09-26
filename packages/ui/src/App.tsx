@@ -996,6 +996,25 @@ export function App() {
   /** `D1143` — what the explorer marks. A set rather than the map, because the explorer needs to
    *  know *which* files are unsaved and has no business with their bytes. */
   const unsavedPaths = useMemo(() => new Set(drafts.keys()), [drafts]);
+  /**
+   * **A draft is not lost to a reload or a closed tab without a word** — `M240` `F` (`M239-07`).
+   *
+   * `D1142` keeps drafts in memory and accepts the loss on reload; what it did not do was tell
+   * anyone. Cmd-R or a closed tab dropped every unsaved row with no prompt, and the unsaved dot
+   * in the explorer was the only signal (review U9). One `beforeunload` listener while any draft
+   * is dirty, removed the moment there is none — so a clean page closes without a dialog, and a
+   * dirty one asks. `returnValue` is the legacy half of the same contract, kept for the browsers
+   * that still read it; the page's own text never reaches the dialog anyway.
+   */
+  useEffect(() => {
+    if (unsavedPaths.size === 0) return;
+    const ask = (e: BeforeUnloadEvent): void => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', ask);
+    return () => window.removeEventListener('beforeunload', ask);
+  }, [unsavedPaths]);
 
   /** This file's unsaved bytes, or `null`. See `drafts` above for why it is keyed by path. */
   const draft = drafts.get(path) ?? null;

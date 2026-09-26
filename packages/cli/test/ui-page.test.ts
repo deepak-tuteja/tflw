@@ -2759,6 +2759,30 @@ test('`M240` `F` (`M239-06`): two failures are two notices, top-right; one close
   }
 });
 
+test('`M240` `F` (`M239-07`): a dirty draft asks before the page unloads, and a clean page does not', async () => {
+  // Dispatched by the test rather than through `page.close()`: Playwright runs no `beforeunload`
+  // on close unless asked, and the claim is about the listener, which `defaultPrevented` reads.
+  const asks = (): Promise<boolean> => page.locator('html').evaluate((el) => {
+    const e = new (el.ownerDocument.defaultView as unknown as { Event: new (t: string, i: { cancelable: boolean }) => Event }).Event('beforeunload', { cancelable: true });
+    el.ownerDocument.defaultView!.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  const view = await fullProject();
+  const target = view.files.find((f) => f.path.endsWith('shop.tflw'))!.path;
+  await page.goto(`${pageUrl}#/browser/compose/${target}`);
+  await page.reload();
+  await page.locator('[data-seq-add="click"]').first().waitFor();
+  assert.equal(await asks(), false, 'a clean page asked'); // one-shot: dispatched by this test against a page it has just loaded; nothing is read off the DOM
+  await page.locator('[data-seq-add="click"]').first().click();
+  await page.locator('[data-compose-dirty]').waitFor();
+  const dirty = await settle(asks, untilMeasurable('the listener is attached', (v) => v === true), { attempts: 40, delayMs: 50, page });
+  assert.equal(dirty.value, true, 'a dirty draft did not ask');
+  await page.locator('[data-compose-discard]').click();
+  await page.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+  const clean = await settle(asks, untilMeasurable('the listener is gone', (v) => v === false), { attempts: 40, delayMs: 50, page });
+  assert.equal(clean.value, false, 'a discarded draft still asks');
+});
+
 // ---------------------------------------------------------------------------
 // `M224` — the LOAD door stops being a form and starts being a door (`D1205`–`D1214`).
 //
