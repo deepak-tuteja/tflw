@@ -194,7 +194,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
 
   const requiredEnv = config.requires.flatMap((r) => r.names);
   const exclude = config.excludes.flatMap((e) => e.paths.map((p) => p.value));
-  // `D1279` — declared directories as written, else the two defaults. The SAME array object as
+  // `D1319` — declared directories as written, else the two defaults. The SAME array object as
   // `DEFAULT_HELPER_DIRS` when defaulted, which is how the checker's hint knows to say so.
   const declaredHelpers = (config.helpers ?? []).flatMap((h) => h.paths.map((p) => p.value));
   const helpers = declaredHelpers.length > 0 ? declaredHelpers : DEFAULT_HELPER_DIRS;

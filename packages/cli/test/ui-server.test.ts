@@ -25,7 +25,7 @@ const cliEntry = join(here, '..', 'src', 'cli.ts');
 // node_modules — so the loader travels as an absolute path, which is what `tflw ui` under the
 // source entry passes along too.
 const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
-// `M239` `A` (`D1276`) — one known token for every server here, sent the way the page sends it.
+// `M239` `A` (`D1316`) — one known token for every server here, sent the way the page sends it.
 // The boundary itself — what a request WITHOUT it gets — is `ui-server-boundary.test.ts`.
 const TOKEN = 'm239-test-token-0123456789abcdef';
 const api = (url: string, init: RequestInit = {}): Promise<Response> => fetch(url, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), authorization: `Bearer ${TOKEN}` } });
@@ -376,7 +376,7 @@ test('the page: index.html for / and for any extension-less path, files by name,
     assert.equal((await api(`${base}/assets/nope.js`)).status, 404);
     assert.equal((await api(`${base}/..%2Ftflw.config`)).status, 404);
     const port2 = await unbuilt.listen(0);
-    // `D1276`: the token first — without it the answer is 401 whatever the bundle's state.
+    // `D1316`: the token first — without it the answer is 401 whatever the bundle's state.
     assert.equal((await fetch(`http://127.0.0.1:${port2}/`)).status, 401);
     const r = await fetch(`http://127.0.0.1:${port2}/?token=${TOKEN}`);
     assert.equal(r.status, 503);

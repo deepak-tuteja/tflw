@@ -1,4 +1,4 @@
-// `TF083` and the `helpers` directive (`M239` `D`, `D1279`) — where a `use` may load from.
+// `TF083` and the `helpers` directive (`M239` `D`, `D1319`) — where a `use` may load from.
 //
 // The rule is textual: the checker resolves a `use` literal against the checked file's own
 // directory, the way the runtime does, and asks whether the result sits inside a directory

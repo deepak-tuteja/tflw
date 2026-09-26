@@ -98,7 +98,7 @@ export interface ProgramCheckOptions {
    */
   readonly missingFiles?: ReadonlySet<string>;
   /**
-   * `TF083` (`M239` `D`, `D1279`) — where a `use` may load from. Both paths are relative to
+   * `TF083` (`M239` `D`, `D1319`) — where a `use` may load from. Both paths are relative to
    * `tflw.config`'s directory and POSIX-separated, because the rule is about *text*: the checker
    * resolves `use` the way the runtime does (against the file's own directory) and never stats
    * anything. Absent means the pass is skipped — a caller with no config to read cannot say what
@@ -3440,7 +3440,7 @@ export function checkReferencedFiles(program: Program, opts: ProgramCheckOptions
   return diags;
 }
 
-/** The directories a `use` may load from when `tflw.config` declares no `helpers` (`D1279`). */
+/** The directories a `use` may load from when `tflw.config` declares no `helpers` (`D1319`). */
 export const DEFAULT_HELPER_DIRS: readonly string[] = ['./helpers', './tests/helpers'];
 
 /** See `ProgramCheckOptions.helpers`. */
@@ -3476,7 +3476,7 @@ function posixDirname(path: string): string {
 }
 
 /**
- * `TF083` (`M239` `D`, `D1279`) — a `use` that resolves outside the directories `helpers` allows.
+ * `TF083` (`M239` `D`, `D1319`) — a `use` that resolves outside the directories `helpers` allows.
  *
  * A `use` is arbitrary code, and until `M239` nothing in a project said where it may come from.
  * The judgement is textual on purpose: `use "../../helpers/x.ts"` from `tests/api/a.tflw` is

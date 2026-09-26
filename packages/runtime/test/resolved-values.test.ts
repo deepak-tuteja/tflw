@@ -46,7 +46,7 @@ test('`report "<dir>"` resolves to that directory — not to the default (M189b)
   assert.equal(resolved([]).reportDir, './report', 'the control: the default, so the line above is the key being read');
 });
 
-test('`helpers` resolves to the declared directories, flattened across lines, and to `DEFAULT_HELPER_DIRS` — the same array — when a config declares none (`M239` `D`, `D1279`)', () => {
+test('`helpers` resolves to the declared directories, flattened across lines, and to `DEFAULT_HELPER_DIRS` — the same array — when a config declares none (`M239` `D`, `D1319`)', () => {
   const declared = parseConfigSource('helpers "./lib", "./shared"\nhelpers "./more"\nenv local default\n  api "http://127.0.0.1:1"\n');
   const r = resolveConfig(declared.config, selectEnv(declared.config, { flag: undefined, envVar: undefined }));
   assert.deepEqual(r.helpers, ['./lib', './shared', './more']);

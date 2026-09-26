@@ -34,7 +34,9 @@ import {
   CITATION,
   PREAMBLE,
   collectAnchors,
+  checkCrossRecordIds,
   checkDuplicateTitles,
+  MULTI_RECORD,
   RANGE,
   byId,
   collectCitations,
@@ -1525,3 +1527,44 @@ test('the shipped reader sees the highest id DECISIONS.md actually carries', () 
   assert.deepEqual([...`see ${highest} here`.matchAll(CITATION)].map((m) => m[1]), [highest],
     `${highest} publishes but CITATION cannot cite it — the two halves have to widen together, or the blindness is symmetric and silent again`);
 });
+
+test('a decision id defined in two records fails, whatever the words say (M240-04)', () => {
+  // The shape that happened: `M230` headed `D1276` in its plan, and `M239` took the same number
+  // for a different decision in a bold lead three weeks later.
+  const rec = [
+    { path: 'PLAN_M230_X.md', text: '### `D1276` — `M222-02` is closed as repaired\n\nbody\n' },
+    { path: 'PLAN_M239_Y.md', text: '**`D1276` — the page is opened by a token.** body\n' },
+  ];
+  const { fresh, stale } = checkCrossRecordIds(collectAnchors(rec), {});
+  assert.deepEqual(fresh, [{ id: 'D1276', files: ['PLAN_M230_X.md', 'PLAN_M239_Y.md'] }]);
+  assert.deepEqual(stale, []);
+
+  // Agreeing words are still two definitions: a restatement and a collision look the same to a
+  // regex, so the only way through is a line in the frozen list.
+  const same = [rec[0], { path: 'PLAN_M239_Y.md', text: '### `D1276` — `M222-02` is closed as repaired\n' }];
+  assert.equal(checkCrossRecordIds(collectAnchors(same), {}).fresh.length, 1);
+  assert.deepEqual(checkCrossRecordIds(collectAnchors(same), { D1276: 'restated' }).fresh, []);
+
+  // A mention is not a definition, and one record twice is `checkDuplicateTitles`'s question.
+  const cited = [rec[0], { path: 'PLAN_M239_Y.md', text: 'As `D1276` says, the row is closed.\n' }];
+  assert.deepEqual(checkCrossRecordIds(collectAnchors(cited), {}).fresh, []);
+  const oneFile = [{ path: 'PLAN_M230_X.md', text: `${rec[0].text}\n**\`D1276\` — again.**\n` }];
+  assert.deepEqual(checkCrossRecordIds(collectAnchors(oneFile), {}).fresh, []);
+
+  // Milestones are headed in their own plan, their arc's and `PROGRESS.md` by design.
+  const milestone = [{ path: 'PLAN_A.md', text: '## M240 — the first five minutes\n' }, { path: 'PROGRESS.md', text: '## M240 — shipped\n' }];
+  assert.deepEqual(checkCrossRecordIds(collectAnchors(milestone), {}).fresh, []);
+});
+
+test('the frozen multi-record list only shrinks: an entry defined once now is stale', () => {
+  const one = [{ path: 'PLAN_A.md', text: '**`D71` — scoped in full today.**\n' }];
+  assert.deepEqual(checkCrossRecordIds(collectAnchors(one), { D71: 'restated' }).stale, ['D71']);
+  // Every entry says which of the two things it is, and nothing else.
+  for (const [id, kind] of Object.entries(MULTI_RECORD)) assert.ok(kind === 'restated' || kind === 'collides', `${id}: ${kind}`);
+  assert.ok(Object.isFrozen(MULTI_RECORD));
+  // The count is pinned so the list cannot grow unnoticed: 37 restatements and 9 collisions
+  // (`M240-06`) when `M240-04` froze it.
+  assert.equal(Object.keys(MULTI_RECORD).length, 46);
+  assert.equal(Object.values(MULTI_RECORD).filter((k) => k === 'collides').length, 9);
+});
+

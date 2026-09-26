@@ -78,7 +78,7 @@ const uiRoot = join(here, '..', '..', 'ui');
 const fixtures = join(uiRoot, 'fixtures');
 const cliEntry = join(here, '..', 'src', 'cli.ts');
 const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
-// `M239` `A` (`D1276`) — one known token; see `ui-page.test.ts` for the shape.
+// `M239` `A` (`D1316`) — one known token; see `ui-page.test.ts` for the shape.
 const TOKEN = 'm239-test-token-0123456789abcdef';
 const newPage = async (options?: Parameters<Browser['newPage']>[0]): Promise<Page> => {
   const p = await browser.newPage(options);

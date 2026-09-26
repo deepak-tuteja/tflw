@@ -108,13 +108,13 @@ npm run verify:ledger                  # § never runs in CI, by decision
   optional: without a display the headed suites **hang** rather than fail.
 - **`npm run verify:observability`** — a test naming a `TF0xx` its harness cannot emit is a passing
   test of nothing. Static, seconds.
-- **The page's boundary rides inside `npm test`** (`D1276`, `D1277`, `D1278`): `packages/cli/test/
+- **The page's boundary rides inside `npm test`** (`D1316`, `D1317`, `D1318`): `packages/cli/test/
   ui-server-boundary.test.ts` walks every `/api/` route the router's source declares and asserts
   401 without the token — so a route added tomorrow joins the walk that day — and `ui-headers.test.ts`
   grades the served page with tflw's own `sec/*` rules. A change to `ui-server.ts` that loosens
   either is a red in the suite, not a review comment.
 - **`npm audit --audit-level=high --omit=dev`** — nothing a `tflw` install carries has a known
-  high-or-critical advisory (`M239` `E`, `D1280`). The development tree is left to Dependabot's
+  high-or-critical advisory (`M239` `E`, `D1320`). The development tree is left to Dependabot's
   alerts, read by hand: the day the gate landed, all four open ones were about a development
   server nothing here runs reachably, and the one in-range fix was an alpha. CI's `supply-chain` job runs it and also publishes a CycloneDX SBOM of the
   tree as an artefact; the SBOM is a record rather than a check and has no local form.

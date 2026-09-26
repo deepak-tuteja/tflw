@@ -198,7 +198,7 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
   checkHelperDirs: {
     verdict: 'n/a',
     reason:
-      '`M239` `D`/`D1279`. `TF083` reasons about `program.uses`, and the config dialect has no `use` — the same shape as `checkImportsParse` above: a session body is a step list inside `tflw.config`, which loads no JS/TS module, so there is nothing a session could hand this pass. The directive that CONFIGURES the pass (`helpers`) lives in the config dialect, but it is a top-level declaration the parser reads, not a step a session body could contain',
+      '`M239` `D`/`D1319`. `TF083` reasons about `program.uses`, and the config dialect has no `use` — the same shape as `checkImportsParse` above: a session body is a step list inside `tflw.config`, which loads no JS/TS module, so there is nothing a session could hand this pass. The directive that CONFIGURES the pass (`helpers`) lives in the config dialect, but it is a top-level declaration the parser reads, not a step a session body could contain',
   },
 };
 

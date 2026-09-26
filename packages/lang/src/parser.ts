@@ -2707,7 +2707,7 @@ class Parser {
     return { type: 'ExcludeDecl', paths, span: this.spanFrom(start) };
   }
 
-  /** `helpers "./lib"[, "./shared"]` (`D1279`) — the same shape as `parseExclude`, for the same
+  /** `helpers "./lib"[, "./shared"]` (`D1319`) — the same shape as `parseExclude`, for the same
    *  reason `exclude` has it: a directory is a path string, never a bare name. */
   private parseHelpers(): HelpersDecl | null {
     const start = this.peek().span.start;

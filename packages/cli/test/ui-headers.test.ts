@@ -1,4 +1,4 @@
-// `tflw ui`'s response headers (`M239` `C`, `D1278`) — the review's S5, which measured the served
+// `tflw ui`'s response headers (`M239` `C`, `D1318`) — the review's S5, which measured the served
 // page with no `Content-Security-Policy`, no `X-Content-Type-Options` and no framing rule, from a
 // product whose own scanner ships `sec/csp-missing` as a serious finding.
 //

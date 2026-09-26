@@ -71,7 +71,7 @@ export function DoorBar({ project, door, onDoor, themePick, onLegend }: DoorBarP
           held nothing; a stranger comparing this page to a docs page had no way to know which
           tflw they were on (review U16). The version is the wire's (`ProjectView.version`, the same
           stamp `tflw spec` prints), and the link is the docs site. `rel="noreferrer"` is belt and
-          braces beside the page's own `Referrer-Policy` (`D1277`). */}
+          braces beside the page's own `Referrer-Policy` (`D1318`). */}
       <a
         className="doorbar-version muted"
         href="https://deepak-tuteja.github.io/tflw/"

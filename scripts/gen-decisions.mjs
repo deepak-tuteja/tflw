@@ -552,6 +552,61 @@ export function checkDuplicateTitles(anchors, records) {
 }
 
 /**
+ * The forms that DEFINE an identifier, for the across-records question below: `TITLING` plus a
+ * heading, because the collision that earned this check was a `### D1276 —` heading in one plan
+ * against a `**D1276 —**` statement in another.
+ */
+const DEFINING = new Set([...TITLING, 'heading']);
+
+/**
+ * Decision identifiers defined in more than one record **before `M240-04`**, frozen. Each is one of
+ * two things, and the map says which:
+ *
+ *   - `restated` — a later record copies the decision in its own words (`PROGRESS.md`'s log of a
+ *     round, an arc plan summarising its milestones' decisions). One decision, stated twice.
+ *   - `collides` — two records took the same number for two different decisions. `M240-06` holds
+ *     these; which block `DECISIONS.md` publishes for them is decided by `pickAnchor`'s ranking,
+ *     not by anyone.
+ *
+ * NOTHING MAY JOIN THIS LIST. It exists so the check below can refuse the next collision without
+ * first repairing records written a hundred milestones ago; an id is only ever removed from it, and a
+ * removal is forced — an entry whose id is defined in one record now is reported as stale.
+ */
+export const MULTI_RECORD = Object.freeze({
+  ...Object.fromEntries(['D43', 'D60', 'D61', 'D62', 'D63', 'D64', 'D65', 'D66', 'D67', 'D68', 'D69', 'D70', 'D71', 'D72', 'D73', 'D74', 'D75', 'D76', 'D77', 'D78', 'D79', 'D80', 'D178', 'D179', 'D180',
+    'D336', 'D537', 'D737', 'D792', 'D809', 'D815', 'D864', 'D1044', 'D1045', 'D1047', 'D1049', 'D1071'].map((id) => [id, 'restated'])),
+  ...Object.fromEntries(['D147', 'D148', 'D149', 'D150', 'D151', 'D152', 'D666', 'D667', 'D821'].map((id) => [id, 'collides'])),
+});
+
+/**
+ * Decision identifiers defined in more than one record (`M240-04`). `checkDuplicateTitles` asks this
+ * inside one file; across files nothing asked, so an id was minted by grepping for the forms its
+ * author remembered, and three milestones took numbers already taken: `M239`'s `D1276`–`D1280` were
+ * `M230`'s and `M233`'s, and `M240`'s first seven were `M233H`/`M233I`'s. `DECISIONS.md` then
+ * published whichever block `pickAnchor` ranked first, under the other milestone's citations.
+ *
+ * The rule is on the number, not the words: two records defining one id fail whether or not they
+ * agree, because a restatement and a collision cannot be told apart by a regex and the cost of
+ * asking is one line in `MULTI_RECORD`. Milestone ids are left alone — a milestone is legitimately
+ * headed in its own plan, its arc's plan and `PROGRESS.md`.
+ *
+ * @returns {{ fresh: {id: string, files: string[]}[], stale: string[] }}
+ */
+export function checkCrossRecordIds(anchors, known = MULTI_RECORD) {
+  const fresh = [];
+  const stale = [];
+  for (const [id, list] of anchors) {
+    if (id[0] !== 'D') continue;
+    const files = [...new Set(list.filter((a) => DEFINING.has(a.kind)).map((a) => a.file))];
+    // Stale means *defined, and in one record now*. An id defined nowhere says nothing — the
+    // records are a miniature (the tests' trees) or absent, and neither is a repair.
+    if (files.length === 1 && id in known) stale.push(id);
+    if (files.length >= 2 && !(id in known)) fresh.push({ id, files });
+  }
+  return { fresh, stale };
+}
+
+/**
  * Overrides for identifiers whose defining block precedence picks wrong (D682). Each carries the
  * reason, because an override with no reason is indistinguishable from a mistake nobody caught.
  *
@@ -1862,7 +1917,20 @@ function main() {
         `  not a judgement (D911). Restate the narrating copy in the words the authoritative one uses,\n` +
         `  or delete it — a decision stated twice is a copy with no guard (D767).`);
     }
-    return result.unresolved.length || result.stale.length || dup.length ? 1 : 0;
+    // `M240-04`: the same question across records — one number, two records defining it.
+    const cross = checkCrossRecordIds(collectAnchors(records));
+    for (const c of cross.fresh) console.error(`  ${c.id.padEnd(7)} defined in ${c.files.join(', ')}`);
+    if (cross.fresh.length) {
+      console.error(`✗ ${cross.fresh.length} decision id(s) are defined in more than one record.\n` +
+        `  Whichever block precedence ranks first is published under every record's citations\n` +
+        `  (M240-04). Renumber the later one to an id collectAnchors says is free, in the record and at\n` +
+        `  every site that cites it meaning that record.`);
+    }
+    if (cross.stale.length) {
+      console.error(`✗ ${cross.stale.length} MULTI_RECORD entr(y/ies) now defined in one record: ${cross.stale.join(' ')}\n` +
+        `  Delete them — the list only ever shrinks.`);
+    }
+    return result.unresolved.length || result.stale.length || dup.length || cross.fresh.length || cross.stale.length ? 1 : 0;
   };
 
   if (demanding) {

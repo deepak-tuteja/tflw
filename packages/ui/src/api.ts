@@ -3,7 +3,7 @@
 import type { EndEvent, ProjectView, ReportDir, RunEvent, RunRecord, RunReport, RunRequest, UnconfiguredView } from './contract';
 
 /**
- * This session's token (`M239` `A`, `D1276`) — read off the URL `tflw ui` printed and opened. Every
+ * This session's token (`M239` `A`, `D1316`) — read off the URL `tflw ui` printed and opened. Every
  * `fetch` below sends it as `Authorization: Bearer`; the two `EventSource`s, which cannot set a
  * header, carry it as `?token=`. The page load that carried it also set the cookie the browser
  * spends on its own navigations (a report file opened in a tab, the trace viewer's assets), so

@@ -518,7 +518,7 @@ export const Codes = {
   AUTHORIZED_TARGET_REASON_EMPTY: 'TF082',
 
   /**
-   * `TF083` — **a `use` outside the directories `helpers` allows** (`M239` `D`, `D1279`).
+   * `TF083` — **a `use` outside the directories `helpers` allows** (`M239` `D`, `D1319`).
    *
    * The escape hatch is unrestricted code execution and, until `M239`, nothing in a project said
    * where that code may come from. `tflw.config`'s `helpers` names the directories; a config that
