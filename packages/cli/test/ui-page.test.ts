@@ -2465,7 +2465,7 @@ test('the switcher moves between doors without leaving the project', async () =>
 });
 
 // ---------------------------------------------------------------------------
-// `M240` `A` — where a door lands (`D1290`, closing `M239-09`).
+// `M240` `A` — where a door lands (`D1309`, closing `M239-09`).
 //
 // The fixture gained two files for this block and nothing else: `tests/actions/aaa-shared.tflw`,
 // an action-only file that SORTS FIRST so `files[0]` is a wrong answer on every door, and
@@ -2474,7 +2474,7 @@ test('the switcher moves between doors without leaving the project', async () =>
 // full, never by calling the page's function — which would be the page grading itself.
 // ---------------------------------------------------------------------------
 
-/** The file `D1290`'s rule lands on, computed independently of `landingRule.ts`: the most tests
+/** The file `D1309`'s rule lands on, computed independently of `landingRule.ts`: the most tests
  *  and crawls behind the door, ties to the path that sorts first, files with errors left out. */
 const ruleLanding = (view: Awaited<ReturnType<typeof fullProject>>, door: string): string | null => {
   let best: string | null = null;
@@ -2905,7 +2905,7 @@ test('`M240` `F` (`M239-11`): with no remembered width, the sequence column is a
   }
 });
 
-test('`M240` `B` (`D1291`): over a directory with no tflw.config the landing names the directory and the tflw, shows no absolute path, and no route fails', async () => {
+test('`M240` `B` (`D1310`): over a directory with no tflw.config the landing names the directory and the tflw, shows no absolute path, and no route fails', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-unconfigured-'));
   const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
   const fresh = await newPage();
@@ -2948,7 +2948,7 @@ const focusedOn = (p: Page): Promise<string> =>
   }, FOCUS_NAMES);
 const focusSettles = (p: Page, what: string, ok: (v: string) => boolean) => settle(() => focusedOn(p), untilMeasurable(what, ok), { attempts: 40, delayMs: 25, page: p });
 
-test('`M240` `C` (`D1292`): the explorer, the door bar and the tab strip are one Tab stop each, and arrows walk inside them', async () => {
+test('`M240` `C` (`D1311`): the explorer, the door bar and the tab strip are one Tab stop each, and arrows walk inside them', async () => {
   const view = await fullProject();
   const open = ruleLanding(view, 'api')!;
   await page.goto(`${pageUrl}#/api`);
@@ -2993,7 +2993,7 @@ test('`M240` `C` (`D1292`): the explorer, the door bar and the tab strip are one
   assert.notEqual(next.value, 'data-tab=compose');
 });
 
-test('`M240` `C` (`D1292`): `?` opens the legend of the keys the page answers, Escape closes it, and `/` and ⌘P reach search and the list', async () => {
+test('`M240` `C` (`D1311`): `?` opens the legend of the keys the page answers, Escape closes it, and `/` and ⌘P reach search and the list', async () => {
   await page.goto(`${pageUrl}#/api`);
   await page.reload();
   await page.locator('[data-doorbar] [data-legend-open]').waitFor();
@@ -3026,7 +3026,7 @@ test('`M240` `C` (`D1292`): `?` opens the legend of the keys the page answers, E
   assert.ok(tree.value.startsWith('data-file-row') || tree.value.startsWith('data-dir-toggle'), `⌘P focused ${tree.value}`);
 });
 
-test('`M240` `C` (`D1292`): ⌘S writes a dirty draft from inside a field, and ⌘↩ runs the open file', async () => {
+test('`M240` `C` (`D1311`): ⌘S writes a dirty draft from inside a field, and ⌘↩ runs the open file', async () => {
   const view = await fullProject();
   const target = view.files.find((f) => f.path.endsWith('shop.tflw'))!.path;
   const before = await readFile(join(root, target), 'utf8');
@@ -5868,7 +5868,7 @@ test('the affirmation this door refuses to make is one the author can make on th
       await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/scan.tflw`);
       await fresh.locator('[data-compose-scan-unauthorized]').waitFor();
 
-      // 1. THE PROSE, both halves. `D291`'s reason is stated in words (`M240` `D`, `D1294` — the
+      // 1. THE PROSE, both halves. `D291`'s reason is stated in words (`M240` `D`, `D1313` — the
       //    identifier left the page), and the claim that the
       //    page cannot write `tflw.config` is gone — asserted as an absence, because the repair of a
       //    two-reason sentence that lost one reason is not complete while the false half survives.

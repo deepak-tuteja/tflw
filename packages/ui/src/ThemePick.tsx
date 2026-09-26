@@ -31,7 +31,7 @@ export const STORAGE_KEY = 'tflw.theme';
 
 const current = (): ThemeName => {
   const on = document.documentElement.getAttribute('data-tflw-theme');
-  // No attribute is the stylesheet's bare `:root`, which is `Paper` since `M240` `F` (`D1296`).
+  // No attribute is the stylesheet's bare `:root`, which is `Paper` since `M240` `F` (`D1315`).
   return THEMES.some(([id]) => id === on) ? (on as ThemeName) : 'paper';
 };
 

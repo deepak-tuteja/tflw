@@ -4238,7 +4238,7 @@ function printUsage(): void {
       '  tflw --version, -v                                 print the installed version',
       '  tflw --help, -h                                    show this message',
       '',
-      // `M240` `D` (`D1294`) — the lines above used to cite `SPEC §`-numbers and milestone ids, and
+      // `M240` `D` (`D1313`) — the lines above used to cite `SPEC §`-numbers and milestone ids, and
       // this footer pointed at `SPEC.md` so a reader could follow them. They carry the reason now,
       // and the long form is the docs site.
       '  docs: https://deepak-tuteja.github.io/tflw/',

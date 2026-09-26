@@ -85,7 +85,7 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
     <div className="authoring auth-panel" data-api-auth={file ? file.path : ''}>
       <header className="authoring-head">
         <h2>who this file runs as</h2>
-        {/* `M240` `D` (`D1293`) — the fact, not the tour: which env, and where it is edited. How to
+        {/* `M240` `D` (`D1312`) — the fact, not the tour: which env, and where it is edited. How to
             switch env is the legend's (`?`), with its docs link. */}
         <p className="muted">
           env <code>{envName}</code> · edited in <em>Config</em>
@@ -234,7 +234,7 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
         <h3>
           <code>{RESERVED_PRINCIPAL}</code> — the principal nobody declares
         </h3>
-        {/* `M240` `D` (`D1293`) — why `anonymous` is reserved, and what probes with it, is the
+        {/* `M240` `D` (`D1312`) — why `anonymous` is reserved, and what probes with it, is the
             legend's Auth entry now: a paragraph every file drew, whatever the file. */}
         <p className="muted" data-auth-anonymous-tests>
           {file === null

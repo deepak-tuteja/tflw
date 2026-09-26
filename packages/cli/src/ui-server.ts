@@ -341,7 +341,7 @@ export interface ProjectAction {
 
 /**
  * **A directory with no `tflw.config` is a project that has not started, not an error** — `M240`
- * `B` (`D1291`). `GET /api/project` answers this shape with a 200: the directory's basename only —
+ * `B` (`D1310`). `GET /api/project` answers this shape with a 200: the directory's basename only —
  * never the absolute path, which the 404 this replaces carried in its body (`D1278` said errors
  * carry none; this extends it to the unconfigured answer) — and the build stamp, so the landing can
  * still say which tflw this is. `noProject` stays beside `configured` for the readers that asked
@@ -1857,7 +1857,7 @@ export class UiServer {
       PREREAD.set(req, text);
     }
 
-    /* **An unconfigured directory, route by route** — `M240` `B` (`D1291`). "There is no project
+    /* **An unconfigured directory, route by route** — `M240` `B` (`D1310`). "There is no project
        here" is a different answer from "this project is broken", and the landing has to tell them
        apart to know whether to offer to create one (`M200` `A0-5`). It used to be a 404 on
        `/api/project` alone, carrying the absolute root in its body, while `/api/reports` reached

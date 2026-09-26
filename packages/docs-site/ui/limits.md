@@ -14,9 +14,10 @@ served. It has no view across repositories, no history beyond the run directorie
 notion of a team. A project's history lives in `git` and its runs live in its run directory; the
 page reads those and adds nothing of its own.
 
-**It keeps no state.** No database, no sidecar file, no hidden directory. Which door and which file
-you are on live in the address bar, so a link is shareable and a reload changes nothing. Your theme
-lives in your browser. Everything else is the project on disk, which means the page can be closed at
+**It keeps nothing on the server.** No database, no sidecar file, no hidden directory. Which door
+and which file you are on live in the address bar, so a link is shareable and a reload changes
+nothing. Two conveniences live in your browser and nowhere else: your theme, and the last file you
+had open behind each door, per project — so a bare door opens where you left it. Everything else is the project on disk, which means the page can be closed at
 any moment without losing anything that was not already a file.
 
 **It does not lint your taste.** The page will happily show you a passing test that asserts nothing.
@@ -29,6 +30,9 @@ other page in your browser, or with a `Host` that is not loopback, is refused. T
 because there is nothing to log into: one process, one token, one person. Making it remotely
 reachable is not something the command offers; `ssh -L` forwards the port and the URL you paste
 carries the token with it.
+
+**It is for a desktop.** The page is laid out for a window 900 px wide and up — an explorer, a
+sequence and a stage side by side. Below that it stacks, and nothing is designed for a phone.
 
 ## Not yet
 

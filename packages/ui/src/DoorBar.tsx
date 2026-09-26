@@ -23,13 +23,13 @@ export interface DoorBarProps {
    * while BROWSER's stayed at 900. Chrome that pushes the product down the page is not free, and
    * the cheapest place to put a control is a row that is already there. */
   readonly themePick?: ReactNode;
-  /** Opens the legend (`M240` `C`, `D1292`) — the same list the `?` key opens. */
+  /** Opens the legend (`M240` `C`, `D1311`) — the same list the `?` key opens. */
   readonly onLegend?: () => void;
 }
 
 export function DoorBar({ project, door, onDoor, themePick, onLegend }: DoorBarProps) {
   const counts = countByDoor(project);
-  /* `M240` `C` (`D1292`) — one Tab stop, arrows inside: the home mark, the four doors, the version
+  /* `M240` `C` (`D1311`) — one Tab stop, arrows inside: the home mark, the four doors, the version
      and `?` are one strip. The theme picker is not in it — a `<select>` answers the arrows itself. */
   const strip = useRef<HTMLElement | null>(null);
   useRovingFocus(strip, { orientation: 'row', selector: ':scope > button, :scope > a' });

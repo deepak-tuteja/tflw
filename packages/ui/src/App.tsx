@@ -297,7 +297,7 @@ export function App() {
   /** `null` until the project probe has answered — `false` is one of the two answers, not a
    *  neutral default, and shipping it as the default is `M235-08`. */
   const [noProject, setNoProject] = useState<boolean | null>(null);
-  /** The unconfigured answer, when that is what the probe got (`D1291`): the directory's name and
+  /** The unconfigured answer, when that is what the probe got (`D1310`): the directory's name and
    *  the build stamp, for the landing to say where it is and which tflw this is. */
   const [unconfigured, setUnconfigured] = useState<UnconfiguredView | null>(null);
 
@@ -820,7 +820,7 @@ export function App() {
    */
   const filePaths = project?.files.map((f) => f.path) ?? [];
   /**
-   * **Where this door lands when the address names no file** — `M240` `A` (`D1290`).
+   * **Where this door lands when the address names no file** — `M240` `A` (`D1309`).
    *
    * This read `filePaths[0]` — the first path in sort order — which on the dogfood put the API door
    * on an action-only helper with no test in it and the BROWSER door on a file with nothing behind
@@ -1064,7 +1064,7 @@ export function App() {
   }, [unsavedPaths]);
 
   /**
-   * **The page's keys** — `M240` `C` (`D1292`). One table (`shortcuts.ts`), two listeners: this one
+   * **The page's keys** — `M240` `C` (`D1311`). One table (`shortcuts.ts`), two listeners: this one
    * answers the five that are about the page, and `ComposeDoor` answers *save*, because the draft
    * and its etag live there. A shortcut already handled below (the legend's `Escape`, a roving
    * strip's arrows) arrives here prevented and is left alone.
@@ -1467,7 +1467,7 @@ export function App() {
             pane was rebuilt three times around it. */}
         {project && composes ? (
           <ComposeDoor
-            /* `M240` `A` (`D1290`) — a door with nothing behind it draws its one sentence and
+            /* `M240` `A` (`D1309`) — a door with nothing behind it draws its one sentence and
                `+ new file` where the file's stage would be, not a pane about whichever file sorted
                first. `path` is `''` exactly when `landingFor` answered empty and the address names
                no file the project has; the strip and the project-fact tabs stay. */

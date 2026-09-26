@@ -30,7 +30,7 @@ export interface LandingProps {
    * finished asking* is measurable, and *what it answered* is the claim (`M141`).
    */
   readonly noProject: boolean | null;
-  /** `D1291` — the unconfigured answer, when that is what the page got: the directory's name and
+  /** `D1310` — the unconfigured answer, when that is what the page got: the directory's name and
    *  the build stamp, said on the landing that offers to make a project there. */
   readonly unconfigured?: UnconfiguredView | null;
   readonly onOpen: (door: Lens) => void;
@@ -136,12 +136,12 @@ export function Landing({ project, unconfigured = null, error, noProject, onOpen
           </button>
         ))}
       </div>
-      {/* `M240` `D` (`D1295`) — the one word the page keeps, defined once, where it is first met. */}
+      {/* `M240` `D` (`D1314`) — the one word the page keeps, defined once, where it is first met. */}
       <p className="muted landing-door-def" data-door-definition>
         A door is a way into the same project: each shows the tests that do its kind of work.
       </p>
 
-      {/* `D1291` — a directory that is not a project yet still says where it is and which tflw
+      {/* `D1310` — a directory that is not a project yet still says where it is and which tflw
           this is, in the same footer a project gets; the absolute path is nobody's business. */}
       {unconfigured ? (
         <footer className="landing-foot muted" data-landing-unconfigured={unconfigured.root}>
