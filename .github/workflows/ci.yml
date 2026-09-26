@@ -402,6 +402,36 @@ jobs:
   # It is deliberately a separate job from `test`: it needs a second checkout and nothing else here
   # does, and a cross-repo red must be legible as one rather than folded into a matrix leg. The
   # sibling's own copy of this dance measures at 0:27.
+  # `M243` `A` (`D1333`). The page and the CLI are local tools, and a Windows user is not a
+  # hypothetical one, so the suite runs on `windows-latest` too: build, typecheck and the whole
+  # `npm test` (the headcount included, so a file that silently fails to load on Windows is a red
+  # and not a smaller number). Its own job rather than a matrix leg, because nothing below `npm
+  # test` in `test` is platform-dependent — coverage, the `verify:*` gates and the screenshots read
+  # the same sources on every OS — and running them twice would buy nothing but minutes. No xvfb:
+  # a Windows runner has a desktop, so the headed `watch` tests need no display server.
+  windows:
+    name: build + typecheck + test (Windows, Node 22)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium firefox
+
+      - run: npm run build
+
+      - run: npm run typecheck
+
+      - run: npm test
+
   # `M239` `E` (`D1320`). Two facts about the dependency tree, on every push: nothing installed
   # carries a known high-or-critical advisory, and what IS installed is written down as a CycloneDX
   # SBOM anyone can diff. Its own job because it needs one `npm ci` and no browser, and a
