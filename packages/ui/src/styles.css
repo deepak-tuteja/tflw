@@ -205,7 +205,11 @@ input[type='checkbox'], input[type='radio'] { all: revert; flex: none; accent-co
    stayed at 900. `margin-left: auto` is what seats it, and `M212`'s header defect is the warning
    attached — two `margin-left: auto` children of one flex row split the free space between them,
    so this must stay the only one in `.doorbar`. */
-.theme-pick { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 11px; color: var(--muted); }
+.theme-pick { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+/* `M239-10` — the corner: the version takes the `margin-left: auto` the picker used to, so the two
+   sit together at the right; the picker follows it with the bar's own gap. */
+.doorbar-version { margin-left: auto; font-size: 11px; text-decoration: none; padding: 0 6px; }
+.doorbar-version:hover { color: var(--fg); text-decoration: underline; }
 .theme-pick select { font-size: 11px; }
 .theme-pick label { text-transform: var(--label-transform); letter-spacing: var(--label-spacing); }
 

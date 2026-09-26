@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { parseConfigSource } from '@tflw/lang';
 import { resolveConfig, selectEnv } from '@tflw/runtime';
 import { UiServer, blockForEnv, readProject, runArgv, initArgv, pickArgv, recordArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, PLAY_SCRATCH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { buildStamp } from '../src/buildStamp.js';
 import { readdir } from 'node:fs/promises';
 
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
@@ -80,6 +81,10 @@ test('readProject: envs, discovered files with their tests, the excluded dir and
     const dir = await fixtureProject(baseUrl);
     try {
       const p = await readProject(dir);
+      // `M240` `F` (`M239-10`) — the build stamp `tflw spec` prints, on the wire: the same object
+      // `buildStamp()` returns, so the page and the CLI can never name two builds.
+      assert.deepEqual(p.version, await buildStamp(), 'the project view carries a stamp that is not the CLI’s own');
+      assert.equal(p.version.source, 'dev', 'under tsx there is no bundle, and the stamp must say so');
       assert.deepEqual(p.envs, [{ name: 'local', isDefault: true }, { name: 'other', isDefault: false }]);
       assert.equal(p.reportDir, './report');
       assert.deepEqual(p.files.map((f) => f.path).sort(), ['broken.tflw', 'deep/slow.tflw', 'health.tflw']);

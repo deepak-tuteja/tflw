@@ -16,6 +16,7 @@ import { createRequire } from 'node:module';
 import { join, resolve, relative, dirname, basename, sep } from 'node:path';
 import { discoverTests } from './project.js';
 import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH, PLAY_SCRATCH } from './ui-server.js';
+import { buildStamp, getVersion, type BuildStamp } from './buildStamp.js';
 import { recordedLine } from './record.js';
 import {
   parseSource,
@@ -150,30 +151,11 @@ const EXIT_ABORTED = 130; // M32/R5 — Ctrl-C during a `tflw run` with workload
 // standard Unix "died from SIGINT" code (128+2), same convention `tflw watch`'s own SIGINT
 // handling documents.
 
-// Set via esbuild `--define` at bundle time (packages/cli/scripts/bundle.mjs, decision 74b) to the
-// real package.json version. Undefined under `npm run dev` (unbundled `tsx`), where `getVersion()`
-// falls back to reading package.json directly.
-declare const __TFLW_VERSION__: string | undefined;
-
-// M154a — the rest of the build stamp `tflw spec` prints, injected by the same `define` mechanism
-// and undefined for the same reason under `npm run dev`. `__TFLW_COMMIT__` is the empty string when
-// the bundle was built somewhere with no git to ask (a published tarball); `buildStamp()` maps that
-// to `null` rather than letting an empty sha look like an answer.
-declare const __TFLW_COMMIT__: string | undefined;
-declare const __TFLW_DIRTY__: boolean | null | undefined;
-declare const __TFLW_BUILD_TIME__: string | undefined;
-
 /** M92c (review `FU-17`) — user-facing surfaces cite `SPEC.md` and its §-numbers, and `SPEC.md` is
  * not in the npm tarball: `docs-data.generated.ts` is cut from it at build time and *is* what ships.
  * The citations are worth keeping — they say where a section came from — but a reader who wants the
  * source had nowhere to go. One constant so the address is stated identically wherever it appears. */
 const SPEC_URL = 'https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md';
-
-async function getVersion(): Promise<string> {
-  if (typeof __TFLW_VERSION__ === 'string') return __TFLW_VERSION__;
-  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
-  return pkg.version;
-}
 
 /**
  * Reads the value of a value-taking flag, and refuses the two ways one can go missing silently
@@ -3304,36 +3286,9 @@ async function specCommand(argv: string[]): Promise<number> {
   return EXIT_OK;
 }
 
-interface BuildStamp {
-  readonly version: string;
-  /** `bundle` — built by `packages/cli/scripts/bundle.mjs`, which is what the npm tarball ships and
-   *  what a consumer vendors. `dev` — run unbundled through `tsx`, where the `define`s do not
-   *  exist. A consumer grading a build should refuse `dev`: it has no provenance to check. */
-  readonly source: 'bundle' | 'dev';
-  readonly commit: string | null;
-  /** Whether the working tree had uncommitted changes at bundle time. Its own field rather than a
-   *  `-dirty` suffix on `commit`, so a consumer comparing shas does not have to strip it first. */
-  readonly dirty: boolean | null;
-  readonly builtAt: string | null;
-}
-
-async function buildStamp(): Promise<BuildStamp> {
-  const version = await getVersion();
-  if (typeof __TFLW_BUILD_TIME__ !== 'string') {
-    return { version, source: 'dev', commit: null, dirty: null, builtAt: null };
-  }
-  const commit = typeof __TFLW_COMMIT__ === 'string' && __TFLW_COMMIT__ !== '' ? __TFLW_COMMIT__ : null;
-  return {
-    version,
-    source: 'bundle',
-    commit,
-    // Restated here rather than trusted from the `define`, because the two can only be got wrong
-    // together: with no commit there is nothing for `dirty` to be relative to, and a `false` would
-    // read as "the tree was clean" when in fact nobody looked.
-    dirty: commit === null ? null : typeof __TFLW_DIRTY__ === 'boolean' ? __TFLW_DIRTY__ : null,
-    builtAt: __TFLW_BUILD_TIME__,
-  };
-}
+// `BuildStamp`, `getVersion` and `buildStamp` live in `buildStamp.ts` since `M240` `F` (`M239-10`):
+// the page's server puts the stamp on the wire, and one module is what keeps `tflw spec` and
+// `/api/project` describing the same build.
 
 /** One line naming a build, shared by `tflw spec`'s human rendering and reused by anything else
  * that needs to say which tflw is speaking. Says `unknown commit` out loud rather than omitting the
