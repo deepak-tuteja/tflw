@@ -98,7 +98,7 @@ export interface UiServerOptions {
 const TOKEN_COOKIE = 'tflw-ui-token';
 /** One MiB — a `PUT /api/file` of the largest `.tflw` in either repository is under 100 KiB. */
 export const BODY_CAP = 1 << 20;
-/** Runs the server remembers (`D1277`); the report directories on disk are the durable record. */
+/** Runs the server remembers (`D1317`); the report directories on disk are the durable record. */
 export const RUNS_KEPT = DEFAULT_RUNS_KEPT;
 /** Stdout lines buffered per run for late subscribers; a workload prints one event per sample. */
 export const LINES_KEPT = 50_000;
