@@ -141,7 +141,9 @@ interface ElLike {
   textContent: string | null;
   checkVisibility(): boolean;
   /** `M214`'s overflow gate reads the bottom edge, which is the whole of its second clause. */
-  getBoundingClientRect(): { readonly height: number; readonly bottom: number; readonly x: number; readonly y: number; readonly width: number };
+  getBoundingClientRect(): { readonly height: number; readonly bottom: number; readonly x: number; readonly y: number; readonly width: number; readonly left: number; readonly right: number; readonly top: number };
+  /** `M240` `F`'s strip probe asks whether a hit is inside the strip. */
+  contains(other: ElLike | null): boolean;
   /** …and the two heights that say whether a region is scrolling inside itself. */
   readonly scrollHeight: number;
   readonly clientHeight: number;
@@ -157,7 +159,7 @@ interface ElLike {
   removeAttribute(name: string): void;
   getAttribute(name: string): string | null;
 }
-declare const document: ElLike & { readonly body: ElLike; readonly documentElement: ElLike; readonly head: ElLike; createElement(tag: string): ElLike };
+declare const document: ElLike & { readonly body: ElLike; readonly documentElement: ElLike; readonly head: ElLike; createElement(tag: string): ElLike; elementFromPoint(x: number, y: number): ElLike | null };
 declare const getComputedStyle: (el: ElLike) => CssLike;
 declare const window: { readonly localStorage: { getItem(key: string): string | null }; readonly innerHeight: number };
 declare const requestAnimationFrame: (cb: () => void) => void;
@@ -418,7 +420,7 @@ test('a page told nothing renders Terminal — the default is the bare `:root` b
   // reintroduces exactly the flash `index.html`'s pre-paint script exists to prevent, and makes the
   // default a property of the app rather than of the stylesheet.
   //
-  // So: no attribute, no stored choice, and the page is nonetheless Terminal.
+  // So: no attribute, no stored choice, and the page is nonetheless Paper.
   const fresh = await openPage();
   try {
     await fresh.goto(`${pageUrl}#/`);
@@ -429,12 +431,13 @@ test('a page told nothing renders Terminal — the default is the bare `:root` b
       const cs = getComputedStyle(document.documentElement);
       return { bg: getComputedStyle(document.body).backgroundColor, unit: cs.getPropertyValue('--unit').trim(), radius: cs.getPropertyValue('--radius').trim() };
     });
-    // Terminal's three most recognisable tokens. `--radius: 0px` is the one no other theme has, so
-    // it alone separates this from Instrument; the ground and the unit are here because a gate that
-    // rests on one token is a gate one typo away from passing on the wrong theme.
-    assert.equal(read.bg, 'rgb(8, 9, 11)', 'the untold page is not on Terminal’s ground');
-    assert.equal(read.unit, '7px');
-    assert.equal(read.radius, '0px');
+    // Paper's three most recognisable tokens (`M240` `F`, `D1296` — the default was Terminal's
+    // `rgb(8, 9, 11)` / `7px` / `0px` until then). `--unit: 9px` is the one no other theme has, so
+    // it alone separates this from the dark three; the ground and the radius are here because a
+    // gate that rests on one token is a gate one typo away from passing on the wrong theme.
+    assert.equal(read.bg, 'rgb(247, 248, 250)', 'the untold page is not on Paper’s ground');
+    assert.equal(read.unit, '9px');
+    assert.equal(read.radius, '6px');
   } finally {
     await fresh.close();
   }
@@ -1461,9 +1464,62 @@ test('the explorer’s create keeps its place on a project with a real file coun
     assert.ok(read.files >= 100, `the explorer listed ${read.files} files — the project is not big enough to state anything`);
     assert.ok(read.scrolls, 'the sidebar is not scrolling, so nothing here is about reachability');
     assert.ok(read.top >= 0 && read.bottom <= read.viewport, `\`+ new file\` sits at ${read.top}–${read.bottom} in a ${read.viewport}px viewport`);
+    /* **And nothing shows through it** — `M240` `F` (`M239-02`). The review's shots had a row
+       visible beside and beneath the button, which reads as a strip with no opaque surface or one
+       narrower than the pane. Sampled at nine points of the strip's own box — corners, edges,
+       centre, each a pixel inside — every hit must be the strip or something inside it. A row
+       under the strip resolving at any point is the defect, whichever half of it is missing. */
+    const through = await page.evaluate(() => { // one-shot: the strip was waited for above and the pane has not been touched since; `elementFromPoint` reads the laid-out frame
+      const el = document.querySelector('[data-explorer-new]')!;
+      const r = el.getBoundingClientRect();
+      const xs = [r.left + 1, (r.left + r.right) / 2, r.right - 1];
+      const ys = [r.top + 1, (r.top + r.bottom) / 2, r.bottom - 1];
+      const leaks: string[] = [];
+      for (const x of xs) for (const y of ys) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit === null || !el.contains(hit)) leaks.push(`${Math.round(x)},${Math.round(y)} → ${hit === null ? 'nothing' : `${hit.tagName.toLowerCase()}${hit.className ? '.' + String(hit.className).split(' ')[0] : ''}`}`);
+      }
+      return { leaks, width: Math.round(r.width), side: Math.round(el.parentElement!.getBoundingClientRect().width) };
+    });
+    assert.deepEqual(through.leaks, [], `something shows through \`+ new file\`'s strip (${through.width}px wide in a ${through.side}px pane)`);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+/* ── Native controls wear the theme's face — `M240` `F` (`M239-12`, `D1296`) ──────────────────
+ *
+ * The review measured `Arial` in the computed font list on every project view (P8) and did not
+ * name the element: `styles.css` sets `font: inherit` on `button, input, select, textarea`, so
+ * whatever carried `Arial` is something that rule does not reach. This gate is the search the
+ * review left undone, made standing: on every door and tab, in every theme, the computed
+ * `font-family` of every native control — `button`, `input`, `select`, `textarea`, `option`,
+ * `summary`, `dialog`, `label` — is the body's own. Not "contains no `Arial`": Paper's stack
+ * carries `system-ui` by design, so the claim is *inherits the theme*, whatever the theme says.
+ */
+test('every native control on every view computes the body’s own font-family, in every theme', async () => {
+  const off: string[] = [];
+  const views = DOORS.flatMap((d) => ['compose', 'source', 'run', 'auth', 'config'].map((t) => [d, t] as const));
+  for (const [door, tab] of views) {
+    await at(door, tab);
+    for (const theme of THEMES) {
+      await wear(theme);
+      const strays = await page.evaluate(() => { // one-shot: computed styles after `wear`'s synchronous attribute write — the view was waited for by `at`, and a font-family needs no paint to compute
+        const body = getComputedStyle(document.body).fontFamily;
+        const out: string[] = [];
+        for (const el of document.querySelectorAll('button, input, select, textarea, option, summary, dialog, label')) {
+          const f = getComputedStyle(el).fontFamily;
+          if (f !== body) {
+            const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme');
+            out.push(`${el.tagName.toLowerCase()}${data ? `[${data.name}]` : ''}${el.className ? '.' + String(el.className).split(' ')[0] : ''} → ${f}`);
+          }
+        }
+        return [...new Set(out)];
+      });
+      for (const s of strays) off.push(`${door}/${tab} ${theme}: ${s}`);
+    }
+  }
+  assert.deepEqual([...new Set(off)], [], `${new Set(off).size} native control(s) fall out of the theme's face`);
 });
 
 // ── 6. The census: every control says what it does — `M229` `F` (`D1256`) ─────────────────────

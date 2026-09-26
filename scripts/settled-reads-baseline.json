@@ -1,12 +1,12 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 968,
-    "atRisk": 887,
+    "reads": 966,
+    "atRisk": 885,
     "high": 333,
     "medium": 65,
-    "low": 489,
-    "declared": 42,
+    "low": 487,
+    "declared": 44,
     "inPage": 106,
     "inRetry": 29
   },
@@ -1060,11 +1060,6 @@
         "low": 1
       },
       "the explorer’s create keeps its place on a project with a real file count": {
-        "high": 0,
-        "medium": 0,
-        "low": 2
-      },
-      "every native control on every view computes the body’s own font-family, in every theme": {
         "high": 0,
         "medium": 0,
         "low": 1
