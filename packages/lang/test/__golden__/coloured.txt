@@ -5,7 +5,7 @@
 # A word added here and nowhere else fails that test — the drift B5-09 records, caught at once
 # rather than by the next milestone to audit two wordlists by hand.
 #
-# 228 words
+# 235 words
 
 DELETE
 GET
@@ -26,6 +26,7 @@ and
 any
 api
 as
+at
 authorization
 authorized
 base64
@@ -72,6 +73,7 @@ drop
 duration
 each
 email
+empty
 enabled
 encode
 env
@@ -92,6 +94,7 @@ from
 full
 future
 give
+graphql
 greater
 handling
 has
@@ -113,8 +116,10 @@ input
 insecure
 is
 iterations
+joined
 keep
 key
+least
 less
 let
 level
@@ -129,6 +134,7 @@ matching
 message
 minor
 moderate
+most
 ms
 mutating
 never
@@ -186,6 +192,7 @@ send
 sequential
 serious
 session
+skip
 snapshot
 spider
 spike

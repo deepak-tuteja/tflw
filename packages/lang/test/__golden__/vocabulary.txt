@@ -7,7 +7,7 @@
 #   V  a `<expr>.value === '…'` comparison
 #   S  a `case '…':` label in a switch on `<expr>.value`
 #
-# 253 words
+# 259 words
 
 A   DELETE
 A   GET
@@ -29,7 +29,7 @@ KS  and
 A   any
 AKS api
 K   as
-A   at
+AK  at
 A   authorization
 AS  authorized
 V   base64
@@ -102,6 +102,7 @@ K   from
 A   full
 K   future
 AS  give
+K   graphql
 AKS greater
 AS  has
 AKS header
@@ -124,9 +125,11 @@ A   input handling
 AS  insecure
 AK  is
 K   iterations
+K   joined
 K   keep
 AS  key
-A   least
+AK  least
+V   length
 AKS less
 AS  let
 K   level
@@ -145,7 +148,7 @@ A   minor
 A   minutes
 A   moderate
 A   more
-A   most
+AK  most
 AS  ms
 A   mutating
 A   never
@@ -164,6 +167,7 @@ A   on success
 K   onto
 AS  open
 K   openapi
+K   operation
 K   over
 A   oversized
 S   page
@@ -209,6 +213,7 @@ K   send
 K   sequential
 A   serious
 K   session
+K   skip
 K   snapshot
 K   spider
 K   spike
@@ -249,6 +254,7 @@ K   user
 K   users
 K   uuid
 K   value
+K   variables
 AS  viewport
 AK  violations
 A   visible

@@ -303,7 +303,9 @@ this opinionated: nothing the formatter does can change what a file means. The s
 answers the editor's *Format Document* through `tflw lsp`, so format-on-save in VS Code needs no
 setting beyond the extension.
 
-## `tflw export otlp [report-dir]`
+## `tflw export`
+
+`tflw export otlp [report-dir] --endpoint <url> [--header <name=value>]`
 
 <table>
   <thead><tr><th>Flag</th><th>Effect</th></tr></thead>

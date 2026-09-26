@@ -9546,6 +9546,64 @@ prunes past after each run (default 50; the report directories on disk are untou
 `D1317` says). Each run record carries the OS user, the hostname and the tflw version, shown in
 the report header.
 
+### D1326
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+
+- **`D1326` — `has count at least|at most N`, `is empty`, `is not empty` are matchers.** `is empty`
+  holds for `""`, `[]`, `{}` and nothing else (not `null`, which has `is null`); on any other type
+  it fails naming the type. The three teaching errors are deleted and their tests become success
+  cases; `FU-09`'s paragraph is rewritten to list what exists.
+
+### D1327
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+
+- **`D1327` — `skip "reason"` is a header clause, and skipped is a third outcome.** Written after the
+  name, beside `retry`/tags. An empty or blank reason is `TF084` (error), for `TF082`'s reason: a
+  skip with no reason is a checkbox. A skipped test runs nothing (no hooks), counts in the summary
+  as its own number, is `<skipped message="…"/>` in JUnit, `"status": "skipped"` in results.json,
+  a `test:start`/`test:end` pair whose result carries `skipped` (no new event type, so no consumer
+  has to learn one), a grey row in the report, and raises no SARIF finding. A run whose only
+  non-passes are skips exits 0. `--tag !x` excludes; exclusions AND, inclusions OR.
+
+### D1328
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+
+- **`D1328` — `body graphql` is a request body kind.** `body graphql """…"""` with optional
+  `variables { … }` and `operationName "…"` lines under it; sent as
+  `{"query","variables","operationName"}` with `content-type: application/json`. On a `GET` it is
+  `TF085` (error): GraphQL-over-GET puts the query in the URL, which is a different shape the
+  language does not write. The parked-list sentence gains one line per remaining protocol.
+  **Amended when built: the query is raw text, never interpolated.** A selection set is `{ id }`,
+  which is exactly an interpolation's spelling — the first runtime test sent `{ orders {id} }` with
+  `id` read as a variable. Values reach a query through `variables`, which is GraphQL's own rule.
+  The page shows a GraphQL body and keeps it as written, as it does `upload`; it is edited in Source.
+
+### D1329
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+
+- **`D1329` — `length of x`, `x joined with y`, and `capture <subject> matching /re/ as n`.**
+  `length of` is sugar evaluating exactly as `.length`; `joined with` takes a list and a string
+  separator and fails on anything else, naming it; the capture takes the first group, or the whole
+  match when the pattern has none, and fails the step when nothing matches. SPEC's "no
+  concatenation" sentence is rewritten to say what is and is not allowed.
+
+### D1331
+
+<sub>cited from SPEC.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+
+- **`D1331` — `tflw export otlp <report-dir> --endpoint URL`** reads `results.json` and posts
+  OTLP/HTTP JSON: one trace per run, spans run → file → test → step, a failed step's span status
+  `ERROR` with its message. No SDK: the JSON encoding is a documented wire format and a
+  dependency would be the larger surface. `--header K=V` for a collector's auth. **Amended when
+  built:** it reads `results.json`, not `events.ndjson` — neither records when a test or step
+  started, and `results.json` carries the run's `startedAt`; spans are laid end to end from it and
+  every span carries `tflw.timing = "reconstructed"`. Ids are hashed from the run, so a re-export is
+  the same trace.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -13792,5 +13850,16 @@ from a measurement of the tree at `78aa376` (tflw `main` after `M240` merged). T
 decisions `PLAN_M239_ENTERPRISE_READINESS.md` numbers 8, 9, 10, 11, 21 and the E4 half of 22 land
 here. The milestone where the page stops
 having a documented fallback it does not have.
+
+### M242
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+
+**`M242` — the language: matchers, skip, GraphQL, strings, shard, exporter, cookbook**
+
+The arc's language milestone (`PLAN_M239_ENTERPRISE_READINESS.md` §6, review decisions 12, 13, 14
+and 23). Scoped 2026-09-26 by measuring the tree first, as `M241` was; §1 is what the measurement
+changed. Decisions `D1326`–`D1332`, free by `collectAnchors` on the day (the corpus's highest was
+`M241`'s `D1325`).
 
 <!-- GENERATED:decisions:end -->
