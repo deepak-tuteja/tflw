@@ -1186,7 +1186,7 @@ test('GET /api/pick refuses when the env declares no `web` base, rather than ope
   }
 });
 
-test('GET /api/pick streams the child’s lines, and the child dies with the connection', async () => {
+test('GET /api/pick streams the child’s lines, and the child dies with the connection', { skip: SIGNALS_UNOBSERVABLE }, async () => {
   // **THE STREAM IS THE SESSION** — the property this route's shape exists for. There is no start
   // call and no stop call, so a session that is never streamed is never started and an orphan is
   // unconstructible. That matters more here than anywhere else in this server: `tflw pick` opens a
