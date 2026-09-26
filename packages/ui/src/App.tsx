@@ -68,6 +68,10 @@ export function App() {
   /** Which stage of the selected file is showing (`M205` §2). It is the hash's second segment, so
    *  a tab is linkable and the back button walks it — the same rule `D1045` makes for the door. */
   const [tab, setTabState] = useState<TabId>(() => tabFromHash(window.location.hash));
+  /** The tab as of the last render, for a stream callback that outlives the render it was made in
+   *  (`M239-08`: a run's end is announced only when the reader is not already looking at it). */
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   /** The file every tab is about (`M206` `Q4`). It lives in the hash for `D1045`'s reason and is
    *  held here rather than in each form, which is where it used to live **twice** — `ApiForm` and
    *  `BrowserForm` each kept their own `useState(files[0] ?? '')`, so a door change reset it. */
@@ -136,9 +140,9 @@ export function App() {
    */
   const [notices, setNotices] = useState<readonly Notice[]>([]);
   const noticeSeq = useRef(0);
-  const notify = useCallback((text: string) => {
+  const notify = useCallback((text: string, tone: Notice['tone'] = 'fail') => {
     noticeSeq.current += 1;
-    setNotices((prev) => [...prev, { id: noticeSeq.current, text, at: Date.now() }]);
+    setNotices((prev) => [...prev, { id: noticeSeq.current, text, at: Date.now(), tone }]);
   }, []);
   const dismiss = useCallback((id: number) => setNotices((prev) => prev.filter((n) => n.id !== id)), []);
   /** The one slot the landing and the sidebar's fallback still read: the newest notice's text. */
@@ -679,10 +683,17 @@ export function App() {
           void refreshLists();
           if (end.kept) setSelected({ kind: 'report', id: reportIdOf(end.kept) });
           else getStderr(id).then((stderr) => setLive((l) => (l && l.id === id ? { ...l, stderr } : l)));
+          /* **A followed run that ends while another tab is open says so** — `M240` `F`
+             (`M239-08`). The Run tab draws the verdict itself; anywhere else the only mark was the
+             tab's `runMark` going quiet. One notice, naming the verdict (`M239-06`'s layer). */
+          if (tabRef.current !== 'run') {
+            const verdict = end.status === 'cancelled' ? 'cancelled' : end.exitCode === 0 ? 'passed' : end.exitCode === 1 ? 'failed' : `ended with exit ${end.exitCode}`;
+            notify(`the run ${verdict}${end.kept ? ` — its report is on the Run tab` : ''}`, 'info');
+          }
         },
       });
     },
-    [refreshLists],
+    [refreshLists, notify],
   );
 
   /* A viewer is about one report; choosing another run is leaving it (`D1179`). */
@@ -695,6 +706,35 @@ export function App() {
   }, [selected, live?.id, watch]);
 
   const running = runs.some((r) => r.status === 'running');
+  /**
+   * **A run that appears is followed** — `M240` `F` (`M239-08`).
+   *
+   * A run started from a terminal, the API or a second tab drew a `● running` chip while the pane
+   * said *select a run* (review U8): `running` is a fact the strip draws and the pane's selection
+   * was a separate state nothing set when a run appeared. Now, whenever the list holds a running
+   * run and nothing is being followed, that run is selected — and selection is what starts the
+   * watch. A reader who is following one run is not moved to another.
+   *
+   * The list itself is re-read every five seconds while the page is visible, because nothing else
+   * tells this page about a run it did not start: the stream is per run, and a run is only
+   * announced by the list. One small `GET` per open tab per five seconds is the price of *a run
+   * started elsewhere is followed*, and it is paid only while somebody can see the page.
+   */
+  useEffect(() => {
+    const first = runs.find((r) => r.status === 'running');
+    if (first === undefined) return;
+    // *Being followed* is a live watch with no end yet; a watch that has ended is a run that is
+    // over, and the next one that appears is followed the same way.
+    if (live !== null && (live.end === null || live.id === first.id)) return;
+    setSelected({ kind: 'run', id: first.id });
+  }, [runs, live]);
+  useEffect(() => {
+    const every = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      refreshLists().catch(() => { /* a poll that fails is the next poll's problem, not a notice every five seconds */ });
+    }, 5_000);
+    return () => clearInterval(every);
+  }, [refreshLists]);
   const onCancel = useCallback(() => {
     const r = runs.find((x) => x.status === 'running');
     if (r) void cancelRun(r.id).then(refreshLists);
@@ -1416,6 +1456,8 @@ interface Notice {
   readonly id: number;
   readonly text: string;
   readonly at: number;
+  /** `fail` is the red border; `info` is a run's end, which is news and not a failure. */
+  readonly tone: 'fail' | 'info';
 }
 
 /** How long a notice stays before it goes on its own. Long enough to read, short enough that a
@@ -1437,7 +1479,7 @@ function Notices({ notices, onDismiss }: { readonly notices: readonly Notice[]; 
   return (
     <div className="notices" data-notices={notices.length} role="status" aria-live="polite">
       {notices.map((n) => (
-        <div key={n.id} className="notice error" data-notice={n.id}>
+        <div key={n.id} className={`notice ${n.tone === 'fail' ? 'error' : 'info'}`} data-notice={n.id} data-notice-tone={n.tone}>
           <span>{n.text}</span>
           <button type="button" onClick={() => onDismiss(n.id)} data-notice-close aria-label="dismiss this notice">
             ✕
