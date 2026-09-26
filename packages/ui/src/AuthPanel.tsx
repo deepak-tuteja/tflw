@@ -144,15 +144,15 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
             `Q2` makes, since the BROWSER one was being shown to all four. */}
         {door === 'browser' && pageSteps > 0 ? (
           <p className="muted" data-auth-no-bridge>
-            <strong>A session does not log the browser in.</strong> Its cached state is never applied to the test's fresh browser
-            context — a cookie jar and a browser context's storage state are two representations tflw deliberately never
-            bridges. Whatever this file runs <em>as</em> below is a fact about its api steps only.
+            {/* `M240-05`: why — the jar and the storage state are never bridged — is the legend's. */}
+            <strong>A session does not log the browser in.</strong> Whatever this file runs <em>as</em> below is a fact about its
+            api steps only.
             {mixed.length === 0 ? null : (
               <>
                 {' '}
                 <span data-auth-mixed={mixed.length}>
                   {mixed.length} {mixed.length === 1 ? 'test' : 'tests'} here {mixed.length === 1 ? 'carries' : 'carry'} both kinds —{' '}
-                  <em>{mixed.map((t) => t.name).join(', ')}</em> — so {mixed.length === 1 ? 'it establishes' : 'they establish'} identity
+                  <em data-user-data>{mixed.map((t) => t.name).join(', ')}</em> — so {mixed.length === 1 ? 'it establishes' : 'they establish'} identity
                   twice: an API login for the api steps, a form login for the page.
                 </span>
               </>
@@ -196,10 +196,9 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
                 <strong>
                   {excluded.length === 1 ? 'One session is' : `${excluded.length} sessions are`} excluded from it
                 </strong>
-                : {excluded.map((n) => <code key={n}>{n}</code>).reduce<ReactNode[]>((acc, el, i) => (i === 0 ? [el] : [...acc, ', ', el]), [])} —{' '}
-                <code>privileged</code> means this principal is <em>supposed</em> to reach other principals' resources, so reporting
-                the access it is entitled to would be a false finding. The consequence is the
-                one worth reading here: <strong>a green result says nothing about what those principals could reach.</strong>
+                : {excluded.map((n) => <code key={n}>{n}</code>).reduce<ReactNode[]>((acc, el, i) => (i === 0 ? [el] : [...acc, ', ', el]), [])} as <code>privileged</code> —{' '}
+                {/* `M240-05`: why a privileged session is left out is the legend's Auth entry. */}
+                <strong>a green result says nothing about what those principals could reach.</strong>
               </>
             )}
           </p>
@@ -241,7 +240,12 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
             ? 'no file open'
             : anonymousTests.length === 0
               ? `Every test in ${file.path} names a session, so nothing here runs as ${RESERVED_PRINCIPAL}.`
-              : `${anonymousTests.length} of ${file.tests.length} tests in ${file.path} run as ${RESERVED_PRINCIPAL}: ${anonymousTests.map((t) => t.name).join(', ')}`}
+              : (
+                <>
+                  {`${anonymousTests.length} of ${file.tests.length} tests in ${file.path} run as ${RESERVED_PRINCIPAL}: `}
+                  <span data-user-data>{anonymousTests.map((t) => t.name).join(', ')}</span>
+                </>
+              )}
         </p>
       </section>
 
@@ -327,7 +331,7 @@ function SessionRow({ name, tests, session, envName, onEdit }: {
                 : `${session.steps} establishing step${session.steps === 1 ? '' : 's'}, and no \`header\` line — what it carries is whatever cookies those steps set`}
       </p>
       <p className="muted" data-auth-session-tests={tests.length}>
-        used by {tests.join(', ')}
+        used by <span data-user-data>{tests.join(', ')}</span>
       </p>
     </li>
   );
@@ -374,10 +378,12 @@ function TargetRow({ target, repeated, onEdit }: {
           </button>
         ) : null}
       </header>
-      <p data-auth-target-reason>“{target.reason}”</p>
+      <p data-auth-target-reason data-user-data>“{target.reason}”</p>
+      {/* `M240-05`: said once per target, so the row carries the fact alone; what the read-only
+          set leaves out is the legend's Auth entry. */}
       <ul className="auth-probes" data-auth-probes={granted.length}>
         {granted.length === 0 ? (
-          <li className="muted">read-only probes only — no mutating request, oversized input, traversal payload or cipher handshake</li>
+          <li className="muted">read-only probes only</li>
         ) : (
           granted.map(([key, grant]) => (
             <li key={String(key)} data-auth-probe={String(key)}>
