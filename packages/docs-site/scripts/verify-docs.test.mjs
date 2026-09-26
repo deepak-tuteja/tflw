@@ -159,10 +159,10 @@ test('a tflw.config sample is validated, not just parsed', async () => {
 
 /** A reference page covering every command the shipped binary dispatches, minus `omit`. */
 const cliPage = (omit) =>
-  // `record` joined in `M213` `S5`. This list is a fixture of *what the binary dispatches*, so it
+  // `record` joined in `M213` `S5`, `export` in `M242` `F` (`D1331`). This list is a fixture of *what the binary dispatches*, so it
   // is not a duplicate of the real page — it is what makes the three tests below able to state
   // *complete* and *incomplete* about a corpus this file controls.
-  ['run', 'check', 'init', 'docs', 'spec', 'lsp', 'install-browsers', 'pick', 'record', 'watch', 'refactor', 'migrate', 'fmt', 'ui']
+  ['run', 'check', 'init', 'docs', 'spec', 'lsp', 'install-browsers', 'pick', 'record', 'watch', 'refactor', 'migrate', 'fmt', 'ui', 'export']
     .filter((c) => c !== omit)
     .map((c) => `## \`tflw ${c}\`\n\nProse.\n`)
     .join('\n');
@@ -186,7 +186,7 @@ test('a complete CLI reference passes', async () => {
   // rejected every corpus carrying a reference page at all.
   const { code, stdout, stderr } = await guard({ 'index.md': '# x\n', 'reference/cli.md': cliPage() });
   assert.equal(code, 0, stderr);
-  assert.match(stdout, /14 shipped subcommands/);
+  assert.match(stdout, /15 shipped subcommands/);
 });
 
 test('a corpus with no CLI reference reports the check as skipped, not as passed', async () => {
