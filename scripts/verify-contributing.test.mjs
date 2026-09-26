@@ -74,6 +74,12 @@ const WORKFLOW_DIR = join(ROOT, '.github', 'workflows');
 const CLASSIFIED = [
   // --- ci.yml, job `test` (matrix Node 22/24) ---------------------------------------------------
   { wf: 'ci.yml', job: 'test', cmd: 'npm ci', class: 'setup', why: 'dependency install' },
+  // --- ci.yml, job `windows` (`M243` `A`, `D1333`) ----------------------------------------------
+  { wf: 'ci.yml', job: 'windows', cmd: 'npm ci', class: 'setup', why: 'dependency install, on the Windows runner' },
+  { wf: 'ci.yml', job: 'windows', cmd: 'npx playwright install chromium firefox', class: 'setup', why: 'the two engines the suite launches, on the Windows runner' },
+  { wf: 'ci.yml', job: 'windows', cmd: 'npm run build', class: 'ci-only', why: 'the same command the `test` job gates on Linux, run again on `windows-latest` — no contributor's machine here runs Windows, and the Linux form is already a gate above, so there is nothing further to run before pushing; a red here is a platform fact, filed as `M243-nn`' },
+  { wf: 'ci.yml', job: 'windows', cmd: 'npm run typecheck', class: 'ci-only', why: 'the same command the `test` job gates on Linux, run again on `windows-latest` — no contributor's machine here runs Windows, and the Linux form is already a gate above, so there is nothing further to run before pushing; a red here is a platform fact, filed as `M243-nn`' },
+  { wf: 'ci.yml', job: 'windows', cmd: 'npm test', class: 'ci-only', why: 'the same command the `test` job gates on Linux, run again on `windows-latest` — no contributor's machine here runs Windows, and the Linux form is already a gate above, so there is nothing further to run before pushing; a red here is a platform fact, filed as `M243-nn`' },
   // --- ci.yml, job `supply-chain` (`M239` `E`, `D1320`) ---------------------------------------
   { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm ci', class: 'setup', why: 'dependency install, again, because this job runs on its own runner' },
   { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm audit --audit-level=high --omit=dev', class: 'gate', local: 'npm audit --audit-level=high --omit=dev', why: 'nothing a `tflw` install carries has a known high-or-critical advisory. `--omit=dev` because the development tree is not what a user runs — its advisories are Dependabot alerts, read by hand (SECURITY.md). Reads the lockfile against the registry, so it needs the network and nothing else' },
