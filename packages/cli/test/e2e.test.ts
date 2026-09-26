@@ -18,6 +18,13 @@ import { fileURLToPath } from 'node:url';
 import { CLI_FLAGS, SPEC_MANIFEST_VERSION, specConstructs } from '@tflw/lang';
 import { ARTIFACT_CONTRACT } from '@tflw/reporter';
 
+// `M243-06`: Windows delivers no signal from one process to another — `child.kill('SIGINT')` there
+// terminates the child outright, so what a test proves by sending SIGINT (a flush, exit 130, a clean
+// browser close) cannot be observed. A user pressing Ctrl+C in a Windows console does reach Node as
+// SIGINT; the page's Cancel does not, which is the open half of `M243-06`. Skipped on Windows only.
+const SIGNALS_UNOBSERVABLE = process.platform === 'win32' ? 'M243-06: no inter-process signals on Windows' : false;
+
+
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
 const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'cli.cjs');
@@ -4306,7 +4313,7 @@ function runLoadAndSigint(loadArgs: string[], cwd: string, killAfterMs: number):
   });
 }
 
-test('`tflw load`: Ctrl-C flushes a partial report (exit 130) instead of losing the run', async () => {
+test('`tflw load`: Ctrl-C flushes a partial report (exit 130) instead of losing the run', { skip: SIGNALS_UNOBSERVABLE }, async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-sigint-'));
     try {
@@ -4347,7 +4354,7 @@ test('`tflw load`: Ctrl-C flushes a partial report (exit 130) instead of losing 
 // console output entirely, so the abort's `run:end` event needs its own run rather than another
 // assertion on the test above. Worth the extra 300ms: `--format ndjson` is the mode built to be
 // consumed by something other than a person, which is exactly who was being lied to.
-test('`--format ndjson`: an aborted run\'s `run:end` event carries `ok: false`, like every other sink', async () => {
+test('`--format ndjson`: an aborted run\'s `run:end` event carries `ok: false`, like every other sink', { skip: SIGNALS_UNOBSERVABLE }, async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-sigint-ndjson-'));
     try {
@@ -4371,7 +4378,7 @@ test('`--format ndjson`: an aborted run\'s `run:end` event carries `ok: false`, 
   });
 });
 
-test('`tflw load --workers 2`: Ctrl-C propagates to forked workers and still merges a partial report', async () => {
+test('`tflw load --workers 2`: Ctrl-C propagates to forked workers and still merges a partial report', { skip: SIGNALS_UNOBSERVABLE }, async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-load-sigint-workers-'));
     try {

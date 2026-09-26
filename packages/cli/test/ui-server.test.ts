@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink, cp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseConfigSource } from '@tflw/lang';
@@ -17,14 +17,23 @@ import { UiServer, blockForEnv, readProject, runArgv, initArgv, pickArgv, record
 import { buildStamp } from '../src/buildStamp.js';
 import { readdir } from 'node:fs/promises';
 
+// `M243-06`: Windows delivers no signal from one process to another — `child.kill('SIGINT')` there
+// terminates the child outright, so what a test proves by sending SIGINT (a flush, exit 130, a clean
+// browser close) cannot be observed. A user pressing Ctrl+C in a Windows console does reach Node as
+// SIGINT; the page's Cancel does not, which is the open half of `M243-06`. Skipped on Windows only.
+const SIGNALS_UNOBSERVABLE = process.platform === 'win32' ? 'M243-06: no inter-process signals on Windows' : false;
+
+
 const readdirSafe = async (dir: string): Promise<string[]> => readdir(dir).catch(() => []);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cliEntry = join(here, '..', 'src', 'cli.ts');
 // `--import tsx` resolves the package from the CHILD's cwd — the fixture project, which has no
-// node_modules — so the loader travels as an absolute path, which is what `tflw ui` under the
+// node_modules — so the loader travels as an absolute `file://` URL, which is what `tflw ui` under the
 // source entry passes along too.
-const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
+// `M243-05`: a URL, not a path — Node on Windows refuses an absolute path as an `--import` specifier
+// (`ERR_UNSUPPORTED_ESM_URL_SCHEME`, protocol `d:`), and a `file://` URL is what every OS accepts.
+const tsxLoader = import.meta.resolve('tsx');
 // `M239` `A` (`D1316`) — one known token for every server here, sent the way the page sends it.
 // The boundary itself — what a request WITHOUT it gets — is `ui-server-boundary.test.ts`.
 const TOKEN = 'm239-test-token-0123456789abcdef';
@@ -198,8 +207,9 @@ test('the project view names the scratch file and says whether git will ignore i
 });
 
 test('safeJoin refuses a path that escapes its base, including the sibling-prefix trick', () => {
-  assert.equal(safeJoin('/base/report', 'results.json'), join('/base/report', 'results.json'));
-  assert.equal(safeJoin('/base/report', 'runs/x/results.json'), join('/base/report', 'runs', 'x', 'results.json'));
+  // `resolve`, as `safeJoin` does: on Windows the absolute form of `/base` carries the drive (`M243-04`).
+  assert.equal(safeJoin('/base/report', 'results.json'), resolve('/base/report', 'results.json'));
+  assert.equal(safeJoin('/base/report', 'runs/x/results.json'), resolve('/base/report', 'runs', 'x', 'results.json'));
   assert.equal(safeJoin('/base/report', '../tflw.config'), null);
   assert.equal(safeJoin('/base/report', '../report-evil/x'), null);
   assert.equal(safeJoin('/base/report', '/etc/passwd'), null);
@@ -207,7 +217,7 @@ test('safeJoin refuses a path that escapes its base, including the sibling-prefi
 
 test('parseUiArgs: defaults, --port, --no-open, a directory, and the two refusals', () => {
   assert.deepEqual(parseUiArgs([], '/cwd'), { root: '/cwd', port: 4141, open: true });
-  assert.deepEqual(parseUiArgs(['--port', '0', '--no-open', 'proj'], '/cwd'), { root: '/cwd/proj', port: 0, open: false });
+  assert.deepEqual(parseUiArgs(['--port', '0', '--no-open', 'proj'], '/cwd'), { root: resolve('/cwd', 'proj'), port: 0, open: false });
   assert.deepEqual(parseUiArgs(['--port', 'x'], '/cwd'), { usage: '--port takes a number 0-65535, got x' });
   assert.deepEqual(parseUiArgs(['--port'], '/cwd'), { usage: '--port takes a number 0-65535, got nothing' });
   assert.deepEqual(parseUiArgs(['--host', '0.0.0.0'], '/cwd'), { usage: 'unknown flag `--host` for `tflw ui`' });
@@ -330,7 +340,7 @@ test('a run from the API is a real tflw run: the stream arrives over SSE, the re
   });
 });
 
-test('cancel sends SIGINT to the child; the run ends cancelled and its subscribers are told', async () => {
+test('cancel sends SIGINT to the child; the run ends cancelled and its subscribers are told', { skip: SIGNALS_UNOBSERVABLE }, async () => {
   await withFixtureServer(async (baseUrl, slow) => {
     const dir = await fixtureProject(baseUrl);
     const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });

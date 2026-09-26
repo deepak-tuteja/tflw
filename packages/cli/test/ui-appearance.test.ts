@@ -77,7 +77,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const uiRoot = join(here, '..', '..', 'ui');
 const fixtures = join(uiRoot, 'fixtures');
 const cliEntry = join(here, '..', 'src', 'cli.ts');
-const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
+// `M243-05`: a URL, not a path — Node on Windows refuses an absolute path as an `--import` specifier
+// (`ERR_UNSUPPORTED_ESM_URL_SCHEME`, protocol `d:`), and a `file://` URL is what every OS accepts.
+const tsxLoader = import.meta.resolve('tsx');
 // `M239` `A` (`D1316`) — one known token; see `ui-page.test.ts` for the shape.
 const TOKEN = 'm239-test-token-0123456789abcdef';
 const newPage = async (options?: Parameters<Browser['newPage']>[0]): Promise<Page> => {

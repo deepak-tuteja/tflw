@@ -25,6 +25,13 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// `M243-06`: Windows delivers no signal from one process to another — `child.kill('SIGINT')` there
+// terminates the child outright, so what a test proves by sending SIGINT (a flush, exit 130, a clean
+// browser close) cannot be observed. A user pressing Ctrl+C in a Windows console does reach Node as
+// SIGINT; the page's Cancel does not, which is the open half of `M243-06`. Skipped on Windows only.
+const SIGNALS_UNOBSERVABLE = process.platform === 'win32' ? 'M243-06: no inter-process signals on Windows' : false;
+
+
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
 const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'cli.cjs');
@@ -140,7 +147,7 @@ function assertInterruptedCleanly(pick: PickController, code: number | null): vo
   assert.ok(!pick.stderr().includes('error'), `Ctrl+C was reported to the user as an error:\n${pick.stderr()}`);
 }
 
-test('Ctrl+C before the browser has even spawned stops cleanly', async () => {
+test('Ctrl+C before the browser has even spawned stops cleanly', { skip: SIGNALS_UNOBSERVABLE }, async () => {
   // Pre-M105 control: no SIGINT listener exists yet at this point, so Node's default kill applies
   // and the process dies by signal — `exit` fires with a `null` code, which is not 0 and not 130.
   await withServer(
@@ -153,7 +160,7 @@ test('Ctrl+C before the browser has even spawned stops cleanly', async () => {
   );
 });
 
-test('Ctrl+C while the page is still navigating stops cleanly and leaks no browser', async () => {
+test('Ctrl+C while the page is still navigating stops cleanly and leaks no browser', { skip: SIGNALS_UNOBSERVABLE }, async () => {
   // The CI failure, made deterministic: the request proves the browser is up and `goto` is in
   // flight, and it is never answered, so the window stays open until the signal closes it.
   // Pre-M105 control: exit 2 with `error: page.goto: net::ERR_ABORTED` on stderr.
@@ -226,7 +233,7 @@ test('a genuine launch failure still reports it and still exits 2', async () => 
   assert.ok(pick.stderr().includes('error'), `expected a reported error, stderr was:\n${pick.stderr()}`);
 });
 
-test('the readiness line prints only once the page is actually up', async () => {
+test('the readiness line prints only once the page is actually up', { skip: SIGNALS_UNOBSERVABLE }, async () => {
   // Decision 188's other half. The old single banner announced "click any element to print its
   // locator" *before* the launch, when there was no window and nothing to click — which is why the
   // downstream guard had to follow it with a fixed 2s sleep. Ordering, not wording, is the fix.

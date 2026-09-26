@@ -19,7 +19,9 @@ import { UiServer, documentPolicy } from '../src/ui-server.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cliEntry = join(here, '..', 'src', 'cli.ts');
-const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
+// `M243-05`: a URL, not a path — Node on Windows refuses an absolute path as an `--import` specifier
+// (`ERR_UNSUPPORTED_ESM_URL_SCHEME`, protocol `d:`), and a `file://` URL is what every OS accepts.
+const tsxLoader = import.meta.resolve('tsx');
 const TOKEN = 'm239-headers-token-0123456789abcdef';
 const bearer = { authorization: `Bearer ${TOKEN}` };
 const EXAMPLE_REPORT = join(here, '..', '..', 'ui', 'fixtures', 'example-reports', 'local');

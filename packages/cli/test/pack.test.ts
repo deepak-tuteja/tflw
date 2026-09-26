@@ -18,6 +18,10 @@ import { fileURLToPath } from 'node:url';
 import { collectNotices } from '../../../scripts/third-party-notices.mjs';
 import { stagedSetup } from '../../../scripts/test-staging.mjs';
 
+// `M243-02`: on Windows `npm` and an installed bin are `.cmd` shims, which Node spawns only
+// through a shell (`EINVAL`/`ENOENT` otherwise, since its fix for CVE-2024-27980).
+const WIN = process.platform === 'win32';
+
 const here = dirname(fileURLToPath(import.meta.url));
 const cliRoot = join(here, '..');
 const execFileAsync = promisify(execFile);
@@ -61,7 +65,7 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/
   const { stdout } = await execFileAsync('tar', ['-tzf', tarballPath]);
   const files = stdout
     .trim()
-    .split('\n')
+    .split(/\r?\n/) // `M243-04`: Windows' tar ends each line with CRLF
     .map((f) => f.replace(/^package\//, ''))
     .sort();
   // `dist/mtls-worker.cjs` (M35c) — the isolated mTLS-dispatch child process, its own separate
@@ -203,10 +207,10 @@ test('installing the tarball into a fresh project pulls in no @tflw/* packages, 
   const projectDir = join(scratchDir, 'consumer');
   await mkdir(projectDir, { recursive: true });
   await writeFile(join(projectDir, 'package.json'), JSON.stringify({ name: 'consumer', version: '0.0.0', private: true }), 'utf8');
-  await execFileAsync('npm', ['install', tarballPath], { cwd: projectDir });
+  await execFileAsync('npm', ['install', tarballPath], { cwd: projectDir, shell: WIN });
 
   await assert.rejects(access(join(projectDir, 'node_modules', '@tflw')), 'no @tflw/* package should ever be installed alongside tflw');
-  await access(join(projectDir, 'node_modules', '.bin', 'tflw'));
+  await access(join(projectDir, 'node_modules', '.bin', WIN ? 'tflw.cmd' : 'tflw'));
 
   const server: Server = createServer((req, res) => {
     if (req.url === '/health') res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
@@ -221,8 +225,8 @@ test('installing the tarball into a fresh project pulls in no @tflw/* packages, 
     await writeFile(join(projectDir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
     await writeFile(join(projectDir, 'health.tflw'), `test "health check"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
 
-    const tflwBin = join(projectDir, 'node_modules', '.bin', 'tflw');
-    const { stdout } = await execFileAsync(tflwBin, ['run', '--no-color'], { cwd: projectDir });
+    const tflwBin = join(projectDir, 'node_modules', '.bin', WIN ? 'tflw.cmd' : 'tflw');
+    const { stdout } = await execFileAsync(tflwBin, ['run', '--no-color'], { cwd: projectDir, shell: WIN });
     assert.match(stdout, /1\/1 passed/);
   } finally {
     server.closeAllConnections();
@@ -232,11 +236,11 @@ test('installing the tarball into a fresh project pulls in no @tflw/* packages, 
 
 test('`tflw init` scaffolds a working project from the installed binary', async () => {
   const projectDir = join(scratchDir, 'consumer'); // reuses the install from the previous test
-  const tflwBin = join(projectDir, 'node_modules', '.bin', 'tflw');
+  const tflwBin = join(projectDir, 'node_modules', '.bin', WIN ? 'tflw.cmd' : 'tflw');
   const initDir = join(scratchDir, 'init-target');
   await mkdir(initDir, { recursive: true });
 
-  const { stdout } = await execFileAsync(tflwBin, ['init'], { cwd: initDir });
+  const { stdout } = await execFileAsync(tflwBin, ['init'], { cwd: initDir, shell: WIN });
   assert.match(stdout, /created tflw\.config, example\.tflw, \.env\.example, package\.json, \.gitignore/);
   await access(join(initDir, 'tflw.config'));
   await access(join(initDir, 'example.tflw'));

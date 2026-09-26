@@ -20,7 +20,9 @@ import { readProject } from '../src/ui-server.js';
 const execFileAsync = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
 const cliEntry = join(here, '..', 'src', 'cli.ts');
-const tsxLoader = fileURLToPath(import.meta.resolve('tsx'));
+// `M243-05`: a URL, not a path — Node on Windows refuses an absolute path as an `--import` specifier
+// (`ERR_UNSUPPORTED_ESM_URL_SCHEME`, protocol `d:`), and a `file://` URL is what every OS accepts.
+const tsxLoader = import.meta.resolve('tsx');
 
 type Outcome = { code: number; stdout: string; stderr: string };
 async function tflw(cwd: string, ...argv: string[]): Promise<Outcome> {
