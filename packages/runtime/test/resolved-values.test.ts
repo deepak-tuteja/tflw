@@ -14,7 +14,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseConfigSource, DEFAULT_HELPER_DIRS } from '@tflw/lang';
+import { parseConfigSource, DEFAULT_HELPER_DIRS, DEFAULT_RUNS_KEPT } from '@tflw/lang';
 import { resolveConfig, selectEnv } from '../src/resolve.js';
 
 /** `workers` and `report` are `defaults`-only keys (`TF025`), so the varying lines go there; the
@@ -55,3 +55,13 @@ test('`helpers` resolves to the declared directories, flattened across lines, an
   assert.equal(d.helpers, DEFAULT_HELPER_DIRS, 'identity, not equality: the checker\'s hint reads it to say "the default"');
   assert.deepEqual([...d.helpers], ['./helpers', './tests/helpers']);
 });
+
+test('`runs keep N` resolves to its number, and to `DEFAULT_RUNS_KEPT` (50) when a config says nothing (`M241` `E`, `D1325`)', () => {
+  const declared = parseConfigSource('runs keep 3\nenv local default\n  api "http://127.0.0.1:1"\n');
+  assert.deepEqual(declared.diagnostics, []);
+  assert.equal(resolveConfig(declared.config, selectEnv(declared.config, { flag: undefined, envVar: undefined })).runsKeep, 3);
+  const none = parseConfigSource('env local default\n  api "http://127.0.0.1:1"\n');
+  assert.equal(resolveConfig(none.config, selectEnv(none.config, { flag: undefined, envVar: undefined })).runsKeep, DEFAULT_RUNS_KEPT);
+  assert.equal(DEFAULT_RUNS_KEPT, 50, 'the number `D1317` chose, kept as the default');
+});
+

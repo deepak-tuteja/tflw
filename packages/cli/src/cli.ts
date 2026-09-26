@@ -13,8 +13,10 @@ import { watch as fsWatch, existsSync, readFileSync, statSync, mkdirSync, openSy
 // M92b (`B6-09`) — `install-browsers` resolves the consumer's own `playwright` instead of letting
 // `npx --yes` fetch an unpinned one from the registry.
 import { createRequire } from 'node:module';
+import { hostname, userInfo } from 'node:os';
 import { join, resolve, relative, dirname, basename, sep } from 'node:path';
 import { discoverTests } from './project.js';
+import { readRunFlags } from './run-flags.js';
 import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH, PLAY_SCRATCH } from './ui-server.js';
 import { buildStamp, getVersion, type BuildStamp } from './buildStamp.js';
 import { recordedLine } from './record.js';
@@ -1055,99 +1057,24 @@ const TEARDOWN_LEVELS = ['always', 'on-success', 'never'] as const;
 const LOG_OUTPUT_VALUES = ['console', 'html', 'both', 'none'] as const;
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
-function parseRunArgs(argv: string[]): RunArgs {
-  const files: string[] = [];
-  let env: string | undefined;
-  let seedRaw: string | undefined;
-  let nowRaw: string | undefined;
-  let tagRaw: string | undefined;
-  let only: string | undefined;
-  let parallelRaw: string | undefined;
-  let workersRaw: string | undefined;
-  let skipWorkload = false;
-  let noColor = false;
-  let verbose = false;
-  let forbidInsecure = false;
-  const allowPublicTargets: string[] = [];
-  let evidenceRaw: string | undefined;
-  let teardownRaw: string | undefined;
-  let failed = false;
-  let bail = false;
-  let formatRaw: string | undefined;
-  let noTimestamps = false;
-  let logFile: string | undefined;
-  let browserRaw: string | undefined;
-  let headed = false;
-  let noHelpers = false;
-  let trace = false;
-  let updateSnapshots = false;
-  let logOutputRaw: string | undefined;
-  let logLevelRaw: string | undefined;
-  let failOnRaw: string | undefined;
-  let baseline: string | undefined;
-  let baselineWrite: string | undefined;
-  let probeSeededRaw: string | undefined;
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!;
-    if (a === '--env') env = flagValue(argv, ++i, a);
-    else if (a.startsWith('--env=')) env = inlineFlagValue(a, '--env');
-    else if (a === '--seed') seedRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--seed=')) seedRaw = inlineFlagValue(a, '--seed');
-    else if (a === '--now') nowRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--now=')) nowRaw = inlineFlagValue(a, '--now');
-    else if (a === '--tag') tagRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--tag=')) tagRaw = inlineFlagValue(a, '--tag');
-    else if (a === '--only') only = flagValue(argv, ++i, a);
-    else if (a.startsWith('--only=')) only = inlineFlagValue(a, '--only');
-    else if (a === '--parallel') parallelRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--parallel=')) parallelRaw = inlineFlagValue(a, '--parallel');
-    else if (a === '--workers') workersRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--workers=')) workersRaw = inlineFlagValue(a, '--workers');
-    else if (a === '--skip-workload') skipWorkload = true;
-    else if (a === '--no-color') noColor = true;
-    else if (a === '--verbose') verbose = true;
-    else if (a === '--forbid-insecure') forbidInsecure = true;
-    // Repeatable (D340): each occurrence names exactly one origin. No comma-separated form and no
-    // wildcard, for `TF061`'s reason — a list is one string an author can extend without rereading,
-    // and a wildcard is a claim whose scope its author could not have known when they wrote it.
-    else if (a === '--allow-public-target') allowPublicTargets.push(flagValue(argv, ++i, a));
-    else if (a.startsWith('--allow-public-target=')) allowPublicTargets.push(inlineFlagValue(a, '--allow-public-target'));
-    else if (a === '--evidence') evidenceRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--evidence=')) evidenceRaw = inlineFlagValue(a, '--evidence');
-    else if (a === '--teardown') teardownRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--teardown=')) teardownRaw = inlineFlagValue(a, '--teardown');
-    else if (a === '--failed') failed = true;
-    else if (a === '--bail') bail = true;
-    else if (a === '--format') formatRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--format=')) formatRaw = inlineFlagValue(a, '--format');
-    else if (a === '--no-timestamps') noTimestamps = true;
-    else if (a === '--log-file') logFile = flagValue(argv, ++i, a);
-    else if (a.startsWith('--log-file=')) logFile = inlineFlagValue(a, '--log-file');
-    else if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
-    else if (a === '--headed') headed = true;
-    else if (a === '--no-helpers') noHelpers = true;
-    else if (a === '--trace') trace = true;
-    else if (a === '--update-snapshots') updateSnapshots = true;
-    else if (a === '--log-output') logOutputRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--log-output=')) logOutputRaw = inlineFlagValue(a, '--log-output');
-    else if (a === '--log-level') logLevelRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--log-level=')) logLevelRaw = inlineFlagValue(a, '--log-level');
-    else if (a === '--fail-on') failOnRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--fail-on=')) failOnRaw = inlineFlagValue(a, '--fail-on');
-    else if (a === '--baseline') baseline = flagValue(argv, ++i, a);
-    else if (a.startsWith('--baseline=')) baseline = inlineFlagValue(a, '--baseline');
-    else if (a === '--baseline-write') baselineWrite = flagValue(argv, ++i, a);
-    else if (a.startsWith('--baseline-write=')) baselineWrite = inlineFlagValue(a, '--baseline-write');
-    else if (a === '--probe-seeded') probeSeededRaw = flagValue(argv, ++i, a);
-    else if (a.startsWith('--probe-seeded=')) probeSeededRaw = inlineFlagValue(a, '--probe-seeded');
-    else if (a.startsWith('--')) unknownFlag('run', a);
-    else files.push(a);
+/** The OS user, the host and the tflw version — `D1325`. A user the OS will not name (a container
+ *  with no passwd entry) is written as such rather than thrown on. */
+async function ranBy(): Promise<{ user: string; host: string; version: string }> {
+  let user = 'unknown';
+  try {
+    user = userInfo().username;
+  } catch {
+    // no passwd entry for this uid — the report says so rather than failing the run
   }
-  // A `--tag` value made only of separators (`,,`, ` , `) survives the empty check in
-  // `requireNonEmpty` but still names zero tags, and used to collapse to `undefined` — the same
-  // silent widening to the whole suite that B6-01 is about, one step further along. Refuse it here
-  // rather than in the flag layer, since only `--tag` has a list to be empty.
+  return { user, host: hostname(), version: await getVersion() };
+}
+
+function parseRunArgs(argv: string[]): RunArgs {
+  // `M241` `D` (`D1324`): the flags are rows of `RUN_FLAGS`, which the page's `more…` reads too.
+  const { files, values } = readRunFlags(argv, flagValue, inlineFlagValue, (a) => unknownFlag('run', a));
+  const str = (key: string): string | undefined => values[key] as string | undefined;
+  const bool = (key: string): boolean => values[key] === true;
+  const tagRaw = str('tagRaw');
   const tagList = tagRaw
     ?.split(',')
     .map((t) => t.trim())
@@ -1161,36 +1088,36 @@ function parseRunArgs(argv: string[]): RunArgs {
   const tags = tagList && tagList.length > 0 ? tagList : undefined;
   return {
     files,
-    env,
-    seedRaw,
-    nowRaw,
+    env: str('env'),
+    seedRaw: str('seedRaw'),
+    nowRaw: str('nowRaw'),
     tags,
-    only,
-    parallelRaw,
-    workersRaw,
-    skipWorkload,
-    noColor,
-    verbose,
-    forbidInsecure,
-    allowPublicTargets,
-    evidenceRaw,
-    teardownRaw,
-    failed,
-    bail,
-    formatRaw,
-    noTimestamps,
-    logFile,
-    browserRaw,
-    headed,
-    noHelpers,
-    trace,
-    updateSnapshots,
-    logOutputRaw,
-    logLevelRaw,
-    failOnRaw,
-    baseline,
-    baselineWrite,
-    probeSeededRaw,
+    only: str('only'),
+    parallelRaw: str('parallelRaw'),
+    workersRaw: str('workersRaw'),
+    skipWorkload: bool('skipWorkload'),
+    noColor: bool('noColor'),
+    verbose: bool('verbose'),
+    forbidInsecure: bool('forbidInsecure'),
+    allowPublicTargets: (values.allowPublicTargets as string[] | undefined) ?? [],
+    evidenceRaw: str('evidenceRaw'),
+    teardownRaw: str('teardownRaw'),
+    failed: bool('failed'),
+    bail: bool('bail'),
+    formatRaw: str('formatRaw'),
+    noTimestamps: bool('noTimestamps'),
+    logFile: str('logFile'),
+    browserRaw: str('browserRaw'),
+    headed: bool('headed'),
+    noHelpers: bool('noHelpers'),
+    trace: bool('trace'),
+    updateSnapshots: bool('updateSnapshots'),
+    logOutputRaw: str('logOutputRaw'),
+    logLevelRaw: str('logLevelRaw'),
+    failOnRaw: str('failOnRaw'),
+    baseline: str('baseline'),
+    baselineWrite: str('baselineWrite'),
+    probeSeededRaw: str('probeSeededRaw'),
   };
 }
 
@@ -2228,10 +2155,13 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     ...[describeRunFilter({ tags: args.tags, only: args.only, failed: args.failed })].filter((d) => d !== undefined),
     ...(args.skipWorkload ? ['--skip-workload'] : []),
   ].join(', ');
-  const merged: RunReport =
-    baselineDoc === null || baselineFrom === null
+  const merged: RunReport = {
+    ...(baselineDoc === null || baselineFrom === null
       ? redacted
-      : { ...redacted, baseline: auditBaseline(baselineDoc, redacted.findings ?? [], baselineFrom.path, narrowedBy === '' ? undefined : narrowedBy) };
+      : { ...redacted, baseline: auditBaseline(baselineDoc, redacted.findings ?? [], baselineFrom.path, narrowedBy === '' ? undefined : narrowedBy) }),
+    // `M241` `E` (`D1325`) — who ran it, where, with which tflw.
+    ranBy: await ranBy(),
+  };
   // `M192b` (`M192-03`): a run owns `report/` whole. `findings.sarif`, `events.ndjson`, `assets/`
   // and the two repro directories are written only when the run has something for them, and a run
   // that does not must not leave the previous run's behind as its own. This is the first write

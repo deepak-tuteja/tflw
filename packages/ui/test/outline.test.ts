@@ -44,6 +44,8 @@ function topLevelSteps(source: string): Step[] {
     ...program.hooks.flatMap((h) => h.body),
     ...program.tests.flatMap((t) => t.body),
     ...(program.crawls ?? []).flatMap((c) => c.body),
+    // …and actions in `M241` `B` (`D1322`), on the same precedent: the outline draws their bodies.
+    ...program.actions.flatMap((a) => a.body),
   ];
 }
 

@@ -67,7 +67,7 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser, type Locator, type Page } from 'playwright';
 import { UiServer, SCRATCH_PATH } from '../src/ui-server.js';
 import { coverageBuildArgs, startUiCoverage, stopUiCoverage } from './ui-coverage.js';
 import { settle, untilEqual, untilMeasurable } from './settle.js';
@@ -163,7 +163,7 @@ const openTab = async (tab: 'compose' | 'source' | 'run' | 'auth' | 'config'): P
 };
 
 /**
- * What is selected inside the Config tab's textarea — how `S5b` checks that an `[edit]` link
+ * What is selected inside the Config tab's editor — how `S5b` checks that an `[edit]` link
  * landed on the block it named.
  *
  * **It casts through `unknown` rather than naming `HTMLTextAreaElement`, and that is not
@@ -173,10 +173,36 @@ const openTab = async (tab: 'compose' | 'source' | 'run' | 'auth' | 'config'): P
  * failed `tsc`. That is `S1`'s finding, arriving a second time in the same file.
  */
 const selectedText = (p: Page, selector: string): Promise<string> =>
-  p.locator(selector).evaluate((el) => {
-    const area = el as unknown as { value: string; selectionStart: number; selectionEnd: number };
-    return area.value.slice(area.selectionStart, area.selectionEnd);
+  // The editor's selection is the document's (`M241` `A`): CodeMirror keeps the native selection in
+  // step with its own while it has focus, and a line it selected is one `.cm-line`'s text.
+  p.locator(selector).evaluate((el) => el.ownerDocument.getSelection()?.toString() ?? '');
+
+/**
+ * The text an editor holds — `M241` `A` (`D1321`). The Source tab and Config are CodeMirror since
+ * that slice, and the DOM cannot answer this: a CodeMirror line is a `<div>`, so `textContent`
+ * loses every newline, and CodeMirror draws only the lines near the viewport, so a long file is
+ * partly absent from the DOM altogether. The document is read from the editor's own state, through
+ * the view CodeMirror hangs on its content element (`cmTile.root.view`, the path
+ * `EditorView.findFromDOM` itself reads).
+ * That is CodeMirror's internal shape, pinned by the lockfile — so its absence THROWS, and an
+ * upgrade that moves it reddens every gate here rather than letting them read nothing.
+ */
+async function editorText(content: Locator): Promise<string> {
+  await content.waitFor();
+  return content.evaluate((el) => {
+    const doc = (el as unknown as { cmTile?: { root?: { view?: { state: { doc: { toString(): string } } } } } }).cmTile?.root?.view?.state.doc;
+    if (doc === undefined) throw new Error('no CodeMirror view on this element — has @codemirror/view moved `cmTile`?');
+    return doc.toString();
   });
+}
+
+/** Replace an editor's whole text the way a person does: focus, select all, type. */
+async function fillEditor(content: Locator, text: string): Promise<void> {
+  await content.click();
+  await content.press('ControlOrMeta+a');
+  if (text === '') await content.press('Delete');
+  else await content.page().keyboard.insertText(text);
+}
 
 /** `html.ts`'s `pretty`, restated: what the page shows for a JSON body. */
 const pretty = (text: string): string => {
@@ -1085,6 +1111,51 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
   }
 });
 
+test('`M241` `D` (`D1324`): `more…` draws the flags this run can spend, and a run sends only the rows on screen', async () => {
+  const view = await fullProject();
+  // What a narrowing reaches, read off the server's own project view — the same lens sets the strip
+  // reads, so the expectation is computed rather than restated.
+  const lensesOf = (tag: string | null): Set<string> =>
+    new Set(view.files.flatMap((f) => [...f.tests, ...f.crawls].filter((d) => tag === null || ((d as { tags?: string[] }).tags ?? []).includes(tag)).flatMap((d) => d.lenses)));
+  const expected = (lenses: Set<string>): string[] =>
+    [['--seed', 'browser'], ['--now', null], ['--parallel', null], ['--skip-workload', 'load'], ['--evidence', null], ['--bail', null], ['--browser', 'browser'], ['--fail-on', 'scan'], ['--baseline', 'scan']]
+      .filter(([, lens]) => lens === null || lenses.has(lens!))
+      .map(([flag]) => flag!);
+
+  await page.goto(`${pageUrl}${API_RUN}`);
+  await page.reload();
+  const more = page.locator('[data-run-more]');
+  await more.waitFor();
+  assert.deepEqual((await more.getAttribute('data-run-more'))!.split(' '), expected(lensesOf(null)), 'run all: every row this project can spend');
+
+  // Narrowed to the load tests: a scan's `fail on` is not on a strip whose run holds no scan.
+  await page.locator('[data-search]').fill('@load');
+  await settle(async () => (await more.getAttribute('data-run-more')) ?? '', untilEqual(expected(lensesOf('load')).join(' ')), { attempts: 40, delayMs: 50, page });
+  assert.ok(expected(lensesOf('load')).includes('--skip-workload'), 'the fixture\'s @load run holds a workload, or this narrowing proves nothing');
+
+  // A value set in `more…` is on the request; the route is caught and refused so nothing runs.
+  const asked: string[] = [];
+  await page.route('**/api/run', async (route) => {
+    if (route.request().method() === 'POST') asked.push(route.request().postData() ?? '');
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'caught by the test' }) });
+  });
+  try {
+    await page.locator('[data-run-more] summary').click();
+    await page.locator('[data-run-flag="--bail"]').check();
+    await page.locator('[data-run-flag="--now"]').fill('2026-01-02T03:04:05Z');
+    await page.locator('[data-run]').click();
+    await settle(async () => asked.length, untilEqual(1), { attempts: 40, delayMs: 50, page });
+    const body = JSON.parse(asked[0]!) as { flags?: Record<string, string | boolean> };
+    assert.deepEqual(body.flags, { '--now': '2026-01-02T03:04:05Z', '--bail': true });
+  } finally {
+    await page.unroute('**/api/run');
+    // The values are remembered per project in this browser; leave none behind for the next test.
+    await page.locator('[data-run-flag="--bail"]').uncheck();
+    await page.locator('[data-run-flag="--now"]').fill('');
+    await page.locator('[data-search]').fill('');
+  }
+});
+
 test('a run cancelled from the page: its kept directory says so above the report, with the exit the process ended with', async () => {
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
@@ -1441,7 +1512,7 @@ test('an index row scrolls the text to its own line, and puts that line in the m
     await fresh.locator('[data-test-index]').waitFor();
     const decl = fresh.locator('[data-source-test="case 12"]');
     const declLine = Number(await decl.getAttribute('data-line'));
-    const text = (await fresh.locator('[data-preview]').textContent())!;
+    const text = (await editorText(fresh.locator('[data-preview]')));
     const lines = text.split('\n');
     // **The anchor is the declaration's FIRST line, which is its tag line when it carries tags** —
     // `@api` sits above `test "…"`, because the node's span starts at its tags. That is the number
@@ -1450,20 +1521,23 @@ test('an index row scrolls the text to its own line, and puts that line in the m
     const keywordAt = lines.findIndex((l) => l.startsWith('test "case 12"'));
     assert.ok(keywordAt >= 0);
     assert.ok(declLine === keywordAt || declLine === keywordAt + 1, `line ${declLine} begins the declaration (the keyword is at ${keywordAt + 1})`);
-    const anchor = fresh.locator(`[data-preview] [data-source-line="${declLine}"]`);
-    assert.equal((await anchor.textContent())!.replace(/\n$/, ''), lines[declLine - 1], 'the anchor holds the file\'s own line');
-
-    // **The `<pre>` is the scroll container, not the page** — `.preview` is `max-height: 40vh;
-    // overflow: auto`, so the line is centred in the text box and the box itself barely moves.
-    // The first draft measured against the viewport's middle and was off by exactly the distance
-    // between the two centres; it is the text box that has to be asked.
-    const boxBefore = (await fresh.locator('[data-preview]').boundingBox())!;
-    const before = (await anchor.boundingBox())!;
-    assert.ok(before.y > boxBefore.y + boxBefore.height, `the declaration starts below the visible text (y ${before.y}, box ends ${boxBefore.y + boxBefore.height})`);
+    // **The editor is the scroll container** — `M241` `A` (`D1321`). The line's anchor is its
+    // number in CodeMirror's gutter: a line's own text is not unique here (`@api` is every fourth
+    // line), and CodeMirror draws only the lines near what is visible, so before the press the
+    // number may not be in the DOM at all — which is itself the proof it is out of view.
+    const scroller = fresh.locator('.source-editor .cm-scroller');
+    const anchor = fresh.locator('.source-editor .cm-lineNumbers .cm-gutterElement', { hasText: new RegExp(`^${declLine}$`) });
+    await scroller.waitFor();
+    const boxBefore = (await scroller.boundingBox())!;
+    if ((await anchor.count()) > 0) {
+      const before = (await anchor.boundingBox())!;
+      assert.ok(before.y > boxBefore.y + boxBefore.height, `the declaration starts below the visible text (y ${before.y}, box ends ${boxBefore.y + boxBefore.height})`);
+    }
     await decl.locator(`[data-source-goto="${declLine}"]`).click();
+    await anchor.waitFor();
     // Both boxes are re-read AFTER the press: the index above the text is 24 rows tall, so the
     // press scrolls the panel as well as the text and a box measured first is a box that moved.
-    const box = (await fresh.locator('[data-preview]').boundingBox())!;
+    const box = (await scroller.boundingBox())!;
     const after = (await anchor.boundingBox())!;
     // Centred, within one line of the middle — the tolerance is the height of the thing being
     // positioned, so a row pointing one line off is the smallest error this can still see.
@@ -1559,7 +1633,7 @@ test('a fragment file is in the tree, reads `—`, and is not dimmed', async () 
     // it could not be read in Source or edited anywhere.
     await fresh.goto(`${base}/?token=${TOKEN}#/api/source/shared/root.tflw`);
     await fresh.locator('[data-test-index-empty]').waitFor();
-    assert.match((await fresh.locator('[data-preview]').textContent())!, /action "the root" do/);
+    assert.match((await editorText(fresh.locator('[data-preview]'))), /action "the root" do/);
   } finally {
     await fresh.close();
     await ui.close();
@@ -2048,7 +2122,7 @@ test('a folder means its files (`D1069`) — plain click folds, cmd-click select
 const pendingBytes = async (p: Page): Promise<string> => {
   await p.locator('[data-tab="source"]').click();
   await p.locator('[data-tabstrip="source"]').waitFor();
-  const text = (await p.locator('[data-preview]').textContent()) ?? '';
+  const text = (await editorText(p.locator('[data-preview]')));
   await p.locator('[data-tab="compose"]').click();
   await p.locator('[data-tabstrip="compose"]').waitFor();
   return text;
@@ -2223,7 +2297,7 @@ test('`M213` `S2`: one tick writes a path assertion, under the request it is abo
   // It landed under the request it was ticked on, and the file says so.
   await page.locator('[data-tab="source"]').click();
   await page.locator('[data-tabstrip="source"]').waitFor();
-  const text = (await page.locator('[data-preview]').textContent())!;
+  const text = (await editorText(page.locator('[data-preview]')));
   const lines = text.split('\n').map((l) => l.trim());
   const at = lines.indexOf('expect body.price equals 12');
   assert.ok(at > 0, `the assertion is in the buffer:\n${text}`);
@@ -2271,7 +2345,7 @@ test('`M213` `S3`: a ticked value becomes a `capture`, bound by the name the res
 
   await page.locator('[data-tab="source"]').click();
   await page.locator('[data-tabstrip="source"]').waitFor();
-  const lines = (await page.locator('[data-preview]').textContent())!.split('\n').map((l) => l.trim());
+  const lines = (await editorText(page.locator('[data-preview]'))).split('\n').map((l) => l.trim());
   const at = lines.indexOf('capture body.id as id');
   assert.ok(at > 0, `the capture is in the buffer:\n${lines.join('\n')}`);
   // Under the request it was read out of — `body` means the last response, so a capture below a
@@ -2291,7 +2365,7 @@ test('`M213` `S3`: several ticks are several captures in ONE edit — a capture 
 
   await page.locator('[data-tab="source"]').click();
   await page.locator('[data-tabstrip="source"]').waitFor();
-  const lines = (await page.locator('[data-preview]').textContent())!.split('\n').map((l) => l.trim());
+  const lines = (await editorText(page.locator('[data-preview]'))).split('\n').map((l) => l.trim());
   assert.ok(lines.includes('capture body.id as id'));
   assert.ok(lines.includes('capture body.price as price'));
   assert.equal(lines.indexOf('capture body.price as price'), lines.indexOf('capture body.id as id') + 1, 'in the order they were ticked, adjacent');
@@ -2302,7 +2376,7 @@ test('`M213` `S3`: `+ let` writes a binding at the TOP of the body, where the re
   await page.locator('[data-seq-add="let"]').first().click();
   await page.locator('[data-tab="source"]').click();
   await page.locator('[data-tabstrip="source"]').waitFor();
-  const lines = (await page.locator('[data-preview]').textContent())!.split('\n').map((l) => l.trim());
+  const lines = (await editorText(page.locator('[data-preview]'))).split('\n').map((l) => l.trim());
   const at = lines.findIndex((l) => l.startsWith('let value ='));
   assert.ok(at > 0, `the binding is in the buffer:\n${lines.join('\n')}`);
   assert.match(lines[at - 1]!, /^test "lists the catalog/, 'directly under the declaration, above every request');
@@ -2313,7 +2387,7 @@ test('`M213` `S3`: `+ wait until` writes a poll with an assertion in it — the 
   await page.locator('[data-seq-add="wait"]').first().click();
   await page.locator('[data-tab="source"]').click();
   await page.locator('[data-tabstrip="source"]').waitFor();
-  const text = (await page.locator('[data-preview]').textContent())!;
+  const text = (await editorText(page.locator('[data-preview]')));
   assert.match(text, /^ {2}wait until api GET \/$/m);
   // **The assertion is what makes it a poll rather than a sleep**, and the builder refuses one
   // without it — so a default carrying none would be a button that writes nothing.
@@ -3789,8 +3863,8 @@ test('an unsaved tflw.config edit survives a door change, because a project fact
   await page.goto(`${pageUrl}#/browser/config`);
   await page.reload();
   await page.locator('[data-api-config-text]').waitFor();
-  const original = await page.locator('[data-api-config-text]').inputValue();
-  await page.locator('[data-api-config-text]').fill(`${original}\n# an edit nobody saved\n`);
+  const original = await editorText(page.locator('[data-api-config-text]'));
+  await fillEditor(page.locator('[data-api-config-text]'), `${original}\n# an edit nobody saved\n`);
   await page.locator('[data-tab-mark="config"]').waitFor();
 
   // Leave by the DOOR, not by the tab — the whole point of this gate.
@@ -3799,10 +3873,10 @@ test('an unsaved tflw.config edit survives a door change, because a project fact
   await page.locator('[data-door-tab="browser"]').click();
   await page.locator('[data-door-form="browser"]').waitFor();
   await openTab('config');
-  assert.match(await page.locator('[data-api-config-text]').inputValue(), /an edit nobody saved/, 'a door change threw away an unsaved config edit');
+  assert.match(await editorText(page.locator('[data-api-config-text]')), /an edit nobody saved/, 'a door change threw away an unsaved config edit');
 
   // Put it back, so this test leaves the project as it found it for whatever runs next.
-  await page.locator('[data-api-config-text]').fill(original);
+  await fillEditor(page.locator('[data-api-config-text]'), original);
 });
 
 test('Config shows the documents this project declares, addressed by `@env`', async () => {
@@ -3825,14 +3899,14 @@ test('Config shows the documents this project declares, addressed by `@env`', as
   const picks = page.locator('[data-config-doc]');
   assert.deepEqual(await picks.evaluateAll((els) => els.map((e) => e.getAttribute('data-config-doc'))), ['config', 'headers']);
   assert.equal(await page.locator('[data-api-config]').getAttribute('data-config-showing'), 'config', 'it opens on tflw.config, which is every pre-M208 address');
-  assert.match(await page.locator('[data-api-config-text]').inputValue(), /authorized target/, 'and that is really the config');
+  assert.match(await editorText(page.locator('[data-api-config-text]')), /authorized target/, 'and that is really the config');
 
   // Clicking the baseline changes the document AND the address, because `D1045` says the choice
   // lives in the URL and nowhere else — so this is linkable and the back button walks out of it.
   await picks.nth(1).click();
   await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
   assert.equal(new URL(page.url()).hash, '#/scan/config/@headers');
-  const doc = JSON.parse(await page.locator('[data-api-config-text]').inputValue()) as { version: number; accepted: { fingerprint: string }[] };
+  const doc = JSON.parse(await editorText(page.locator('[data-api-config-text]'))) as { version: number; accepted: { fingerprint: string }[] };
   assert.equal(doc.version, 1);
   assert.deepEqual(doc.accepted.map((a) => a.fingerprint), ['d1a3ef65f88fb550'], 'the document the headers corpus is actually graded against');
 
@@ -3840,13 +3914,13 @@ test('Config shows the documents this project declares, addressed by `@env`', as
   // anywhere. That is the claim `D1045` makes and the one a click alone cannot prove.
   await page.reload();
   await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
-  assert.match(await page.locator('[data-api-config-text]').inputValue(), /d1a3ef65f88fb550/);
+  assert.match(await editorText(page.locator('[data-api-config-text]')), /d1a3ef65f88fb550/);
 
   // Back out, and `tflw.config` is what Config shows again — the default being the ABSENCE of the
   // segment is what keeps every link written before `M208` meaning what it meant.
   await page.goBack();
   await page.locator('[data-api-config][data-config-showing="config"]').waitFor();
-  assert.match(await page.locator('[data-api-config-text]').inputValue(), /authorized target/);
+  assert.match(await editorText(page.locator('[data-api-config-text]')), /authorized target/);
 });
 
 test('an unsaved edit in one document survives a trip to another, and the mark says so', async () => {
@@ -3858,8 +3932,8 @@ test('an unsaved edit in one document survives a trip to another, and the mark s
   await page.goto(`${pageUrl}#/scan/config/@headers`);
   await page.reload();
   await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
-  const original = await page.locator('[data-api-config-text]').inputValue();
-  await page.locator('[data-api-config-text]').fill(original.replace('"accepted"', '"accepted" '));
+  const original = await editorText(page.locator('[data-api-config-text]'));
+  await fillEditor(page.locator('[data-api-config-text]'), original.replace('"accepted"', '"accepted" '));
   await page.locator('[data-tab-mark="config"]').waitFor();
 
   // Away to the other document, and back.
@@ -3868,10 +3942,10 @@ test('an unsaved edit in one document survives a trip to another, and the mark s
   assert.equal(await page.locator('[data-tab-mark="config"]').count(), 1, 'the mark went quiet while the edited document was not the one on screen');
   await page.locator('[data-config-doc="headers"]').click();
   await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
-  assert.match(await page.locator('[data-api-config-text]').inputValue(), /"accepted" /, 'a document change threw away an unsaved edit');
+  assert.match(await editorText(page.locator('[data-api-config-text]')), /"accepted" /, 'a document change threw away an unsaved edit');
 
   // Put it back, so this test leaves the project as it found it.
-  await page.locator('[data-api-config-text]').fill(original);
+  await fillEditor(page.locator('[data-api-config-text]'), original);
   await page.locator('[data-tab-mark="config"]').waitFor({ state: 'detached' });
 });
 
@@ -3902,7 +3976,7 @@ test('[accept] stages a finding into the baseline and opens it — and writes no
   // the page is not deriving the `defaults` fallback a second time.
   await page.locator('[data-api-config][data-config-showing="headers"]').waitFor();
   assert.match(new URL(page.url()).hash, /^#\/api\/config\/@headers\/L\d+$/);
-  const staged = await page.locator('[data-api-config-text]').inputValue();
+  const staged = await editorText(page.locator('[data-api-config-text]'));
   assert.deepEqual(
     (JSON.parse(staged) as { accepted: { fingerprint: string }[] }).accepted.map((a) => a.fingerprint),
     ['d1a3ef65f88fb550', 'f9ea851f1285230b'],
@@ -3916,7 +3990,7 @@ test('[accept] stages a finding into the baseline and opens it — and writes no
   await openTab('run');
   await openTab('config');
   assert.equal(await readFile(docPath, 'utf8'), onDisk, 'a trip through another tab wrote to disk');
-  assert.match(await page.locator('[data-api-config-text]').inputValue(), /f9ea851f1285230b/, 'the staged entry was thrown away');
+  assert.match(await editorText(page.locator('[data-api-config-text]')), /f9ea851f1285230b/, 'the staged entry was thrown away');
 
   // And saving is what writes it — the other half of the control, without which the two rows above
   // would pass on a page that can never write anything.
@@ -3928,7 +4002,7 @@ test('[accept] stages a finding into the baseline and opens it — and writes no
   );
 
   // Put the project back as it was found, through the page, so the etag this page holds stays true.
-  await page.locator('[data-api-config-text]').fill(onDisk);
+  await fillEditor(page.locator('[data-api-config-text]'), onDisk);
   await page.locator('[data-api-config-save]').click();
   await page.locator('[data-api-config-saved]').waitFor();
   assert.equal(await readFile(docPath, 'utf8'), onDisk);
@@ -4036,7 +4110,7 @@ test('`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the ro
 
   await page.locator('[data-tab="source"]').click();
   await page.locator('[data-tabstrip="source"]').waitFor();
-  const text = (await page.locator('[data-preview]').textContent())!;
+  const text = (await editorText(page.locator('[data-preview]')));
   assert.match(text, /^ {2}click text "Add to cart"$/m);
 
   // And `tflw check` reads what Compose is holding — the claim that makes the pane worth anything
@@ -4243,7 +4317,7 @@ test('`M213` `S4`: adding a gesture to a test that already opened a page writes 
 
   await page.locator('[data-tab="source"]').click();
   await page.locator('[data-tabstrip="source"]').waitFor();
-  const text = (await page.locator('[data-preview]').textContent())!;
+  const text = (await editorText(page.locator('[data-preview]')));
   assert.match(text, /fill field "Coupon" with "SAVE10"/);
   assert.equal((text.match(/^\s*open /gm) ?? []).length, openedBefore, 'adding a gesture must not add an `open`');
 
@@ -4483,7 +4557,7 @@ test('`M219` `D`: one statement in a `within` is one row carrying both; more tha
       await inner.locator('[data-locator-value]').fill('Delete');
       await fresh.locator('[data-tab="source"]').click();
       await fresh.locator('[data-tabstrip="source"]').waitFor();
-      const text = (await fresh.locator('[data-preview]').textContent())!;
+      const text = (await editorText(fresh.locator('[data-preview]')));
       // **The scope survives an edit to the statement inside it**, and the statement survives an
       // edit to the scope. A rebuild that dropped either would print a file that still parses.
       assert.match(text, /within list "Saved for later"\n\s+click button "Delete"/);
@@ -4627,7 +4701,7 @@ test('`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer fol
       await fresh.locator('[data-add-step]').waitFor({ state: 'detached' });
       await fresh.locator('[data-tab="source"]').click();
       await fresh.locator('[data-tabstrip="source"]').waitFor();
-      const landed = (await fresh.locator('[data-preview]').textContent())!;
+      const landed = (await editorText(fresh.locator('[data-preview]')));
       assert.match(landed, /dismiss dialog/, 'the bytes previewed are the bytes that land');
       assert.match(landed, /expect status equals 201/, 'and the pending edit is still there — the shape `M217` `2` found');
     } finally {
@@ -4866,7 +4940,7 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
          are in the pending source before anything was ticked. */
       await fresh.locator('[data-tab="source"]').click();
       await fresh.locator('[data-tabstrip="source"]').waitFor();
-      const before = (await fresh.locator('[data-preview]').textContent())!;
+      const before = (await editorText(fresh.locator('[data-preview]')));
       assert.equal(before.includes('click button "Sign in"'), false, `nothing is written until it is kept:\n${before}`);
       assert.equal(await fresh.locator('[data-compose-dirty]').count(), 0, 'and the pane is not dirty, because nothing has been written');
 
@@ -4880,7 +4954,7 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
       await fresh.locator('[data-compose-dirty]').waitFor();
       await fresh.locator('[data-tab="source"]').click();
       await fresh.locator('[data-tabstrip="source"]').waitFor();
-      const after = (await fresh.locator('[data-preview]').textContent())!;
+      const after = (await editorText(fresh.locator('[data-preview]')));
       assert.ok(after.includes('fill field "Email" with "alice@example.com"'), `the kept line is in the buffer:\n${after}`);
       assert.equal(after.includes('click button "Sign in"'), false, 'and only the kept line — the other three are still evidence');
       assert.equal(after.includes('tick field "Remember me"'), false);
@@ -5037,7 +5111,7 @@ test('`M213` `S4`: `pick` fixes the locator on the row it is pressed on, from a 
       // …and it reaches the buffer, which is the only claim that matters in the end.
       await fresh.locator('[data-tab="source"]').click();
       await fresh.locator('[data-tabstrip="source"]').waitFor();
-      assert.match((await fresh.locator('[data-preview]').textContent())!, /click css "#totals \.amount"/);
+      assert.match((await editorText(fresh.locator('[data-preview]'))), /click css "#totals \.amount"/);
 
       assert.deepEqual(pageErrors, [], 'classifying a line must not throw — a filtered banner and a crashed handler are otherwise indistinguishable');
     } finally {
@@ -5086,7 +5160,7 @@ test('the SCANS door grades a response a test already fetches, and the three ind
   // What is shown is what is written — the claim every door in this arc makes, and here the
   // showing surface is Source rather than a form's own preview box.
   await openTab('source');
-  const shown = (await page.locator('.doorpane pre').textContent()) ?? '';
+  const shown = await editorText(page.locator('.doorpane [data-preview]'));
   assert.match(shown, /check response has no serious input handling violations/, `the three words did not all reach the draft:\n${shown}`);
 
   await openTab('compose');
@@ -5422,7 +5496,7 @@ test('the API door adds work to a test the LOAD door started, above its workload
   await page.locator('[data-compose-dirty]').waitFor();
 
   await openTab('source');
-  const preview = (await page.locator('[data-preview]').textContent()) ?? '';
+  const preview = (await editorText(page.locator('[data-preview]')));
   await openTab('compose');
   await page.locator('[data-compose-write]').click();
   await page.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
@@ -5886,7 +5960,7 @@ test('the affirmation this door refuses to make is one the author can make on th
       // 3. **THE AFFIRMATION, MADE HERE.** `tflw init --scan` leaves the line commented out on
       //    purpose, so uncommenting it in this textarea is precisely the act `D291` reserves to the
       //    author — and it is the act the old prose sent the reader out of the product to perform.
-      const before = await fresh.locator('[data-api-config-text]').inputValue();
+      const before = await editorText(fresh.locator('[data-api-config-text]'));
       assert.match(before, /^\s+#authorized target .* reason ""$/m, 'the scaffold no longer leaves an inert declaration, so this test affirms nothing');
 
       // **REMOVING THE `#` IS SUFFICIENT, AND UNTIL `M207` `S4` IT WAS NOT (`M207-03`).** The
@@ -5906,12 +5980,12 @@ test('the affirmation this door refuses to make is one the author can make on th
       // let it be written half-made. This is also the control on the step above — a `#` removal
       // that had left the line ungrammatical would disable save for the WRONG reason, so the
       // diagnostic is read rather than only the button.
-      await fresh.locator('[data-api-config-text]').fill(uncommented);
+      await fillEditor(fresh.locator('[data-api-config-text]'), uncommented);
       await fresh.locator('[data-api-config-diagnostics]').waitFor();
       assert.match((await fresh.locator('[data-api-config-diagnostics]').textContent()) ?? '', /TF082/, 'the blank reason is not what the page is objecting to');
       assert.equal(await fresh.locator('[data-api-config-save]').isDisabled(), true, 'a blank reason saves, so TF082 is not being enforced on this page');
 
-      await fresh.locator('[data-api-config-text]').fill(uncommented.replace('reason ""', 'reason "a fixture host this test owns"'));
+      await fillEditor(fresh.locator('[data-api-config-text]'), uncommented.replace('reason ""', 'reason "a fixture host this test owns"'));
       await fresh.locator('[data-api-config-save]').click();
       await fresh.locator('[data-api-config-saved]').waitFor();
 
@@ -6131,14 +6205,14 @@ test('the Config tab makes the edit the product had been telling the author to m
     const base = `http://127.0.0.1:${await ui.listen(0)}`;
     await fresh.goto(`${base}/?token=${TOKEN}#/api/config`);
     await fresh.locator('[data-api-config-text]').waitFor();
-    assert.equal(await fresh.locator('[data-api-config-text]').inputValue(), scaffold, 'the bytes on disk, not a re-print of them');
+    assert.equal(await editorText(fresh.locator('[data-api-config-text]')), scaffold, 'the bytes on disk, not a re-print of them');
     assert.equal(await fresh.locator('[data-api-config-save]').isDisabled(), true, 'nothing to save on arrival');
 
     // 1. Text that does not parse is refused HERE, before the server sees it — and it is refused
     //    by disabling the save rather than by a dialog, because `D1052` says the form shows what
     //    `tflw check` will say. The server refuses it too; a button that always 422s is a button
     //    that lies.
-    await fresh.locator('[data-api-config-text]').fill(scaffold + '\nenv\n');
+    await fillEditor(fresh.locator('[data-api-config-text]'), scaffold + '\nenv\n');
     assert.match(await fresh.locator('[data-api-config-diagnostics] li').first().innerText(), /TF010/);
     assert.equal(await fresh.locator('[data-api-config-save]').isDisabled(), true);
 
@@ -6147,7 +6221,7 @@ test('the Config tab makes the edit the product had been telling the author to m
     //    one is lost, and a half-edited config thrown away by a glance at Auth would be exactly
     //    the failure the Compose fields were saved from.
     const edited = scaffold.replace('api "tflw://demo"', 'api "http://localhost:3001"');
-    await fresh.locator('[data-api-config-text]').fill(edited);
+    await fillEditor(fresh.locator('[data-api-config-text]'), edited);
     assert.equal(await fresh.locator('[data-tab-mark="config"]').count(), 1, 'the tab says it is holding something');
     await fresh.locator('[data-tab="auth"]').click();
     await fresh.locator('[data-api-auth]').waitFor();
@@ -6161,7 +6235,7 @@ test('the Config tab makes the edit the product had been telling the author to m
     // value where the thing being graded is a settled state — caught this time by making the
     // mutation before shipping the gate.
     await fresh.waitForLoadState('networkidle');
-    assert.equal(await fresh.locator('[data-api-config-text]').inputValue(), edited, 'a tab trip threw away an unsaved config');
+    assert.equal(await editorText(fresh.locator('[data-api-config-text]')), edited, 'a tab trip threw away an unsaved config');
 
     // 3. The save, and the three things that make it real: the bytes on disk, the mark gone, and
     //    — the one that matters — the TOOL now reads the new base. A page that wrote the file and
@@ -6263,7 +6337,8 @@ test('a test written from Compose appears in the Source index without a reload',
 const requestsInSource = (source: string): Array<{ decl: number; line: number; method: string; path: string }> => {
   const { program } = parseSource(source);
   const out: Array<{ decl: number; line: number; method: string; path: string }> = [];
-  for (const d of [...program.hooks, ...program.tests]) {
+  // Every declaration the explorer draws — actions since `M241` `B` (`D1322`), crawls since `M228`.
+  for (const d of [...program.hooks, ...program.tests, ...program.actions, ...(program.crawls ?? [])]) {
     for (const s of d.body) {
       if (s.type === 'ApiStep') out.push({ decl: d.span.start.line, line: s.span.start.line, method: s.method, path: s.path.raw });
       else if (s.type === 'WaitUntilApiStmt') out.push({ decl: d.span.start.line, line: s.span.start.line, method: s.request.method, path: s.request.path.raw });
@@ -6308,13 +6383,13 @@ test('Compose draws every request the file holds, at its own line, under the dec
     assert.deepEqual(outline.value, want, `${f.path}: every request in the file is a row in the explorer's outline (${outline.attempts} look(s))`);
     // And the declarations, which is the other half of `D1081`'s two levels.
     const { program } = parseSource(source);
-    const decls = [...program.hooks, ...program.tests].map((d) => d.span.start.line).sort((a, b) => a - b);
+    const decls = [...program.hooks, ...program.tests, ...program.actions, ...(program.crawls ?? [])].map((d) => d.span.start.line).sort((a, b) => a - b);
     const outlineDecls = await settle(
       async () => (await page.locator('[data-outline-decl]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-line'))))).sort((a, b) => a - b),
       untilEqual(decls),
       { attempts: 40, delayMs: 50, page },
     );
-    assert.deepEqual(outlineDecls.value, decls, `${f.path}: every hook and test is a row too — a declaration with no request is still there (${outlineDecls.attempts} look(s))`);
+    assert.deepEqual(outlineDecls.value, decls, `${f.path}: every declaration is a row too — a declaration with no request is still there (${outlineDecls.attempts} look(s))`);
   }
 });
 
@@ -6967,7 +7042,7 @@ test('a clause the file does not write is not a field — it is in a menu that n
     await fresh.locator('[data-compose-dirty]').waitFor();
     await fresh.locator('[data-tab="source"]').click();
     await fresh.locator('[data-tabstrip="source"]').waitFor();
-    assert.match((await fresh.locator('[data-preview]').textContent())!, /api GET \/health timeout 30s/);
+    assert.match((await editorText(fresh.locator('[data-preview]'))), /api GET \/health timeout 30s/);
   } finally {
     await fresh.close();
     await ui.close();
@@ -7507,7 +7582,7 @@ test('`M210` `S2`: a field edit becomes bytes, and every other byte of the file 
     // The bytes, read through Source — the same buffer, which is the claim.
     await p.locator('[data-tab="source"]').click();
     await p.locator('[data-source="pending"]').waitFor();
-    const text = (await p.locator('[data-preview]').textContent())!;
+    const text = (await editorText(p.locator('[data-preview]')));
     assert.match(text, /^ {2}api POST \/orders\/bulk /m, 'the edit is in the bytes');
     assert.match(text, /^# the file, and this line must survive every edit below$/m);
     assert.match(text, /^@crud$/m);
@@ -7538,7 +7613,7 @@ test('`M210` `S2`: the three clauses `ApiStepSpec` used to have no room for surv
     await p.locator('[data-request-path]').fill('/orders/bulk');
     await p.locator('[data-compose-dirty]').waitFor();
     await p.locator('[data-tab="source"]').click();
-    const text = (await p.locator('[data-preview]').textContent())!;
+    const text = (await editorText(p.locator('[data-preview]')));
     assert.match(text, /timeout 9s/, 'the timeout survived');
     assert.match(text, /without redirects/, 'the redirect clause survived');
     assert.match(text, /as "place"/, 'and so did the label, which the spec DOES carry');
@@ -7585,7 +7660,7 @@ test('`M210` `S2`: an edit that is not yet a request says so and leaves the buff
     await p.locator('[data-compose-problem]').waitFor();
     assert.ok((await p.locator('[data-compose-problem]').textContent())!.length > 0, 'the pane says why');
     await p.locator('[data-tab="source"]').click();
-    const held = (await p.locator('[data-preview]').textContent())!;
+    const held = (await editorText(p.locator('[data-preview]')));
     assert.match(held, /^ {2}api POST \/orders\/bulk /m, 'and the buffer still holds the last edit that WAS a request');
     // Finish typing it and the buffer moves again.
     await p.locator('[data-tab="compose"]').click();
@@ -7593,7 +7668,7 @@ test('`M210` `S2`: an edit that is not yet a request says so and leaves the buff
     await p.locator('[data-header-edit-value="1"]').fill('abc');
     await p.locator('[data-compose-problem]').waitFor({ state: 'detached' });
     await p.locator('[data-tab="source"]').click();
-    assert.match((await p.locator('[data-preview]').textContent())!, /header "X-Trace" is "abc"/);
+    assert.match((await editorText(p.locator('[data-preview]'))), /header "X-Trace" is "abc"/);
   });
 });
 
@@ -7801,7 +7876,7 @@ test('`M210` `S3`: `not` is a control, and an edit that does not touch it cannot
     await negated.locator('[data-expect-operand]').fill('503');
     await p.locator('[data-compose-dirty]').waitFor();
     await p.locator('[data-tab="source"]').click();
-    assert.match((await p.locator('[data-preview]').textContent())!, /^ {2}expect status not equals 503$/m, 'the operand moved and the negation did not');
+    assert.match((await editorText(p.locator('[data-preview]'))), /^ {2}expect status not equals 503$/m, 'the operand moved and the negation did not');
 
     await p.locator('[data-tab="compose"]').click();
     const plain = p.locator('li.stmt:has([data-expect-matcher="hasNoSecurityViolations"])').first();
@@ -7812,7 +7887,7 @@ test('`M210` `S3`: `not` is a control, and an edit that does not touch it cannot
     await plain.locator('[data-assert-more="shut"]').click();
     await plain.locator('[data-expect-negated]').click();
     await p.locator('[data-tab="source"]').click();
-    assert.match((await p.locator('[data-preview]').textContent())!, /^ {2}expect response not has no security violations$/m, 'and the checkbox writes the word');
+    assert.match((await editorText(p.locator('[data-preview]'))), /^ {2}expect response not has no security violations$/m, 'and the checkbox writes the word');
   });
 });
 
@@ -7841,7 +7916,7 @@ test('`M210` `S3`: the subset editor is the operand, and a clause matcher keeps 
     await p.locator('[data-subset-value="1"]').fill('"Gadget"');
     await p.locator('[data-compose-dirty]').waitFor();
     await p.locator('[data-tab="source"]').click();
-    assert.match((await p.locator('[data-preview]').textContent())!, /^ {2}expect body matches subset \{ id: 1, name: "Gadget" \}$/m);
+    assert.match((await editorText(p.locator('[data-preview]'))), /^ {2}expect body matches subset \{ id: 1, name: "Gadget" \}$/m);
 
     // A key added from the editor is a key in the object, quoted only where the language needs it.
     await p.locator('[data-tab="compose"]').click();
@@ -7849,13 +7924,13 @@ test('`M210` `S3`: the subset editor is the operand, and a clause matcher keeps 
     await p.locator('[data-subset-key="2"]').fill('user name');
     await p.locator('[data-subset-value="2"]').fill('"ada"');
     await p.locator('[data-tab="source"]').click();
-    assert.match((await p.locator('[data-preview]').textContent())!, /matches subset \{ id: 1, name: "Gadget", "user name": "ada" \}/);
+    assert.match((await editorText(p.locator('[data-preview]'))), /matches subset \{ id: 1, name: "Gadget", "user name": "ada" \}/);
 
     // …and the schema clause, which is the operand this matcher spells after itself.
     await p.locator('[data-tab="compose"]').click();
     await p.locator('[data-expect-schema-name]').fill('OrderV2');
     await p.locator('[data-tab="source"]').click();
-    assert.match((await p.locator('[data-preview]').textContent())!, /^ {2}expect body matches schema "OrderV2" from root "\/openapi\.json"$/m, 'the service the clause names survives an edit to the name beside it');
+    assert.match((await editorText(p.locator('[data-preview]'))), /^ {2}expect body matches schema "OrderV2" from root "\/openapi\.json"$/m, 'the service the clause names survives an edit to the name beside it');
   });
 });
 
@@ -9409,55 +9484,76 @@ const LEGIBLE = [
 ].join('\n');
 
 test('`M216` `B0`/`A1`: Source numbers every line, and the text under the numbers is still the file byte for byte (`D985`)', async () => {
+  // **Rewritten for the editor — `M241` `A` (`D1321`).** The numbers were `::before` content on one
+  // span per line, because `D985` makes the text the file byte for byte and a drawn number would
+  // corrupt it. CodeMirror keeps them in a gutter beside the text element, so the same claim is
+  // asked of a different structure: the text is the file, every line has its number, the numbers
+  // are not inside the text, and the gutter is as wide as the widest number.
+  let twoDigits = 0;
   await withRemovalFixture(LEGIBLE, async (p, base, dir) => {
     await p.goto(`${base}/?token=${TOKEN}#/api/source/x.tflw`);
     const file = await readFile(join(dir, 'x.tflw'), 'utf8');
     const lines = file.split('\n');
-    // The last line, not the `<pre>`: the element is in the document before the bytes are.
-    await p.locator(`[data-preview] [data-source-line="${lines.length}"]`).waitFor();
-
-    // **This assertion is `A1`'s whole design, not a side condition.** `D985` makes this `<pre>`'s
-    // `textContent` the file byte for byte, and every page gate that reads `[data-preview]` rests
-    // on it — so the numbers had to be drawn as generated content, which `textContent` does not
-    // see. Render them as text instead and this line reddens on the first character: it IS the
-    // mutation detector for the obvious implementation.
-    assert.equal(await p.locator('[data-preview]').textContent(), file, 'the gutter costs the projection nothing');
+    assert.equal(await editorText(p.locator('[data-preview]')), file, 'the text is the file, byte for byte');
+    assert.equal(await p.locator('[data-preview] .cm-gutterElement').count(), 0, 'and no number is inside it');
 
     // Every physical line is numbered, including the blank ones — a gutter that skips the empties
-    // renumbers the file.
-    const spans = p.locator('[data-preview] [data-source-line]');
-    assert.equal(await spans.count(), lines.length, `${lines.length} lines, ${lines.length} numbers`);
-    assert.deepEqual(
-      await spans.evaluateAll((els) => els.map((e) => e.getAttribute('data-source-line'))),
-      lines.map((_, i) => String(i + 1)),
-      'and they count from one, in order',
-    );
-
-    // **The number the READER sees**, which is a different claim from the attribute being present:
-    // the attribute has been there since `M213` for the index to scroll to, and nothing drew it.
-    const drawn = await spans.first().evaluate((el) => {
-      const view = el.ownerDocument.defaultView!;
-      const before = view.getComputedStyle(el, '::before');
-      return { content: before.content, width: Math.round(Number.parseFloat(before.width)) };
-    });
-    assert.match(drawn.content, /1/, `the first line's gutter draws its number (${drawn.content})`);
-    assert.ok(drawn.width > 0, `and it occupies the page (${drawn.width}px)`);
-
-    // **The gutter is as wide as the widest number and no wider**, which is why it is a variable
-    // rather than a constant: a 17-line file spends two characters and a 120-line file spends
-    // three. Asked at both, so the rule cannot pass by agreeing with one hardcoded answer.
-    assert.equal(await p.locator('[data-preview]').getAttribute('data-source-gutter'), '2', '17 lines, two digits');
+    // renumbers the file. CodeMirror's gutter also holds one hidden sizing element, which is why
+    // the visible ones are counted.
+    const numbers = p.locator('.source-editor .cm-lineNumbers .cm-gutterElement:visible');
+    await numbers.nth(lines.length - 1).waitFor();
+    assert.deepEqual(await numbers.allTextContents(), lines.map((_, i) => String(i + 1)), `${lines.length} lines, numbered from one, in order`);
+    twoDigits = await p.locator('.source-editor .cm-lineNumbers').evaluate((el) => el.getBoundingClientRect().width);
+    assert.ok(twoDigits > 0, `and the gutter occupies the page (${twoDigits}px)`);
   });
 
+  // **The gutter is as wide as the widest number and no wider**, asked at two sizes so the rule
+  // cannot pass by agreeing with one hardcoded answer.
   const long: string[] = ['# a file past a hundred lines', ''];
   for (let i = 0; i < 30; i++) long.push('@api', `test "case ${i}"`, `  api GET /c/${i}`, '  expect status equals 200', '');
   await withRemovalFixture(long.join('\n'), async (p, base) => {
     await p.goto(`${base}/?token=${TOKEN}#/api/source/x.tflw`);
-    // Waited for by its LAST line, not by the `<pre>`: the element is in the document before the
-    // bytes are, and a gutter width read off an empty buffer is one digit — which is how the first
-    // draft of this assertion failed while the page was perfectly correct.
-    await p.locator(`[data-preview] [data-source-line="${long.length}"]`).waitFor();
-    assert.equal(await p.locator('[data-preview]').getAttribute('data-source-gutter'), '3', `${long.length} lines, three digits`);
+    assert.equal((await editorText(p.locator('[data-preview]'))).split('\n').length, long.length);
+    const threeDigits = await p.locator('.source-editor .cm-lineNumbers').evaluate((el) => el.getBoundingClientRect().width);
+    assert.ok(threeDigits > twoDigits, `${long.length} lines draw a wider gutter than 17 (${threeDigits}px against ${twoDigits}px)`);
+  });
+});
+
+test('`M241` `A` (`D1321`): Source is an editor — an edit is the draft Compose holds, undo takes it back, the checker underlines it, and ⌘S writes it', async () => {
+  await withRemovalFixture(LEGIBLE, async (p, base, dir) => {
+    await p.goto(`${base}/?token=${TOKEN}#/api/source/x.tflw`);
+    const content = p.locator('[data-preview]');
+    const onDisk = await editorText(content);
+    await p.locator('[data-source="written"]').waitFor();
+
+    // Typed at the end of the file, as one transaction — which is also one undo step.
+    await content.click();
+    await p.keyboard.press('ControlOrMeta+End');
+    await p.keyboard.insertText('\ntest "typed in source"\n  api GET /typed/{nope}\n  expect status equals 200\n');
+    await p.locator('[data-source="pending"]').waitFor();
+    // **The checker's answer is drawn on the span**, not only listed under the editor: `{nope}` is
+    // bound nowhere, which `tflw check` calls `TF030`.
+    await content.locator('[data-editor-diagnostic="TF030"]').first().waitFor();
+
+    // Undo returns the bytes on disk, and bytes equal to the file are no draft at all — the tab's
+    // state goes back to *as it is on disk*, which is the control that the draft was real.
+    await p.keyboard.press('ControlOrMeta+z');
+    await p.locator('[data-source="written"]').waitFor();
+    assert.equal(await editorText(content), onDisk, 'undo took the edit back to the file');
+    await p.keyboard.press('ControlOrMeta+Shift+z');
+    await p.locator('[data-source="pending"]').waitFor();
+
+    // **One buffer**: Compose holds what Source wrote, with no save between them — its own
+    // unsaved-draft mark is up although nothing was done in Compose at all.
+    await p.locator('[data-tab="compose"]').click();
+    await p.locator('[data-compose-dirty]').waitFor();
+
+    // …and ⌘S writes that buffer, from Compose, as the file.
+    await p.keyboard.press('ControlOrMeta+s');
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const written = await readFile(join(dir, 'x.tflw'), 'utf8');
+    assert.match(written, /test "typed in source"\n {2}api GET \/typed\/\{nope\}/, 'the edit made in Source is what was written');
+    assert.ok(written.startsWith(onDisk.trimEnd()), 'and nothing above it moved');
   });
 });
 
@@ -10041,7 +10137,7 @@ test('`M216` `D1`: removing a clause unwrites it, and the bytes say so', async (
 
     await p.locator('[data-tab="source"]').click();
     await p.locator('[data-source="pending"]').waitFor();
-    const text = (await p.locator('[data-preview]').textContent())!;
+    const text = (await editorText(p.locator('[data-preview]')));
     assert.doesNotMatch(text, /@crud/, 'the tag line is gone from the pending bytes');
     assert.match(text, /^test "it carries every clause the band can draw" retry 2$/m, 'and the test it was on is not, nor the clause beside it');
     assert.match(text, /^ {2}api POST \/orders /m, 'nor anything under it');
@@ -10121,7 +10217,7 @@ test('`M216` `D4`: the request scope removes the same way, and an added-but-unwr
     await p.locator('[data-compose-dirty]').waitFor();
     await p.locator('[data-tab="source"]').click();
     await p.locator('[data-source="pending"]').waitFor();
-    assert.doesNotMatch((await p.locator('[data-preview]').textContent())!, /timeout 9s/, 'the clause is unwritten');
+    assert.doesNotMatch((await editorText(p.locator('[data-preview]'))), /timeout 9s/, 'the clause is unwritten');
 
     // **Drawn but never written, so removing it is forgetting a row.** The reader cannot tell the
     // two cases apart, and the point of the gate is that they do not have to.
@@ -10584,7 +10680,7 @@ test('`M217` `B1`: inserting a request changes no reader’s response — asked 
 
       await p.locator('[data-tab="source"]').click();
       await p.locator('[data-source="pending"]').waitFor();
-      const pending = (await p.locator('[data-preview]').textContent())!;
+      const pending = (await editorText(p.locator('[data-preview]')));
 
       const lost = keepsEveryReader(before, responseReaders(pending));
       assert.equal(lost, null, `+ after \`${after}\`: this reader changed what it reads — ${lost}`);
@@ -10642,7 +10738,7 @@ test('`M217` `B3`: the last request’s `+` and the foot’s `+ request` write t
       await p.locator('[data-compose-dirty]').waitFor();
       await p.locator('[data-tab="source"]').click();
       await p.locator('[data-source="pending"]').waitFor();
-      return (await p.locator('[data-preview]').textContent())!;
+      return (await editorText(p.locator('[data-preview]')));
     };
     const viaPlus = await bytes('[data-seq-plus="GET /orders/{basketId}"]');
     const viaFoot = await bytes('[data-seq-add="request"]');
@@ -11366,7 +11462,7 @@ test('`M218` `F2`: duplicating changes no existing assertion’s response (`D113
     await p.locator('.ctx-menu [data-menu-item="duplicate"]').click();
     await p.locator('[data-compose-dirty]').waitFor({ state: 'visible' });
     await p.locator('[data-tab="source"]').click();
-    const after = await p.locator('[data-compose-source], .source-text, pre').first().innerText();
+    const after = await editorText(p.locator('[data-preview]'));
     const lost = keepsEveryReader(before, responseReaders(after));
     assert.equal(lost, null, `this pair stopped being true: ${lost}`);
   });
@@ -12615,7 +12711,143 @@ test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, sca
    is that the tree draws every declaration the FILE has — which the badge's own inputs are a
    subset of — and it is taken on both doors, because a crawl is the only construct that reaches
    SCANS without also reaching API. */
-test('`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and saying why (`D1238`)', async () => {
+test('`M241` `B` (`D1322`): an action is a declaration — its band renames it, `call` opens it here and across an import, and `+ new action`/`+ new crawl` land on one', async () => {
+  const files = {
+    'lib/auth.tflw': ['action signIn(email)', '  api POST /login body { email: "{email}" }', '  expect status equals 200', ''].join('\n'),
+    'a.tflw': [
+      'import "./lib/auth.tflw"', //                     L1
+      '', //                                             L2
+      'action warmUp()', //                              L3
+      '  # the note on the action\'s first statement', // L4
+      '  api GET /warm', //                              L5
+      '  expect status equals 200', //                   L6
+      '', //                                             L7
+      'test "calls both"', //                            L8
+      '  warmUp()', //                                   L9
+      '  signIn("a@example.com")', //                    L10
+      '',
+    ].join('\n'),
+  };
+  await withProjectFixture(files, async (p, base, dir) => {
+    // The action is a declaration in the tree and a band in the pane.
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/a.tflw/L3`);
+    await p.locator('[data-band-kind="action"]').waitFor();
+    await settle(async () => p.locator('[data-outline-decl="action"]').count(), untilEqual(1), { attempts: 40, delayMs: 50, page: p });
+    assert.equal(await p.locator('input[data-band-name]').inputValue(), 'warmUp');
+
+    // The band renames and re-parameters, and the statement under it keeps its note.
+    await p.locator('input[data-band-name]').fill('warmCache');
+    await p.locator('input[data-band-params]').fill('region');
+    await p.locator('[data-compose-dirty]').waitFor();
+    await p.locator('[data-tab="source"]').click();
+    const renamed = await editorText(p.locator('[data-preview]'));
+    assert.match(renamed, /^action warmCache\(region\)\n {2}# the note on the action's first statement\n {2}api GET \/warm$/m, `the header was not rewritten in place:\n${renamed}`);
+    // **A rename does not rewrite its callers** (`D1322`) — the checker names the one it broke.
+    assert.match(renamed, /^ {2}warmUp\(\)$/m, 'the call was rewritten, which `D1322` refuses');
+    // Put it back so the calls resolve, through the same band.
+    await p.locator('[data-tab="compose"]').click();
+    await p.locator('input[data-band-name]').fill('warmUp');
+    await p.locator('input[data-band-params]').fill('');
+
+    // **Open action**, local: the call row lands on the action's own header in this file.
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/a.tflw/L9`);
+    await p.locator('[data-call-open]').click();
+    await p.waitForURL(/#\/api\/compose\/a\.tflw\/L3$/);
+    await p.locator('[data-band-kind="action"]').waitFor();
+
+    // …and across an import: the imported file, at its action's header.
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/a.tflw/L10`);
+    await p.reload();
+    await p.locator('[data-call-open]').click();
+    await p.waitForURL(/#\/api\/compose\/lib\/auth\.tflw\/L1$/);
+    await p.locator('[data-band-kind="action"] input[data-band-name]').waitFor();
+    assert.equal(await p.locator('input[data-band-name]').inputValue(), 'signIn');
+
+    // `+ new action` appends one with a free name and lands on it; SCANS adds `+ new crawl`.
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/a.tflw`);
+    await p.reload();
+    await p.locator('[data-compose-new-action]').waitFor();
+    await settle(async () => p.locator('[data-compose-new-crawl]').count(), untilEqual(0), { attempts: 10, delayMs: 50, page: p }); // `+ new crawl` belongs to SCANS
+    await p.locator('[data-compose-new-action]').click();
+    await p.locator('[data-band-kind="action"] input[data-band-name]').waitFor();
+    assert.equal(await p.locator('input[data-band-name]').inputValue(), 'new action');
+    await p.goto(`${base}/?token=${TOKEN}#/scan/compose/a.tflw`);
+    await p.locator('[data-compose-new-crawl]').click();
+    await p.locator('input[data-crawl-name]').waitFor();
+    assert.equal(await p.locator('input[data-crawl-name]').inputValue(), 'new crawl');
+    await p.keyboard.press('ControlOrMeta+s');
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    const saved = await readFile(join(dir, 'a.tflw'), 'utf8');
+    assert.match(saved, /\n\naction new action\(\)\n {2}log "a new action — its statements go here"\n/);
+    assert.match(saved, /\n\ncrawl "new crawl"\n {2}seed spider "\/"\n {2}expect response has no serious security violations\n$/);
+  });
+});
+
+test('`M241` `E` (`D1325`): the explorer scales — virtualised past its threshold, `collapse all` keeps the open file\'s folder, and `this door only` changes the view and never the run', async () => {
+  // 400 files in 8 folders of 50; even files are API tests, odd ones open a page and are BROWSER's.
+  const files: Record<string, string> = {};
+  for (let i = 0; i < 400; i++) {
+    const name = `area${Math.floor(i / 50)}/f${String(i).padStart(3, '0')}.tflw`;
+    files[name] = i % 2 === 0 ? `test "t${i}"\n  api GET /x\n  expect status equals 200\n` : `test "b${i}"\n  open "/"\n`;
+  }
+  await withProjectFixture(files, async (p, base) => {
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/area0/f000.tflw`);
+    const list = p.locator('[data-tree-virtual]');
+    await list.waitFor();
+    assert.equal(await list.getAttribute('data-tree-virtual'), '408', '8 folders and 400 files, flattened');
+    const drawn = (await settle(async () => p.locator('[data-tree-virtual] [data-file]').count(), untilMeasurable('some rows drawn', (n) => n > 0), { attempts: 40, delayMs: 50, page: p })).value;
+    assert.ok(drawn > 0 && drawn < 100, `the list draws ${drawn} of 400 file rows — what is near the scroll position, not the project`);
+    await list.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await p.locator('[data-file="area7/f399.tflw"]').waitFor();
+
+    const runLabel = await p.locator('[data-run]').textContent();
+    // `collapse all` folds every folder but the open file's own, which puts the project under the
+    // threshold: the nested tree again, with one folder open.
+    await p.locator('[data-collapse-all]').click();
+    await list.waitFor({ state: 'detached' });
+    await settle(async () => p.locator('[data-dir-toggle][aria-expanded="true"]').count(), untilEqual(1), { attempts: 40, delayMs: 50, page: p });
+    assert.equal(await p.locator('[data-dir-toggle="area0"]').getAttribute('aria-expanded'), 'true', 'the open file\'s folder stayed open');
+    await settle(async () => p.locator('[data-file^="area0/"]').count(), untilEqual(50), { attempts: 40, delayMs: 50, page: p });
+
+    // `this door only` hides the 25 BROWSER-only files in the open folder — and the run is unchanged.
+    await p.locator('[data-door-only]').check();
+    await settle(async () => p.locator('[data-file^="area0/"]').count(), untilEqual(25), { attempts: 40, delayMs: 50, page: p });
+    assert.equal(await p.locator('[data-run]').textContent(), runLabel, 'a view toggle narrowed the run');
+    await p.locator('[data-door-only]').uncheck();
+    await settle(async () => p.locator('[data-file^="area0/"]').count(), untilEqual(50), { attempts: 40, delayMs: 50, page: p });
+  });
+});
+
+test('`M241` `E` (`D1325`): a report is narrowed by failed, by file and by name, and says it is showing a part', async () => {
+  // Two tests that pass by construction and one that fails by construction — its `api` points at a
+  // port nothing listens on — so the report holds both verdicts without a fixture server.
+  const files = {
+    'a.tflw': 'test "a passes"\n  log "ok"\n\ntest "a fails"\n  api GET /nothing-here\n  expect status equals 200\n',
+    'b.tflw': 'test "b also passes"\n  log "ok"\n',
+  };
+  await withProjectFixture(files, async (p, base) => {
+    await p.goto(`${base}/?token=${TOKEN}#/api/run`);
+    await p.locator('[data-run]').click();
+    const filter = p.locator('[data-report-filter]');
+    await filter.waitFor({ timeout: 60_000 });
+    await settle(async () => (await filter.getAttribute('data-report-total')) ?? '', untilEqual('3'), { attempts: 40, delayMs: 100, page: p });
+    await p.locator('[data-filter-failed]').check();
+    await settle(async () => (await filter.getAttribute('data-report-shown')) ?? '', untilEqual('1'), { attempts: 40, delayMs: 50, page: p });
+    await settle(async () => p.locator('[data-test]').evaluateAll((els) => els.map((e) => e.getAttribute('data-name'))), untilEqual(['a fails']), { attempts: 40, delayMs: 50, page: p });
+    await p.locator('[data-report-narrowed]').waitFor();
+    await p.locator('[data-filter-failed]').uncheck();
+    await p.locator('[data-filter-file]').selectOption('b.tflw');
+    await settle(async () => (await filter.getAttribute('data-report-shown')) ?? '', untilEqual('1'), { attempts: 40, delayMs: 50, page: p });
+    await p.locator('[data-filter-file]').selectOption('');
+    await p.locator('[data-filter-text]').fill('passes');
+    await settle(async () => (await filter.getAttribute('data-report-shown')) ?? '', untilEqual('2'), { attempts: 40, delayMs: 50, page: p });
+    await settle(async () => p.locator('[data-filter-skipped]').count(), untilEqual(0), { attempts: 10, delayMs: 50, page: p }); // no test was skipped, so there is no `skipped` to narrow by
+  });
+});
+
+test('`M228` `C` / `M241` `C`: a `crawl` is drawn in the tree and in the pane, and its band and rows edit it (`D1238`, `D1323`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m228c-'));
   const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
   const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
@@ -12666,36 +12898,46 @@ test('`M228` `C`: a `crawl` is drawn in the tree and in the pane, read-only and 
       assert.equal(await fresh.locator('[data-outline-decl="crawl"]').count(), 1, `the crawl is missing from the ${door} tree`);
     }
 
-    // ── Gate 10 — read-only, and the reason is the crawl's own rather than the block's ───────
+    // ── Gate 10, since `M241` `C` (`D1323`): the crawl is built here, not only drawn ─────────
+    // `M228` drew it read-only because it had no address; the language gave it one. So the band
+    // is a form, its statement is an editable row, it has a `✕`, and its foot offers `+ assertion` —
+    // and still no ▶, because `--only` names a test and a crawl is not one.
     await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/c.tflw/L5`);
     await fresh.locator('[data-band-kind="crawl"]').waitFor();
-    assert.equal(await fresh.locator('[data-crawl-name]').textContent(), 'walked again as a stranger');
+    assert.equal(await fresh.locator('input[data-crawl-name]').inputValue(), 'walked again as a stranger');
     assert.deepEqual(
       await fresh.locator('[data-crawl-seed]').evaluateAll((els) => els.map((e) => e.getAttribute('data-crawl-seed'))),
-      ['TrafficSeed'],
-      'the seeds are the whole of where a crawl’s requests come from, and were invisible in the product before this slice',
+      ['traffic'],
+      'the seeds are the whole of where a crawl’s requests come from',
     );
-    /* **`isVisible`, not `textContent`.** The first draft read the text and the `hidden` mutation
-       survived it: an element the reader cannot see still carries every word it was written with.
-       `M224` `G` (`D1214`) filed exactly this once already — `hidden` on a block that was fully
-       visible and interactive — and the mirror of it is a gate that cannot tell the two apart. */
-    assert.ok(await fresh.locator('[data-crawl-why]').isVisible(), 'a disabled declaration with no visible explanation is the pane `D1082` refuses');
-    const why = (await fresh.locator('[data-crawl-why]').textContent()) ?? '';
-    assert.match(why, /crawl/, `the reason does not say what it is about — got ${why}`);
+    assert.equal(await fresh.locator('[data-seq-play]').count(), 0, '▶ is offered on a crawl, which `--only` cannot name');
+    assert.ok((await fresh.locator('[data-seq-remove]').count()) > 0, 'a crawl has an address now, so it has a `✕`');
+    assert.equal(await fresh.locator('[data-seq-foot]').getAttribute('data-seq-adds'), 'assert', 'a crawl takes its own `+ assertion` and nothing a request would need');
 
-    /* **No control that does nothing.** ▶ needs `--only <name>` against a test, and `✕` and every
-       step removal name a declaration by `replaceInSource`'s index — which a crawl deliberately
-       does not have. Drawn-and-inert is worse than absent, and is the same failure as a disabled
-       row with no reason. */
-    assert.equal(await fresh.locator('[data-seq-play]').count(), 0, '▶ is offered on a crawl and could only ever refuse');
-    assert.equal(await fresh.locator('[data-seq-remove]').count(), 0, '`✕` is offered on a crawl and `onRemoveDecl` cannot address one');
-    assert.equal(await fresh.locator('[data-seq-foot]').getAttribute('data-seq-adds'), '', 'the foot offers `+` gestures that would splice into a crawl');
+    // The band writes: a principal and a spider seed in place of `seed traffic`, and the
+    // statement under them — and its bytes — untouched.
+    await fresh.locator('[data-crawl-sessions]').fill('stranger');
+    await fresh.locator('[data-crawl-seed-kind]').selectOption('spider');
+    await fresh.locator('[data-crawl-seed-target]').fill('/');
+    await fresh.locator('[data-compose-dirty]').waitFor();
+    await fresh.locator('[data-tab="source"]').click();
+    const written = await editorText(fresh.locator('[data-preview]'));
+    assert.match(written, /crawl "walked again as a stranger" as stranger\n {2}seed spider "\/"\n {2}expect response has no serious security violations\n/, `the header was not rewritten in place:\n${written}`);
+    assert.match(written, /^test "the surface the crawl will walk"\n {2}api GET \/items\n {2}expect status equals 200\n/, 'and the test above it is byte for byte what it was');
+    await fresh.locator('[data-tab="compose"]').click();
 
     await fresh.goto(`${base}/?token=${TOKEN}#/scan/compose/c.tflw/L7`);
     await fresh.locator('[data-stmt-editable]').first().waitFor();
-    assert.equal(await fresh.locator('[data-stmt-editable="yes"]').count(), 0, "a crawl's own assertion is live, so its address is reachable after all");
-    const reason = (await fresh.locator('.editor-body .stmt-line p').textContent()) ?? '';
-    assert.match(reason, /crawl/, `the row gives the nested-block reason about a crawl, which is a true-shaped sentence about the wrong thing — got ${reason}`);
+    assert.ok((await fresh.locator('[data-stmt-editable="yes"]').count()) > 0, "a crawl's own assertion is an editable row now");
+    // …and `+ assertion` appends one, under the crawl's last statement and nowhere else.
+    await fresh.locator('[data-seq-add="assert"]').click();
+    await fresh.locator('[data-tab="source"]').click();
+    assert.match(
+      await editorText(fresh.locator('[data-preview]')),
+      /seed spider "\/"\n {2}expect response has no serious security violations\n {2}expect response has no serious security violations\n$/,
+      'the crawl gained its second assertion',
+    );
+    await fresh.locator('[data-tab="compose"]').click();
 
     /* **The control**, and it is the one `M224` cost us: the same pane, the same door, one file
        away, still fully live. Without it every assertion above is satisfied by a pane that has

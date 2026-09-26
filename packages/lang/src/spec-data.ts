@@ -259,7 +259,7 @@ export interface CliFlagEntry {
  * `TF022` row's `meaning` interpolates it. Adding a sixth directive updates all five surfaces or
  * fails the build; it cannot half-land again.
  */
-export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'require', 'exclude', 'helpers'] as const;
+export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'require', 'exclude', 'helpers', 'runs'] as const;
 
 export type ConfigDirective = (typeof CONFIG_DIRECTIVES)[number];
 
@@ -317,6 +317,7 @@ export const CONFIG_KEYWORDS: readonly ConfigKeywordEntry[] = [
   { id: 'require', slot: 'directive', summary: 'environment variables that must be set before a run starts; `tflw check` refuses an undeclared `env()` and names any that are unset, and `tflw run` refuses before its first request' },
   { id: 'exclude', slot: 'directive', summary: 'glob patterns that discovery skips when a run names a folder rather than a file' },
   { id: 'helpers', slot: 'directive', summary: 'the directories a `use` may load a JS/TS module from, relative to `tflw.config`; `./helpers` and `./tests/helpers` when the file declares none, and a `use` resolving outside them is `TF083`' },
+  { id: 'runs', slot: 'directive', summary: 'how many runs `tflw ui` lists before it forgets the oldest ended one — `runs keep 20`; 50 when the file says nothing' },
 
   { id: 'header', slot: 'key', summary: 'a request header sent on every `api` step' },
   { id: 'timeout', slot: 'key', summary: 'the default per-step budget; `timeout api`/`timeout browser` set the two independently' },

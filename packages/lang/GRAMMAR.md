@@ -608,7 +608,7 @@ Parsed by the same lexer/parser as test files; declaration-only (`test`/`action`
 errors here).
 
 ```
-ConfigFile      := (NEWLINE | RequireDecl | ExcludeDecl | HelpersDecl | DefaultsBlock | EnvBlock | SessionDecl)*
+ConfigFile      := (NEWLINE | RequireDecl | ExcludeDecl | HelpersDecl | RunsDecl | DefaultsBlock | EnvBlock | SessionDecl)*
 
 RequireDecl     := 'require' 'env' IDENT (',' IDENT)* NEWLINE
 ExcludeDecl     := 'exclude' STRING (',' STRING)* NEWLINE         # file-discovery exclusions (§3.9,
@@ -619,6 +619,8 @@ HelpersDecl     := 'helpers' STRING (',' STRING)* NEWLINE         # directories 
                                                                    # (§3.12, D1319); same shape as
                                                                    # ExcludeDecl, absent = the two
                                                                    # defaults
+RunsDecl        := 'runs' 'keep' NUMBER NEWLINE                   # runs `tflw ui` keeps (§3.13, D1325); a
+                                                                   # whole number, at least 1; at most once
 DefaultsBlock   := 'defaults' NEWLINE INDENT ConfigEntry* DEDENT
 EnvBlock        := 'env' IDENT 'default'? NEWLINE INDENT ConfigEntry* DEDENT
 

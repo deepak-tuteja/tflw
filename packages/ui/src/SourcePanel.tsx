@@ -1,4 +1,5 @@
 // The Source tab — the file itself, and, while you are composing, the bytes the write will produce.
+// Editable since `M241` `A` (`D1321`): the text is `Editor.tsx`, and an edit is the page's one draft.
 //
 // `M205` `S5a` built this inside `ApiForm`; `M206` `S2a` lifted it out unchanged in behaviour,
 // because **every door's Source tab is the same tab**. The rule says a tab is a stage of one file's
@@ -25,13 +26,15 @@
 // listed; the door is a mark on the row and never a reason to omit one.
 import { useRef } from 'react';
 import type { diagnose } from './diagnose';
+import { Editor, scrollEditorTo } from './Editor';
 import type { FileView } from './api';
 import type { Lens, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
-import { SourceText } from './Source';
 
-export function SourcePanel({ file, pending, diagnostics, project, door }: {
+export function SourcePanel({ file, pending, diagnostics, project, door, onText }: {
   readonly file: FileView | null;
+  /** The editor's text, into the page's one buffer (`D1321`) — the same `draft` Compose writes. */
+  readonly onText: (text: string) => void;
   readonly pending: { ok: true; text: string } | { ok: false; reason: string };
   readonly diagnostics: ReturnType<typeof diagnose>;
   /** The project as the server derived it — where the three derived facts come from. */
@@ -42,7 +45,7 @@ export function SourcePanel({ file, pending, diagnostics, project, door }: {
   const pendingText = pending.ok ? pending.text : null;
   const unwritten = pendingText !== null && file !== null && pendingText !== file.text;
   const shown = unwritten ? pendingText : (file?.text ?? '');
-  const pre = useRef<HTMLPreElement>(null);
+  const pre = useRef<HTMLDivElement>(null);
 
   const entry = file === null ? undefined : project.files.find((f) => f.path === file.path);
   /** Crawls and tests as one list in line order — the index is about the file, and the file does
@@ -52,12 +55,8 @@ export function SourcePanel({ file, pending, diagnostics, project, door }: {
     ...(entry?.tests ?? []).map((t) => ({ kind: 'test' as const, name: t.name, line: t.line, lenses: t.lenses, tags: t.tags, workload: t.workload })),
   ].sort((a, b) => a.line - b.line);
 
-  /** Scroll the text to a declaration's own line. The lines are spans so that there is something
-   *  with a position to scroll to — `scrollIntoView` on a text node is not a thing. */
-  const goToLine = (line: number) => {
-    const target = pre.current?.querySelector(`[data-source-line="${line}"]`);
-    target?.scrollIntoView({ block: 'center' });
-  };
+  /** Scroll the editor to a declaration's own line, leaving the caret where the author put it. */
+  const goToLine = (line: number) => scrollEditorTo(pre.current, line);
 
   return (
     <div className="authoring source-panel" data-source={unwritten ? 'pending' : 'written'}>
@@ -125,32 +124,22 @@ export function SourcePanel({ file, pending, diagnostics, project, door }: {
         </div>
       ) : null}
 
-      {/* Each line is its own span so the index has something with a position to scroll to. The
-          text is reassembled exactly — `textContent` here is the file, byte for byte, which is
-          what `D985` requires of a projection and what every gate reading `[data-preview]` asserts. */}
-      {/* **The gutter is generated content, and that is a requirement rather than a shortcut**
-          (`M216`). Every line already carried `data-source-line` — the index scrolls to it — so the
-          numbers were in the DOM and simply never drawn. They cannot be drawn as TEXT: `D985` says
-          this `<pre>`'s `textContent` is the file byte for byte, and every gate reading
-          `[data-preview]` rests on it, so a rendered number would corrupt the one property the
-          projection has. A CSS `::before` reading the attribute is outside `textContent` entirely.
-
-          The width is the file's own digit count rather than a constant: at a fixed `3ch` the
-          thousandth line of a long file pushes one character further right than the nine hundred
-          before it, and a gutter that does not line up is worse than no gutter. */}
-      <pre
-        className="preview source-text"
-        data-preview
-        /* `M240` `E` — a scrolling region the keyboard cannot reach cannot be read past its first
-           screen without a mouse; one Tab stop and a name make it a place. */
-        tabIndex={0}
-        aria-label="the file's source"
-        data-source-gutter={String(shown === '' ? 1 : shown.split('\n').length).length}
-        style={{ ['--gutter-ch' as string]: `${String(shown === '' ? 1 : shown.split('\n').length).length}ch` }}
-        ref={pre}
-      >
-        <SourceText text={shown} />
-      </pre>
+      {/* **The file, editable** — `M241` `A` (`D1321`). It was a `<pre>` of spans until this slice,
+          and the two properties that `<pre>` was built to keep are kept by other means: the
+          gutter is CodeMirror's (outside the text element, so the text is still the file byte for
+          byte, `D985`), and `data-preview` is on the element holding the text, so the page's gates
+          read what the author reads. An edit here IS the draft Compose writes — one buffer. */}
+      <div ref={pre} className="source-editor">
+        {file === null ? null : (
+          <Editor
+            value={shown}
+            onChange={onText}
+            dialect="test"
+            diagnostics={diagnostics}
+            contentAttributes={{ 'data-preview': '', 'aria-label': "the file's source" }}
+          />
+        )}
+      </div>
       {/* `D1052` — what `tflw check` will say about these bytes. Shown, never blocking: the write
           route refuses what cannot be read (`D1049`), and an unbound `{'{'}token{'}'}` reads fine — it is
           just wrong, and the author should hear it here rather than in CI. */}

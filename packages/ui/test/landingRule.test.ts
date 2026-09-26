@@ -7,7 +7,7 @@ import { behindDoor, landingDecl, landingFor, landingKey, landingKeys, projectHa
 import { fileOutline } from '../src/outline';
 import type { ProjectView } from '../src/contract';
 
-const project = (files: ProjectView['files']): ProjectView => ({ configured: true, root: '/p', version: { version: '0.0.0-test', source: 'dev', commit: null, dirty: null, builtAt: null }, envs: [], reportDir: './report', helpers: [], files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, playScratch: '.play.tflw', playIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [], sessions: [] }, webBaseUrl: null });
+const project = (files: ProjectView['files']): ProjectView => ({ configured: true, root: '/p', version: { version: '0.0.0-test', source: 'dev', commit: null, dirty: null, builtAt: null }, envs: [], reportDir: './report', helpers: [], runFlags: [], files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, playScratch: '.play.tflw', playIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [], sessions: [] }, webBaseUrl: null });
 
 const file = (path: string, tests: Array<readonly string[]>, crawls: Array<readonly string[]> = [], errors = 0): ProjectView['files'][number] => ({
   path,

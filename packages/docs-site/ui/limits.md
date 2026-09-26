@@ -36,13 +36,15 @@ sequence and a stage side by side. Below that it stacks, and nothing is designed
 
 ## Not yet
 
-**Compose does not write every construct the language has.** The doors' forms cover the constructs
-each door's work is built from, and the language is larger than that. Anything Compose cannot write,
-the **Source** tab can — it is an editor over the real file, and the checker grades what you type
-there the same way it grades what Compose produces.
+**Sessions and envs are written in Config, not in a form.** Compose writes tests, hooks, actions
+and crawls, and anything its forms do not cover the **Source** tab edits directly — an editor over
+the real file, with the language's own highlighting, the checker's answer underlined as you type,
+and undo. The two things a file resolves against rather than holds, `session` and `env` blocks,
+live in `tflw.config`, and the Config tab is the same editor over that file. A second, form-shaped
+editor over one file would be two answers to one question.
 
-**Some panels are read-only.** Config and Auth show the project facts a file resolves against; where
-a value is not editable in place, `tflw.config` is a text file and editing it is the supported path.
+**Auth is read-only.** It shows the sessions and targets a file resolves against, and each row
+links to the line in Config that declares it.
 
 **The page does not author across files.** Composing works on the file you have selected. A
 refactor that moves a session or a hook between files is `tflw refactor`'s job, from the command

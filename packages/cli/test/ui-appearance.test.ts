@@ -1506,7 +1506,9 @@ test('the explorer’s create keeps its place on a project with a real file coun
  * **One control is a code surface and wears the theme's other face.** The Config tab's editor
  * (`.config-text`) is `tflw.config`'s text, set in `var(--mono)` like every other place the page
  * shows source; the claim for it is *the theme's mono*, read off a probe carrying that token, so a
- * theme that changes its mono stack changes the expectation with it. This gate first went green
+ * theme that changes its mono stack changes the expectation with it. Since `M241` `A` (`D1321`)
+ * both editors — Source and Config — are CodeMirror, whose text element (`.cm-content`) is a
+ * `contenteditable` rather than a native control, so it is named here by that class. This gate first went green
  * without ever meeting that editor: `at` waits for the tab strip, the config text is fetched after
  * it, and on a fast machine the read ran before the textarea existed. CI's slower runner met it and
  * went red on all twelve config views. So the Config tab now waits for its editor, and the gate
@@ -1518,7 +1520,7 @@ test('every native control on every view computes the body’s own font-family, 
   const views = DOORS.flatMap((d) => ['compose', 'source', 'run', 'auth', 'config'].map((t) => [d, t] as const));
   for (const [door, tab] of views) {
     await at(door, tab);
-    if (tab === 'config') await page.locator('textarea[data-api-config-text]').first().waitFor();
+    if (tab === 'config') await page.locator('[data-api-config-text]').first().waitFor();
     for (const theme of THEMES) {
       await wear(theme);
       const read = await page.evaluate(() => { // one-shot: computed styles after `wear`'s synchronous attribute write — the view was waited for by `at` (and the config editor above), and a font-family needs no paint to compute
@@ -1530,9 +1532,9 @@ test('every native control on every view computes the body’s own font-family, 
         probe.remove();
         const out: string[] = [];
         let code = 0;
-        for (const el of document.querySelectorAll('button, input, select, textarea, option, summary, dialog, label')) {
+        for (const el of document.querySelectorAll('button, input, select, textarea, option, summary, dialog, label, .cm-content')) {
           const f = getComputedStyle(el).fontFamily;
-          const isCode = el.matches('textarea.config-text');
+          const isCode = el.matches('.cm-content');
           if (isCode) code++;
           if (f !== (isCode ? mono : body)) {
             const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme');
@@ -1764,7 +1766,9 @@ test('control: axe names an unlabelled `<nav>` when there is one', async () => {
 // every other view already fit once the fold was honoured.
 
 const BUDGET: Readonly<Record<string, number>> = { landing: 120, compose: 250, auth: 200, run: 150 };
-const THEIRS = 'code, pre, kbd, input, textarea, select, option, .seq-text, [data-files], [data-user-data], .tip, [data-legend], [data-test], [data-finding], [data-finding-gone]';
+// `.cm-editor` since `M241` `A` (`D1321`): the Source and Config editors are CodeMirror, whose text
+// is a `div` where it was a `<textarea>`, and a file's words are the author's, never the page's.
+const THEIRS = 'code, pre, kbd, input, textarea, select, option, .cm-editor, .seq-text, [data-files], [data-user-data], .tip, [data-legend], [data-test], [data-finding], [data-finding-gone]';
 
 const wordsAtRest = (): Promise<{ readonly n: number; readonly text: string }> =>
   page.evaluate((skip) => {
@@ -1886,4 +1890,69 @@ test('control: the copy instruments count a paragraph put back and refuse a 91-c
   assert.ok(tips.some((t) => tipProblem(t) === '91 characters'), 'a 91-character tip passed the tip rule');
   assert.equal(tipProblem('one. Two'), 'two sentences');
   assert.equal(tipProblem('`tflw.config` for this env'), null, 'a dotted name is not a second sentence');
+});
+
+// ── `M241` `E` (`D1325`): the size census ────────────────────────────────────────────────────────
+//
+// **Every control at least 24 px on both sides, and no text under 11 px**, on every view the budget
+// walks and on Source. The census is the sibling's `S-2b` (`lib/ui-budgets.mjs`), which printed
+// 106–201 small targets per view and one 10 px glyph on its own project and judged nothing, because
+// judging was this slice's to build. Here it judges, on this repository's fixture, and the sibling's
+// `JUDGE_SIZES` flips when it merges — two instruments, one rule.
+//
+// A control is what the keyboard or a pointer can act on: buttons, links, form controls, `summary`,
+// and anything made focusable. An element with no box (hidden, or `display: contents`) is not a
+// target; a checkbox is measured by the label it sits in, which is what a pointer presses; and the
+// resize grips are the one named exception, for the reason `styles.css` gives beside the floors.
+// Text is every visible text run, measured on the element that sets its size.
+const smallThings = (): Promise<{ readonly targets: readonly string[]; readonly texts: readonly string[] }> =>
+  page.evaluate(() => { // one-shot: geometry after the view's readiness selector was waited for by the caller, and sizes need layout, not a later paint
+    type N = { nodeType: number; parentElement: N | null; childNodes: ArrayLike<N>; textContent: string | null; tagName: string; attributes: ArrayLike<{ name: string; value: string }>; checkVisibility(): boolean; getBoundingClientRect(): { width: number; height: number } };
+    const describe = (el: N): string => {
+      const data = Array.from(el.attributes).find((a) => a.name.startsWith('data-') && a.name !== 'data-tip');
+      return `${el.tagName.toLowerCase()}${data ? `[${data.name}${data.value ? `=${data.value.slice(0, 24)}` : ''}]` : ''}`;
+    };
+    const targets: string[] = [];
+    for (const found of Array.from(document.querySelectorAll('button, a[href], input, select, textarea, summary, [role=button], [tabindex="0"]')) as unknown as (N & { matches(s: string): boolean; closest(s: string): N | null; type?: string })[]) {
+      if (!found.checkVisibility()) continue;
+      // **The resize grips are the one named exception** (`styles.css`, `D1325`): a 6 px seam the
+      // length of the pane, keyboard-resizable, kept that narrow so it covers neither scrollbar.
+      if (found.matches('[data-grip], [data-compose-split]')) continue;
+      // A checkbox or radio is pressed through its label — the label is the target a pointer meets.
+      const el = (found.type === 'checkbox' || found.type === 'radio') && found.closest('label') !== null ? found.closest('label')! : found;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (r.width < 24 || r.height < 24) targets.push(`${describe(el)} ${Math.round(r.width)}×${Math.round(r.height)}`);
+    }
+    const texts: string[] = [];
+    const walk = (n: N): void => {
+      if (n.nodeType === 3) {
+        const parent = n.parentElement!;
+        if ((n.textContent ?? '').trim() === '') return;
+        const px = parseFloat(getComputedStyle(parent as never).fontSize);
+        if (px < 11) texts.push(`${describe(parent)} ${px}px “${(n.textContent ?? '').trim().slice(0, 20)}”`);
+        return;
+      }
+      if (n.nodeType !== 1 || !n.checkVisibility()) return;
+      for (const c of Array.from(n.childNodes)) walk(c);
+    };
+    walk(document.body as unknown as N);
+    return { targets: [...new Set(targets)], texts: [...new Set(texts)] };
+  });
+
+test('`M241` `E` (`D1325`): no control on any view is under 24 px on a side, and no text is under 11 px', async () => {
+  const small: string[] = [];
+  let views = 0;
+  const walked: ReadonlyArray<readonly [string, string, string | null]> = [...COPY_VIEWS, ...DOORS.map((d) => [d, 'source', 'tests/catalog.tflw'] as const)];
+  for (const [door, tab, where] of walked) {
+    if (where === null) await visit(door, tab);
+    else { await page.goto(`${pageUrl}#/${door}/${tab}/${where}`); await page.reload(); }
+    await page.locator(tab === 'source' ? '[data-preview]' : COPY_READY[tab]!).first().waitFor();
+    views += 1;
+    const { targets, texts } = await smallThings();
+    for (const x of targets) small.push(`${door || '/'} ${tab}: target ${x}`);
+    for (const x of texts) small.push(`${door || '/'} ${tab}: text ${x}`);
+  }
+  assert.ok(views >= 21, `the census walked ${views} views`);
+  assert.deepEqual(small, [], `${small.length} small thing(s):\n${small.slice(0, 60).join('\n')}`);
 });

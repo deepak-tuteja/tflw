@@ -968,6 +968,18 @@ helpers "./helpers", "./lib/tflw"
 - Deliberately a directive rather than an env key: which code a suite may run is not something
   that varies by environment, and a per-env answer would be the loophole.
 
+### 3.13 How many runs the page keeps — `runs keep` (M241, D1325)
+
+```
+runs keep 20
+```
+
+- Top-level, once: how many runs `tflw ui` lists before it forgets the oldest one that has ended.
+  A config that says nothing keeps 50. A running run is never forgotten.
+- It bounds the page's memory and nothing else. Every run still writes its report directory, and
+  those directories are the durable record — this line never deletes one.
+- Read at each run, so an edit made in the page's Config tab takes effect on the next run.
+
 ## 4. Tests & structure ✅
 
 ### 4.1 `test`
@@ -4119,7 +4131,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF016` | Parser: top-level content that isn't a `test`/`crawl`/`action`/`import`/`use`/`before`/`after`. | `expect status equals 200` → `` expected a `test`, `crawl`, `action`, `import`, `use`, `before`, or `after`, found `expect` `` |
 | `TF020` | Parser (config): an unrecognised key inside a config block. | `defaults` then `headr "Accept" is "application/json"` in `tflw.config` → `` did you mean `header`? `` |
 | `TF021` | Parser (config): a `test` appears in the declaration-only config dialect. | `test "not allowed here"` in `tflw.config` → `` `test` is not allowed in tflw.config `` |
-| `TF022` | Parser (config): top-level config content that isn't one of `defaults`, `env`, `session`, `require`, `exclude`, or `helpers` (M110, `V4-04` — this list is `CONFIG_DIRECTIVES` above, the same array the parser's own message is built from, so the two cannot drift again). The code carries a **second** use this row went two arcs without naming: a `session … oauth2` block that is missing a required line. `M147e` (`A2-15`) found it while narrowing that message — the block used to name all three of `token url`, `client id` and `client secret` however many were already written, and now names only the ones absent — and the omission here is the same doc-drift class as `A2-16`, caught in the file that generates `diagnostics.md`. | `workers 3` in `tflw.config` → `` expected `defaults`, `env`, `session`, `require`, `exclude`, or `helpers`, found `workers` `` |
+| `TF022` | Parser (config): top-level config content that isn't one of `defaults`, `env`, `session`, `require`, `exclude`, `helpers`, or `runs` (M110, `V4-04` — this list is `CONFIG_DIRECTIVES` above, the same array the parser's own message is built from, so the two cannot drift again). The code carries a **second** use this row went two arcs without naming: a `session … oauth2` block that is missing a required line. `M147e` (`A2-15`) found it while narrowing that message — the block used to name all three of `token url`, `client id` and `client secret` however many were already written, and now names only the ones absent — and the omission here is the same doc-drift class as `A2-16`, caught in the file that generates `diagnostics.md`. | `workers 3` in `tflw.config` → `` expected `defaults`, `env`, `session`, `require`, `exclude`, `helpers`, or `runs`, found `workers` `` |
 | `TF023` | Parser: a duration whose unit is missing, mis-spelled, mis-cased, or spaced off its number. M98c (`A1-07`) made it reachable from **value** position — `expect duration is less than 250 ms` and `2sec` used to fall out of the step as ``TF010: unexpected `ms` at end of step`` / `= help: expected end of line`, because `250ms` and `250 ms` lex identically and the value path simply declined to build a duration when its adjacency or unit check failed. The three cases are kept apart because their fixes differ: a real unit written with a space, shown the closed-up spelling, a word that means a unit tflw spells differently (`sec` → `s`, `MS` → `ms`), and a word that was never a unit, which keeps the generic error. The known-spelling table is enumerated, not inferred, so `1e3` and `0xff` stay `TF001`'s numeric-notation case rather than acquiring a second, wrong explanation. M147d (`A3-13`, D638) folded the three unit vocabularies into one — every duration position now takes `seconds`/`minutes`/`hours`/`days`/`weeks` as well as `ms`/`s`/`m` — and the *adjacency* half survived that on purpose: it is asked of an **abbreviation**, which is what makes `250 ms` a mistake worth teaching, and not of a **word**, which date arithmetic has always accepted with a space. So this code now reports three things and not two: a spaced abbreviation, a mis-spelled or mis-cased one, and a word that is not a unit in any spelling. | `defaults` then `timeout step 5x` in `tflw.config` → `` unknown time unit `x` ``; `api GET /a` then `expect duration is less than 2sec` → `` tflw's abbreviated time units are `ms`, `s` and `m` — write `2s` `` |
 | `TF024` | Checker (config): more than one `env` marked `default`, or a duplicate env name. | two `env … default` blocks in one `tflw.config` → `` more than one env is marked `default` `` |
 | `TF025` | Checker (config): a key used in the wrong block. | `defaults` then `web "https://example.com"` in `tflw.config` → `` `web` is not allowed in defaults `` |

@@ -12,7 +12,7 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { AcceptDialogStmt, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ExpectStmt, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
+import type { AcceptDialogStmt, ActionDecl, CrawlDecl, CrawlSeed, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ExpectStmt, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
 import { pollable, quantifiable } from './ast.js';
 import { parse as parseTokens, parsePathText, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
@@ -189,6 +189,111 @@ export function buildTest(spec: TestSpec): BuildResult<TestDecl> {
       workload: spec.workload,
       thresholds: spec.thresholds,
       concurrency: spec.concurrency ?? 'sequential',
+      body: spec.body,
+      span: SYNTHETIC,
+    },
+  };
+}
+
+/**
+ * An `action` — `M241` `B` (`D1322`). Its name is one or more bare words (`action add to cart(sku)`
+ * is a name of three), each a parameter a bare identifier, and its body at least one statement,
+ * because an action with none does not parse. The same three rules `printAction` refuses by, stated
+ * here so a form's refusal lands on the field that caused it.
+ */
+export interface ActionSpec {
+  readonly name: string;
+  readonly params: readonly string[];
+  readonly body: ActionDecl['body'];
+}
+
+const BARE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export function buildAction(spec: ActionSpec): BuildResult<ActionDecl> {
+  const words = spec.name.trim().split(/\s+/).filter((w) => w !== '');
+  if (words.length === 0) return bad('an action needs a name');
+  for (const word of words) {
+    if (!BARE_IDENT.test(word)) return bad(`\`${word}\` cannot be part of an action name — each word starts with a letter or \`_\` and holds letters, digits or \`_\``);
+  }
+  const seen = new Set<string>();
+  for (const param of spec.params) {
+    if (!BARE_IDENT.test(param)) return bad(`\`${param}\` is not a parameter name — it starts with a letter or \`_\` and holds letters, digits or \`_\``);
+    if (seen.has(param)) return bad(`\`${param}\` is a parameter twice`);
+    seen.add(param);
+  }
+  if (spec.body.length === 0) return bad('an action needs at least one statement');
+  return { ok: true, node: { type: 'ActionDecl', name: words.join(' '), params: spec.params, body: spec.body, span: SYNTHETIC } };
+}
+
+/**
+ * A `crawl` — `M241` `C` (`D1323`). What SCANS' *new crawl* form holds: a name, the principals it
+ * walks as, where its surface comes from (at least one seed — a crawl with none is `TF068`), the
+ * paths it leaves alone, and the assertions its body makes over every response it reaches.
+ */
+export type CrawlSeedSpec =
+  | { readonly kind: 'openapi'; readonly source: string; readonly service?: string }
+  | { readonly kind: 'traffic' }
+  | { readonly kind: 'spider'; readonly root: string; readonly service?: string; readonly maxDepth?: number; readonly maxPages?: number };
+
+export interface CrawlSpec {
+  readonly name: string;
+  readonly tags: readonly string[];
+  readonly sessions: readonly string[];
+  readonly seeds: readonly CrawlSeedSpec[];
+  readonly excludes: readonly string[];
+  readonly body: CrawlDecl['body'];
+}
+
+export function buildCrawl(spec: CrawlSpec): BuildResult<CrawlDecl> {
+  if (spec.name.trim().length === 0) return bad('a crawl needs a name');
+  for (const tag of spec.tags) {
+    if (!/^[A-Za-z][\w-]*$/.test(tag)) return bad(`\`@${tag}\` is not a tag — a tag starts with a letter and holds letters, digits, \`_\` or \`-\``);
+  }
+  for (const session of spec.sessions) {
+    if (!BARE_IDENT.test(session)) return bad(`\`${session}\` is not a session name — it starts with a letter or \`_\` and holds letters, digits or \`_\``);
+  }
+  if (spec.seeds.length === 0) return bad('a crawl needs a seed — where its surface comes from (openapi, traffic or spider)');
+  const seeds: CrawlSeed[] = [];
+  for (const s of spec.seeds) {
+    if (s.kind === 'traffic') {
+      seeds.push({ type: 'TrafficSeed', span: SYNTHETIC });
+      continue;
+    }
+    if (s.service !== undefined && !BARE_IDENT.test(s.service)) return bad(`\`${s.service}\` is not a service name`);
+    if (s.kind === 'openapi') {
+      if (s.source.trim() === '') return bad('an openapi seed needs the document it reads');
+      seeds.push({ type: 'OpenApiSeed', source: stringLit(s.source), ...(s.service === undefined ? {} : { service: s.service }), span: SYNTHETIC });
+      continue;
+    }
+    if (s.root.trim() === '') return bad('a spider seed needs the page it starts from');
+    const cap = (n: number | undefined, what: string): NumberLit | string | undefined => {
+      if (n === undefined) return undefined;
+      const wrong = positive(n, what);
+      return wrong ?? ({ type: 'NumberLit', value: n, raw: String(n), span: SYNTHETIC } as NumberLit);
+    };
+    const depth = cap(s.maxDepth, 'max depth');
+    const pages = cap(s.maxPages, 'max pages');
+    if (typeof depth === 'string') return bad(depth);
+    if (typeof pages === 'string') return bad(pages);
+    seeds.push({
+      type: 'SpiderSeed',
+      root: stringLit(s.root),
+      ...(s.service === undefined ? {} : { service: s.service }),
+      ...(depth === undefined ? {} : { maxDepth: depth }),
+      ...(pages === undefined ? {} : { maxPages: pages }),
+      span: SYNTHETIC,
+    });
+  }
+  for (const glob of spec.excludes) if (glob.trim() === '') return bad('an exclude needs the path it leaves alone');
+  return {
+    ok: true,
+    node: {
+      type: 'CrawlDecl',
+      name: stringLit(spec.name),
+      tags: spec.tags,
+      sessions: spec.sessions,
+      seeds,
+      excludes: spec.excludes.map(stringLit),
       body: spec.body,
       span: SYNTHETIC,
     },

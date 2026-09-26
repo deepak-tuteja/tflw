@@ -81,7 +81,7 @@ import {
 } from '@tflw/lang';
 import { LEAF_CAP, captureName, captureSpecs, leaves, verifySpec } from './response';
 import { laidOut } from './jsonview';
-import type { FileOutline, Note, OutlineCrawl, OutlineHook, OutlineRequest, OutlineStatement, OutlineTest } from './outline';
+import { spaceOfDecl, type FileOutline, type Note, type OutlineAction, type OutlineCrawl, type OutlineDecl, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest } from './outline';
 import { BodyText } from './Source';
 
 /**
@@ -289,6 +289,14 @@ export interface RowEditing {
   /** The declaration header being typed into, and where a change goes (`M210` `S5`). */
   readonly header: { readonly key: string; readonly values: HeaderEdit } | null;
   readonly onHeader: ((decl: OutlineHook | OutlineTest, next: HeaderEdit) => void) | null;
+  /** An action's header — `M241` `B` (`D1322`): its name and parameters, held as typed. */
+  readonly actionHeader: { readonly key: string; readonly values: ActionHeaderEdit } | null;
+  readonly onActionHeader: ((decl: OutlineAction, next: ActionHeaderEdit) => void) | null;
+  /** *Open action* on a `call` row — `M241` `B` (`D1322`): the action's own header, in whatever file declares it. */
+  readonly onOpenAction: ((name: string) => void) | null;
+  /** A crawl's header — `M241` `C` (`D1323`). */
+  readonly crawlHeader: { readonly key: string; readonly values: CrawlHeaderEdit } | null;
+  readonly onCrawlHeader: ((decl: OutlineCrawl, next: CrawlHeaderEdit) => void) | null;
   /** One threshold of a test, by its own index. `null` as the value removes it. */
   readonly threshold: { readonly key: string; readonly values: ThresholdEdit } | null;
   readonly onThreshold: ((decl: OutlineTest, index: number, next: ThresholdEdit | null) => void) | null;
@@ -441,7 +449,10 @@ export { ago } from './format';
 /** A statement's address as one string, for keying the row being typed into. `null` for a row no
  *  index pair can name. */
 export function stepKey(path: StepPath | null): string | null {
-  return path === null ? null : `${path.decl}:${path.step}`;
+  // The space leads when there is one (`M241` `B`): `0:1` is the second statement of test 0 AND of
+  // action 0, and a held edit keyed on it would appear in both. The default space keeps the key
+  // every earlier round wrote.
+  return path === null ? null : `${path.space === undefined ? '' : `${path.space}:`}${path.decl}:${path.step}`;
 }
 
 /**
@@ -972,6 +983,22 @@ export function expectSpecOf(edit: ExpectEdit, original: ExpectStmt | null): Exp
  * `printTest` writes them on one line (450 of 682 tag lines carry more than one), and sessions are
  * comma-separated because `as admin, shopper` is how the grammar spells a list.
  */
+/** What an action's band holds while it is typed in: the name as words, the parameters as the
+ *  comma list the file writes. */
+export interface ActionHeaderEdit {
+  readonly name: string;
+  readonly params: string;
+}
+
+/**
+ * The key an edit in progress is held under. **It carries the space** (`M241` `B`): `decl:0` would
+ * otherwise name the first test and the first action at once, and a name typed into one band would
+ * appear in the other. A test and a hook keep the `decl:` key every earlier round wrote.
+ */
+export function declKey(decl: OutlineDecl): string {
+  return decl.kind === 'action' || decl.kind === 'crawl' ? `${decl.kind}:${decl.index}` : `decl:${decl.index}`;
+}
+
 export interface HeaderEdit {
   readonly name: string;
   readonly tags: string;
@@ -1346,8 +1373,10 @@ function PickField({ statement, pick, onPicked }: {
   );
 }
 
-export function ScriptRow({ statement, edit, onEdit, trailing, pick, phase }: {
+export function ScriptRow({ statement, edit, onEdit, trailing, pick, phase, onOpenAction = null }: {
   readonly statement: OutlineStatement;
+  /** *Open action* for a `call` row (`D1322`) — `null` where the row is not in a pane that can navigate. */
+  readonly onOpenAction?: ((name: string) => void) | null;
   /** The picker, or `null` on a door whose vocabulary has no locators in it (`D1106`). */
   readonly pick: RowEditing['pick'];
   /** Everything but an assertion, which has its own row — so the last branch here is `pause` by
@@ -1436,6 +1465,11 @@ export function ScriptRow({ statement, edit, onEdit, trailing, pick, phase }: {
           />
         ))}
         <span className="kw">)</span>
+        {onOpenAction === null ? null : (
+          <button onClick={() => onOpenAction(edit.name)} data-call-open data-tip="the action this calls — its own header, in the file that declares it">
+            open action
+          </button>
+        )}
         <button onClick={() => onEdit({ ...edit, args: [...edit.args, '""'] })} data-call-arg-add data-tip="one more argument for this action">
           + argument
         </button>
@@ -2158,81 +2192,208 @@ export function bodyText(body: ApiBody): string {
  * same mistake on screen, every time.
  */
 /**
- * **A `crawl`, drawn and not built** — `M228` `C` (`D1238`).
+ * **An action's band** — `M241` `B` (`D1322`). The header of the third declaration shape: its name
+ * (one or more words, which is what a `call` writes) and its parameters. The body below is drawn by
+ * the same rows a test's is, because an action holds the same statements.
  *
- * Read-only **and saying why**, which is `DoorVocabulary.constructs`' own written rule rather than
- * a compromise: *a kind this door owns and cannot construct is drawn, disabled, saying why; a pane
- * that is half live and silent about which half is what `D1082` refuses.* The cost of the
- * alternative is written down in `outline.ts` beside `OutlineCrawl` — a builder, an `Insertion`
- * member, `Edit` members for the header and each seed, and every consumer of `declarations` — for
- * **14 real crawls in the whole corpus**.
- *
- * What it draws is what the declaration says and nothing derived: the name, the principals, the
- * seeds in the words the language spells them with, and the excludes. A crawl's seeds are the
- * whole of *where its requests come from*, and they were invisible in the product until this
- * round.
+ * **A rename does not rewrite the callers** (`D1322`): the checker's unknown-action error names each
+ * one, in this file and in every file that imports it, which is a diagnostic the author reads rather
+ * than edits this page makes in files nobody opened.
  */
-function CrawlBand({ decl }: { readonly decl: OutlineCrawl }) {
+function ActionBand({ decl, editing }: { readonly decl: OutlineAction; readonly editing: RowEditing }) {
+  const key = declKey(decl);
+  const live = editing.onActionHeader !== null;
+  const v = editing.actionHeader !== null && editing.actionHeader.key === key ? editing.actionHeader.values : { name: decl.name, params: decl.params.join(', ') };
+  const change = (patch: Partial<ActionHeaderEdit>): void => editing.onActionHeader?.(decl, { ...v, ...patch });
+  const what = `action ${decl.name}`;
   return (
-    <div className="test-band crawl-band" data-band-kind="crawl" data-band-line={decl.line} data-crawl-readonly>
-      {decl.note === null ? null : <NoteBlock note={decl.note} what={`crawl ${decl.name}`} />}
+    <div className="test-band action-band" data-band-kind="action" data-band-line={decl.line}>
+      {editing.noting === key ? (
+        <NoteOpen note={decl.note} what={what} onChange={(lines) => editing.onNote?.({ on: 'declaration', decl: decl.index, space: 'action' }, lines)} />
+      ) : decl.note ? (
+        <NoteBlock note={decl.note} what={what} onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!({ on: 'declaration', decl: decl.index, space: 'action' }, lines)} />
+      ) : null}
       <header className="band-head">
-        <span className="t-kw">crawl</span>
-        <span className="t-name" data-crawl-name>{decl.name}</span>
-        {decl.sessions.length === 0 ? null : (
-          <span className="muted" data-crawl-sessions={decl.sessions.length}>
-            as <code>{decl.sessions.join(', ')}</code>
-          </span>
+        <span className="band-what">action</span>
+        {live ? (
+          <input
+            className="band-name"
+            value={v.name}
+            onChange={(e) => change({ name: e.target.value })}
+            data-band-name={v.name}
+            aria-label="action name"
+            data-tip="what a `call` names this action by — one word or several"
+          />
+        ) : (
+          <strong data-band-name={decl.name}>{decl.name}</strong>
         )}
+        <span className="muted">(</span>
+        {live ? (
+          <input
+            className="band-params"
+            value={v.params}
+            onChange={(e) => change({ params: e.target.value })}
+            data-band-params={v.params}
+            aria-label="parameters"
+            data-tip="the values a `call` passes, in order, separated by commas"
+          />
+        ) : (
+          <code data-band-params={decl.params.join(', ')}>{decl.params.join(', ')}</code>
+        )}
+        <span className="muted">)</span>
+        <span className="ln muted">line {decl.line}</span>
       </header>
-      <ul className="crawl-clauses">
-        {decl.seeds.map((seed, i) => (
-          <li key={i} data-crawl-seed={seed.type}>
-            <code>{SEED_WORD[seed.type] ?? 'seed'}</code>
-          </li>
-        ))}
-        {decl.excludes.map((x, i) => (
-          <li key={`x${i}`} data-crawl-exclude={x.value}>
-            <code>exclude &ldquo;{x.value}&rdquo;</code>
-          </li>
-        ))}
-      </ul>
-      {/* **The reason, which is the half `D1082` is about.** A disabled row with no explanation is
-          the pane it refuses; a reader who cannot edit this needs to know it is a decision and
-          where the edit lives instead. */}
-      <p className="muted" data-crawl-why>
-        A <code>crawl</code> is drawn here and edited in the file. Its requests are ones nobody wrote, so it is built from{' '}
-        <code>seed</code> lines rather than from steps, and this pane has no builder for one — <code>tflw fmt</code> and your editor
-        are where a crawl is changed.
-      </p>
     </div>
   );
 }
 
-/** The word each seed kind is written with, so the band spells them the way the file does rather
- *  than printing a node type at the reader. */
-const SEED_WORD: Partial<Record<string, string>> = {
-  OpenApiSeed: 'seed openapi',
-  TrafficSeed: 'seed traffic',
-  SpiderSeed: 'seed spider',
-};
+/** What a crawl's band holds while it is typed in — `M241` `C` (`D1323`). Every field is text as
+ *  typed, so a half-written value is a moment on screen and not a refusal to act on. */
+export interface CrawlHeaderEdit {
+  readonly name: string;
+  readonly tags: string;
+  readonly sessions: string;
+  readonly seeds: readonly SeedEdit[];
+  readonly excludes: readonly string[];
+}
+
+export interface SeedEdit {
+  readonly kind: 'openapi' | 'traffic' | 'spider';
+  /** The document an openapi seed reads, or the page a spider starts from. */
+  readonly target: string;
+  readonly service: string;
+  readonly depth: string;
+  readonly pages: string;
+}
+
+export function crawlEditOf(decl: OutlineCrawl): CrawlHeaderEdit {
+  return {
+    name: decl.name,
+    tags: decl.tags.map((t) => `@${t}`).join(' '),
+    sessions: decl.sessions.join(', '),
+    seeds: decl.seeds.map((s): SeedEdit =>
+      s.type === 'TrafficSeed'
+        ? { kind: 'traffic', target: '', service: '', depth: '', pages: '' }
+        : s.type === 'OpenApiSeed'
+          ? { kind: 'openapi', target: s.source.value, service: s.service ?? '', depth: '', pages: '' }
+          : { kind: 'spider', target: s.root.value, service: s.service ?? '', depth: s.maxDepth === undefined ? '' : String(s.maxDepth.value), pages: s.maxPages === undefined ? '' : String(s.maxPages.value) },
+    ),
+    excludes: decl.excludes.map((x) => x.value),
+  };
+}
+
+/**
+ * **A crawl's band** — `M241` `C` (`D1323`), which retired `M228` `C`'s read-only one (`D1238`).
+ *
+ * The header of a crawl is everything that says what it walks: its name and tags, the principals it
+ * walks as, where its surface comes from (one row per `seed`), and the paths it leaves alone. Its
+ * statements are ordinary rows below, edited and removed like a test's. The band writes through
+ * the same header edit a test's does, addressed in the crawl space, so the statements and their
+ * notes are never re-printed.
+ */
+function CrawlBand({ decl, editing }: { readonly decl: OutlineCrawl; readonly editing: RowEditing }) {
+  const key = declKey(decl);
+  const live = editing.onCrawlHeader !== null;
+  const v = editing.crawlHeader !== null && editing.crawlHeader.key === key ? editing.crawlHeader.values : crawlEditOf(decl);
+  const change = (patch: Partial<CrawlHeaderEdit>): void => editing.onCrawlHeader?.(decl, { ...v, ...patch });
+  const seedAt = (i: number, patch: Partial<SeedEdit>): void => change({ seeds: v.seeds.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
+  const what = `crawl ${decl.name}`;
+  if (!live) {
+    return (
+      <div className="test-band crawl-band" data-band-kind="crawl" data-band-line={decl.line}>
+        {decl.note === null ? null : <NoteBlock note={decl.note} what={what} />}
+        <header className="band-head">
+          <span className="t-kw">crawl</span>
+          <span className="t-name" data-crawl-name>{decl.name}</span>
+        </header>
+      </div>
+    );
+  }
+  return (
+    <div className="test-band crawl-band" data-band-kind="crawl" data-band-line={decl.line}>
+      {editing.noting === key ? (
+        <NoteOpen note={decl.note} what={what} onChange={(lines) => editing.onNote?.({ on: 'declaration', decl: decl.index, space: 'crawl' }, lines)} />
+      ) : decl.note ? (
+        <NoteBlock note={decl.note} what={what} onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!({ on: 'declaration', decl: decl.index, space: 'crawl' }, lines)} />
+      ) : null}
+      <header className="band-head">
+        <span className="band-what">crawl</span>
+        <input className="band-name" value={v.name} onChange={(e) => change({ name: e.target.value })} data-crawl-name={v.name} aria-label="crawl name" data-tip="what a run reports this crawl under" />
+        <span className="ln muted">line {decl.line}</span>
+      </header>
+      <div className="band-clauses">
+        <label className="field">
+          tags
+          <input value={v.tags} onChange={(e) => change({ tags: e.target.value })} data-crawl-tags aria-label="tags" placeholder="@scan" data-tip="what `--tag` selects this crawl by, separated by spaces" />
+        </label>
+        <label className="field">
+          as
+          <input value={v.sessions} onChange={(e) => change({ sessions: e.target.value })} data-crawl-sessions aria-label="principals" placeholder="shopper, peer" data-tip="the sessions the crawl walks as — none sends no credential" />
+        </label>
+        <ul className="crawl-clauses">
+          {v.seeds.map((s, i) => (
+            <li key={i} className="row" data-crawl-seed={s.kind}>
+              <select value={s.kind} onChange={(e) => seedAt(i, { kind: e.target.value as SeedEdit['kind'] })} data-crawl-seed-kind aria-label="where the surface comes from">
+                <option value="spider">seed spider</option>
+                <option value="openapi">seed openapi</option>
+                <option value="traffic">seed traffic</option>
+              </select>
+              {s.kind === 'traffic' ? (
+                <span className="muted">the requests this run's tests made</span>
+              ) : (
+                <input value={s.target} onChange={(e) => seedAt(i, { target: e.target.value })} data-crawl-seed-target aria-label={s.kind === 'spider' ? 'start page' : 'document'} placeholder={s.kind === 'spider' ? '/' : '/openapi.json'} data-tip={s.kind === 'spider' ? 'the page the walk starts from' : 'the openapi document the surface is read from'} />
+              )}
+              {s.kind !== 'spider' ? null : (
+                <>
+                  <input value={s.depth} onChange={(e) => seedAt(i, { depth: e.target.value })} data-crawl-seed-depth aria-label="max depth" placeholder="depth" inputMode="numeric" data-tip="how many links deep the walk goes — empty is the runtime's default" />
+                  <input value={s.pages} onChange={(e) => seedAt(i, { pages: e.target.value })} data-crawl-seed-pages aria-label="max pages" placeholder="pages" inputMode="numeric" data-tip="how many pages the walk visits at most — empty is the runtime's default" />
+                </>
+              )}
+              {v.seeds.length < 2 ? null : (
+                <button onClick={() => change({ seeds: v.seeds.filter((_, j) => j !== i) })} data-crawl-seed-remove aria-label="remove this seed" data-tip="remove this seed — a crawl keeps at least one">
+                  ✕
+                </button>
+              )}
+            </li>
+          ))}
+          {v.excludes.map((x, i) => (
+            <li key={`x${i}`} className="row" data-crawl-exclude={x}>
+              <code>exclude</code>
+              <input value={x} onChange={(e) => change({ excludes: v.excludes.map((y, j) => (j === i ? e.target.value : y)) })} data-crawl-exclude-glob aria-label="excluded paths" data-tip="a path glob the crawl leaves alone" />
+              <button onClick={() => change({ excludes: v.excludes.filter((_, j) => j !== i) })} data-crawl-exclude-remove aria-label="remove this exclude" data-tip="walk these paths again">
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="row">
+          <button onClick={() => change({ seeds: [...v.seeds, { kind: 'spider', target: '/', service: '', depth: '', pages: '' }] })} data-crawl-seed-add data-tip="one more place the surface comes from">
+            + seed
+          </button>
+          <button onClick={() => change({ excludes: [...v.excludes, '/admin/**'] })} data-crawl-exclude-add data-tip="a path the crawl leaves alone">
+            + exclude
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function TestBand({ decl, door, editing, lastRun }: {
-  readonly decl: OutlineHook | OutlineTest | OutlineCrawl;
+  readonly decl: OutlineDecl;
   readonly door: Lens;
   readonly editing: RowEditing;
   /** `D1221`'s citation, looked up by the door. `undefined` while nobody has answered yet, `null`
    *  when the answer is *never run here*. */
   readonly lastRun?: { readonly iterations: number; readonly p95Ms: number; readonly inconclusive: boolean } | null;
 }) {
-  /* **A crawl takes its own band and returns before any of this** — `M228` `C` (`D1238`).
-     Everything below writes: `headerEditOf` builds an edit, `editing.onHeader` sends it to
-     `replaceInSource` by `decl.index`, and a crawl's index is `-1`. So it is not a matter of
-     disabling controls one at a time — the band's whole mechanism is addressed by a number this
-     declaration deliberately does not have. */
-  if (decl.kind === 'crawl') return <CrawlBand decl={decl} />;
+  /* **A crawl and an action each take their own band** — `M241` `B`/`C`. Everything below is a
+     test's or a hook's clauses (tags, `with each`, retry, workload, thresholds), none of which the
+     other two declarations can hold. */
+  if (decl.kind === 'crawl') return <CrawlBand decl={decl} editing={editing} />;
+  if (decl.kind === 'action') return <ActionBand decl={decl} editing={editing} />;
   const test: OutlineTest | null = decl.kind === 'test' ? decl : null;
-  const key = `decl:${decl.index}`;
+  const key = declKey(decl);
   const live = editing.onHeader !== null;
   const v = editing.header !== null && editing.header.key === key ? editing.header.values : headerEditOf(decl);
   const change = (patch: Partial<HeaderEdit>): void => {
@@ -2281,9 +2442,9 @@ export function TestBand({ decl, door, editing, lastRun }: {
   return (
     <div className="test-band" data-band-kind={decl.kind} data-band-line={decl.line} data-band-drawn={BAND_CLAUSES.filter((c) => shows(c.key)).length}>
       {writingNote ? (
-        <NoteOpen note={decl.note} what={what} onChange={(lines) => editing.onNote?.({ on: 'declaration', decl: decl.index }, lines)} />
+        <NoteOpen note={decl.note} what={what} onChange={(lines) => editing.onNote?.({ on: 'declaration', decl: decl.index, space: spaceOfDecl(decl) }, lines)} />
       ) : decl.note ? (
-        <NoteBlock note={decl.note} what={what} onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!({ on: 'declaration', decl: decl.index }, lines)} />
+        <NoteBlock note={decl.note} what={what} onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!({ on: 'declaration', decl: decl.index, space: spaceOfDecl(decl) }, lines)} />
       ) : null}
       <header className="band-head">
         {decl.kind === 'hook' ? (

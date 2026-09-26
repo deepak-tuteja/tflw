@@ -19,6 +19,7 @@
 // will run*, never *what is selected somewhere else*. The narrowing itself is still the sidebar's
 // gesture — this strip shows the total, which is what makes the two halves legible as one request.
 
+import { useEffect, useState } from 'react';
 import type { ProjectView, RunRequest } from './contract';
 import { lensesInRun, matchingFiles, parseQuery } from './search';
 
@@ -73,6 +74,42 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, headed, onHe
   const lenses = lensesInRun(project, selection, parsed);
   const takesWorkers = lenses.has('load');
   const takesHeaded = lenses.has('browser');
+
+  /**
+   * **`more…`** — `M241` `D` (`D1324`). The rest of `tflw run`'s flags the page may set, as the
+   * server lists them from the table the CLI parses by, each drawn only while its subject is in
+   * THIS run — the same `D1250` reading `workers` and `headed` use, so a scan's `fail on` is not on
+   * a strip whose run holds no scan. Only the rows on screen are sent: a value set while a scan was
+   * selected does not ride along on a run that has none.
+   *
+   * The values are remembered per project in this browser — a convenience, and nothing a run
+   * depends on: the argv the run was started with is on its record, which is the durable answer.
+   */
+  const storeKey = `tflw.runFlags:${project.root}`;
+  const [flags, setFlags] = useState<Record<string, string | boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(storeKey) ?? '{}') as Record<string, string | boolean>;
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(storeKey, JSON.stringify(flags));
+    } catch {
+      // A private window or blocked storage: the values last as long as the page, which is all
+      // this ever promised.
+    }
+  }, [storeKey, flags]);
+  const spends = (subject: string): boolean =>
+    subject === 'always' || (subject === 'scan' && lenses.has('scan')) || (subject === 'browser' && lenses.has('browser')) || (subject === 'workload' && lenses.has('load'));
+  const rows = project.runFlags.filter((f) => spends(f.subject));
+  const sent: Record<string, string | boolean> = {};
+  for (const row of rows) {
+    const v = flags[row.flag];
+    if (v !== undefined && v !== false && v !== '') sent[row.flag] = v;
+  }
+  const setCount = Object.keys(sent).length;
   const nothing = parsed.kind === 'tag' && parsed.tags.length === 0;
   const label = nothing
     ? `nothing matches ${parsed.typed}`
@@ -126,13 +163,35 @@ export function RunStrip({ project, env, onEnv, workers, onWorkers, headed, onHe
             headed
           </label>
         ) : null}
+        {rows.length === 0 ? null : (
+          <details className="run-more" data-run-more={rows.map((r) => r.flag).join(' ')}>
+            <summary data-tip="the rest of what `tflw run` takes, for what this run holds">
+              more…{setCount === 0 ? '' : ` (${setCount})`}
+            </summary>
+            <div className="run-more-rows">
+              {rows.map((row) =>
+                row.shape === 'bool' ? (
+                  <label key={row.flag} className="check" data-tip={row.hint}>
+                    <input type="checkbox" checked={flags[row.flag] === true} onChange={(e) => setFlags({ ...flags, [row.flag]: e.target.checked })} data-run-flag={row.flag} disabled={running} />
+                    {row.label}
+                  </label>
+                ) : (
+                  <label key={row.flag} data-tip={row.hint}>
+                    {row.label}
+                    <input value={typeof flags[row.flag] === 'string' ? (flags[row.flag] as string) : ''} onChange={(e) => setFlags({ ...flags, [row.flag]: e.target.value })} data-run-flag={row.flag} disabled={running} placeholder="default" />
+                  </label>
+                ),
+              )}
+            </div>
+          </details>
+        )}
       </div>
       {running ? (
         <button className="cancel" onClick={onCancel} data-cancel>
           cancel
         </button>
       ) : (
-        <button className="run" onClick={() => onRun(request())} data-run disabled={nothing} data-tip="runs and grades these tests, and keeps the run as a report you can reopen" data-run-narrowing={nothing ? 'none' : selection.length > 0 ? 'selection' : parsed.kind}>
+        <button className="run" onClick={() => onRun(setCount === 0 ? request() : { ...request(), flags: sent })} data-run disabled={nothing} data-tip="runs and grades these tests, and keeps the run as a report you can reopen" data-run-narrowing={nothing ? 'none' : selection.length > 0 ? 'selection' : parsed.kind}>
           {label}
         </button>
       )}

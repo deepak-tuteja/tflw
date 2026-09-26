@@ -60,6 +60,9 @@ import {
   type Lens,
   type ExpectSpec,
   type NoteOwner,
+  type ActionDecl,
+  type CrawlDecl,
+  type CrawlSeedSpec,
   type HookDecl,
   type Program,
   type Step,
@@ -68,6 +71,8 @@ import {
   stringLit,
   SYNTHETIC,
   buildTest,
+  buildAction,
+  buildCrawl,
   insertIntoSource,
 } from '@tflw/lang';
 import { pickLocators, recordActions, putFile, getFile, dropScratch, startRun, subscribe, getReports, getResults, type FileView } from './api';
@@ -79,11 +84,15 @@ import { TabStrip } from './TabStrip';
 import { Stage, traceOf } from './Stage';
 import { Grip, STAGE, storedSize } from './Grip';
 import {
+  declKey,
   editOf,
+  stepKey,
   specOf,
   rowKey,
   tableSpecOf,
   thresholdSpecOf,
+  type ActionHeaderEdit,
+  type CrawlHeaderEdit,
   type HeaderEdit,
   type RequestEdit,
   type StatementEdit,
@@ -100,10 +109,10 @@ import type { Session, SessionLine } from './SessionPanel';
 import type { MenuItem, MenuRequest } from './ContextMenu';
 import type { NewMode } from './NewThing';
 import { addressed, anchorAfter, fileOutline, pageOpeners, requestsOf, statementsOf,
-  prefixOf, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest,
+  prefixOf, spaceOfDecl, appendInto, resolveImport, type BodiedDecl, type OutlineAction, type OutlineCrawl, type OutlineDecl, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest,
   type Prefix, type SendForm } from './outline';
 import { SourcePanel } from './SourcePanel';
-import type { TabId } from './doors';
+import { hashForTab, type TabId } from './doors';
 import type { EndEvent, ProjectView, RunReport, RunRequest, StepResult } from './contract';
 import type { FileOutline } from './outline';
 
@@ -458,12 +467,137 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
     [settle, path, onTab, opensPage],
   );
 
+  /**
+   * **`+ new action` and `+ new crawl`** — `M241` `B`/`C` (`D1322`, `D1323`).
+   *
+   * No dialog, which is `M217`'s precedent for a request rather than `NewThing`'s for a test: every
+   * field a dialog would ask for is on the declaration's band the moment `landOn` selects it, and a
+   * modal for them would be a second surface for fields that already have a first. What is written
+   * is the smallest declaration that parses: an action must hold a statement, so it holds a `log`
+   * saying it is new; a crawl must have a seed, so it walks the site from `/` and asserts the one
+   * thing a crawl is for. Both are ordinary rows the author then edits or removes.
+   */
+  const addDeclaration = useCallback(
+    (kind: 'action' | 'crawl') => {
+      if (!file) return;
+      const text = draft ?? file.text;
+      const program = parseSource(text).program;
+      const taken = new Set(kind === 'action' ? program.actions.map((a) => a.name) : (program.crawls ?? []).map((c) => c.name.value));
+      let name = `new ${kind}`;
+      for (let n = 2; taken.has(name); n++) name = `new ${kind} ${n}`;
+      const first = (source: string): Step => parseSource(`test "t"\n  ${source}\n`).program.tests[0]!.body[0]!;
+      const built =
+        kind === 'action'
+          ? buildAction({ name, params: [], body: [first('log "a new action — its statements go here"')] })
+          : buildCrawl({ name, tags: [], sessions: [], seeds: [{ kind: 'spider', root: '/' }], excludes: [], body: [first('expect response has no serious security violations')] });
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = insertIntoSource(text, kind === 'action' ? { kind: 'action', node: built.node as ActionDecl } : { kind: 'crawl', node: built.node as CrawlDecl });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      landOn(out.text, (after) => after.declarations.find((d) => d.kind === kind && d.name === name)?.line ?? null);
+    },
+    [file, draft, landOn],
+  );
+
+  /** **A crawl's header** — `M241` `C` (`D1323`), held as typed like the others. */
+  const [crawlHeader, setCrawlHeader] = useState<{ key: string; values: CrawlHeaderEdit } | null>(null);
+  const applyCrawlHeader = useCallback(
+    (decl: OutlineCrawl, next: CrawlHeaderEdit) => {
+      if (!file) return;
+      setCrawlHeader({ key: declKey(decl), values: next });
+      const count = (raw: string, what: string): number | undefined | string => {
+        if (raw.trim() === '') return undefined;
+        const n = Number(raw);
+        return Number.isInteger(n) ? n : `${what} is a whole number`;
+      };
+      const seeds: CrawlSeedSpec[] = [];
+      for (const s of next.seeds) {
+        const service = s.service.trim() === '' ? undefined : s.service.trim();
+        if (s.kind === 'traffic') seeds.push({ kind: 'traffic' });
+        else if (s.kind === 'openapi') seeds.push({ kind: 'openapi', source: s.target.trim(), ...(service === undefined ? {} : { service }) });
+        else {
+          const depth = count(s.depth, 'max depth');
+          const pages = count(s.pages, 'max pages');
+          if (typeof depth === 'string' || typeof pages === 'string') {
+            setEditProblem(typeof depth === 'string' ? depth : (pages as string));
+            return;
+          }
+          seeds.push({ kind: 'spider', root: s.target.trim(), ...(service === undefined ? {} : { service }), ...(depth === undefined ? {} : { maxDepth: depth }), ...(pages === undefined ? {} : { maxPages: pages }) });
+        }
+      }
+      const built = buildCrawl({
+        name: next.name,
+        tags: next.tags.split(/\s+/).map((x) => x.replace(/^@/, '')).filter((x) => x !== ''),
+        sessions: next.sessions.split(',').map((x) => x.trim()).filter((x) => x !== ''),
+        seeds,
+        excludes: next.excludes,
+        body: decl.node.body,
+      });
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'header', decl: decl.index, node: built.node, space: 'crawl' });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /**
+   * **Open action** on a `call` row — `M241` `B` (`D1322`). The name is resolved the way `tflw run`
+   * resolves it: this file's own actions first, then each file it imports, in the order it imports
+   * them. A local hit is a line in the address; an imported one is that file at its action's header,
+   * read through the same route the explorer reads — so it is the file as it is on disk, which is
+   * what a `call` from here would run.
+   */
+  const openAction = useCallback(
+    async (name: string): Promise<void> => {
+      const words = name.trim().split(/\s+/).join(' ');
+      const text = draft ?? file?.text ?? '';
+      const program = parseSource(text).program;
+      const here = program.actions.find((a) => a.name === words);
+      if (here) {
+        onTab('compose', here.span.start.line);
+        return;
+      }
+      for (const imp of program.imports) {
+        const target = resolveImport(path, imp.path.value);
+        if (target === null) continue;
+        let source: string;
+        try {
+          source = (await getFile(target)).text;
+        } catch {
+          continue;
+        }
+        const there = parseSource(source).program.actions.find((a) => a.name === words);
+        if (there) {
+          window.location.hash = hashForTab(door, 'compose', target, there.span.start.line);
+          return;
+        }
+      }
+      setEditProblem(`no action named “${words}” in this file or in any file it imports`);
+    },
+    [draft, file, path, door, onTab],
+  );
+
   /** The declaration this gesture was fired on, re-read out of the edited text by the index that
    *  still identifies it — a line moves under `format`, an index does not. */
   const declAfter = useCallback(
-    (after: FileOutline, decl: OutlineHook | OutlineTest): OutlineTest | null => {
-      const d = after.declarations[decl.index];
-      return d !== undefined && d.kind === 'test' ? d : null;
+    (after: FileOutline, decl: OutlineDecl): BodiedDecl | null => {
+      // By space AND index (`M241` `B`): a position in the outline's list is not `replaceInSource`'s
+      // index once a crawl or an action sits above the declaration.
+      const d = after.declarations.find((x) => spaceOfDecl(x) === spaceOfDecl(decl) && x.index === decl.index);
+      return d !== undefined && d.kind !== 'hook' ? d : null;
     },
     [],
   );
@@ -477,7 +611,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * whenever the selection changes.
    */
   const [edit, setEdit] = useState<{ key: string; values: RequestEdit } | null>(null);
-  const selectedKey = at?.request ? `${at.request.stepPath.decl}:${at.request.stepPath.step}` : null;
+  const selectedKey = at?.request ? stepKey(at.request.stepPath) : null;
   const values: RequestEdit | null = at?.request ? (edit?.key === selectedKey ? edit.values : editOf(at.request)) : null;
 
   /**
@@ -500,7 +634,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   const applyEdit = useCallback(
     (next: RequestEdit) => {
       if (!at?.request || !file) return;
-      setEdit({ key: `${at.request.stepPath.decl}:${at.request.stepPath.step}`, values: next });
+      setEdit({ key: stepKey(at.request.stepPath)!, values: next });
       const built = buildApiStep(specOf(next));
       if (!built.ok) {
         setEditProblem(built.reason);
@@ -627,6 +761,31 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * changes no byte anywhere, by construction rather than for want of a gate.
    */
   const [header, setHeader] = useState<{ key: string; values: HeaderEdit } | null>(null);
+  /**
+   * **An action's header** — `M241` `B` (`D1322`). Held as typed, like a test's, because a half-typed
+   * parameter list (`email,`) is a legitimate moment and not a refusal to act on: the values stay on
+   * screen, the reason is shown, and the file is written the moment the header builds.
+   */
+  const [actionHeader, setActionHeader] = useState<{ key: string; values: ActionHeaderEdit } | null>(null);
+  const applyActionHeader = useCallback(
+    (decl: OutlineAction, next: ActionHeaderEdit) => {
+      if (!file) return;
+      setActionHeader({ key: declKey(decl), values: next });
+      const built = buildAction({ name: next.name, params: next.params.split(',').map((p) => p.trim()).filter((p) => p !== ''), body: decl.node.body });
+      if (!built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'header', decl: decl.index, node: built.node, space: 'action' });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
   const applyHeader = useCallback(
     (decl: OutlineHook | OutlineTest, next: HeaderEdit) => {
       if (!file) return;
@@ -753,7 +912,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * file, between two writes, whose assertion names a response nothing fetched.
    */
   const addRequest = useCallback(
-    (decl: OutlineTest) => {
+    (decl: BodiedDecl) => {
       if (!file) return;
       const step = buildApiStep({ method: 'GET', path: '/', service: null, label: null, headers: [], body: null });
       if (!step.ok) {
@@ -765,7 +924,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         setEditProblem(expect.reason);
         return;
       }
-      const out = insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [step.node, expect.node] });
+      const out = insertIntoSource(draft ?? file.text, appendInto(decl, [step.node, expect.node]));
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -802,7 +961,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * request's run of statements end* is two places for it to be wrong.
    */
   const addRequestAfter = useCallback(
-    (decl: OutlineTest, request: OutlineRequest) => {
+    (decl: BodiedDecl, request: OutlineRequest) => {
       if (!file) return;
       const step = buildApiStep({ method: 'GET', path: '/', service: null, label: null, headers: [], body: null });
       if (!step.ok) {
@@ -848,7 +1007,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * reason.
    */
   const duplicateRequest = useCallback(
-    (decl: OutlineTest, request: OutlineRequest) => {
+    (decl: BodiedDecl, request: OutlineRequest) => {
       if (!file) return;
       const nodes = [request.node, ...request.attached.filter((a) => a.stepPath !== null).map((a) => a.node)];
       const out = insertIntoSource(draft ?? file.text, { kind: 'stepsAfter', path: anchorAfter(request), nodes });
@@ -897,9 +1056,9 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * where a reader can act on it.
    */
   const removeSteps = useCallback(
-    (decl: OutlineHook | OutlineTest, steps: readonly number[]) => {
+    (decl: OutlineDecl, steps: readonly number[]) => {
       if (!file) return;
-      const out = replaceInSource(draft ?? file.text, { kind: 'remove', decl: decl.index, steps: [...steps] });
+      const out = replaceInSource(draft ?? file.text, { kind: 'remove', decl: decl.index, steps: [...steps], space: spaceOfDecl(decl) });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -911,7 +1070,9 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
          declaration the removal happened in, read back out of the edited text by the index that
          still identifies it. Leaving it where it was points the editor at whatever moved up. */
       const after = fileOutline(path, out.text, opensPage);
-      const moved = after.declarations[decl.index];
+      // By space AND index (`M241` `B`): the outline's list is every declaration by line, and a
+      // position in it is not `replaceInSource`'s index as soon as a crawl or an action sits above.
+      const moved = after.declarations.find((d) => spaceOfDecl(d) === spaceOfDecl(decl) && d.index === decl.index);
       onTab('compose', moved ? moved.line : 1);
     },
     [file, draft, settle, path, onTab, opensPage],
@@ -933,7 +1094,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
       const addr = statement.stepPath;
       const body = owner.body.filter((_, i) => i !== statement.inner);
       const out = body.length === 0
-        ? replaceInSource(draft ?? file.text, { kind: 'remove', decl: addr.decl, steps: [addr.step] })
+        ? replaceInSource(draft ?? file.text, { kind: 'remove', decl: addr.decl, steps: [addr.step], space: addr.space })
         : ((): ReturnType<typeof replaceInSource> => {
             const rebuilt = reblock(owner, body);
             return rebuilt.ok ? replaceInSource(draft ?? file.text, { kind: 'step', path: addr, node: rebuilt.node }) : rebuilt;
@@ -1020,9 +1181,9 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    *  `✕` like everything under it. What follows is the **file**, which is the one subject that
    *  always exists: an address with no `L` is `selectedAt`'s `file`. */
   const removeDecl = useCallback(
-    (decl: OutlineHook | OutlineTest) => {
+    (decl: OutlineDecl) => {
       if (!file) return;
-      const out = replaceInSource(draft ?? file.text, { kind: 'removeDecl', decl: decl.index });
+      const out = replaceInSource(draft ?? file.text, { kind: 'removeDecl', decl: decl.index, space: spaceOfDecl(decl) });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -1114,7 +1275,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * own careful case, reused rather than re-derived here.
    */
   const addLetTo = useCallback(
-    (decl: OutlineTest) => {
+    (decl: BodiedDecl) => {
       if (!file) return;
       const built = buildLet({ name: 'value', value: '"change me"' });
       if (!built.ok) {
@@ -1131,7 +1292,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         .filter((x) => x.stepPath !== null)
         .sort((a, b) => a.stepPath!.step - b.stepPath!.step)[0];
       const out = first === undefined || first.stepPath === null
-        ? insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] })
+        ? insertIntoSource(draft ?? file.text, appendInto(decl, [built.node]))
         : insertIntoSource(draft ?? file.text, { kind: 'stepsBefore', path: first.stepPath, nodes: [built.node] });
       if (!out.ok) {
         setEditProblem(out.reason);
@@ -1155,7 +1316,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * poll with nothing to wait for is a sleep with a request in it and the parser would accept it.
    */
   const addWaitTo = useCallback(
-    (decl: OutlineTest) => {
+    (decl: BodiedDecl) => {
       if (!file) return;
       const built = buildWaitUntilApi({
         request: { method: 'GET', path: '/', service: null, label: null, headers: [], body: null },
@@ -1166,7 +1327,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         setEditProblem(built.reason);
         return;
       }
-      const out = insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] });
+      const out = insertIntoSource(draft ?? file.text, appendInto(decl, [built.node]));
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -1234,7 +1395,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * author answer a question the file already answers.
    */
   const addOpen = useCallback(
-    (decl: OutlineTest) => {
+    (decl: BodiedDecl) => {
       if (!file) return;
       const built = buildOpen('/');
       if (!built.ok) {
@@ -1245,7 +1406,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         .filter((x) => x.stepPath !== null)
         .sort((a, b) => a.stepPath!.step - b.stepPath!.step)[0];
       const out = first === undefined || first.stepPath === null
-        ? insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] })
+        ? insertIntoSource(draft ?? file.text, appendInto(decl, [built.node]))
         : insertIntoSource(draft ?? file.text, { kind: 'stepsBefore', path: first.stepPath, nodes: [built.node] });
       if (!out.ok) {
         setEditProblem(out.reason);
@@ -1279,7 +1440,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * so the file parses, the row is editable in place, and nobody mistakes it for a decision.
    */
   const addGesture = useCallback(
-    (decl: OutlineTest, which: 'click' | 'fill') => {
+    (decl: BodiedDecl, which: 'click' | 'fill') => {
       if (!file) return;
       const built = which === 'click'
         ? buildClick({ locator: { kind: 'button', value: 'change me' }, kind: 'single' })
@@ -1288,7 +1449,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         setEditProblem(built.reason);
         return;
       }
-      const out = insertIntoSource(draft ?? file.text, { kind: 'steps', testName: decl.name, nodes: [built.node] });
+      const out = insertIntoSource(draft ?? file.text, appendInto(decl, [built.node]));
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -1745,11 +1906,11 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * surfaces is if it is made to.
    */
   /** The declaration `+ step…` was pressed on, or `null` (`M219` `E`, `D1164`). */
-  const [addingStep, setAddingStep] = useState<OutlineTest | null>(null);
+  const [addingStep, setAddingStep] = useState<BodiedDecl | null>(null);
   useEffect(() => setAddingStep(null), [path]);
 
   const add = useCallback(
-    (decl: OutlineTest, key: string) => {
+    (decl: BodiedDecl, key: string) => {
       switch (key) {
         case 'request': return addRequest(decl);
         case 'let': return addLetTo(decl);
@@ -1757,15 +1918,24 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         case 'open': return addOpen(decl);
         case 'click': return addGesture(decl, 'click');
         case 'fill': return addGesture(decl, 'fill');
-        case 'record': return recording === null ? startRecording(decl) : stopRecording();
+        // A recording writes into a TEST by name (`D1095`); the foot offers it on no other kind.
+        case 'record': return decl.kind !== 'test' ? undefined : recording === null ? startRecording(decl) : stopRecording();
         /* **`+ step…` opens a dialog rather than writing a statement** — `M219` `E` (`D1164`).
            The other gestures have one shape each and can write it; this one is eighteen shapes, so
            what it opens is a chooser. It still writes through the same `buildStatement`. */
         case 'step': return setAddingStep(decl);
+        // `M241` `C` (`D1323`) — a crawl's own gesture: the assertion a crawl exists for.
+        case 'assert': {
+          if (!file) return;
+          const node = parseSource('test "t"\n  expect response has no serious security violations\n').program.tests[0]!.body[0]!;
+          const out = insertIntoSource(draft ?? file.text, appendInto(decl, [node]));
+          if (!out.ok) return setEditProblem(out.reason);
+          return landOn(out.text, (after) => declAfter(after, decl)?.body.preamble.at(-1)?.line ?? null);
+        }
         default: return setEditProblem(`this door offers no \`${key}\` gesture — \`vocabulary.ts\` and this switch disagree`);
       }
     },
-    [addRequest, addLetTo, addWaitTo, addOpen, addGesture, recording, startRecording, stopRecording],
+    [addRequest, addLetTo, addWaitTo, addOpen, addGesture, recording, startRecording, stopRecording, file, draft, landOn, declAfter],
   );
 
   /** The row whose new note is open — see `RowEditing.noting`. It lives here rather than in the
@@ -2407,7 +2577,27 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     >
       <TabStrip tab={tab} onTab={onTab} marked={marks} />
 
-      {tab === 'source' ? <SourcePanel file={file} pending={sourcePending} diagnostics={diagnostics} project={project} door={door} /> : null}
+      {tab === 'source' ? (
+        <SourcePanel
+          file={file}
+          pending={sourcePending}
+          diagnostics={diagnostics}
+          project={project}
+          door={door}
+          // `D1321` — the editor writes the one buffer; text equal to the file is no draft at all,
+          // so undoing back to the disk bytes clears the tab's mark as well. And the rows Compose
+          // was holding open are dropped: each is addressed by a `StepPath` into the text as it
+          // was, and a path into text that has since changed names a different statement.
+          onText={(text) => {
+            setEdit(null);
+            setExpectEdit(null);
+            setHeader(null);
+            setThreshold(null);
+            setNoting(null);
+            onDraft(file !== null && text === file.text ? null : text);
+          }}
+        />
+      ) : null}
       {tab === 'run' ? (
         <div className="runpane" data-door-run-tab={door}>
           {runPane}
@@ -2462,6 +2652,11 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
             onNoting: setNoting,
             header,
             onHeader: applyHeader,
+            actionHeader,
+            onActionHeader: applyActionHeader,
+            onOpenAction: (name) => void openAction(name),
+            crawlHeader,
+            onCrawlHeader: applyCrawlHeader,
             threshold,
             onThreshold: applyThreshold,
             workload,
@@ -2486,6 +2681,8 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onCapture={captureFrom}
           onAdd={add}
           adds={VOCABULARY[door].adds}
+          onNewDecl={addDeclaration}
+          crawls={door === 'scan'}
           recording={recording}
           onAddAfter={addRequestAfter} onDuplicate={duplicateRequest} menuFor={seqMenuFor} onMenu={onMenu}
           made={made}

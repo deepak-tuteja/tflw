@@ -75,9 +75,8 @@ export interface AddGesture {
  *
  * **Not a `crawl`**, on `D1053`'s own measured grounds: across both corpora the assertion is the
  * common act (96 scan assertions in 29 files) and the crawl is the specialist (14 real ones in 5),
- * so a scaffold leading with the crawl would teach the rarer half first. It is also the half this
- * pane cannot construct at all (`D1238`), and `D1189`'s invariant forbids a scaffold writing what
- * the sequence cannot edit.
+ * so a scaffold leading with the crawl would teach the rarer half first. The crawl has its own
+ * gesture since `M241` `C` (`D1323`): `+ new crawl` on the foot, beside `+ new test`.
  */
 export type Scaffold = 'api' | 'open' | 'workload' | 'scan';
 
@@ -315,7 +314,7 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
    * `constructs` is API's set, and like LOAD's that is a fact about the **language** rather than a
    * copy: a scan assertion grades *the last response*, so the body of a scan-bearing test is `api`
    * steps and the neutral kinds. The other route to a severity matcher is a `crawl`, whose body
-   * cannot hold an `api` step at all (`TF070`) and which this pane draws read-only (`D1238`).
+   * cannot hold an `api` step at all (`TF070`) and which this pane builds with its own band (`D1323`).
    * `adds` follows from `constructs` by `D1189`'s invariant.
    *
    * **`plays: true`, priced** (`D1212`, `D1241`) — and ▶ on a scan test is the most consequential

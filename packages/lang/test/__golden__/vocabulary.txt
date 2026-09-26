@@ -7,7 +7,7 @@
 #   V  a `<expr>.value === '…'` comparison
 #   S  a `case '…':` label in a switch on `<expr>.value`
 #
-# 251 words
+# 253 words
 
 A   DELETE
 A   GET
@@ -124,6 +124,7 @@ A   input handling
 AS  insecure
 AK  is
 K   iterations
+K   keep
 AS  key
 A   least
 AKS less
@@ -192,6 +193,7 @@ K   retry
 AS  right
 K   rps
 K   run
+K   runs
 AS  s
 AK  scenario
 K   schema
