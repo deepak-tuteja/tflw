@@ -293,6 +293,10 @@ function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | nul
           timeoutMs: step.timeoutMs,
           followRedirects: step.followRedirects,
           retryMax: step.retryAfter?.max ?? null,
+          // `M246`: structural, never masked. A `sign with` line and its overrides decide what the
+          // server sees, so two steps that differ only in `secret`/`at`/`then body` are different
+          // requests — the negative cases of a signed-endpoint suite are exactly that shape.
+          sign: step.sign ? spanFree(step.sign) : null,
         },
         literals,
       };
@@ -412,6 +416,11 @@ interface TestSlot {
 interface WindowOcc {
   readonly slotIdx: number;
   readonly start: number;
+}
+
+/** A node's structure with every span dropped, so two occurrences compare by what they say. */
+function spanFree(node: unknown): unknown {
+  return JSON.parse(JSON.stringify(node, (key, value: unknown) => (/span$/i.test(key) ? undefined : value)));
 }
 
 function stableKey(shapes: readonly unknown[]): string {
