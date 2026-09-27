@@ -1560,11 +1560,10 @@ test('the frozen multi-record list only shrinks: an entry defined once now is st
   const one = [{ path: 'PLAN_A.md', text: '**`D71` — scoped in full today.**\n' }];
   assert.deepEqual(checkCrossRecordIds(collectAnchors(one), { D71: 'restated' }).stale, ['D71']);
   // Every entry says which of the two things it is, and nothing else.
-  for (const [id, kind] of Object.entries(MULTI_RECORD)) assert.ok(kind === 'restated' || kind === 'collides', `${id}: ${kind}`);
+  for (const [id, kind] of Object.entries(MULTI_RECORD)) assert.equal(kind, 'restated', id);
   assert.ok(Object.isFrozen(MULTI_RECORD));
-  // The count is pinned so the list cannot grow unnoticed: 37 restatements and 9 collisions
-  // (`M240-06`) when `M240-04` froze it.
-  assert.equal(Object.keys(MULTI_RECORD).length, 46);
-  assert.equal(Object.values(MULTI_RECORD).filter((k) => k === 'collides').length, 9);
+  // The count is pinned so the list cannot grow unnoticed: 37 restatements and 9 collisions when
+  // `M240-04` froze it, and the 9 renumbered away by `M244` (`M240-06`).
+  assert.equal(Object.keys(MULTI_RECORD).length, 37);
 });
 

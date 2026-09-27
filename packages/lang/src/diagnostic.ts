@@ -660,7 +660,7 @@ export interface RenderOptions {
 const MAX_RENDERED_LINE = 200;
 
 // ---------------------------------------------------------------------------
-// The display coordinate (M98a, `A1-08` / D147-D151).
+// The display coordinate (M98a, `A1-08` / D1334-D1338).
 //
 // tflw has two coordinate systems and used one type for both. `Position.column` is a **machine**
 // coordinate — a 1-based UTF-16 code-unit column, which is what `String.prototype.slice` and LSP
@@ -724,13 +724,13 @@ function cellWidth(ch: string): number {
  * Lay a source line out for the terminal: expand tabs to spaces, and translate the caret's
  * code-unit range into a cell range.
  *
- * **Tabs are expanded rather than measured** (D150). Measuring alone is not enough: the printed
+ * **Tabs are expanded rather than measured** (D1337). Measuring alone is not enough: the printed
  * line would still contain the raw tab, and where a terminal puts that tab depends on the tab stop
  * *relative to the gutter prefix* (`2 | `), which this renderer does not control. Expanding makes
  * the rendered line's geometry a property of the string instead of a property of the reader's
  * terminal, and then the caret padding is exact by construction rather than by coincidence.
  *
- * Runs after `windowLine`, never before (D151): the 200-column cap exists to bound `A1-01`'s
+ * Runs after `windowLine`, never before (D1338): the 200-column cap exists to bound `A1-01`'s
  * quadratic allocation, which is a code-unit concern. Capping in cells would make the bound depend
  * on the content's script for no gain.
  */
