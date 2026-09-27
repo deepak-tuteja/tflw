@@ -152,7 +152,7 @@ export async function evaluateSnapshot(paths: SnapshotPaths, name: string, actua
     return {
       ok: false,
       updated: false,
-      message: `snapshot "${name}": dimensions differ (baseline ${baselinePng.width}x${baselinePng.height}, actual ${actualPngDecoded.width}x${actualPngDecoded.height}) — run \`--update-snapshots\` to accept`,
+      message: `snapshot "${name}": dimensions differ (baseline ${baselinePng.width}x${baselinePng.height}, actual ${actualPngDecoded.width}x${actualPngDecoded.height}) — run \`--update-snapshots\` to accept${fontsNote(baseline.platformKey)}`,
       diff: { baseline: toBase64(baseline.png), actual: toBase64(actualPng) },
     };
   }
@@ -189,9 +189,24 @@ export async function evaluateSnapshot(paths: SnapshotPaths, name: string, actua
   return {
     ok: false,
     updated: false,
-    message: `snapshot "${name}": does not match baseline (${diffPixels} px / ${pct}% differed) — run \`--update-snapshots\` to accept, or inspect the diff in the report`,
+    message: `snapshot "${name}": does not match baseline (${diffPixels} px / ${pct}% differed) — run \`--update-snapshots\` to accept, or inspect the diff in the report${fontsNote(baseline.platformKey)}`,
     diff: { baseline: toBase64(baseline.png), actual: toBase64(actualPng), diff: toBase64(PNG.sync.write(diffPng)) },
   };
+}
+
+/**
+ * `M243-15` — what a same-key mismatch may be about, said where it can be read.
+ *
+ * The platform key names the OS, the engine and the browser build, and not the fonts, so a baseline
+ * cut on one Linux distribution meets another under the same key. A page with text then fails here,
+ * on its dimensions or its pixels, and `--update-snapshots` — the only repair the message used to
+ * offer — accepts the second machine's picture and reddens the first. Putting a font hash in the key
+ * was weighed and not taken: it would fail every baseline that holds no text, which is the one kind
+ * that does travel between distributions (the sibling's four, cut on Fedora and green on Ubuntu CI).
+ * So the key is unchanged and the message names the cause it cannot rule out.
+ */
+export function fontsNote(baselineKey: string): string {
+  return ` — if the page itself did not change, the likely cause is different fonts: the baseline's key (\`${baselineKey}\`) names the OS, engine and browser build, not the fonts, so two machines with different fonts share it, and accepting this run's picture fails the machine that cut the baseline`;
 }
 
 /** `linux-chromium-131.0.6778.33` (D15): OS + engine + the actual browser build version, so a

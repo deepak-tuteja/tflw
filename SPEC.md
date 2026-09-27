@@ -3013,7 +3013,11 @@ expect list "Cart items" matches snapshot "cart-badge"
   hinting/subpixel AA between two OSes or engines never reconciles, and a looser cross-platform
   threshold only hides real regressions instead of catching them. Generate and verify baselines in
   the same environment (a CI image, most reliably — `testFlow-tests` has a Docker compose stack
-  that's free to run this in).
+  that's free to run this in). **The key does not name the fonts** (`M243-15`): two Linux
+  distributions with the same browser build share a key, so a baseline with text in it fails
+  there on its dimensions or its pixels rather than on the key, and those two messages say that
+  different fonts are the likely cause when the page did not change. A baseline with no text
+  travels between them, which is why fonts are left out of the key.
 - **The compare itself has no exposed fuzz knob either** — same-platform pixels are compared with
   pixelmatch's own default anti-aliasing threshold (just enough to absorb harmless AA jitter on an
   otherwise byte-identical render) and a pass requires **zero** differing pixels. There is no
