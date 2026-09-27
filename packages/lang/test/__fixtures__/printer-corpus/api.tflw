@@ -28,6 +28,8 @@ test "the four body shapes that are not inline JSON"
   expect status equals 201
   api POST /v1/uploads upload "./payloads/avatar.png" as "avatar" type "image/png"
   expect status equals 201
+  api POST /v1/attachments upload "./payloads/a.png" as "files", "./payloads/b.pdf" as "files" type "application/pdf", "./payloads/c.txt" as "note" form title="Bug 42"
+  expect status equals 201
 
 # `M242` `C` (`D1328`): a GraphQL body, its query raw and its values in `variables`.
 @printer

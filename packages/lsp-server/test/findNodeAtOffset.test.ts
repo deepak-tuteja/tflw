@@ -307,3 +307,17 @@ test('spanContains: inclusive of both endpoints', () => {
   assert.equal(spanContains(span, 4), false);
   assert.equal(spanContains(span, 11), false);
 });
+
+// -- M245: an `upload` names a list of files, and each is reachable -----------------------------
+
+test('findNodeAtOffset: descends into the second file of an `upload` list, through its own UploadFile', () => {
+  const source = `test "ok"\n  api POST /me upload "./a.png" as "avatar", "./b.jpg" as "cover" type "image/jpeg" form x=1\n`;
+  const { program } = parseSource(source);
+  // Before `M245` there was no second file to reach: `, "./b.jpg"` did not parse.
+  const path = findNodeAtOffset(program, source.indexOf('./b.jpg') + 1);
+  assert.deepEqual(path.slice(-3).map((n) => n.type), ['UploadBody', 'UploadFile', 'StringLit']);
+  const typePath = findNodeAtOffset(program, source.indexOf('image/jpeg') + 1);
+  assert.equal(typePath[typePath.length - 2]!.type, 'UploadFile');
+  const formPath = findNodeAtOffset(program, source.indexOf('x=1') + 1);
+  assert.equal(formPath[formPath.length - 1]!.type === 'FormField' || formPath[formPath.length - 2]!.type === 'FormField', true);
+});

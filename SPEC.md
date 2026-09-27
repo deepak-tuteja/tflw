@@ -1419,7 +1419,7 @@ interpolate the raw value, unencoded, since that's JSON/text content, not a URL.
 | Inline JSON | `body { name: {n}, qty: random number 1 to 5 }` or `body [{ id: 1 }, { id: 2 }]` | small payloads; expressions + generators inside; object **or top-level array** (M147d, `A3-12`, D639) |
 | File-backed | `body from "./payloads/order.json"` | file is a template — `{vars}` interpolate; checker warns when a literal path names nothing (`TF043`, M97c; warning not error since M97e/D147 — the file is read at step time) |
 | Form-encoded | `form user={u}, pass=env(PW)` | `application/x-www-form-urlencoded` |
-| Multipart upload | `upload "./files/img.png" as "avatar"` | Content-Type inferred from the file extension by default (small curated table — images/documents/archives/web text; unrecognized extensions fall back to `application/octet-stream`); optional `type "…"` overrides the inference; may combine with `form` fields (M19) |
+| Multipart upload | `upload "./files/img.png" as "avatar"` or `upload "./a.png" as "files", "./b.pdf" as "files"` | one or more files, comma-separated on one line (`M245`, `D1343`); Content-Type inferred from each file's extension by default (small curated table — images/documents/archives/web text; unrecognized extensions fall back to `application/octet-stream`); optional `type "…"` per file overrides the inference; may combine with `form` fields (M19) |
 | Raw text | `body text "plain payload"` | sets no JSON content-type |
 | GraphQL | `body graphql "query O($id: ID!) { order(id: $id) { id } }" variables { id: {orderId} } operation "O"` | GraphQL-over-HTTP's POST shape: `{"query", "variables", "operationName"}` as `application/json`, the two optional fields absent when not written; `TF085` on a `GET` (`M242`, `D1328`) |
 
@@ -1435,6 +1435,22 @@ extension) falls back to `application/octet-stream`, matching pre-M19 behavior e
 `type` always wins over inference — useful for a negative test deliberately sending a wrong or
 missing type. A non-interpolated `type` literal is checker-validated against a light
 `type/subtype` shape (TF032) — a typo check, not an IANA-vocabulary gatekeeper.
+
+**Several files in one request** (`M245`, `D1343`): `upload` takes a comma-separated list, each
+entry `"<path>" as "<field>"` with its own optional `type "…"`, then the optional `form` fields:
+
+```tflw
+api POST /tickets/{id}/attachments upload "./a.png" as "files", "./b.pdf" as "files" type "application/pdf", "./c.txt" as "note" form title="Bug 42"
+```
+
+The parts go out in the order written — every file, then the fields. A field name may repeat, and
+each file is sent as its own part under it, which is what a `files[]`-style endpoint reads. Each
+file is inferred, checked (`TF043`, `TF032`) and reported on its own, and the report's request
+body names every part: `[multipart form: files=a.png (image/png), files=b.pdf (application/pdf),
+note=c.txt (text/plain), title=Bug 42]`. The list is line-terminated like `form`'s, so there is no
+trailing comma and no continuation line (`D637`); a file that cannot be read fails the step
+naming which of the list it was, and nothing is sent. A one-file `upload` is the one-entry list
+and reads exactly as it always has.
 
 **A `body` is a JSON document, not specifically an object** (M147d, `A3-12`, D639). Both `body`
 positions — an `api` step's inline body and a `stub`'s stubbed response — take an object or a

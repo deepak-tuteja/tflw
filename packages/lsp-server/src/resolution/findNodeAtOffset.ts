@@ -90,6 +90,7 @@ import type {
   UniqueLikeExpr,
   UniquePrefixExpr,
   UploadBody,
+  UploadFile,
   UseDecl,
   WaitUntilApiStmt,
   WaitUntilUiStmt,
@@ -189,7 +190,11 @@ function children(node: Node): readonly Node[] {
     }
     case 'UploadBody': {
       const n = node as UploadBody;
-      return [n.filePath, n.fieldName, ...(n.contentType ? [n.contentType] : []), ...n.extra];
+      return [...n.files, ...n.extra];
+    }
+    case 'UploadFile': {
+      const n = node as UploadFile;
+      return [n.filePath, n.fieldName, ...(n.contentType ? [n.contentType] : [])];
     }
     case 'ExpectStmt': {
       const n = node as ExpectStmt;

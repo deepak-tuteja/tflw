@@ -44,6 +44,7 @@ import type {
   OpenStmt,
   WithinBlock,
   FormField,
+  UploadFile,
   LetStmt,
   LogStmt,
   Matcher,
@@ -272,13 +273,14 @@ export const PRINTABLE = new Set<string>([
  * interesting one: `name: 1` is not a program, so there is no source a printed field could be
  * re-parsed from. It is printed by `printObject` and compared through its parent. `FormField` and
  * `RetryAfterClause` joined it in `A1-2` on the same ordinary grounds. `FillFormRow` joined
- * them in `A4-3`, likewise: `| "Email" | "x" |` is a row of a block, not a step.
+ * them in `A4-3`, likewise: `| "Email" | "x" |` is a row of a block, not a step. `UploadFile`
+ * joined in `M245`: `"./a.png" as "f"` is one entry of an `upload` list, not a body.
  *
  * Expect more of these as `A1`–`A4` widen the printer. The shape to watch for is a node whose
  * field was normalised on the way in, because a normalisation is a spelling decision the AST
  * stopped recording.
  */
-export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'RetryAfterClause', 'FillFormRow']);
+export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'UploadFile', 'RetryAfterClause', 'FillFormRow']);
 
 /**
  * The kinds that refuse **by construction**, and will not gain a printer in any round (`A4-5`).
@@ -967,14 +969,21 @@ function printBody(b: ApiBody): string {
     case 'FormBody':
       return 'form ' + printFormFields(b.fields);
     case 'UploadBody': {
-      let out = `upload ${printString(b.filePath)} as ${printString(b.fieldName)}`;
-      if (b.contentType) out += ' type ' + printString(b.contentType);
+      if (b.files.length === 0) refuse('UploadBody', 'an upload needs at least one file');
+      let out = 'upload ' + b.files.map(printUploadFile).join(', ');
       if (b.extra.length > 0) out += ' form ' + printFormFields(b.extra);
       return out;
     }
     default:
       return refuse((b as Node).type);
   }
+}
+
+/** `"<path>" as "<field>" [type "<mime>"]` — one entry of an `upload` list (`M245`). */
+function printUploadFile(f: UploadFile): string {
+  let out = `${printString(f.filePath)} as ${printString(f.fieldName)}`;
+  if (f.contentType) out += ' type ' + printString(f.contentType);
+  return out;
 }
 
 /** `k=v, k=v` — keys are bare identifiers by grammar (`parseFormFields` takes an `ident` and
