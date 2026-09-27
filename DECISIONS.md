@@ -9647,7 +9647,7 @@ the report header.
 
 ### D1344
 
-<sub>cited from SPEC.md · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/apiV2/src/signed/signed.controller.ts, tflw-tests/tests/api/mechanics/signed-requests.tflw +1 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1344` — scope.** HMAC and SigV4 together, on one mechanism: a signing hook that runs **after
   the body is serialised and before the request is sent**, so a signature covers the exact bytes on
@@ -9656,7 +9656,7 @@ the report header.
 
 ### D1345
 
-<sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +3 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1345` — placement.** A named `signer` is declared in `tflw.config`, secrets through `env(…)`,
   optionally per env like `cert`/`key`. A request uses one with a `sign with <name>` sub-line under
@@ -9668,7 +9668,7 @@ the report header.
 
 ### D1346
 
-<sub>cited inside a range only · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +3 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1346` — HMAC is templates, with no vendor presets.** One general form:
 
@@ -9715,7 +9715,7 @@ the report header.
 
 ### D1349
 
-<sub>cited from SPEC.md · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/apiV2/src/signed/signed.controller.ts, tflw-tests/tests/api/mechanics/signed-requests.tflw +1 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1349` — the signing clock is the run clock advanced by the run's elapsed time** (taken while
   building, 2026-09-27). The run clock is a fixed instant, the run's first second. Read literally, a
@@ -14010,7 +14010,7 @@ new protocol.
 
 ### M246
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +11 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 **`M246` — signed requests: HMAC and AWS SigV4**
 

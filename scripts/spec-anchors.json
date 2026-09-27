@@ -1,9 +1,9 @@
 {
   "comment": "GitHub's own heading anchors for SPEC.md, fetched from the ref below. Never hand-edit: the point of this file is that nothing in this repository computed it. Refresh with `node scripts/refresh-spec-anchors.mjs --ref <ref>`.",
   "repo": "deepak-tuteja/tflw",
-  "ref": "m242-language",
-  "sha": "6e75b776b82df4dea60e51454e10c939b44dd0b0",
-  "source": "https://github.com/deepak-tuteja/tflw/blob/6e75b776b82df4dea60e51454e10c939b44dd0b0/SPEC.md",
+  "ref": "m246-request-signing",
+  "sha": "ddb7a3cee5ae1d31dfaa15a5d4ea710c46dda14e",
+  "source": "https://github.com/deepak-tuteja/tflw/blob/ddb7a3cee5ae1d31dfaa15a5d4ea710c46dda14e/SPEC.md",
   "headings": [
     [
       "testFlow — SPEC",
@@ -80,6 +80,10 @@
     [
       "3.13 How many runs the page keeps — `runs keep` (M241, D1325)",
       "313-how-many-runs-the-page-keeps--runs-keep-m241-d1325"
+    ],
+    [
+      "3.14 Signed requests — `signer` (M246, D1344–D1349)",
+      "314-signed-requests--signer-m246-d1344d1349"
     ],
     [
       "4. Tests & structure ✅",
