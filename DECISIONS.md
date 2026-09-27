@@ -9656,7 +9656,7 @@ the report header.
 
 ### D1345
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +3 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +5 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1345` — placement.** A named `signer` is declared in `tflw.config`, secrets through `env(…)`,
   optionally per env like `cert`/`key`. A request uses one with a `sign with <name>` sub-line under
@@ -9668,7 +9668,7 @@ the report header.
 
 ### D1346
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +3 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +4 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1346` — HMAC is templates, with no vendor presets.** One general form:
 
@@ -14010,7 +14010,7 @@ new protocol.
 
 ### M246
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +11 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +13 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 **`M246` — signed requests: HMAC and AWS SigV4**
 
