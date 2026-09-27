@@ -115,7 +115,7 @@ test('a token after a closed multi-line bracket has the correct line/column (dec
   assert.deepEqual(expectKw.span.start, { offset: src.indexOf('expect'), line: 5, column: 3 });
 });
 
-test('a tab counts as one code unit in the machine coordinate (decision 69, D147)', () => {
+test('a tab counts as one code unit in the machine coordinate (decision 69, D1334)', () => {
   // M98a (`A1-OS-03`): this test was titled "a tab … does not distort column tracking", which is
   // true of what it asserts and false of what a reader takes away. `Position.column` is a *machine*
   // coordinate — UTF-16 code units, what `slice` and LSP want — and a tab is one of those. It is

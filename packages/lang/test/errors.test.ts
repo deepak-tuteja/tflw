@@ -27,7 +27,7 @@ test('recovery reports more than one error in a file', () => {
 });
 
 // ---------------------------------------------------------------------------
-// M98a (`A1-08`, D147-D151) — the caret is placed in terminal cells, not code units.
+// M98a (`A1-08`, D1334-D1338) — the caret is placed in terminal cells, not code units.
 //
 // Before M98a the renderer spent `Position.column` (a UTF-16 code-unit column) as if it were a
 // display column, so every caret under a tab, a CJK run or a combining mark was misaligned by
@@ -67,7 +67,7 @@ test('M98a/A1-08: a tab before the error does not push the caret left', () => {
   // short in the finding's repro where the tab sat in a wider run.
   const rendered = renderStrayDollar('test "s"\n  log\t"x" $y\n');
   assert.equal(caretCell(rendered), 12);
-  // Tabs are expanded in the printed line (D150), so the caret and the `$` now share an index —
+  // Tabs are expanded in the printed line (D1337), so the caret and the `$` now share an index —
   // the rendered geometry no longer depends on the reader's tab stops.
   const sourceLine = rendered.split('\n').find((l) => /^\s*\d+ \|/.test(l))!;
   const caretLine = rendered.split('\n').find((l) => l.includes('^'))!;

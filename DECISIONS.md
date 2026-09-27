@@ -13893,7 +13893,7 @@ changed. Decisions `D1326`–`D1332`, free by `collectAnchors` on the day (the c
 
 ### M243
 
-<sub>cited from README.md · lifted from `PLAN_M243_PLATFORM.md`</sub>
+<sub>cited from README.md, SPEC.md · lifted from `PLAN_M243_PLATFORM.md`</sub>
 
 **`M243` — the platform: Windows, and the arc's close-out**
 

@@ -559,14 +559,15 @@ export function checkDuplicateTitles(anchors, records) {
 const DEFINING = new Set([...TITLING, 'heading']);
 
 /**
- * Decision identifiers defined in more than one record **before `M240-04`**, frozen. Each is one of
- * two things, and the map says which:
+ * Decision identifiers defined in more than one record **before `M240-04`**, frozen. Every one is
+ * `restated` — a later record copies the decision in its own words (`PROGRESS.md`'s log of a round,
+ * an arc plan summarising its milestones' decisions). One decision, stated twice.
  *
- *   - `restated` — a later record copies the decision in its own words (`PROGRESS.md`'s log of a
- *     round, an arc plan summarising its milestones' decisions). One decision, stated twice.
- *   - `collides` — two records took the same number for two different decisions. `M240-06` holds
- *     these; which block `DECISIONS.md` publishes for them is decided by `pickAnchor`'s ranking,
- *     not by anyone.
+ * The freeze also held nine `collides` entries: two records that took one number for two different
+ * decisions, where `pickAnchor`'s ranking decided which block `DECISIONS.md` published. `M244`
+ * renumbered one side of each (`M240-06`) — `M98`'s `D147`–`D152` to `D1334`–`D1339`, `M149`'s
+ * `D666`/`D667` to `D1340`/`D1341`, `M162`'s `D821` to `D1342`, in each case the record fewer
+ * tracked sites meant — so the kind is gone with its last member.
  *
  * NOTHING MAY JOIN THIS LIST. It exists so the check below can refuse the next collision without
  * first repairing records written a hundred milestones ago; an id is only ever removed from it, and a
@@ -575,7 +576,6 @@ const DEFINING = new Set([...TITLING, 'heading']);
 export const MULTI_RECORD = Object.freeze({
   ...Object.fromEntries(['D43', 'D60', 'D61', 'D62', 'D63', 'D64', 'D65', 'D66', 'D67', 'D68', 'D69', 'D70', 'D71', 'D72', 'D73', 'D74', 'D75', 'D76', 'D77', 'D78', 'D79', 'D80', 'D178', 'D179', 'D180',
     'D336', 'D537', 'D737', 'D792', 'D809', 'D815', 'D864', 'D1044', 'D1045', 'D1047', 'D1049', 'D1071'].map((id) => [id, 'restated'])),
-  ...Object.fromEntries(['D147', 'D148', 'D149', 'D150', 'D151', 'D152', 'D666', 'D667', 'D821'].map((id) => [id, 'collides'])),
 });
 
 /**
