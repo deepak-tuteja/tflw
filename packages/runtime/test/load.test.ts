@@ -1336,7 +1336,10 @@ test('a rising target against a healthy finite-capacity server produces no diagn
   await server.close();
 });
 
-test('a uniformly fast server does not trigger a backOff warning', async () => {
+// `M243-17`'s second member: the same 5 ms timer fixture, the same Windows quantisation, four
+// sightings on 2026-09-27 at ratios 0.283–0.290 against a 0.25 line. The ledger row said a third
+// sighting names it here.
+test('a uniformly fast server does not trigger a backOff warning', { skip: WINDOWS_TIMERS }, async () => {
   const server = await startFixtureServer({ '/health': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 5) });
   const source = 'test "Healthy"\n  hold 5 users for 1500ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
