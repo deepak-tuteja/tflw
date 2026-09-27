@@ -1953,7 +1953,7 @@ test('`--update-snapshots` against a real mismatch overwrites the baseline and p
   }
 });
 
-test('a platform-key mismatch fails immediately with a clear message, before any pixel is compared — not affected by `--update-snapshots`\'s absence or presence changing that message', async () => {
+test('a platform-key mismatch fails immediately with a clear message, before any pixel is compared (with `--update-snapshots` it re-records instead: snapshot-fonts-note.test.ts)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-snap-'));
   try {
     await runSnapshot('test "seed"\n  open "/snap"\n  expect page matches snapshot "platform"\n', dir, { updateSnapshots: true });

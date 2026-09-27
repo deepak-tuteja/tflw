@@ -51,3 +51,24 @@ test('a match says nothing about fonts — the note is for a failure only', asyn
   const message = await against(png(8, 8, 0), png(8, 8, 0));
   assert.doesNotMatch(message, /fonts/);
 });
+
+test('`--update-snapshots` re-records a baseline cut on another platform, and says which two', async () => {
+  // Before: the platform check ran ahead of the flag, so a browser upgrade left every baseline
+  // unrecordable while the refusal told the user to run exactly this flag.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-fonts-note-'));
+  try {
+    const paths = snapshotPaths(dir, 'tests/t.tflw', 't', 'shot');
+    await evaluateSnapshot(paths, 'shot', png(8, 8, 0), 'linux-chromium-1.0', true, false);
+    const refused = await evaluateSnapshot(paths, 'shot', png(8, 8, 0), KEY, false, false);
+    assert.equal(refused.ok, false, 'without the flag a platform change still refuses');
+    assert.match(refused.message, /not a tolerance knob/);
+
+    const updated = await evaluateSnapshot(paths, 'shot', png(8, 8, 0), KEY, true, false);
+    assert.equal(updated.ok, true);
+    assert.equal(updated.updated, true);
+    assert.ok(updated.message.includes(`"${KEY}" (was "linux-chromium-1.0")`), updated.message);
+    assert.equal((await evaluateSnapshot(paths, 'shot', png(8, 8, 0), KEY, false, false)).message, 'snapshot "shot": matches baseline');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

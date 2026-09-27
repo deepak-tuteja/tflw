@@ -129,6 +129,18 @@ export async function evaluateSnapshot(paths: SnapshotPaths, name: string, actua
   }
 
   if (baseline.platformKey !== platformKey) {
+    // SPEC §9.9: `--update-snapshots` overwrites a baseline "whatever it currently compares as".
+    // A browser upgrade changes the key on every baseline at once, and re-recording is the only way
+    // forward, so the one outcome that refused the flag was the one it is most needed for.
+    if (updateSnapshots) {
+      await writeBaseline(paths, actualPng, platformKey);
+      return {
+        ok: true,
+        updated: true,
+        message: `snapshot "${name}": baseline re-recorded on platform "${platformKey}" (was "${baseline.platformKey}")`,
+        diff: { baseline: toBase64(baseline.png), actual: toBase64(actualPng) },
+      };
+    }
     return {
       ok: false,
       updated: false,
