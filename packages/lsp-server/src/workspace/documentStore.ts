@@ -140,6 +140,7 @@ export class DocumentStore {
     // docs-site demo — a browser, where no config can exist even in principle — omits these.
     let knownServices: string[] = [];
     let knownSessions: string[] = [];
+    let knownSigners: string[] | undefined;
     // M130b/D307 — a subset of the roster above, and it follows `knownServices`' rule rather than
     // `envBaseUrls`': `[]` here means "no session is privileged", which is both the honest answer
     // for a file outside any project and the answer that emits nothing.
@@ -178,6 +179,7 @@ export class DocumentStore {
       if (project?.resolved) {
         knownServices = Object.keys(project.resolved.services);
         knownSessions = Array.from(project.resolved.sessions.keys());
+        knownSigners = Array.from(project.resolved.signers?.keys() ?? []);
         privilegedSessions = knownSessions.filter((name) => project.resolved!.sessions.get(name)?.privileged === true);
         envBaseUrls = {
           envName: project.resolved.envName,
@@ -234,6 +236,7 @@ export class DocumentStore {
       ...checkProgram(parsed.program, {
         knownServices,
         knownSessions,
+        ...(knownSigners === undefined ? {} : { knownSigners }),
         privilegedSessions,
         // `undefined` still means *world unknown* and still suppresses the negative passes — and it
         // now arrives by two routes that mean the same thing: a pathless buffer with nowhere to

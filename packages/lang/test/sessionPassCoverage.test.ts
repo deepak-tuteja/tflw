@@ -130,6 +130,10 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
 
   checkProgram: { verdict: 'n/a', reason: 'the composition of the per-file passes, not a pass — `checkSessionBody` is its config-side counterpart' },
   checkSessionBody: { verdict: 'n/a', reason: 'this list itself' },
+  checkSigners: {
+    verdict: 'n/a',
+    reason: 'M246 (`TF086`). A `sign with` inside a session body IS checked — by `validateConfig`, against every `signer` the same file declares, beside the session\'s own `signed with`. Not through `checkSessionBody`, because this pass asks about the *active env\'s* signers, a resolved-config answer, and a session body lives in the file that declares them: judging it against the file is exact, where an env\'s subset would call a signer another env uses unknown',
+  },
   checkSessionServices: { verdict: 'n/a', reason: 'subsumed: `checkSessionBody` folds it in so callers have one entry point' },
   validateConfig: { verdict: 'n/a', reason: 'validates config *declarations* (which key in which block), not step bodies' },
   checkAllowHostsCoversBaseUrls: { verdict: 'n/a', reason: 'reasons about an env\'s own base URLs against its `allow hosts` — a whole-env property, not a step one' },

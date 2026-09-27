@@ -8,6 +8,14 @@ import { describeToken, describeTokenType } from './token.js';
 import { type Diagnostic, Codes, suggest } from './diagnostic.js';
 import type {
   FindingSeverity,
+  HmacAlgorithm,
+  HmacScheme,
+  SignatureEncoding,
+  SignClause,
+  SignerDecl,
+  SignerHeader,
+  SignerRef,
+  Sigv4Scheme,
   AcceptDialogStmt,
   ActionDecl,
   AllowHostsDecl,
@@ -682,6 +690,18 @@ const EVIDENCE_LEVEL_OF: Readonly<Record<(typeof EVIDENCE_PHRASES)[number], Evid
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 const LOG_DESTINATIONS = ['console', 'html', 'both'] as const;
 const RETRY_AFTER_HEADERS = ['Retry-After'] as const;
+
+/** Whether a `sign with … at` value could be a time (`M246`): a date atom or date arithmetic, or a
+ * value only the run can read. A literal of any other shape cannot, and is refused where written.
+ * Spelled as `.type` comparisons rather than a list, because a list of strings in this file is read
+ * as language vocabulary (`vocabulary.test.ts`) and these are AST kinds, not words anyone types. */
+function signingTimeShaped(v: Value): boolean {
+  return v.type === 'DateAtom' || v.type === 'BinaryExpr' || v.type === 'VarRef' || v.type === 'Interp' || v.type === 'CallExpr' || v.type === 'EnvRef';
+}
+
+/** `hmac <alg> <enc>` (`M246`, `D1346`) — the hashes and output encodings a signer may name. */
+export const HMAC_ALGORITHMS = ['sha1', 'sha256', 'sha512'] as const satisfies readonly HmacAlgorithm[];
+export const SIGNATURE_ENCODINGS = ['hex', 'base64'] as const satisfies readonly SignatureEncoding[];
 // Budget family first, then poll family (`D770`) — the order this array is written in is the order
 // `TF010` lists them in, since its message interpolates the array rather than repeating it.
 const TIMEOUT_TARGETS = ['step', 'api', 'browser', 'expect', 'wait'] as const;
@@ -1530,12 +1550,13 @@ class Parser {
     const helpers: HelpersDecl[] = [];
     let runs: RunsDecl | null = null;
     const sessions: SessionDecl[] = [];
+    const signers: SignerDecl[] = [];
     this.skipNewlines();
     // M110 (`V4-04`) — the branch chain below and `TF022`'s message are the same list, and the
     // message is now built from `CONFIG_DIRECTIVES`. This makes the *other* half of that pair
     // checkable too: a directive added to the manifest with no branch here fails to compile, so
     // the message can never promise to accept something this loop drops into the `else`.
-    const HANDLED: Record<ConfigDirective, true> = { defaults: true, env: true, session: true, require: true, exclude: true, helpers: true, runs: true };
+    const HANDLED: Record<ConfigDirective, true> = { defaults: true, env: true, session: true, signer: true, require: true, exclude: true, helpers: true, runs: true };
     void HANDLED;
     while (!this.atEof()) {
       const before = this.pos;
@@ -1584,6 +1605,13 @@ class Parser {
         const s = this.parseSessionDecl();
         if (s) sessions.push(s);
         else this.synchronize();
+      } else if (this.isKw(tok, 'signer')) {
+        const sg = this.parseSignerDecl();
+        if (sg) signers.push(sg);
+        else {
+          this.synchronize();
+          this.skipBlock();
+        }
       } else if (this.isKw(tok, 'test')) {
         this.error(Codes.CONFIG_TEST_NOT_ALLOWED, '`test` is not allowed in tflw.config', tok.span, 'the config dialect is declaration-only; put tests in `.tflw` files');
         this.synchronize();
@@ -1608,7 +1636,7 @@ class Parser {
       this.skipNewlines();
     }
     // `helpers` is absent-when-empty (see `ConfigFile.helpers`), like `Program.crawls`.
-    const config: ConfigFile = { type: 'ConfigFile', defaults, envs, requires, excludes, ...(helpers.length > 0 ? { helpers } : {}), ...(runs === null ? {} : { runs }), sessions, span: this.spanFrom(startPos) };
+    const config: ConfigFile = { type: 'ConfigFile', defaults, envs, requires, excludes, ...(helpers.length > 0 ? { helpers } : {}), ...(runs === null ? {} : { runs }), sessions, ...(signers.length > 0 ? { signers } : {}), span: this.spanFrom(startPos) };
     return { config, diagnostics: this.diagnostics };
   }
 
@@ -1620,6 +1648,7 @@ class Parser {
     const name = this.expect('ident', 'a session name, e.g. `session admin`');
     if (!name) return null;
     const envs = this.parseSessionEnvScope();
+    const signer = this.parseSessionSigner();
     // `session <name> privileged oauth2` — one order is legal (below) and this is the other one.
     // Reported here, before anything else reads the header, and then *recovered from by reading
     // the header the way it was plainly meant*: left to `endLine()` it produced one honest error
@@ -1645,14 +1674,160 @@ class Parser {
       this.endLine();
       const oauth2 = this.parseOauth2SessionConfig(start, headerSpan);
       if (!oauth2) return null;
-      return { type: 'SessionDecl', name: name.value, envs, oauth2, body: [], privileged, span: this.spanFrom(start) };
+      return { type: 'SessionDecl', name: name.value, envs, oauth2, body: [], privileged, ...(signer ? { signer } : {}), span: this.spanFrom(start) };
     }
     const privileged = this.parsePrivilegedModifier();
     this.lateEnvScope(name.value, envs);
     const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     const body = this.parseSessionBlock(headerSpan);
-    return { type: 'SessionDecl', name: name.value, envs, oauth2: null, body, privileged, span: this.spanFrom(start) };
+    return { type: 'SessionDecl', name: name.value, envs, oauth2: null, body, privileged, ...(signer ? { signer } : {}), span: this.spanFrom(start) };
+  }
+
+  /** `session <name> [for env …] signed with <signer>` (`M246`, `D1345`) — read after the env scope
+   * and before `oauth2`/`privileged`, so the modifier pair D310 settled keeps its one spelling and
+   * `oauth2` stays next to the block it introduces. */
+  private parseSessionSigner(): SignerRef | null {
+    if (!this.isKw(this.peek(), 'signed')) return null;
+    this.advance(); // `signed`
+    if (!this.expectKw('with')) return null;
+    const tok = this.expect('ident', 'a signer name after `signed with`, e.g. `session partner signed with stripe`');
+    if (!tok) return null;
+    return { type: 'SignerRef', name: tok.value, span: tok.span };
+  }
+
+  // -- signer declarations (`M246`, D1344–D1347) ------------------------------
+
+  /** `signer <name> [for env <a>[, <b>]] hmac <alg> <enc> secret <v>` + an indented `signs` line and
+   * `header` lines, or `signer <name> [for env …] sigv4 region <v> service <v> key <v> secret <v>
+   * [token <v>]` on one line. The env scope reads exactly as a session's does (D642). */
+  private parseSignerDecl(): SignerDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `signer`
+    const name = this.expect('ident', 'a signer name, e.g. `signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)`');
+    if (!name) return null;
+    const envs = this.parseSessionEnvScope();
+    const kind = this.peek();
+    if (this.isKw(kind, 'hmac')) {
+      const scheme = this.parseHmacScheme(start);
+      if (!scheme) return null;
+      return { type: 'SignerDecl', name: name.value, nameSpan: name.span, envs, scheme, span: this.spanFrom(start) };
+    }
+    if (this.isKw(kind, 'sigv4')) {
+      const scheme = this.parseSigv4Scheme();
+      if (!scheme) return null;
+      return { type: 'SignerDecl', name: name.value, nameSpan: name.span, envs, scheme, span: this.spanFrom(start) };
+    }
+    this.error(
+      Codes.UNEXPECTED_TOKEN,
+      `expected \`hmac\` or \`sigv4\` after the signer's name, found ${describeToken(kind)}`,
+      kind.span,
+      'a signer is `hmac <sha1|sha256|sha512> <hex|base64> secret <value>` with `signs`/`header` lines under it, or `sigv4 region "…" service "…" key <value> secret <value>`',
+    );
+    return null;
+  }
+
+  private parseHmacScheme(declStart: Position): HmacScheme | null {
+    const start = this.peek().span.start;
+    this.advance(); // `hmac`
+    const algTok = this.peek();
+    if (!(algTok.type === 'ident' && (HMAC_ALGORITHMS as readonly string[]).includes(algTok.value))) {
+      this.error(Codes.UNEXPECTED_TOKEN, `expected a hash after \`hmac\` (${HMAC_ALGORITHMS.join(', ')}), found ${describeToken(algTok)}`, algTok.span, 'e.g. `hmac sha256 hex secret env(WEBHOOK_SECRET)`');
+      return null;
+    }
+    this.advance();
+    const encTok = this.peek();
+    if (!(encTok.type === 'ident' && (SIGNATURE_ENCODINGS as readonly string[]).includes(encTok.value))) {
+      this.error(Codes.UNEXPECTED_TOKEN, `expected how the signature is written (${SIGNATURE_ENCODINGS.join(', ')}), found ${describeToken(encTok)}`, encTok.span, 'e.g. `hmac sha256 hex secret …` — `hex` for Stripe, GitHub and Slack, `base64` for Shopify-style schemes');
+      return null;
+    }
+    this.advance();
+    if (!this.expectKw('secret')) return null;
+    const secret = this.parseValue();
+    if (!secret) return null;
+    const headerSpan = this.headerSpanFrom(declStart);
+    this.endLine();
+    if (!this.check('indent')) {
+      this.error(Codes.EMPTY_BLOCK, 'this `hmac` signer says nothing about what it signs', headerSpan, 'indent a `signs "{timestamp}.{body}"` line and at least one `header "…" is "…{signature}…"` line under it');
+      return null;
+    }
+    this.advance(); // indent
+    let signs: StringLit | null = null;
+    const headers: SignerHeader[] = [];
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const tok = this.peek();
+      if (this.isKw(tok, 'signs')) {
+        this.advance();
+        const tpl = this.expectString('the string to sign, e.g. `signs "{timestamp}.{body}"`');
+        if (tpl) {
+          if (signs) this.error(Codes.UNEXPECTED_TOKEN, 'a signer signs one string — this is a second `signs` line', tok.span, 'keep one `signs` line; a scheme that signs several parts joins them in the one template');
+          else signs = tpl;
+          this.endLine();
+        } else this.synchronize();
+      } else if (this.isKw(tok, 'header')) {
+        const hStart = tok.span.start;
+        this.advance();
+        const hName = this.expectString('a header name string, e.g. `header "Stripe-Signature" is "t={timestamp},v1={signature}"`');
+        if (hName && this.expectKw('is')) {
+          const hValue = this.expectString('the header\'s template as a string, e.g. `"sha256={signature}"`');
+          if (hValue) {
+            headers.push({ type: 'SignerHeader', name: hName, value: hValue, span: this.spanFrom(hStart) });
+            this.endLine();
+          } else this.synchronize();
+        } else this.synchronize();
+      } else {
+        this.error(Codes.UNEXPECTED_TOKEN, `only \`signs\` and \`header\` lines go under an \`hmac\` signer, found ${describeToken(tok)}`, tok.span);
+        this.synchronize();
+      }
+      if (this.pos === before) this.advance();
+    }
+    if (this.check('dedent')) this.advance();
+    if (!signs) {
+      this.error(Codes.EMPTY_BLOCK, 'this `hmac` signer has no `signs` line', headerSpan, 'say what is signed, e.g. `signs "{timestamp}.{body}"`');
+      return null;
+    }
+    if (headers.length === 0) {
+      this.error(Codes.EMPTY_BLOCK, 'this `hmac` signer sends its signature nowhere', headerSpan, 'add a `header "…" is "…{signature}…"` line — the signature travels in a header');
+      return null;
+    }
+    return { type: 'HmacScheme', algorithm: algTok.value as HmacAlgorithm, encoding: encTok.value as SignatureEncoding, secret, signs, headers, span: this.spanFrom(start) };
+  }
+
+  /** The `sigv4` line: `region`, `service`, `key` and `secret` in that order, then an optional
+   * `token`. One order, as every other clause list in the language has. */
+  private parseSigv4Scheme(): Sigv4Scheme | null {
+    const start = this.peek().span.start;
+    this.advance(); // `sigv4`
+    const read = (word: string, example: string): Value | null => {
+      if (!this.isKw(this.peek(), word)) {
+        this.error(Codes.UNEXPECTED_TOKEN, `expected \`${word}\` in a \`sigv4\` signer, found ${describeToken(this.peek())}`, this.peek().span, `a \`sigv4\` signer reads \`region\`, \`service\`, \`key\` and \`secret\` in that order, then an optional \`token\` — e.g. \`${example}\``);
+        return null;
+      }
+      this.advance();
+      return this.parseValue();
+    };
+    const example = 'sigv4 region "eu-west-1" service "execute-api" key env(AWS_ACCESS_KEY_ID) secret env(AWS_SECRET_ACCESS_KEY)';
+    const region = read('region', example);
+    if (!region) return null;
+    const service = read('service', example);
+    if (!service) return null;
+    const key = read('key', example);
+    if (!key) return null;
+    const secret = read('secret', example);
+    if (!secret) return null;
+    let token: Value | null = null;
+    if (this.isKw(this.peek(), 'token')) {
+      this.advance();
+      token = this.parseValue();
+      if (!token) return null;
+    }
+    this.endLine();
+    return { type: 'Sigv4Scheme', region, service, key, secret, token, span: this.spanFrom(start) };
   }
 
   /** `session <name> for env <a>[, <b>...]` — the env scope clause (`M147d`/`M137f-02`, D642).
@@ -3511,8 +3686,8 @@ class Parser {
       if (!tag) return null;
     }
     this.endLine();
-    const { headers, retryAfter } = this.parseApiHeaders();
-    return { type: 'ApiStep', ...spec, tag, headers: [...spec.headers, ...headers], retryAfter, span: this.spanFrom(start) };
+    const { headers, retryAfter, sign } = this.parseApiHeaders();
+    return { type: 'ApiStep', ...spec, tag, headers: [...spec.headers, ...headers], retryAfter, ...(sign ? { sign } : {}), span: this.spanFrom(start) };
   }
 
   /** The shared `[<service>] METHOD PATH [body-form] [timeout <dur>] [without redirects]` line,
@@ -3730,10 +3905,11 @@ class Parser {
   /** An optional indented block beneath an api step: `header "…" is <value>` lines (SPEC §5.1)
    * and/or one `retry honoring "Retry-After" up to N` line (SPEC §5.1, PLAN decision 102b,
    * enterprise arc cluster 3). */
-  private parseApiHeaders(): { headers: ApiHeader[]; retryAfter: RetryAfterClause | null } {
+  private parseApiHeaders(): { headers: ApiHeader[]; retryAfter: RetryAfterClause | null; sign: SignClause | null } {
     const headers: ApiHeader[] = [];
     let retryAfter: RetryAfterClause | null = null;
-    if (!this.check('indent')) return { headers, retryAfter };
+    let sign: SignClause | null = null;
+    if (!this.check('indent')) return { headers, retryAfter, sign };
     this.advance(); // indent
     while (!this.check('dedent') && !this.atEof()) {
       if (this.check('newline')) {
@@ -3747,14 +3923,80 @@ class Parser {
       } else if (this.isKw(this.peek(), 'retry')) {
         const clause = this.parseRetryAfterClause();
         if (clause) retryAfter = clause;
+      } else if (this.isKw(this.peek(), 'sign')) {
+        const at = this.peek().span;
+        const clause = this.parseSignClause();
+        if (clause) {
+          if (sign) this.error(Codes.UNEXPECTED_TOKEN, 'a request is signed once — this is a second `sign with` line', at, 'keep one `sign with` line; its overrides go on that line');
+          else sign = clause;
+        }
       } else {
-        this.error(Codes.UNEXPECTED_TOKEN, `only \`header\` or \`retry honoring\` lines may follow an api step, found ${describeToken(this.peek())}`, this.peek().span);
+        this.error(Codes.UNEXPECTED_TOKEN, `only \`header\`, \`sign with\` or \`retry honoring\` lines may follow an api step, found ${describeToken(this.peek())}`, this.peek().span);
         this.synchronize();
       }
       if (this.pos === before) this.advance();
     }
     if (this.check('dedent')) this.advance();
-    return { headers, retryAfter };
+    return { headers, retryAfter, sign };
+  }
+
+  /** `sign with <signer> [secret <v>] [at <time>] [then <body>]` (`M246`, `D1348`) — the overrides in
+   * that one order. Caller has confirmed `sign` is next. */
+  private parseSignClause(): SignClause | null {
+    const start = this.peek().span.start;
+    this.advance(); // `sign`
+    if (!this.expectKw('with')) {
+      this.synchronize();
+      return null;
+    }
+    const nameTok = this.expect('ident', 'a signer name after `sign with`, e.g. `sign with stripe`');
+    if (!nameTok) {
+      this.synchronize();
+      return null;
+    }
+    const signer: SignerRef = { type: 'SignerRef', name: nameTok.value, span: nameTok.span };
+    let secret: Value | null = null;
+    let at: Value | null = null;
+    let thenBody: ApiBody | null = null;
+    if (this.isKw(this.peek(), 'secret')) {
+      this.advance();
+      secret = this.parseValue();
+      if (!secret) {
+        this.synchronize();
+        return null;
+      }
+    }
+    if (this.isKw(this.peek(), 'at')) {
+      this.advance();
+      at = this.parseValue();
+      if (!at) {
+        this.synchronize();
+        return null;
+      }
+      // A literal that cannot be a time is knowable here, so it is refused here; what remains for the
+      // run to reject is a variable or a helper that turned out not to hold one.
+      if (!signingTimeShaped(at)) {
+        this.error(Codes.UNEXPECTED_TOKEN, '`sign with … at` takes a time, and this is not one', at.span, 'write a date value — `at now - 10 minutes`, or `at today`');
+        this.synchronize();
+        return null;
+      }
+    }
+    if (this.isKw(this.peek(), 'then')) {
+      this.advance();
+      const bodyTok = this.peek();
+      if (!(this.isKw(bodyTok, 'body') || this.isKw(bodyTok, 'form'))) {
+        this.error(Codes.UNEXPECTED_TOKEN, `expected the body to send after \`then\`, found ${describeToken(bodyTok)}`, bodyTok.span, 'e.g. `sign with stripe then body { amount: 1 }` — the signature covers the step\'s own body and this one is sent instead');
+        this.synchronize();
+        return null;
+      }
+      thenBody = this.parseApiBody();
+      if (!thenBody) {
+        this.synchronize();
+        return null;
+      }
+    }
+    this.endLine();
+    return { type: 'SignClause', signer, secret, at, thenBody, span: this.spanFrom(start) };
   }
 
   /** `retry honoring "Retry-After" up to N` — a per-`api`-step retry clause (SPEC §5.1, PLAN

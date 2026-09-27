@@ -31,6 +31,7 @@ import type {
   PathSegment,
   Program,
   SessionDecl,
+  SignerRef,
   Step,
   StringLit,
   EnvRef,
@@ -65,6 +66,12 @@ export interface ProgramCheckOptions {
    * `knownSessions` and is read only when that is present: the two are the same question answered
    * about two disjoint sets of names, and a caller holding one always holds the other. */
   readonly outOfScopeSessions?: OutOfScopeSessions;
+  /** `M246` (`D1345`) — the signers the active env has, for `TF086` on a step's `sign with`. Same
+   * `undefined`-vs-`[]` rule as `knownSessions`: undefined skips the pass. */
+  readonly knownSigners?: readonly string[];
+  /** The signers declared for other envs only, for `TF086`'s scoped hint — `outOfScopeSessions`'
+   * shape and reason. */
+  readonly outOfScopeSigners?: OutOfScopeSessions;
   /**
    * The subset of `knownSessions` declared `privileged` (M130b, D307) — principals `has no
    * authorization violations` leaves out of its probe set because they are *meant* to reach other
@@ -327,6 +334,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...(opts.knownServices ? checkServices(program, opts.knownServices) : []),
     ...checkDataTables(program),
     ...(opts.knownSessions ? checkSessions(program, opts.knownSessions, opts.outOfScopeSessions) : []),
+    ...(opts.knownSigners ? checkSigners(program, opts.knownSigners, opts.outOfScopeSigners) : []),
     ...checkActionDecls(program, opts),
     ...checkUnknownVariables(program),
     ...checkRequestAssertions(program),
@@ -778,6 +786,7 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
     }
   }
 
+  checkSignerDecls(config, diags);
   return diags;
 }
 
@@ -946,6 +955,114 @@ export function checkSessions(program: Program, knownSessions: readonly string[]
  * services declared in the active env (P#29). Called by the CLI once the config is resolved —
  * the lang package itself has no notion of "the active env", only the checker rule.
  */
+/**
+ * `TF086` (`M246`, `D1345`) — every `sign with <name>` in a test file against the signers the active
+ * env has. One diagnostic per use, anchored on the name, as `checkSessions` does for its list.
+ */
+export function checkSigners(program: Program, knownSigners: readonly string[], outOfScope?: OutOfScopeSessions): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const bodies = [...program.tests.map((t) => t.body), ...program.actions.map((a) => a.body), ...program.hooks.map((h) => h.body)];
+  for (const body of bodies) {
+    for (const ref of signerRefs(body)) {
+      const d = unknownSignerDiagnostic(ref, knownSigners, outOfScope);
+      if (d) diags.push(d);
+    }
+  }
+  return diags;
+}
+
+/** Every `sign with` name in a body of steps, through the blocks that hold steps. */
+export function signerRefs(steps: readonly Step[]): SignerRef[] {
+  const out: SignerRef[] = [];
+  for (const step of steps) {
+    if (step.type === 'ApiStep' && step.sign) out.push(step.sign.signer);
+    else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') out.push(...signerRefs(step.body));
+  }
+  return out;
+}
+
+function unknownSignerDiagnostic(ref: SignerRef, known: readonly string[], outOfScope?: OutOfScopeSessions): Diagnostic | null {
+  if (known.includes(ref.name)) return null;
+  const scopedTo = outOfScope?.declaredElsewhere.get(ref.name);
+  if (outOfScope && scopedTo) {
+    return {
+      code: Codes.UNKNOWN_SIGNER,
+      severity: 'error',
+      message: `unknown signer "${ref.name}" in env "${outOfScope.envName}"`,
+      span: ref.span,
+      hint: `\`signer ${ref.name}\` is declared \`for env ${scopedTo.join(', ')}\`, and this run resolved env "${outOfScope.envName}" — add "${outOfScope.envName}" to that clause, or run under an env the signer is scoped to`,
+    };
+  }
+  const hint = suggest(ref.name, known);
+  return {
+    code: Codes.UNKNOWN_SIGNER,
+    severity: 'error',
+    message: `unknown signer "${ref.name}"`,
+    span: ref.span,
+    hint: hint ? `did you mean \`${hint}\`?` : known.length ? `known signers: ${known.join(', ')}` : 'tflw.config declares no `signer` — declare one there, e.g. `signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)`',
+  };
+}
+
+/** The placeholders an `hmac` signer fills (`D1346`), by where they may appear. */
+export const SIGNS_PLACEHOLDERS = ['body', 'method', 'path', 'query', 'timestamp', 'body sha256'] as const;
+export const SIGNER_HEADER_PLACEHOLDERS = ['signature', 'timestamp'] as const;
+
+/** The `{…}` names a signer template holds, with their offsets in the decoded text. A signer's
+ * braces are its own placeholders, never variables, so this reads the decoded value rather than
+ * `StringLit.parts`, whose idea of a hole is a variable path. */
+export function templatePlaceholders(text: string): { name: string; index: number }[] {
+  const out: { name: string; index: number }[] = [];
+  const re = /\{([^{}]*)\}/g;
+  for (let m = re.exec(text); m; m = re.exec(text)) out.push({ name: m[1]!, index: m.index });
+  return out;
+}
+
+function checkSignerDecls(config: ConfigFile, diags: Diagnostic[]): void {
+  const signers = config.signers ?? [];
+  const seen = new Set<string>();
+  for (const signer of signers) {
+    if (seen.has(signer.name)) {
+      diags.push({ code: Codes.SIGNER_DECL, severity: 'error', message: `duplicate signer \`${signer.name}\``, span: signer.nameSpan, hint: 'signer names must be unique — a `sign with` line would not say which one it meant' });
+    }
+    seen.add(signer.name);
+    if (signer.scheme.type !== 'HmacScheme') continue;
+    const { signs, headers } = signer.scheme;
+    for (const p of templatePlaceholders(signs.value)) {
+      if ((SIGNS_PLACEHOLDERS as readonly string[]).includes(p.name)) continue;
+      const hint = p.name === 'signature' ? 'the signature is what `signs` produces, so it cannot be part of it — `{signature}` goes in a `header` line' : `\`signs\` fills ${SIGNS_PLACEHOLDERS.map((n) => `\`{${n}}\``).join(', ')}` + (suggest(p.name, SIGNS_PLACEHOLDERS) ? ` — did you mean \`{${suggest(p.name, SIGNS_PLACEHOLDERS)}}\`?` : '');
+      diags.push({ code: Codes.SIGNER_DECL, severity: 'error', message: `\`{${p.name}}\` is not something a signer can sign`, span: signs.span, hint });
+    }
+    for (const h of headers) {
+      for (const p of templatePlaceholders(h.value.value)) {
+        if ((SIGNER_HEADER_PLACEHOLDERS as readonly string[]).includes(p.name)) continue;
+        diags.push({ code: Codes.SIGNER_DECL, severity: 'error', message: `\`{${p.name}}\` is not something a signer's header can carry`, span: h.value.span, hint: 'a signer\'s `header` fills `{signature}` and `{timestamp}`' });
+      }
+    }
+    if (!headers.some((h) => templatePlaceholders(h.value.value).some((p) => p.name === 'signature'))) {
+      diags.push({ code: Codes.SIGNER_DECL, severity: 'error', message: `signer \`${signer.name}\` computes a signature and sends it nowhere`, span: signer.nameSpan, hint: 'one `header` line has to carry `{signature}`, e.g. `header "X-Signature" is "sha256={signature}"`' });
+    }
+  }
+  const envNames = new Set(config.envs.map((e) => e.name));
+  for (const signer of signers) {
+    for (const ref of signer.envs ?? []) {
+      if (envNames.has(ref.name)) continue;
+      const hint = suggest(ref.name, [...envNames]);
+      diags.push({ code: Codes.CONFIG_UNKNOWN_ENV, severity: 'error', message: `unknown env "${ref.name}"`, span: ref.span, hint: hint ? `did you mean \`${hint}\`?` : envNames.size ? `\`for env\` names \`env\` blocks in this file, and this one declares: ${[...envNames].join(', ')}` : 'this config declares no `env` blocks — drop the `for env` clause and the signer belongs to every env' });
+    }
+  }
+  // A session's `signed with` and a session body's `sign with` are both in this file, so they are
+  // judged here against every declaration rather than against one env's: the env a session runs in
+  // is a run's question, and `TF086` on the test side asks it.
+  const names = signers.map((s) => s.name);
+  for (const session of config.sessions) {
+    const refs = [...(session.signer ? [session.signer] : []), ...signerRefs(session.body)];
+    for (const ref of refs) {
+      const d = unknownSignerDiagnostic(ref, names);
+      if (d) diags.push(d);
+    }
+  }
+}
+
 export function checkServices(program: Program, knownServices: readonly string[]): Diagnostic[] {
   const diags: Diagnostic[] = [];
   for (const test of program.tests) {

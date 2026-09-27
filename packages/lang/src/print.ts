@@ -29,6 +29,7 @@ import type {
   CrawlSeed,
   ApiBody,
   ApiHeader,
+  SignClause,
   ApiRequestSpec,
   ApiStep,
   ArrayLit,
@@ -280,7 +281,7 @@ export const PRINTABLE = new Set<string>([
  * field was normalised on the way in, because a normalisation is a spelling decision the AST
  * stopped recording.
  */
-export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'UploadFile', 'RetryAfterClause', 'FillFormRow']);
+export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'UploadFile', 'RetryAfterClause', 'SignClause', 'SignerRef', 'FillFormRow']);
 
 /**
  * The kinds that refuse **by construction**, and will not gain a printer in any round (`A4-5`).
@@ -895,7 +896,19 @@ function printPause(p: PauseStmt): string {
 function printApiStep(a: ApiStep, level: number): string {
   const lines = [pad(level) + 'api ' + requestLine(a) + (a.tag ? ' as ' + printString(a.tag) : '')];
   lines.push(...apiBlock(a, a.retryAfter, level));
+  if (a.sign) lines.push(pad(level + 1) + printSignClause(a.sign));
   return lines.join('\n');
+}
+
+/** `sign with <signer> [secret <v>] [at <time>] [then <body>]` (`M246`) — the overrides in the one
+ *  order `parseSignClause` reads them. */
+function printSignClause(c: SignClause): string {
+  if (!isBareIdent(c.signer.name)) refuse('SignClause', `\`${c.signer.name}\` is not a signer name this language can write`);
+  let line = 'sign with ' + c.signer.name;
+  if (c.secret) line += ' secret ' + printValue(c.secret);
+  if (c.at) line += ' at ' + printValue(c.at);
+  if (c.thenBody) line += ' then ' + printBody(c.thenBody);
+  return line;
 }
 
 /**

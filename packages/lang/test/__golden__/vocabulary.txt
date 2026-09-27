@@ -7,7 +7,7 @@
 #   V  a `<expr>.value === '…'` comparison
 #   S  a `case '…':` label in a switch on `<expr>.value`
 #
-# 259 words
+# 269 words
 
 A   DELETE
 A   GET
@@ -32,7 +32,7 @@ K   as
 AK  at
 A   authorization
 AS  authorized
-V   base64
+AV  base64
 AS  baseline
 AK  before
 K   between
@@ -108,8 +108,9 @@ AS  has
 AKS header
 A   headers only
 K   helpers
-V   hex
+AV  hex
 A   hidden
+K   hmac
 K   hold
 K   honoring
 K   hosts
@@ -213,6 +214,14 @@ K   send
 K   sequential
 A   serious
 K   session
+A   sha1
+A   sha256
+A   sha512
+K   sign
+K   signed
+K   signer
+K   signs
+K   sigv4
 K   skip
 K   snapshot
 K   spider
@@ -230,6 +239,7 @@ AK  test
 A   tests
 AKS text
 AK  than
+K   then
 AS  think
 K   threshold
 AS  tick

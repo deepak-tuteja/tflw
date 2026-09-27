@@ -616,6 +616,30 @@ export interface ApiRequestSpec {
    * Only meaningful for a workload-bearing test; ignored by `test`/`action` execution. Null means the step
    * falls back to the automatic identity. */
   readonly tag: StringLit | null;
+  /** `sign with <signer>` (`M246`, `D1345`/`D1348`) — the request is signed by a `signer` declared in
+   * `tflw.config`, after its body is serialised. **Optional, and omitted when the step has none**,
+   * for `ConfigFile.helpers`' reason: a required field would put `"sign": null` into every golden
+   * that holds a request. Only an `api` step's sub-block reads it; `wait until api` never does. */
+  readonly sign?: SignClause;
+}
+
+/** `sign with <signer> [secret <v>] [at <time>] [then body …]` (`M246`, `D1345`, `D1348`). Each
+ * override exists to write one negative test and reads as what it does: `secret` signs with the
+ * wrong key, `at` signs as of another instant (the replay case), and `then body` signs the step's
+ * body and sends this one instead (the tamper case). */
+export interface SignClause extends Node {
+  readonly type: 'SignClause';
+  readonly signer: SignerRef;
+  readonly secret: Value | null;
+  readonly at: Value | null;
+  readonly thenBody: ApiBody | null;
+}
+
+/** A use of a `signer`'s name — on a step's `sign with` or a session's `signed with`. A node so a
+ * diagnostic about an unknown name points at the name, and go-to-definition has something to find. */
+export interface SignerRef extends Node {
+  readonly type: 'SignerRef';
+  readonly name: string;
 }
 
 export interface ApiStep extends Node, ApiRequestSpec {
@@ -1686,6 +1710,56 @@ export interface ConfigFile extends Node {
   readonly runs?: RunsDecl;
   /** `session <name> ... ` blocks — the single auth concept (SPEC §3.3, P#20/31/42). */
   readonly sessions: readonly SessionDecl[];
+  /** `signer <name> …` declarations (`M246`, `D1345`). Optional and omitted when absent, like
+   * `helpers`. */
+  readonly signers?: readonly SignerDecl[];
+}
+
+/** `signer <name> [for env …] hmac …` or `… sigv4 …` (`M246`, `D1345`–`D1347`) — a request
+ * signature as a credential. Declared once in the config so a secret never appears in a test file;
+ * a step opts in with `sign with <name>` and a session with `signed with <name>`. */
+export interface SignerDecl extends Node {
+  readonly type: 'SignerDecl';
+  readonly name: string;
+  /** Where the name was written — the target of go-to-definition and of a duplicate's diagnostic. */
+  readonly nameSpan: Span;
+  /** `for env <a>[, <b>]` — `SessionDecl.envs`' clause and meaning: `null` is every env. */
+  readonly envs: readonly EnvScopeRef[] | null;
+  readonly scheme: HmacScheme | Sigv4Scheme;
+}
+
+/** `hmac <sha1|sha256|sha512> <hex|base64> secret <v>` with an indented `signs "…"` template and one
+ * or more `header "…" is "…"` lines (`D1346`). The templates' `{…}` are the signer's placeholders,
+ * not variables: `{body}`, `{method}`, `{path}`, `{query}`, `{timestamp}` and `{body sha256}` in
+ * `signs`; `{signature}` and `{timestamp}` in a header. */
+export interface HmacScheme extends Node {
+  readonly type: 'HmacScheme';
+  readonly algorithm: HmacAlgorithm;
+  readonly encoding: SignatureEncoding;
+  readonly secret: Value;
+  readonly signs: StringLit;
+  readonly headers: readonly SignerHeader[];
+}
+
+export type HmacAlgorithm = 'sha1' | 'sha256' | 'sha512';
+export type SignatureEncoding = 'hex' | 'base64';
+
+/** One `header "Name" is "template"` line under an `hmac` signer. */
+export interface SignerHeader extends Node {
+  readonly type: 'SignerHeader';
+  readonly name: StringLit;
+  readonly value: StringLit;
+}
+
+/** `sigv4 region <v> service <v> key <v> secret <v> [token <v>]` (`D1347`) — AWS Signature Version
+ * 4, computed in-house on `node:crypto`. `token` is the session token of temporary credentials. */
+export interface Sigv4Scheme extends Node {
+  readonly type: 'Sigv4Scheme';
+  readonly region: Value;
+  readonly service: Value;
+  readonly key: Value;
+  readonly secret: Value;
+  readonly token: Value | null;
 }
 
 /** `session <name> ... steps ...` — runs once per run per worker; its `header` steps become the
@@ -1719,6 +1793,9 @@ export interface SessionDecl extends Node {
    * authz assertion fast would otherwise be to declare away the thing it measures. The lever for
    * cost is fewer assertion sites. */
   readonly privileged: boolean;
+  /** `session <name> signed with <signer>` (`M246`, `D1345`) — every request of a test that opts
+   * into this session is signed. Optional and omitted when absent, like `ConfigFile.helpers`. */
+  readonly signer?: SignerRef;
 }
 
 /** One env-block name from a `session ... for env` clause (`M147d`, D642). A node rather than a

@@ -984,6 +984,56 @@ runs keep 20
   those directories are the durable record — this line never deletes one.
 - Read at each run, so an edit made in the page's Config tab takes effect on the next run.
 
+### 3.14 Signed requests — `signer` (M246, D1344–D1349)
+
+```
+signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)
+  signs "{timestamp}.{body}"
+  header "Stripe-Signature" is "t={timestamp},v1={signature}"
+
+signer aws for env staging, prod sigv4 region "eu-west-1" service "execute-api" key env(AWS_ACCESS_KEY_ID) secret env(AWS_SECRET_ACCESS_KEY)
+
+session partner signed with stripe
+  header "X-Partner" is "acme"
+```
+
+- For an API whose credential is a signature over the request itself: a webhook receiver that
+  checks its sender's signature, a partner API that signs method, path, timestamp and body, or
+  anything behind AWS IAM. A signer is declared once, top-level, with its secret through `env(…)`,
+  so no secret appears in a test file. `for env` scopes it exactly as it scopes a `session` (§3.3).
+- **`hmac <sha1|sha256|sha512> <hex|base64> secret <value>`** takes a `signs` template (the
+  string to sign) and one or more `header` templates (where the signature travels). `signs` fills
+  `{body}`, `{method}`, `{path}`, `{query}`, `{timestamp}` and `{body sha256}`, each **as sent**;
+  a `header` fills `{signature}` and `{timestamp}`. `{timestamp}` is Unix seconds. There are no
+  vendor presets: GitHub, Stripe, Slack and a method-path-body partner scheme are recipes in the
+  guide, so no vendor format can change under a suite. A placeholder the signer does not fill,
+  `{signature}` inside `signs`, no header carrying `{signature}`, or two signers of one name is
+  `TF087`.
+- **`sigv4 region <v> service <v> key <v> secret <v> [token <v>]`** is AWS Signature Version 4,
+  in that clause order, computed on `node:crypto` with no dependency. It signs `host`,
+  `content-type` when the request has one, and every `x-amz-*` header, and adds `x-amz-date`,
+  `x-amz-security-token` for a `token`, and `x-amz-content-sha256` when the service is `s3`. Paths
+  are encoded twice except for S3, as AWS specifies.
+- A step opts in with a **`sign with <name>`** line under its `api` step, beside its `header`
+  lines. A session opts every request of a test that uses it in, with **`signed with <name>`**
+  after its name and `for env` clause; a step's own line wins over the session's. Naming no signer
+  the active env has is `TF086`.
+- **The signature covers the bytes on the wire.** The body is serialised once, after its form is
+  known (JSON, form, text, multipart with its boundary, a file), and those same bytes are signed
+  and sent.
+- **Negatives are overrides on the step's line**, in this order: `secret <v>` signs with another
+  key; `at <time>` signs as of another instant (`sign with stripe at now - 10 minutes`, the replay
+  case); `then body …` signs the step's own body and sends this one instead (the tamper case). No
+  `sign` line at all is the missing-signature case.
+- **The signing clock is the run clock, advanced by the run's own elapsed time** (D1349). `--now`
+  still pins it, so a signed run is reproducible, but a request twenty minutes into a sweep is not
+  stamped with the sweep's first second, which a receiver's tolerance window would refuse as a
+  replay. A retry (`retry honoring`) and a session's 401 refresh re-sign, with a fresh timestamp.
+- The secret is redacted like every `env()` value. The signature header is shown in the report:
+  it is not a secret, and a failed verification needs it to be diagnosed.
+- Not in scope: verifying a signature on a webhook the app under test *sends*. tflw has no
+  receiver for it.
+
 ## 4. Tests & structure ✅
 
 ### 4.1 `test`
@@ -1405,6 +1455,15 @@ where `<target>` is either a path (`/orders`) or an absolute URL (`https://host/
     header "Authorization" is "Bearer {userToken}"
     retry honoring "Retry-After" up to 3
   expect status equals 201
+  ```
+- `sign with <signer> [secret <v>] [at <time>] [then <body>]` (M246): a line under the api step,
+  alongside `header`, that signs this request with a `signer` from `tflw.config` (§3.14), after its
+  body is serialised. At most one per step. Its overrides write the negative tests: another key,
+  another instant, another body sent than the one signed.
+  ```
+  api POST /webhooks/stripe body { id: "evt_1", type: "charge.succeeded" }
+    sign with stripe
+  expect status equals 200
   ```
 
 Interpolated `{var}` path segments are percent-encoded (`encodeURIComponent`) before being
@@ -4191,7 +4250,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF016` | Parser: top-level content that isn't a `test`/`crawl`/`action`/`import`/`use`/`before`/`after`. | `expect status equals 200` → `` expected a `test`, `crawl`, `action`, `import`, `use`, `before`, or `after`, found `expect` `` |
 | `TF020` | Parser (config): an unrecognised key inside a config block. | `defaults` then `headr "Accept" is "application/json"` in `tflw.config` → `` did you mean `header`? `` |
 | `TF021` | Parser (config): a `test` appears in the declaration-only config dialect. | `test "not allowed here"` in `tflw.config` → `` `test` is not allowed in tflw.config `` |
-| `TF022` | Parser (config): top-level config content that isn't one of `defaults`, `env`, `session`, `require`, `exclude`, `helpers`, or `runs` (M110, `V4-04` — this list is `CONFIG_DIRECTIVES` above, the same array the parser's own message is built from, so the two cannot drift again). The code carries a **second** use this row went two arcs without naming: a `session … oauth2` block that is missing a required line. `M147e` (`A2-15`) found it while narrowing that message — the block used to name all three of `token url`, `client id` and `client secret` however many were already written, and now names only the ones absent — and the omission here is the same doc-drift class as `A2-16`, caught in the file that generates `diagnostics.md`. | `workers 3` in `tflw.config` → `` expected `defaults`, `env`, `session`, `require`, `exclude`, `helpers`, or `runs`, found `workers` `` |
+| `TF022` | Parser (config): top-level config content that isn't one of `defaults`, `env`, `session`, `signer`, `require`, `exclude`, `helpers`, or `runs` (M110, `V4-04` — this list is `CONFIG_DIRECTIVES` above, the same array the parser's own message is built from, so the two cannot drift again). The code carries a **second** use this row went two arcs without naming: a `session … oauth2` block that is missing a required line. `M147e` (`A2-15`) found it while narrowing that message — the block used to name all three of `token url`, `client id` and `client secret` however many were already written, and now names only the ones absent — and the omission here is the same doc-drift class as `A2-16`, caught in the file that generates `diagnostics.md`. | `workers 3` in `tflw.config` → `` expected `defaults`, `env`, `session`, `signer`, `require`, `exclude`, `helpers`, or `runs`, found `workers` `` |
 | `TF023` | Parser: a duration whose unit is missing, mis-spelled, mis-cased, or spaced off its number. M98c (`A1-07`) made it reachable from **value** position — `expect duration is less than 250 ms` and `2sec` used to fall out of the step as ``TF010: unexpected `ms` at end of step`` / `= help: expected end of line`, because `250ms` and `250 ms` lex identically and the value path simply declined to build a duration when its adjacency or unit check failed. The three cases are kept apart because their fixes differ: a real unit written with a space, shown the closed-up spelling, a word that means a unit tflw spells differently (`sec` → `s`, `MS` → `ms`), and a word that was never a unit, which keeps the generic error. The known-spelling table is enumerated, not inferred, so `1e3` and `0xff` stay `TF001`'s numeric-notation case rather than acquiring a second, wrong explanation. M147d (`A3-13`, D638) folded the three unit vocabularies into one — every duration position now takes `seconds`/`minutes`/`hours`/`days`/`weeks` as well as `ms`/`s`/`m` — and the *adjacency* half survived that on purpose: it is asked of an **abbreviation**, which is what makes `250 ms` a mistake worth teaching, and not of a **word**, which date arithmetic has always accepted with a space. So this code now reports three things and not two: a spaced abbreviation, a mis-spelled or mis-cased one, and a word that is not a unit in any spelling. | `defaults` then `timeout step 5x` in `tflw.config` → `` unknown time unit `x` ``; `api GET /a` then `expect duration is less than 2sec` → `` tflw's abbreviated time units are `ms`, `s` and `m` — write `2s` `` |
 | `TF024` | Checker (config): more than one `env` marked `default`, or a duplicate env name. | two `env … default` blocks in one `tflw.config` → `` more than one env is marked `default` `` |
 | `TF025` | Checker (config): a key used in the wrong block. | `defaults` then `web "https://example.com"` in `tflw.config` → `` `web` is not allowed in defaults `` |
@@ -4254,6 +4313,8 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF083` | Checker (`M239` `D`, `D1319`): **a `use` that resolves outside the directories `helpers` allows.** A `use` is arbitrary code — SPEC §11 says so and the security guide repeats it — and until `M239` nothing in a project said WHERE that code may come from: a test three directories deep could `use "../../../anything.ts"` and the run would import it. `tflw.config`'s `helpers` directive names the directories, relative to its own; a config declaring none gets `./helpers` and `./tests/helpers`. The path is judged as text against the checked file's own location, exactly as the runtime resolves it, so `tests/api/a.tflw` writing `use "../../helpers/x.ts"` lands in `helpers/` and passes, and `use "../lib/x.ts"` from `tests/` lands in `lib/` and does not. **An error, not a warning**: this is the one declaration that decides what the run executes. `tflw run --no-helpers` reports every `use` under this code, naming the flag. **Deliberately not `TF043`**: that says the file is not there; this says it is somewhere the project did not allow, and the repairs differ — move the module, or widen `helpers`. | a `use` in `tests/a.tflw` naming `../lib/sign.ts`, in a project whose `tflw.config` declares no `helpers` → `outside the directories` |
 | `TF084` | Checker (`M242` `B`, `D1327`): **a `skip` whose reason says nothing.** A skipped test is one the suite has stopped running, and its reason is the only record of whether and when it comes back — so `skip ""` is `TF082`'s checkbox again: an artifact that says *skipped* with nothing behind it. **Whitespace-only is blank too; nothing else about the text is judged**, and an interpolated reason is accepted without inspection. **An error**, matching `TF082`. | a test header carrying `skip ""` → `gives no reason` |
 | `TF085` | Checker (`M242` `C`, `D1328`): **a `body graphql` on a `GET`.** This body kind is GraphQL-over-HTTP's POST shape — `{"query", "variables", "operationName"}` as JSON — and a `GET` carries its query in the URL instead, so on a `GET` the query is a body most servers ignore and the response answers nothing that was asked. **An error**: the request cannot do what it says. The repair is the method, `api POST …`. | an `api GET` whose body is `body graphql` → `` this request is a `GET` `` |
+| `TF086` | Checker (`M246`, `D1345`): **a `sign with <name>` or `session … signed with <name>` naming no signer.** A step's name is checked against the signers the active env has, the way `TF028` checks `as <session>`; a session's is checked in `tflw.config` against every declaration. A signer declared `for env` other envs only is the same code with a hint naming them. **An error**: the request would go out unsigned, and the server's 401 would not say why. | `api POST /webhooks/stripe body { id: "evt_1" }` then `sign with strpe` → `` did you mean `stripe`? `` |
+| `TF087` | Checker (config, `M246`, `D1346`): **a signer that cannot sign as written** — a `{placeholder}` the signer does not fill (`signs` fills `{body}`, `{method}`, `{path}`, `{query}`, `{timestamp}` and `{body sha256}`; a `header` fills `{signature}` and `{timestamp}`), `{signature}` inside the string being signed, no `header` line carrying `{signature}`, or two signers of one name. Each is a request signed over the wrong text or not signed at all. | `signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)` then `signs "{timestmp}.{body}"` then `header "Stripe-Signature" is "t={timestamp},v1={signature}"` in `tflw.config` → `` did you mean `{timestamp}`? `` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

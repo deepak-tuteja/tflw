@@ -562,6 +562,29 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     checkerCode: 'TF028',
     note: 'sessions are declared in `tflw.config`, which the checker reads',
   },
+  // `M246` — a signed request's three runtime refusals.
+  {
+    id: 'unknown-signer',
+    file: 'interpreter.ts',
+    excerpt: 'unknown signer "',
+    decidable: 'static',
+    checkerCode: 'TF086',
+    note: 'signers are declared in `tflw.config`, which the checker reads; the scoped-to-another-env branch is the same site and `TF086`\'s hint',
+  },
+  {
+    id: 'signer-value-empty',
+    file: 'interpreter.ts',
+    excerpt: ': ${what} is empty',
+    decidable: 'needs-values',
+    note: 'an `env()` secret, key or region that is set to the empty string — the variable\'s value, known only at run time (`require env` only says it is set)',
+  },
+  {
+    id: 'sign-at-not-a-time',
+    file: 'interpreter.ts',
+    excerpt: 'needs a time — e.g.',
+    decidable: 'needs-values',
+    note: 'the parser refuses every literal that cannot be a time; what reaches here is a variable or helper call whose value was not a date',
+  },
   {
     id: 'session-establish-failed',
     file: 'interpreter.ts',

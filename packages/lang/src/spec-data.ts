@@ -267,7 +267,7 @@ export interface CliFlagEntry {
  * `TF022` row's `meaning` interpolates it. Adding a sixth directive updates all five surfaces or
  * fails the build; it cannot half-land again.
  */
-export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'require', 'exclude', 'helpers', 'runs'] as const;
+export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'signer', 'require', 'exclude', 'helpers', 'runs'] as const;
 
 export type ConfigDirective = (typeof CONFIG_DIRECTIVES)[number];
 
@@ -322,6 +322,7 @@ export const CONFIG_KEYWORDS: readonly ConfigKeywordEntry[] = [
   { id: 'defaults', slot: 'directive', summary: 'settings shared by every environment; at most one per config' },
   { id: 'env', slot: 'directive', summary: 'one named environment and its own base URLs, selected by `--env` or the `default` marker' },
   { id: 'session', slot: 'directive', summary: 'a reusable identity — steps that authenticate, or an `oauth2` block — attached to a test with `as <name>`, and optionally scoped to named envs with `for env <a>[, <b>...]`' },
+  { id: 'signer', slot: 'directive', summary: 'a request signature as a credential — `hmac` over a template you write, or AWS `sigv4` — used by a step\'s `sign with <name>` or a session\'s `signed with <name>`; its secret never appears in a test file' },
   { id: 'require', slot: 'directive', summary: 'environment variables that must be set before a run starts; `tflw check` refuses an undeclared `env()` and names any that are unset, and `tflw run` refuses before its first request' },
   { id: 'exclude', slot: 'directive', summary: 'glob patterns that discovery skips when a run names a folder rather than a file' },
   { id: 'helpers', slot: 'directive', summary: 'the directories a `use` may load a JS/TS module from, relative to `tflw.config`; `./helpers` and `./tests/helpers` when the file declares none, and a `use` resolving outside them is `TF083`' },
@@ -395,6 +396,8 @@ export interface DiagnosticProbe {
   readonly needs?: {
     readonly services?: readonly string[];
     readonly sessions?: readonly string[];
+    /** `TF086` (`M246`) — the signers the active env has. */
+    readonly signers?: readonly string[];
     readonly missingFiles?: readonly string[];
     /** `TF083` — the `helpers` policy: the allowed directories and the checked file's own path, both relative to `tflw.config`'s directory. */
     readonly helpers?: { readonly dirs: readonly string[]; readonly file: string; readonly refuseAll?: boolean };
@@ -584,6 +587,8 @@ const DIAGNOSTIC_ROWS: readonly Omit<DiagnosticEntry, 'example'>[] = [
   { code: 'TF083', meaning: 'Checker (`M239` `D`, `D1319`): **a `use` that resolves outside the directories `helpers` allows.** A `use` is arbitrary code — SPEC §11 says so and the security guide repeats it — and until `M239` nothing in a project said WHERE that code may come from: a test three directories deep could `use "../../../anything.ts"` and the run would import it. `tflw.config`\'s `helpers` directive names the directories, relative to its own; a config declaring none gets `./helpers` and `./tests/helpers`. The path is judged as text against the checked file\'s own location, exactly as the runtime resolves it, so `tests/api/a.tflw` writing `use "../../helpers/x.ts"` lands in `helpers/` and passes, and `use "../lib/x.ts"` from `tests/` lands in `lib/` and does not. **An error, not a warning**: this is the one declaration that decides what the run executes. `tflw run --no-helpers` reports every `use` under this code, naming the flag. **Deliberately not `TF043`**: that says the file is not there; this says it is somewhere the project did not allow, and the repairs differ — move the module, or widen `helpers`.', probes: [{ wrap: 'file', source: ['use "../lib/sign.ts"', 'test "signed"', '  api GET /health', '  expect status equals 200'], says: 'outside the directories', as: 'a `use` in `tests/a.tflw` naming `../lib/sign.ts`, in a project whose `tflw.config` declares no `helpers`', needs: { helpers: { dirs: ['./helpers', './tests/helpers'], file: 'tests/a.tflw' } } }] },
   { code: 'TF084', meaning: 'Checker (`M242` `B`, `D1327`): **a `skip` whose reason says nothing.** A skipped test is one the suite has stopped running, and its reason is the only record of whether and when it comes back — so `skip ""` is `TF082`\'s checkbox again: an artifact that says *skipped* with nothing behind it. **Whitespace-only is blank too; nothing else about the text is judged**, and an interpolated reason is accepted without inspection. **An error**, matching `TF082`.', probes: [{ wrap: 'file', source: ['test "t" skip ""', '  api GET /health', '  expect status equals 200'], says: 'gives no reason', as: 'a test header carrying `skip ""`' }] },
   { code: 'TF085', meaning: 'Checker (`M242` `C`, `D1328`): **a `body graphql` on a `GET`.** This body kind is GraphQL-over-HTTP\'s POST shape — `{"query", "variables", "operationName"}` as JSON — and a `GET` carries its query in the URL instead, so on a `GET` the query is a body most servers ignore and the response answers nothing that was asked. **An error**: the request cannot do what it says. The repair is the method, `api POST …`.', probes: [{ wrap: 'file', source: ['test "t"', '  api GET /graphql body graphql "{ orders { id } }"', '  expect status equals 200'], says: 'this request is a `GET`', as: 'an `api GET` whose body is `body graphql`' }] },
+  { code: 'TF086', meaning: 'Checker (`M246`, `D1345`): **a `sign with <name>` or `session … signed with <name>` naming no signer.** A step\'s name is checked against the signers the active env has, the way `TF028` checks `as <session>`; a session\'s is checked in `tflw.config` against every declaration. A signer declared `for env` other envs only is the same code with a hint naming them. **An error**: the request would go out unsigned, and the server\'s 401 would not say why.', probes: [{ wrap: 'step', source: ['api POST /webhooks/stripe body { id: "evt_1" }', '  sign with strpe'], says: 'did you mean `stripe`?', needs: { signers: ['stripe'] } }] },
+  { code: 'TF087', meaning: 'Checker (config, `M246`, `D1346`): **a signer that cannot sign as written** — a `{placeholder}` the signer does not fill (`signs` fills `{body}`, `{method}`, `{path}`, `{query}`, `{timestamp}` and `{body sha256}`; a `header` fills `{signature}` and `{timestamp}`), `{signature}` inside the string being signed, no `header` line carrying `{signature}`, or two signers of one name. Each is a request signed over the wrong text or not signed at all.', probes: [{ wrap: 'config', source: ['signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)', '  signs "{timestmp}.{body}"', '  header "Stripe-Signature" is "t={timestamp},v1={signature}"'], says: 'did you mean `{timestamp}`?' }] },
 ] as const;
 
 /** The rows every consumer reads, with `example` filled in from whichever evidence the row carries

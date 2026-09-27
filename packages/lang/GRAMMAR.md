@@ -235,7 +235,7 @@ PauseStmt   := 'pause' Duration ('to' Duration)? NEWLINE
 ## API steps (§5)
 
 ```
-ApiStep         := 'api' ApiRequestLine NEWLINE (INDENT (HeaderLine | RetryAfterClause)* DEDENT)?
+ApiStep         := 'api' ApiRequestLine NEWLINE (INDENT (HeaderLine | RetryAfterClause | SignClause)* DEDENT)?
 WaitUntilApiStep:= 'wait' 'until' 'api' ApiRequestLine WaitBudget? NEWLINE
                     INDENT (HeaderLine* ExpectStmt+) DEDENT      # (§5.5) — expect-only body, no
                                                                   # `retry honoring` clause here;
@@ -286,6 +286,11 @@ RetryAfterClause:= 'retry' 'honoring' STRING 'up' 'to' NUMBER NEWLINE
                    # STRING must equal "Retry-After" — the only value this clause's vocabulary
                    # currently accepts (P#102b, gap #5). One per api step, after any
                    # header lines in the step's indented sub-block.
+SignClause      := 'sign' 'with' IDENT ('secret' Value)? ('at' Value)? ('then' ApiBody)? NEWLINE
+                   # M246 (§3.14, D1345/D1348) — one per api step. IDENT names a `signer` in
+                   # tflw.config (`TF086` if the active env has none by that name). The overrides
+                   # are read in this order: another key, another signing instant (a date value,
+                   # `now - 10 minutes`), and a body sent instead of the one signed.
 ```
 
 ## Assertions (§6)
@@ -621,7 +626,7 @@ Parsed by the same lexer/parser as test files; declaration-only (`test`/`action`
 errors here).
 
 ```
-ConfigFile      := (NEWLINE | RequireDecl | ExcludeDecl | HelpersDecl | RunsDecl | DefaultsBlock | EnvBlock | SessionDecl)*
+ConfigFile      := (NEWLINE | RequireDecl | ExcludeDecl | HelpersDecl | RunsDecl | DefaultsBlock | EnvBlock | SessionDecl | SignerDecl)*
 
 RequireDecl     := 'require' 'env' IDENT (',' IDENT)* NEWLINE
 ExcludeDecl     := 'exclude' STRING (',' STRING)* NEWLINE         # file-discovery exclusions (§3.9,
@@ -703,7 +708,7 @@ ViewportDecl    := 'viewport' NUMBER NUMBER                       # width height
                                                                    # `report`; omitted = Playwright's
                                                                    # own default (1280×720)
 
-SessionDecl     := 'session' IDENT EnvScope? ('oauth2' 'privileged'? NEWLINE INDENT Oauth2Config DEDENT
+SessionDecl     := 'session' IDENT EnvScope? SignedWith? ('oauth2' 'privileged'? NEWLINE INDENT Oauth2Config DEDENT
                                               | 'privileged'? NEWLINE Block)
                                                                   # `privileged` (§3.3, M130b, D307) — this
                                                                   #   principal is meant to reach other
@@ -711,6 +716,17 @@ SessionDecl     := 'session' IDENT EnvScope? ('oauth2' 'privileged'? NEWLINE IND
                                                                   #   authorization violations` leaves it out
                                                                   #   of the probe set. A whole config of
                                                                   #   privileged sessions is a checker error
+SignedWith      := 'signed' 'with' IDENT                           # M246 (§3.14, D1345) — every request of
+                                                                  #   a test using this session is signed;
+                                                                  #   a step's `sign with` wins over it
+SignerDecl      := 'signer' IDENT EnvScope? (HmacSigner | Sigv4Signer)
+HmacSigner      := 'hmac' ('sha1' | 'sha256' | 'sha512') ('hex' | 'base64') 'secret' Value NEWLINE
+                   INDENT ('signs' STRING NEWLINE | 'header' STRING 'is' STRING NEWLINE)+ DEDENT
+                                                                  # exactly one `signs`, at least one
+                                                                  #   `header`; their `{…}` are the
+                                                                  #   signer's placeholders (§3.14), not
+                                                                  #   variables — `TF087` for any other
+Sigv4Signer     := 'sigv4' 'region' Value 'service' Value 'key' Value 'secret' Value ('token' Value)? NEWLINE
 EnvScope        := 'for' 'env' IDENT (',' IDENT)*
                                                                   # (§3.3, M147d/`M137f-02`, D642) — the
                                                                   #   `env` blocks this session belongs to.

@@ -154,6 +154,9 @@ const CONFIG_KEYWORDS = new Set([
   // `M241` `E` (`D1325`) — `runs keep N`. Config-only: in a `.tflw` file both are plausible names.
   'runs', 'keep',
   'oauth2', 'token', 'client', 'id', 'secret', 'scope',
+  // `M246` (`D1344`–`D1347`) — the `signer` directive and its scheme words, and a session's `signed`
+  // (`signed with`). Config-only, where none of them is an ordinary name.
+  'signer', 'hmac', 'sigv4', 'sha1', 'sha256', 'sha512', 'signs', 'signed',
   'destination', 'level', 'query',
   // `M147b` (`A2-14`/`D623`/`D628`) — the enumerated values of `evidence`, `log destination` and
   // `log level`, and `D552` reinstated on its own terms.
@@ -308,6 +311,9 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
   ['operation', 'D1328 — same: `capture body.operation as operation` is ordinary tflw'],
   ['length', "D1329 — `length of x` is a value form, but `length` is also the commonest path segment in the language (`body.items.length`), and a flat set would paint every one of those"],
   ['depth', 'D442 — same, and this list cannot say "only after `max`"'],
+  // `M246` (`D1345`/`D1348`) — the step's `sign with … then body …`.
+  ['sign', 'D1345 — `sign with` under an api step, and also the first word of a helper call (`sign payload({body})`, SPEC §11), which a flat set would paint as a keyword'],
+  ['then', 'D1348 — `sign with … then body …`, the tamper override; a plausible captured name (`capture body.then as then`) everywhere else'],
   // M142 (`M136b-01`), the three of that row's four words that fail D427a's test. Their sibling
   // `honoring` is coloured; these are not, and the asymmetry is the row's answer rather than a
   // residue of it.
@@ -405,7 +411,8 @@ function symbolKindToTokenType(kind: SymbolKind): SemanticTokenType | null {
     case 'importedAction':
       return 'function';
     case 'session':
-      return null; // sessions already get grammar coloring parity via `as`/keyword handling; not part of this pass
+    case 'signer':
+      return null; // sessions (and, since `M246`, signers) already get grammar coloring parity via `as`/keyword handling; not part of this pass
   }
 }
 

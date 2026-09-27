@@ -39,6 +39,7 @@ const GUIDE_SIDEBAR = [
       { text: 'Writing your first test', link: '/guide/first-test' },
       { text: 'Config & environments', link: '/guide/config' },
       { text: 'Sessions & auth', link: '/guide/sessions' },
+      { text: 'Signed requests', link: '/guide/signed-requests' },
     ],
   },
   {

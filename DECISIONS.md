@@ -9645,6 +9645,87 @@ the report header.
   request body names every part. `UploadBody` becomes `{ files: UploadFile[], extra }`, and a
   one-file upload prints exactly as before, so no `.tflw` file changes.
 
+### D1344
+
+<sub>cited from SPEC.md · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+
+- **`D1344` — scope.** HMAC and SigV4 together, on one mechanism: a signing hook that runs **after
+  the body is serialised and before the request is sent**, so a signature covers the exact bytes on
+  the wire (a JSON body, a form body, a multipart body with its boundary). PKCE is not in this
+  milestone.
+
+### D1345
+
+<sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+
+- **`D1345` — placement.** A named `signer` is declared in `tflw.config`, secrets through `env(…)`,
+  optionally per env like `cert`/`key`. A request uses one with a `sign with <name>` sub-line under
+  its `api` step, the way `header` lines sit; a session applies one to every request of a test that
+  opts in, `session partner signed with <name>`. A secret never appears in a test file, and the test
+  file always shows which requests are signed (by the step line, or by the `as <session>` it opts
+  into). Chosen over per-step only (every SigV4 call repeats the line) and over per-service in an env
+  (invisible where a reader looks).
+
+### D1346
+
+<sub>cited inside a range only · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+
+- **`D1346` — HMAC is templates, with no vendor presets.** One general form:
+
+  ```
+  signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)
+    signs "{timestamp}.{body}"
+    header "Stripe-Signature" is "t={timestamp},v1={signature}"
+  ```
+
+  `signs` is the string to sign and may name `{body}`, `{method}`, `{path}`, `{query}` and
+  `{timestamp}` as **sent**; `{body sha256}` for the schemes that sign a body hash. The algorithm is
+  `sha256` / `sha1` / `sha512`, the output `hex` / `base64`. One or more `header` lines carry
+  `{signature}` and `{timestamp}`. GitHub, Stripe, Slack and a method-path-body partner scheme are
+  **documented recipes**, not built-ins: tflw carries no vendor format that can change under it.
+
+### D1347
+
+<sub>cited inside a range only · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+
+- **`D1347` — SigV4 is in-house on `node:crypto`.** No dependency (`@smithy/signature-v4` would be
+  the only sizeable runtime tree tflw has).
+
+  ```
+  signer aws sigv4 region "eu-west-1" service "execute-api" key env(AWS_ACCESS_KEY_ID) secret env(AWS_SECRET_ACCESS_KEY)
+  ```
+
+  With an optional `token env(AWS_SESSION_TOKEN)` for temporary credentials, and
+  `x-amz-content-sha256` for S3. Correctness is pinned by **AWS's published SigV4 test-suite cases**
+  used as known answers. **Its LICENSE is confirmed and the user asked before any case is
+  vendored.**
+
+### D1348
+
+<sub>cited from packages/lang/GRAMMAR.md · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+
+- **`D1348` — negatives are overrides on the sign line**, each one visible and reading as what it
+  does:
+  - `sign with stripe secret "not-the-secret"`: the wrong key.
+  - `sign with stripe at now minus 10 minutes`: a stale timestamp, the replay case (the time
+    expression is the generators' run-clock arithmetic).
+  - `sign with stripe then body { amount: 1 }`: the signature is computed over the step's body and a
+    different body is sent, the tamper case.
+  - No `sign` line at all: the missing-signature case, which needs nothing new.
+
+### D1349
+
+<sub>cited from SPEC.md · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+
+- **`D1349` — the signing clock is the run clock advanced by the run's elapsed time** (taken while
+  building, 2026-09-27). The run clock is a fixed instant, the run's first second. Read literally, a
+  request twenty minutes into a sweep would carry a timestamp twenty minutes old, which Stripe's
+  five-minute tolerance refuses as a replay, and rule 5's "a new timestamp" on a retry would be
+  the same timestamp. So a signature carries `runClock + (wall now − wall at the run's start)`:
+  `--now` still pins where it starts, so a signed run stays reproducible, and it moves as the run
+  does. `at <time>` is evaluated against this clock too, so `at now - 10 minutes` is ten minutes
+  before the request, not before the run.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -13926,5 +14007,14 @@ is one real gap. An `api` step's multipart body holds exactly **one** file (`Upl
 and a cover, or a `files[]` bulk import, cannot be written at all today. This is the most common
 multipart shape outside a single avatar, and it is a gap in a form that already ships (`M19`), not a
 new protocol.
+
+### M246
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+
+**`M246` — signed requests: HMAC and AWS SigV4**
+
+Scoped 2026-09-27 by grilling, from `PLAN_M239` §8's parked `L5`. PKCE / authorization-code stays
+parked: it is a browser-to-API bridge and runs into `D10`, and it gets its own plan.
 
 <!-- GENERATED:decisions:end -->

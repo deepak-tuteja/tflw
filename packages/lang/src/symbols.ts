@@ -36,7 +36,7 @@ import type { Position, Span, Token } from './token.js';
 import { lex } from './lexer.js';
 import { parseStringParts } from './parser.js';
 
-export type SymbolKind = 'variable' | 'session' | 'action' | 'param' | 'importedAction';
+export type SymbolKind = 'variable' | 'session' | 'signer' | 'action' | 'param' | 'importedAction';
 
 export interface SymbolDef {
   readonly name: string;
@@ -259,6 +259,14 @@ export function collectConfigSymbols(config: ConfigFile, source: string): Symbol
     defs.push(def);
   };
 
+  // `M246` — a signer's name is a def, and a session's `signed with` is a ref to one in this file.
+  for (const signer of config.signers ?? []) pushDef({ name: signer.name, kind: 'signer', span: signer.nameSpan, scopeId: 'config' });
+  for (const session of config.sessions) {
+    if (session.signer) {
+      const def = (config.signers ?? []).find((sg) => sg.name === session.signer!.name);
+      refs.push({ name: session.signer.name, kind: 'signer', span: session.signer.span, scopeId: 'config', ...(def ? { defSpan: def.nameSpan } : {}) });
+    }
+  }
   for (const session of config.sessions) {
     const headerEnd = session.oauth2 ? session.oauth2.span.start : (session.body[0]?.span.start ?? session.span.end);
     const [nameSpan] = findIdentifierSpans(source, { start: session.span.start, end: headerEnd }, [session.name]);
@@ -452,6 +460,14 @@ function walkApiRequestSpec(spec: ApiRequestSpec, bound: Map<string, Span>, scop
   for (const header of spec.headers) {
     walkStringLit(source, header.name, bound, scopeId, refs);
     walkValue(header.value, bound, scopeId, source, actionDefs, refs);
+  }
+  // `M246` — a `sign with` names a signer declared in `tflw.config`, resolved there the way an
+  // `as <session>` is; its overrides are ordinary values in this scope.
+  if (spec.sign) {
+    refs.push({ name: spec.sign.signer.name, kind: 'signer', span: spec.sign.signer.span, scopeId });
+    if (spec.sign.secret) walkValue(spec.sign.secret, bound, scopeId, source, actionDefs, refs);
+    if (spec.sign.at) walkValue(spec.sign.at, bound, scopeId, source, actionDefs, refs);
+    if (spec.sign.thenBody) walkApiBody(spec.sign.thenBody, bound, scopeId, source, actionDefs, refs);
   }
 }
 

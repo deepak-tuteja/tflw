@@ -214,6 +214,10 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
   const sessionsOutOfScope = new Map(
     config.sessions.filter((s) => !sessions.has(s.name)).map((s) => [s.name, (s.envs ?? []).map((e) => e.name)] as const),
   );
+  // `M246` (`D1345`) — a signer's `for env` clause is a session's, filtered the same way.
+  const signerDecls = config.signers ?? [];
+  const signers = new Map(signerDecls.filter((sg) => !sg.envs || sg.envs.some((scope) => scope.name === env.name)).map((sg) => [sg.name, sg] as const));
+  const signersOutOfScope = new Map(signerDecls.filter((s) => !signers.has(s.name)).map((s) => [s.name, (s.envs ?? []).map((e) => e.name)] as const));
 
   return {
     envName: env.name,
@@ -236,6 +240,8 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
     runsKeep,
     sessions,
     sessionsOutOfScope,
+    signers,
+    signersOutOfScope,
     mtls,
     allowHosts,
     authorizedTargets,
