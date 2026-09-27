@@ -140,11 +140,11 @@
     ]
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "@types/vscode": "^1.85.0",
-    "@vscode/vsce": "^3.9.2",
-    "esbuild": "^0.28.1",
-    "vscode-languageclient": "^10.1.0",
+    "@types/node": "^26.6.2",
+    "@types/vscode": "^1.138.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "vscode-languageclient": "^10.1.1",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   }
