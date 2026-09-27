@@ -3022,11 +3022,13 @@ function checkApiBody(body: ApiBody, bound: Set<string>, diags: Diagnostic[]): v
       if (body.operation) checkStringLit(body.operation, bound, diags);
       break;
     case 'UploadBody':
-      checkStringLit(body.filePath, bound, diags);
-      checkStringLit(body.fieldName, bound, diags);
-      if (body.contentType) {
-        checkStringLit(body.contentType, bound, diags);
-        checkContentTypeShape(body.contentType, diags);
+      for (const file of body.files) {
+        checkStringLit(file.filePath, bound, diags);
+        checkStringLit(file.fieldName, bound, diags);
+        if (file.contentType) {
+          checkStringLit(file.contentType, bound, diags);
+          checkContentTypeShape(file.contentType, diags);
+        }
       }
       for (const field of body.extra) checkValue(field.value, bound, diags);
       break;
@@ -3246,7 +3248,8 @@ const FILE_BEARING_NODES: readonly FileBearingNode[] = [
   { node: 'UseDecl', field: 'path', syntax: 'use', neededBy: 'check' },
   { node: 'FileDataTable', field: 'path', syntax: 'with each from', neededBy: 'run' },
   { node: 'FileBody', field: 'path', syntax: 'body from', neededBy: 'run' },
-  { node: 'UploadBody', field: 'filePath', syntax: 'upload', neededBy: 'run' },
+  // `M245`: the entry, not the body — an `upload` names a list of files, and each is checked.
+  { node: 'UploadFile', field: 'filePath', syntax: 'upload', neededBy: 'run' },
   { node: 'Matcher', field: 'filePath', syntax: 'matches file', neededBy: 'run' },
   { node: 'DropFileStmt', field: 'filePath', syntax: 'drop file', neededBy: 'run' },
 ];

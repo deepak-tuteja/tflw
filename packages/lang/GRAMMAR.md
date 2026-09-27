@@ -272,9 +272,13 @@ BodyForm        := 'body' JsonDoc                                # inline JSON (
                  | 'body' 'graphql' STRING                       # M242/D1328 — POSTed as JSON
                     ('variables' Object)? ('operation' STRING)?   #   {query, variables, operationName}
                  | 'form' FormField (',' FormField)*              # application/x-www-form-urlencoded
-                 | 'upload' STRING 'as' STRING ('type' STRING)?   # multipart file upload; `type`
-                    ('form' FormField (',' FormField)*)?          # overrides extension-based MIME
-                                                                    # inference (M19)
+                 | 'upload' UploadFile (',' UploadFile)*         # multipart; one part per file in
+                    ('form' FormField (',' FormField)*)?          # written order, then the fields
+                                                                    # (M19; a list since M245/D1343)
+UploadFile      := STRING 'as' STRING ('type' STRING)?            # `type` overrides extension-based
+                                                                    # MIME inference, per file; a
+                                                                    # field name may repeat. One line:
+                                                                    # no trailing comma (D637)
 FormField       := IDENT '=' Value
 
 HeaderLine      := 'header' STRING 'is' Value NEWLINE

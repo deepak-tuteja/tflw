@@ -9633,6 +9633,18 @@ the report header.
   red rather than a smaller number. No xvfb (a Windows runner has a desktop). Node 22 only — the
   Node line is covered on Linux.
 
+### D1343
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M245_MULTI_UPLOAD.md`</sub>
+
+- **`D1343` — an `upload` names a list of files.** `upload "<path>" as "<field>" [type "<mime>"]`,
+  then any number more after a comma, then the optional `form k=v, …`. One line, line-terminated
+  like `form`'s, so no trailing comma and no continuation (`D637`). The parts go out in the order
+  written, every file and then the fields; a field name may repeat and sends one part per file;
+  `type` is per file; `TF043` and `TF032` fire per file at that file's own span; the report's
+  request body names every part. `UploadBody` becomes `{ files: UploadFile[], extra }`, and a
+  one-file upload prints exactly as before, so no `.tflw` file changes.
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -13900,5 +13912,19 @@ changed. Decisions `D1326`–`D1332`, free by `collectAnchors` on the day (the c
 The arc's last milestone (`PLAN_M239_ENTERPRISE_READINESS.md` §7, review decision 22 / row E2).
 Scoped 2026-09-26. Decisions from `D1333`, free by `collectAnchors` on the day (the corpus's highest
 was `M242`'s `D1332`).
+
+### M245
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M245_MULTI_UPLOAD.md`</sub>
+
+**`M245` — several files in one multipart request**
+
+Scoped 2026-09-27, after the user settled what `L4` (`PLAN_M239` §8) means for this project: HTTP
+stays the transport, and WebSocket, SSE, gRPC, XML and binary bodies stay parked. Inside HTTP there
+is one real gap. An `api` step's multipart body holds exactly **one** file (`UploadBody.filePath`,
+`fieldName`, `contentType`, then `form` fields), so a request carrying two attachments, or an avatar
+and a cover, or a `files[]` bulk import, cannot be written at all today. This is the most common
+multipart shape outside a single avatar, and it is a gap in a form that already ships (`M19`), not a
+new protocol.
 
 <!-- GENERATED:decisions:end -->

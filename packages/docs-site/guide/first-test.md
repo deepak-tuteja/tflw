@@ -110,6 +110,23 @@ The query is sent exactly as written: its braces are GraphQL's selection sets, n
 `{name}`, so values go in `variables` — which is also GraphQL's own advice. A `body graphql` on a
 `GET` is `TF085`.
 
+### Files in a multipart request
+
+`upload` sends `multipart/form-data`: one or more files, comma-separated on the one line, each
+`"<path>" as "<field>"`, then any plain fields after `form`:
+
+```tflw
+test "a ticket takes two screenshots and a note"
+  api POST /tickets/42/attachments upload "./shots/before.png" as "files", "./shots/after.png" as "files", "./notes.txt" as "note" type "text/markdown" form title="Checkout hangs"
+  expect status equals 201
+```
+
+The parts go out in the order written. A field name may repeat, and each file becomes its own part
+under it, which is what a `files[]` endpoint reads. Each file's Content-Type comes from its
+extension unless it has its own `type "…"`. Paths resolve against the test file's directory, and
+`tflw check` warns about any literal path that names nothing (`TF043`). There is no trailing
+comma: the list ends with its line, like `form`'s.
+
 ## What a failure looks like
 
 Say the API returns the unit price where the test expects a line total. Only the failing step

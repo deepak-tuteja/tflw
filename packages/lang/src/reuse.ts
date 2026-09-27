@@ -279,9 +279,7 @@ function analyzeEligibleStep(step: Step, literals: Literals): StepAnalysis | nul
                     ? { t: 'GraphqlBody', query: body.query.value, variables: body.variables === null ? null : maskValue(body.variables, literals, 'variables'), operation: body.operation?.value ?? null }
                   : {
                       t: 'UploadBody',
-                      filePath: body.filePath.value,
-                      fieldName: body.fieldName.value,
-                      contentType: body.contentType?.value ?? null,
+                      files: body.files.map((f) => ({ filePath: f.filePath.value, fieldName: f.fieldName.value, contentType: f.contentType?.value ?? null })),
                       extra: body.extra.map((f) => ({ key: f.key, value: maskValue(f.value, literals, f.key) })),
                     };
       return {

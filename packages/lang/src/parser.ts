@@ -153,6 +153,7 @@ import type {
   UniqueUuidExpr,
   UntickStmt,
   UploadBody,
+  UploadFile,
   UseDecl,
   Value,
   ViewportDecl,
@@ -3668,16 +3669,15 @@ class Parser {
   private parseUploadBody(): UploadBody | null {
     const start = this.peek().span.start;
     this.advance(); // `upload`
-    const filePath = this.expectString('a file path string, e.g. `upload "./files/img.png" as "avatar"`');
-    if (!filePath) return null;
-    if (!this.expectKw('as')) return null;
-    const fieldName = this.expectString('a field name string after `as`');
-    if (!fieldName) return null;
-    let contentType: StringLit | null = null;
-    if (this.isKw(this.peek(), 'type')) {
+    const files: UploadFile[] = [];
+    // `M245` — a comma-separated list, line-terminated like `form`'s, so a trailing comma is refused
+    // by the next entry's missing path (D637: there is no continuation line to carry it).
+    for (;;) {
+      const file = this.parseUploadFile(files.length);
+      if (!file) return null;
+      files.push(file);
+      if (!this.check('comma')) break;
       this.advance();
-      contentType = this.expectString('a MIME type string after `type`, e.g. `type "image/png"`');
-      if (!contentType) return null;
     }
     let extra: FormField[] = [];
     if (this.isKw(this.peek(), 'form')) {
@@ -3686,7 +3686,26 @@ class Parser {
       if (!fields) return null;
       extra = fields;
     }
-    return { type: 'UploadBody', filePath, fieldName, contentType, extra, span: this.spanFrom(start) };
+    return { type: 'UploadBody', files, extra, span: this.spanFrom(start) };
+  }
+
+  /** One `"<path>" as "<field>" [type "<mime>"]`. `index` names the entry in a message, since the
+   *  third of three files failing to parse says nothing useful as "a file path string". */
+  private parseUploadFile(index: number): UploadFile | null {
+    const start = this.peek().span.start;
+    const which = index === 0 ? '' : ` (file ${index + 1} of the \`upload\` list — a list is one line, so a trailing comma has nothing after it)`;
+    const filePath = this.expectString(`a file path string, e.g. \`upload "./files/img.png" as "avatar"\`${which}`);
+    if (!filePath) return null;
+    if (!this.expectKw('as')) return null;
+    const fieldName = this.expectString(`a field name string after \`as\`${index === 0 ? '' : ` (file ${index + 1} of the \`upload\` list)`}`);
+    if (!fieldName) return null;
+    let contentType: StringLit | null = null;
+    if (this.isKw(this.peek(), 'type')) {
+      this.advance();
+      contentType = this.expectString('a MIME type string after `type`, e.g. `type "image/png"`');
+      if (!contentType) return null;
+    }
+    return { type: 'UploadFile', filePath, fieldName, contentType, span: this.spanFrom(start) };
   }
 
   private parseFormFields(): FormField[] | null {

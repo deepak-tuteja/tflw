@@ -746,15 +746,25 @@ export interface GraphqlBody extends Node {
   readonly operation: StringLit | null;
 }
 
-/** `upload "./f" as "field"` (+ optional `type "mime/type"`, + optional `form k=v, …`) —
- * multipart/form-data. `contentType` null means infer from the file extension at run time
- * (decision 22/M19), falling back to `application/octet-stream` for an unrecognized extension. */
+/** `upload "./f" as "field"` (+ optional `type "mime/type"`), then any number more after a comma,
+ * then optional `form k=v, …` — multipart/form-data (`M19`, a list since `M245`). A file's
+ * `contentType` null means infer from its extension at run time (decision 22/M19), falling back to
+ * `application/octet-stream` for an unrecognized extension. The parts go out in `files` order, then
+ * `extra`; a field name may repeat, which sends one part per file under that name. */
 export interface UploadBody extends Node {
   readonly type: 'UploadBody';
+  /** At least one — the parser refuses an `upload` with no file. */
+  readonly files: readonly UploadFile[];
+  readonly extra: readonly FormField[];
+}
+
+/** One `"<path>" as "<field>" [type "<mime>"]` entry of an `upload` list. Its span is its own, so a
+ *  diagnostic about the second file lands on the second file. */
+export interface UploadFile extends Node {
+  readonly type: 'UploadFile';
   readonly filePath: StringLit;
   readonly fieldName: StringLit;
   readonly contentType: StringLit | null;
-  readonly extra: readonly FormField[];
 }
 
 // ---- Assertions ------------------------------------------------------------

@@ -4240,19 +4240,25 @@ async function prepareBody(body: ApiBody, ctx: EvalCtx, baseDir: string): Promis
       return { sendBody: text, traceText: text, contentType: 'application/x-www-form-urlencoded' };
     }
     case 'UploadBody': {
-      const filePath = String(evalValue(body.filePath, ctx));
-      const abs = resolvePath(baseDir, filePath);
-      let buf: Buffer;
-      try {
-        buf = await readFile(abs);
-      } catch (err) {
-        throw new RuntimeError(`could not read \`upload\` file "${filePath}" (resolved ${abs}): ${(err as Error).message}`);
-      }
-      const fieldName = String(evalValue(body.fieldName, ctx));
-      const contentType = body.contentType ? String(evalValue(body.contentType, ctx)) : inferContentType(abs);
+      // `M245` — one part per file in the order written, then the `form` fields. A field name may
+      // repeat (`files[]`-style APIs), and `FormData.append` sends each as its own part.
       const form = new FormData();
-      form.append(fieldName, new Blob([new Uint8Array(buf)], { type: contentType }), basename(abs));
-      const traceParts = [`${fieldName}=${basename(abs)} (${contentType})`];
+      const traceParts: string[] = [];
+      for (const [i, file] of body.files.entries()) {
+        const filePath = String(evalValue(file.filePath, ctx));
+        const abs = resolvePath(baseDir, filePath);
+        let buf: Buffer;
+        try {
+          buf = await readFile(abs);
+        } catch (err) {
+          const which = body.files.length > 1 ? ` (file ${i + 1} of ${body.files.length})` : '';
+          throw new RuntimeError(`could not read \`upload\` file "${filePath}"${which} (resolved ${abs}): ${(err as Error).message}`);
+        }
+        const fieldName = String(evalValue(file.fieldName, ctx));
+        const contentType = file.contentType ? String(evalValue(file.contentType, ctx)) : inferContentType(abs);
+        form.append(fieldName, new Blob([new Uint8Array(buf)], { type: contentType }), basename(abs));
+        traceParts.push(`${fieldName}=${basename(abs)} (${contentType})`);
+      }
       for (const field of body.extra) {
         const value = stringify(evalValue(field.value, ctx));
         form.append(field.key, value);

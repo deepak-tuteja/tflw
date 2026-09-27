@@ -135,25 +135,25 @@ test('`parallel`/`sequential` is legal alongside a workload clause (D112 — ort
   assert.ok(program.tests[0]!.workload);
 });
 
-test('parses `upload … type "…"` into UploadBody.contentType (decision 22/M19)', () => {
+test('parses `upload … type "…"` into the file contentType (decision 22/M19)', () => {
   const { program, diagnostics } = parseSource(
     `test "ok"\n  api POST /uploads upload "./img.png" as "avatar" type "image/png"\n`,
   );
   assert.deepEqual(diagnostics, []);
   const step = program.tests[0]!.body[0]!;
   assert.equal(step.type, 'ApiStep');
-  const body = (step as { body: unknown }).body as { type: string; contentType: { value: string } | null };
+  const body = (step as { body: unknown }).body as { type: string; files: readonly { contentType: { value: string } | null }[] };
   assert.equal(body.type, 'UploadBody');
-  assert.equal(body.contentType?.value, 'image/png');
+  assert.equal(body.files[0]!.contentType?.value, 'image/png');
 });
 
-test('parses `upload … as "…"` with no `type` clause as UploadBody.contentType: null', () => {
+test('parses `upload … as "…"` with no `type` clause as the file contentType: null', () => {
   const { program, diagnostics } = parseSource(`test "ok"\n  api POST /uploads upload "./img.png" as "avatar"\n`);
   assert.deepEqual(diagnostics, []);
   const step = program.tests[0]!.body[0]!;
-  const body = (step as { body: unknown }).body as { type: string; contentType: unknown };
+  const body = (step as { body: unknown }).body as { type: string; files: readonly { contentType: unknown }[] };
   assert.equal(body.type, 'UploadBody');
-  assert.equal(body.contentType, null);
+  assert.equal(body.files[0]!.contentType, null);
 });
 
 test('parses `upload … type "…" form k=v` — `type` before `form`, both present (decision 22/M19)', () => {
@@ -164,10 +164,10 @@ test('parses `upload … type "…" form k=v` — `type` before `form`, both pre
   const step = program.tests[0]!.body[0]!;
   const body = (step as { body: unknown }).body as {
     type: string;
-    contentType: { value: string } | null;
+    files: readonly { contentType: { value: string } | null }[];
     extra: readonly { key: string }[];
   };
-  assert.equal(body.contentType?.value, 'image/png');
+  assert.equal(body.files[0]!.contentType?.value, 'image/png');
   assert.equal(body.extra.length, 1);
   assert.equal(body.extra[0]!.key, 'owner');
 });

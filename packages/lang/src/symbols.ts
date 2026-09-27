@@ -475,9 +475,11 @@ function walkApiBody(body: ApiBody, bound: Map<string, Span>, scopeId: string, s
       if (body.operation) walkStringLit(source, body.operation, bound, scopeId, refs);
       break;
     case 'UploadBody':
-      walkStringLit(source, body.filePath, bound, scopeId, refs);
-      walkStringLit(source, body.fieldName, bound, scopeId, refs);
-      if (body.contentType) walkStringLit(source, body.contentType, bound, scopeId, refs);
+      for (const file of body.files) {
+        walkStringLit(source, file.filePath, bound, scopeId, refs);
+        walkStringLit(source, file.fieldName, bound, scopeId, refs);
+        if (file.contentType) walkStringLit(source, file.contentType, bound, scopeId, refs);
+      }
       for (const field of body.extra) walkValue(field.value, bound, scopeId, source, actionDefs, refs);
       break;
   }
