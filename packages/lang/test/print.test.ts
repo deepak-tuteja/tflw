@@ -344,7 +344,9 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // `M240` `A` — the page fixture's two landing files, `aaa-shared.tflw` and `hook-first.tflw`:
   // 26 -> 28 files and 560 -> 577 nodes.
   // `M242` (`D1328`, `D1329`): a GraphQL body with its variables, and the two string forms. 577 -> 587.
-  const EXPECTED_NODES = 587;
+  // `M245` (`D1343`): a three-file upload with a form field in `api.tflw` — its step and its
+  // `expect`, the upload's files being context-bound and compared through their body. 587 -> 589.
+  const EXPECTED_NODES = 589;
   const EXPECTED_FILES = 28;
   assert.equal(filesRead, EXPECTED_FILES, `the corpus read ${filesRead} files, expected ${EXPECTED_FILES} — a fixture was added or lost`);
   assert.equal(total, EXPECTED_NODES, `the corpus round-tripped ${total} nodes, expected ${EXPECTED_NODES} — move the number in the change that moved the corpus`);
