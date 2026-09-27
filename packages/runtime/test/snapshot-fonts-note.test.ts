@@ -72,3 +72,23 @@ test('`--update-snapshots` re-records a baseline cut on another platform, and sa
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('`--update-snapshots` never writes from a `not matches snapshot` step — the picture meant to differ does not become the baseline', async () => {
+  // Before: every write branch ignored `negated`, so a test that records a name and then asserts a
+  // changed state `not matches` it ended the update run with the changed state as its baseline.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-fonts-note-'));
+  try {
+    const paths = snapshotPaths(dir, 'tests/t.tflw', 't', 'shot');
+    await evaluateSnapshot(paths, 'shot', png(8, 8, 0), KEY, true, false);
+    const negated = await evaluateSnapshot(paths, 'shot', png(8, 8, 255), KEY, true, true);
+    assert.equal(negated.ok, true);
+    assert.equal(negated.updated, false);
+    assert.match(negated.message, /differs from baseline as expected/);
+    assert.equal((await evaluateSnapshot(paths, 'shot', png(8, 8, 0), KEY, false, false)).message, 'snapshot "shot": matches baseline');
+    // Nor from a negated step with nothing to compare against: there is no picture it could accept.
+    const fresh = snapshotPaths(dir, 'tests/t.tflw', 't', 'fresh');
+    assert.equal((await evaluateSnapshot(fresh, 'fresh', png(8, 8, 0), KEY, true, true)).updated, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
