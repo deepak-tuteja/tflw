@@ -73,7 +73,7 @@ test('`--update-snapshots` re-records a baseline cut on another platform, and sa
   }
 });
 
-test('`--update-snapshots` never writes from a `not matches snapshot` step — the picture meant to differ does not become the baseline', async () => {
+test('`--update-snapshots` never overwrites a comparable baseline from a `not matches snapshot` step — the picture meant to differ does not become the baseline', async () => {
   // Before: every write branch ignored `negated`, so a test that records a name and then asserts a
   // changed state `not matches` it ended the update run with the changed state as its baseline.
   const dir = await mkdtemp(join(tmpdir(), 'tflw-fonts-note-'));
@@ -85,9 +85,12 @@ test('`--update-snapshots` never writes from a `not matches snapshot` step — t
     assert.equal(negated.updated, false);
     assert.match(negated.message, /differs from baseline as expected/);
     assert.equal((await evaluateSnapshot(paths, 'shot', png(8, 8, 0), KEY, false, false)).message, 'snapshot "shot": matches baseline');
-    // Nor from a negated step with nothing to compare against: there is no picture it could accept.
+    // It still seeds: a name used only negated (a clock that never matches) gets its first baseline,
+    // and a baseline cut on another platform is re-recorded, since neither can be compared.
     const fresh = snapshotPaths(dir, 'tests/t.tflw', 't', 'fresh');
-    assert.equal((await evaluateSnapshot(fresh, 'fresh', png(8, 8, 0), KEY, true, true)).updated, false);
+    assert.equal((await evaluateSnapshot(fresh, 'fresh', png(8, 8, 0), KEY, true, true)).updated, true);
+    const moved = await evaluateSnapshot(fresh, 'fresh', png(8, 8, 9), 'linux-chromium-999.0', true, true);
+    assert.equal(moved.updated, true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
