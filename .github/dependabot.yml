@@ -2,6 +2,9 @@
 # workflow pins — merged by hand, never auto-merged, because a dependency bump in a testing tool
 # is a change to what every user's run executes. The group keeps it to two reviews a week rather
 # than one per package.
+# Majors are left out of the groups (2026-09-27): a grouped PR carrying TypeScript 5.9 -> 7.0 and
+# @types/node 22 -> 26 is a migration inside a bump, and one red major blocked every harmless minor
+# beside it. A major arrives as its own pull request and is taken as its own piece of work.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -12,6 +15,7 @@ updates:
     groups:
       npm:
         patterns: ['*']
+        update-types: ['minor', 'patch']
     open-pull-requests-limit: 2
   - package-ecosystem: github-actions
     directory: /
@@ -21,4 +25,5 @@ updates:
     groups:
       actions:
         patterns: ['*']
+        update-types: ['minor', 'patch']
     open-pull-requests-limit: 1
