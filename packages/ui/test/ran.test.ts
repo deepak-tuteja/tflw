@@ -113,6 +113,21 @@ test('a report about another file answers for nothing here', () => {
   assert.equal(index.size, 0);
 });
 
+test('`M240-03`: a step from an imported action answers for nothing here, even where its line reads the same', () => {
+  // The action's request is its own file's line 2, and this buffer's line 2 happens to read the same
+  // text — the one case the `(line, source)` key cannot refuse by itself. The negative control is the
+  // same step without `file`: it IS this file's line 2, and it joins.
+  const foreign = [
+    step({ kind: 'api', source: 'api GET /health', line: 2, file: 'tests/actions/shared.tflw', response: { status: 500, bodyText: '{}' } as never }),
+    step({ kind: 'expect', source: 'expect status equals 200', line: 3, file: 'tests/actions/shared.tflw', ok: false }),
+  ];
+  assert.equal(indexFromReport(report(foreign), 'tests/checkout.tflw', BUFFER).size, 0);
+  assert.equal(indexFromSend({ steps: foreign, lines: new Map([[2, 2]]), bufferText: BUFFER, startedAt: 'x' }).size, 0);
+  const own = foreign.map(({ file: _f, ...rest }) => rest);
+  assert.equal(indexFromReport(report(own), 'tests/checkout.tflw', BUFFER).get(2)!.response!.status, 500);
+  assert.equal(indexFromSend({ steps: own, lines: new Map([[2, 2]]), bufferText: BUFFER, startedAt: 'x' }).size, 1);
+});
+
 test('a `./` in front of a path is not a different file', () => {
   const index = indexFromReport(
     report([step({ kind: 'api', source: 'api GET /health', line: 2 })], './tests/checkout.tflw'),

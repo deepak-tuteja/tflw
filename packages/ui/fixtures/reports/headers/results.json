@@ -1,8 +1,8 @@
 {
   "ok": false,
   "env": "headers",
-  "startedAt": "2026-09-25T23:35:13.082Z",
-  "durationMs": 10000,
+  "startedAt": "2026-09-27T08:48:26.759Z",
+  "durationMs": 10066,
   "total": 13,
   "passed": 9,
   "failed": 4,
@@ -11,7 +11,7 @@
       "kind": "functional",
       "name": "lists the catalog and follows the first item",
       "ok": true,
-      "durationMs": 13,
+      "durationMs": 12,
       "steps": [
         {
           "kind": "api",
@@ -19,7 +19,7 @@
           "line": 3,
           "ok": true,
           "durationMs": 9,
-          "detail": "GET http://127.0.0.1:4717/items → 200 (8.1ms)",
+          "detail": "GET http://127.0.0.1:4717/items → 200 (7.7ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/items",
@@ -31,7 +31,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:13 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:26 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -41,7 +41,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 8.062805999999966,
+            "durationMs": 7.73540399999996,
             "finalUrl": "http://127.0.0.1:4717/items",
             "cookieEvents": []
           },
@@ -86,8 +86,8 @@
           "source": "api GET /items/{firstId}",
           "line": 8,
           "ok": true,
-          "durationMs": 2,
-          "detail": "GET http://127.0.0.1:4717/items/1 → 200 (1.4ms)",
+          "durationMs": 1,
+          "detail": "GET http://127.0.0.1:4717/items/1 → 200 (1.3ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/items/1",
@@ -99,7 +99,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:13 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:26 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -109,7 +109,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 1.3524139999999534,
+            "durationMs": 1.2564520000000243,
             "finalUrl": "http://127.0.0.1:4717/items/1",
             "cookieEvents": []
           },
@@ -147,7 +147,7 @@
           "line": 14,
           "ok": true,
           "durationMs": 1,
-          "detail": "GET http://127.0.0.1:4717/items/999 → 404 (0.67ms)",
+          "detail": "GET http://127.0.0.1:4717/items/999 → 404 (0.71ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/items/999",
@@ -159,7 +159,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:13 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:26 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -169,7 +169,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.667632000000026,
+            "durationMs": 0.7129620000000045,
             "finalUrl": "http://127.0.0.1:4717/items/999",
             "cookieEvents": []
           },
@@ -207,7 +207,7 @@
           "line": 20,
           "ok": true,
           "durationMs": 1,
-          "detail": "GET http://127.0.0.1:4717/items/1 → 200 (0.55ms)",
+          "detail": "GET http://127.0.0.1:4717/items/1 → 200 (0.54ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/items/1",
@@ -219,7 +219,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:13 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:26 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -229,7 +229,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.5527819999999792,
+            "durationMs": 0.5353309999999851,
             "finalUrl": "http://127.0.0.1:4717/items/1",
             "cookieEvents": []
           },
@@ -268,7 +268,7 @@
           "line": 10,
           "ok": true,
           "durationMs": 1,
-          "detail": "GET http://127.0.0.1:4717/items → 200 (0.59ms)",
+          "detail": "GET http://127.0.0.1:4717/items → 200 (0.55ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/items",
@@ -280,7 +280,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:13 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:26 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -290,7 +290,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.5867220000000088,
+            "durationMs": 0.5508209999999849,
             "finalUrl": "http://127.0.0.1:4717/items",
             "cookieEvents": []
           },
@@ -310,7 +310,7 @@
           "line": 12,
           "ok": true,
           "durationMs": 1,
-          "detail": "GET http://127.0.0.1:4717/items/1 → 200 (0.67ms)",
+          "detail": "GET http://127.0.0.1:4717/items/1 → 200 (0.56ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/items/1",
@@ -322,7 +322,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:13 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:26 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -332,7 +332,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.6692329999999629,
+            "durationMs": 0.5551810000000046,
             "finalUrl": "http://127.0.0.1:4717/items/1",
             "cookieEvents": []
           },
@@ -348,11 +348,11 @@
         },
         {
           "kind": "api",
-          "source": "import \"../actions/aaa-shared.tflw\"",
+          "source": "api GET /items/{id}",
           "line": 7,
           "ok": true,
           "durationMs": 1,
-          "detail": "GET http://127.0.0.1:4717/items/1 → 200 (0.6ms)",
+          "detail": "GET http://127.0.0.1:4717/items/1 → 200 (0.59ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/items/1",
@@ -364,7 +364,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:13 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:26 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -374,35 +374,39 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.6023620000000278,
+            "durationMs": 0.5914210000000253,
             "finalUrl": "http://127.0.0.1:4717/items/1",
             "cookieEvents": []
           },
-          "endpoint": "GET /items/{id}"
+          "endpoint": "GET /items/{id}",
+          "file": "tests/actions/aaa-shared.tflw"
         },
         {
           "kind": "expect",
-          "source": "",
+          "source": "expect status equals 200",
           "line": 8,
           "ok": true,
           "durationMs": 0,
-          "detail": "status to equal 200"
+          "detail": "status to equal 200",
+          "file": "tests/actions/aaa-shared.tflw"
         },
         {
           "kind": "capture",
-          "source": "before",
+          "source": "capture body.name as shelfName",
           "line": 9,
           "ok": true,
           "durationMs": 0,
-          "detail": "shelfName = [omitted by evidence level] (captured)"
+          "detail": "shelfName = [omitted by evidence level] (captured)",
+          "file": "tests/actions/aaa-shared.tflw"
         },
         {
           "kind": "give",
-          "source": "api GET /items",
+          "source": "give shelfName",
           "line": 10,
           "ok": true,
           "durationMs": 0,
-          "detail": "give \"widget\""
+          "detail": "give \"widget\"",
+          "file": "tests/actions/aaa-shared.tflw"
         },
         {
           "kind": "call",
@@ -438,7 +442,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:13 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:26 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -448,7 +452,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.39363099999997075,
+            "durationMs": 0.39172099999996135,
             "finalUrl": "http://127.0.0.1:4717/items/1",
             "cookieEvents": []
           },
@@ -488,133 +492,93 @@
         "assertions": 240,
         "errorRate": 0,
         "durations": {
-          "min": 2.7,
-          "max": 28,
-          "avg": 15,
-          "p50": 15,
-          "p90": 27,
-          "p95": 28,
-          "p99": 28
+          "min": 2.9,
+          "max": 29,
+          "avg": 16,
+          "p50": 16,
+          "p90": 28,
+          "p95": 29,
+          "p99": 29
         },
         "histogram": [
-          {
-            "value": 2.7,
-            "count": 1
-          },
-          {
-            "value": 2.74,
-            "count": 1
-          },
-          {
-            "value": 2.8000000000000003,
-            "count": 1
-          },
-          {
-            "value": 2.9,
-            "count": 1
-          },
           {
             "value": 2.91,
             "count": 1
           },
           {
-            "value": 2.92,
+            "value": 3.15,
             "count": 1
           },
           {
-            "value": 2.98,
+            "value": 3.45,
             "count": 1
           },
           {
-            "value": 3.02,
+            "value": 3.61,
             "count": 1
           },
           {
-            "value": 3.0700000000000003,
+            "value": 3.68,
             "count": 1
           },
           {
-            "value": 3.41,
+            "value": 3.89,
             "count": 1
           },
           {
-            "value": 3.52,
+            "value": 4.01,
             "count": 1
           },
           {
-            "value": 3.62,
+            "value": 4.15,
             "count": 1
           },
           {
-            "value": 3.63,
+            "value": 4.16,
             "count": 1
           },
           {
-            "value": 3.7600000000000002,
+            "value": 4.17,
             "count": 1
           },
           {
-            "value": 3.83,
+            "value": 4.22,
             "count": 1
           },
           {
-            "value": 3.84,
+            "value": 4.38,
             "count": 1
           },
           {
-            "value": 3.86,
+            "value": 4.47,
             "count": 1
           },
           {
-            "value": 6.83,
+            "value": 4.54,
             "count": 1
           },
           {
-            "value": 6.9,
+            "value": 4.7,
             "count": 1
           },
           {
-            "value": 6.92,
-            "count": 2
-          },
-          {
-            "value": 7.07,
+            "value": 4.93,
             "count": 1
           },
           {
-            "value": 7.11,
+            "value": 5.3,
             "count": 1
           },
           {
-            "value": 7.140000000000001,
-            "count": 2
-          },
-          {
-            "value": 7.2,
+            "value": 7.5200000000000005,
             "count": 1
           },
           {
-            "value": 7.26,
+            "value": 7.75,
             "count": 1
           },
           {
-            "value": 7.2700000000000005,
-            "count": 1
-          },
-          {
-            "value": 7.3,
-            "count": 1
-          },
-          {
-            "value": 7.4,
-            "count": 1
-          },
-          {
-            "value": 7.53,
-            "count": 1
-          },
-          {
-            "value": 7.6000000000000005,
+            "value": 7.83,
             "count": 1
           },
           {
@@ -626,99 +590,111 @@
             "count": 1
           },
           {
+            "value": 7.97,
+            "count": 1
+          },
+          {
+            "value": 8.120000000000001,
+            "count": 1
+          },
+          {
+            "value": 8.2,
+            "count": 2
+          },
+          {
+            "value": 8.24,
+            "count": 1
+          },
+          {
+            "value": 8.34,
+            "count": 1
+          },
+          {
+            "value": 8.36,
+            "count": 1
+          },
+          {
+            "value": 8.47,
+            "count": 1
+          },
+          {
+            "value": 8.84,
+            "count": 1
+          },
+          {
+            "value": 8.94,
+            "count": 1
+          },
+          {
+            "value": 9.13,
+            "count": 1
+          },
+          {
             "value": 9.77,
             "count": 1
           },
           {
-            "value": 10.200000000000001,
+            "value": 10.100000000000001,
             "count": 1
           },
           {
-            "value": 10.3,
-            "count": 1
-          },
-          {
-            "value": 10.4,
-            "count": 1
-          },
-          {
-            "value": 10.5,
-            "count": 1
-          },
-          {
-            "value": 10.600000000000001,
-            "count": 1
-          },
-          {
-            "value": 10.700000000000001,
-            "count": 3
-          },
-          {
-            "value": 10.9,
-            "count": 1
-          },
-          {
-            "value": 11,
-            "count": 1
-          },
-          {
-            "value": 11.200000000000001,
-            "count": 1
-          },
-          {
-            "value": 11.3,
+            "value": 11.100000000000001,
             "count": 2
-          },
-          {
-            "value": 11.4,
-            "count": 1
-          },
-          {
-            "value": 11.5,
-            "count": 1
           },
           {
             "value": 11.600000000000001,
             "count": 1
           },
           {
-            "value": 14,
+            "value": 11.8,
             "count": 1
           },
           {
-            "value": 14.100000000000001,
+            "value": 11.9,
             "count": 1
           },
           {
-            "value": 14.3,
+            "value": 12.100000000000001,
+            "count": 2
+          },
+          {
+            "value": 12.200000000000001,
+            "count": 2
+          },
+          {
+            "value": 12.600000000000001,
+            "count": 2
+          },
+          {
+            "value": 12.700000000000001,
+            "count": 2
+          },
+          {
+            "value": 12.8,
             "count": 1
           },
           {
-            "value": 14.8,
+            "value": 12.9,
             "count": 1
           },
           {
-            "value": 15.100000000000001,
+            "value": 13.100000000000001,
+            "count": 1
+          },
+          {
+            "value": 13.200000000000001,
             "count": 1
           },
           {
             "value": 15.200000000000001,
-            "count": 3
-          },
-          {
-            "value": 15.3,
             "count": 2
           },
           {
             "value": 15.4,
-            "count": 3
-          },
-          {
-            "value": 15.5,
             "count": 1
           },
           {
-            "value": 15.600000000000001,
+            "value": 15.5,
             "count": 1
           },
           {
@@ -726,15 +702,35 @@
             "count": 1
           },
           {
-            "value": 16.7,
+            "value": 16,
             "count": 1
           },
           {
-            "value": 17.3,
+            "value": 16.1,
             "count": 1
           },
           {
-            "value": 18.400000000000002,
+            "value": 16.2,
+            "count": 3
+          },
+          {
+            "value": 16.3,
+            "count": 1
+          },
+          {
+            "value": 16.400000000000002,
+            "count": 1
+          },
+          {
+            "value": 16.8,
+            "count": 3
+          },
+          {
+            "value": 17,
+            "count": 1
+          },
+          {
+            "value": 17.2,
             "count": 1
           },
           {
@@ -743,30 +739,10 @@
           },
           {
             "value": 18.7,
-            "count": 2
-          },
-          {
-            "value": 18.900000000000002,
-            "count": 2
+            "count": 1
           },
           {
             "value": 19,
-            "count": 2
-          },
-          {
-            "value": 19.1,
-            "count": 1
-          },
-          {
-            "value": 19.200000000000003,
-            "count": 1
-          },
-          {
-            "value": 19.3,
-            "count": 1
-          },
-          {
-            "value": 19.400000000000002,
             "count": 2
           },
           {
@@ -774,11 +750,35 @@
             "count": 1
           },
           {
+            "value": 19.8,
+            "count": 1
+          },
+          {
             "value": 19.900000000000002,
             "count": 1
           },
           {
-            "value": 20,
+            "value": 20.1,
+            "count": 2
+          },
+          {
+            "value": 20.200000000000003,
+            "count": 3
+          },
+          {
+            "value": 20.5,
+            "count": 2
+          },
+          {
+            "value": 20.6,
+            "count": 1
+          },
+          {
+            "value": 21.200000000000003,
+            "count": 1
+          },
+          {
+            "value": 21.8,
             "count": 1
           },
           {
@@ -786,91 +786,43 @@
             "count": 1
           },
           {
-            "value": 22.6,
-            "count": 1
-          },
-          {
-            "value": 22.700000000000003,
-            "count": 1
-          },
-          {
-            "value": 22.900000000000002,
-            "count": 1
-          },
-          {
-            "value": 23,
-            "count": 1
-          },
-          {
-            "value": 23.200000000000003,
-            "count": 2
-          },
-          {
             "value": 23.400000000000002,
             "count": 1
           },
           {
-            "value": 23.6,
-            "count": 3
-          },
-          {
-            "value": 23.700000000000003,
+            "value": 24,
             "count": 2
           },
           {
-            "value": 23.8,
-            "count": 1
-          },
-          {
-            "value": 24,
-            "count": 1
-          },
-          {
             "value": 24.1,
+            "count": 3
+          },
+          {
+            "value": 24.200000000000003,
             "count": 1
+          },
+          {
+            "value": 24.3,
+            "count": 2
           },
           {
             "value": 24.400000000000002,
-            "count": 1
+            "count": 2
+          },
+          {
+            "value": 24.5,
+            "count": 2
           },
           {
             "value": 24.900000000000002,
             "count": 1
           },
           {
-            "value": 25.900000000000002,
+            "value": 25.3,
             "count": 1
           },
           {
-            "value": 26.3,
-            "count": 1
-          },
-          {
-            "value": 26.400000000000002,
-            "count": 1
-          },
-          {
-            "value": 26.700000000000003,
-            "count": 1
-          },
-          {
-            "value": 26.8,
-            "count": 2
-          },
-          {
-            "value": 27,
-            "count": 1
-          },
-          {
-            "value": 27.1,
-            "count": 1
-          },
-          {
-            "value": 27.200000000000003,
-            "count": 1
-          },
-          {
-            "value": 27.5,
+            "value": 25.8,
             "count": 2
           },
           {
@@ -883,14 +835,50 @@
           },
           {
             "value": 27.8,
-            "count": 2
+            "count": 1
           },
           {
             "value": 27.900000000000002,
+            "count": 2
+          },
+          {
+            "value": 28.1,
+            "count": 1
+          },
+          {
+            "value": 28.3,
+            "count": 1
+          },
+          {
+            "value": 28.400000000000002,
             "count": 1
           },
           {
             "value": 28.5,
+            "count": 1
+          },
+          {
+            "value": 28.6,
+            "count": 2
+          },
+          {
+            "value": 28.700000000000003,
+            "count": 1
+          },
+          {
+            "value": 28.8,
+            "count": 1
+          },
+          {
+            "value": 28.900000000000002,
+            "count": 1
+          },
+          {
+            "value": 29.3,
+            "count": 1
+          },
+          {
+            "value": 29.400000000000002,
             "count": 1
           }
         ],
@@ -901,183 +889,143 @@
             "failures": 0,
             "rps": 32,
             "errorRate": 0,
-            "min": 2.7,
-            "mean": 15,
-            "max": 28,
+            "min": 3.2,
+            "mean": 16,
+            "max": 29,
             "p50": 16,
-            "p95": 28,
+            "p95": 29,
             "p99": 29
           },
           {
             "offsetSeconds": 1,
-            "count": 36,
+            "count": 35,
             "failures": 0,
-            "rps": 36,
+            "rps": 35,
             "errorRate": 0,
-            "min": 3,
-            "mean": 15,
-            "max": 28,
-            "p50": 15,
-            "p95": 28,
-            "p99": 28
+            "min": 2.9,
+            "mean": 16,
+            "max": 29,
+            "p50": 17,
+            "p95": 29,
+            "p99": 29
           },
           {
             "offsetSeconds": 2,
-            "count": 34,
+            "count": 33,
             "failures": 0,
-            "rps": 34,
+            "rps": 33,
             "errorRate": 0,
-            "min": 2.7,
-            "mean": 15,
-            "max": 28,
-            "p50": 15,
-            "p95": 28,
-            "p99": 28
+            "min": 3.9,
+            "mean": 16,
+            "max": 29,
+            "p50": 16,
+            "p95": 29,
+            "p99": 29
           },
           {
             "offsetSeconds": 3,
-            "count": 18,
+            "count": 20,
             "failures": 0,
-            "rps": 18,
+            "rps": 20,
             "errorRate": 0,
-            "min": 2.9,
-            "mean": 15,
-            "max": 28,
-            "p50": 15,
-            "p95": 28,
-            "p99": 28
+            "min": 3.5,
+            "mean": 16,
+            "max": 29,
+            "p50": 17,
+            "p95": 29,
+            "p99": 29
           }
         ],
         "successful": {
           "iterations": 120,
           "durations": {
-            "min": 2.7,
-            "max": 28,
-            "avg": 15,
-            "p50": 15,
-            "p90": 27,
-            "p95": 28,
-            "p99": 28
+            "min": 2.9,
+            "max": 29,
+            "avg": 16,
+            "p50": 16,
+            "p90": 28,
+            "p95": 29,
+            "p99": 29
           },
           "histogram": [
-            {
-              "value": 2.7,
-              "count": 1
-            },
-            {
-              "value": 2.74,
-              "count": 1
-            },
-            {
-              "value": 2.8000000000000003,
-              "count": 1
-            },
-            {
-              "value": 2.9,
-              "count": 1
-            },
             {
               "value": 2.91,
               "count": 1
             },
             {
-              "value": 2.92,
+              "value": 3.15,
               "count": 1
             },
             {
-              "value": 2.98,
+              "value": 3.45,
               "count": 1
             },
             {
-              "value": 3.02,
+              "value": 3.61,
               "count": 1
             },
             {
-              "value": 3.0700000000000003,
+              "value": 3.68,
               "count": 1
             },
             {
-              "value": 3.41,
+              "value": 3.89,
               "count": 1
             },
             {
-              "value": 3.52,
+              "value": 4.01,
               "count": 1
             },
             {
-              "value": 3.62,
+              "value": 4.15,
               "count": 1
             },
             {
-              "value": 3.63,
+              "value": 4.16,
               "count": 1
             },
             {
-              "value": 3.7600000000000002,
+              "value": 4.17,
               "count": 1
             },
             {
-              "value": 3.83,
+              "value": 4.22,
               "count": 1
             },
             {
-              "value": 3.84,
+              "value": 4.38,
               "count": 1
             },
             {
-              "value": 3.86,
+              "value": 4.47,
               "count": 1
             },
             {
-              "value": 6.83,
+              "value": 4.54,
               "count": 1
             },
             {
-              "value": 6.9,
+              "value": 4.7,
               "count": 1
             },
             {
-              "value": 6.92,
-              "count": 2
-            },
-            {
-              "value": 7.07,
+              "value": 4.93,
               "count": 1
             },
             {
-              "value": 7.11,
+              "value": 5.3,
               "count": 1
             },
             {
-              "value": 7.140000000000001,
-              "count": 2
-            },
-            {
-              "value": 7.2,
+              "value": 7.5200000000000005,
               "count": 1
             },
             {
-              "value": 7.26,
+              "value": 7.75,
               "count": 1
             },
             {
-              "value": 7.2700000000000005,
-              "count": 1
-            },
-            {
-              "value": 7.3,
-              "count": 1
-            },
-            {
-              "value": 7.4,
-              "count": 1
-            },
-            {
-              "value": 7.53,
-              "count": 1
-            },
-            {
-              "value": 7.6000000000000005,
+              "value": 7.83,
               "count": 1
             },
             {
@@ -1089,99 +1037,111 @@
               "count": 1
             },
             {
+              "value": 7.97,
+              "count": 1
+            },
+            {
+              "value": 8.120000000000001,
+              "count": 1
+            },
+            {
+              "value": 8.2,
+              "count": 2
+            },
+            {
+              "value": 8.24,
+              "count": 1
+            },
+            {
+              "value": 8.34,
+              "count": 1
+            },
+            {
+              "value": 8.36,
+              "count": 1
+            },
+            {
+              "value": 8.47,
+              "count": 1
+            },
+            {
+              "value": 8.84,
+              "count": 1
+            },
+            {
+              "value": 8.94,
+              "count": 1
+            },
+            {
+              "value": 9.13,
+              "count": 1
+            },
+            {
               "value": 9.77,
               "count": 1
             },
             {
-              "value": 10.200000000000001,
+              "value": 10.100000000000001,
               "count": 1
             },
             {
-              "value": 10.3,
-              "count": 1
-            },
-            {
-              "value": 10.4,
-              "count": 1
-            },
-            {
-              "value": 10.5,
-              "count": 1
-            },
-            {
-              "value": 10.600000000000001,
-              "count": 1
-            },
-            {
-              "value": 10.700000000000001,
-              "count": 3
-            },
-            {
-              "value": 10.9,
-              "count": 1
-            },
-            {
-              "value": 11,
-              "count": 1
-            },
-            {
-              "value": 11.200000000000001,
-              "count": 1
-            },
-            {
-              "value": 11.3,
+              "value": 11.100000000000001,
               "count": 2
-            },
-            {
-              "value": 11.4,
-              "count": 1
-            },
-            {
-              "value": 11.5,
-              "count": 1
             },
             {
               "value": 11.600000000000001,
               "count": 1
             },
             {
-              "value": 14,
+              "value": 11.8,
               "count": 1
             },
             {
-              "value": 14.100000000000001,
+              "value": 11.9,
               "count": 1
             },
             {
-              "value": 14.3,
+              "value": 12.100000000000001,
+              "count": 2
+            },
+            {
+              "value": 12.200000000000001,
+              "count": 2
+            },
+            {
+              "value": 12.600000000000001,
+              "count": 2
+            },
+            {
+              "value": 12.700000000000001,
+              "count": 2
+            },
+            {
+              "value": 12.8,
               "count": 1
             },
             {
-              "value": 14.8,
+              "value": 12.9,
               "count": 1
             },
             {
-              "value": 15.100000000000001,
+              "value": 13.100000000000001,
+              "count": 1
+            },
+            {
+              "value": 13.200000000000001,
               "count": 1
             },
             {
               "value": 15.200000000000001,
-              "count": 3
-            },
-            {
-              "value": 15.3,
               "count": 2
             },
             {
               "value": 15.4,
-              "count": 3
-            },
-            {
-              "value": 15.5,
               "count": 1
             },
             {
-              "value": 15.600000000000001,
+              "value": 15.5,
               "count": 1
             },
             {
@@ -1189,15 +1149,35 @@
               "count": 1
             },
             {
-              "value": 16.7,
+              "value": 16,
               "count": 1
             },
             {
-              "value": 17.3,
+              "value": 16.1,
               "count": 1
             },
             {
-              "value": 18.400000000000002,
+              "value": 16.2,
+              "count": 3
+            },
+            {
+              "value": 16.3,
+              "count": 1
+            },
+            {
+              "value": 16.400000000000002,
+              "count": 1
+            },
+            {
+              "value": 16.8,
+              "count": 3
+            },
+            {
+              "value": 17,
+              "count": 1
+            },
+            {
+              "value": 17.2,
               "count": 1
             },
             {
@@ -1206,30 +1186,10 @@
             },
             {
               "value": 18.7,
-              "count": 2
-            },
-            {
-              "value": 18.900000000000002,
-              "count": 2
+              "count": 1
             },
             {
               "value": 19,
-              "count": 2
-            },
-            {
-              "value": 19.1,
-              "count": 1
-            },
-            {
-              "value": 19.200000000000003,
-              "count": 1
-            },
-            {
-              "value": 19.3,
-              "count": 1
-            },
-            {
-              "value": 19.400000000000002,
               "count": 2
             },
             {
@@ -1237,11 +1197,35 @@
               "count": 1
             },
             {
+              "value": 19.8,
+              "count": 1
+            },
+            {
               "value": 19.900000000000002,
               "count": 1
             },
             {
-              "value": 20,
+              "value": 20.1,
+              "count": 2
+            },
+            {
+              "value": 20.200000000000003,
+              "count": 3
+            },
+            {
+              "value": 20.5,
+              "count": 2
+            },
+            {
+              "value": 20.6,
+              "count": 1
+            },
+            {
+              "value": 21.200000000000003,
+              "count": 1
+            },
+            {
+              "value": 21.8,
               "count": 1
             },
             {
@@ -1249,91 +1233,43 @@
               "count": 1
             },
             {
-              "value": 22.6,
-              "count": 1
-            },
-            {
-              "value": 22.700000000000003,
-              "count": 1
-            },
-            {
-              "value": 22.900000000000002,
-              "count": 1
-            },
-            {
-              "value": 23,
-              "count": 1
-            },
-            {
-              "value": 23.200000000000003,
-              "count": 2
-            },
-            {
               "value": 23.400000000000002,
               "count": 1
             },
             {
-              "value": 23.6,
-              "count": 3
-            },
-            {
-              "value": 23.700000000000003,
+              "value": 24,
               "count": 2
             },
             {
-              "value": 23.8,
-              "count": 1
-            },
-            {
-              "value": 24,
-              "count": 1
-            },
-            {
               "value": 24.1,
+              "count": 3
+            },
+            {
+              "value": 24.200000000000003,
               "count": 1
+            },
+            {
+              "value": 24.3,
+              "count": 2
             },
             {
               "value": 24.400000000000002,
-              "count": 1
+              "count": 2
+            },
+            {
+              "value": 24.5,
+              "count": 2
             },
             {
               "value": 24.900000000000002,
               "count": 1
             },
             {
-              "value": 25.900000000000002,
+              "value": 25.3,
               "count": 1
             },
             {
-              "value": 26.3,
-              "count": 1
-            },
-            {
-              "value": 26.400000000000002,
-              "count": 1
-            },
-            {
-              "value": 26.700000000000003,
-              "count": 1
-            },
-            {
-              "value": 26.8,
-              "count": 2
-            },
-            {
-              "value": 27,
-              "count": 1
-            },
-            {
-              "value": 27.1,
-              "count": 1
-            },
-            {
-              "value": 27.200000000000003,
-              "count": 1
-            },
-            {
-              "value": 27.5,
+              "value": 25.8,
               "count": 2
             },
             {
@@ -1346,14 +1282,50 @@
             },
             {
               "value": 27.8,
-              "count": 2
+              "count": 1
             },
             {
               "value": 27.900000000000002,
+              "count": 2
+            },
+            {
+              "value": 28.1,
+              "count": 1
+            },
+            {
+              "value": 28.3,
+              "count": 1
+            },
+            {
+              "value": 28.400000000000002,
               "count": 1
             },
             {
               "value": 28.5,
+              "count": 1
+            },
+            {
+              "value": 28.6,
+              "count": 2
+            },
+            {
+              "value": 28.700000000000003,
+              "count": 1
+            },
+            {
+              "value": 28.8,
+              "count": 1
+            },
+            {
+              "value": 28.900000000000002,
+              "count": 1
+            },
+            {
+              "value": 29.3,
+              "count": 1
+            },
+            {
+              "value": 29.400000000000002,
               "count": 1
             }
           ]
@@ -1364,14 +1336,14 @@
           "label": "p95 duration",
           "op": "lessThan",
           "target": 500,
-          "actual": 28,
+          "actual": 29,
           "ok": true
         },
         {
           "label": "p95 duration for \"search\"",
           "op": "lessThan",
           "target": 500,
-          "actual": 27,
+          "actual": 28,
           "ok": true
         },
         {
@@ -1393,49 +1365,57 @@
             "errorRate": 0,
             "durations": {
               "min": 3,
-              "max": 27,
-              "avg": 15,
-              "p50": 15,
-              "p90": 26,
-              "p95": 27,
-              "p99": 27
+              "max": 29,
+              "avg": 16,
+              "p50": 16,
+              "p90": 27,
+              "p95": 28,
+              "p99": 28
             },
             "histogram": [
               {
                 "value": 3,
-                "count": 17
+                "count": 9
               },
               {
-                "value": 6,
-                "count": 2
+                "value": 4,
+                "count": 8
               },
               {
                 "value": 7,
-                "count": 15
+                "count": 7
+              },
+              {
+                "value": 8,
+                "count": 9
+              },
+              {
+                "value": 9,
+                "count": 1
               },
               {
                 "value": 10,
-                "count": 6
+                "count": 1
               },
               {
                 "value": 11,
-                "count": 11
+                "count": 5
+              },
+              {
+                "value": 12,
+                "count": 10
               },
               {
                 "value": 13,
-                "count": 1
-              },
-              {
-                "value": 14,
-                "count": 3
+                "count": 2
               },
               {
                 "value": 15,
-                "count": 12
+                "count": 7
               },
               {
                 "value": 16,
-                "count": 1
+                "count": 9
               },
               {
                 "value": 17,
@@ -1443,35 +1423,51 @@
               },
               {
                 "value": 18,
-                "count": 8
+                "count": 3
               },
               {
                 "value": 19,
-                "count": 8
+                "count": 6
+              },
+              {
+                "value": 20,
+                "count": 6
               },
               {
                 "value": 21,
-                "count": 1
-              },
-              {
-                "value": 22,
                 "count": 2
               },
               {
+                "value": 22,
+                "count": 1
+              },
+              {
                 "value": 23,
-                "count": 13
+                "count": 3
               },
               {
                 "value": 24,
+                "count": 11
+              },
+              {
+                "value": 25,
                 "count": 2
               },
               {
                 "value": 26,
-                "count": 8
+                "count": 1
               },
               {
                 "value": 27,
-                "count": 9
+                "count": 7
+              },
+              {
+                "value": 28,
+                "count": 8
+              },
+              {
+                "value": 29,
+                "count": 1
               }
             ],
             "timeline": [
@@ -1483,98 +1479,106 @@
                 "errorRate": 0,
                 "min": 3,
                 "mean": 15,
-                "max": 27,
-                "p50": 15,
-                "p95": 27,
-                "p99": 27
+                "max": 28,
+                "p50": 16,
+                "p95": 28,
+                "p99": 28
               },
               {
                 "offsetSeconds": 1,
-                "count": 36,
+                "count": 35,
                 "failures": 0,
-                "rps": 36,
+                "rps": 35,
                 "errorRate": 0,
                 "min": 3,
-                "mean": 15,
-                "max": 27,
-                "p50": 15,
-                "p95": 27,
-                "p99": 27
+                "mean": 16,
+                "max": 28,
+                "p50": 16,
+                "p95": 28,
+                "p99": 28
               },
               {
                 "offsetSeconds": 2,
-                "count": 34,
+                "count": 33,
                 "failures": 0,
-                "rps": 34,
-                "errorRate": 0,
-                "min": 3,
-                "mean": 14,
-                "max": 27,
-                "p50": 15,
-                "p95": 27,
-                "p99": 27
-              },
-              {
-                "offsetSeconds": 3,
-                "count": 18,
-                "failures": 0,
-                "rps": 18,
+                "rps": 33,
                 "errorRate": 0,
                 "min": 3,
                 "mean": 15,
-                "max": 27,
+                "max": 29,
                 "p50": 15,
-                "p95": 27,
-                "p99": 27
+                "p95": 28,
+                "p99": 29
+              },
+              {
+                "offsetSeconds": 3,
+                "count": 20,
+                "failures": 0,
+                "rps": 20,
+                "errorRate": 0,
+                "min": 3,
+                "mean": 16,
+                "max": 28,
+                "p50": 16,
+                "p95": 28,
+                "p99": 28
               }
             ],
             "successful": {
               "iterations": 120,
               "durations": {
                 "min": 3,
-                "max": 27,
-                "avg": 15,
-                "p50": 15,
-                "p90": 26,
-                "p95": 27,
-                "p99": 27
+                "max": 29,
+                "avg": 16,
+                "p50": 16,
+                "p90": 27,
+                "p95": 28,
+                "p99": 28
               },
               "histogram": [
                 {
                   "value": 3,
-                  "count": 17
+                  "count": 9
                 },
                 {
-                  "value": 6,
-                  "count": 2
+                  "value": 4,
+                  "count": 8
                 },
                 {
                   "value": 7,
-                  "count": 15
+                  "count": 7
+                },
+                {
+                  "value": 8,
+                  "count": 9
+                },
+                {
+                  "value": 9,
+                  "count": 1
                 },
                 {
                   "value": 10,
-                  "count": 6
+                  "count": 1
                 },
                 {
                   "value": 11,
-                  "count": 11
+                  "count": 5
+                },
+                {
+                  "value": 12,
+                  "count": 10
                 },
                 {
                   "value": 13,
-                  "count": 1
-                },
-                {
-                  "value": 14,
-                  "count": 3
+                  "count": 2
                 },
                 {
                   "value": 15,
-                  "count": 12
+                  "count": 7
                 },
                 {
                   "value": 16,
-                  "count": 1
+                  "count": 9
                 },
                 {
                   "value": 17,
@@ -1582,35 +1586,51 @@
                 },
                 {
                   "value": 18,
-                  "count": 8
+                  "count": 3
                 },
                 {
                   "value": 19,
-                  "count": 8
+                  "count": 6
+                },
+                {
+                  "value": 20,
+                  "count": 6
                 },
                 {
                   "value": 21,
-                  "count": 1
-                },
-                {
-                  "value": 22,
                   "count": 2
                 },
                 {
+                  "value": 22,
+                  "count": 1
+                },
+                {
                   "value": 23,
-                  "count": 13
+                  "count": 3
                 },
                 {
                   "value": 24,
+                  "count": 11
+                },
+                {
+                  "value": 25,
                   "count": 2
                 },
                 {
                   "value": 26,
-                  "count": 8
+                  "count": 1
                 },
                 {
                   "value": 27,
-                  "count": 9
+                  "count": 7
+                },
+                {
+                  "value": 28,
+                  "count": 8
+                },
+                {
+                  "value": 29,
+                  "count": 1
                 }
               ]
             }
@@ -1626,8 +1646,8 @@
             "durations": {
               "min": 0,
               "max": 1,
-              "avg": 0.28,
-              "p50": 0,
+              "avg": 0.72,
+              "p50": 1,
               "p90": 1,
               "p95": 1,
               "p99": 1
@@ -1635,11 +1655,11 @@
             "histogram": [
               {
                 "value": 0,
-                "count": 86
+                "count": 33
               },
               {
                 "value": 1,
-                "count": 34
+                "count": 87
               }
             ],
             "timeline": [
@@ -1650,48 +1670,48 @@
                 "rps": 32,
                 "errorRate": 0,
                 "min": 0,
-                "mean": 0.31,
+                "mean": 0.66,
                 "max": 1,
-                "p50": 0,
+                "p50": 1,
                 "p95": 1,
                 "p99": 1
               },
               {
                 "offsetSeconds": 1,
-                "count": 36,
+                "count": 35,
                 "failures": 0,
-                "rps": 36,
+                "rps": 35,
                 "errorRate": 0,
                 "min": 0,
-                "mean": 0.33,
+                "mean": 0.8,
                 "max": 1,
-                "p50": 0,
+                "p50": 1,
                 "p95": 1,
                 "p99": 1
               },
               {
                 "offsetSeconds": 2,
-                "count": 34,
+                "count": 33,
                 "failures": 0,
-                "rps": 34,
+                "rps": 33,
                 "errorRate": 0,
                 "min": 0,
-                "mean": 0.21,
+                "mean": 0.64,
                 "max": 1,
-                "p50": 0,
+                "p50": 1,
                 "p95": 1,
                 "p99": 1
               },
               {
                 "offsetSeconds": 3,
-                "count": 18,
+                "count": 20,
                 "failures": 0,
-                "rps": 18,
+                "rps": 20,
                 "errorRate": 0,
                 "min": 0,
-                "mean": 0.28,
+                "mean": 0.85,
                 "max": 1,
-                "p50": 0,
+                "p50": 1,
                 "p95": 1,
                 "p99": 1
               }
@@ -1701,8 +1721,8 @@
               "durations": {
                 "min": 0,
                 "max": 1,
-                "avg": 0.28,
-                "p50": 0,
+                "avg": 0.72,
+                "p50": 1,
                 "p90": 1,
                 "p95": 1,
                 "p99": 1
@@ -1710,11 +1730,11 @@
               "histogram": [
                 {
                   "value": 0,
-                  "count": 86
+                  "count": 33
                 },
                 {
                   "value": 1,
-                  "count": 34
+                  "count": 87
                 }
               ]
             }
@@ -1739,157 +1759,161 @@
         "assertions": 40,
         "errorRate": 0.25,
         "durations": {
-          "min": 0,
-          "max": 41,
+          "min": 0.046,
+          "max": 42,
           "avg": 11,
-          "p50": 0.86,
-          "p90": 41,
-          "p95": 41,
-          "p99": 41
+          "p50": 1.2,
+          "p90": 42,
+          "p95": 42,
+          "p99": 42
         },
         "histogram": [
           {
-            "value": 0,
+            "value": 0.04649999999999999,
             "count": 1
           },
           {
-            "value": 0.0934,
+            "value": 0.188,
             "count": 1
           },
           {
-            "value": 0.124,
+            "value": 0.34800000000000003,
             "count": 1
           },
           {
-            "value": 0.155,
+            "value": 0.373,
             "count": 1
           },
           {
-            "value": 0.187,
+            "value": 0.453,
             "count": 1
           },
           {
-            "value": 0.20400000000000001,
+            "value": 0.534,
             "count": 1
           },
           {
-            "value": 0.28600000000000003,
+            "value": 0.554,
             "count": 1
           },
           {
-            "value": 0.29,
+            "value": 0.592,
             "count": 1
           },
           {
-            "value": 0.377,
+            "value": 0.614,
             "count": 1
           },
           {
-            "value": 0.379,
+            "value": 0.64,
             "count": 1
           },
           {
-            "value": 0.401,
+            "value": 0.672,
             "count": 1
           },
           {
-            "value": 0.441,
+            "value": 0.728,
             "count": 1
           },
           {
-            "value": 0.486,
+            "value": 0.789,
             "count": 1
           },
           {
-            "value": 0.51,
+            "value": 0.792,
             "count": 1
           },
           {
-            "value": 0.625,
+            "value": 0.907,
             "count": 1
           },
           {
-            "value": 0.671,
+            "value": 0.928,
             "count": 1
           },
           {
-            "value": 0.681,
+            "value": 0.985,
             "count": 1
           },
           {
-            "value": 0.751,
+            "value": 1.06,
             "count": 1
           },
           {
-            "value": 0.772,
+            "value": 1.07,
             "count": 1
           },
           {
-            "value": 0.8230000000000001,
+            "value": 1.16,
             "count": 1
           },
           {
-            "value": 0.865,
+            "value": 1.21,
             "count": 1
           },
           {
-            "value": 0.892,
+            "value": 1.24,
             "count": 1
           },
           {
-            "value": 1.09,
-            "count": 1
-          },
-          {
-            "value": 1.1,
-            "count": 1
-          },
-          {
-            "value": 1.11,
-            "count": 1
-          },
-          {
-            "value": 1.1500000000000001,
-            "count": 1
-          },
-          {
-            "value": 1.23,
-            "count": 1
-          },
-          {
-            "value": 1.31,
-            "count": 1
-          },
-          {
-            "value": 1.34,
-            "count": 1
-          },
-          {
-            "value": 1.42,
-            "count": 1
-          },
-          {
-            "value": 40.1,
-            "count": 1
-          },
-          {
-            "value": 40.6,
-            "count": 1
-          },
-          {
-            "value": 40.7,
-            "count": 4
-          },
-          {
-            "value": 40.800000000000004,
+            "value": 1.27,
             "count": 2
           },
           {
-            "value": 40.900000000000006,
+            "value": 1.28,
             "count": 1
           },
           {
-            "value": 41,
+            "value": 1.3,
+            "count": 1
+          },
+          {
+            "value": 1.36,
+            "count": 1
+          },
+          {
+            "value": 1.3900000000000001,
+            "count": 1
+          },
+          {
+            "value": 1.44,
+            "count": 1
+          },
+          {
+            "value": 1.46,
+            "count": 1
+          },
+          {
+            "value": 40.800000000000004,
+            "count": 1
+          },
+          {
+            "value": 41.1,
+            "count": 1
+          },
+          {
+            "value": 41.300000000000004,
+            "count": 2
+          },
+          {
+            "value": 41.400000000000006,
+            "count": 1
+          },
+          {
+            "value": 41.5,
+            "count": 2
+          },
+          {
+            "value": 41.6,
+            "count": 1
+          },
+          {
+            "value": 41.7,
+            "count": 1
+          },
+          {
+            "value": 41.800000000000004,
             "count": 1
           }
         ],
@@ -1900,144 +1924,140 @@
             "failures": 10,
             "rps": 40,
             "errorRate": 0.25,
-            "min": 0,
+            "min": 0.046,
             "mean": 11,
-            "max": 41,
-            "p50": 0.86,
-            "p95": 41,
-            "p99": 41
+            "max": 42,
+            "p50": 1.2,
+            "p95": 42,
+            "p99": 42
           }
         ],
         "successful": {
           "iterations": 30,
           "durations": {
-            "min": 0,
-            "max": 1.4,
-            "avg": 0.66,
-            "p50": 0.67,
-            "p90": 1.3,
-            "p95": 1.3,
-            "p99": 1.4
+            "min": 0.046,
+            "max": 1.5,
+            "avg": 0.89,
+            "p50": 0.93,
+            "p90": 1.4,
+            "p95": 1.4,
+            "p99": 1.5
           },
           "histogram": [
             {
-              "value": 0,
+              "value": 0.04649999999999999,
               "count": 1
             },
             {
-              "value": 0.0934,
+              "value": 0.188,
               "count": 1
             },
             {
-              "value": 0.124,
+              "value": 0.34800000000000003,
               "count": 1
             },
             {
-              "value": 0.155,
+              "value": 0.373,
               "count": 1
             },
             {
-              "value": 0.187,
+              "value": 0.453,
               "count": 1
             },
             {
-              "value": 0.20400000000000001,
+              "value": 0.534,
               "count": 1
             },
             {
-              "value": 0.28600000000000003,
+              "value": 0.554,
               "count": 1
             },
             {
-              "value": 0.29,
+              "value": 0.592,
               "count": 1
             },
             {
-              "value": 0.377,
+              "value": 0.614,
               "count": 1
             },
             {
-              "value": 0.379,
+              "value": 0.64,
               "count": 1
             },
             {
-              "value": 0.401,
+              "value": 0.672,
               "count": 1
             },
             {
-              "value": 0.441,
+              "value": 0.728,
               "count": 1
             },
             {
-              "value": 0.486,
+              "value": 0.789,
               "count": 1
             },
             {
-              "value": 0.51,
+              "value": 0.792,
               "count": 1
             },
             {
-              "value": 0.625,
+              "value": 0.907,
               "count": 1
             },
             {
-              "value": 0.671,
+              "value": 0.928,
               "count": 1
             },
             {
-              "value": 0.681,
+              "value": 0.985,
               "count": 1
             },
             {
-              "value": 0.751,
+              "value": 1.06,
               "count": 1
             },
             {
-              "value": 0.772,
+              "value": 1.07,
               "count": 1
             },
             {
-              "value": 0.8230000000000001,
+              "value": 1.16,
               "count": 1
             },
             {
-              "value": 0.865,
+              "value": 1.21,
               "count": 1
             },
             {
-              "value": 0.892,
+              "value": 1.24,
               "count": 1
             },
             {
-              "value": 1.09,
+              "value": 1.27,
+              "count": 2
+            },
+            {
+              "value": 1.28,
               "count": 1
             },
             {
-              "value": 1.1,
+              "value": 1.3,
               "count": 1
             },
             {
-              "value": 1.11,
+              "value": 1.36,
               "count": 1
             },
             {
-              "value": 1.1500000000000001,
+              "value": 1.3900000000000001,
               "count": 1
             },
             {
-              "value": 1.23,
+              "value": 1.44,
               "count": 1
             },
             {
-              "value": 1.31,
-              "count": 1
-            },
-            {
-              "value": 1.34,
-              "count": 1
-            },
-            {
-              "value": 1.42,
+              "value": 1.46,
               "count": 1
             }
           ]
@@ -2063,29 +2083,29 @@
             "errorRate": 0.25,
             "durations": {
               "min": 0,
-              "max": 41,
+              "max": 42,
               "avg": 11,
               "p50": 1,
               "p90": 41,
-              "p95": 41,
-              "p99": 41
+              "p95": 42,
+              "p99": 42
             },
             "histogram": [
               {
                 "value": 0,
-                "count": 14
+                "count": 5
               },
               {
                 "value": 1,
-                "count": 16
-              },
-              {
-                "value": 40,
-                "count": 1
+                "count": 25
               },
               {
                 "value": 41,
-                "count": 9
+                "count": 7
+              },
+              {
+                "value": 42,
+                "count": 3
               }
             ],
             "timeline": [
@@ -2097,10 +2117,10 @@
                 "errorRate": 0.25,
                 "min": 0,
                 "mean": 11,
-                "max": 41,
+                "max": 42,
                 "p50": 1,
-                "p95": 41,
-                "p99": 41
+                "p95": 42,
+                "p99": 42
               }
             ],
             "successful": {
@@ -2108,7 +2128,7 @@
               "durations": {
                 "min": 0,
                 "max": 1,
-                "avg": 0.53,
+                "avg": 0.83,
                 "p50": 1,
                 "p90": 1,
                 "p95": 1,
@@ -2117,11 +2137,11 @@
               "histogram": [
                 {
                   "value": 0,
-                  "count": 14
+                  "count": 5
                 },
                 {
                   "value": 1,
-                  "count": 16
+                  "count": 25
                 }
               ]
             }
@@ -2144,7 +2164,7 @@
           "line": 3,
           "ok": true,
           "durationMs": 5,
-          "detail": "POST http://127.0.0.1:4717/orders → 201 (5ms)",
+          "detail": "POST http://127.0.0.1:4717/orders → 201 (4.9ms)",
           "request": {
             "method": "POST",
             "url": "http://127.0.0.1:4717/orders",
@@ -2158,7 +2178,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:17 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:31 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -2168,7 +2188,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 5.030416000000514,
+            "durationMs": 4.869206999999733,
             "finalUrl": "http://127.0.0.1:4717/orders",
             "cookieEvents": []
           },
@@ -2211,8 +2231,8 @@
           "source": "api GET /orders/{orderId}",
           "line": 8,
           "ok": true,
-          "durationMs": 2,
-          "detail": "GET http://127.0.0.1:4717/orders/1 → 200 (1.5ms)",
+          "durationMs": 1,
+          "detail": "GET http://127.0.0.1:4717/orders/1 → 200 (1.2ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/orders/1",
@@ -2224,7 +2244,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:17 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:31 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -2234,7 +2254,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 1.4828349999997954,
+            "durationMs": 1.1535320000002685,
             "finalUrl": "http://127.0.0.1:4717/orders/1",
             "cookieEvents": []
           },
@@ -2272,7 +2292,7 @@
           "line": 14,
           "ok": true,
           "durationMs": 1,
-          "detail": "GET http://127.0.0.1:4717/warmup → 200 (0.46ms)",
+          "detail": "GET http://127.0.0.1:4717/warmup → 200 (0.43ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/warmup",
@@ -2284,7 +2304,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:17 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:31 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -2294,7 +2314,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.4607420000002094,
+            "durationMs": 0.4290110000001732,
             "finalUrl": "http://127.0.0.1:4717/warmup",
             "cookieEvents": []
           },
@@ -2322,7 +2342,7 @@
               "line": 14,
               "ok": true,
               "durationMs": 1,
-              "detail": "GET http://127.0.0.1:4717/warmup → 503 (0.51ms)",
+              "detail": "GET http://127.0.0.1:4717/warmup → 503 (0.5ms)",
               "request": {
                 "method": "GET",
                 "url": "http://127.0.0.1:4717/warmup",
@@ -2334,7 +2354,7 @@
                 "headers": {
                   "connection": "keep-alive",
                   "content-type": "application/json; charset=utf-8",
-                  "date": "Fri, 25 Sep 2026 23:35:17 GMT",
+                  "date": "Sun, 27 Sep 2026 08:48:31 GMT",
                   "keep-alive": "timeout=5",
                   "transfer-encoding": "chunked",
                   "x-content-type-options": "nosniff"
@@ -2344,7 +2364,7 @@
                   "type": "Buffer",
                   "data": []
                 },
-                "durationMs": 0.5084710000000996,
+                "durationMs": 0.4984410000006392,
                 "finalUrl": "http://127.0.0.1:4717/warmup",
                 "cookieEvents": []
               },
@@ -2372,7 +2392,7 @@
               "line": 14,
               "ok": true,
               "durationMs": 1,
-              "detail": "GET http://127.0.0.1:4717/warmup → 200 (0.46ms)",
+              "detail": "GET http://127.0.0.1:4717/warmup → 200 (0.43ms)",
               "request": {
                 "method": "GET",
                 "url": "http://127.0.0.1:4717/warmup",
@@ -2384,7 +2404,7 @@
                 "headers": {
                   "connection": "keep-alive",
                   "content-type": "application/json; charset=utf-8",
-                  "date": "Fri, 25 Sep 2026 23:35:17 GMT",
+                  "date": "Sun, 27 Sep 2026 08:48:31 GMT",
                   "keep-alive": "timeout=5",
                   "transfer-encoding": "chunked",
                   "x-content-type-options": "nosniff"
@@ -2394,7 +2414,7 @@
                   "type": "Buffer",
                   "data": []
                 },
-                "durationMs": 0.4607420000002094,
+                "durationMs": 0.4290110000001732,
                 "finalUrl": "http://127.0.0.1:4717/warmup",
                 "cookieEvents": []
               },
@@ -2426,7 +2446,7 @@
           "line": 3,
           "ok": true,
           "durationMs": 1,
-          "detail": "GET http://127.0.0.1:4717/items → 200 (0.59ms)",
+          "detail": "GET http://127.0.0.1:4717/items → 200 (0.4ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/items",
@@ -2438,7 +2458,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:17 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:31 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked",
               "x-content-type-options": "nosniff"
@@ -2448,7 +2468,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.5907109999998283,
+            "durationMs": 0.40409100000033504,
             "finalUrl": "http://127.0.0.1:4717/items",
             "cookieEvents": []
           },
@@ -2477,8 +2497,8 @@
           "source": "api GET /",
           "line": 8,
           "ok": true,
-          "durationMs": 1,
-          "detail": "GET http://127.0.0.1:4717/ → 200 (0.41ms)",
+          "durationMs": 0,
+          "detail": "GET http://127.0.0.1:4717/ → 200 (0.37ms)",
           "request": {
             "method": "GET",
             "url": "http://127.0.0.1:4717/",
@@ -2490,7 +2510,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "text/html; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:17 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:31 GMT",
               "keep-alive": "timeout=5",
               "transfer-encoding": "chunked"
             },
@@ -2499,7 +2519,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.4097719999999754,
+            "durationMs": 0.36826100000052975,
             "finalUrl": "http://127.0.0.1:4717/",
             "cookieEvents": []
           },
@@ -2529,7 +2549,7 @@
           "line": 13,
           "ok": true,
           "durationMs": 1,
-          "detail": "POST http://127.0.0.1:4717/login → 200 (0.69ms)",
+          "detail": "POST http://127.0.0.1:4717/login → 200 (0.66ms)",
           "request": {
             "method": "POST",
             "url": "http://127.0.0.1:4717/login",
@@ -2543,7 +2563,7 @@
             "headers": {
               "connection": "keep-alive",
               "content-type": "application/json; charset=utf-8",
-              "date": "Fri, 25 Sep 2026 23:35:17 GMT",
+              "date": "Sun, 27 Sep 2026 08:48:31 GMT",
               "keep-alive": "timeout=5",
               "set-cookie": "session=fixture-1; Path=/",
               "transfer-encoding": "chunked",
@@ -2554,7 +2574,7 @@
               "type": "Buffer",
               "data": []
             },
-            "durationMs": 0.6884730000001582,
+            "durationMs": 0.6636609999995926,
             "finalUrl": "http://127.0.0.1:4717/login",
             "cookieEvents": []
           },
@@ -2577,14 +2597,14 @@
       "kind": "functional",
       "name": "the shop page greets and the button answers",
       "ok": true,
-      "durationMs": 347,
+      "durationMs": 375,
       "steps": [
         {
           "kind": "open",
           "source": "open \"/\"",
           "line": 3,
           "ok": true,
-          "durationMs": 296,
+          "durationMs": 314,
           "detail": "open http://127.0.0.1:4717/"
         },
         {
@@ -2592,7 +2612,7 @@
           "source": "expect text \"Fixture shop\" is visible",
           "line": 4,
           "ok": true,
-          "durationMs": 16,
+          "durationMs": 13,
           "detail": "`text \"Fixture shop\"` to be visible"
         },
         {
@@ -2600,7 +2620,7 @@
           "source": "click button \"Buy a widget\"",
           "line": 5,
           "ok": true,
-          "durationMs": 31,
+          "durationMs": 44,
           "detail": "click `button \"Buy a widget\"`"
         },
         {
@@ -2608,7 +2628,7 @@
           "source": "expect text \"Bought one widget.\" is visible",
           "line": 6,
           "ok": true,
-          "durationMs": 2,
+          "durationMs": 1,
           "detail": "`text \"Bought one widget.\"` to be visible"
         },
         {
@@ -2627,7 +2647,7 @@
       "kind": "functional",
       "name": "the shelf never says sold out",
       "ok": false,
-      "durationMs": 5168,
+      "durationMs": 5178,
       "steps": [
         {
           "kind": "open",
@@ -2650,7 +2670,7 @@
           "source": "expect text \"Sold out\" is visible",
           "line": 13,
           "ok": false,
-          "durationMs": 5143,
+          "durationMs": 5153,
           "detail": "expected `text \"Sold out\"` to be visible, but got no matching element"
         }
       ],
@@ -2659,8 +2679,8 @@
       "file": "tests/shop.tflw"
     }
   ],
-  "seed": 1404063753,
-  "now": "2026-09-25T23:35:13.080Z",
+  "seed": 3270842971,
+  "now": "2026-09-27T08:48:26.757Z",
   "insecure": false,
   "evidenceLevel": "headers-only",
   "browserEngine": "chromium",
@@ -2767,9 +2787,9 @@
     }
   ],
   "selfDiagnosis": {
-    "avgEventLoopLagMs": 0.23131854545457547,
-    "maxEventLoopLagMs": 1.1125739999997677,
-    "cpuPercent": 4.346862572757473,
+    "avgEventLoopLagMs": 0.7730764090909112,
+    "maxEventLoopLagMs": 1.7120390000000043,
+    "cpuPercent": 6.024714724774539,
     "saturated": false
   },
   "inconclusive": false,
@@ -2778,5 +2798,10 @@
     "accepted": 1,
     "matched": 1,
     "stale": []
+  },
+  "ranBy": {
+    "user": "fixture",
+    "host": "fixture-host",
+    "version": "0.1.0"
   }
 }

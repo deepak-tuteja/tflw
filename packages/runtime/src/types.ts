@@ -361,6 +361,10 @@ export interface StepResult {
   /** The original source line, for the report timeline (mirrors source, SPEC §13). */
   readonly source: string;
   readonly line: number;
+  /** `M240-03` — the file `line` is a line of, present only when that is not the test's own file: a
+   * step of an action imported from another file. Relative to the run's cwd with `/` separators, as
+   * `TestResult.file` is. */
+  readonly file?: string;
   readonly ok: boolean;
   /** Whole milliseconds — deliberately still rounded (`D807`). A single step really can be
    * sub-millisecond, which makes this the one arguable site in that split; it stays rounded

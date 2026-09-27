@@ -93,7 +93,7 @@
             {
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "tests/security.tflw",
+                  "uri": "packages/ui/fixtures/project/tests/security.tflw",
                   "uriBaseId": "%SRCROOT%"
                 },
                 "region": {
@@ -128,7 +128,7 @@
             {
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "tests/security.tflw",
+                  "uri": "packages/ui/fixtures/project/tests/security.tflw",
                   "uriBaseId": "%SRCROOT%"
                 },
                 "region": {
