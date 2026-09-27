@@ -9,9 +9,10 @@
 // Runs the source entry under tsx, so the corpus is the checked-out tflw's, not the last build's.
 
 import { spawn } from 'node:child_process';
-import { cp, rm, mkdir, readdir } from 'node:fs/promises';
+import { cp, rm, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { hostname, userInfo } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -55,6 +56,21 @@ for (const env of ['full', 'headers']) {
     await rm(dest, { recursive: true, force: true });
     await mkdir(dest, { recursive: true });
     await cp(join(project, 'report'), dest, { recursive: true });
+    // `M244` — the report names who ran it (`ranBy`, `D1325`), and this corpus is committed to a
+    // public repository. The machine that regenerates it is somebody's, so its account and host
+    // name are replaced by fixed ones: the two places they are printed, the JSON and the header.
+    const who = userInfo().username;
+    const where = hostname();
+    for (const name of ['results.json', 'report.html']) {
+      const path = join(dest, name);
+      const text = await readFile(path, 'utf8');
+      const scrubbed = text
+        .replaceAll(`"user": "${who}"`, '"user": "fixture"')
+        .replaceAll(`"host": "${where}"`, '"host": "fixture-host"')
+        .replaceAll(`by <code>${who}</code> on <code>${where}</code>`, 'by <code>fixture</code> on <code>fixture-host</code>');
+      if (scrubbed.includes(who)) throw new Error(`${env}/${name} still names the account "${who}" after the scrub — a form this script does not know`);
+      await writeFile(path, scrubbed);
+    }
     const members = (await readdir(dest)).sort();
     process.stdout.write(`${env}: exit ${code}, ${out.split('\n').filter(Boolean).length} events, kept ${members.join(' ')}\n`);
   } finally {

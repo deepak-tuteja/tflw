@@ -7,7 +7,7 @@
 //    request and to evaluate assertions are the real ones (P#30).
 
 import { readFile } from 'node:fs/promises';
-import { basename, join, resolve as resolvePath } from 'node:path';
+import { basename, join, posix, resolve as resolvePath } from 'node:path';
 import { Codes, isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   FindingSeverity,
@@ -156,7 +156,18 @@ type HelperFn = (ctx: { readonly env: NodeJS.ProcessEnv }, ...args: unknown[]) =
  * every nested action call) in it (P#17, P#11). */
 interface CallRegistry {
   readonly actions: ReadonlyMap<string, ActionDecl>;
+  /** `M240-03` — the text each action's spans index, and, for an imported one, the file it came from
+   * as the `import` wrote it. An action's body is read against *its own* document, which for an
+   * imported action is not the test's: before this, its steps were recorded with the caller's source
+   * text at the action's line numbers — an `import` line, a blank, a hook's first two lines. */
+  readonly sources: ReadonlyMap<string, ActionSource>;
   readonly helpers: ReadonlyMap<string, HelperFn>;
+}
+
+interface ActionSource {
+  readonly lines: readonly string[];
+  /** The `import` path, present only for an action declared outside the test's own file. */
+  readonly importPath?: string;
 }
 
 const WAIT_POLL_INTERVAL_MS = 300;
@@ -331,7 +342,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const tlsProber = opts.tlsProber ?? new TlsProber();
   const filePath = opts.filePath ?? 'inline';
   const updateSnapshots = opts.updateSnapshots ?? false;
-  const registry = await buildRegistry(program, baseDir);
+  const registry = await buildRegistry(program, baseDir, lines);
   const beforeFile = program.hooks.filter((h) => h.scope === 'file' && h.when === 'before');
   const afterFile = program.hooks.filter((h) => h.scope === 'file' && h.when === 'after');
   const beforeEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');
@@ -1442,7 +1453,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   const uniqueSeq = makeUniqueSeq(opts.shard);
   const sessionCache = new SessionCache();
   const tlsProber = new TlsProber();
-  const registry = await buildRegistry(program, baseDir);
+  const registry = await buildRegistry(program, baseDir, lines);
   const beforeEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');
   const afterEach = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
   const tc: TestCtx = { environ, redactor, emit: () => {}, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, filePath: baseDir, updateSnapshots: false };
@@ -2167,13 +2178,16 @@ async function expandTestCases(program: Program, baseDir: string): Promise<TestC
 /** Resolve this file's own `action`s + every `import`ed file's `action`s, and load every `use`d
  * JS/TS helper module (P#11, P#17). Duplicate action/export names are a hard error — actions are
  * file-scoped by design, and a silent last-one-wins would be a confusing way to find that out. */
-async function buildRegistry(program: Program, baseDir: string): Promise<CallRegistry> {
+async function buildRegistry(program: Program, baseDir: string, lines: readonly string[]): Promise<CallRegistry> {
   const actions = new Map<string, ActionDecl>();
-  const addAction = (a: ActionDecl, from: string): void => {
+  const sources = new Map<string, ActionSource>();
+  const addAction = (a: ActionDecl, from: string, source: ActionSource): void => {
     if (actions.has(a.name)) throw new RuntimeError(`duplicate action "${a.name}"${from ? ` (imported from "${from}")` : ''} — actions are file-scoped; rename one`);
     actions.set(a.name, a);
+    sources.set(a.name, source);
   };
-  for (const a of program.actions) addAction(a, '');
+  const local: ActionSource = { lines };
+  for (const a of program.actions) addAction(a, '', local);
   for (const imp of program.imports) {
     const abs = resolvePath(baseDir, imp.path.value);
     let text: string;
@@ -2186,7 +2200,8 @@ async function buildRegistry(program: Program, baseDir: string): Promise<CallReg
     if (parsed.diagnostics.length > 0) {
       throw new RuntimeError(`imported file "${imp.path.value}" has parse errors:\n${renderDiagnostics(parsed.diagnostics, text, { filename: imp.path.value })}`);
     }
-    for (const a of parsed.program.actions) addAction(a, imp.path.value);
+    const imported: ActionSource = { lines: text.split('\n'), importPath: imp.path.value };
+    for (const a of parsed.program.actions) addAction(a, imp.path.value, imported);
   }
 
   const helpers = new Map<string, HelperFn>();
@@ -2219,7 +2234,7 @@ async function buildRegistry(program: Program, baseDir: string): Promise<CallReg
       restoreWarnings();
     }
   }
-  return { actions, helpers };
+  return { actions, sources, helpers };
 }
 
 interface TestCtx {
@@ -2290,6 +2305,16 @@ interface TestCtx {
    * Undefined everywhere else (a plain `tflw run`, a session's own establishment run, `wait until
    * api` outside a load context) — those keep using `sendRequest`'s unpinned `fetch()`. */
   readonly pinnedAgents?: KeepAliveAgents;
+  /** `M240-03` — set on the context an imported action's body runs under: the action's file,
+   * relative to the run's cwd with `/` separators, as a test's own `file` is (`M243-07`). Stamped on
+   * each step that body records, so a step's `line` names a line of the file it is in. Absent is the
+   * test's own file. */
+  readonly stepFile?: string;
+  /** `M240-03` — the test an action's steps belong to on the event stream. An action body runs
+   * under its own `testName` (`readShelf(...)`, which names its snapshots), and the stream used to
+   * carry its steps under that name: a test with no `test:start`/`test:end`, which the live reducer
+   * turned into a row the report never holds. `results.json` already filed them under the caller. */
+  readonly stepsOf?: string;
 }
 
 export interface SessionOutcome {
@@ -2458,7 +2483,7 @@ async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx
   const cookieJar = new CookieJar();
   const securitySink: Observation[] = [];
   const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionTc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, csrfSink, cookieJar, securitySink };
-  const emptyRegistry: CallRegistry = { actions: new Map(), helpers: new Map() };
+  const emptyRegistry: CallRegistry = { actions: new Map(), sources: new Map(), helpers: new Map() };
   const exec = await execSteps(decl.body, config, ctx, sessionTc, `session ${decl.name}`, emptyRegistry);
   return {
     headers: headerSink,
@@ -2506,7 +2531,7 @@ async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx
  * It is visible on failure and wrong on success too, in every report tflw has ever written.
  */
 function sessionCtx(name: string, tc: TestCtx): TestCtx {
-  return { ...tc, lines: tc.configLines, baseDir: tc.configDir, filePath: join(tc.configDir, 'tflw.config'), rng: mulberry32(subSeed(tc.runSeed, hashString(name))) };
+  return { ...tc, lines: tc.configLines, baseDir: tc.configDir, filePath: join(tc.configDir, 'tflw.config'), rng: mulberry32(subSeed(tc.runSeed, hashString(name))), stepFile: undefined, stepsOf: undefined };
 }
 
 /** `session <name> oauth2 ...` — POSTs the client-credentials grant to `tokenUrl` and turns the
@@ -3485,7 +3510,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         }
         case 'LetStmt': {
           if (step.value.type === 'CallExpr') {
-            const call = await execCall(step.value, config, ctx, tc, registry, src, stepStart);
+            const call = await execCall(step.value, config, ctx, tc, registry, src, stepStart, testName);
             results.push(...call.subSteps);
             ctx.scope.set(step.name, call.value);
             result = call.result;
@@ -3496,7 +3521,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           break;
         }
         case 'CallStmt': {
-          const call = await execCall(step.call, config, ctx, tc, registry, src, stepStart);
+          const call = await execCall(step.call, config, ctx, tc, registry, src, stepStart, testName);
           results.push(...call.subSteps);
           result = call.result;
           callSoftError = call.softError;
@@ -3531,9 +3556,9 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         }
         case 'GiveStmt': {
           giveValue = evalValue(step.value, ctx);
-          result = mkStep('give', src, step.span, true, stepStart, tc.redactor.redact(`give ${repr(giveValue)}`));
+          result = inStepFile(tc, mkStep('give', src, step.span, true, stepStart, tc.redactor.redact(`give ${repr(giveValue)}`)));
           results.push(result);
-          tc.emit({ type: 'step:end', test: testName, step: result });
+          tc.emit({ type: 'step:end', test: tc.stepsOf ?? testName, step: result });
           // `give` ends the block, like a return — but must not erase any soft `check` failures
           // accumulated before it (decision 55): almost every real action ends in `give`, so this
           // is the common path a soft failure has to survive, not an edge case.
@@ -3806,8 +3831,9 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         const screenshot = await captureFailureScreenshot(ctx.browser.page.currentPageIfAny());
         if (screenshot) result = { ...result, screenshot };
       }
+      result = inStepFile(tc, result);
       results.push(result);
-      tc.emit({ type: 'step:end', test: testName, step: result });
+      tc.emit({ type: 'step:end', test: tc.stepsOf ?? testName, step: result });
       if (!result.ok) {
         if (step.type === 'ExpectStmt' && step.soft) {
           // `check` records and continues (P#16) — the test still fails, just not fast.
@@ -3832,8 +3858,9 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
         const screenshot = await captureFailureScreenshot(ctx.browser.page.currentPageIfAny());
         if (screenshot) failed = { ...failed, screenshot };
       }
+      failed = inStepFile(tc, failed);
       results.push(failed);
-      tc.emit({ type: 'step:end', test: testName, step: failed });
+      tc.emit({ type: 'step:end', test: tc.stepsOf ?? testName, step: failed });
       // Carry the failure's structure up alongside the rendered string (M97d). A host refusal
       // deliberately drops it: `refusalDuring` replaces the message entirely, so the frames that
       // came with the original error no longer describe what is being reported.
@@ -3881,7 +3908,7 @@ interface CallOutcome {
   readonly softError?: string;
 }
 
-async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalCtx, tc: TestCtx, registry: CallRegistry, src: string, start: number): Promise<CallOutcome> {
+async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalCtx, tc: TestCtx, registry: CallRegistry, src: string, start: number, callerName: string): Promise<CallOutcome> {
   const args = call.args.map((a) => evalValue(a, callerCtx));
 
   const action = registry.actions.get(call.name);
@@ -3937,7 +3964,7 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
       browser: callerCtx.browser,
       callStack: [...callerStack, call.name],
     };
-    const exec = await execSteps(action.body, config, actionCtx, tc, `${call.name}(...)`, registry);
+    const exec = await execSteps(action.body, config, actionCtx, actionTc(tc, registry.sources.get(call.name), callerName), `${call.name}(...)`, registry);
     // A hard failure inside the action (a failing `expect`, or a thrown error) still aborts the
     // caller immediately — but a *soft* one (`exec.soft`, decision 55) must propagate as soft, not
     // silently harden into a caller-aborting throw: `check`→`check` stays uniform even through an
@@ -3968,6 +3995,20 @@ async function execCall(call: CallExpr, config: ResolvedConfig, callerCtx: EvalC
   }
 
   throw new RuntimeError(`unknown call \`${call.name}(...)\` — no action (\`import\`) or JS helper (\`use\`) defines it`);
+}
+
+/** `M240-03` — the context an action's body runs under: its own document's lines, its file when that
+ * is not the test's, and the test its steps belong to on the stream. A local action called from an
+ * imported one gets the test's own lines back, which is why the source is looked up per call rather
+ * than inherited from the caller. */
+function actionTc(tc: TestCtx, source: ActionSource | undefined, callerName: string): TestCtx {
+  const importPath = source?.importPath;
+  const stepFile = importPath === undefined ? undefined : posix.normalize(posix.join(posix.dirname(tc.filePath), importPath.split('\\').join('/')));
+  return { ...tc, lines: source?.lines ?? tc.lines, stepFile, stepsOf: tc.stepsOf ?? callerName };
+}
+
+function inStepFile(tc: TestCtx, step: StepResult): StepResult {
+  return tc.stepFile === undefined ? step : { ...step, file: tc.stepFile };
 }
 
 // ---- step executors --------------------------------------------------------

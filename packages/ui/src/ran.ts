@@ -215,6 +215,11 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
       });
     };
     for (const step of entry.steps) {
+      // `M240-03` — a step of an action imported from another file is a line of *that* file. Before
+      // the runtime said so it carried the caller's text at the action's line numbers, so
+      // `stillReads` matched and an imported action's request drew its response on whatever line of
+      // this buffer shared its number — `hook-first.tflw`'s `import` line, in the corpus.
+      if (step.file !== undefined) continue;
       if (OPENS_GROUP.has(step.kind)) {
         close();
         open = { step, verdicts: new Map() };
@@ -263,7 +268,7 @@ export function indexFromSend(args: {
   const lines = linesOf(args.bufferText);
   const out = new Map<number, Ran>();
   for (const step of args.steps) {
-    if (step.kind !== 'api') continue;
+    if (step.kind !== 'api' || step.file !== undefined) continue;
     const at = args.lines.get(step.line);
     if (at === undefined) continue;
     out.set(at, {

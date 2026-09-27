@@ -34,17 +34,15 @@ test('the stream replayed through the reducer is results.json: every test, in or
   // `concurrency`, which a workload result carries on the stream already (U4 found the two kinds
   // differ here). Stated rather than absorbed: a third field appearing on one side and not the
   // other is a contract drift the page should notice.
-  // **An action's steps are streamed under a name of their own** — `readShelf(...)`, the label
-  // `interpreter.ts` hands `execSteps` for a call — with no `test:start` before them and no
-  // `test:end` after, so the reducer materialises a row for them (`patch`'s last branch: kept
-  // rather than dropped) that the report never holds. One such row here, from the one call in the
-  // corpus; it is stated so a row the reducer dropped and a row it invented are both red. The
-  // steps it carries name the CALLER's source at the action's own line numbers, which is
-  // `M240-03` and the runtime's, not this reducer's.
+  // **An action's steps are streamed under the test that called them** (`M240-03`). They used to
+  // arrive under a name of their own — `readShelf(...)`, the label `interpreter.ts` hands
+  // `execSteps` for a call — with no `test:start` before them and no `test:end` after, so the
+  // reducer materialised a row for them (`patch`'s last branch: kept rather than dropped) that the
+  // report never held. The corpus holds one call, so this is the claim that it now makes no row.
   const announced = new Set(events.filter((e) => e.type === 'test:start').map((e) => `${e.file}\u0000${e.name}`));
   const announcedRows = live.tests.filter((t) => announced.has(`${t.file}\u0000${t.name}`));
   const synthesized = live.tests.filter((t) => !announced.has(`${t.file}\u0000${t.name}`));
-  assert.deepEqual(synthesized.map((t) => ({ file: t.file, name: t.name, steps: t.steps.length, result: t.result })), [{ file: 'tests/hooks/hook-first.tflw', name: 'readShelf(...)', steps: 4, result: null }]);
+  assert.deepEqual(synthesized.map((t) => ({ file: t.file, name: t.name, steps: t.steps.length, result: t.result })), []);
   assert.equal(announcedRows.length, report.tests.length);
   for (let i = 0; i < report.tests.length; i++) {
     const { file, concurrency, ...entry } = report.tests[i] as TestResult | WorkloadTestResult;
