@@ -227,10 +227,11 @@ export function startServer(options: StartServerOptions = {}): void {
     if (!result) return null;
     if (result.kind === 'local') return toLspLocation(params.textDocument.uri, result.span);
 
-    if (result.kind === 'config-session') {
+    if (result.kind === 'config-session' || result.kind === 'config-signer') {
       if (!info.root) return null;
       const project = await loadProjectConfig(info.root, envSetting).catch(() => undefined);
-      const def = project?.symbols.defs.find((d) => d.kind === 'session' && d.name === result.name);
+      const want = result.kind === 'config-session' ? 'session' : 'signer';
+      const def = project?.symbols.defs.find((d) => d.kind === want && d.name === result.name);
       return def ? toLspLocation(pathToUri(project!.configPath), def.span) : null;
     }
 

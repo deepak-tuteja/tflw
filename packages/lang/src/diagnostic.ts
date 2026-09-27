@@ -543,6 +543,20 @@ export const Codes = {
    * else about the text is judged.
    */
   SKIP_REASON_EMPTY: 'TF084',
+  /**
+   * `TF086` — **a `sign with` or `signed with` naming no signer** (`M246`, `D1345`). Checked where
+   * the name is written: a step's against the active env's signers, the way `TF028` checks `as
+   * <session>`, and a session's against the config's own declarations. A signer scoped to other
+   * envs is the same code with a hint naming them, `TF028`'s rule for a scoped session.
+   */
+  UNKNOWN_SIGNER: 'TF086',
+  /**
+   * `TF087` — **a signer that cannot sign as written** (`M246`, `D1346`): a placeholder the signer
+   * does not fill (`{bdy}`, or `{signature}` inside the string being signed), no `header` line that
+   * carries `{signature}`, or two signers of one name. Each is a request that would leave the
+   * machine unsigned or signed over the wrong text, and the server's 401 would not say which.
+   */
+  SIGNER_DECL: 'TF087',
 } as const;
 
 // ---------------------------------------------------------------------------

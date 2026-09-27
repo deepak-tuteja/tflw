@@ -73,6 +73,10 @@ export interface EvalCtx {
    * before retrying once — the general auto-refresh-on-401 mechanism every session gets "for
    * free", not just `oauth2` ones. */
   readonly sessionNames: readonly string[];
+  /** `M246` (`D1345`) — the signer this test's sessions (or, in a session's own run, the session)
+   * are `signed with`; a step's own `sign with` wins over it. Optional, `undefined` meaning none,
+   * like `sessionCsrfHeaders`. */
+  readonly sessionSigner?: string;
   /** M128b/D287 — security findings from the *login responses* of the sessions this test opted
    * into, scanned once when each session was established and carried here so that every
    * `expect response has no … security violations` in the test can see them.

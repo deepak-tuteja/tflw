@@ -68,6 +68,11 @@ import type {
   ScrollStmt,
   SelectStmt,
   SessionDecl,
+  SignClause,
+  SignerDecl,
+  HmacScheme,
+  SignerHeader,
+  Sigv4Scheme,
   HoldRpsWorkload,
   HoldUsersWorkload,
   PerVuIterationsWorkload,
@@ -375,12 +380,33 @@ function children(node: Node): readonly Node[] {
     // -- config dialect --
     case 'ConfigFile': {
       const n = node as ConfigFile;
-      return [...(n.defaults ? [n.defaults] : []), ...n.envs, ...n.requires, ...n.sessions];
+      return [...(n.defaults ? [n.defaults] : []), ...n.envs, ...n.requires, ...n.sessions, ...(n.signers ?? [])];
     }
     case 'SessionDecl': {
       const n = node as SessionDecl;
-      return [...(n.oauth2 ? [n.oauth2] : []), ...n.body];
+      return [...(n.signer ? [n.signer] : []), ...(n.oauth2 ? [n.oauth2] : []), ...n.body];
     }
+    // `M246` — the signer family: a declaration's scheme and its template lines, and a step's clause.
+    case 'SignerDecl':
+      return [...((node as SignerDecl).envs ?? []), (node as SignerDecl).scheme];
+    case 'HmacScheme': {
+      const n = node as HmacScheme;
+      return [n.secret, n.signs, ...n.headers];
+    }
+    case 'SignerHeader': {
+      const n = node as SignerHeader;
+      return [n.name, n.value];
+    }
+    case 'Sigv4Scheme': {
+      const n = node as Sigv4Scheme;
+      return [n.region, n.service, n.key, n.secret, ...(n.token ? [n.token] : [])];
+    }
+    case 'SignClause': {
+      const n = node as SignClause;
+      return [n.signer, ...(n.secret ? [n.secret] : []), ...(n.at ? [n.at] : []), ...(n.thenBody ? [n.thenBody] : [])];
+    }
+    case 'SignerRef':
+      return [];
     case 'Oauth2SessionConfig': {
       const n = node as Oauth2SessionConfig;
       return [n.tokenUrl, n.clientId, n.clientSecret, ...(n.scope ? [n.scope] : [])];
@@ -418,7 +444,7 @@ function children(node: Node): readonly Node[] {
 }
 
 function apiRequestSpecChildren(spec: ApiRequestSpec): readonly Node[] {
-  return [spec.path, ...(spec.body ? [spec.body] : []), ...spec.headers];
+  return [spec.path, ...(spec.body ? [spec.body] : []), ...spec.headers, ...(spec.sign ? [spec.sign] : [])];
 }
 
 /**

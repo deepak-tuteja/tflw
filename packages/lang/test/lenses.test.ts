@@ -174,7 +174,8 @@ test('every test in the corpus classifies, and a third of them land in more than
   // `M240` `A` — the page fixture gained two files that sort and land awkwardly on purpose: an
   // action-only file (no test) and a file whose first declaration is a hook (one test). 85 -> 86.
   // `M242` (`D1328`, `D1329`): the printer corpus's GraphQL test and its strings test. 86 -> 88.
-  const EXPECTED_TESTS = 88;
+  // `M246`: the printer corpus's signed-webhook test. 88 -> 89.
+  const EXPECTED_TESTS = 89;
   assert.equal(mine.total, EXPECTED_TESTS,
     `the corpus classified ${mine.total} tests, expected ${EXPECTED_TESTS} — move the number in the change that moved the corpus`);
 

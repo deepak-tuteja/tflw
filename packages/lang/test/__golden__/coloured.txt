@@ -5,7 +5,7 @@
 # A word added here and nowhere else fails that test — the drift B5-09 records, caught at once
 # rather than by the next milestone to audit two wordlists by hand.
 #
-# 235 words
+# 243 words
 
 DELETE
 GET
@@ -103,6 +103,7 @@ headers
 helpers
 hex
 hidden
+hmac
 hold
 honoring
 hosts
@@ -192,6 +193,13 @@ send
 sequential
 serious
 session
+sha1
+sha256
+sha512
+signed
+signer
+signs
+sigv4
 skip
 snapshot
 spider

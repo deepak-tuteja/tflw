@@ -1342,6 +1342,9 @@ async function loadAndValidate(
       knownSessions,
       privilegedSessions,
       outOfScopeSessions: { envName: resolved.envName, declaredElsewhere: resolved.sessionsOutOfScope },
+      // `M246` (`TF086`) — the active env's signers, with the scoped-elsewhere set for the hint.
+      knownSigners: Array.from(resolved.signers?.keys() ?? []),
+      outOfScopeSigners: { envName: resolved.envName, declaredElsewhere: resolved.signersOutOfScope ?? new Map() },
       importedActions: imports.actions,
       importsWithErrors: imports.unparseable,
       // `TF043` (M97c, D144, `A4-07`) — the `stat`s happen here, in the caller, for the same reason
@@ -3009,6 +3012,8 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
         knownSessions,
         privilegedSessions,
         outOfScopeSessions: { envName: loaded.resolved.envName, declaredElsewhere: loaded.resolved.sessionsOutOfScope },
+        knownSigners: Array.from(loaded.resolved.signers?.keys() ?? []),
+        outOfScopeSigners: { envName: loaded.resolved.envName, declaredElsewhere: loaded.resolved.signersOutOfScope ?? new Map() },
         importedActions: imports.actions,
         importsWithErrors: imports.unparseable,
         missingFiles: await resolveMissingFiles(abs, parsed.program, existsPending),

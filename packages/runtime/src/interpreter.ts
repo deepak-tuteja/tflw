@@ -11,6 +11,7 @@ import { basename, join, posix, resolve as resolvePath } from 'node:path';
 import { Codes, isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   FindingSeverity,
+  Value,
   ApiBody,
   ApiRequestSpec,
   ApiStep,
@@ -107,6 +108,7 @@ import { RequestTimeoutError, sendRequest } from './http.js';
 import { absoluteUrlNeedsAllowHosts, AllowHostsError, allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { createKeepAliveAgents, destroyKeepAliveAgents, sendPinnedRequest, warnPinnedFallback, type KeepAliveAgents } from './httpPinned.js';
 import { hashString, mulberry32, resolveRunClock, resolveRunSeed, subSeed } from './seed.js';
+import { markRunClock, signRequest, signingNow, type Signer } from './signing.js';
 import { inferContentType } from './mime.js';
 import { acquireInsecureTls, releaseInsecureTls } from './tls.js';
 import { finalizeVerdict } from './run-verdict.js';
@@ -336,6 +338,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   const runStart = performance.now();
   const runSeed = resolveRunSeed(opts.seed);
   const runClock = resolveRunClock(opts.now);
+  markRunClock(runClock);
   const uniqueSeq = opts.uniqueSeq ?? makeUniqueSeq();
   const testIndexOffset = opts.testIndexOffset ?? 0;
   const sessionCache = opts.sessionCache ?? new SessionCache();
@@ -1446,6 +1449,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   const lines = opts.source.split('\n');
   const runSeed = resolveRunSeed(opts.seed);
   const runClock = resolveRunClock(opts.now);
+  markRunClock(runClock);
   // `opts.shard` (`M161-01`, `D815`) — this call may be one forked worker of several, and each one
   // reaching this line independently is what made `unique` collide across them. It was already in
   // scope here, and passed to `scenarioCtx` a few lines below for the iteration axis; only the
@@ -2482,7 +2486,7 @@ async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx
   const scope = new Map<string, unknown>();
   const cookieJar = new CookieJar();
   const securitySink: Observation[] = [];
-  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionTc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, csrfSink, cookieJar, securitySink };
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: sessionTc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], headerSink, csrfSink, cookieJar, securitySink, ...(decl.signer ? { sessionSigner: decl.signer.name } : {}) };
   const emptyRegistry: CallRegistry = { actions: new Map(), sources: new Map(), helpers: new Map() };
   const exec = await execSteps(decl.body, config, ctx, sessionTc, `session ${decl.name}`, emptyRegistry);
   return {
@@ -2988,6 +2992,7 @@ async function runTestAttemptBody(
     sessionHeaders,
     sessionCsrfHeaders,
     sessionNames: test.sessions,
+    ...sessionSignerOf(test.sessions, config),
     sessionFindings,
     cookieJar,
     ...(tc.browserManager && browserPageState ? { browser: { manager: tc.browserManager, page: browserPageState, scope: null } } : {}),
@@ -4109,6 +4114,27 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
     if (prepared.contentType && !hasHeader(headers, 'content-type')) setHeader(headers, 'content-type', prepared.contentType);
   }
 
+  // `M246` (`D1344`/`D1345`) — a step's `sign with` wins over its session's `signed with`, which is
+  // how a signed-session test sends one bad signature (rule 4). Signing happens here, after the body
+  // is serialised: the body is turned into the bytes that will be sent, once, and those bytes are
+  // both signed and sent (rule 2), so a multipart boundary or a JSON key order can never differ
+  // between what was signed and what arrived.
+  const sign = resolveSigning(spec, config, ctx);
+  let signedBytes: Uint8Array | undefined;
+  if (sign) {
+    const bytes = await bodyBytes(sendBody, headers);
+    signedBytes = bytes.body;
+    sendBody = bytes.body === undefined ? undefined : Buffer.from(bytes.body);
+    if (sign.thenBody) {
+      // The tamper case (`D1348`): the signature covers the step's own body, and this one is sent.
+      const tampered = await prepareBody(sign.thenBody, ctx, baseDir);
+      const sent = await bodyBytes(tampered.sendBody, headers);
+      sendBody = sent.body === undefined ? undefined : Buffer.from(sent.body);
+      traceBody = tampered.traceText;
+      if (tampered.contentType) setHeader(headers, 'content-type', tampered.contentType);
+    }
+  }
+
   const request: RequestTrace = { method: spec.method, url, headers, ...(traceBody !== undefined ? { body: traceBody } : {}) };
   const timeoutMs = spec.timeoutMs ?? config.timeouts.api;
   // `M97c-03`: `cert`/`key` are `tflw.config` keys (SPEC §3.6), so they resolve against the
@@ -4120,10 +4146,17 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
   // is dead code there and `sendRequest`'s `fetch()` path is exactly what it always was.
   const canPin = pinnedAgents !== undefined && !mtls && (sendBody === undefined || typeof sendBody === 'string');
   if (pinnedAgents !== undefined && !canPin) warnPinnedFallback(mtls ? 'mtls' : 'formdata');
-  const sendOnce = (): Promise<ResponseTrace> =>
-    canPin
+  // A retry re-signs (rule 5): each attempt gets a fresh timestamp, because re-sending a stale one
+  // would fail for the wrong reason. The headers are set on the one object the trace also holds, so
+  // the report shows the signature the last attempt actually carried.
+  const sendOnce = (): Promise<ResponseTrace> => {
+    if (sign) {
+      for (const [k, v] of Object.entries(signRequest(sign.signer, { method: spec.method, url, headers, body: signedBytes, now: sign.at ?? signingNow(ctx.runClock) }))) setHeader(headers, k, v);
+    }
+    return canPin
       ? sendPinnedRequest({ method: spec.method, url, headers, body: sendBody as string | undefined, timeoutMs, followRedirects: spec.followRedirects, allowHosts: config.allowHosts }, pinnedAgents!)
       : sendRequest({ method: spec.method, url, headers, body: sendBody, timeoutMs, followRedirects: spec.followRedirects, allowHosts: config.allowHosts, ...(mtls ? { mtls } : {}) });
+  };
   let response = await sendOnce();
 
   // `retry honoring "Retry-After" up to N` (SPEC §5.1, PLAN decision 102b, enterprise arc
@@ -4160,6 +4193,75 @@ async function execApi(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCt
     retryAfterWaitedMs,
     ...(cookieScopeNote !== undefined ? { cookieScopeNote } : {}),
   };
+}
+
+/** `D1345` — the signer a test's sessions bring, when one of them is `signed with` one. Several
+ * sessions follow SPEC §3.3's precedence rule for their headers: the later-listed one wins. */
+function sessionSignerOf(sessions: readonly string[], config: ResolvedConfig): { sessionSigner?: string } {
+  let name: string | undefined;
+  for (const s of sessions) name = config.sessions.get(s)?.signer?.name ?? name;
+  return name === undefined ? {} : { sessionSigner: name };
+}
+
+/** What `execApi` needs to sign one request, resolved from the step's `sign with` or the session's
+ * `signed with` (`M246`). `null` when the request is not signed. */
+interface ResolvedSigning {
+  readonly signer: Signer;
+  /** `at <time>` — a fixed signing instant, the replay case; `null` is the signing clock. */
+  readonly at: Date | null;
+  readonly thenBody: ApiBody | null;
+}
+
+function resolveSigning(spec: ApiRequestSpec, config: ResolvedConfig, ctx: EvalCtx): ResolvedSigning | null {
+  const clause = spec.sign ?? null;
+  const name = clause?.signer.name ?? ctx.sessionSigner;
+  if (name === undefined) return null;
+  const decl = config.signers?.get(name);
+  if (!decl) {
+    const elsewhere = config.signersOutOfScope?.get(name);
+    throw new RuntimeError(
+      elsewhere
+        ? `signer "${name}" is declared \`for env ${elsewhere.join(', ')}\`, and this run resolved env "${config.envName}"`
+        : `unknown signer "${name}" — is it declared in tflw.config?`,
+    );
+  }
+  const text = (v: Value, what: string): string => {
+    const out = evalValue(v, ctx);
+    if (out === undefined || out === null || out === '') throw new RuntimeError(`signer "${name}": ${what} is empty`);
+    return stringify(out);
+  };
+  const secret = clause?.secret ? text(clause.secret, 'the `secret` override') : null;
+  let signer: Signer;
+  if (decl.scheme.type === 'HmacScheme') {
+    const h = decl.scheme;
+    signer = { kind: 'hmac', algorithm: h.algorithm, encoding: h.encoding, secret: secret ?? text(h.secret, 'its `secret`'), signs: h.signs.value, headers: h.headers.map((x) => ({ name: x.name.value, value: x.value.value })) };
+  } else {
+    const a = decl.scheme;
+    signer = { kind: 'sigv4', region: text(a.region, 'its `region`'), service: text(a.service, 'its `service`'), accessKeyId: text(a.key, 'its `key`'), secretAccessKey: secret ?? text(a.secret, 'its `secret`'), sessionToken: a.token ? text(a.token, 'its `token`') : null };
+  }
+  let at: Date | null = null;
+  if (clause?.at) {
+    // Evaluated against the signing clock, so `now - 10 minutes` is ten minutes before *this*
+    // request rather than before the run began (`D1349`).
+    const when = evalValue(clause.at, { ...ctx, runClock: signingNow(ctx.runClock) });
+    if (!(when instanceof Date)) throw new RuntimeError(`\`sign with ${name} at …\` needs a time — e.g. \`at now - 10 minutes\``);
+    at = when;
+  }
+  return { signer, at, thenBody: clause?.thenBody ?? null };
+}
+
+/** A prepared body as the bytes that will be sent. A multipart `FormData` is serialised here, and
+ * its boundary-bearing content type replaces the one `fetch` would otherwise invent — which would
+ * be a second serialisation with a different boundary, and a signature over the wrong bytes. */
+async function bodyBytes(body: BodyInit | undefined, headers: Record<string, string>): Promise<{ body: Uint8Array | undefined }> {
+  if (body === undefined) return { body: undefined };
+  if (typeof body === 'string') return { body: Buffer.from(body, 'utf8') };
+  if (body instanceof Uint8Array) return { body };
+  if (body instanceof ArrayBuffer) return { body: new Uint8Array(body) };
+  const r = new Response(body as BodyInit);
+  const type = r.headers.get('content-type');
+  if (type && body instanceof FormData) setHeader(headers, 'content-type', type);
+  return { body: new Uint8Array(await r.arrayBuffer()) };
 }
 
 /** The `scheme://host:port` a request is addressed to — the cookie jar's scope key (D-M88-7).

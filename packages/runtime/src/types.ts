@@ -1,7 +1,7 @@
 // Shared runtime types: the resolved config the interpreter runs against, the event stream it
 // emits (SPEC §13 — the reporter is a pure consumer of these), and the aggregated run report.
 
-import type { EvidenceLevel, LogDestination, LogLevel, RedactPattern, SessionDecl, TeardownLevel, Value } from '@tflw/lang';
+import type { EvidenceLevel, LogDestination, LogLevel, RedactPattern, SessionDecl, SignerDecl, TeardownLevel, Value } from '@tflw/lang';
 // Re-exported so downstream packages that only depend on `@tflw/runtime` (e.g. `packages/reporter`,
 // which has no direct `@tflw/lang` dependency) can still type a `logLevelThreshold`/`logDestination`
 // parameter without adding one (M27, PLAN_LOG.md).
@@ -116,6 +116,11 @@ export interface ResolvedConfig {
    * their `for env` clause does name. Never used to establish anything; its only consumer is
    * `TF028`, which needs the difference between *no session by that name* and *not this env's*. */
   readonly sessionsOutOfScope: ReadonlyMap<string, readonly string[]>;
+  /** `signer <name> …` declarations this env gets (`M246`, `D1345`), by name. Optional so a config
+   * built by hand — every test fixture — need not spell out that it has none. */
+  readonly signers?: ReadonlyMap<string, SignerDecl>;
+  /** Declared for other envs only — `TF086`'s scoped hint, `sessionsOutOfScope`' twin. */
+  readonly signersOutOfScope?: ReadonlyMap<string, readonly string[]>;
   /** `cert`/`key` — per-env mTLS client certificate paths, resolved relative to the config file's
    * directory at request time (SPEC §3.5, decision 3b, enterprise arc). `null` when neither is
    * set; `resolveConfig` rejects one without the other. */

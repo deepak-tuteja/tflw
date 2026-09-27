@@ -31,6 +31,18 @@ test "the four body shapes that are not inline JSON"
   api POST /v1/attachments upload "./payloads/a.png" as "files", "./payloads/b.pdf" as "files" type "application/pdf", "./payloads/c.txt" as "note" form title="Bug 42"
   expect status equals 201
 
+# `M246` (`D1345`/`D1348`): a signed request, and one negative per override, printed in the one
+# order `parseSignClause` reads them.
+@printer
+test "signed webhooks, good and bad"
+  api POST /webhooks/stripe body { id: "evt_1" }
+    header "X-Trace" is "t1"
+    sign with stripe
+  expect status equals 200
+  api POST /webhooks/stripe body { amount: 100 }
+    sign with stripe secret "not-the-secret" at now - 10 minutes then body { amount: 1 }
+  expect status equals 400
+
 # `M242` `C` (`D1328`): a GraphQL body, its query raw and its values in `variables`.
 @printer
 test "a GraphQL query with its variables and operation"

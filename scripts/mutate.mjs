@@ -519,9 +519,9 @@ const REGISTRY = [
     id: 'config-directive-list',
     milestone: 'm110',
     file: 'packages/lang/src/spec-data.ts',
-    what: '`TF022` goes back to naming six config directives while the parser accepts seven — `V4-04` exactly, re-introduced at its single source (the list grew by `helpers` in `M239` and by `runs` in `M241`; the mutation drops the newest member the same way it once dropped `exclude`)',
-    find: "export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'require', 'exclude', 'helpers', 'runs'] as const;",
-    replace: "export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'require', 'exclude', 'helpers'] as const;",
+    what: '`TF022` goes back to naming seven config directives while the parser accepts eight — `V4-04` exactly, re-introduced at its single source (the list grew by `helpers` in `M239`, `runs` in `M241` and `signer` in `M246`; the mutation drops the last member the same way it once dropped `exclude`)',
+    find: "export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'signer', 'require', 'exclude', 'helpers', 'runs'] as const;",
+    replace: "export const CONFIG_DIRECTIVES = ['defaults', 'env', 'session', 'signer', 'require', 'exclude', 'helpers'] as const;",
   },
   {
     id: 'cli-reference-section',

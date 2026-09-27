@@ -82,6 +82,7 @@ const SYMBOL_KIND_LABEL: Record<SymbolKind, string> = {
   param: 'action parameter',
   action: 'action',
   session: 'session',
+  signer: 'signer',
   // Reached since `M125e`/D279a — but from `refLabel` below, never from a ref that *carries* this
   // kind. `collectSymbols` has never produced `'importedAction'` and (D279a) deliberately still
   // doesn't; the sibling branches in `semanticTokens.ts` and `rename.ts` remain dead as they have
