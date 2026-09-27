@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, parseConfigSource, print, format, checkProgram, collectSymbols, collectConfigSymbols, Codes } from '../src/index.js';
+import { parseSource, parseConfigSource, print, format, checkProgram, collectSymbols, collectConfigSymbols, detectReuse, Codes } from '../src/index.js';
 import type { ApiStep, HmacScheme, Sigv4Scheme } from '../src/index.js';
 
 const STRIPE = `signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)
@@ -180,4 +180,23 @@ test('a `sign with` name is a signer ref, and the config\'s declaration is its d
   assert.equal(def?.name, 'stripe');
   const ref = configTable.refs.find((r) => r.kind === 'signer');
   assert.deepEqual(ref?.defSpan, def?.span, 'the session\'s `signed with` resolves to the declaration in the same file');
+});
+
+// ---- reuse ---------------------------------------------------------------------------------------------
+
+test('a reuse hint never folds two requests that differ only in their `sign with` overrides', () => {
+  // Found by the sibling's `refactor-check` sweep: `RF001` pulled the wrong-key and the replay
+  // tests into one action, and both then sent a valid signature. The control is the same pair with
+  // identical sign lines, which is a genuine duplicate and still gets its hint.
+  const pair = (a: string, b: string): number => {
+    // Three steps: `RF001` proposes nothing shorter.
+    const tail = '  expect status equals 400\n  expect body.error equals "bad signature"\n';
+    const src = `test "a"\n  ${STEP}\n    ${a}\n${tail}\ntest "b"\n  ${STEP}\n    ${b}\n${tail}`;
+    const { program, diagnostics } = parseSource(src);
+    assert.deepEqual(diagnostics, []);
+    return detectReuse([{ path: 'tests/w.tflw', source: src, program }]).length;
+  };
+  assert.equal(pair('sign with stripe secret "not-the-secret"', 'sign with stripe at now - 10 minutes'), 0);
+  assert.equal(pair('sign with stripe then body { amount: 1 }', 'sign with stripe then body { amount: 2 }'), 0);
+  assert.equal(pair('sign with stripe secret "not-the-secret"', 'sign with stripe secret "not-the-secret"'), 1);
 });
