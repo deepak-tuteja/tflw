@@ -101,7 +101,7 @@ function toBase64(png: Buffer): string {
 }
 
 /** Compares `actualPng` against whatever baseline (if any) lives at `paths`, honoring
- * `updateSnapshots` (`tflw run --update-snapshots`, never on a negated step). Never throws for an ordinary mismatch/missing
+ * `updateSnapshots` (`tflw run --update-snapshots`; a negated step seeds but never overwrites). Never throws for an ordinary mismatch/missing
  * baseline — those are reported through `SnapshotOutcome.ok`, the same "a failure is data, not an
  * exception" shape every other UI matcher in this runtime uses; only a real I/O error propagates.
  *
@@ -114,13 +114,15 @@ function toBase64(png: Buffer): string {
  * `wasMade`-only negation check. */
 export async function evaluateSnapshot(paths: SnapshotPaths, name: string, actualPng: Buffer, platformKey: string, updateSnapshots: boolean, negated: boolean): Promise<SnapshotOutcome> {
   const baseline = await readBaseline(paths);
-  // A `not matches snapshot` step never writes: the picture it holds is the one that is meant to
-  // differ, so accepting it would overwrite the baseline the positive step beside it just recorded
-  // (tflw-tests' render fixture had to be seeded from a hand-neutralised copy of its test for this).
-  const write = updateSnapshots && !negated;
+  // A `not matches snapshot` step may seed a baseline (none yet, or one cut on another platform) but
+  // never overwrites a comparable one: the picture it holds is the one meant to differ, so accepting
+  // it would replace what the positive step beside it just recorded (tflw-tests' render fixture had
+  // to be seeded from a hand-neutralised copy of its test for this). A name used only negated still
+  // needs its first baseline from somewhere, which is why seeding stays.
+  const overwrite = updateSnapshots && !negated;
 
   if (!baseline) {
-    if (write) {
+    if (updateSnapshots) {
       await writeBaseline(paths, actualPng, platformKey);
       return { ok: true, updated: true, message: `snapshot "${name}": new baseline written`, diff: { actual: toBase64(actualPng) } };
     }
@@ -136,7 +138,7 @@ export async function evaluateSnapshot(paths: SnapshotPaths, name: string, actua
     // SPEC §9.9: `--update-snapshots` overwrites a baseline "whatever it currently compares as".
     // A browser upgrade changes the key on every baseline at once, and re-recording is the only way
     // forward, so the one outcome that refused the flag was the one it is most needed for.
-    if (write) {
+    if (updateSnapshots) {
       await writeBaseline(paths, actualPng, platformKey);
       return {
         ok: true,
@@ -156,7 +158,7 @@ export async function evaluateSnapshot(paths: SnapshotPaths, name: string, actua
   const baselinePng = PNG.sync.read(baseline.png);
   const actualPngDecoded = PNG.sync.read(actualPng);
   if (baselinePng.width !== actualPngDecoded.width || baselinePng.height !== actualPngDecoded.height) {
-    if (write) {
+    if (overwrite) {
       await writeBaseline(paths, actualPng, platformKey);
       return {
         ok: true,
@@ -185,7 +187,7 @@ export async function evaluateSnapshot(paths: SnapshotPaths, name: string, actua
   }
 
   const pct = ((diffPixels / (width * height)) * 100).toFixed(2);
-  if (write) {
+  if (overwrite) {
     await writeBaseline(paths, actualPng, platformKey);
     return {
       ok: true,
