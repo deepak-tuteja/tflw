@@ -143,27 +143,32 @@
           },
           "body": {
             "type": "UploadBody",
-            "filePath": {
-              "type": "StringLit",
-              "value": "./files/img.png",
-              "parts": [
-                {
-                  "kind": "text",
-                  "value": "./files/img.png"
-                }
-              ]
-            },
-            "fieldName": {
-              "type": "StringLit",
-              "value": "avatar",
-              "parts": [
-                {
-                  "kind": "text",
-                  "value": "avatar"
-                }
-              ]
-            },
-            "contentType": null,
+            "files": [
+              {
+                "type": "UploadFile",
+                "filePath": {
+                  "type": "StringLit",
+                  "value": "./files/img.png",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "value": "./files/img.png"
+                    }
+                  ]
+                },
+                "fieldName": {
+                  "type": "StringLit",
+                  "value": "avatar",
+                  "parts": [
+                    {
+                      "kind": "text",
+                      "value": "avatar"
+                    }
+                  ]
+                },
+                "contentType": null
+              }
+            ],
             "extra": [
               {
                 "type": "FormField",

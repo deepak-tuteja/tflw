@@ -1,0 +1,3 @@
+# Checkout hangs
+
+Steps to reproduce, for the docs sample in guide/first-test.md.
