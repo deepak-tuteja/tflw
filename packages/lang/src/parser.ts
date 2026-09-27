@@ -3676,8 +3676,8 @@ class Parser {
       const file = this.parseUploadFile(files.length);
       if (!file) return null;
       files.push(file);
-      if (!this.check('comma')) break;
-      this.advance();
+      if (this.check('comma')) this.advance();
+      else break;
     }
     let extra: FormField[] = [];
     if (this.isKw(this.peek(), 'form')) {
