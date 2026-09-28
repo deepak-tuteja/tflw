@@ -178,6 +178,8 @@ export class DocumentStore {
     // built to prevent. `undefined` on a pathless scratch buffer, where no project resolves and
     // every `env(` in the file would otherwise be squiggled red on code that is correct.
     let requiredEnv: readonly string[] | undefined;
+    // `M247-04` (`G7`): the env this buffer is checked under — the CLI passes it, so the editor must.
+    let activeEnv: string | undefined;
     let helpers: HelperPolicy | undefined;
     if (doc.root) {
       const project = await loadProjectConfig(doc.root, envSetting).catch(() => undefined);
@@ -186,6 +188,7 @@ export class DocumentStore {
         knownSessions = Array.from(project.resolved.sessions.keys());
         knownSigners = Array.from(project.resolved.signers?.keys() ?? []);
         knownEnvs = project.resolved.envNames;
+        activeEnv = project.resolved.envName;
         privilegedSessions = knownSessions.filter((name) => project.resolved!.sessions.get(name)?.privileged === true);
         envBaseUrls = {
           envName: project.resolved.envName,
@@ -244,6 +247,7 @@ export class DocumentStore {
         knownSessions,
         ...(knownSigners === undefined ? {} : { knownSigners }),
         ...(knownEnvs === undefined ? {} : { knownEnvs }),
+        ...(activeEnv === undefined ? {} : { activeEnv }),
         privilegedSessions,
         // `undefined` still means *world unknown* and still suppresses the negative passes — and it
         // now arrives by two routes that mean the same thing: a pathless buffer with nowhere to

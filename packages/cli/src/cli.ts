@@ -1350,6 +1350,7 @@ async function loadAndValidate(
       // `M246` (`TF086`) — the active env's signers, with the scoped-elsewhere set for the hint.
       knownSigners: Array.from(resolved.signers?.keys() ?? []),
       ...(resolved.envNames ? { knownEnvs: resolved.envNames } : {}),
+      activeEnv: resolved.envName,
       outOfScopeSigners: { envName: resolved.envName, declaredElsewhere: resolved.signersOutOfScope ?? new Map() },
       importedActions: imports.actions,
       ...(imports.elements === undefined ? {} : { importedElements: imports.elements }),
