@@ -6535,16 +6535,50 @@ function evaluateQuantified(step: ExpectStmt, response: ResponseTrace | null, ct
   const arrayLabel = `${subjectLabel}${pathLabel(path.slice(0, i))}`;
   const remaining = path.slice(i);
 
-  // A per-element navigation failure (an element missing the remaining path entirely, e.g. a
-  // `null`/absent intermediate field) is that element failing to match, not a reason to blow up
-  // the whole quantified assertion (P#46) — `any` in particular must be able to say "this one
-  // element didn't have it" without crashing out before checking the rest.
-  const outcomes = current.map((el, idx) => {
-    const label = `${arrayLabel}[${idx}]${pathLabel(remaining)}`;
+  // `G8` (`TFLW-GAPS.md` row 11): the path quantifies across **every** array it crosses, not only
+  // the first. `any body.orders.items.quantity` over orders that each carry `items[]` reads every
+  // item of every order — `any` holds when one leaf matches, `all` when every leaf does. A property
+  // read that meets a second array fans out over its elements instead of reading the property off
+  // the array itself, which is what made the gap silent: `navigate` returned `undefined` for
+  // `items.quantity` and the assertion said *none of N matched* with the matching item present.
+  // An array's own properties (`length`, an index) are still read off it, and a `[n]` segment
+  // still picks one element, so a path that worked before reads exactly as it did.
+  const leaves: { label: string; value: unknown; error?: string }[] = [];
+  let crossed = false;
+  const walk = (value: unknown, rest: readonly PathSegment[], label: string): void => {
+    let v = value;
+    let here = label;
+    for (let k = 0; k < rest.length; k++) {
+      const seg = rest[k]!;
+      if (Array.isArray(v) && seg.kind === 'prop' && !Object.prototype.hasOwnProperty.call(v, seg.name)) {
+        const tail = rest.slice(k);
+        crossed = true;
+        v.forEach((el, idx) => walk(el, tail, `${here}[${idx}]`));
+        return;
+      }
+      here = `${here}${pathLabel([seg])}`;
+      // A per-element navigation failure (an element missing the remaining path entirely, e.g. a
+      // `null`/absent intermediate field) is that element failing to match, not a reason to blow
+      // up the whole quantified assertion (P#46) — `any` in particular must be able to say "this
+      // one element didn't have it" without crashing out before checking the rest.
+      try {
+        v = navigate(v, seg, here);
+      } catch (err) {
+        leaves.push({ label: here, value: undefined, error: err instanceof RuntimeError ? err.message : `${(err as Error).message}` });
+        return;
+      }
+    }
+    leaves.push({ label: here, value: v });
+  };
+  current.forEach((el, idx) => walk(el, remaining, `${arrayLabel}[${idx}]`));
+  // Once a second array was crossed the summary names it — `body.orders[*].items` — so a failure
+  // says where it looked rather than naming only the outer array.
+  const scopeLabel = crossed ? `${arrayLabel}[*]${nestedLabel(remaining, current)}` : arrayLabel;
+
+  const outcomes = leaves.map((leaf) => {
+    if (leaf.error !== undefined) return { ok: false, message: leaf.error };
     try {
-      let value: unknown = el;
-      for (const seg of remaining) value = navigate(value, seg, label);
-      return evalMatcher(label, value, step.matcher, ctx);
+      return evalMatcher(leaf.label, leaf.value, step.matcher, ctx);
     } catch (err) {
       const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
       return { ok: false, message };
@@ -6552,9 +6586,25 @@ function evaluateQuantified(step: ExpectStmt, response: ResponseTrace | null, ct
   });
 
   const ok = step.quantifier === 'any' ? outcomes.some((o) => o.ok) : outcomes.every((o) => o.ok);
-  if (ok) return { ok: true, message: `${step.quantifier} of ${current.length} element(s) in ${arrayLabel} matched` };
+  if (ok) return { ok: true, message: `${step.quantifier} of ${leaves.length} element(s) in ${scopeLabel} matched` };
   if (step.quantifier === 'all') return outcomes.find((o) => !o.ok)!;
-  return { ok: false, message: `expected any element in ${arrayLabel} to match, but none of ${current.length} did` };
+  const across = crossed ? ` (across ${current.length} element(s) of ${arrayLabel})` : '';
+  return { ok: false, message: `expected any element in ${scopeLabel} to match, but none of ${leaves.length} did${across}` };
+}
+
+/** The part of a quantified path between the first array and the next one it fans out over, for a
+ * summary label: `.items` in `body.orders[*].items`. Read off the first element that has the path. */
+function nestedLabel(remaining: readonly PathSegment[], arr: readonly unknown[]): string {
+  const probe = arr.find((el) => el !== null && typeof el === 'object');
+  let v: unknown = probe;
+  const out: PathSegment[] = [];
+  for (const seg of remaining) {
+    if (Array.isArray(v) && seg.kind === 'prop' && !Object.prototype.hasOwnProperty.call(v, seg.name)) break;
+    out.push(seg);
+    if (v === null || typeof v !== 'object') break;
+    v = seg.kind === 'prop' ? (v as Record<string, unknown>)[seg.name] : (v as unknown[])[seg.index];
+  }
+  return pathLabel(out);
 }
 
 function pathLabel(path: readonly PathSegment[]): string {

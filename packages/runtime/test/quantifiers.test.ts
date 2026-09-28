@@ -147,3 +147,57 @@ test('`any`/`all` extend to `body csv` (D19.8), same as `body.<path>`', async ()
 
   await server.close();
 });
+
+// `G8` (`TFLW-GAPS.md` row 11) — the path quantifies across every array it crosses. The row's own
+// shape: a list of orders, each carrying `items[]`, and the matching item in the second order.
+const NESTED = {
+  orders: [
+    { id: 1, items: [{ quantity: 1 }, { quantity: 2 }] },
+    { id: 2, items: [{ quantity: 3 }] },
+    { id: 3, items: [] },
+  ],
+};
+
+test('G8: `any`/`all` quantify into a nested array — every leaf of every parent is read', async () => {
+  const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, NESTED) });
+
+  const source = `test "nested"
+  api GET /orders
+  expect any body.orders.items.quantity equals 3
+  check any body.orders.items.quantity equals 9
+  check all body.orders.items.quantity is greater than 0
+  check all body.orders.items.quantity is less than 3
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  const t = asEntry(report.tests[0], 'functional');
+  assert.equal(t.steps[1]!.ok, true, t.steps[1]!.detail); // the quantity-3 item sits in the second order
+  assert.match(t.steps[1]!.detail ?? '', /any of 3 element\(s\) in body\.orders\[\*\]\.items matched/);
+  assert.equal(t.steps[2]!.ok, false);
+  assert.match(t.steps[2]!.detail ?? '', /expected any element in body\.orders\[\*\]\.items to match, but none of 3 did \(across 3 element\(s\) of body\.orders\)/);
+  assert.equal(t.steps[3]!.ok, true, t.steps[3]!.detail); // an empty `items[]` adds no leaf, so it cannot fail `all`
+  assert.equal(t.steps[4]!.ok, false);
+  assert.match(t.steps[4]!.detail ?? '', /body\.orders\[1\]\.items\[0\]\.quantity/); // the leaf that failed, both indices named
+
+  await server.close();
+});
+
+test('G8: a path that worked before reads as it did — `length` and `[n]` are still read off the array', async () => {
+  const server = await startFixtureServer({ '/orders': (_req, res) => json(res, 200, NESTED) });
+
+  const source = `test "unchanged"
+  api GET /orders
+  expect any body.orders.items.length equals 2
+  expect all body.orders.items.length is less than 3
+  expect any body.orders.items[0].quantity equals 3
+`;
+  const { program } = parseSource(source);
+  const { report } = await runProgram(program, testConfig(server.baseUrl), { source });
+
+  assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+  const t = asEntry(report.tests[0], 'functional');
+  assert.match(t.steps[1]!.detail ?? '', /any of 3 element\(s\) in body\.orders matched/); // no second array crossed
+
+  await server.close();
+});
