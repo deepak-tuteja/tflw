@@ -45,6 +45,8 @@ export const CONSTRUCT_HOMES = new Map(Object.entries({
   'declaration:test': ['first-test'],
   'declaration:crawl': ['crawling'],
   'declaration:action': ['actions'],
+  // `M247` `D` (`D1356`) — a named locator is taught where locators are, not where `import` is.
+  'declaration:element': ['browser-basics'],
   'declaration:import': ['actions'],
   'declaration:use': ['actions'],
   'declaration:before': ['data-and-hooks'],

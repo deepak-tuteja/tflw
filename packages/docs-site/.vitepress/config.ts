@@ -213,6 +213,10 @@ export default defineConfig({
       // fifth, because it is a peer of the Guide and 80.7% of this site being prose about the
       // language was the whole of the complaint that moved it.
       { text: 'The UI', link: '/ui/' },
+      // `M247` `F` (`D1350`) — the adopter's runbook: how to run a project, grown one page per
+      // milestone rather than written at the end. Its index, glossary and troubleshooting pages
+      // arrive with `M253`.
+      { text: 'Runbook', link: '/runbook/project' },
       { text: 'Reference', link: '/reference/matchers' },
       { text: 'Grammar', link: '/grammar' },
       { text: 'Editor', link: '/editor' },
@@ -239,6 +243,12 @@ export default defineConfig({
       // screenshot, and the screenshot was cut at a door its caption did not name. The doors are
       // the axis this UI is organised on, and a reader who wants the LOAD door does not want the
       // other three first.
+      '/runbook/': [
+        {
+          text: 'Runbook',
+          items: [{ text: 'Setting up a project', link: '/runbook/project' }],
+        },
+      ],
       '/ui/': [
         {
           text: 'The UI',

@@ -17,6 +17,36 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — the language joins its sessions to the browser (M247)
+
+- **A session signs the browser in** (`D1352`, amending `D10`). `test "…" as shopper` starts its
+  browser context with the session's cookies — `HttpOnly`, `Secure` and `SameSite` kept — so the
+  first `open` is signed in and a mixed API-and-page test needs no form login. The first browser
+  step's report line says what was seeded, or that the session carries headers only. Hosts are never
+  rewritten (`localhost` and `127.0.0.1` stay two sites), and a login made through the page still
+  does not flow back to the `api` steps. The page's Auth panel says the new rule.
+- **`skip "reason" on env ci, staging`** (`D1353`): a skip that holds only in the named `env` blocks.
+  Reported with its env (`… (on env ci)`), `skippedOn` in `results.json`, `N skipped (M by env)` on
+  the summary; an undeclared env is `TF088`. The page's skip row takes the env list.
+- **`element <name> = <locator>`** (`D1356`): name a locator once and use the bare name wherever a
+  locator goes — `click checkout`, `expect cartCount has text "1"`, `within`, `drag`, `mask`.
+  Importable like an action; an unknown name is `TF089`, a repeated one `TF035`. `tflw check` offers
+  a reuse hint for a `css`/`xpath` string written in two or more files, and `tflw refactor apply`
+  writes the `element` line into `shared/elements.tflw` and rewrites every site. The language server
+  resolves, renames and completes element names; the page's locator pickers offer them.
+- **`with each concurrently`** (`D1359`): a table's rows run at once, each still its own case in
+  row order; a failing row cancels nothing. One row marked `concurrently` is `TF090`.
+- **Docs**: the patterns page is nine sections, one per thing the language refuses and the shape
+  that works instead (`D1360`); the runbook starts with *Setting up a project*.
+
+### Changed — M247
+
+- `--tag`'s exclusion form (`--tag !slow`) was already shipped (`M242`); a planned `--skip-tag` flag
+  was withdrawn as a second spelling of it, and the stale comment that hid it was corrected.
+- In a subject position, a bare word that is not one edit from a subject keyword is now read as an
+  `element` name. `expect total equals 3` meaning a bound value is `TF089` at check time — whose hint
+  says to write `{total}` — rather than a parse error.
+
 ### Added — enterprise arc (M9–M28)
 
 - Session hardening: refresh-on-`401`, per-session TTL, `session <name> oauth2` client-credentials

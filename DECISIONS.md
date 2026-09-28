@@ -2380,7 +2380,7 @@ resolution is reported.**
 
 ### D10
 
-<sub>cited from SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tflw-acceptance/README.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Sessions & identity (D10) — no bridge**
 
@@ -9733,7 +9733,7 @@ the report header.
 
 ### D1352
 
-<sub>cited from SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9741,7 +9741,7 @@ the report header.
 
 ### D1353
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9749,7 +9749,7 @@ the report header.
 
 ### D1356
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9757,11 +9757,19 @@ the report header.
 
 ### D1359
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
 | `D1359` | L8 | **Re-score #11/#12/#18** with runtime known-answers in the sibling. **`with each concurrently`**: the table's rows run at once, each its own reported case; a race is asserted as state afterwards. Retires the sibling's five concurrency helpers. |
+
+### D1360
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1360` | L9 | **The cookbook is one section per fence refusal**, each with the ask, why the fence refuses, the shape that works, a link to the dogfood plant: flag · per-env value · response-driven · env skip · five at once · signed in on both sides · every page of a list · a fixed wait · an outbound call. |
 
 ### M0
 
@@ -14012,7 +14020,7 @@ having a documented fallback it does not have.
 
 ### M242
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +14 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +15 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 **`M242` — the language: matchers, skip, GraphQL, strings, shard, exporter, cookbook**
 
@@ -14056,7 +14064,7 @@ parked: it is a browser-to-API bridge and runs into `D10`, and it gets its own p
 
 ### M247
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§3 `M247` — the language joins its sessions to the browser**
 
