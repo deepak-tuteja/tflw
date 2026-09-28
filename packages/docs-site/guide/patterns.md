@@ -99,7 +99,10 @@ test "refunds settle" skip "no payments sandbox in CI" on env ci
 
 Under `--env ci` the test is reported skipped with its reason and the env; under every other env it
 runs. The names are `env` blocks in `tflw.config`, and a name the config does not declare is
-`TF088`. See [skipping a test](/guide/ci-and-reporting#skip).
+`TF088`. Checked under the env it skips, the test is not held to a service or session only another
+env declares, since that is usually why it skips. See [skipping a test](/guide/ci-and-reporting#skip).
+Kept true by `tests/api/identity/secure-local.tflw` and `tests/api/identity/mtls.tflw`, which run only
+through the project's TLS sidecars and are skipped, with their reason, everywhere else.
 
 ## Five requests at the same moment
 
@@ -127,6 +130,13 @@ test "exactly one reservation won"
 Each row is its own case in the report, and a failing row stops nothing. See [rows at
 once](/guide/data-and-hooks#concurrently).
 
+This works when each row's racing request is the whole row. A row that first needs its own setup (a
+shopper to register, a cart to fill) runs that setup inside the race, so the requests that matter no
+longer land together. And a value made once before the race, such as the product every row buys,
+cannot be handed to the rows: `before file` runs in its own scope. The project tflw is tested
+against still proves its races with a helper for both reasons, so no file there keeps this section
+true yet.
+
 ## Signed in on both sides
 
 **The ask:** *log in through the API, then open the page already logged in.* **Why not:** nothing
@@ -145,6 +155,11 @@ It works when the app signs in by cookie. A session that signs in with a header 
 an API key — has nothing a browser can hold, and a page that keeps its token in `localStorage`
 still signs in through its form. The API and the page must name the same host; see [a session signs
 the browser in](/guide/sessions#a-session-signs-the-browser-in) for the three limits.
+
+A fourth limit is the app's rather than tflw's. A page that sends a CSRF token its own login form
+stores (in `sessionStorage`, say) opens signed in and can read, but its first write is refused. Keep
+the form login for the tests that write through the page. Kept true by `tests/mixed/storefront.tflw`,
+whose read-only journeys run `as shopper` and whose writing journeys still sign in through the form.
 
 ## Every page of a list
 
