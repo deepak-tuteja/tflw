@@ -12,7 +12,9 @@ export type DefinitionResult =
   | { readonly kind: 'local'; readonly span: Span }
   | { readonly kind: 'config-session'; readonly name: string }
   | { readonly kind: 'config-signer'; readonly name: string }
-  | { readonly kind: 'imported-call'; readonly name: string; readonly importPaths: readonly string[]; readonly usePaths: readonly string[] };
+  | { readonly kind: 'imported-call'; readonly name: string; readonly importPaths: readonly string[]; readonly usePaths: readonly string[] }
+  /** `M247` `D` — an `element` name declared in one of this file's imports. */
+  | { readonly kind: 'imported-element'; readonly name: string; readonly importPaths: readonly string[] };
 
 /**
  * Find where the identifier at `offset` is defined. A ref that already resolved locally
@@ -30,6 +32,7 @@ export function findDefinition(program: Program, table: SymbolTable, offset: num
     if (ref.kind === 'session') return { kind: 'config-session', name: ref.name };
     // `M246` — a `sign with` name is declared in `tflw.config`, like a session.
     if (ref.kind === 'signer') return { kind: 'config-signer', name: ref.name };
+    if (ref.kind === 'element') return { kind: 'imported-element', name: ref.name, importPaths: program.imports.map((i) => i.path.value) };
     if (ref.kind === 'action') {
       return {
         kind: 'imported-call',

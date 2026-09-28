@@ -947,7 +947,11 @@ test('A3-5: the browser builders refuse in the form’s own words', () => {
 
   // Every kind the grammar has is offered — the parser's own list, so a seventh reaches the form
   // the day it reaches the language.
-  assert.deepEqual([...LOCATOR_KINDS], ['button', 'field', 'text', 'list', 'css', 'xpath']);
+  // `M247` `D` added the seventh, `element`, which this comment was waiting for.
+  assert.deepEqual([...LOCATOR_KINDS], ['button', 'field', 'text', 'list', 'css', 'xpath', 'element']);
+  assert.match(reason(buildClick({ locator: { kind: 'element', value: 'cart badge' }, kind: 'single' })), /named by one word/);
+  const built = buildClick({ locator: { kind: 'element', value: 'cartBadge' }, kind: 'single' });
+  assert.ok(built.ok && print(built.node).text === 'click cartBadge');
 
 });
 

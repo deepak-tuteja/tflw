@@ -48,5 +48,5 @@ export function findRenameTargets(table: SymbolTable, offset: number): RenameRes
     for (const r of table.refs) if (r.kind === kind && r.name === name) spans.push(r.span);
   }
 
-  return { kind, name, spans, crossFile: kind === 'session' || kind === 'action' || kind === 'importedAction' };
+  return { kind, name, spans, crossFile: kind === 'session' || kind === 'action' || kind === 'importedAction' || kind === 'element' };
 }

@@ -9739,6 +9739,22 @@ the report header.
 |---|---|---|
 | `D1352` | L2 | **A session seeds the browser's cookies.** A test that opts into a session starts its browser context with that session's jar, so the first `open` is signed in. The limit — a token in `localStorage` still needs the form — is documented, not bridged. `D10` amended. |
 
+### D1353
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1353` | L7 | **`skip "reason" on env a, b`** is a header clause resolved at plan time from `tflw.config` (never from a response — inside the fence), reported as skipped with its reason. **`--skip-tag a,b`** excludes tests carrying any listed tag, combinable with `--tag`. |
+
+### D1356
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1356` | L1 | **`element name = <locator>`** at file top level, importable, valid in every locator position, LSP rename/definition/references; **`tflw check` hints (`RF0xx`) when one raw `css`/`xpath` string appears in ≥ 2 files**, with `refactor apply` extracting it. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -14032,7 +14048,7 @@ parked: it is a browser-to-API bridge and runs into `D10`, and it gets its own p
 
 ### M247
 
-<sub>cited from SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§3 `M247` — the language joins its sessions to the browser**
 

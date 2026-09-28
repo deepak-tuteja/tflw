@@ -2473,12 +2473,12 @@ unbound reference is the same `TF030` unknown-variable diagnostic `capture`/`che
   threshold: unlike `--verbose`-gated step lines, it prints on a passing test too, since a `log`
   call is deliberate author signal, not step-execution plumbing.
 
-## 8. Actions, imports, element aliases (P#2, P#17–18) 🔧
+## 8. Actions, imports, element aliases (P#2, P#17–18) ✅
 
 ✅ Actions, `give` returns, `import`, the bare-call `CallStmt` form, and the reuse pass itself
-(`tflw check` diagnostics + `tflw refactor apply`, M6) all apply today. 🔮 `element` aliases and
-the lint nudging a duplicated `css`/`xpath` escape behind one remain unbuilt — no milestone owns
-them yet (M6 shipped the reuse *pass*; alias-centralized locators are a separate, still-open gap).
+(`tflw check` diagnostics + `tflw refactor apply`, M6) all apply today. ✅ Since `M247` `D`
+(`D1356`), `element` aliases and the reuse hint that moves a duplicated `css`/`xpath` escape behind
+one do too.
 
 ```
 # shared/orders.tflw
@@ -2488,7 +2488,7 @@ action create order(name)
   capture body.id as id
   give id
 
-element node card = css ".react-flow__node[data-id]"
+element nodeCard = css ".react-flow__node[data-id]"
 ```
 
 ```
@@ -2497,7 +2497,7 @@ import "./shared/orders.tflw"
 test "pay for an order"
   let orderId = create order("Widget")
   open "/orders/{orderId}"
-  click node card
+  click nodeCard
 ```
 
 - Actions: parameters + `give` return values; file-scoped; shared via `import`. No globals (P#17).
@@ -2541,8 +2541,25 @@ test "pay for an order"
   already written down. Before this rule, `run checkout("1")` failed with "expected an iteration count"
   while the identical call in value position (`let x = run checkout("1")`) worked: the language
   would let you declare an action it then refused to call.
-- Element aliases centralize locators; lint: a `css`/`xpath` escape duplicated across files
-  SHOULD move behind an alias (checker warning) (P#18). Not yet built (see the status line above).
+- **`element <name> = <locator>`** (`M247` `D`, `D1356`) names a locator once. The name is one
+  word and the right-hand side is a real locator — an element naming another element is refused,
+  so a lookup is never a chain. A bare name then goes wherever a locator goes: `click nodeCard`,
+  `expect nodeCard is visible`, `within nodeCard`, `drag nodeCard to …`, a snapshot `mask`.
+  Resolution is the `action` rule: the file's own declarations, then each imported file's, one
+  level; an imported action's references resolve in the file it was written in. An unknown name is
+  `TF089` (decided only when the imports were read), a name declared twice in that namespace is
+  `TF035`. The runtime inlines every reference before the first step, so a step's trace shows the
+  declared locator (`click button "Checkout"`) and a failure still points at the line that used
+  the name. **In a subject position** a bare name that is one edit from a subject word (`statuss`)
+  is still read as that word's typo; every other bare name is an element, and `TF089`'s hint
+  offers the `{name}` reading for someone who meant a bound value.
+- **The reuse pass's locator half** (P#18): a plain `css`/`xpath` string written in two or more
+  files, that no `element` already names, is a hint in the same `RF` sequence as the action hints,
+  numbered after them. `tflw refactor apply <id>` appends `element <name> = <locator>` to
+  `shared/elements.tflw` (creating it if needed), replaces every site with the bare name, and adds
+  the `import` each rewritten file lacks — re-checked in memory before a byte is written, the
+  action path's rule. The name is proposed from the selector's words (`[data-test=cart-count]` →
+  `cartCount`) and never collides with one the suite declares.
 - The **reuse pass** (P#2, M6) scans every test body `tflw check` is given and reports similar
   step sequences as hints (`RF001`, `RF002`, …, stable within one scan/run — not a content hash)
   alongside the ordinary checker diagnostics, each with a fully prepared extraction: a proposed
@@ -2591,7 +2608,7 @@ shipped**: network observation (`request to "…"`, `of request to "…"`) and `
 tooling catch-up for M3a-M3e (no new grammar). **M4b ✅ shipped**: visual regression
 (`matches snapshot`) — see §9.9. **M5 ✅ shipped**: the live-DOM "nearest candidate" cold-start
 diagnosis (§9.3) and `tflw pick <url>` (§12).
-**Still planned**: `element <name> = <locator>` aliases (§8 — no milestone owns them yet).
+`element <name> = <locator>` aliases shipped in `M247` `D` (§8).
 `tflw install-browsers [--browser chromium|firefox|webkit]` downloads the browser binary
 (`playwright` is an optional peer, D5 — you install it, and it is dynamically imported only once a
 suite actually runs a browser step).
@@ -4281,7 +4298,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF032` | Checker: an `upload … type "…"` value that is a non-interpolated literal not shaped like `type/subtype` (M19) — a light regex, not an IANA vocabulary check, so it only catches an obvious typo before the run. | `api POST /u upload "./f.png" as "avatar" type "imagepng"` → `invalid content type "imagepng", expected a "type/subtype" shape like "image/png"` |
 | `TF033` | Parser/checker (load, M29/M30, M50/D93-D96): a workload-bearing `test`'s workload/threshold shape is invalid, two such tests in one file share a name (M30, D29 — names key each one's own metrics/threshold breakdown under concurrent multi-load-test runs), a `retry`/`with each` clause coexists with a workload (D96), a browser step appears inside a workload-bearing body (D19 — API-only in v1), `pause` appears outside one (D18), a workload-bearing `test` carries no `threshold` at all (M60/A4-01 — its verdict comes only from thresholds, so with none it can never fail), a workload-bearing `test` thresholds `duration` without pairing it with an **unscoped** `error rate` threshold (M89c/B3-14 — a duration threshold reads only the iterations that succeeded, so alone it is satisfied by a target that fails half its requests fast, and a *scoped* error-rate threshold bounds one endpoint while the rest of the scenario fails freely), an `authorization violations` assertion appears inside a workload-bearing body (M130b, D315 — each one sends a probe per declared principal, so under a workload the cross-identity traffic is multiplied by the load factor against a host authorized for a scan, not for a scan times the VU count), or a removed keyword is found — `scenario` (D103 — write `test "…" { ramp to … }` instead) or `think` (FS-05 — renamed to `pause`). The `pause`/browser-step bans follow calls into `action`s (M60/A4-02) and report at the call site, since the same action is legal under a workload and illegal outside one. The `pause` hint names both ways out honestly (FS-05): a *condition* is `wait until …` / `wait until … for <dur>`, while genuinely elapsed time — a cache TTL, a token expiry — has no condition to poll and belongs in the JS escape hatch (§11). | `pause 2s` → `` `pause` is only legal inside a workload-bearing `test` ``; `think 2s` → `` `think` was renamed to `pause` `` |
 | `TF034` | Checker (load, M43/D70): a `threshold … for "label"` clause references a label that matches no `api` step's identity (its explicit `as "label"` tag, or its automatic `METHOD path.raw` identity when untagged) within the same workload-bearing test. | `threshold p95 duration for "checkotu" is less than 250ms` with only an `as "checkout"`-tagged step in scope → `` threshold `for "checkotu"` matches no step in this test `` |
-| `TF035` | Checker (M60/`A2-01`; widened M97b/`B5-02`): a name is declared as an `action` more than once in the namespace a file actually runs in. Two `action`s in one file is the original case — actions are file-scoped, so the second shadows nothing, it is simply ambiguous. As of M97b the same code also covers a name declared locally *and* brought in by an `import`, and a name two `import`s both provide: the runtime (`buildRegistry`) has always refused all three, and `TF035` used to see only the first — so the manifest, the checker and its test agreed with each other while missing what the runtime enforced. The imported halves are reported only when the imports were actually read (the same `undefined`-vs-`[]` rule `TF037` turns on): a name cannot be called a duplicate of something nobody looked at. | `action fetch it()` declared twice → `duplicate action "fetch it"`; the same name arriving via `import "./shared/orders.tflw"` → `duplicate action "fetch it" (imported from "./shared/orders.tflw")` |
+| `TF035` | Checker (M60/`A2-01`; widened M97b/`B5-02`): a name is declared as an `action` more than once in the namespace a file actually runs in. Two `action`s in one file is the original case — actions are file-scoped, so the second shadows nothing, it is simply ambiguous. As of M97b the same code also covers a name declared locally *and* brought in by an `import`, and a name two `import`s both provide: the runtime (`buildRegistry`) has always refused all three, and `TF035` used to see only the first — so the manifest, the checker and its test agreed with each other while missing what the runtime enforced. The imported halves are reported only when the imports were actually read (the same `undefined`-vs-`[]` rule `TF037` turns on): a name cannot be called a duplicate of something nobody looked at. **Widened again in `M247` `D` (`D1356`)** to `element` names, which share the rule and the namespace shape: declared twice in one file, or once here and once through an `import`. | `element cartBadge` declared twice → `duplicate element "cartBadge"`; `action fetch it()` declared twice → `duplicate action "fetch it"`; the same name arriving via `import "./shared/orders.tflw"` → `duplicate action "fetch it" (imported from "./shared/orders.tflw")` |
 | `TF036` | Checker (M85/A4-10): the **active** env's own `api`/`api <service>`/`web` base URL has a host that its own `allow hosts` list (accumulated across `defaults` + the env, SPEC §3.7) does not match — a statically decidable contradiction that costs a whole run to discover otherwise, one identical runtime refusal per step for one config line. Env-scoped like every other config check (`checkSessionServices`, `knownServices`): a contradiction in an env you have not selected is not this run's problem, and a suite may legitimately keep a deliberately-blocked env as a negative-case fixture. The hint names the consequence *that key* has — only the default `api` base takes the whole suite down; a named service takes its own calls, `web` takes the browser half. Only fully literal URLs are checked: a base URL containing `{…}` names a host this pass cannot decide, and is skipped rather than guessed at (note that `resolveConfig` takes such a URL literally today — the recorded `A2-12` gap — so skipping it neither hides a live behaviour nor pre-commits this check if config interpolation ever lands). | `api "http://127.0.0.1:9099"` alongside `allow hosts "example.com"` → `` env `local`'s `api` base URL is "http://127.0.0.1:9099", whose host "127.0.0.1" is not in its own `allow hosts` (example.com) `` |
 | `TF037` | Checker (M87/A4-03, `FU-08`): a call names neither an `action` nor a JS helper, so the run dies at that step with `unknown call`. Being a *negative* claim it is made only where it is sound, which is narrower than it first looks. **The world must be closed**: every `import` resolved, and no `use` at all — a JS helper module's exports cannot be enumerated without importing it, and the checker never executes the code it checks (P#2), so one `use` line makes this undecidable for that file. **And the frame's registry must be knowable**: a `test` or hook body, never an `action` body. Calls bind late, against the *entry* file's registry, so a shared action may legitimately call a name only its importer defines; a `test` is safe because an imported file's tests never run (`buildRegistry` takes only its `actions`). `TF038` is unaffected by either condition — it only ever fires on a name that already resolved. | `creat order("Widget")` beside `action create order(name)` → `` did you mean `create order`? `` |
 | `TF038` | Checker (M87/A4-03): a call resolves to a known `action` but passes the wrong number of arguments. Sound regardless of `use`, unlike `TF037` — the runtime resolves actions before helpers (`execCall`), and an action name is unique across the whole registry (`TF035` and `buildRegistry` both refuse a duplicate), so a name that matches a declared action is that action and nothing else. | `create order("Widget", "extra")` against `action create order(name)` → `action "create order" expects 1 argument, got 2` |
@@ -4334,6 +4351,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF086` | Checker (`M246`, `D1345`): **a `sign with <name>` or `session … signed with <name>` naming no signer.** A step's name is checked against the signers the active env has, the way `TF028` checks `as <session>`; a session's is checked in `tflw.config` against every declaration. A signer declared `for env` other envs only is the same code with a hint naming them. **An error**: the request would go out unsigned, and the server's 401 would not say why. | `api POST /webhooks/stripe body { id: "evt_1" }` then `sign with strpe` → `` did you mean `stripe`? `` |
 | `TF087` | Checker (config, `M246`, `D1346`): **a signer that cannot sign as written** — a `{placeholder}` the signer does not fill (`signs` fills `{body}`, `{method}`, `{path}`, `{query}`, `{timestamp}` and `{body sha256}`; a `header` fills `{signature}` and `{timestamp}`), `{signature}` inside the string being signed, no `header` line carrying `{signature}`, or two signers of one name. Each is a request signed over the wrong text or not signed at all. | `signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)` then `signs "{timestmp}.{body}"` then `header "Stripe-Signature" is "t={timestamp},v1={signature}"` in `tflw.config` → `` did you mean `{timestamp}`? `` |
 | `TF088` | Checker (`M247` `B`, `D1353`): **a `skip … on env` naming an env `tflw.config` does not declare.** The skip would hold nowhere, so the test runs in the very env it was written to stay out of, and the run would not say why. Checked against every `env` block, not only the active one — naming another env is the clause's purpose. One diagnostic per unknown name. **An error**, matching `TF028`. | `test "refunds settle" skip "no sandbox in CI" on env cii` then `api GET /health` then `expect status equals 200` → `` did you mean `ci`? `` |
+| `TF089` | Checker (`M247` `D`, `D1356`): **an `element` reference naming no element.** A bare name in a locator position — `click cartBadge`, `expect cartBadge is visible` — is looked up in the file's own `element` declarations and then each imported file's, the `action` rule; like an unknown call it is decided only when the imports were read. In a subject position a bare name may also be a value meant as `{name}`, and the hint says so. **An error**: the step would have nothing to find. | a file declaring `cartBadge` and clicking `cartBadg` → `` did you mean `cartBadge`? `` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

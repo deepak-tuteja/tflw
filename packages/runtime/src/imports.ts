@@ -20,7 +20,7 @@
 
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { collectConfigFileReferences, collectFileReferences, parseSource, type ConfigFile, type Diagnostic, type FileReference, type KnownAction, type Program, Codes } from '@tflw/lang';
+import { collectConfigFileReferences, collectFileReferences, parseSource, type ConfigFile, type Diagnostic, type FileReference, type KnownAction, type KnownElement, type Program, Codes } from '@tflw/lang';
 
 /** Reads a file's text, given an absolute path. Injectable so the language server can answer from
  * an open editor buffer — an imported file being edited in another tab is more current on screen
@@ -49,6 +49,8 @@ const readFromDisk: ReadText = (absPath) => readFile(absPath, 'utf8');
 export interface ImportResolution {
   /** The imported actions, or `undefined` when any import could not be read or could not be parsed. */
   readonly actions: KnownAction[] | undefined;
+  /** `M247` `D` (`D1356`) — the imported `element` names, with the same `undefined` rule. */
+  readonly elements?: KnownElement[] | undefined;
   /** The path literals, as written, of imports naming a file that exists and does not parse. */
   readonly unparseable: ReadonlySet<string>;
 }
@@ -89,9 +91,10 @@ export async function resolveImportedActions(
   program: Program,
   readText: ReadText = readFromDisk,
 ): Promise<ImportResolution> {
-  if (program.imports.length === 0) return { actions: [], unparseable: new Set() };
+  if (program.imports.length === 0) return { actions: [], elements: [], unparseable: new Set() };
   const baseDir = dirname(filePath);
   const out: KnownAction[] = [];
+  const elements: KnownElement[] = [];
   const unparseable = new Set<string>();
   let worldKnown = true;
   for (const imp of program.imports) {
@@ -114,8 +117,9 @@ export async function resolveImportedActions(
       // reference into `parsed`, so carrying it costs nothing a re-parse would not have cost more.
       out.push({ name: action.name, arity: action.params.length, from: imp.path.value, body: action.body });
     }
+    for (const element of parsed.program.elements ?? []) elements.push({ name: element.name, from: imp.path.value });
   }
-  return { actions: worldKnown ? out : undefined, unparseable };
+  return { actions: worldKnown ? out : undefined, elements: worldKnown ? elements : undefined, unparseable };
 }
 
 /** Does this path exist? Injectable for the same reason `ReadText` is: the language server has to

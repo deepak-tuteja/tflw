@@ -58,6 +58,9 @@ export interface DocumentAnalysis {
   readonly root?: string;
   /** Absent for a pathless buffer (D214) — nothing relative can be resolved against it. */
   readonly baseDir?: string;
+  /** `M247` `D` — every `element` name this file can use: its own, then its imports'. What the
+   *  `locator` and `subject` completions offer. */
+  readonly elementNames?: readonly string[];
 }
 
 const DEBOUNCE_MS = 200;
@@ -247,6 +250,7 @@ export class DocumentStore {
         // read from (D214), and an import that was read and could not be parsed. Both are "these
         // could not be resolved", which is the only thing `checkCalls` asks of this option.
         ...(imports?.actions === undefined ? {} : { importedActions: imports.actions }),
+        ...(imports?.elements === undefined ? {} : { importedElements: imports.elements }),
         ...(imports === undefined ? {} : { importsWithErrors: imports.unparseable }),
         ...(missingFiles === undefined ? {} : { missingFiles }),
         ...(envBaseUrls ? { envBaseUrls } : {}),
@@ -256,7 +260,8 @@ export class DocumentStore {
         ...(helpers ? { helpers } : {}),
       }),
     ];
-    return { diagnostics, symbols, program: parsed.program, ...(doc.root ? { root: doc.root } : {}), ...(baseDir === undefined ? {} : { baseDir }) };
+    const elementNames = [...new Set([...(parsed.program.elements ?? []).map((e) => e.name), ...(imports?.elements ?? []).map((e) => e.name)])];
+    return { diagnostics, symbols, program: parsed.program, elementNames, ...(doc.root ? { root: doc.root } : {}), ...(baseDir === undefined ? {} : { baseDir }) };
   }
 
   /** Resets the debounce timer on every call for the same `uri` — a burst of keystrokes collapses

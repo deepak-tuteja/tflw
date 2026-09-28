@@ -50,6 +50,7 @@ import { classifyAddress } from './addressClass.js';
 import { absoluteUrlHost, isAbsoluteUrl } from './absoluteUrl.js';
 import { MATCHERS, MATCHER_ROW_BY_NAME, type SubjectKind } from './spec-data.js';
 import { parseStringParts } from './parser.js';
+import { elementRefs } from './elements.js';
 
 /** What a caller of `checkProgram` knows about the project around the file being checked. Each
  * field is `undefined` when the caller could not resolve a config at all — distinct from `[]`,
@@ -94,6 +95,10 @@ export interface ProgramCheckOptions {
    * read, and `checkCalls` must not claim a name is unknown when it never looked. A file with no
    * `import` line at all is closed either way — see `checkCalls` for the full closed-world rule. */
   readonly importedActions?: readonly KnownAction[];
+  /** `M247` `D` (`D1356`) — the `element` names this file's `import`s bring in, resolved on the
+   *  same walk as `importedActions` and with its `undefined`-vs-`[]` rule: `undefined` means the
+   *  imports were not read, and `TF089` then says nothing about a name it could not look up. */
+  readonly importedElements?: readonly KnownElement[];
   /**
    * Which of this file's path literals name a file that is not there (M97c, D144, `A4-07`) — the
    * *answers*, resolved and stat'd by the caller, keyed by the literal's own text.
@@ -281,6 +286,13 @@ export interface EnvTimeouts {
  * declared. `from` is the `import "…"` path it came in through, or `null` for one declared in the
  * file being checked — a diagnostic reads very differently depending on which ("declared at line
  * 3" vs. "imported from ./shared/orders.tflw"). */
+/** An `element` another file declares, as `importedElements` carries it (`M247` `D`). */
+export interface KnownElement {
+  readonly name: string;
+  /** The `import` path as the importing file wrote it. */
+  readonly from: string;
+}
+
 export interface KnownAction {
   readonly name: string;
   readonly arity: number;
@@ -341,6 +353,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...(opts.knownSigners ? checkSigners(program, opts.knownSigners, opts.outOfScopeSigners) : []),
     ...(opts.knownEnvs ? checkSkipEnvs(program, opts.knownEnvs) : []),
     ...checkActionDecls(program, opts),
+    ...checkElements(program, opts),
     ...checkUnknownVariables(program),
     ...checkRequestAssertions(program),
     ...checkValueSubjects(program),
@@ -1356,6 +1369,72 @@ export function checkActionDecls(program: Program, opts: ProgramCheckOptions = {
     }
   }
 
+  return diags;
+}
+
+/**
+ * `element` declarations and references (`M247` `D`, `D1356`).
+ *
+ * `TF035`, widened: an element name declared twice in the namespace the file runs in — twice in the
+ * file, or once here and once through an `import` — the action rule, reported at the second
+ * declaration. `TF089`: a reference naming no element. A file with no `import` is a closed world
+ * and every unknown name is reported; with imports, only when `importedElements` says they were
+ * read.
+ */
+export function checkElements(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const seen = new Map<string, string>();
+  for (const e of program.elements ?? []) {
+    const first = seen.get(e.name);
+    if (!first) {
+      seen.set(e.name, `at line ${e.span.start.line}`);
+      continue;
+    }
+    diags.push({
+      code: Codes.DUPLICATE_ACTION,
+      severity: 'error',
+      message: `duplicate element "${e.name}"`,
+      span: e.nameSpan,
+      hint: `already declared ${first} — one name, one locator; rename this one or delete it`,
+    });
+  }
+  if (opts.importedElements !== undefined) {
+    const importSpan = new Map(program.imports.map((imp) => [imp.path.value, imp.span]));
+    for (const imported of opts.importedElements) {
+      const first = seen.get(imported.name);
+      if (!first) {
+        seen.set(imported.name, `by \`import "${imported.from}"\``);
+        continue;
+      }
+      const span = importSpan.get(imported.from);
+      if (!span) continue;
+      diags.push({
+        code: Codes.DUPLICATE_ACTION,
+        severity: 'error',
+        message: `duplicate element "${imported.name}" (imported from "${imported.from}")`,
+        span,
+        hint: `already declared ${first} — an \`import\` shares the file's one namespace of element names, so rename one of them`,
+      });
+    }
+  }
+
+  const closed = program.imports.length === 0 || opts.importedElements !== undefined;
+  if (!closed) return diags;
+  const known = [...seen.keys()];
+  for (const ref of elementRefs(program)) {
+    const name = ref.value.value;
+    if (seen.has(name)) continue;
+    const hint = suggest(name, known);
+    diags.push({
+      code: Codes.UNKNOWN_ELEMENT,
+      severity: 'error',
+      message: `unknown element \`${name}\``,
+      span: ref.span,
+      hint: hint
+        ? `did you mean \`${hint}\`?`
+        : `declare it once at the top of the file or in an imported one — \`element ${name} = css "…"\` — or, if \`${name}\` is a value you bound with \`let\`/\`capture\`, write \`{${name}}\``,
+    });
+  }
   return diags;
 }
 

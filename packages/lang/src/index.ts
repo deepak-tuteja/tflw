@@ -64,6 +64,7 @@ export {
   checkProgram,
   type ProgramCheckOptions,
   type KnownAction,
+  type KnownElement,
   validateConfig,
   checkServices,
   checkSessionBody,
@@ -176,3 +177,5 @@ export function parseConfigSource(source: string): ParsedConfig {
   const diagnostics = [...lexed.diagnostics, ...parsed.diagnostics, ...semantic].sort((a, b) => a.span.start.offset - b.span.start.offset);
   return { config: parsed.config, diagnostics };
 }
+export { elementRefs, elementsOf, inlineElements } from './elements.js';
+export { detectElementReuse, proposeElementName, ELEMENT_DECLARATION_FILE, type ElementReuseHint, type ElementReuseOccurrence } from './elementReuse.js';

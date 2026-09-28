@@ -18,6 +18,7 @@ import type {
   Sigv4Scheme,
   AcceptDialogStmt,
   ActionDecl,
+  ElementDecl,
   AllowHostsDecl,
   AuthorizedTargetDecl,
   ApiBody,
@@ -203,6 +204,8 @@ export interface ConfigResult {
 export type CompletionKind =
   | 'step'
   | 'subject'
+  /** `M247` `D` — where a locator goes: its keywords, and the file's `element` names. */
+  | 'locator'
   | 'matcher'
   | 'session'
   | 'unique'
@@ -280,7 +283,7 @@ export const STATEMENT_KEYWORDS = [
  * and `switch to tab N` have to `switch` — one construct, two forms, one manifest id carrying both
  * in its `syntax`.
  */
-export const DECLARATION_KEYWORDS = ['test', 'crawl', 'action', 'import', 'use', 'before', 'after'] as const;
+export const DECLARATION_KEYWORDS = ['test', 'crawl', 'action', 'element', 'import', 'use', 'before', 'after'] as const;
 
 // The `test`-header clauses have **no matching array here**, deliberately. Three of their manifest
 // ids (`tags`, `with-each`, `concurrency`) are not words the language has — they name a construct
@@ -905,6 +908,7 @@ class Parser {
     const imports: ImportDecl[] = [];
     const uses: UseDecl[] = [];
     const actions: ActionDecl[] = [];
+    const elements: ElementDecl[] = [];
     const hooks: HookDecl[] = [];
     const startPos = this.peek().span.start;
     this.skipNewlines();
@@ -950,6 +954,10 @@ class Parser {
         const a = this.parseActionDecl();
         if (a) actions.push(a);
         else this.recoverTopLevel();
+      } else if (this.isKw(tok, 'element')) {
+        const e = this.parseElementDecl();
+        if (e) elements.push(e);
+        else this.recoverTopLevel();
       } else if (this.isKw(tok, 'before') || this.isKw(tok, 'after')) {
         const h = this.parseHookDecl(tok.value as 'before' | 'after');
         if (h) hooks.push(h);
@@ -994,6 +1002,7 @@ class Parser {
       // Spread rather than assigned, for the same reason `recoveredSpans` is below: a
       // program that declares no crawl must serialise exactly as it always has.
       ...(crawls.length > 0 ? { crawls } : {}),
+      ...(elements.length > 0 ? { elements } : {}),
       // Spread rather than assigned: see `Program.recoveredSpans` — a healthy program's AST must
       // stay byte-identical, and every parser golden file is the assertion that it does.
       ...(this.recoveredSpans.length > 0 ? { recoveredSpans: this.recoveredSpans } : {}),
@@ -1051,6 +1060,35 @@ class Parser {
     if (!path) return null;
     this.endLine();
     return { type: 'UseDecl', path, span: this.spanFrom(start) };
+  }
+
+  /** `element <name> = <locator>` (`M247` `D`, `D1356`). One line, no body. The right-hand side is
+   * parsed by `parseLocator`, which would also accept a bare name — so an element that names
+   * another element is refused here by kind, keeping resolution one lookup deep. */
+  private parseElementDecl(): ElementDecl | null {
+    const start = this.peek().span.start;
+    this.advance(); // `element`
+    const name = this.expect('ident', 'an element name after `element`, e.g. `element cartBadge = css "[data-test=cart-count]"`');
+    if (!name) return null;
+    if ((LOCATOR_KEYWORDS as readonly string[]).includes(name.value)) {
+      this.error(Codes.UNEXPECTED_TOKEN, `\`${name.value}\` is a locator keyword and cannot name an element`, name.span, 'pick a name that says what the thing is — `element cartBadge = css "…"`');
+      return null;
+    }
+    if (!this.expect('equals', '`=` after the element name')) return null;
+    const locatorTok = this.peek();
+    const locator = this.parseLocator();
+    if (!locator) return null;
+    if (locator.kind === 'element') {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        `an element is declared with a locator, and \`${locator.value.value}\` is a name`,
+        locatorTok.span,
+        'write the locator itself — `button "…"`, `css "…"`, … — an element naming another element would make one lookup a chain',
+      );
+      return null;
+    }
+    this.endLine();
+    return { type: 'ElementDecl', name: name.value, nameSpan: name.span, locator, span: this.spanFrom(start) };
   }
 
   private parseActionDecl(): ActionDecl | null {
@@ -4460,6 +4498,14 @@ class Parser {
       }
       default: {
         const hint = suggest(tok.value, SUBJECT_OPENING_WORDS);
+        // `M247` `D` — a bare name that is not a near miss of a subject word is an `element`
+        // reference (`expect cartBadge is visible`). A near miss keeps its did-you-mean: `statuss`
+        // is a typo far more often than an element, and an element named one letter from `status`
+        // is the one name this rule cannot reach — the checker's `TF089` names the escape.
+        if (!hint && tok.type === 'ident' && this.peek(1).type !== 'string') {
+          this.advance();
+          return { type: 'LocatorSubject', locator: this.elementRef(tok), span: this.spanFrom(start) };
+        }
         this.error(
           Codes.UNKNOWN_SUBJECT,
           `unknown subject \`${tok.value}\``,
@@ -4833,7 +4879,20 @@ class Parser {
   // -- UI / browser steps (SPEC §9, M3a) --------------------------------------
 
   private parseLocator(): Locator | null {
+    if (this.completionMode && this.atCompletionPoint()) {
+      this.completionResult = { kind: 'locator', prefix: this.completionPrefix() };
+      return null;
+    }
     const tok = this.peek();
+    // `M247` `D` (`D1356`) — a bare name where a locator goes is an `element` reference. Only when
+    // no string follows: `buton "Save"` is a misspelt keyword with its selector, and keeps the
+    // did-you-mean below; `cartBadge` alone has nothing after it that a keyword would take. Whether
+    // the name is declared is the checker's question (`TF089`), because the declaration may live in
+    // an imported file the parser never reads.
+    if (tok.type === 'ident' && !(LOCATOR_KEYWORDS as readonly string[]).includes(tok.value) && this.peek(1).type !== 'string') {
+      this.advance();
+      return this.elementRef(tok);
+    }
     if (tok.type !== 'ident' || !(LOCATOR_KEYWORDS as readonly string[]).includes(tok.value)) {
       const hint = tok.type === 'ident' ? suggest(tok.value, LOCATOR_KEYWORDS) : undefined;
       this.error(
@@ -4864,6 +4923,14 @@ class Parser {
     const value = this.expectString(`a ${kind} name/selector, e.g. \`${kind} "…"\``);
     if (!value) return null;
     return { type: 'Locator', kind, value, span: this.spanFrom(start) };
+  }
+
+  /** An `element` reference as a `Locator` of kind `element` whose value is the name — the shape
+   * every locator consumer already walks, so a printer, a lens or a symbol pass sees one more kind
+   * rather than a second node type in every locator position. */
+  private elementRef(tok: Token): Locator {
+    const value: StringLit = { type: 'StringLit', value: tok.value, parts: [{ kind: 'text', value: tok.value }], span: tok.span };
+    return { type: 'Locator', kind: 'element', value, span: tok.span };
   }
 
   /** Zero or more trailing `mask <locator>` clauses (M4b, D15) — dynamic regions to paint over

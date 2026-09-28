@@ -167,7 +167,8 @@ would be:
 - `field "…"` — a closed 3-step cascade: label → placeholder → role (textbox). A below-tier-1
   resolution is annotated right in the CLI/report line (`field "Search" (resolved via
   placeholder)`), never silently accepted.
-- Escapes: `css "…"`, `xpath "…"` — greppable when nothing else fits.
+- Escapes: `css "…"`, `xpath "…"` — greppable when nothing else fits, and worth naming once with
+  [`element`](#naming-a-locator-once-element) when more than one test needs them.
 
 **Ambiguity is always a hard error** — more than one match never silently picks the first. The
 error lists up to 5 matched candidates' visible text and suggests `within <container>` or a more
@@ -184,6 +185,31 @@ within list "Cart items"                 # scopes every nested step's locator re
 elements of the right shape and appends up to 5 ranked, ready-to-paste suggestions to the "no
 element found" error — a typo like `click button "Add to Crat"` surfaces `button "Add to Cart"`.
 This only changes what the failure message *suggests*, never which element a step acts on.
+
+### Naming a locator once — `element`
+
+A selector the page owns — an id, a `data-test` attribute — is the part of a test that breaks when
+the markup changes. Write it once, give it a name, and use the name everywhere a locator goes:
+
+```tflw
+element cartCount = css "[data-test=cart-count]"
+element checkout = button "Checkout"
+
+test "the badge counts what was added"
+  open "/"
+  click button "Add to cart"
+  expect cartCount has text "1"
+  click checkout
+```
+
+A name is one word, and it can be imported like an `action`: put the declarations in
+`shared/elements.tflw` and `import` it. The report shows the locator the name stands for
+(`click button "Checkout"`), so a failure reads the same as if you had written it inline. A name
+nothing declares is `TF089`.
+
+`tflw check` finds the selectors worth naming for you. A `css` or `xpath` string written in two or
+more files is offered as a reuse hint, and `tflw refactor apply <id>` writes the `element` line
+into `shared/elements.tflw` and replaces every site with the name.
 
 For a *verified* (not best-guess) locator while you're still writing a test, point `tflw pick` at
 a real running page and click the element you want — see

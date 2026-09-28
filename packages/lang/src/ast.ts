@@ -42,6 +42,9 @@ export interface Program extends Node {
    * what they were written to assert, and the field appears only on the programs it describes.
    */
   readonly crawls?: readonly CrawlDecl[];
+  /** `element` declarations (`M247` `D`, `D1356`). Absent when the file declares none, for
+   *  `crawls`' reason: every parser golden stays byte-identical for a file that never wrote one. */
+  readonly elements?: readonly ElementDecl[];
   /**
    * Spans the parser already diagnosed and then had to leave a **recovery node** behind at (M99a,
    * D168b). Empty for every program that parses.
@@ -95,6 +98,20 @@ export interface ActionDecl extends Node {
   readonly name: string;
   readonly params: readonly string[];
   readonly body: readonly Step[];
+}
+
+/** `element cartBadge = css "[data-test=cart-count]"` (`M247` `D`, `D1356`) — a locator declared
+ *  once and named, so a selector the page owns is written in one place. Top level, importable like
+ *  an `action` (the file's own, then each `import`ed file's, first declaration wins nothing — a
+ *  repeat is `TF035`), and valid wherever a locator is. The right-hand side is a real locator: an
+ *  element naming another element is refused at parse, so resolution is one lookup and never a
+ *  chain. */
+export interface ElementDecl extends Node {
+  readonly type: 'ElementDecl';
+  readonly name: string;
+  /** The name's own span, for rename and go-to-definition. */
+  readonly nameSpan: Span;
+  readonly locator: Locator;
 }
 
 /** A `test "…" { … }` block — functional or workload-bearing, distinguished only by
@@ -1164,7 +1181,11 @@ export interface Matcher extends Node {
 /** Locator noun (D6, SPEC §9.3): the noun picks the resolution strategy — `button`/`text`/`list`
  * single-strategy, `field` a closed 3-step cascade (label → placeholder → role), `css`/`xpath`
  * escapes. `element` aliases are not yet implemented (deferred, see note above). */
-export type LocatorKind = 'button' | 'field' | 'text' | 'list' | 'css' | 'xpath';
+/** `element` (`M247` `D`, `D1356`) is the one kind that is not a way of finding something on a page:
+ *  it is a *name* for a locator declared once with `element <name> = <locator>`, and its `value`
+ *  holds that name. It exists only between parsing and running — the runtime inlines every one
+ *  (`inlineElements`) before a step executes, so nothing that drives a browser ever sees it. */
+export type LocatorKind = 'button' | 'field' | 'text' | 'list' | 'css' | 'xpath' | 'element';
 
 export interface Locator extends Node {
   readonly type: 'Locator';

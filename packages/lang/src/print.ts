@@ -57,6 +57,7 @@ import type {
   Step,
   MalformedStep,
   ActionDecl,
+  ElementDecl,
   AcceptDialogStmt,
   DownloadBlock,
   DragStmt,
@@ -182,6 +183,8 @@ export const PRINTABLE = new Set<string>([
   'UseDecl',
   'HookDecl',
   'ActionDecl',
+  // `M247` `D` (`D1356`).
+  'ElementDecl',
   'GiveStmt',
   // `A4-3` — the form family, and the largest browser remnant. `FillFormStmt` is the only browser
   // statement in the language that is a BLOCK of rows rather than a line, which is why it sat at
@@ -339,6 +342,10 @@ function printNode(node: Node, level: number): string {
       return printHook(node as HookDecl, level);
     case 'ActionDecl':
       return printAction(node as ActionDecl, level);
+    case 'ElementDecl': {
+      const e = node as ElementDecl;
+      return pad(level) + `element ${e.name} = ${printLocator(e.locator)}`;
+    }
     case 'GiveStmt':
       return pad(level) + 'give ' + printValue((node as GiveStmt).value);
     case 'TestDecl':
@@ -570,7 +577,7 @@ const pad = (level: number) => INDENT.repeat(level);
  */
 function printProgram(p: Program, level: number): string {
   const decls: ReadonlyArray<TestDecl | CrawlDecl | Node> = [
-    ...p.imports, ...p.uses, ...p.actions, ...p.hooks, ...p.tests, ...(p.crawls ?? []),
+    ...p.imports, ...p.uses, ...(p.elements ?? []), ...p.actions, ...p.hooks, ...p.tests, ...(p.crawls ?? []),
   ];
   // By line alone, and deliberately with no column tiebreak: a declaration header must end its
   // line (`parseHookDecl`/`parseTest` all call `endLine()`), so two top-level declarations cannot
@@ -590,11 +597,14 @@ function printProgram(p: Program, level: number): string {
   // the corpus's consecutive one-line declarations, **8 pairs are adjacent and 2 are separated**,
   // so grouping is the convention — and it is a convention rather than a fact, because the AST
   // records no blank line either way and there is nothing to preserve.
-  const ONE_LINE = new Set<string>(['ImportDecl', 'UseDecl']);
+  // `element` (`M247` `D`) is one line too, and a block of them reads as one table of names — but
+  // its own table: a blank line separates it from the `import`/`use` block above it.
+  const ONE_LINE = new Set<string>(['ImportDecl', 'UseDecl', 'ElementDecl']);
+  const sameGroup = (a: string, b: string): boolean => ONE_LINE.has(a) && ONE_LINE.has(b) && (a === 'ElementDecl') === (b === 'ElementDecl');
   const out: string[] = [];
   let previous: string | null = null;
   for (const d of ordered) {
-    if (previous !== null && !(ONE_LINE.has(d.type) && ONE_LINE.has(previous))) out.push('');
+    if (previous !== null && !sameGroup(d.type, previous)) out.push('');
     out.push(printNode(d, level));
     previous = d.type;
   }
@@ -1677,6 +1687,8 @@ function printFill(f: FillStmt): string {
  * survive the round trip with its interpolation intact rather than as escaped text.
  */
 function printLocator(l: Locator): string {
+  // `M247` `D` — a reference prints as the bare name it was written as.
+  if (l.kind === 'element') return l.value.value;
   return `${l.kind} ${printString(l.value)}`;
 }
 

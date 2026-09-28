@@ -17,6 +17,7 @@
 import {
   CONFIG_KEYWORDS,
   GENERATORS,
+  LOCATOR_KEYWORDS,
   MATCHERS,
   STEP_KEYWORDS,
   SUBJECT_FORMS,
@@ -45,6 +46,8 @@ export interface CompletionSources {
    * Same shape as `knownSessions`: `packages/lang` has no notion of "what is in scope *here*", so
    * the caller (Phase 3's I/O layer, which holds the symbol table) resolves it. */
   readonly knownVariables?: readonly string[];
+  /** `M247` `D` — the `element` names this file declares or imports. */
+  readonly knownElements?: readonly string[];
 }
 
 // `M125e`/`FU-24`/D251: the step list used to live here as thirty-seven bare strings — an
@@ -229,6 +232,13 @@ export function getCompletions(ctx: CompletionContext, sources: CompletionSource
         ...(sources.knownVariables ?? [])
           .filter(byPrefix)
           .map((name) => ({ label: `{${name}}`, filterText: name, detail: 'value bound with `let`/`capture`' })),
+        ...(sources.knownElements ?? []).filter(byPrefix).map((label) => ({ label, detail: 'an `element` this file declares or imports' })),
+      ];
+    // `M247` `D` (`D1356`) — the locator keywords, then the element names the file can use.
+    case 'locator':
+      return [
+        ...LOCATOR_KEYWORDS.filter(byPrefix).map((label) => ({ label })),
+        ...(sources.knownElements ?? []).filter(byPrefix).map((label) => ({ label, detail: 'an `element` this file declares or imports' })),
       ];
     case 'matcher':
       return MATCHER_CANDIDATES.filter((c) => byPrefix(c.label)).map((c) => ({ label: c.label, detail: matcherDetail(c.specId) }));
