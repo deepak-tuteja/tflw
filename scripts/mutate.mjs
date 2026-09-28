@@ -2336,7 +2336,7 @@ const REGISTRY = [
     pkg: '@tflw/runtime',
     file: INTERP,
     what: "`A4-18`'s runtime half removed: a `{col}` in a `with each` test's **name** that the row does not carry goes back to `lookupVar`'s general sentence, which names `let` and `capture` — two keywords that cannot bind a table column — in the one scope where the header is the only thing that could have helped. The row was filed on the *remedy*, not on a missing error, and this is the only home for the file-backed form: `@tflw/lang` does no I/O, so `TF027` cannot see the columns of `with each from \"./rows.csv\"`",
-    find: '    if (first.kind !== \'prop\' || columns.includes(first.name)) continue;',
+    find: '    if (first.kind !== \'prop\' || columns.includes(first.name) || fileValues?.has(first.name)) continue;',
     replace: '    if (first.kind !== \'prop\' || true) continue;',
   },
   {
