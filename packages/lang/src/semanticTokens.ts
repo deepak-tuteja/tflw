@@ -216,6 +216,9 @@ const OPERATORS = new Set([
   // `M242` `A` (`D1326`) — the count's two bounds and the emptiness test, which were in
   // `REFUSED_ON_PURPOSE` below until they became matchers.
   'at', 'least', 'most', 'empty',
+  // `G10` (`D1384`) — a `rows` line's two count words (`expect exactly 1 row …`, `expect every row …`),
+  // in the change that ships them. `at least`/`at most`/`no` were already here.
+  'exactly', 'every',
   'visible', 'hidden', 'enabled', 'disabled', 'checked', 'any', 'all', 'connects', 'fails', 'matching',
   // M134a adds `input`/`handling` — the third scan's two words (`has no [<severity>] input handling
   // violations`, D366). Caught up **in the milestone that ships the grammar**, which is the whole
@@ -317,6 +320,9 @@ export const DELIBERATELY_UNCOLOURED: ReadonlyMap<string, string> = new Map([
   ['operation', 'D1328 — same: `capture body.operation as operation` is ordinary tflw'],
   ['length', "D1329 — `length of x` is a value form, but `length` is also the commonest path segment in the language (`body.items.length`), and a flat set would paint every one of those"],
   ['depth', 'D442 — same, and this list cannot say "only after `max`"'],
+  // `G10` (`D1384`) — the `rows` block and its count noun.
+  ['rows', "D1384 — the block under a `with each` test, and an ordinary name for a captured value (`capture body.rows as rows`), the same reason `pages` is here"],
+  ['row', 'D1384 — the count noun in `expect exactly 1 row …`, and a plausible table column or captured name everywhere else'],
   // `M246` (`D1345`/`D1348`) — the step's `sign with … then body …`.
   ['sign', 'D1345 — `sign with` under an api step, and also the first word of a helper call (`sign payload({body})`, SPEC §11), which a flat set would paint as a keyword'],
   ['then', 'D1348 — `sign with … then body …`, the tamper override; a plausible captured name (`capture body.then as then`) everywhere else'],

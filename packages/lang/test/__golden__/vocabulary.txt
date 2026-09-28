@@ -7,7 +7,7 @@
 #   V  a `<expr>.value === '…'` comparison
 #   S  a `case '…':` label in a switch on `<expr>.value`
 #
-# 272 words
+# 276 words
 
 A   DELETE
 A   GET
@@ -43,7 +43,7 @@ AS  button
 K   bytes
 AS  capture
 AS  cert
-AS  check
+AKVS check
 A   checked
 A   ciphers
 AK  cleanup
@@ -87,7 +87,9 @@ K   encode
 KV  env
 AS  equals
 AK  error
+K   every
 AS  evidence
+K   exactly
 K   exclude
 AKS expect
 AS  fails
@@ -131,7 +133,7 @@ K   iterations
 K   joined
 K   keep
 AS  key
-AK  least
+AKV least
 V   length
 AKS less
 AS  let
@@ -198,6 +200,8 @@ K   respond
 S   response
 K   retry
 AS  right
+K   row
+K   rows
 K   rps
 K   run
 K   runs

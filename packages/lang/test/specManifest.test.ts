@@ -190,6 +190,7 @@ test('every test-header clause the manifest offers parses on a real header', () 
     retry: 'test "t" retry 2\n  api GET /a\n',
     skip: 'test "t" skip "the sandbox is down"\n  api GET /a\n',
     concurrency: 'test "t" sequential\n  api GET /a\n',
+    rows: 'with each\n  | name |\n  | a    |\ntest "t"\n  api GET /a\nrows\n  expect exactly 1 row status equals 200\n',
   };
   // No parser-side array to compare against, on purpose (see `DECLARATION_KEYWORDS`' neighbour
   // comment): three of these ids are not words the language has. Every header row must carry a
