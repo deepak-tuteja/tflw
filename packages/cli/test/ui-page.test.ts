@@ -5764,8 +5764,10 @@ test('Auth says what a session reaches, and a mixed test with no session is wher
       // session, whose form login leaves its api steps signed out. The mixed test run `as admin`
       // is not named.
       assert.equal(await fresh.locator('[data-auth-mixed]').getAttribute('data-auth-mixed'), '1');
-      assert.match((await fresh.locator('[data-auth-mixed]').textContent()) ?? '', /signing in, both ways/);
-      assert.doesNotMatch((await fresh.locator('[data-auth-mixed]').textContent()) ?? '', /signed in by the session/);
+      // One read for both claims: a second `textContent()` of the same element is a second sample.
+      const mixed = (await fresh.locator('[data-auth-mixed]').textContent()) ?? '';
+      assert.match(mixed, /signing in, both ways/);
+      assert.doesNotMatch(mixed, /signed in by the session/);
 
       // NEGATIVE CONTROL, and the test is worth little without it: on a file with no page steps the
       // refusal is ABSENT. A warning shown unconditionally is decoration, and would pass every

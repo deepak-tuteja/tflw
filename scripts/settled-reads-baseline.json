@@ -1,7 +1,7 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 929,
+    "reads": 930,
     "atRisk": 845,
     "high": 332,
     "medium": 61,
@@ -387,7 +387,7 @@
         "medium": 3,
         "low": 2
       },
-      "Auth says what a session does NOT reach, and a mixed test is where that matters": {
+      "Auth says what a session reaches, and a mixed test with no session is where that matters": {
         "high": 2,
         "medium": 0,
         "low": 5
