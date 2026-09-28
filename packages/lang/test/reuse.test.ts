@@ -436,3 +436,40 @@ test('M196 — CONTROL: the two predicates agree with the walk TF039 runs (one d
     if (establishes) assert.equal(isResponseFrame([step, ...stepsOf('  expect status equals 200\n')]), true, `establishes for the walk: ${body}`);
   }
 });
+
+// `M247-03` (`G6`): a window that names an imported `element` is extracted with the `import` that
+// declares it — the sibling's `refactor-check` found `refactor apply` refusing its own proposal
+// with `TF089` because the lifted file named `virtualRow` and imported nothing.
+const ELEMENT_FLOW = (who: string) => `import "../shared/parts.tflw"
+
+test "browse as ${who}"
+  open "/catalog"
+  fill field "Filter" with "${who}"
+  click badge
+  expect badge is visible
+  expect text "Added" is visible
+`;
+
+test('`M247-03`: an extracted window that names an imported element imports the file that declares it', () => {
+  const parts = entry('tests/shared/parts.tflw', 'element badge = css ".badge"\n');
+  const hints = detectReuse([parts, entry('tests/ui/a.tflw', ELEMENT_FLOW('ada')), entry('tests/ui/b.tflw', ELEMENT_FLOW('bob'))]);
+  assert.equal(hints.length, 1);
+  const [hint] = hints;
+  assert.match(hint!.actionSource, /^import "\.\.\/tests\/shared\/parts\.tflw"\n\naction /);
+  assert.match(hint!.actionSource, /click badge/);
+  // The control: the same flow with no element in it extracts with no import at all.
+  const plain = (who: string) => ELEMENT_FLOW(who).replace(/badge/g, 'button "Add"').replace(/^import [^\n]*\n\n/, '');
+  const [bare] = detectReuse([entry('tests/ui/a.tflw', plain('ada')), entry('tests/ui/b.tflw', plain('bob'))]);
+  assert.ok(bare, 'the element-free flow is offered too');
+  assert.doesNotMatch(bare!.actionSource, /^import /m);
+});
+
+test('`M247-03`: a window whose element is a test file\'s own declaration, or means two selectors, is not offered', () => {
+  const local = (who: string) => `element badge = css ".badge"\n\n${ELEMENT_FLOW(who).replace(/^import [^\n]*\n\n/, '')}`;
+  assert.equal(detectReuse([entry('tests/ui/a.tflw', local('ada')), entry('tests/ui/b.tflw', local('bob'))]).length, 0, 'a test file\'s own element cannot be imported by an action');
+
+  const one = entry('tests/shared/parts.tflw', 'element badge = css ".badge"\n');
+  const other = entry('tests/other/parts.tflw', 'element badge = css ".other-badge"\n');
+  const b = entry('tests/ui/b.tflw', ELEMENT_FLOW('bob').replace('../shared/parts.tflw', '../other/parts.tflw'));
+  assert.equal(detectReuse([one, other, entry('tests/ui/a.tflw', ELEMENT_FLOW('ada')), b]).length, 0, 'two declarations of one name are two sequences');
+});

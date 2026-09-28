@@ -79,3 +79,28 @@ test('a rebuilt header keeps its env list, and an env list without a reason writ
   const none = buildTest({ name: 't', tags: [], workload: null, thresholds: [], body: [], skip: '', skipOn: ['ci'] });
   assert.ok(none.ok && !('skipOn' in none.node));
 });
+
+// `M247-04` (`G7`): a test `skip … on env X` does not run under X, so a service only another env
+// declares is not an error there — the skip exists for exactly that. Found by the sibling's
+// `secure-local.tflw`, which names `api plain` (an `env secureLocal` service) and is skipped on `local`.
+test('`M247-04`: an env-scoped name in a test skipped on the checked env is not an error there, and is everywhere else', () => {
+  const source = [
+    'test "through the sidecar" skip "only the sidecar has it" on env local',
+    '  api plain GET /x',
+    '  expect status equals 200',
+    '',
+    'test "runs everywhere"',
+    '  api plain GET /y',
+    '  expect status equals 200',
+    '',
+  ].join('\n');
+  const { program } = parseSource(source);
+  const under = (envName: string) =>
+    checkProgram(program, { knownServices: ['root'], outOfScopeSessions: { envName, declaredElsewhere: new Map() } })
+      .filter((d) => d.code === 'TF026')
+      .map((d) => d.span.start.line);
+  // Under `local`: the skipped test's line is spared; the test that runs there is still judged.
+  assert.deepEqual(under('local'), [6]);
+  // Under an env the skip does not name, both are judged — the control that the spare is the skip.
+  assert.deepEqual(under('ci'), [2, 6]);
+});

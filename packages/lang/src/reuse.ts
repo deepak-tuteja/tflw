@@ -27,6 +27,7 @@
 
 import type { GeneratorExpr, Program, Step, TestDecl, Value } from './ast.js';
 import { checkUnknownVariables, freeVariableRefs, isResponseFrame, stepEstablishesResponse, stepReadsResponse } from './checker.js';
+import { elementRefs } from './elements.js';
 import { lex } from './lexer.js';
 import { parse, STATEMENT_KEYWORDS } from './parser.js';
 import type { Span } from './token.js';
@@ -563,11 +564,74 @@ export function detectReuse(entries: readonly SuiteEntry[]): ReuseHint[] {
     // Name first (it's in the rendered source), but claim it only if the hint survives, so a
     // dropped hint doesn't push a later one to "post notes 2".
     const actionName = nextFreeActionName(draft.actionName, usedNames);
-    if (!actionIsSelfContained(renderActionSource(actionName, draft))) continue;
+    // `M247-03` (`G6`): a window that names an `element` needs the extracted file to import what
+    // declares it — or it is not offered at all, when no single shared file can (below).
+    const imports = elementImportsFor(draft, entries, `shared/${kebab(actionName)}.tflw`);
+    if (imports === null) continue;
+    if (!actionIsSelfContained(renderActionSource(actionName, draft, imports))) continue;
     usedNames.add(actionName);
-    hints.push(finalizeHint(`RF${String(hints.length + 1).padStart(3, '0')}`, actionName, draft));
+    hints.push(finalizeHint(`RF${String(hints.length + 1).padStart(3, '0')}`, actionName, draft, imports));
   }
   return hints;
+}
+
+/**
+ * `M247-03` (`G6`): the `import` lines an extracted action needs for the `element` names its window
+ * uses, or `null` when the window cannot be extracted faithfully.
+ *
+ * A name resolves the way the checker resolves it — the file's own declarations, then each file it
+ * imports (`elements.ts`). Every occurrence must reach the **same** declaring file, and that file
+ * must not be the occurrence's own: an action cannot import a test file's private declarations,
+ * and two occurrences whose `badge` means two different selectors are not one sequence, however
+ * alike they read. Either case drops the hint rather than offering one the checker would refuse —
+ * `M195-01`'s rule, which this reopened the first time a file gained a second kind of imported name.
+ */
+function elementImportsFor(draft: DraftHint, entries: readonly SuiteEntry[], actionFile: string): string[] | null {
+  const names = [...new Set(elementRefs(draft.templateSteps).map((ref) => ref.value.value))];
+  if (names.length === 0) return [];
+  const byPath = new Map(entries.map((e) => [e.path, e]));
+  const declaringFiles = new Set<string>();
+  for (const name of names) {
+    let declaredIn: string | undefined;
+    for (const occ of draft.occurrences) {
+      const entry = byPath.get(occ.path);
+      if (!entry) return null;
+      if ((entry.program.elements ?? []).some((e) => e.name === name)) return null;
+      const from = entry.program.imports
+        .map((imp) => joinPosix(dirnamePosix(entry.path), imp.path.value))
+        .find((path) => (byPath.get(path)?.program.elements ?? []).some((e) => e.name === name));
+      if (from === undefined) return null;
+      if (declaredIn !== undefined && declaredIn !== from) return null;
+      declaredIn = from;
+    }
+    declaringFiles.add(declaredIn!);
+  }
+  return [...declaringFiles].sort().map((file) => relativePosix(dirnamePosix(actionFile), file));
+}
+
+/** Posix path helpers over the cwd-relative display paths `SuiteEntry` carries. The language
+ *  package has no `node:path` dependency, and these paths are always `/`-separated here. */
+function dirnamePosix(path: string): string {
+  const i = path.replace(/\\/g, '/').lastIndexOf('/');
+  return i === -1 ? '.' : path.replace(/\\/g, '/').slice(0, i);
+}
+function joinPosix(dir: string, rel: string): string {
+  const out: string[] = dir === '.' ? [] : dir.split('/');
+  for (const part of rel.replace(/\\/g, '/').split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') out.pop();
+    else out.push(part);
+  }
+  return out.join('/');
+}
+function relativePosix(fromDir: string, to: string): string {
+  const a = fromDir === '.' ? [] : fromDir.split('/');
+  const b = to.split('/');
+  let i = 0;
+  while (i < a.length && i < b.length - 1 && a[i] === b[i]) i++;
+  const up = a.slice(i).map(() => '..');
+  const rel = [...up, ...b.slice(i)].join('/');
+  return up.length === 0 ? `./${rel}` : rel;
 }
 
 /** Does the action this hint proposes stand on its own — parse, and resolve every variable it
@@ -699,9 +763,9 @@ function buildHint(slots: readonly TestSlot[], length: number, occs: readonly Wi
   };
 }
 
-function finalizeHint(id: string, actionName: string, draft: DraftHint): ReuseHint {
+function finalizeHint(id: string, actionName: string, draft: DraftHint, imports: readonly string[] = []): ReuseHint {
   const actionFile = `shared/${kebab(actionName)}.tflw`;
-  const actionSource = renderActionSource(actionName, draft);
+  const actionSource = renderActionSource(actionName, draft, imports);
   const occurrences = draft.occurrences;
   const diffPreview = renderDiffPreview(id, actionName, actionFile, draft.length, occurrences, draft.params);
   return { id, length: draft.length, occurrences, actionName, params: draft.params, actionFile, actionSource, diffPreview };
@@ -781,7 +845,7 @@ function words(text: string): string {
 /** Splice occurrence 0's own source text verbatim, replacing every literal that became a
  * parameter with `{paramName}` — everything else (structural text, identical literals, original
  * spacing/quoting) is copied through byte-for-byte. */
-function renderActionSource(actionName: string, draft: DraftHint): string {
+function renderActionSource(actionName: string, draft: DraftHint, imports: readonly string[] = []): string {
   const { templateEntry, templateSteps, templateParamNames, params } = draft;
   const first = templateSteps[0]!;
   const last = templateSteps[templateSteps.length - 1]!;
@@ -811,7 +875,8 @@ function renderActionSource(actionName: string, draft: DraftHint): string {
   body += templateEntry.source.slice(cursor, endOff);
 
   const bodyLines = normalizeIndent(body.split('\n'));
-  return [`action ${actionName}(${params.join(', ')})`, ...bodyLines].join('\n') + '\n';
+  const head = imports.length === 0 ? [] : [...imports.map((path) => `import "${path}"`), ''];
+  return [...head, `action ${actionName}(${params.join(', ')})`, ...bodyLines].join('\n') + '\n';
 }
 
 /** Re-indent a block of source lines to a flat 2-space single level, regardless of how deeply

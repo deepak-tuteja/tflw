@@ -947,6 +947,10 @@ instead of typed on every invocation.
   need a rule nobody wrote.
 - **Resolved against `tflw.config`'s own directory**, like `cert`/`key` (§3.6) and `exclude` (§3.9)
   — not against the cwd. `--baseline`, being a command-line path, resolves against the shell's.
+- **A declared baseline that is not there yet is created by the run that writes it** (`M247-01`).
+  Any other run refuses a missing file, because a baseline that is not read accepts nothing. A run
+  whose `--baseline-write` names the very file the key declares grades against an empty accepted
+  set and writes what it found. `--baseline-write` to any other path is still refused.
 - **`--baseline` overrides it for one run.** The key is the committed choice; the flag is this run's,
   which is what keeps a fresh `--baseline-write` output inspectable before it is committed and keeps
   a CI job able to grade against a document the config does not name.
@@ -1197,6 +1201,11 @@ its reason (`no payments sandbox in CI (on env ci)`), a `skippedOn` field on the
 `results.json`, and the summary's count split (`2 skipped (1 by env)`). An env the config does not
 declare is `TF088`: the skip would hold nowhere, and the test would run in the env it was written
 to stay out of. Leaving a test out of one CI job by tag is `--tag !slow` (§12), not a skip.
+
+Checked under an env it is skipped on, such a test is not held to what only another env declares
+(`M247-04`). An unknown `api` service (`TF026`), session or signer inside it is not reported there,
+because the commonest reason to write the skip is that this env lacks the thing. Under every other
+env the test runs, and all three are judged as usual.
 
 ### 4.5 Load testing — workload-bearing tests (M29/M30, M50-M56, D16-D19/D24a/D26/D70/D93-D122)
 
@@ -3718,6 +3727,13 @@ gates the crawl's own writes, not only its probes** — a synthesized `POST`/`PU
 enumerated, disclosed and *not sent* unless the origin's `authorized target` declares the opt-in,
 because affirming a scan is not affirming writes. A crawl is **strictly sequential** — one request in
 flight — so `probe rate`'s deferral condition (D21 layer 5) stays untripped.
+
+**`D285` is asked of the surface, not of each route** (`M247-02`). A crawl reaches routes a
+document chose, and some always give a family nothing to read: `/health`, an avatar, an empty list.
+On such a route the assertion reports *not applicable on this route* and passes. After the walk, an
+assertion that applied on **no** route fails once, with the no-power-to-fail sentence, naming how
+many routes it judged. So `expect` over a real API is writable, and a crawl that judged nothing
+still cannot pass.
 
 **Everything discovered is accounted for, and every invented value is named.** Before it sends anything
 the crawl prints what it plans to: how many operations each seed found, how many are withheld and why,
