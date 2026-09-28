@@ -60,6 +60,7 @@
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdtemp, cp, rm, readFile, writeFile, mkdir, symlink, utimes, readdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12936,6 +12937,39 @@ test('`M241` `E` (`D1325`): a report is narrowed by failed, by file and by name,
     await p.locator('[data-filter-text]').fill('passes');
     await settle(async () => (await filter.getAttribute('data-report-shown')) ?? '', untilEqual('2'), { attempts: 40, delayMs: 50, page: p });
     await settle(async () => p.locator('[data-filter-skipped]').count(), untilEqual(0), { attempts: 10, delayMs: 50, page: p }); // no test was skipped, so there is no `skipped` to narrow by
+  });
+});
+
+test('`M249` `B` (`D1362`): a test\'s past is drawn beside it — dots oldest first, and a pill when it flipped on the same file', async () => {
+  // Same shapes as the filter test above: `a fails` fails by construction, `a passes` passes. One
+  // earlier run is planted by hand with the SAME source hash and the opposite verdict for `a fails`,
+  // because a real flip on unchanged source cannot be produced on demand — which is the point of it.
+  const source = 'test "a passes"\n  log "ok"\n\ntest "a fails"\n  api GET /nothing-here\n  expect status equals 200\n';
+  await withProjectFixture({ 'a.tflw': source }, async (p, base, dir) => {
+    const sourceHash = createHash('sha256').update(source).digest('hex').slice(0, 16);
+    const earlier = join(dir, 'report', 'runs', '2026-01-01T00-00-00-000Z');
+    await mkdir(earlier, { recursive: true });
+    await writeFile(
+      join(earlier, 'results.json'),
+      JSON.stringify({
+        ok: true, env: 'local', startedAt: '2026-01-01T00:00:00.000Z', durationMs: 1, total: 2, passed: 2, failed: 0, seed: 1, now: '2026-01-01T00:00:00.000Z', insecure: false,
+        tests: [
+          { kind: 'functional', name: 'a passes', ok: true, durationMs: 1, steps: [], file: 'a.tflw', sourceHash },
+          { kind: 'functional', name: 'a fails', ok: true, durationMs: 1, steps: [], file: 'a.tflw', sourceHash },
+        ],
+      }),
+    );
+    await p.goto(`${base}/?token=${TOKEN}#/api/run`);
+    await p.locator('[data-run]').click();
+    const fails = p.locator('[data-test][data-name="a fails"]');
+    await fails.waitFor({ timeout: 60_000 });
+    await settle(async () => (await fails.locator('[data-history]').getAttribute('data-history').catch(() => null)) ?? '', untilEqual('pass,fail'), { attempts: 60, delayMs: 100, page: p });
+    await fails.locator('[data-history-flaky]').waitFor();
+    assert.match((await fails.locator('[data-history]').getAttribute('data-tip')) ?? '', /1 of the last 2 kept runs failed — the verdict changed with no change to the file/);
+    // The control: the test that did not flip has dots and no pill.
+    const passes = p.locator('[data-test][data-name="a passes"]');
+    assert.equal(await passes.locator('[data-history]').getAttribute('data-history'), 'pass,pass');
+    assert.equal(await passes.locator('[data-history-flaky]').count(), 0);
   });
 });
 

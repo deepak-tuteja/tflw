@@ -7,10 +7,10 @@
 // `#/load` is a link to the LOAD door of whatever project this server is serving.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getFile, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, putFile, reportFileUrl, startRun, subscribe } from './api';
+import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getFile, getHistory, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, putFile, reportFileUrl, startRun, subscribe } from './api';
 import type { DocumentView, FileView } from './api';
 import { EMPTY_BASELINE, stageFingerprint } from './baseline';
-import type { EndEvent, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding, UnconfiguredView } from './contract';
+import type { EndEvent, HistoryView, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding, UnconfiguredView } from './contract';
 import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
 import { Landing } from './Landing';
 import { EmptyDoor } from './EmptyDoor';
@@ -152,6 +152,8 @@ export function App() {
   const error = notices.length === 0 ? null : notices[notices.length - 1]!.text;
   const [runs, setRuns] = useState<readonly RunRecord[]>([]);
   const [reports, setReports] = useState<readonly ReportDir[]>([]);
+  /** `M249` `B` — the kept runs joined by test; `null` until read, or when the read failed. */
+  const [history, setHistory] = useState<HistoryView | null>(null);
   const [selected, setSelected] = useState<Selection>(null);
   const [report, setReport] = useState<{ id: string; data: RunReport } | null>(null);
   // U4 — a second directory opened beside the selected one (§2 q6). Chosen per selection: it
@@ -288,9 +290,10 @@ export function App() {
   );
 
   const refreshLists = useCallback(async () => {
-    const [r, p] = await Promise.all([getRuns(), getReports()]);
+    const [r, p, h] = await Promise.all([getRuns(), getReports(), getHistory().catch(() => null)]);
     setRuns(r);
     setReports(p);
+    setHistory(h);
     return p;
   }, []);
 
@@ -1272,7 +1275,7 @@ export function App() {
               ))}
           </p>
           <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} onAccept={door === null ? null : (f) => void acceptFinding(f)} />
-          <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null, onOpenTrace: (p) => setTraceOpen({ id: report.id, path: p }) }} />
+          <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null, history, onOpenTrace: (p) => setTraceOpen({ id: report.id, path: p }) }} />
         </article>
       ) : null}
       {selected === null && !error ? <p className="muted empty">select a run</p> : null}

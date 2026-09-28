@@ -1,6 +1,6 @@
 // The page's only door to the server (`M192` U2): one function per route, and the stream.
 
-import type { EndEvent, ProjectView, ReportDir, RunEvent, RunRecord, RunReport, RunRequest, UnconfiguredView } from './contract';
+import type { EndEvent, HistoryView, ProjectView, ReportDir, RunEvent, RunRecord, RunReport, RunRequest, UnconfiguredView } from './contract';
 
 /**
  * This session's token (`M239` `A`, `D1316`) — read off the URL `tflw ui` printed and opened. Every
@@ -41,6 +41,8 @@ export async function initProject(door: string): Promise<{ ok: boolean; created:
 }
 export const getRuns = () => getJson<RunRecord[]>('/api/runs');
 export const getReports = () => getJson<ReportDir[]>('/api/reports');
+/** `M249` `B` — every kept run's verdicts per test (`GET /api/history`). */
+export const getHistory = () => getJson<HistoryView>('/api/history');
 export const getResults = (reportId: string) => getJson<RunReport>(`/api/reports/${encodeURIComponent(reportId)}/results.json`);
 export const reportFileUrl = (reportId: string, file: string) => `/api/reports/${encodeURIComponent(reportId)}/${file}`;
 

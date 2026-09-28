@@ -12,6 +12,7 @@ import { readFile, readdir, writeFile, access, mkdir, stat } from 'node:fs/promi
 import { watch as fsWatch, existsSync, readFileSync, statSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs';
 // M92b (`B6-09`) — `install-browsers` resolves the consumer's own `playwright` instead of letting
 // `npx --yes` fetch an unpinned one from the registry.
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { hostname, userInfo } from 'node:os';
 import { join, resolve, relative, dirname, basename, sep } from 'node:path';
@@ -132,6 +133,8 @@ import {
   describeRunFilter,
   writeEventsNdjson,
   clearRunOwnedMembers,
+  keepRun,
+  readHistory,
   renderCliSummary,
   describeWorkload,
 } from '@tflw/reporter';
@@ -1016,6 +1019,9 @@ interface RunArgs {
    * *now*, and a project that kept one on every green CI run is `M205-07` by default.
    */
   readonly trace: boolean;
+  /** `--no-keep` (`M249` `A`, `D1362`) — do not copy this run into `report/runs/<id>/`. A scratch
+   * run: `report/` still holds it, and the kept history is left as it was. */
+  readonly noKeep: boolean;
   /** `--update-snapshots` (M4b, D15) — writes/overwrites `matches snapshot` baselines instead of
    * just comparing against them. Off by default, same as every prior milestone's behavior. */
   readonly updateSnapshots: boolean;
@@ -1123,6 +1129,7 @@ function parseRunArgs(argv: string[]): RunArgs {
     headed: bool('headed'),
     noHelpers: bool('noHelpers'),
     trace: bool('trace'),
+    noKeep: bool('noKeep'),
     updateSnapshots: bool('updateSnapshots'),
     logOutputRaw: str('logOutputRaw'),
     logLevelRaw: str('logLevelRaw'),
@@ -2112,7 +2119,9 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
         // `matches snapshot` step's `snapshots/<file>/…` path (M4b) — this stamp remains the
         // display-only one `report.tests[].file` has always been, kept as its own assignment rather
         // than merged into the two so neither concern's rationale gets confused for the other's.
-        return { report: { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel })) } };
+        // `M249` `A` — and the file's source hash beside it, for history's *flaky* (`sourceHash`).
+        const sourceHash = createHash('sha256').update(source).digest('hex').slice(0, 16);
+        return { report: { ...report, tests: report.tests.map((t) => ({ ...t, file: fileLabel, sourceHash })) } };
       } catch (e) {
         buffered?.flush();
         // A runtime throw in this file (e.g. a bad `import`/`use` path) must never sink the whole
@@ -2296,9 +2305,21 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     );
   }
 
+  // `M249` `A` (`D1362`) — every run is kept, bounded by `runs keep N`, in the layout the page's
+  // server kept its own runs in. `TFLW_KEEP_ID` is how that server names the run it started, so the
+  // record it shows and the directory on disk are one id; nothing else sets it.
+  const kept = args.noKeep
+    ? null
+    : await keepRun(reportDir, { startedAt: merged.startedAt, keep: resolved.runsKeep, ...(process.env.TFLW_KEEP_ID ? { id: process.env.TFLW_KEEP_ID } : {}) });
+
+  // `M249` `B` — the kept runs this one joins, read only when a test failed: a green run's summary
+  // has no line a history clause would attach to, so it does not pay for the read.
+  const history = !ndjsonActive && merged.failed > 0 ? await readHistory(reportDir, { limit: resolved.runsKeep }) : undefined;
+
   if (!ndjsonActive) {
-    out.write(withTimestamps('\n' + renderCliSummary(merged, color), timestamps) + '\n');
+    out.write(withTimestamps('\n' + renderCliSummary(merged, color, history), timestamps) + '\n');
     out.write(withTimestamps(`\n${dim(color, 'report:')} ${relative(cwd, outPath)}`, timestamps) + '\n');
+    if (kept) out.write(withTimestamps(`${dim(color, 'kept:')} ${relative(cwd, join(reportDir, kept.dir)).split(sep).join('/')}`, timestamps) + '\n');
   }
 
   out.close(); // the wrapper closes it too; `close()` is idempotent, and flushing here keeps the
@@ -4238,7 +4259,7 @@ function printUsage(): void {
       '',
       'usage:',
       '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
-      '            [--failed] [--shard i/n] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots] [--no-helpers]',
+      '            [--failed] [--shard i/n] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots] [--no-helpers] [--no-keep]',
       '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
       '            [--teardown always|on-success|never]',
       '            [--log-output console|html|both|none]',
@@ -4260,6 +4281,7 @@ function printUsage(): void {
       '                                                      --browser switches every browser step to one engine (default chromium)',
       '                                                      --headed shows the browser window instead of running headless',
       '                                                      --trace keeps the browser trace even when everything passed (needs --evidence full; open it with `npx playwright show-trace`)',
+      '                                                      every run is kept under report/runs/<id>/ (the newest `runs keep N`, 50 by default); --no-keep skips that for a scratch run',
       '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines',
       '                                                      --no-helpers refuses every `use` before the first request',
       '                                                      --forbid-insecure refuses to run at all if `insecure true` is active for this env (a CI policy gate)',

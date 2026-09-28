@@ -1,5 +1,6 @@
 // A compact terminal summary of a run (SPEC §13). Secrets are already redacted in the report.
 
+import { historyClause, type History } from './history.js';
 import { exhaustiveEntry, MIN_REDACTABLE_LENGTH, SCAN_KIND_LABEL, WITHHELD_LABEL } from '@tflw/runtime';
 import type { CrawlResult, LoadDurationStats, LoadMetrics, RunReport, SelfDiagnosis, StepResult, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { grantedProbeClauses } from './probe-clauses.js';
@@ -19,7 +20,10 @@ const C = {
   bold: '\x1b[1m',
 };
 
-export function renderCliSummary(report: RunReport, color = true): string {
+/** `history` (`M249` `B`, `D1362`) — the kept runs this one joins; a failing test's line then says
+ * how often it failed before, and whether it is flaky across runs. Optional: without it the summary
+ * is what it always was. */
+export function renderCliSummary(report: RunReport, color = true, history?: History): string {
   const c = color ? C : { reset: '', dim: '', red: '', green: '', yellow: '', bold: '' };
   const lines: string[] = [];
   const noVerdict = noVerdictReason(report);
@@ -35,7 +39,7 @@ export function renderCliSummary(report: RunReport, color = true): string {
       continue;
     }
     if (test.kind !== 'functional') return exhaustiveEntry(test);
-    lines.push(testLine(test, c));
+    lines.push(testLine(test, c, history));
     lines.push(...warningLines(test, c));
     lines.push(...failureLines(test, c));
   }
@@ -232,10 +236,11 @@ function warningLines(test: TestResult, c: typeof C): string[] {
   ]);
 }
 
-function testLine(test: TestResult, c: typeof C): string {
+function testLine(test: TestResult, c: typeof C, history?: History): string {
   const mark = test.ok ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
   const flaky = test.flaky ? ` ${c.dim}(flaky)${c.reset}` : '';
-  return `  ${mark} ${test.name}${flaky}${attemptSuffix(test, c)} ${c.dim}(${test.durationMs} ms)${c.reset}`;
+  const past = !test.ok && history ? historyClause(history, test.file, test.name) : '';
+  return `  ${mark} ${test.name}${flaky}${attemptSuffix(test, c)} ${c.dim}(${test.durationMs} ms)${past}${c.reset}`;
 }
 
 /**

@@ -470,6 +470,11 @@ export interface TestResult {
    * against `TestResult` (unit tests across `runtime`/`reporter`) keeps compiling unchanged; a
    * report with no `file` groups every test under one untitled group. */
   readonly file?: string;
+  /** `M249` `A` (`D1362`) — a hash of the source of the file this test came from, stamped beside
+   * `file`. History reads it to tell *flaky* (the verdict changed and the file did not) from *changed*
+   * (someone edited it). The file, not the test: a row-expanded name cannot be mapped back to its
+   * declaration from here, and a coarser hash only ever withholds the word *flaky*, never invents it. */
+  readonly sourceHash?: string;
   /** The fatal error that ended the test early, if any. */
   readonly error?: string;
   /** Runtime diagnostics raised while this test ran, in the order they were raised (`D801`).
@@ -514,6 +519,11 @@ export interface TestResult {
 export interface WorkloadTestResult extends LoadScenarioReport {
   readonly kind: 'workload';
   readonly file?: string;
+  /** `M249` `A` (`D1362`) — a hash of the source of the file this test came from, stamped beside
+   * `file`. History reads it to tell *flaky* (the verdict changed and the file did not) from *changed*
+   * (someone edited it). The file, not the test: a row-expanded name cannot be mapped back to its
+   * declaration from here, and a coarser hash only ever withholds the word *flaky*, never invents it. */
+  readonly sourceHash?: string;
   readonly concurrency?: 'parallel' | 'sequential';
 }
 
@@ -535,6 +545,11 @@ export interface CrawlResult {
   readonly durationMs: number;
   readonly steps: readonly StepResult[];
   readonly file?: string;
+  /** `M249` `A` (`D1362`) — a hash of the source of the file this test came from, stamped beside
+   * `file`. History reads it to tell *flaky* (the verdict changed and the file did not) from *changed*
+   * (someone edited it). The file, not the test: a row-expanded name cannot be mapped back to its
+   * declaration from here, and a coarser hash only ever withholds the word *flaky*, never invents it. */
+  readonly sourceHash?: string;
   readonly error?: string;
   readonly surface: CrawlSurfaceReport;
 }

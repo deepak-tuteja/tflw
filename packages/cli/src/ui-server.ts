@@ -42,6 +42,7 @@ import { join, resolve, relative, dirname, extname, sep, basename } from 'node:p
 import { createRequire } from 'node:module';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { DEFAULT_RUNS_KEPT, parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, pageOpening, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
+import { readHistory } from '@tflw/reporter';
 import { parseBaseline, resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 import { buildStamp, type BuildStamp } from './buildStamp.js';
@@ -100,6 +101,22 @@ const TOKEN_COOKIE = 'tflw-ui-token';
 export const BODY_CAP = 1 << 20;
 /** Runs the server remembers (`D1317`); the report directories on disk are the durable record. */
 export const RUNS_KEPT = DEFAULT_RUNS_KEPT;
+
+/** `GET /api/history` (`M249` `B`, `D1362`) — every kept run's verdict per test, newest first. */
+export interface HistoryView {
+  /** Kept run ids read, newest first. */
+  readonly runs: readonly string[];
+  readonly tests: readonly {
+    readonly file: string;
+    readonly name: string;
+    /** One per kept run that contained the test, newest first. */
+    readonly verdicts: readonly ('pass' | 'fail' | 'skip')[];
+    readonly failures: number;
+    /** The verdict changed between two runs of the same source (`history.ts`). */
+    readonly flaky: boolean;
+  }[];
+  readonly thresholds: readonly { readonly file: string; readonly test: string; readonly threshold: string; readonly values: readonly (number | null)[] }[];
+}
 /** Stdout lines buffered per run for late subscribers; a workload prints one event per sample. */
 export const LINES_KEPT = 50_000;
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
@@ -1642,7 +1659,8 @@ export class UiServer {
     const argv = runArgv(request);
     const child = spawn(process.execPath, [...(this.opts.execArgv ?? []), this.opts.cliEntry, ...argv], {
       cwd: this.opts.root,
-      env: { ...process.env, FORCE_COLOR: '0' },
+      // `M249` `A` — the id the CLI keeps this run under, so the record and the directory agree.
+      env: { ...process.env, FORCE_COLOR: '0', TFLW_KEEP_ID: id },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const record: RunRecord = { id, startedAt: new Date().toISOString(), request, argv, status: 'running', exitCode: null, signal: null, endedAt: null, kept: null };
@@ -1768,28 +1786,19 @@ export class UiServer {
     return null;
   }
 
-  /** Copy the report directory aside as `runs/<id>/` — the run's record, kept. Only the members
-   * the contract names and the directories beside them; `runs/` itself is never copied into
-   * itself. Skipped when the run wrote nothing (a usage error exits before any artefact) —
-   * judged by `results.json`'s mtime against the run's start, not by its presence: a directory the
-   * previous run left is present too, and `M192` U7's gate kept one as the record of a run that
-   * had refused its own argv, then opened it as that run's report. */
+  /** Record where the run was kept. Since `M249` `A` (`D1362`) `tflw run` keeps every run itself,
+   * into `runs/<id>/` under the id this server handed it (`TFLW_KEEP_ID`), so the server no longer
+   * copies anything — a second copy would be a second entry in every history. What is left here is
+   * the judgement the copy used to make: a run that refused its own argv writes nothing and keeps
+   * nothing, and is recorded as such (`M192` U7's gate), which is now simply whether the directory
+   * exists with a `results.json` in it. */
   private async keep(live: LiveRun): Promise<void> {
     const reportDir = await this.reportDirFor();
-    let written: Date;
+    const dest = join(reportDir, 'runs', live.record.id);
     try {
-      written = (await stat(join(reportDir, 'results.json'))).mtime;
+      await stat(join(dest, 'results.json'));
     } catch {
       return;
-    }
-    if (written.getTime() < Date.parse(live.record.startedAt)) return;
-    const dest = join(reportDir, 'runs', live.record.id);
-    await mkdir(dest, { recursive: true });
-    // Entry by entry rather than one `cp` of the directory: `fs.cp` refuses a destination inside
-    // its source (`ERR_FS_CP_EINVAL`), and `runs/` is inside `report/` by design.
-    for (const entry of await readdir(reportDir, { withFileTypes: true })) {
-      if (entry.name === 'runs') continue;
-      await cp(join(reportDir, entry.name), join(dest, entry.name), { recursive: true });
     }
     live.record.kept = relative(this.opts.root, dest).split(sep).join('/');
   }
@@ -1938,6 +1947,7 @@ export class UiServer {
         return json(res, 200, view);
       }
       if (path === '/api/reports' && method === 'GET') return json(res, 200, []);
+      if (path === '/api/history' && method === 'GET') return json(res, 200, { runs: [], tests: [], thresholds: [] } satisfies HistoryView);
       const allowed = path === '/api/init' || path === '/api/runs' || path.startsWith('/api/runs/') || path === '/api/config';
       if (!allowed) return json(res, 409, { error: 'this directory has no tflw.config yet — init first' });
     }
@@ -2250,6 +2260,18 @@ export class UiServer {
 
     if (path === '/api/reports' && method === 'GET') {
       return json(res, 200, await this.listReports());
+    }
+
+    // `M249` `B` (`D1362`) — the kept runs, read on demand, joined by test. What the Run tab draws
+    // its dots, sparklines and *flaky* pill from; the same reader the CLI's summary uses.
+    if (path === '/api/history' && method === 'GET') {
+      const history = await readHistory(await this.reportDirFor(), { limit: await this.runsKept() });
+      const view: HistoryView = {
+        runs: [...history.runs],
+        tests: [...history.tests.values()].map((t) => ({ file: t.file, name: t.name, verdicts: t.runs.map((r) => r.verdict), failures: t.failures, flaky: t.flaky })),
+        thresholds: history.thresholds.map((t) => ({ file: t.file, test: t.test, threshold: t.threshold, values: [...t.values] })),
+      };
+      return json(res, 200, view);
     }
 
     const reportFile = /^\/api\/reports\/([^/]+)\/(.+)$/.exec(path);
