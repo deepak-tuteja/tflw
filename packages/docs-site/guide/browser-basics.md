@@ -168,7 +168,7 @@ would be:
   resolution is annotated right in the CLI/report line (`field "Search" (resolved via
   placeholder)`), never silently accepted.
 - Escapes: `css "…"`, `xpath "…"` — greppable when nothing else fits, and worth naming once with
-  [`element`](#naming-a-locator-once-element) when more than one test needs them.
+  [`element`](#element) when more than one test needs them.
 
 **Ambiguity is always a hard error** — more than one match never silently picks the first. The
 error lists up to 5 matched candidates' visible text and suggests `within <container>` or a more
@@ -186,7 +186,7 @@ elements of the right shape and appends up to 5 ranked, ready-to-paste suggestio
 element found" error — a typo like `click button "Add to Crat"` surfaces `button "Add to Cart"`.
 This only changes what the failure message *suggests*, never which element a step acts on.
 
-### Naming a locator once — `element`
+### Naming a locator once — `element` {#element}
 
 A selector the page owns — an id, a `data-test` attribute — is the part of a test that breaks when
 the markup changes. Write it once, give it a name, and use the name everywhere a locator goes:
