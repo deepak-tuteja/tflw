@@ -66,8 +66,9 @@ test('`+ step…` offers every browser kind the foot does not, and none it canno
      the day it was written, because every `CATALOGUE` row was a browser kind — so it was a trap
      rather than a defect, and the trap is that adding the five would have changed nothing and
      reddened no gate. */
-  assert.equal(offers.length, 23, '22 browser kinds − 3 in the foot − `within`, plus the five door-agnostic kinds');
-  assert.equal(AGNOSTIC.length, 5, 'capture, log, call, give, pause — if the language gains a sixth it needs a CATALOGUE row and a seed');
+  // `G9`: `together` is the sixth door-agnostic kind (a barrier chooses no door), so 23 -> 24.
+  assert.equal(offers.length, 24, '22 browser kinds − 3 in the foot − `within`, plus the six door-agnostic kinds');
+  assert.equal(AGNOSTIC.length, 6, 'capture, log, call, give, pause, together — if the language gains a seventh it needs a CATALOGUE row and a seed');
   // And the list cannot claim a kind the door cannot construct, which is the direction that
   // matters: a chooser offering a kind with no builder is a control that refuses itself.
   for (const o of offers) assert.ok(VOCABULARY.browser.constructs.has(o.kind), `${o.label} is offered and not constructible`);

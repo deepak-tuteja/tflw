@@ -7,7 +7,7 @@
 #   V  a `<expr>.value === '…'` comparison
 #   S  a `case '…':` label in a switch on `<expr>.value`
 #
-# 271 words
+# 272 words
 
 A   DELETE
 A   GET
@@ -248,6 +248,7 @@ AS  tick
 AKS timeout
 K   to
 V   today
+AS  together
 K   token
 K   traffic
 A   traversal

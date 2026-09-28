@@ -1273,7 +1273,8 @@ test('`M224` `D1207`: every test in the example project accepts a threshold, by 
   // `M234` `C` — 16 -> 35. The example is now an equality against what the printer can emit
   // (`exampleCoverage.test.ts`), and widening it is what found the defect the gate above this one
   // pins: a paragraph closing the FILE was being read as the last test's trailing note.
-  assert.equal(seen, 35, 'the example project declares 35 tests — if it grew, move this number');
+  // `G1`/`G3` — the checkout's two-tabs race and the test that judges it: 35 -> 37.
+  assert.equal(seen, 37, 'the example project declares 37 tests — if it grew, move this number');
 });
 
 test('`M224` `D1207`: a trailing note inside a test keeps the new line below it', () => {

@@ -4715,7 +4715,7 @@ test('`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer fol
        * kind — so it was a trap rather than a defect, and the trap is that adding the five rows
        * would have changed this number by zero and reddened nothing.
        */
-      assert.equal(await fresh.locator('[data-add-step-count]').getAttribute('data-add-step-count'), '23');
+      assert.equal(await fresh.locator('[data-add-step-count]').getAttribute('data-add-step-count'), '24'); // `G9`: `together` is the sixth door-agnostic kind, 23 -> 24
       assert.equal(await fresh.locator('[data-add-step-kind="WithinBlock"]').count(), 0);
       assert.equal(await fresh.locator('[data-add-step-kind="CaptureStmt"]').count(), 1, 'a door-agnostic kind is offered on the BROWSER door — it was offered nowhere');
       assert.equal(await fresh.locator('[data-add-step-kind="LetStmt"]').count(), 0, 'and `let` is not, because every door already carries `+ let` in its foot');

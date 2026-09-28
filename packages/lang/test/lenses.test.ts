@@ -177,7 +177,9 @@ test('every test in the corpus classifies, and a third of them land in more than
   // `M246`: the printer corpus's signed-webhook test. 88 -> 89.
   // `M247` gaps: the printer corpus's header case gained a skip scoped to two envs, so `EnvScopeRef`
   // is reached in-repo. 89 -> 90.
-  const EXPECTED_TESTS = 90;
+  // `G1`/`G3`: the printer corpus's concurrent race (1) and the example's two-tabs race and the
+  // test that judges it (2). 90 -> 93.
+  const EXPECTED_TESTS = 93;
   assert.equal(mine.total, EXPECTED_TESTS,
     `the corpus classified ${mine.total} tests, expected ${EXPECTED_TESTS} — move the number in the change that moved the corpus`);
 

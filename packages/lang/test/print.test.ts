@@ -353,7 +353,9 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // `M247` `D`: `basket.tflw`'s `element savedLine` declaration — its two uses replace two `css`
   // locators one for one, so the declaration is the only new node. 594 -> 595.
   // `M247` gaps: `header.tflw`'s env-scoped skip — the test, its api step and its `expect`. 595 -> 598.
-  const EXPECTED_NODES = 598;
+  // `G1`/`G3`: the printer corpus's concurrent race (its test, `together`, two api steps and two
+  // `expect`s) and the example's `before file`, two-tabs race and the test judging it. 598 -> 618.
+  const EXPECTED_NODES = 618;
   const EXPECTED_FILES = 28;
   assert.equal(filesRead, EXPECTED_FILES, `the corpus read ${filesRead} files, expected ${EXPECTED_FILES} — a fixture was added or lost`);
   assert.equal(total, EXPECTED_NODES, `the corpus round-tripped ${total} nodes, expected ${EXPECTED_NODES} — move the number in the change that moved the corpus`);

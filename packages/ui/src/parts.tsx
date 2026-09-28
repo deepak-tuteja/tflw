@@ -1204,7 +1204,7 @@ export type StatementEdit =
   | { readonly kind: 'click'; readonly locatorKind: LocatorKind; readonly locator: string; readonly clickKind: ClickKind }
   | { readonly kind: 'fill'; readonly locatorKind: LocatorKind; readonly locator: string; readonly value: string }
   | { readonly kind: 'locatorOnly'; readonly of: 'HoverStmt' | 'ScrollStmt' | 'TickStmt' | 'UntickStmt'; readonly locatorKind: LocatorKind; readonly locator: string }
-  | { readonly kind: 'bare'; readonly of: 'DismissDialogStmt' | 'CloseTabStmt' }
+  | { readonly kind: 'bare'; readonly of: 'DismissDialogStmt' | 'CloseTabStmt' | 'TogetherStmt' }
   | { readonly kind: 'acceptDialog'; readonly text: string }
   | { readonly kind: 'switchToTab'; readonly index: string }
   | { readonly kind: 'screenshot'; readonly name: string }
@@ -1280,6 +1280,7 @@ export function statementEditOf(node: Step): StatementEdit | null {
       return { kind: 'locatorOnly', of: node.type, locatorKind: node.locator.kind, locator: node.locator.value.value };
     case 'DismissDialogStmt':
     case 'CloseTabStmt':
+    case 'TogetherStmt':
       return { kind: 'bare', of: node.type };
     case 'AcceptDialogStmt':
       /* Blank is the bare `accept dialog`, which is a spelling rather than a missing value — the
@@ -1601,12 +1602,14 @@ export function ScriptRow({ statement, edit, onEdit, trailing, pick, phase, onOp
        refuses a pane that is silent about which of its rows are live. What is live here is the
        `✕` and the note; what is absent is absent because the language has nothing to ask. */
     return (
-      <div className="row expect-fields" data-script={edit.of === 'CloseTabStmt' ? 'close-tab' : 'dismiss-dialog'} data-expect-line={statement.line}>
-        <span className="kw">{edit.of === 'CloseTabStmt' ? 'close tab' : 'dismiss dialog'}</span>
+      <div className="row expect-fields" data-script={edit.of === 'CloseTabStmt' ? 'close-tab' : edit.of === 'TogetherStmt' ? 'together' : 'dismiss-dialog'} data-expect-line={statement.line}>
+        <span className="kw">{edit.of === 'CloseTabStmt' ? 'close tab' : edit.of === 'TogetherStmt' ? 'together' : 'dismiss dialog'}</span>
         <span className="muted" data-script-nofields>
           {edit.of === 'CloseTabStmt'
             ? 'closes the tab in front and returns to the one before it — it takes no arguments'
-            : 'answers the native dialog with cancel — it takes no arguments'}
+            : edit.of === 'TogetherStmt'
+              ? 'the rows of a `with each concurrently` table wait here for one another, then go on at once — it takes no arguments, and belongs at the top level of such a test'
+              : 'answers the native dialog with cancel — it takes no arguments'}
         </span>
         {line}
       </div>
