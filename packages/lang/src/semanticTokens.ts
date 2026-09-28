@@ -108,8 +108,9 @@ const KEYWORDS = new Set([
   // this list has no way to say "only after `max`". So the bounds render as plain identifiers on
   // purpose: an uncoloured keyword is a cosmetic gap, a wrongly-coloured identifier is `M133-01`.
   'crawl', 'seed', 'openapi', 'traffic', 'spider',
-  // `M247` `D` (`D1356`) — the `element` declaration keyword, in the milestone that ships it.
-  'element',
+  // `M247` `D` (`D1356`) — the `element` declaration keyword, and `E` (`D1359`) the `with each`
+  // modifier, both in the milestone that ships them.
+  'element', 'concurrently',
   'authorized', 'target', 'reason', 'probe', 'mutating', 'oversized', 'traversal', 'ciphers', 'privileged',
   // M142 (`M136b-01`). `honoring` is the one of that row's four words that passes D427a's test:
   // `retry honoring "Retry-After" up to 3` is its only construction and nobody names a variable

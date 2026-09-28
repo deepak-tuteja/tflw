@@ -3453,9 +3453,11 @@ class Parser {
       this.advance();
       const path = this.expectString('a data file path, e.g. `with each from "./data/x.csv"`');
       if (!path) return null;
+      const concurrently = this.takeConcurrently();
       this.endLine();
-      return { type: 'FileDataTable', path, span: this.spanFrom(start) };
+      return { type: 'FileDataTable', path, ...(concurrently ? { concurrently: true as const } : {}), span: this.spanFrom(start) };
     }
+    const concurrently = this.takeConcurrently();
     const headerSpan = this.headerSpanFrom(start);
     this.endLine();
     if (!this.check('indent')) {
@@ -3506,7 +3508,16 @@ class Parser {
     if (rows.length === 0) {
       this.error(Codes.EMPTY_BLOCK, 'this `with each` table has a header but no data rows', this.spanFrom(start), 'add at least one data row below the header, e.g. `| "value" |`');
     }
-    return { type: 'InlineDataTable', columns, rows, span: this.spanFrom(start) };
+    return { type: 'InlineDataTable', columns, rows, ...(concurrently ? { concurrently: true as const } : {}), span: this.spanFrom(start) };
+  }
+
+  /** `concurrently` at the end of a `with each` header (`M247` `E`, `D1359`) — consumed if present.
+   *  A modifier on the table and not on the test: it says how the *rows* run, and `parallel` on
+   *  the test header already says how tests run beside each other. */
+  private takeConcurrently(): boolean {
+    if (!this.isKw(this.peek(), 'concurrently')) return false;
+    this.advance();
+    return true;
   }
 
   private parseTableColumnName(seen: Set<string>): string | null {

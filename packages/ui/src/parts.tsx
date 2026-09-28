@@ -1025,6 +1025,8 @@ export interface HeaderEdit {
   readonly when: HookDecl['when'];
   readonly scope: HookDecl['scope'];
   readonly tableKind: 'none' | 'inline' | 'file';
+  /** `with each concurrently` (`M247` `E`) — kept across a header rebuild. */
+  readonly tableConcurrently: boolean;
   readonly tablePath: string;
   readonly columns: readonly string[];
   readonly rows: readonly (readonly string[])[];
@@ -1044,6 +1046,7 @@ export function headerEditOf(decl: OutlineHook | OutlineTest): HeaderEdit {
     when: decl.kind === 'hook' ? decl.when : 'before',
     scope: decl.kind === 'hook' ? decl.scope : 'each',
     tableKind: table === null ? 'none' : table.type === 'InlineDataTable' ? 'inline' : 'file',
+    tableConcurrently: table?.concurrently === true,
     tablePath: table !== null && table.type === 'FileDataTable' ? table.path.value : '',
     columns: table !== null && table.type === 'InlineDataTable' ? table.columns : ['name'],
     rows: table !== null && table.type === 'InlineDataTable' ? table.rows.map((row) => row.map((cell) => printValue(cell))) : [['""']],
@@ -1053,8 +1056,8 @@ export function headerEditOf(decl: OutlineHook | OutlineTest): HeaderEdit {
 /** The table half of a header edit, or `null` for a test that runs once. */
 export function tableSpecOf(edit: HeaderEdit): DataTableSpec | null {
   if (edit.tableKind === 'none') return null;
-  if (edit.tableKind === 'file') return { kind: 'file', path: edit.tablePath };
-  return { kind: 'inline', columns: edit.columns, rows: edit.rows };
+  if (edit.tableKind === 'file') return { kind: 'file', path: edit.tablePath, concurrently: edit.tableConcurrently };
+  return { kind: 'inline', columns: edit.columns, rows: edit.rows, concurrently: edit.tableConcurrently };
 }
 
 /** What a threshold row holds. A `duration` metric carries a percentile; an `errorRate` does not,
@@ -2599,11 +2602,21 @@ export function TestBand({ decl, door, editing, lastRun }: {
           <li data-band-table={test.table === null ? 'none' : test.table.type}>
             with each{' '}
             {live ? (
-              <select value={v.tableKind} onChange={(e) => change({ tableKind: e.target.value as HeaderEdit['tableKind'] })} data-band-table-kind aria-label="data table">
-                <option value="none">none — one case</option>
-                <option value="inline">rows written here</option>
-                <option value="file">rows from a file</option>
-              </select>
+              <>
+                <select value={v.tableKind} onChange={(e) => change({ tableKind: e.target.value as HeaderEdit['tableKind'] })} data-band-table-kind aria-label="data table">
+                  <option value="none">none — one case</option>
+                  <option value="inline">rows written here</option>
+                  <option value="file">rows from a file</option>
+                </select>
+                {/* `M247` `E` (`D1359`) — the rows run at once instead of in turn. */}
+                {v.tableKind === 'none' ? null : (
+                  <label>
+                    {' '}
+                    <input type="checkbox" checked={v.tableConcurrently} onChange={(e) => change({ tableConcurrently: e.target.checked })} data-band-table-concurrently />{' '}
+                    rows at once
+                  </label>
+                )}
+              </>
             ) : test.table === null ? (
               <span className="muted">none — one case</span>
             ) : test.table.type === 'InlineDataTable' ? (

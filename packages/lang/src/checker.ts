@@ -352,6 +352,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...(opts.knownSessions ? checkSessions(program, opts.knownSessions, opts.outOfScopeSessions) : []),
     ...(opts.knownSigners ? checkSigners(program, opts.knownSigners, opts.outOfScopeSigners) : []),
     ...(opts.knownEnvs ? checkSkipEnvs(program, opts.knownEnvs) : []),
+    ...checkConcurrentTables(program),
     ...checkActionDecls(program, opts),
     ...checkElements(program, opts),
     ...checkUnknownVariables(program),
@@ -4404,6 +4405,23 @@ export function checkSkipReasons(program: Program): Diagnostic[] {
       message: `\`skip\` on "${test.name.value}" gives no reason`,
       span: reason.span,
       hint: 'say why it is skipped and when it comes back — `skip "the payments sandbox is down until the 3rd"`. A skip nobody explained is a test nobody will turn back on',
+    });
+  }
+  return diags;
+}
+
+/** `TF090` (`M247` `E`, `D1359`) — `with each concurrently` over one inline row. */
+export function checkConcurrentTables(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const test of program.tests) {
+    const t = test.table;
+    if (!t || t.type !== 'InlineDataTable' || !t.concurrently || t.rows.length !== 1) continue;
+    diags.push({
+      code: Codes.CONCURRENTLY_ONE_ROW,
+      severity: 'warning',
+      message: `\`with each concurrently\` on "${test.name.value}" has one row, so nothing runs beside it`,
+      span: t.span,
+      hint: 'add the rows that should overlap — a race needs at least two — or drop `concurrently`',
     });
   }
   return diags;

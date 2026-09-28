@@ -110,6 +110,36 @@ row legible as its own line in the report.
 cell under the earlier column would be read and thrown away — silently, with the test still passing.
 The caret lands on the second occurrence, because that is the one to rename.
 
+## Rows at once — `with each concurrently` {#concurrently}
+
+Some questions are only asked by several requests at the same time: two buyers reserving the last
+unit, five refunds against one order, ten logins racing one rate limit. `concurrently` on the table
+runs its rows at once instead of one after another:
+
+```tflw
+with each concurrently
+  | buyer   |
+  | "ana"   |
+  | "ben"   |
+  | "chloe" |
+test "{buyer} tries to reserve the last unit"
+  api POST /reservations body { sku: "LAST-1", buyer: {buyer} }
+  expect status is less than 500
+
+test "exactly one reservation won"
+  api GET /stock/LAST-1
+  expect body.reserved equals 1
+```
+
+Each row accepts either answer — a `201` for the winner, a `409` for the others — because which row
+wins is the race. Each row is still its own case with its own hooks and its own line in the report,
+in row order. A row that fails stops nothing — the others run to their end. What the rows raced over
+is asserted **afterwards**, as state: the test below the table reads the one number the race
+decides. A table of one row marked `concurrently` is `TF090`, because nothing runs beside it.
+
+`concurrently` is about a table's rows. `parallel` on a test header runs neighbouring *tests* beside
+each other, and `--parallel N` runs *files*.
+
 ## Rows from a file
 
 `with each from` reads rows from a file instead — same one-case-per-row reporting, CSV or JSON:
@@ -128,6 +158,8 @@ test "creates {name} from a CSV row"
   expect status equals 201
   expect body.price equals {price}
 ```
+
+`with each from "…" concurrently` runs a file's rows at once, the same way.
 
 Numeric-looking cells (`price` above) are coerced to real numbers, which is what lets
 `expect body.price equals {price}` compare against a JSON number rather than a string — and it

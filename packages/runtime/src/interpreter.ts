@@ -571,8 +571,15 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
         }
         const group = functionalGroups.get(test);
         if (!group) return Promise.resolve();
-        return (async () => {
-          for (let j = 0; j < group.cases.length; j++) {
+        // `M247` `E` (`D1359`) — `with each concurrently`: the rows start together instead of in
+        // turn. Each is still its own case with its own hooks, seed, captures and result slot (by
+        // index, so the report keeps row order whatever finishes first), and a row that fails
+        // cancels nothing — the others run to their own end. Its events are buffered and flushed
+        // whole on its `test:end`, D114's rule for a batch, because rows now interleave exactly the
+        // way two parallel tests do.
+        const rowsTogether = test.table?.concurrently === true && group.cases.length > 1;
+        const runCase = async (j: number): Promise<void> => {
+            const buffered = isBatched || rowsTogether;
             const kase = group.cases[j]!;
             const globalIndex = testIndexOffset + group.startIndex + j;
             const testSeed = subSeed(runSeed, globalIndex);
@@ -583,7 +590,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // block, for the same "don't delay all feedback behind the slowest thing" reason D114
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
-            const caseEmit: EventSink = isBatched ? (event) => eventBuffer.push(event) : emit;
+            const caseEmit: EventSink = buffered ? (event) => eventBuffer.push(event) : emit;
             const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.reproSink ? { reproSink: opts.reproSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
@@ -594,13 +601,19 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             const result = await runTest(kase.test, config, tc, registry, beforeEach, afterEach, testSeed, kase.cells, sessionOwnership);
             functionalResults[group.startIndex + j] = result;
             const endEvent: RunEvent = { type: 'test:end', result };
-            if (isBatched) {
+            if (buffered) {
               eventBuffer.push(endEvent);
               for (const event of eventBuffer) emit(event);
             } else {
               emit(endEvent);
             }
+        };
+        return (async () => {
+          if (rowsTogether) {
+            await Promise.all(group.cases.map((_, j) => runCase(j)));
+            return;
           }
+          for (let j = 0; j < group.cases.length; j++) await runCase(j);
         })();
       });
       // A singleton batch is awaited directly (D111) — today's exact sequential shape, preserved

@@ -293,6 +293,9 @@ export interface InlineDataTable extends Node {
   readonly type: 'InlineDataTable';
   readonly columns: readonly string[];
   readonly rows: readonly (readonly Value[])[];
+  /** `with each concurrently` (`M247` `E`, `D1359`) — the rows run at once rather than one after
+   *  another. Absent, not `false`, when not written, so every earlier tree keeps its shape. */
+  readonly concurrently?: true;
 }
 
 /** `with each from "./x.csv"` / `.json` — same semantics, rows loaded from a file at run time,
@@ -301,6 +304,8 @@ export interface InlineDataTable extends Node {
 export interface FileDataTable extends Node {
   readonly type: 'FileDataTable';
   readonly path: StringLit;
+  /** `with each from "…" concurrently` — `InlineDataTable.concurrently`'s meaning. */
+  readonly concurrently?: true;
 }
 
 // ---- Load testing (M29/M30/M50, PLAN_BROWSER_PERF_SECURITY.md §2, D16-D19/D24a/D26/D29/D30,
