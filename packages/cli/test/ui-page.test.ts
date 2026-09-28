@@ -5753,11 +5753,12 @@ test('Auth says what a session reaches, and a mixed test with no session is wher
       assert.equal(await fresh.locator('[data-auth-reach-api]').getAttribute('data-auth-reach-api'), '6', 'api work miscounted');
       assert.equal(await fresh.locator('[data-auth-reach-page]').getAttribute('data-auth-reach-page'), '5', 'page work miscounted');
 
-      // The bridge, as it stands since `D1352`: a session's cookies sign the page in, a header
-      // credential does not, and a page login never reaches the api steps.
+      // The bridge, as it stands since `D1352`: a session's cookies sign the page in and a header
+      // credential does not. That a page login never reaches the api steps is the legend's — the
+      // panel at rest is held to the sibling's word budget, which the first draft broke (230 > 200).
       const bridge = await fresh.locator('[data-auth-bridge]').textContent();
       assert.match(bridge ?? '', /session signs the page in with its cookies/i);
-      assert.match(bridge ?? '', /a login made through the page never reaches them/);
+      assert.match(bridge ?? '', /A header token reaches the api steps only/);
 
       // And the case it matters most in, named rather than counted: the mixed test with no
       // session, whose form login leaves its api steps signed out. The mixed test run `as admin`

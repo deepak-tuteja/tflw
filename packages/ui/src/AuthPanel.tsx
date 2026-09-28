@@ -137,7 +137,7 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
           </li>
           <li className={pageSteps > 0 ? 'warn' : ''} data-auth-reach-page={pageSteps}>
             <strong>{pageSteps}</strong> {pageSteps === 1 ? 'statement does' : 'statements do'} page work —{' '}
-            {pageSteps === 0 ? 'none here' : "a session's cookies sign the page in; a header credential does not reach it"}
+            {pageSteps === 0 ? 'none here' : 'signed in by the session'}
           </li>
         </ul>
 
@@ -148,16 +148,16 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
         {door === 'browser' && pageSteps > 0 ? (
           <p className="muted" data-auth-bridge>
             {/* `M247` `A` (`D1352`, amending `D10`): the jar → browser direction is bridged. */}
-            <strong>A session signs the page in with its cookies.</strong> A test run <em>as</em> a session below opens its pages
-            signed in; a session that signs in by header — a bearer token, <code>oauth2</code> — reaches only the api steps, and
-            a login made through the page never reaches them.
+            {/* The limits — a header credential, a login made on the page — are the legend's (`?`); at rest
+                the page holds itself to the sibling's word budget. */}
+            <strong>A session signs the page in with its cookies.</strong> A header token reaches the api steps only.
             {mixed.length === 0 ? null : (
               <>
                 {' '}
                 <span data-auth-mixed={mixed.length}>
-                  {mixed.length} {mixed.length === 1 ? 'test' : 'tests'} here {mixed.length === 1 ? 'does' : 'do'} both kinds of work
-                  with no session — <em data-user-data>{mixed.map((t) => t.name).join(', ')}</em> — so a form login on the page
-                  leaves {mixed.length === 1 ? 'its' : 'their'} api steps signed out; <code>as &lt;session&gt;</code> signs in both.
+                  {mixed.length} {mixed.length === 1 ? 'test' : 'tests'} here {mixed.length === 1 ? 'mixes' : 'mix'} api and page steps
+                  with no session — <em data-user-data>{mixed.map((t) => t.name).join(', ')}</em> — so {mixed.length === 1 ? 'its' : 'their'} api
+                  steps run signed out; <code>as &lt;session&gt;</code> signs in both.
                 </span>
               </>
             )}
