@@ -37,6 +37,10 @@ const setup = stagedSetup(async () => {
     ['element cartBadge = css "[data-test=cart-count]"', 'element addButton = button "Add to cart"', '', 'action add one()', '  click addButton', ''].join('\n'),
     'utf8',
   );
+  // `M247-05`: the shape `refactor apply` writes since `M247-03` — an action file that declares no
+  // element and imports the file that does.
+  await writeFile(join(dir, 'parts.tflw'), ['element addViaImport = button "Add to cart"', ''].join('\n'), 'utf8');
+  await writeFile(join(dir, 'lifted.tflw'), ['import "./parts.tflw"', '', 'action add via import()', '  click addViaImport', ''].join('\n'), 'utf8');
 });
 
 before(setup.begin);
@@ -65,6 +69,14 @@ test('a file\'s own element drives a click and an assertion', async () => {
 
 test('an imported element resolves, and an imported action resolves its elements against its own file', async () => {
   const { report } = await run(['import "./shared.tflw"', '', 'test "imported"', '  open "/"', '  add one()', '  add one()', '  within cartBadge', '    expect text "2" is visible', ''].join('\n'));
+  assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
+});
+
+test('`M247-05`: an imported action resolves an element its OWN file imports, as the checker does', async () => {
+  // Before the fix the runtime read an imported action's names off that file's own declarations
+  // only, so this checked clean and failed at `click` — found by the sibling's `refactor-check`,
+  // whose extracted actions import the storefront's elements rather than declaring them.
+  const { report } = await run(['import "./lifted.tflw"', '', 'test "lifted"', '  open "/"', '  add via import()', '  expect text "1" is visible', ''].join('\n'));
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
 });
 

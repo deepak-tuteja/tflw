@@ -354,11 +354,20 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
   const unresolved = elementDiags.filter((d) => d.code === Codes.UNKNOWN_SUBJECT || d.code === Codes.UNKNOWN_ELEMENT).map((d) => d.span);
   const judgesUnresolved = (d: Diagnostic): boolean =>
     d.code === Codes.MATCHER_SUBJECT_MISMATCH && unresolved.some((u) => u.start.offset >= d.span.start.offset && u.end.offset <= d.span.end.offset);
+  // `M247-04` (`G7`): a test `skip … on env X` does not run under X, so what only X lacks — a service,
+  // a session or a signer declared for another env — is not an error there. The commonest reason to
+  // write the skip is that the env lacks the thing; demanding it anyway refused the run before the
+  // skip could apply. Only those three codes, only inside a test skipped on the env being checked.
+  const activeEnv = opts.outOfScopeSessions?.envName;
+  const skippedHere = activeEnv === undefined ? [] : program.tests.filter((t) => t.skipOn?.some((ref) => ref.name === activeEnv)).map((t) => t.span);
+  const envScoped = new Set<string>([Codes.UNKNOWN_SERVICE, Codes.UNKNOWN_SESSION, Codes.UNKNOWN_SIGNER]);
+  const notRunHere = (d: Diagnostic): boolean =>
+    envScoped.has(d.code) && skippedHere.some((t) => d.span.start.offset >= t.start.offset && d.span.end.offset <= t.end.offset);
   return byPosition([
-    ...(opts.knownServices ? checkServices(program, opts.knownServices) : []),
+    ...(opts.knownServices ? checkServices(program, opts.knownServices).filter((d) => !notRunHere(d)) : []),
     ...checkDataTables(program),
-    ...(opts.knownSessions ? checkSessions(program, opts.knownSessions, opts.outOfScopeSessions) : []),
-    ...(opts.knownSigners ? checkSigners(program, opts.knownSigners, opts.outOfScopeSigners) : []),
+    ...(opts.knownSessions ? checkSessions(program, opts.knownSessions, opts.outOfScopeSessions).filter((d) => !notRunHere(d)) : []),
+    ...(opts.knownSigners ? checkSigners(program, opts.knownSigners, opts.outOfScopeSigners).filter((d) => !notRunHere(d)) : []),
     ...(opts.knownEnvs ? checkSkipEnvs(program, opts.knownEnvs) : []),
     ...checkConcurrentTables(program),
     ...checkActionDecls(program, opts),

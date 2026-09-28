@@ -8,6 +8,10 @@ import { dateOffsetMs, describe, evalValue, RuntimeError, stringify, type EvalCt
 export interface MatchOutcome {
   readonly ok: boolean;
   readonly message: string;
+  /** `M247-02` (`G4`): a scan whose every rule stood down on this response — `D285`'s *no power to
+   *  fail*. Set only by the three scan outcomes; a `crawl` reads it to judge `D285` over its surface
+   *  rather than per route. */
+  readonly standsDown?: true;
 }
 
 /** Bounds every failure message's "expected"/"got" text (TFLW-GAPS.md gap #8): a bare untruncated

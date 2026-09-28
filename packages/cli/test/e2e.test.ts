@@ -5317,6 +5317,18 @@ test('the built dist/cli.cjs applies --fail-on, writes a baseline, and reads it 
     assert.match(said, /tflw\.config `baseline` \(env "local"\)/, 'the error must name the config, not just the path');
     assert.doesNotMatch(said, /ENOENT/, 'a bare errno is what this message exists to replace');
     assert.doesNotMatch(said, /1\/1 passed/);
+
+    // 10. `M247-01` (`G5`): the command step 9's message prescribes is the one that creates the file.
+    //     Writing to the declared path runs (and grades against nothing, so the finding fails it) and
+    //     leaves the document there; the next run reads it and is green. Writing anywhere else is
+    //     still step 9's refusal — the control that the exemption is the path, not the flag.
+    const elsewhere = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--baseline-write', 'other.json'], { cwd: dir }).catch((e: { code?: number }) => e);
+    assert.equal((elsewhere as { code?: number }).code, 2, '--baseline-write to another file does not create the declared one');
+    const created = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--baseline-write', 'nowhere.json'], { cwd: dir }).catch((e: { code?: number }) => e);
+    assert.equal((created as { code?: number }).code, 1, 'the creating run grades against nothing, so its finding still fails it');
+    await access(join(dir, 'nowhere.json')); // throws if the creating run wrote nothing
+    const afterCreate = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+    assert.match(afterCreate.stdout, /1\/1 passed/, 'the next run reads what the first one wrote');
   } finally {
     await rm(dir, { recursive: true, force: true });
     server.closeAllConnections();

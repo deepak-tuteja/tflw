@@ -446,6 +446,33 @@ test('seed traffic on a suite that sent nothing is TF068, and says which seed ca
   assert.match(crawl.steps.find((s) => s.kind === 'seed')!.detail!, /only as large as the suite that ran before it/);
 });
 
+// -- `M247-02` (`G4`): `D285` over the surface ----------------------------------------------------
+
+test('G4: a route every rule stands down on is not applicable there, and the crawl still passes on the routes that were judged', async () => {
+  // `/strict?q=the-real-one` answers 200 with no cookie and no CORS header, so the critical security
+  // rules have nothing to read on it; `/products` sets an `HttpOnly` cookie they can judge and clear.
+  // Before `G4` the first route failed the crawl as an assertion with no power to fail, which made a
+  // hard assertion over any real surface unwritable — a document always reaches a `/health`.
+  const source =
+    `test "a test that touches two routes"\n  api GET /products\n  expect status equals 200\n  api GET /strict?q=the-real-one\n  expect status equals 200\n\n` +
+    `crawl "what the suite touched"\n  seed traffic\n${SECURITY}\n`;
+  const { crawl, ok } = await run(source);
+  assert.equal(ok, true, crawl.steps.filter((s) => !s.ok).map((s) => s.detail).join('\n'));
+  const judged = crawl.steps.filter((s) => s.kind === 'expect');
+  assert.equal(judged.length, 2, 'one judgement per reached route');
+  assert.ok(judged.some((s) => /^not applicable on this route — no `critical`-or-worse security rule applied/.test(s.detail ?? '')), 'the stood-down route says so');
+  assert.ok(judged.some((s) => /has no critical security violations/.test(s.detail ?? '')), 'the judged route is judged');
+});
+
+test('G4: the control — an assertion that stood down on EVERY route had no power to fail on this crawl', async () => {
+  const source = `test "a test that touches one plain route"\n  api GET /strict?q=the-real-one\n  expect status equals 200\n\ncrawl "what the suite touched"\n  seed traffic\n${SECURITY}\n`;
+  const { crawl, ok } = await run(source);
+  assert.equal(ok, false, 'D285 still holds — it is asked of the surface now, not of each route');
+  const verdict = crawl.steps.at(-1)!;
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.detail!, /no power to fail on this crawl: no rule applied on any of the 1 route it judged/);
+});
+
 test('seed traffic deduplicates by normalized template, so a suite cannot multiply the crawl', async () => {
   // Forty calls to one route are one thing to crawl. Without the normalization a suite that iterates
   // over ids would make the crawl re-issue every one of them — the run`s own traffic squared.

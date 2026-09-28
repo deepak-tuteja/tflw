@@ -1944,7 +1944,20 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
       : resolved.baselinePath !== null
         ? { path: resolved.baselinePath, where: `tflw.config \`baseline\` (env "${resolved.envName}")` }
         : null;
-  const baselineDoc = baselineFrom === null ? null : parseBaseline(await readBaselineFile(resolve(cwd, baselineFrom.path), baselineFrom), baselineFrom.path);
+  // `M247-01` (`G5`): the refusal below says *write one with `--baseline-write <that path>`*, and
+  // that command used to meet the same refusal, because the declared file was read before the flag
+  // was. A run whose `--baseline-write` names the very file the config declares, while it does not
+  // exist, is the run that creates it: it grades against nothing and writes what it found. Any
+  // other target keeps the refusal — writing somewhere else is not creating the declared file.
+  const baselineAbs = baselineFrom === null ? null : resolve(cwd, baselineFrom.path);
+  const creatingDeclared =
+    baselineFrom !== null &&
+    args.baseline === undefined &&
+    args.baselineWrite !== undefined &&
+    resolve(cwd, args.baselineWrite) === baselineAbs &&
+    !(await exists(baselineAbs!));
+  const baselineDoc =
+    baselineFrom === null || creatingDeclared ? null : parseBaseline(await readBaselineFile(baselineAbs!, baselineFrom), baselineFrom.path);
   const scanGate: ScanGate | undefined =
     failOn === null && baselineDoc === null ? undefined : { failOn, accepted: new Map((baselineDoc?.accepted ?? []).map((e) => [e.fingerprint, e])) };
   // Validated here for the same reason and at the same moment: a bad `--probe-seeded` is a usage

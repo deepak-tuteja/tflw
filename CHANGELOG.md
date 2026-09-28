@@ -29,7 +29,7 @@ performance arc closed 2026-08-02 and is included below.
   Reported with its env (`… (on env ci)`), `skippedOn` in `results.json`, `N skipped (M by env)` on
   the summary; an undeclared env is `TF088`. The page's skip row takes the env list.
 - **`element <name> = <locator>`** (`D1356`): name a locator once and use the bare name wherever a
-  locator goes — `click checkout`, `expect cartCount has text "1"`, `within`, `drag`, `mask`.
+  locator goes — `click checkout`, `expect cartCount is visible`, `within cartCount`, `drag`, `mask`.
   Importable like an action; an unknown name is `TF089`, a repeated one `TF035`. `tflw check` offers
   a reuse hint for a `css`/`xpath` string written in two or more files, and `tflw refactor apply`
   writes the `element` line into `shared/elements.tflw` and rewrites every site. The language server
@@ -46,6 +46,26 @@ performance arc closed 2026-08-02 and is included below.
 - In a subject position, a bare word that is not one edit from a subject keyword is now read as an
   `element` name. `expect total equals 3` meaning a bound value is `TF089` at check time — whose hint
   says to write `{total}` — rather than a parse error.
+
+### Fixed — what the dogfood found building on M247
+
+- **A `crawl` can carry `expect` over a real API** (`M247-02`). `D285` (*no power to fail*) is now
+  asked of the whole surface. A route where every rule stood down reports *not applicable on this
+  route*, and an assertion that applied on no route fails once, after the walk. Before this, a crawl
+  over any real API failed on its `/health`.
+- **`--baseline-write` creates the baseline the config declares** (`M247-01`). The missing-file
+  refusal prescribed that command, and the command met the same refusal. Writing any other path is
+  still refused.
+- **An extracted action imports the elements it uses** (`M247-03`). `tflw check` offered to lift a
+  step window naming an imported `element` into `shared/…`, and `refactor apply` refused its own
+  proposal with `TF089`. The extraction now imports the declaring file. A window whose element is a
+  test file's own declaration, or means two selectors across occurrences, is not offered.
+- **An imported action finds the elements its own file imports** (`M247-05`). The checker read an
+  action file's `import`s for element names and the runtime did not, so a shared action whose
+  elements came from another file checked clean and failed at its first step.
+- **A test skipped on an env is not held to what only another env declares** (`M247-04`). Under
+  that env, `TF026`, an unknown session and an unknown signer inside the test are not reported,
+  so a skip written because the env lacks a service no longer blocks the run it exists for.
 
 ### Added — enterprise arc (M9–M28)
 

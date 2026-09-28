@@ -7,8 +7,8 @@
 //    request and to evaluate assertions are the real ones (P#30).
 
 import { readFile } from 'node:fs/promises';
-import { basename, join, posix, resolve as resolvePath } from 'node:path';
-import { Codes, elementRefs, elementsOf, inlineElements, isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
+import { basename, dirname, join, posix, resolve as resolvePath } from 'node:path';
+import { Codes, elementRefs, elementsOf, inlineElements, isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr, type Locator } from '@tflw/lang';
 import type {
   FindingSeverity,
   Value,
@@ -351,6 +351,14 @@ export async function runProgram(program: Program, config: ResolvedConfig, opts:
  */
 async function withElementsInlined(program: Program, baseDir: string): Promise<Program> {
   if (elementRefs(program).length === 0) return program;
+  return inlineElements(program, await elementLookupFor(program, baseDir));
+}
+
+/** A file's element names — its own declarations, then each file it imports — the checker's rule.
+ *  `M247-05`: `buildRegistry` read an imported action's names off its own file only, so a shared
+ *  action whose elements came from *its* import checked clean and failed at run time; both paths
+ *  now build the lookup here. An import that cannot be read is skipped, for the reason above. */
+async function elementLookupFor(program: Program, baseDir: string): Promise<Map<string, Locator>> {
   const lookup = elementsOf(program);
   for (const imp of program.imports) {
     let text: string;
@@ -362,7 +370,7 @@ async function withElementsInlined(program: Program, baseDir: string): Promise<P
     const parsed = parseSource(text);
     for (const e of parsed.program.elements ?? []) if (!lookup.has(e.name)) lookup.set(e.name, e.locator);
   }
-  return inlineElements(program, lookup);
+  return lookup;
 }
 
 async function runProgramInner(program: Program, config: ResolvedConfig, opts: RunOptions): Promise<RunOutput> {
@@ -2271,9 +2279,9 @@ async function buildRegistry(program: Program, baseDir: string, lines: readonly 
       throw new RuntimeError(`imported file "${imp.path.value}" has parse errors:\n${renderDiagnostics(parsed.diagnostics, text, { filename: imp.path.value })}`);
     }
     const imported: ActionSource = { lines: text.split('\n'), importPath: imp.path.value };
-    // `M247` `D` — an imported action's element references resolve against its own file's
-    // declarations: that is the file its author wrote them in.
-    const ownElements = elementsOf(parsed.program);
+    // `M247` `D` — an imported action's element references resolve against its own file: that
+    // file's declarations, then what IT imports (`M247-05`), which is how the checker reads them.
+    const ownElements = await elementLookupFor(parsed.program, dirname(abs));
     for (const a of parsed.program.actions) addAction(inlineElements(a, ownElements), imp.path.value, imported);
   }
 
@@ -2356,6 +2364,9 @@ interface TestCtx {
    * attributing a finding to the wrong seed.
    */
   readonly crawlVia?: CrawlVia;
+  /** `M247-02` (`G4`): per body assertion (keyed by its offset), how many reached routes a rule
+   *  applied on and how many stood every rule down. Present only on a crawl's derived context. */
+  readonly crawlStandDowns?: Map<number, { applied: number; stoodDown: number }>;
   /** M137c (D435) — `crawl … seed traffic`'s source: every `api` step's own request, in the order the
    *  run made them, accumulated across the whole file.
    *
@@ -3121,6 +3132,9 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
   const name = crawl.name.value;
   tc.emit({ type: 'test:start', name });
   const steps: StepResult[] = [];
+  const standDowns = new Map<number, { applied: number; stoodDown: number }>(
+    crawl.body.filter((st) => st.type === 'ExpectStmt').map((st) => [st.span.start.offset, { applied: 0, stoodDown: 0 }]),
+  );
   const noSurface = { discovered: 0, withheld: 0, sent: 0, reached: 0, seeds: [] };
   const fail = (error: string): CrawlResult => ({ kind: 'crawl', name, ok: false, durationMs: Math.round(performance.now() - crawlStart), steps, error, surface: noSurface });
 
@@ -3265,7 +3279,7 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
       const out: StepResult[] = [];
       const ownerIdentity = ownerIdentityFor(ctx, request.url);
       // D437's stamp, applied by derivation rather than mutation — see `TestCtx.crawlVia`.
-      const viaTc: TestCtx = { ...tc, crawlVia: via };
+      const viaTc: TestCtx = { ...tc, crawlVia: via, crawlStandDowns: standDowns };
       for (const step of crawl.body) {
         // `TF070` has already refused anything else at check time; this is the runtime's own reading of
         // the same rule, for the file run without a check pass — the same relationship `TF039`'s
@@ -3305,10 +3319,30 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
 
   const outcome = await runCrawl(crawl, config, deps);
   steps.push(...outcome.steps);
+  // `G4`: an assertion that stood down on every route it met had no power to fail on this surface.
+  let surfaceOk = true;
+  for (const step of crawl.body) {
+    if (step.type !== 'ExpectStmt') continue;
+    const tally = standDowns.get(step.span.start.offset);
+    if (tally === undefined || tally.applied > 0 || tally.stoodDown === 0) continue;
+    surfaceOk = false;
+    const src = (tc.lines[step.span.start.line - 1] ?? '').trim();
+    const result = mkStep(
+      step.soft ? 'check' : 'expect',
+      src,
+      step.span,
+      false,
+      performance.now(),
+      `this assertion had no power to fail on this crawl: no rule applied on any of the ${tally.stoodDown} route${tally.stoodDown === 1 ? '' : 's'} it judged (D285, judged over the surface). ` +
+        'Each route above says which precondition went unmet; give the crawl a seed that reaches a route one of them can judge, or lower the severity floor.',
+    );
+    steps.push(result);
+    tc.emit({ type: 'step:end', test: name, step: result });
+  }
   const result: CrawlResult = {
     kind: 'crawl',
     name,
-    ok: outcome.ok,
+    ok: outcome.ok && surfaceOk,
     // Whole-crawl wall clock — rounded, see `D807`; a crawl is seconds-to-minutes work.
     durationMs: Math.round(performance.now() - crawlStart),
     steps,
@@ -5091,7 +5125,7 @@ async function execSecurityExpect(
   const verdict = gateScan('security', [...sessionFindings, ...result.findings], templateEndpoint(request.method, response.finalUrl), step, tc);
   reportCensus('security', result.applicable, result.notApplicable, tc);
   const outcome = describeSecurityOutcome(step, floor, result, sessionFindings, verdict);
-  return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+  return mkStep(step.soft ? 'check' : 'expect', src, step.span, crawlRouteVerdict(step, outcome, tc), start, ctx.redactor.redact(crawlRouteMessage(outcome, tc)));
 }
 
 /**
@@ -5137,6 +5171,32 @@ function scanCounts(result: ScanResult): string {
 }
 
 /**
+ * `M247-02` (`G4`) — **`D285` over a crawl's surface, not per route.** A crawl reaches routes a
+ * document chose, so some always carry nothing a family can read — `/health`, an avatar, an empty
+ * list — and judging `D285` per response turned each of them into a failure: a hard assertion over
+ * any real API was unwritable, and the only corpus crawl had used `check` to get past it. Inside a
+ * crawl a stood-down route is therefore a pass that says so, counted in `crawlStandDowns`, and
+ * `runCrawlDecl` fails the assertion once, after the walk, if it applied on **no** route — which is
+ * `D285`'s question asked of the thing the author actually wrote. Outside a crawl nothing changes.
+ */
+function crawlRouteVerdict(step: ExpectStmt, outcome: MatchOutcome, tc: TestCtx): boolean {
+  const tally = tc.crawlStandDowns?.get(step.span.start.offset);
+  if (tally === undefined) return outcome.ok;
+  if (outcome.standsDown) {
+    tally.stoodDown += 1;
+    return true;
+  }
+  tally.applied += 1;
+  return outcome.ok;
+}
+
+function crawlRouteMessage(outcome: MatchOutcome, tc: TestCtx): string {
+  if (!outcome.standsDown || tc.crawlStandDowns === undefined) return outcome.message;
+  const first = outcome.message.split('\n')[0] ?? outcome.message;
+  return `not applicable on this route — ${first.replace(/^this assertion had no power to fail: /, '')}`;
+}
+
+/**
  * **D285 — zero applicable rules is a failure, not a pass.**
  *
  * This is `M127`'s "an empty shard is an error, not an early return" applied one layer up, against
@@ -5171,6 +5231,7 @@ function describeSecurityOutcome(
     const why = result.notApplicable.map((n) => `  - ${n.rule.id} applies when: ${n.because}`);
     return {
       ok: false,
+      standsDown: true,
       message:
         `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}security rule applied to this response (${counts}).\n` +
         `${why.join('\n')}\n` +
@@ -5592,7 +5653,7 @@ async function execAuthzExpect(
   const verdict = gateScan('authorization', result.findings, templateEndpoint(request.method, request.url), step, tc);
   reportCensus('authorization', result.applicable, result.notApplicable, tc);
   const outcome = describeAuthzOutcome(step, floor, result, probes, privileged, verdict);
-  return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+  return mkStep(step.soft ? 'check' : 'expect', src, step.span, crawlRouteVerdict(step, outcome, tc), start, ctx.redactor.redact(crawlRouteMessage(outcome, tc)));
 }
 
 /** D316's probe line, in `scanCounts`' shape: every count beside its denominator, so nobody holds
@@ -5681,6 +5742,7 @@ function describeAuthzOutcome(
     const why = result.notApplicable.map((n) => `  - ${n.rule.id} applies when: ${n.because}`);
     return {
       ok: false,
+      standsDown: true,
       message:
         `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}authorization rule applied (${counts}; ${probeLine}).\n` +
         `${why.join('\n')}\n` +
@@ -5837,7 +5899,7 @@ async function execInputHandlingExpect(
     });
   }
   const outcome = describeInputOutcome(step, floor, result, probes, sites, withheld, verdict);
-  return mkStep(step.soft ? 'check' : 'expect', src, step.span, outcome.ok, start, ctx.redactor.redact(outcome.message));
+  return mkStep(step.soft ? 'check' : 'expect', src, step.span, crawlRouteVerdict(step, outcome, tc), start, ctx.redactor.redact(crawlRouteMessage(outcome, tc)));
 }
 
 /**
@@ -5928,6 +5990,7 @@ function describeInputOutcome(
       : 'Assert it on a step whose request takes an id, a query parameter or a JSON body (`TF067`)';
     return {
       ok: false,
+      standsDown: true,
       message:
         `this assertion had no power to fail: no ${floor ? `\`${floor}\`-or-worse ` : ''}input-handling rule applied (${counts}; ${probeLine}).\n` +
         `${why.join('\n')}\n` +
