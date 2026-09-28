@@ -4260,7 +4260,7 @@ applicable** — never a violation, and never a silent pass. The result carries 
 
 ### D285
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +15 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +17 more · lifted from `PLAN_M128_PENTEST_TIER1.md`</sub>
 
 **D285 — zero applicable rules is a failure, not a pass**
 
@@ -6318,7 +6318,7 @@ reconstructed, and the rule stands going forward.
 
 ### D659
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-check-diagnostics.mjs +1 more · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/journeys.mjs +2 more · lifted from `PLAN_M149_DOCS_CURRENT_STATE.md`</sub>
 
 **D659 — a completeness gate beside the denylist: a shipped construct must be mentioned somewhere**
 
@@ -6454,7 +6454,7 @@ dogfooding, which `plan_v2.md` §4.2 deliberately protects).
 
 ### D723
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +3 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +4 more · lifted from `PLAN_M154_DOGFOOD_CONFORMANCE.md`</sub>
 
 **`D723` — ground truth is `tflw spec --json`, emitted by the binary under test.**
 tflw grows one new subcommand emitting its own surface: statement keywords (from
@@ -9539,7 +9539,7 @@ limits page's *does not write every construct* shrinks to the config-only pair.
 
 ### D1325
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +5 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +6 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
 
 **`D1325` — the explorer scales, the census is judged, and a run says who ran it.** The tree is
 virtualised with `@tanstack/react-virtual`; collapse-all; a *this door only* view toggle that
@@ -9562,7 +9562,7 @@ the report header.
 
 ### D1327
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +5 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +7 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1327` — `skip "reason"` is a header clause, and skipped is a third outcome.** Written after the
   name, beside `retry`/tags. An empty or blank reason is `TF084` (error), for `TF082`'s reason: a
@@ -9733,7 +9733,7 @@ the report header.
 
 ### D1352
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tests/mixed/storefront.tflw · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9741,7 +9741,7 @@ the report header.
 
 ### D1353
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +5 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9749,7 +9749,7 @@ the report header.
 
 ### D1356
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +5 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9757,7 +9757,7 @@ the report header.
 
 ### D1359
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +3 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9765,15 +9765,23 @@ the report header.
 
 ### D1360
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
 | `D1360` | L9 | **The cookbook is one section per fence refusal**, each with the ask, why the fence refuses, the shape that works, a link to the dogfood plant: flag · per-env value · response-driven · env skip · five at once · signed in on both sides · every page of a list · a fixed wait · an outbound call. |
 
+### D1372
+
+<sub>cited from tflw-tests/scripts/lib/journeys.mjs, tflw-tests/scripts/verify-journeys.mjs, tflw-tests/scripts/verify-provenance.mjs +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1372` | D1 | **The discovered tree owes every construct in a real test, gated**: `verify:journeys`' floor extends from 21 browser statements to every family (steps, declarations, subjects, matchers, generators at ≥ 1 test under `tests/`; browser stays ≥ 3 journeys; every config directive in `tflw.config`). `.constructs` keeps only the known-answers a journey cannot state. |
+
 ### D1381
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/lib/journeys.mjs +3 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9781,7 +9789,7 @@ the report header.
 
 ### D1382
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -12277,7 +12285,7 @@ exemptions than `D691` named, one of which was `D691` clause 2 being wrong).
 
 ### M153b
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-acceptance.mjs +10 more · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/check-acceptance.mjs +11 more · lifted from `PLAN_M153_PUBLISHED_METADATA.md`</sub>
 
 **`M153b` — the sibling's two descriptions (testFlow-tests)**
 
@@ -13649,7 +13657,7 @@ running the extracted actions against the stack.
 
 ### M197
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +27 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +24 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
 
 **`M197` — the sweep runs its four groups at once**
 
@@ -14032,7 +14040,7 @@ on this milestone and is not built here.
 
 ### M241
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +6 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +7 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
 
 **`M241` — authoring completeness: the Source editor, actions, crawls, the strip, scale**
 
@@ -14044,7 +14052,7 @@ having a documented fallback it does not have.
 
 ### M242
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +15 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +16 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 **`M242` — the language: matchers, skip, GraphQL, strings, shard, exporter, cookbook**
 
@@ -14088,7 +14096,7 @@ parked: it is a browser-to-API bridge and runs into `D10`, and it gets its own p
 
 ### M247
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +16 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§3 `M247` — the language joins its sessions to the browser**
 
