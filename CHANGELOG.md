@@ -66,6 +66,11 @@ performance arc closed 2026-08-02 and is included below.
 - **A test skipped on an env is not held to what only another env declares** (`M247-04`). Under
   that env, `TF026`, an unknown session and an unknown signer inside the test are not reported,
   so a skip written because the env lacks a service no longer blocks the run it exists for.
+- **`any`/`all` quantify into a nested array** (`G8`, the sibling's `TFLW-GAPS.md` row 11).
+  `expect any body.orders.items.quantity equals 3` over orders that each carry `items[]` read
+  `.items.quantity` off the second array as `undefined` and reported *none of N matched* with the
+  matching item present. The path now fans out across every array it crosses, and a failure names
+  both indices.
 
 ### Added — enterprise arc (M9–M28)
 

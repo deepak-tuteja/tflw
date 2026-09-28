@@ -2037,6 +2037,15 @@ expect all {items.price} is greater than 0     # over a captured array (§6.1)
 Three subjects can carry a quantifier: `body.<path>`, `body csv`, and a value subject. For a value
 subject the array must be reachable **inside** the braces — `{items.price}`, never `{items}.price`.
 
+The path quantifies across **every** array it crosses (`G8`). Over orders that each carry
+`items[]`, `expect any body.orders.items.quantity equals 3` reads every item of every order: `any`
+holds when one leaf matches, `all` when every leaf does, and a parent whose array is empty adds no
+leaf. A failure names the leaf by all its indices (`body.orders[1].items[0].quantity`) and the
+summary names the arrays it crossed (`body.orders[*].items`). An array's own properties are still
+read off the array — `any body.orders.items.length equals 2` compares each order's item count —
+and `[n]` still picks one element. A path that *ends* on the second array hands the matcher that
+array whole: `any body.orders.items contains …` asks each order's `items`, not each item.
+
 ### 6.3.1 Partial-object matching — `matches subset {...}` (P#14)
 
 `equals` is a full deep-equal (every key, both directions); `matches subset {...}` checks the
