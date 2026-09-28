@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseConfigSource } from '@tflw/lang';
 import { resolveConfig, selectEnv } from '@tflw/runtime';
-import { UiServer, blockForEnv, readProject, runArgv, initArgv, pickArgv, recordArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, PLAY_SCRATCH, type RunRecord, type ReportEntry } from '../src/ui-server.js';
+import { UiServer, blockForEnv, readProject, runArgv, initArgv, pickArgv, recordArgv, pickUrl, safeJoin, parseUiArgs, traceViewerDir, writeProjectFile, writeConfigFile, writeBaselineDoc, resolveBaselineDoc, dropScratch, etagOf, SCAFFOLDED, SCRATCH_PATH, PLAY_SCRATCH, type RunRecord, type ReportEntry, type HistoryView } from '../src/ui-server.js';
 import { buildStamp } from '../src/buildStamp.js';
 import { readdir } from 'node:fs/promises';
 
@@ -290,6 +290,11 @@ test('a run from the API is a real tflw run: the stream arrives over SSE, the re
         assert.equal(r.tests.some((f) => r.artefacts.includes(f)), false, 'the two lists share no member — that is the whole reason for two fields');
       }
       assert.equal(reports[0]!.path, `report/runs/${record.id}`);
+
+      // `M249` `B` (`D1362`) — the kept run is history's first run: one verdict, and no pill yet.
+      const history = (await (await api(`${base}/api/history`)).json()) as HistoryView;
+      assert.deepEqual(history.runs, [record.id], 'the run the CLI kept under the server\'s id, and the refused run kept nothing');
+      assert.deepEqual(history.tests.map((t) => [t.file, t.verdicts, t.flaky]), [['health.tflw', ['pass'], false]]);
 
       // **THE OTHER DIRECTION, WHICH IS THE ONE THAT COULD LOSE A RUN.** `tflw run` in a terminal
       // writes `report/` and keeps nothing, so `current` is then a run with no `runs/<id>` of its

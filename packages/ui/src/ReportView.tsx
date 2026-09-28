@@ -3,8 +3,9 @@
 // `RunReport`) and for a run in flight (the stream reduced to the same shape by `live.ts`); the
 // only difference is the header, which for a live run says what has arrived so far.
 
+import { HistoryDots, testPast } from './History';
 import { useEffect, useState } from 'react';
-import type { AttemptResult, CrawlResult, ReportEntry, RunReport, StepResult, TestResult, TraceAsset, WorkloadTestResult } from './contract';
+import type { AttemptResult, CrawlResult, HistoryView, ReportEntry, RunReport, StepResult, TestResult, TraceAsset, WorkloadTestResult } from './contract';
 import type { LiveTest } from './live';
 import { BROWSER_KINDS, tracePath } from './assets';
 import { ms, when } from './format';
@@ -20,6 +21,8 @@ export interface ReportContext {
   readonly traceViewer: boolean;
   /** U4 — a second report directory opened beside this one; the workload view shows both. */
   readonly compare?: { readonly id: string; readonly data: RunReport } | null;
+  /** `M249` `B` — the kept runs, for each test's dots and each threshold's sparkline. */
+  readonly history?: HistoryView | null;
   /**
    * **Open this trace in the page** — `M220` `C` (`D1179`).
    *
@@ -172,7 +175,7 @@ function Entry({ entry, context }: { entry: ReportEntry; context?: ReportContext
     case 'workload': {
       const c = context?.compare;
       const other = c ? { id: c.id, test: c.data.tests.find((t): t is WorkloadTestResult => t.kind === 'workload' && t.name === entry.name) ?? null } : null;
-      return <Workload test={entry} other={other} />;
+      return <Workload test={entry} other={other} history={context?.history ?? null} />;
     }
     case 'crawl':
       return <Crawl test={entry} />;
@@ -194,6 +197,7 @@ function Functional({ test, context }: { test: TestResult; context?: ReportConte
         {test.skipped !== undefined ? <span className="badge" data-skip-badge data-tip={`skipped: ${test.skipped}`}>skipped</span> : null}
         {test.flaky ? <span className="badge warn" data-flaky>flaky</span> : null}
         {test.concurrency === 'parallel' ? <span className="badge">parallel</span> : null}
+        <HistoryDots past={testPast(context?.history, test.file, test.name)} />
         <span className="tms" data-ms>
           {ms(test.durationMs)}
         </span>

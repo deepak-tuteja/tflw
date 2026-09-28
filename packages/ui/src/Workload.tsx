@@ -8,6 +8,8 @@
 // side (§2 q6 — two perf runs compare by opening two directories), the difference being the one
 // number the page adds, because it is arithmetic on two stated figures and not a measurement.
 
+import { Sparkline, thresholdPast } from './History';
+import type { HistoryView } from './contract';
 import { useMemo } from 'react';
 import { createColumnHelper, createSortedRowModel, rowSortingFeature, sortFn_basic, tableFeatures, useTable } from '@tanstack/react-table';
 import type { LoadMetrics, WorkloadTestResult } from './contract';
@@ -94,7 +96,7 @@ function timelineSeries(a: LoadMetrics, b: LoadMetrics | null, pick: (p: LoadMet
   return { x: xs, series };
 }
 
-export function Workload({ test, other }: { test: WorkloadTestResult; other?: Comparison | null }) {
+export function Workload({ test, other, history }: { test: WorkloadTestResult; other?: Comparison | null; history?: HistoryView | null }) {
   const b = other?.test ?? null;
   const m = test.metrics;
   // A new array identity on every theme change, which is what pulls each `useMemo` below — and
@@ -210,6 +212,9 @@ export function Workload({ test, other }: { test: WorkloadTestResult; other?: Co
                 </td>
                 <td data-actual>actual: {formatThresholdActual(t)}</td>
                 {b ? <td data-actual-other>{o ? formatThresholdActual(o) : '—'}</td> : null}
+                <td data-threshold-past>
+                  <Sparkline past={thresholdPast(history, test.file, test.name, `${t.label} ${t.op === 'lessThan' ? '<' : '>'} ${t.target}`)} />
+                </td>
               </tr>
             );
           })}

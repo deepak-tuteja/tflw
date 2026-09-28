@@ -53,6 +53,8 @@ export const RUN_FLAGS: readonly RunFlag[] = [
   { flag: '--no-helpers', key: 'noHelpers', shape: 'bool', subject: 'cli' },
   { flag: '--trace', key: 'trace', shape: 'bool', subject: 'cli' },
   { flag: '--update-snapshots', key: 'updateSnapshots', shape: 'bool', subject: 'cli' },
+  // `M249` `A` (`D1362`): every run is kept under `report/runs/`; this is the scratch run that is not.
+  { flag: '--no-keep', key: 'noKeep', shape: 'bool', subject: 'cli' },
   { flag: '--log-output', key: 'logOutputRaw', shape: 'value', subject: 'cli' },
   { flag: '--log-level', key: 'logLevelRaw', shape: 'value', subject: 'cli' },
   { flag: '--fail-on', key: 'failOnRaw', shape: 'value', subject: 'scan', label: 'fail on', hint: 'the least severe finding that fails the run' },

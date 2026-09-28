@@ -3105,6 +3105,35 @@ test('`FU-23`/D250: `--failed` says what it is replaying, and says when the last
   });
 });
 
+test('`M249` `A`/`B` (`D1362`): every run is kept, bounded by `runs keep`, and a failing test says how often it failed before', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-keep-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `runs keep 2\n\nenv local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'a.tflw'), `test "fails"\n  api GET /health\n  expect status equals 999\n`, 'utf8');
+      const run = (...extra: string[]) => execFileAsync('node', [cliEntry, 'run', '--no-color', ...extra], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
+
+      const first = await run();
+      assert.match(first.stdout, /kept: report\/runs\/\d{4}-\d{2}-\d{2}T/, 'the run says where it was kept');
+      assert.doesNotMatch(first.stdout, /kept runs/, 'a first run has no past to report');
+      await run();
+      const third = await run();
+      const kept = (await readdir(join(dir, 'report', 'runs'))).sort();
+      assert.equal(kept.length, 2, `runs keep 2 holds two: ${kept.join(', ')}`);
+      assert.match(third.stdout, /✗ fails .*— failed in 2 of its last 2 kept runs/);
+      const results = JSON.parse(await readFile(join(dir, 'report', 'runs', kept[1]!, 'results.json'), 'utf8')) as { tests: { sourceHash?: string }[] };
+      assert.match(results.tests[0]!.sourceHash ?? '', /^[0-9a-f]{16}$/, 'each test carries its file\'s source hash');
+
+      // `--no-keep`: report/ is written, the kept history is untouched.
+      const scratch = await run('--no-keep');
+      assert.doesNotMatch(scratch.stdout, /kept: /);
+      assert.deepEqual((await readdir(join(dir, 'report', 'runs'))).sort(), kept);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 test('`FU-23`: the "which was filtered by" clause fires when the replayed record was a narrowed one', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-failed-narrowed-'));

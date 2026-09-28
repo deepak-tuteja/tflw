@@ -426,6 +426,14 @@ button.cancel { background: var(--warn); }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
 .dot.ok { background: var(--pass); }
 .dot.fail { background: var(--fail); }
+/* `M249` `B` — a test's past, oldest on the left; a skip is hollow, not missing. */
+.history { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; vertical-align: middle; }
+.hdot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.hdot.pass { background: var(--pass); }
+.hdot.fail { background: var(--fail); }
+.hdot.skip { border: 1px solid var(--muted); }
+.history .badge { margin-left: 4px; }
+.sparkline { color: var(--muted); vertical-align: middle; }
 .dot.running { background: var(--accent); animation: pulse 1s infinite alternate; }
 @keyframes pulse { from { opacity: 0.4; } to { opacity: 1; } }
 
