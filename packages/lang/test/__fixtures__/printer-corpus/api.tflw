@@ -94,4 +94,9 @@ test "{shopper} races for the last one"
   expect status equals 201
   together
   api POST /v1/checkout
-  expect status equals 201
+  expect status is less than 500
+rows
+  expect exactly 1 row status equals 201
+  check at most 1 row status is less than 300
+  expect no rows status equals 500
+  expect every row {shopper} matches "^[ab]$"

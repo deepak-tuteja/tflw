@@ -75,6 +75,11 @@ performance arc closed 2026-08-02 and is included below.
   race and the test that judges it can name the same coupon. Binding the name again is `TF091`.
   **Breaking**, deliberately: a file that relied on the old isolation to reuse a name now gets
   `TF091` and must rename one of them.
+- **A race whose outcome is only in the responses can be judged** (`G10`, `D1384`). A `rows` block
+  under a `with each` test counts the rows whose last response or bindings satisfy a line:
+  `expect exactly 1 row status equals 201`. It runs once after the last row and reports as its own
+  entry. Before this, a race that left nothing to read back (one email registered five times at once)
+  could only be proved with a JS helper. No table is `TF095`; a page subject is `TF096`.
 - **`any`/`all` quantify into a nested array** (`G8`, `D1383`, the sibling's `TFLW-GAPS.md` row 11).
   `expect any body.orders.items.quantity equals 3` over orders that each carry `items[]` read
   `.items.quantity` off the second array as `undefined` and reported *none of N matched* with the

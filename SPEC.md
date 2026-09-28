@@ -1181,6 +1181,31 @@ test "invite {role}"
     api GET /coupons/{coupon}
     expect body.used equals 1
   ```
+- **`rows`** (`G10`, `D1384`) — judgements across a `with each` test's rows, written directly under
+  the test and run once, after the last row ends. Each line is `expect` or `check`, a count, `row` or
+  `rows`, then a subject and a matcher: the subject and matcher are asked of every row's **last body
+  response** (or, for a `{value}` subject, its bindings), and the count of rows that satisfy them is
+  compared with `exactly N`, `N`, `at least N`, `at most N`, `no` or `every`. It reports as one entry
+  after the rows — *"register {n} — rows"* — with a step per line naming the rows that matched; a
+  failed `expect` stops the block, a failed `check` does not. It is for a race whose outcome lives
+  only in the responses, where no state afterwards can be read back: each row sees its own answer,
+  and this block is the one place that sees them all. Under a test with no table it is `TF095`; a
+  subject a finished row cannot answer (a locator, `page`, a dialog, a network observation — its
+  page is closed) is `TF096`.
+
+  ```
+  with each concurrently
+    | n |
+    | 1 |
+    | 2 |
+    | 3 |
+  test "register attempt {n}"
+    api POST /auth/register body { email: "{raceEmail}", password: "{racePw}" }
+    expect status is less than 500
+  rows
+    expect exactly 1 row status equals 201
+    expect 2 rows status equals 409
+  ```
 
 `.csv` parsing (P#65): minimal RFC-4180 — a field may be quoted (`"Smith, John"`) to
 contain a comma verbatim, `""` inside a quoted field is an escaped quote. A numeric-looking cell
@@ -4424,6 +4449,8 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF090` | Checker (`M247` `E`, `D1359`): **`with each concurrently` on an inline table of one row.** One row has nothing to run beside, so the clause promises an overlap the run cannot produce, and a test written to prove a race would pass without one ever happening. File-backed tables are not judged — their rows are read at run time. **A warning**: the test still means something; only the clause does not. | a one-row table marked `concurrently` → `has one row, so nothing runs beside it` |
 | `TF091` | Checker (`G3`, `D1382`): **a test rebinds a name `before file` made.** What `before file` binds is shared, read-only, by every test, each-scope hook, row and `after file` in the file (SPEC §4.2) — the coupon a race is run over, the product whose stock it drains. A `let`, a `capture` or an inline table column of the same name would make one name mean two values depending on where it is read, and under `with each concurrently` on which row read it. **An error**: the file runs either reading, and the author meant one. | a test rebinding a `before file` value → `` is made once in `before file` and shared read-only `` |
 | `TF092` | Checker (`G1`, `D1381`): **`together` where no rows can meet.** The barrier holds the rows of a `with each concurrently` test until every row still running has reached it. In a test whose rows run in turn, in a hook or in an action there is nothing to wait for; inside a block (`within`, a tab, a download) some rows could pass it while others never reach it. **An error**: a race written with a barrier that does nothing passes without the race. | `together` in a test with no concurrent table → `whose rows do not run at once` |
+| `TF095` | Checker (`G10`, `D1384`): **a `rows` block under a test with no `with each` table.** One run has nothing to count across; the judgement belongs in the test body as an ordinary `expect`. **An error.** (`TF093`/`TF094` are reserved for `M248`'s code-flow session.) | a `rows` block under a plain test → `` which has no `with each` table `` |
+| `TF096` | Checker (`G10`, `D1384`): **a `rows` line whose subject a finished row cannot answer.** A row is judged after it ends, from its last response and its bindings; its page is closed by then, so a locator, `page`, a dialog or a network observation has nothing left to read. **An error.** | a `rows` line about a locator → `can read a row's last response and its bindings` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

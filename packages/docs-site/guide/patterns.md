@@ -138,6 +138,11 @@ with the test that judges the race afterwards. Kept true by `tests/api/orders/co
 oversell and single-use-coupon races run this way against the project's real stock and coupon
 tables.
 
+When the race leaves nothing to read back — one email registered five times at once — count the
+rows' own answers in a [`rows`](/guide/data-and-hooks#rows) block under the test:
+`expect exactly 1 row status equals 201`. Kept true by `tests/api/identity/auth.tflw`, whose
+registration and refresh-rotation races are judged this way.
+
 ## Signed in on both sides
 
 **The ask:** *log in through the API, then open the page already logged in.* **Why not:** nothing

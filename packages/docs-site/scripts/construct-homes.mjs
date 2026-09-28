@@ -54,6 +54,7 @@ export const CONSTRUCT_HOMES = new Map(Object.entries({
   // Headers on a declaration: each belongs to its own subject, not to "headers".
   'declaration:tags': ['ci-and-reporting'], //   `--tag` is a selection made when running
   'declaration:with-each': ['data-and-hooks'], // a row per case is what data-driven means
+  'declaration:rows': ['data-and-hooks'], //     `G10` (`D1384`) — judged across a table's rows, beside them
   'declaration:as': ['sessions'],
   'declaration:retry': ['retry-and-polling'],
   'declaration:skip': ['ci-and-reporting'], // `M242` `B` (`D1327`) — beside `--tag`, which it is the opposite of

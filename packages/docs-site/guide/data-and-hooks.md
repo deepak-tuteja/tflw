@@ -180,6 +180,39 @@ together. The coupon is made once in `before file`, so every row and the test af
 same one. `together` belongs at the top level of a `with each concurrently` test; anywhere else it
 is `TF092`, because there are no rows to meet.
 
+### Judging the rows together — `rows` {#rows}
+
+Some races leave nothing behind to read. Register one email five times at once and the server keeps
+one account — but no route lists accounts by email, and each row only ever sees its own answer. A
+`rows` block, written directly under the test, sees all of them:
+
+```tflw
+before file
+  let raceEmail = unique email
+
+with each concurrently
+  | n |
+  | 1 |
+  | 2 |
+  | 3 |
+  | 4 |
+  | 5 |
+test "register attempt {n}"
+  together
+  api POST /auth/register body { email: {raceEmail}, password: "Passw0rd!" }
+  expect status is less than 500
+rows
+  expect exactly 1 row status equals 201
+  expect 4 rows status equals 409
+```
+
+Each line counts the rows whose last response — or, for a `{value}` subject, whose bindings —
+satisfy it: `exactly N`, `N`, `at least N`, `at most N`, `no` or `every`. The block runs once, after
+the last row, and reports as its own entry, `register attempt {n} — rows`, naming the rows that
+matched. Every row above passes on its own either way; only the count can see that two of them won.
+A `rows` block needs a `with each` table (`TF095`), and it reads responses and bindings, not pages:
+a row's page is closed by the time it is judged (`TF096`).
+
 ## Rows from a file
 
 `with each from` reads rows from a file instead — same one-case-per-row reporting, CSV or JSON:

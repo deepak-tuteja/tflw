@@ -13,6 +13,7 @@
 // §1's own note — the thing it pointed at for authority — had already been corrected (`A4-19`).
 
 import type {
+  RowsCheck,
   Locator,
   ActionDecl,
   ApiBody,
@@ -375,6 +376,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...(opts.knownEnvs ? checkSkipEnvs(program, opts.knownEnvs) : []),
     ...checkConcurrentTables(program),
     ...checkTogether(program),
+    ...checkRows(program),
     ...checkFileValues(program),
     ...checkActionDecls(program, opts),
     ...elementDiags,
@@ -3013,6 +3015,8 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
     for (const hook of beforeEachHooks) checkStepSequence(hook.body, bound, diags);
     checkStepSequence(test.body, bound, diags);
     for (const hook of afterEachHooks) checkStepSequence(hook.body, bound, diags);
+    // `G10` (`D1384`): a `rows` line reads what each row bound, and the file's shared values.
+    if (test.rows) checkStepSequence(test.rows.checks.map(rowsCheckAsExpect), bound, diags);
   }
 
   for (const action of program.actions) {
@@ -4586,6 +4590,45 @@ export function checkFileValues(program: Program): Diagnostic[] {
   for (const hook of program.hooks) {
     if (hook.scope === 'file' && hook.when === 'before') continue;
     scan(hook.body, hook.scope === 'file' ? '`after file`' : `a \`${hook.when}\` hook`);
+  }
+  return diags;
+}
+
+/** The subjects a finished row can answer (`G10`, `D1384`): its last response and its bindings. */
+const ROW_READABLE = new Set<Subject['type']>(['StatusSubject', 'DurationSubject', 'HeaderSubject', 'BodySubject', 'BodyTextSubject', 'BodyBytesSubject', 'BodyCsvSubject', 'BodyPdfTextSubject', 'ValueSubject']);
+
+/** A `rows` line as the `expect` it asks of each row — the shape every per-step pass already reads. */
+export function rowsCheckAsExpect(c: RowsCheck): ExpectStmt {
+  return { type: 'ExpectStmt', soft: c.soft, quantifier: null, subject: c.subject, matcher: c.matcher, masks: [], span: c.span };
+}
+
+/** `TF095`/`TF096` (`G10`, `D1384`) — a `rows` block with no rows to count, and a line asking a
+ *  finished row for something it no longer has. */
+export function checkRows(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const test of program.tests) {
+    if (!test.rows) continue;
+    if (!test.table) {
+      diags.push({
+        code: Codes.ROWS_WITHOUT_TABLE,
+        severity: 'error',
+        message: `\`rows\` under "${test.name.value}", which has no \`with each\` table`,
+        span: test.rows.span,
+        hint: 'one run has nothing to count across — write the judgement as an ordinary `expect` in the test body, or give the test a `with each` table',
+      });
+      continue;
+    }
+    for (const c of test.rows.checks) {
+      const networked = c.subject.type === 'StatusSubject' && c.subject.of !== null;
+      if (ROW_READABLE.has(c.subject.type) && !networked) continue;
+      diags.push({
+        code: Codes.ROWS_SUBJECT_UNREADABLE,
+        severity: 'error',
+        message: 'a `rows` line can read a row\'s last response and its bindings, and this subject is neither',
+        span: c.subject.span,
+        hint: 'a row is judged after it ends, when its page is closed — assert the page inside the test body, and count what the row\'s response or a captured value says here',
+      });
+    }
   }
   return diags;
 }

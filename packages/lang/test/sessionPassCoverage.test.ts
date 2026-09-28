@@ -172,6 +172,10 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     verdict: 'n/a',
     reason: '`G1` (`D1381`). Walks tests, hooks and actions for `together`; a session body admits only `api`/`header`/`capture`/`let`/`csrf` (SPEC §3.3), so the parser never lets `together` into one, and a session has no rows to meet',
   },
+  checkRows: {
+    verdict: 'n/a',
+    reason: '`G10` (`D1384`). Walks `program.tests` for a `rows` block under a `with each` test; a session has no table and no rows, and runs once per run',
+  },
   checkFileValues: {
     verdict: 'n/a',
     reason: '`G3` (`D1382`). Guards the names a `.tflw` file\'s `before file` shares with its tests; a session is declared in `tflw.config`, which has no `before file`, and its scope never reads a test file\'s values',
