@@ -123,7 +123,7 @@ SkipEnvs    := 'on' 'env' IDENT (',' IDENT)* # M247/D1353 — the skip holds onl
                                              #   blocks and the test runs elsewhere; an undeclared
                                              #   name is TF088
 
-DataTable   := 'with' 'each' ('from' STRING)? NEWLINE
+DataTable   := 'with' 'each' ('from' STRING)? 'concurrently'? NEWLINE   # M247/D1359 — rows at once
                ( '|' IDENT ('|' IDENT)* '|' NEWLINE          # inline: header row
                  ('|' Cell ('|' Cell)* '|' NEWLINE)+ )?      # inline: one or more data rows
                # `from STRING` (a .csv/.json path) replaces the inline table entirely — mutually

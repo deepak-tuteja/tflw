@@ -924,14 +924,16 @@ export function buildPause(spec: PauseSpec): BuildResult<PauseStmt> {
  * three reading a file. The cells are the whole value grammar, same as a `let`, so each is parsed
  * rather than quoted: a table's column of ids is `1`, `2`, `3` and not `"1"`, `"2"`, `"3"`.
  */
+/** `concurrently` (`M247` `E`) rides on both forms: a header rebuild that dropped it would put a
+ *  race test's rows back in turn without a word, and the test would pass for the wrong reason. */
 export type DataTableSpec =
-  | { readonly kind: 'inline'; readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[] }
-  | { readonly kind: 'file'; readonly path: string };
+  | { readonly kind: 'inline'; readonly columns: readonly string[]; readonly rows: readonly (readonly string[])[]; readonly concurrently?: boolean }
+  | { readonly kind: 'file'; readonly path: string; readonly concurrently?: boolean };
 
 export function buildDataTable(spec: DataTableSpec): BuildResult<DataTable> {
   if (spec.kind === 'file') {
     if (spec.path.trim() === '') return bad('a `with each from` needs a path to read the rows from');
-    return { ok: true, node: { type: 'FileDataTable', path: stringLit(spec.path.trim()), span: SYNTHETIC } };
+    return { ok: true, node: { type: 'FileDataTable', path: stringLit(spec.path.trim()), ...(spec.concurrently ? { concurrently: true as const } : {}), span: SYNTHETIC } };
   }
   if (spec.columns.length === 0) return bad('a `with each` table needs at least one column');
   if (spec.rows.length === 0) return bad('a `with each` table needs at least one row of values');
@@ -946,7 +948,7 @@ export function buildDataTable(spec: DataTableSpec): BuildResult<DataTable> {
     }
     rows.push(cells);
   }
-  return { ok: true, node: { type: 'InlineDataTable', columns: spec.columns, rows, span: SYNTHETIC } };
+  return { ok: true, node: { type: 'InlineDataTable', columns: spec.columns, rows, ...(spec.concurrently ? { concurrently: true as const } : {}), span: SYNTHETIC } };
 }
 
 /** Every locator kind the grammar has, for a form's dropdown — the parser's own list, re-exported

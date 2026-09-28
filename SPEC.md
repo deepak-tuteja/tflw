@@ -1135,6 +1135,16 @@ test "invite {role}"
   \`name\`?` — because by then the row is loaded and its columns are known (`M147c`, `A4-18`). It is
   a message and not a code: the runtime carries none.
 
+- **`with each concurrently`** (`M247` `E`, `D1359`) — and `with each from "…" concurrently` — runs
+  the rows at once instead of in turn. Each row is still its own case: its own `before`/`after`
+  hooks, seed, captures and result, reported in row order whatever finished first, streamed whole
+  on its own end so two rows' lines never interleave. A failing row cancels nothing. What the rows
+  race over is asserted as state afterwards — an `after` step or a following test reads the stock
+  count, the balance, the one winner — because a race has no step-level order to assert inside it.
+  It is the table's own modifier and independent of the test's `parallel`, which runs *tests*
+  beside each other; `--parallel N` is about files. One inline row marked `concurrently` is
+  `TF090`, a warning: nothing runs beside it, so a race test would pass without a race.
+
 `.csv` parsing (P#65): minimal RFC-4180 — a field may be quoted (`"Smith, John"`) to
 contain a comma verbatim, `""` inside a quoted field is an escaped quote. A numeric-looking cell
 (`3`, `-1.5`) is coerced to a real number, matching a `.json`-backed table's native types (so
@@ -4352,6 +4362,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF087` | Checker (config, `M246`, `D1346`): **a signer that cannot sign as written** — a `{placeholder}` the signer does not fill (`signs` fills `{body}`, `{method}`, `{path}`, `{query}`, `{timestamp}` and `{body sha256}`; a `header` fills `{signature}` and `{timestamp}`), `{signature}` inside the string being signed, no `header` line carrying `{signature}`, or two signers of one name. Each is a request signed over the wrong text or not signed at all. | `signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)` then `signs "{timestmp}.{body}"` then `header "Stripe-Signature" is "t={timestamp},v1={signature}"` in `tflw.config` → `` did you mean `{timestamp}`? `` |
 | `TF088` | Checker (`M247` `B`, `D1353`): **a `skip … on env` naming an env `tflw.config` does not declare.** The skip would hold nowhere, so the test runs in the very env it was written to stay out of, and the run would not say why. Checked against every `env` block, not only the active one — naming another env is the clause's purpose. One diagnostic per unknown name. **An error**, matching `TF028`. | `test "refunds settle" skip "no sandbox in CI" on env cii` then `api GET /health` then `expect status equals 200` → `` did you mean `ci`? `` |
 | `TF089` | Checker (`M247` `D`, `D1356`): **an `element` reference naming no element.** A bare name in a locator position — `click cartBadge`, `expect cartBadge is visible` — is looked up in the file's own `element` declarations and then each imported file's, the `action` rule; like an unknown call it is decided only when the imports were read. In a subject position a bare name may also be a value meant as `{name}`, and the hint says so. **An error**: the step would have nothing to find. | a file declaring `cartBadge` and clicking `cartBadg` → `` did you mean `cartBadge`? `` |
+| `TF090` | Checker (`M247` `E`, `D1359`): **`with each concurrently` on an inline table of one row.** One row has nothing to run beside, so the clause promises an overlap the run cannot produce, and a test written to prove a race would pass without one ever happening. File-backed tables are not judged — their rows are read at run time. **A warning**: the test still means something; only the clause does not. | a one-row table marked `concurrently` → `has one row, so nothing runs beside it` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

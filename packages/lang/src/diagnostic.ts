@@ -573,6 +573,14 @@ export const Codes = {
    * so, because before `element` existed that was the only reading.
    */
   UNKNOWN_ELEMENT: 'TF089',
+  /**
+   * `TF090` — **`with each concurrently` on a table of one row** (`M247` `E`, `D1359`). One row has
+   * nothing to run beside, so the word promises an overlap the run cannot produce — and a test
+   * written to prove a race would pass without one ever happening. A warning, because the test
+   * still means something; only the clause does not. File-backed tables are not judged: their row
+   * count is not known until the file is read.
+   */
+  CONCURRENTLY_ONE_ROW: 'TF090',
 } as const;
 
 // ---------------------------------------------------------------------------

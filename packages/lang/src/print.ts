@@ -1035,7 +1035,9 @@ function printHeader(h: ApiHeader): string {
  * `format` writes and the printer has to be a fixpoint of it.
  */
 function printTable(t: DataTable, level: number): string[] {
-  if (t.type === 'FileDataTable') return [pad(level) + 'with each from ' + printString(t.path)];
+  // `M247` `E` — `concurrently` closes the header line in both forms.
+  const how = t.concurrently ? ' concurrently' : '';
+  if (t.type === 'FileDataTable') return [pad(level) + 'with each from ' + printString(t.path) + how];
   if (t.columns.length === 0) refuse('InlineDataTable', 'a `with each` table needs at least one column');
   if (t.rows.length === 0) refuse('InlineDataTable', 'a `with each` table needs at least one data row');
   for (const c of t.columns) if (!isBareIdent(c)) refuse('InlineDataTable', `\`${c}\` is not a column name this language can write — column names are bare words`);
@@ -1046,7 +1048,7 @@ function printTable(t: DataTable, level: number): string[] {
   }
   const width = t.columns.map((_, i) => Math.max(...cells.map((r) => r[i]!.length)));
   const line = (row: readonly string[]): string => pad(level + 1) + '| ' + row.map((c, i) => c.padEnd(width[i]!)).join(' | ') + ' |';
-  return [pad(level) + 'with each', ...cells.map(line)];
+  return [pad(level) + 'with each' + how, ...cells.map(line)];
 }
 
 function printExpect(e: ExpectStmt, level: number): string {

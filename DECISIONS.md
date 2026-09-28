@@ -9755,6 +9755,14 @@ the report header.
 |---|---|---|
 | `D1356` | L1 | **`element name = <locator>`** at file top level, importable, valid in every locator position, LSP rename/definition/references; **`tflw check` hints (`RF0xx`) when one raw `css`/`xpath` string appears in ≥ 2 files**, with `refactor apply` extracting it. |
 
+### D1359
+
+<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1359` | L8 | **Re-score #11/#12/#18** with runtime known-answers in the sibling. **`with each concurrently`**: the table's rows run at once, each its own reported case; a race is asserted as state afterwards. Retires the sibling's five concurrency helpers. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
