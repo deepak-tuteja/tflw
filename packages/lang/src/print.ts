@@ -279,12 +279,14 @@ export const PRINTABLE = new Set<string>([
  * `RetryAfterClause` joined it in `A1-2` on the same ordinary grounds. `FillFormRow` joined
  * them in `A4-3`, likewise: `| "Email" | "x" |` is a row of a block, not a step. `UploadFile`
  * joined in `M245`: `"./a.png" as "f"` is one entry of an `upload` list, not a body.
+ * `EnvScopeRef` joined in `M247`: `ci` in `skip "…" on env ci` or `session … for env ci` is a name
+ * inside its parent's clause, printed by that clause (found when the sibling first wrote `on env`).
  *
  * Expect more of these as `A1`–`A4` widen the printer. The shape to watch for is a node whose
  * field was normalised on the way in, because a normalisation is a spelling decision the AST
  * stopped recording.
  */
-export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'UploadFile', 'RetryAfterClause', 'SignClause', 'SignerRef', 'FillFormRow']);
+export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'UploadFile', 'RetryAfterClause', 'SignClause', 'SignerRef', 'FillFormRow', 'EnvScopeRef']);
 
 /**
  * The kinds that refuse **by construction**, and will not gain a printer in any round (`A4-5`).

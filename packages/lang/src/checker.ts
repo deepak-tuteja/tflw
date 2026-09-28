@@ -75,6 +75,10 @@ export interface ProgramCheckOptions {
    * Every env and not only the active one: a skip names the envs it holds in, which are by design
    * not the one the author happens to be checking under. Same `undefined`-vs-`[]` rule. */
   readonly knownEnvs?: readonly string[];
+  /** `M247-04` (`G7`) — the env this pass checks under, so a test `skip … on env` it is not held to
+   *  a service, session or signer only another env declares. Both callers pass it (the CLI and the
+   *  language server, `M60`'s one pass list); absent, nothing is spared. */
+  readonly activeEnv?: string;
   /** The signers declared for other envs only, for `TF086`'s scoped hint — `outOfScopeSessions`'
    * shape and reason. */
   readonly outOfScopeSigners?: OutOfScopeSessions;
@@ -358,7 +362,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
   // a session or a signer declared for another env — is not an error there. The commonest reason to
   // write the skip is that the env lacks the thing; demanding it anyway refused the run before the
   // skip could apply. Only those three codes, only inside a test skipped on the env being checked.
-  const activeEnv = opts.outOfScopeSessions?.envName;
+  const activeEnv = opts.activeEnv ?? opts.outOfScopeSessions?.envName;
   const skippedHere = activeEnv === undefined ? [] : program.tests.filter((t) => t.skipOn?.some((ref) => ref.name === activeEnv)).map((t) => t.span);
   const envScoped = new Set<string>([Codes.UNKNOWN_SERVICE, Codes.UNKNOWN_SESSION, Codes.UNKNOWN_SIGNER]);
   const notRunHere = (d: Diagnostic): boolean =>
