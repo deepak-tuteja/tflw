@@ -9761,7 +9761,7 @@ the report header.
 
 | id | row | decision |
 |---|---|---|
-| `D1359` | L8 | **Re-score #11/#12/#18** with runtime known-answers in the sibling. **`with each concurrently`**: the table's rows run at once, each its own reported case; a race is asserted as state afterwards. Retires the sibling's five concurrency helpers. |
+| `D1359` | L8 | **Re-score the sibling's `TFLW-GAPS.md` rows 11, 12 and 18** with runtime known-answers. **`with each concurrently`**: the table's rows run at once, each its own reported case; a race is asserted as state afterwards. *Amended 2026-09-28:* the sibling's concurrency helpers retire when gaps `G1` and `G3` (§14) give a row a barrier and a value made once before the race; this decision alone retires none of them. |
 
 ### D1360
 
