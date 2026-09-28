@@ -149,6 +149,7 @@ function minimalDeclaration(word: string): string {
     case 'test': return 'test "t"\n  api GET /a\n';
     case 'crawl': return 'crawl "c"\n  expect response has no critical security violations\n';
     case 'action': return 'action make thing()\n  api GET /a\n';
+    case 'element': return 'element cartBadge = css ".badge"\n';
     case 'import': return 'import "./other.tflw"\n';
     case 'use': return 'use "./helper.ts"\n';
     case 'before': return 'before file\n  api GET /a\n';
@@ -161,7 +162,7 @@ test('every declaration the parser dispatches on has a manifest entry, and vice 
   assert.deepEqual(
     DECLARATIONS.filter((d) => d.group === 'declaration').map((d) => d.id).sort(),
     [...DECLARATION_KEYWORDS].sort(),
-    'DECLARATIONS and parser.ts DECLARATION_KEYWORDS must name the same seven words',
+    'DECLARATIONS and parser.ts DECLARATION_KEYWORDS must name the same eight words',
   );
 });
 

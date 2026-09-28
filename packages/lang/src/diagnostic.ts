@@ -565,6 +565,14 @@ export const Codes = {
    * naming another env is the clause's whole purpose.
    */
   SKIP_ENV_UNKNOWN: 'TF088',
+  /**
+   * `TF089` — **an `element` reference that names no element** (`M247` `D`, `D1356`). Checked
+   * against the file's own `element` declarations and every imported file's — the `action` rule,
+   * and like an unknown call it is only decidable when the imports were read. A bare name in a
+   * subject position may also be a value the author meant to write as `{name}`, and the hint says
+   * so, because before `element` existed that was the only reading.
+   */
+  UNKNOWN_ELEMENT: 'TF089',
 } as const;
 
 // ---------------------------------------------------------------------------

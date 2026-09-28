@@ -35,8 +35,9 @@ import type {
 import type { Position, Span, Token } from './token.js';
 import { lex } from './lexer.js';
 import { parseStringParts } from './parser.js';
+import { elementRefs } from './elements.js';
 
-export type SymbolKind = 'variable' | 'session' | 'signer' | 'action' | 'param' | 'importedAction';
+export type SymbolKind = 'variable' | 'session' | 'signer' | 'action' | 'param' | 'importedAction' | 'element';
 
 export interface SymbolDef {
   readonly name: string;
@@ -150,6 +151,20 @@ export function collectSymbols(program: Program, source: string): SymbolTable {
     const def: SymbolDef = { name: action.name, kind: 'action', span: { start: first.start, end: last.end }, scopeId: 'file' };
     pushDef(def);
     actionDefs.set(action.name, def);
+  }
+
+  // `M247` `D` (`D1356`) — an element's name is a def with its own span, and every bare-name
+  // reference is a ref whose span is exactly the name (the parser gave it the token's span). A ref
+  // with no local def is resolved across files by the LSP, as an unresolved `action` call is.
+  const elementDefs = new Map<string, SymbolDef>();
+  for (const e of program.elements ?? []) {
+    const def: SymbolDef = { name: e.name, kind: 'element', span: e.nameSpan, scopeId: 'file' };
+    pushDef(def);
+    if (!elementDefs.has(e.name)) elementDefs.set(e.name, def);
+  }
+  for (const ref of elementRefs(program)) {
+    const def = elementDefs.get(ref.value.value);
+    refs.push({ name: ref.value.value, kind: 'element', span: ref.span, scopeId: 'file', ...(def ? { defSpan: def.span } : {}) });
   }
 
   const beforeEachHooks = program.hooks.filter((h) => h.scope === 'each' && h.when === 'before');

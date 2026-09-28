@@ -400,3 +400,21 @@ test('variablesInScopeAt: outside any test/action/hook, nothing is in scope (M96
   const symbols = collectSymbols(program, source);
   assert.deepEqual(variablesInScopeAt(program, symbols, 0), []);
 });
+
+// `M247` `D` (`D1356`) — where a locator goes, the keywords and then the element names.
+test('getCompletions: a locator position offers the locator keywords and the known element names', () => {
+  const source = 'test "t"\n  click ';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.equal(ctx.kind, 'locator');
+  const labels = getCompletions(ctx, { knownElements: ['cartBadge', 'checkout'] }).map((c) => c.label);
+  assert.deepEqual(labels, ['button', 'field', 'text', 'list', 'css', 'xpath', 'cartBadge', 'checkout']);
+  const typed = 'test "t"\n  click ch';
+  assert.deepEqual(getCompletions(getCompletionContext(typed, typed.length)!, { knownElements: ['cartBadge', 'checkout'] }).map((c) => c.label), ['checkout']);
+});
+
+test('getCompletions: a subject position offers element names beside the subject words', () => {
+  const source = 'test "t"\n  expect ca';
+  const ctx = getCompletionContext(source, source.length)!;
+  assert.equal(ctx.kind, 'subject');
+  assert.ok(getCompletions(ctx, { knownElements: ['cartBadge'] }).some((c) => c.label === 'cartBadge'));
+});

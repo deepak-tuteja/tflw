@@ -112,6 +112,10 @@ function noteText(note: Note | null): string {
  * every time the author closes it. So the gesture owns the state (`RowEditing.noting`) and the
  * editor is a plain block for as long as it lasts.
  */
+
+/** `M247` `D` — the one `<datalist>` Compose renders with the file's `element` names. */
+export const ELEMENT_DATALIST_ID = 'tflw-element-names';
+
 export function NoteOpen({ note, what, onChange }: {
   readonly note: Note | null;
   readonly what: string;
@@ -1158,6 +1162,7 @@ export function SubjectFields({ subject, argument, locatorKind, carried, onChang
           data-expect-argument
           aria-label="subject argument"
           placeholder={subject === 'header' ? 'content-type' : subject === 'value' ? 'orderId' : subject === 'locator' ? 'Buy' : subject === 'networkRequest' ? '/v1/products' : 'items[0].price'}
+          list={subject === 'locator' && locatorKind === 'element' ? ELEMENT_DATALIST_ID : undefined}
         />
       ) : null}
     </>
@@ -1533,7 +1538,7 @@ export function ScriptRow({ statement, edit, onEdit, trailing, pick, phase, onOp
             <option key={k} value={k}>{k}</option>
           ))}
         </select>
-        <input value={edit.locator} onChange={(e) => onEdit({ ...edit, locator: e.target.value })} data-locator-value aria-label="element" placeholder="Buy" />
+        <input value={edit.locator} onChange={(e) => onEdit({ ...edit, locator: e.target.value })} data-locator-value aria-label="element" placeholder="Buy" list={edit.locatorKind === 'element' ? ELEMENT_DATALIST_ID : undefined} />
         {pick === null ? null : <PickField statement={statement} pick={pick} onPicked={(l) => onEdit({ ...edit, locatorKind: l.kind, locator: l.value })} />}
         {edit.kind === 'fill' ? (
           <>
@@ -1956,6 +1961,7 @@ function LocatorPair({ kind, value, onKind, onValue, statement, pick, onPicked, 
         data-locator-value={slot ?? ''}
         aria-label={slot === undefined ? 'element' : `${slot} element`}
         placeholder={placeholder ?? 'Buy'}
+        list={kind === 'element' ? ELEMENT_DATALIST_ID : undefined}
       />
       {pick === null ? null : <PickField statement={statement} pick={pick} onPicked={onPicked} />}
     </>

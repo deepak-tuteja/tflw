@@ -99,6 +99,7 @@ import {
   type ThresholdEdit,
   type Ran,
   type RanIndex,
+  ELEMENT_DATALIST_ID,
 } from './parts';
 import { workloadSpecOf, type WorkloadEdit } from './workloadEdit';
 import { ComposePane, selectedAt, type EditorTab, type SeqTarget } from './ComposePane';
@@ -2477,6 +2478,14 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
    * is judged here now. `project.authorization` is handed through unchanged, so the page never
    * assembles a second account of what the config says.
    */
+  /** `M247` `D` (`D1356`) — the `element` names this file declares, offered by every locator field
+   *  whose kind is `element` through one `<datalist>`. The file's own only: an imported name is
+   *  typed, and `TF089` answers whether it resolves. */
+  const elementNames = useMemo(() => {
+    const text = draft ?? file?.text ?? '';
+    return (parseSource(text).program.elements ?? []).map((e) => e.name);
+  }, [draft, file]);
+
   const diagnostics = useMemo(
     // `helpers` (`M239` `D`, `D1319`): the file's own path is what a `use` is judged from, and it
     // is the same path the server read the file by, so the page and `tflw check` agree.
@@ -2578,6 +2587,9 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
       data-stage-fit={stageH === null ? 'auto' : String(stageH)}
       style={stageH === null ? undefined : { ['--stage-h' as string]: `${stageH}px` }}
     >
+      <datalist id={ELEMENT_DATALIST_ID} data-element-names={elementNames.join(',')}>
+        {elementNames.map((n) => <option key={n} value={n} />)}
+      </datalist>
       <TabStrip tab={tab} onTab={onTab} marked={marks} />
 
       {tab === 'source' ? (

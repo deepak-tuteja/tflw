@@ -55,3 +55,22 @@ test('findDefinition: null when nothing resolvable sits at the offset', () => {
   const table = collectSymbols(program, source);
   assert.equal(findDefinition(program, table, source.indexOf('equals')), null);
 });
+
+// `M247` `D` (`D1356`) — `element` names.
+test('findDefinition: an element reference resolves to its declaration in this file', () => {
+  const source = `element checkout = button "Checkout"\n\ntest "ok"\n  open "/"\n  click checkout\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+  const result = findDefinition(program, table, source.lastIndexOf('checkout') + 1);
+  const def = table.defs.find((d) => d.kind === 'element')!;
+  assert.deepEqual(result, { kind: 'local', span: def.span });
+  assert.equal(source.slice(def.span.start.offset, def.span.end.offset), 'checkout', 'the def span is the name alone');
+});
+
+test('findDefinition: an element declared in an import surfaces an imported-element marker', () => {
+  const source = `import "./shared.tflw"\n\ntest "ok"\n  open "/"\n  expect cartBadge is visible\n`;
+  const { program } = parseSource(source);
+  const table = collectSymbols(program, source);
+  const result = findDefinition(program, table, source.indexOf('cartBadge') + 1);
+  assert.deepEqual(result, { kind: 'imported-element', name: 'cartBadge', importPaths: ['./shared.tflw'] });
+});

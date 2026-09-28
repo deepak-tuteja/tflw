@@ -728,6 +728,10 @@ function candidateStrategies(scope: LocatorScope, kind: LocatorKind, name: strin
       return [{ pwLocator: scope.locator(name), via: 'css' }];
     case 'xpath':
       return [{ pwLocator: scope.locator(`xpath=${name}`), via: 'xpath' }];
+    case 'element':
+      // `M247` `D` — every declared element was inlined before the run (`withElementsInlined`), so
+      // a reference that reaches here names nothing. `TF089`'s sentence, for a run nobody checked.
+      throw new RuntimeError(`unknown element \`${name}\` — declare it once with \`element ${name} = css "…"\` in this file or an imported one (\`tflw check\` reports this as TF089)`);
   }
 }
 

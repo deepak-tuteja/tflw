@@ -33,6 +33,8 @@ import {
   identityCensus,
   suggest,
   detectReuse,
+  detectElementReuse,
+  type ElementReuseHint,
   renderCallSiteReplacement,
   importInsertionOffset,
   collectMigrations,
@@ -1350,6 +1352,7 @@ async function loadAndValidate(
       ...(resolved.envNames ? { knownEnvs: resolved.envNames } : {}),
       outOfScopeSigners: { envName: resolved.envName, declaredElsewhere: resolved.signersOutOfScope ?? new Map() },
       importedActions: imports.actions,
+      ...(imports.elements === undefined ? {} : { importedElements: imports.elements }),
       importsWithErrors: imports.unparseable,
       // `TF043` (M97c, D144, `A4-07`) — the `stat`s happen here, in the caller, for the same reason
       // `importedActions` does: `@tflw/lang` does no I/O. Before this, `tflw check` printed `no
@@ -2871,7 +2874,9 @@ async function checkCommand(argv: string[]): Promise<number> {
   // suggestion carrying a diff preview, not a diagnostic anchored to a span, so it has no place in
   // a per-file `diagnostics` array — which stays true now that the JSON shape covers every file).
   const entries: SuiteEntry[] = loaded.parsedFiles.map((f) => ({ path: relative(cwd, f.file), source: f.source, program: f.program }));
-  const hints = detectReuse(entries);
+  const actionHints = detectReuse(entries);
+  // `M247` `D` (`D1356`) — the locator half, numbered on from the action half: one `RF` sequence.
+  const hints: readonly { readonly diffPreview: string }[] = [...actionHints, ...detectElementReuse(entries, actionHints.length + 1)];
   if (hints.length > 0) {
     process.stdout.write(`\n${hints.length} reuse ${hints.length === 1 ? 'hint' : 'hints'} found (P#2) — apply with \`tflw refactor apply <id>\`:\n\n`);
     process.stdout.write(hints.map((h) => h.diffPreview).join('\n\n') + '\n');
@@ -2911,9 +2916,12 @@ async function refactorCommand(argv: string[]): Promise<number> {
 
   const entries: SuiteEntry[] = loaded.parsedFiles.map((f) => ({ path: relative(cwd, f.file), source: f.source, program: f.program }));
   const hints = detectReuse(entries);
+  const elementHints = detectElementReuse(entries, hints.length + 1);
+  const elementHint = elementHints.find((h) => h.id === id);
+  if (elementHint) return applyElementHint(elementHint, loaded, cwd, color);
   const hint = hints.find((h) => h.id === id);
   if (!hint) {
-    const available = hints.map((h) => h.id).join(', ') || '(none)';
+    const available = [...hints, ...elementHints].map((h) => h.id).join(', ') || '(none)';
     err(`no reuse hint \`${id}\` found. Run \`tflw check\` for current ids (they can shift as the suite changes) — available right now: ${available}.`);
     return EXIT_USAGE;
   }
@@ -2964,6 +2972,49 @@ async function refactorCommand(argv: string[]): Promise<number> {
   for (const [abs, source] of pending) await writeFile(abs, source, 'utf8');
 
   process.stdout.write(`applied ${hint.id}: extracted \`action ${hint.actionName}(${hint.params.join(', ')})\` into ${hint.actionFile}\n`);
+  process.stdout.write(`  updated: ${changedFiles.sort().join(', ')}\n`);
+  return EXIT_OK;
+}
+
+/**
+ * `refactor apply` for a locator hint (`M247` `D`, `D1356`). The declaration is written into
+ * `shared/elements.tflw` — appended when the file exists, since a file of element names is a list
+ * that grows, unlike an action file that is one extraction — and every site's `css "…"` is replaced
+ * by the bare name, with an `import` added to each rewritten file that lacks one. Everything is
+ * built in memory and put through `checkPendingRewrite` before one byte is written, the action
+ * path's doctrine (`B5-02` half 3): a rewrite that would not check is refused, not rolled back.
+ */
+async function applyElementHint(hint: ElementReuseHint, loaded: ValidatedProject, cwd: string, color: boolean): Promise<number> {
+  const declAbs = join(cwd, hint.declarationFile);
+  const existing = await readFile(declAbs, 'utf8').catch(() => null);
+  const pending = new Map<string, string>([[declAbs, existing === null ? `${hint.declaration}\n` : `${existing.replace(/\n*$/, '\n')}${hint.declaration}\n`]]);
+
+  const byPath = new Map<string, typeof hint.occurrences[number][]>();
+  for (const occ of hint.occurrences) byPath.set(occ.path, [...(byPath.get(occ.path) ?? []), occ]);
+  const changedFiles: string[] = [];
+  for (const [path, occs] of byPath) {
+    const abs = join(cwd, path);
+    const parsedFile = loaded.parsedFiles.find((f) => f.file === abs)!;
+    let source = abs === declAbs ? pending.get(declAbs)! : parsedFile.source;
+    const edits: { start: number; end: number; text: string }[] = occs.map((o) => ({ start: o.span.start.offset, end: o.span.end.offset, text: hint.elementName }));
+    if (abs !== declAbs) {
+      const importPath = toImportPath(dirname(abs), declAbs);
+      if (!parsedFile.program.imports.some((imp) => imp.path.value === importPath)) {
+        const at = importInsertionOffset(parsedFile.program, source);
+        edits.push({ start: at, end: at, text: `import "${importPath}"\n` });
+      }
+    }
+    edits.sort((a, b) => b.start - a.start);
+    for (const e of edits) source = source.slice(0, e.start) + e.text + source.slice(e.end);
+    pending.set(abs, source);
+    changedFiles.push(path);
+  }
+
+  const rejected = await checkPendingRewrite(pending, loaded, color);
+  if (rejected !== undefined) return rejected;
+  await mkdir(dirname(declAbs), { recursive: true });
+  for (const [abs, source] of pending) await writeFile(abs, source, 'utf8');
+  process.stdout.write(`applied ${hint.id}: declared \`${hint.declaration}\` in ${hint.declarationFile}\n`);
   process.stdout.write(`  updated: ${changedFiles.sort().join(', ')}\n`);
   return EXIT_OK;
 }
@@ -3020,6 +3071,7 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
         ...(loaded.resolved.envNames ? { knownEnvs: loaded.resolved.envNames } : {}),
         outOfScopeSigners: { envName: loaded.resolved.envName, declaredElsewhere: loaded.resolved.signersOutOfScope ?? new Map() },
         importedActions: imports.actions,
+        ...(imports.elements === undefined ? {} : { importedElements: imports.elements }),
         importsWithErrors: imports.unparseable,
         missingFiles: await resolveMissingFiles(abs, parsed.program, existsPending),
       }),

@@ -951,7 +951,7 @@ export function buildDataTable(spec: DataTableSpec): BuildResult<DataTable> {
 
 /** Every locator kind the grammar has, for a form's dropdown — the parser's own list, re-exported
  *  rather than re-typed, so a seventh kind reaches the form the day it reaches the language. */
-export const LOCATOR_KINDS: readonly LocatorKind[] = ['button', 'field', 'text', 'list', 'css', 'xpath'];
+export const LOCATOR_KINDS: readonly LocatorKind[] = ['button', 'field', 'text', 'list', 'css', 'xpath', 'element'];
 
 /**
  * `button "Sign in"` — `M200` `A3-5`.
@@ -964,6 +964,12 @@ export function buildLocator(spec: LocatorSpec): BuildResult<Locator> {
   if (spec.value.trim().length === 0) {
     return bad(`a \`${spec.kind}\` locator needs something to match — the accessible name, the text, or the selector`);
   }
+  // `M247` `D` — an element reference is written as its bare name, so the name has to be one the
+  // parser reads back as a name: an identifier, and not a locator keyword.
+  if (spec.kind === 'element' && (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(spec.value.trim()) || LOCATOR_KINDS.includes(spec.value.trim() as LocatorKind))) {
+    return bad(`an \`element\` is named by one word — letters, digits and \`_\` — declared with \`element <name> = <locator>\`; \`${spec.value}\` is not one`);
+  }
+  if (spec.kind === 'element') return { ok: true, node: { type: 'Locator', kind: 'element', value: { type: 'StringLit', value: spec.value.trim(), parts: [{ kind: 'text', value: spec.value.trim() }], span: SYNTHETIC }, span: SYNTHETIC } };
   return { ok: true, node: { type: 'Locator', kind: spec.kind, value: stringLit(spec.value), span: SYNTHETIC } };
 }
 

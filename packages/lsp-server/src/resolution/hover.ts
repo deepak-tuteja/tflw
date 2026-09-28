@@ -88,6 +88,7 @@ const SYMBOL_KIND_LABEL: Record<SymbolKind, string> = {
   // doesn't; the sibling branches in `semanticTokens.ts` and `rename.ts` remain dead as they have
   // been since `M13`. Kept in the map because the label it holds is the one `refLabel` prints.
   importedAction: 'imported action',
+  element: 'element',
 };
 
 /**

@@ -8,7 +8,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { basename, join, posix, resolve as resolvePath } from 'node:path';
-import { Codes, isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
+import { Codes, elementRefs, elementsOf, inlineElements, isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr } from '@tflw/lang';
 import type {
   FindingSeverity,
   Value,
@@ -341,7 +341,32 @@ export async function runProgram(program: Program, config: ResolvedConfig, opts:
   }
 }
 
+/**
+ * `M247` `D` (`D1356`) — every `element` reference in this file inlined to its declared locator,
+ * before any case is expanded, so nothing downstream of here ever sees one. The lookup is the
+ * `action` rule: the file's own declarations, then each imported file's (one level, as
+ * `buildRegistry` reads them). An import that cannot be read or parsed is skipped here and refused
+ * by `buildRegistry` with its own sentence a moment later — this pass is not where that is said.
+ * A name nothing declares is left for `resolveLocator` to refuse with `TF089`'s sentence.
+ */
+async function withElementsInlined(program: Program, baseDir: string): Promise<Program> {
+  if (elementRefs(program).length === 0) return program;
+  const lookup = elementsOf(program);
+  for (const imp of program.imports) {
+    let text: string;
+    try {
+      text = await readFile(resolvePath(baseDir, imp.path.value), 'utf8');
+    } catch {
+      continue;
+    }
+    const parsed = parseSource(text);
+    for (const e of parsed.program.elements ?? []) if (!lookup.has(e.name)) lookup.set(e.name, e.locator);
+  }
+  return inlineElements(program, lookup);
+}
+
 async function runProgramInner(program: Program, config: ResolvedConfig, opts: RunOptions): Promise<RunOutput> {
+  program = await withElementsInlined(program, opts.baseDir ?? process.cwd());
   const environ = opts.environ ?? process.env;
   const redactor = opts.redactor ?? new Redactor();
   // Pre-register every `require env` variable up front (decision 56, half 1) — closes most of the
@@ -2233,7 +2258,10 @@ async function buildRegistry(program: Program, baseDir: string, lines: readonly 
       throw new RuntimeError(`imported file "${imp.path.value}" has parse errors:\n${renderDiagnostics(parsed.diagnostics, text, { filename: imp.path.value })}`);
     }
     const imported: ActionSource = { lines: text.split('\n'), importPath: imp.path.value };
-    for (const a of parsed.program.actions) addAction(a, imp.path.value, imported);
+    // `M247` `D` — an imported action's element references resolve against its own file's
+    // declarations: that is the file its author wrote them in.
+    const ownElements = elementsOf(parsed.program);
+    for (const a of parsed.program.actions) addAction(inlineElements(a, ownElements), imp.path.value, imported);
   }
 
   const helpers = new Map<string, HelperFn>();

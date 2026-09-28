@@ -52,6 +52,17 @@ export class CrossFileResolver {
     return entry;
   }
 
+  /** `M247` `D` — the first import declaring `name` as an `element`, and the name's span there. */
+  async resolveImportedElement(baseDir: string, importPaths: readonly string[], name: string): Promise<{ readonly absPath: string; readonly span: Span } | null> {
+    for (const p of importPaths) {
+      const abs = resolvePath(baseDir, p);
+      const entry = await this.load(abs);
+      const def = entry?.symbols.defs.find((d) => d.kind === 'element' && d.name === name);
+      if (def) return { absPath: abs, span: def.span };
+    }
+    return null;
+  }
+
   /** Searches `importPaths` in order (first declaring file wins, matching `buildRegistry`'s
    * duplicate-action-name error being the only other tiebreak rule); falls back to the first
    * `use`d path's line 1 when no import declares `name`. `null` when neither list resolves it

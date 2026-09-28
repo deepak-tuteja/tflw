@@ -97,13 +97,15 @@ TAG         '@' IDENT
 ## Program structure
 
 ```
-Program     := (NEWLINE | ImportDecl | UseDecl | ActionDecl | HookDecl | TestDecl | CrawlDecl)*
+Program     := (NEWLINE | ImportDecl | UseDecl | ElementDecl | ActionDecl | HookDecl | TestDecl | CrawlDecl)*
 
 ImportDecl  := 'import' STRING NEWLINE                     # a sibling .tflw file's actions (§8)
 UseDecl     := 'use' STRING NEWLINE                         # a .ts/.js JS-escape-hatch module (§11)
 HookDecl    := ('before' | 'after') 'file'? NEWLINE Block   # no `file` = per-test hook;
                                                              # `file` = once-per-file hook (§4.2)
 ActionDecl  := 'action' CallName '(' (IDENT (',' IDENT)*)? ')' NEWLINE Block   # (§8)
+ElementDecl := 'element' IDENT '=' Locator NEWLINE   # M247/D1356 (§8) — the Locator may not itself be
+                                                     #   a bare name; IDENT may not be a LocatorKind
 ```
 
 ## Tests & structure (§4)
@@ -535,6 +537,10 @@ WithinBlock     := 'within' 'frame'? Locator NEWLINE Block           # `frame` t
                                                                       # <iframe>'s own document (M3b)
 
 Locator         := LocatorKind (STRING | Interp)
+                 | IDENT                                   # M247/D1356 — an `element` name, when no
+                                                           #   STRING follows; unknown is TF089. In a
+                                                           #   subject position, an IDENT one edit
+                                                           #   from a subject word stays that typo
 LocatorKind     := 'button' | 'field' | 'text' | 'list' | 'css' | 'xpath'   # (§9.3, D6)
 
 DialogStmt      := 'accept' 'dialog' [ 'with' Value ]

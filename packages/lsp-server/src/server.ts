@@ -235,6 +235,12 @@ export function startServer(options: StartServerOptions = {}): void {
       return def ? toLspLocation(pathToUri(project!.configPath), def.span) : null;
     }
 
+    if (result.kind === 'imported-element') {
+      if (!analysis.baseDir) return null;
+      const found = await crossFile.resolveImportedElement(analysis.baseDir, result.importPaths, result.name);
+      return found ? toLspLocation(pathToUri(found.absPath), found.span) : null;
+    }
+
     // result.kind === 'imported-call'
     // No `baseDir` means a pathless buffer (D214/D215) — a relative `import` has nothing to resolve
     // against, so there is no imported definition to jump to.
@@ -272,7 +278,12 @@ export function startServer(options: StartServerOptions = {}): void {
       const analysis = await store.analyze(params.textDocument.uri, envSetting);
       if (analysis?.program) knownVariables = variablesInScopeAt(analysis.program, analysis.symbols, offset);
     }
-    return getCompletions(ctx, { knownSessions, knownVariables }).map((c) => ({
+    let knownElements: readonly string[] | undefined;
+    if (ctx.kind === 'locator' || ctx.kind === 'subject') {
+      const analysis = await store.analyze(params.textDocument.uri, envSetting);
+      knownElements = analysis?.elementNames;
+    }
+    return getCompletions(ctx, { knownSessions, knownVariables, knownElements }).map((c) => ({
       label: c.label,
       ...(c.detail ? { detail: c.detail } : {}),
       ...(c.filterText ? { filterText: c.filterText } : {}),

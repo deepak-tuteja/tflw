@@ -108,6 +108,8 @@ const KEYWORDS = new Set([
   // this list has no way to say "only after `max`". So the bounds render as plain identifiers on
   // purpose: an uncoloured keyword is a cosmetic gap, a wrongly-coloured identifier is `M133-01`.
   'crawl', 'seed', 'openapi', 'traffic', 'spider',
+  // `M247` `D` (`D1356`) — the `element` declaration keyword, in the milestone that ships it.
+  'element',
   'authorized', 'target', 'reason', 'probe', 'mutating', 'oversized', 'traversal', 'ciphers', 'privileged',
   // M142 (`M136b-01`). `honoring` is the one of that row's four words that passes D427a's test:
   // `retry honoring "Retry-After" up to 3` is its only construction and nobody names a variable
@@ -410,6 +412,8 @@ function symbolKindToTokenType(kind: SymbolKind): SemanticTokenType | null {
     case 'action':
     case 'importedAction':
       return 'function';
+    case 'element':
+      return 'variable'; // `M247` `D` — a named locator reads as a name the file declared
     case 'session':
     case 'signer':
       return null; // sessions (and, since `M246`, signers) already get grammar coloring parity via `as`/keyword handling; not part of this pass

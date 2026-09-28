@@ -13,6 +13,12 @@
 # test ended — the arming did nothing`. That warning is on a test that PASSED, which is the point
 # of it: the assertion after a mis-ordered arm is true for a reason the author did not write.
 
+# **`savedLine` is an `element`**: the saved line has no role or label a person would read, so it
+# is found by its id, and the id is written once here rather than at every step that needs it.
+# `expect savedLine is hidden` and `drag savedLine to …` below both read the one line.
+
+element savedLine = css "#saved-line"
+
 @checkout @functional
 test "removing a saved item asks first, and yes means yes"
   open "/order"
@@ -20,7 +26,7 @@ test "removing a saved item asks first, and yes means yes"
   within list "Saved for later"
     click button "Remove"
   expect dialog message equals "Remove Filter coffee, 1kg from your saved items?"
-  expect css "#saved-line" is hidden
+  expect savedLine is hidden
 
 @checkout @functional
 test "…and no leaves the item where it was"
@@ -33,5 +39,5 @@ test "…and no leaves the item where it was"
 @checkout @functional
 test "a saved item can be dragged into the basket"
   open "/order"
-  drag css "#saved-line" to css "#basket"
+  drag savedLine to css "#basket"
   expect text "Moved Filter coffee, 1kg to your basket" is visible
