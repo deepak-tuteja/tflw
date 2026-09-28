@@ -198,7 +198,8 @@ element checkout = button "Checkout"
 test "the badge counts what was added"
   open "/"
   click button "Add to cart"
-  expect cartCount has text "1"
+  within cartCount
+    expect text "1" is visible
   click checkout
 ```
 

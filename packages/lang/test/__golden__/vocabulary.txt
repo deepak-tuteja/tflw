@@ -7,7 +7,7 @@
 #   V  a `<expr>.value === '…'` comparison
 #   S  a `case '…':` label in a switch on `<expr>.value`
 #
-# 269 words
+# 271 words
 
 A   DELETE
 A   GET
@@ -50,6 +50,7 @@ AK  cleanup
 AKS click
 K   client
 AS  close
+K   concurrently
 AS  connects
 A   console
 AS  contains
@@ -78,6 +79,7 @@ AS  drag
 AS  drop
 KS  duration
 K   each
+AK  element
 K   email
 V   empty
 A   enabled

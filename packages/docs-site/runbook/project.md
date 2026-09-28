@@ -27,14 +27,14 @@ Everything that differs between your laptop, CI and staging is either a base URL
 URLs live in the config, each naming the variable that overrides it, so the same file serves every
 environment:
 
-```tflw-config fragment
+```tflw-config
 env local default
   api env API_BASE default "http://localhost:4001/v1"
   web env WEB_BASE default "http://localhost:5173"
 
 env ci
-  api env API_BASE default "http://api:4001/v1"
-  web env WEB_BASE default "http://web:5173"
+  api env API_BASE default "http://app.ci:4001/v1"
+  web env WEB_BASE default "http://app.ci:5173"
 ```
 
 Secrets are never written down. `require env ADMIN_EMAIL, ADMIN_PW` makes a run without them stop
@@ -52,6 +52,8 @@ in. It covers the page too: the session's cookies are handed to the test's brows
 seed data over the API and check it on the page with no form login in between.
 
 ```tflw-config fragment
+require env SHOPPER_EMAIL, SHOPPER_PW
+
 session shopper
   api POST /auth/login body { email: env(SHOPPER_EMAIL), password: env(SHOPPER_PW) }
   expect status equals 200

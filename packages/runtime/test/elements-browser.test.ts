@@ -56,7 +56,7 @@ async function run(source: string) {
 
 test('a file\'s own element drives a click and an assertion', async () => {
   const { report } = await run(
-    ['element badge = css "[data-test=cart-count]"', 'element add = button "Add to cart"', '', 'test "own"', '  open "/"', '  click add', '  expect badge has text "1"', ''].join('\n'),
+    ['element badge = css "[data-test=cart-count]"', 'element add = button "Add to cart"', '', 'test "own"', '  open "/"', '  click add', '  expect badge has count 1', '  within badge', '    expect text "1" is visible', ''].join('\n'),
   );
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
   const steps = asEntry(report.tests[0], 'functional').steps;
@@ -64,7 +64,7 @@ test('a file\'s own element drives a click and an assertion', async () => {
 });
 
 test('an imported element resolves, and an imported action resolves its elements against its own file', async () => {
-  const { report } = await run(['import "./shared.tflw"', '', 'test "imported"', '  open "/"', '  add one()', '  add one()', '  expect cartBadge has text "2"', ''].join('\n'));
+  const { report } = await run(['import "./shared.tflw"', '', 'test "imported"', '  open "/"', '  add one()', '  add one()', '  within cartBadge', '    expect text "2" is visible', ''].join('\n'));
   assert.equal(report.ok, true, JSON.stringify(report.tests, null, 2));
 });
 

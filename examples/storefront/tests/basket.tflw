@@ -5,6 +5,12 @@
 # picking one — the same refusal `signin.tflw` records for `expect text "Sign in"`. Scoping to the
 # list names one of the three.
 
+# **`savedLine` is an `element`**: the saved line has no role or label a person would read, so it
+# is found by its id, and the id is written once here rather than at every step that needs it.
+# `expect savedLine is hidden` and `drag savedLine to …` below both read the one line.
+
+element savedLine = css "#saved-line"
+
 # **The answer is armed BEFORE the question is asked, and the first draft had it the other way
 # round.** A native `confirm()` blocks the page until something answers it, so there is no moment
 # between the click and the dialog in which a test could decide — `accept dialog` says what to do
@@ -12,12 +18,6 @@
 # `warning[TF079]: dismiss dialog armed the next native dialog and no dialog was raised before the
 # test ended — the arming did nothing`. That warning is on a test that PASSED, which is the point
 # of it: the assertion after a mis-ordered arm is true for a reason the author did not write.
-
-# **`savedLine` is an `element`**: the saved line has no role or label a person would read, so it
-# is found by its id, and the id is written once here rather than at every step that needs it.
-# `expect savedLine is hidden` and `drag savedLine to …` below both read the one line.
-
-element savedLine = css "#saved-line"
 
 @checkout @functional
 test "removing a saved item asks first, and yes means yes"
