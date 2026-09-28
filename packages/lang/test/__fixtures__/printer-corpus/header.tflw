@@ -30,3 +30,10 @@ after file
 test "the header above is the subject; this test is only somewhere for it to sit"
   api GET /items
   expect status equals 200
+
+# `M247` `B` (`D1353`): a skip that holds only in the named envs — `EnvScopeRef`, which prints only
+# through the clause it sits in, and which no in-repo file reached until the sibling first wrote one.
+@printer
+test "a skip scoped to two envs" skip "no payments sandbox there" on env ci, staging
+  api GET /items
+  expect status equals 200
