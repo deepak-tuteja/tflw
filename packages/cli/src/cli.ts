@@ -17,6 +17,7 @@ import { createRequire } from 'node:module';
 import { hostname, userInfo } from 'node:os';
 import { join, resolve, relative, dirname, basename, sep } from 'node:path';
 import { discoverTests } from './project.js';
+import { diagnose, renderDoctor } from './doctor.js';
 import { inShard, parseShard, readRunFlags, tagsKeep } from './run-flags.js';
 import { parseHeader, reportToOtlp } from './otlp.js';
 import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH, PLAY_SCRATCH } from './ui-server.js';
@@ -377,6 +378,8 @@ async function main(argv: string[]): Promise<number> {
       return exportCommand(rest);
     case 'merge':
       return mergeCommand(rest);
+    case 'doctor':
+      return doctorCommand(rest);
     case 'ui':
       return uiCommand(rest);
     case '--version':
@@ -391,7 +394,7 @@ async function main(argv: string[]): Promise<number> {
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
       err(
-        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw spec\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, \`tflw migrate\`, \`tflw fmt\`, \`tflw export otlp\`, \`tflw merge\`, or \`tflw ui\`.`,
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw spec\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, \`tflw migrate\`, \`tflw fmt\`, \`tflw export otlp\`, \`tflw merge\`, \`tflw doctor\`, or \`tflw ui\`.`,
       );
       return EXIT_USAGE;
   }
@@ -2728,6 +2731,39 @@ async function mergeCommand(argv: string[]): Promise<number> {
   return merged.ok ? EXIT_OK : EXIT_FAIL;
 }
 
+/**
+ * `tflw doctor [--env E] [--json]` — `M249` `D` (`D1370`). What this machine and this project will
+ * run with, read offline: see `doctor.ts`. Exit 1 only for the three things that stop every run
+ * (no config, Node below 22, browser tests and no browser); 2 for a usage problem, including an
+ * `--env` the config does not declare, which is the same refusal `run --env` gives.
+ */
+async function doctorCommand(argv: string[]): Promise<number> {
+  let env: string | undefined;
+  let json = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === '--env') env = flagValue(argv, ++i, a);
+    else if (a.startsWith('--env=')) env = inlineFlagValue(a, '--env');
+    else if (a === '--json') json = true;
+    else if (a.startsWith('--')) unknownFlag('doctor', a);
+    else {
+      err(`unexpected argument \`${a}\`. Usage: tflw doctor [--env <name>] [--json]`);
+      return EXIT_USAGE;
+    }
+  }
+  const cwd = process.cwd();
+  if (env !== undefined && existsSync(join(cwd, 'tflw.config'))) {
+    const names = parseConfigSource(readFileSync(join(cwd, 'tflw.config'), 'utf8')).config.envs.map((e) => e.name);
+    if (!names.includes(env)) {
+      err(`unknown env "${env}" (from --env). Available: ${names.join(', ') || '(none declared)'}`);
+      return EXIT_USAGE;
+    }
+  }
+  const report = await diagnose(cwd, { ...(env !== undefined ? { env } : {}), version: await getVersion() });
+  process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : `${renderDoctor(report)}\n`);
+  return report.ok ? EXIT_OK : EXIT_FAIL;
+}
+
 async function fmtCommand(argv: string[]): Promise<number> {
   const paths: string[] = [];
   let check = false;
@@ -4426,6 +4462,9 @@ function printUsage(): void {
       '                                                      send a finished run to an OpenTelemetry collector as one trace (run →',
       '                                                      file → test → step) over OTLP/HTTP JSON; report-dir defaults to report/.',
       '                                                      Times are laid end to end from the run\'s start and every span says so',
+      '  tflw doctor [--env <name>] [--json]              what this machine and project will run with — versions, the env\'s services,',
+      '                                                      proxy and TLS, the suite, the browsers; offline. Exits 1 only for no',
+      '                                                      config, Node below 22, or browser tests with no browser installed',
       '  tflw merge <report-dir>... --out <dir> [--no-color]',
       '                                                      join finished runs (shards, a sweep\'s groups) into one report: tests in',
       '                                                      the order given, counts re-derived, findings deduplicated by fingerprint;',

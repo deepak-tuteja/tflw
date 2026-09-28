@@ -18,6 +18,7 @@ const migrateFlags = CLI_FLAGS.filter((f) => f.command === 'migrate');
 const fmtFlags = CLI_FLAGS.filter((f) => f.command === 'fmt');
 const exportFlags = CLI_FLAGS.filter((f) => f.command === 'export');
 const mergeFlags = CLI_FLAGS.filter((f) => f.command === 'merge');
+const doctorFlags = CLI_FLAGS.filter((f) => f.command === 'doctor');
 const uiFlags = CLI_FLAGS.filter((f) => f.command === 'ui');
 const specFlags = CLI_FLAGS.filter((f) => f.command === 'spec');
 const globalFlags = CLI_FLAGS.filter((f) => f.command === 'global');
@@ -346,6 +347,28 @@ the one `tflw run` would give (an aborted input makes the merge not `ok`). `env`
 env and `mergedFrom` in `results.json` lists the inputs. Each input's `events.ndjson` is joined in
 order, and `assets/` is copied across. Exits 0 when the merged run passed, 1 when it did not, and 2
 for a usage problem. See [splitting a suite across CI jobs](/guide/ci-and-reporting#shard).
+
+## `tflw doctor`
+
+`tflw doctor [--env <name>] [--json]`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in doctorFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+What this machine and this project will run with, on one screen: tflw and Node versions, the env
+and every `api` base it resolves to, the proxy variables and whether anything reads them, TLS
+(certificate verification, a client certificate and whether it is on disk), the suite's size and
+how much of it drives a browser, and which Playwright browsers are downloaded. **Read-only and
+offline** — it resolves the config and asks Playwright where its browsers are; it sends no request.
+Exits 1 only for what stops every run: no `tflw.config`, Node older than 22, or browser tests with
+no browser installed. See [installing tflw](/runbook/install).
 
 ## `tflw ui [dir]`
 
