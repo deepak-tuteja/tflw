@@ -103,6 +103,9 @@ import type {
   PathExpr,
   PauseStmt,
   TogetherStmt,
+  RowCount,
+  RowsBlock,
+  RowsCheck,
   PathSegment,
   PressStmt,
   Program,
@@ -3210,7 +3213,103 @@ class Parser {
     // same layering as D19's browser-step rejection (checker.ts's `checkWorkloadTests`), since
     // it's a semantic rule about the fully-formed node, not a grammar ambiguity.
     const { workload, thresholds, body } = this.parseTestBody('test', headerSpan);
-    return { type: 'TestDecl', name, tags, sessions, retry, ...(skip === undefined ? {} : { skip }), ...(skipOn === undefined ? {} : { skipOn }), table, workload, thresholds, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
+    const rows = this.parseRowsAfterTest();
+    return { type: 'TestDecl', name, tags, sessions, retry, ...(skip === undefined ? {} : { skip }), ...(skipOn === undefined ? {} : { skipOn }), table, workload, thresholds, concurrency: concurrency ?? 'sequential', body, ...(rows ? { rows } : {}), span: this.spanFrom(start) };
+  }
+
+  /** `rows` directly under a test body (`G10`, `D1384`), blank lines allowed between. Anything else
+   * leaves the position where it was, so the next declaration parses as it always did. */
+  private parseRowsAfterTest(): RowsBlock | null {
+    const save = this.pos;
+    this.skipNewlines();
+    if (!this.isKw(this.peek(), 'rows')) {
+      this.pos = save;
+      return null;
+    }
+    const start = this.peek().span.start;
+    const header = this.advance();
+    this.endLine();
+    if (!this.check('indent')) {
+      this.error(Codes.EMPTY_BLOCK, 'this `rows` has no judgements', header.span, 'indent at least one `expect <count> rows <subject> <matcher>` line under `rows`');
+      return { type: 'RowsBlock', checks: [], span: this.spanFrom(start) };
+    }
+    this.advance(); // indent
+    const checks: RowsCheck[] = [];
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const check = this.parseRowsCheck();
+      if (check) checks.push(check);
+      else this.synchronize();
+      if (this.pos === before) this.advance();
+    }
+    if (this.check('dedent')) this.advance();
+    return { type: 'RowsBlock', checks, span: this.spanFrom(start) };
+  }
+
+  /** `expect|check <count> row|rows <subject> <matcher>`. */
+  private parseRowsCheck(): RowsCheck | null {
+    const start = this.peek().span.start;
+    const head = this.peek();
+    if (!this.isKw(head, 'expect') && !this.isKw(head, 'check')) {
+      this.error(Codes.UNKNOWN_STATEMENT, `a \`rows\` line is \`expect\` or \`check\`, found ${describeToken(head)}`, head.span, 'write `expect exactly 1 row status equals 201` — a count, `row`/`rows`, then a subject and a matcher');
+      return null;
+    }
+    const soft = this.advance().value === 'check';
+    const count = this.parseRowCount();
+    if (!count) return null;
+    const noun = this.peek();
+    if (!this.isKw(noun, 'row') && !this.isKw(noun, 'rows')) {
+      this.error(Codes.UNEXPECTED_TOKEN, `expected \`row\` or \`rows\` after the count, found ${describeToken(noun)}`, noun.span, 'e.g. `expect exactly 1 row status equals 201`');
+      return null;
+    }
+    this.advance();
+    const subject = this.parseSubject();
+    if (!subject) return null;
+    const matcher = this.parseMatcher();
+    if (!matcher) return null;
+    this.endLine();
+    return { type: 'RowsCheck', soft, count, subject, matcher, span: this.spanFrom(start) };
+  }
+
+  private parseRowCount(): RowCount | null {
+    const tok = this.peek();
+    const whole = (): number | null => {
+      const n = this.peek();
+      if (n.type !== 'number' || !/^\d+$/.test(n.value)) {
+        this.error(Codes.UNEXPECTED_TOKEN, `expected a whole number of rows, found ${describeToken(n)}`, n.span, 'e.g. `exactly 1 row`, `at least 2 rows`');
+        return null;
+      }
+      return Number(this.advance().value);
+    };
+    if (this.isKw(tok, 'no')) {
+      this.advance();
+      return { kind: 'no' };
+    }
+    if (this.isKw(tok, 'every')) {
+      this.advance();
+      return { kind: 'every' };
+    }
+    if (this.isKw(tok, 'exactly')) {
+      this.advance();
+      const n = whole();
+      return n === null ? null : { kind: 'exactly', n };
+    }
+    if (this.isKw(tok, 'at') && (this.isKw(this.peek(1), 'least') || this.isKw(this.peek(1), 'most'))) {
+      this.advance();
+      const kind = this.advance().value === 'least' ? 'atLeast' : 'atMost';
+      const n = whole();
+      return n === null ? null : { kind, n };
+    }
+    if (tok.type === 'number') {
+      const n = whole();
+      return n === null ? null : { kind: 'bare', n };
+    }
+    this.error(Codes.UNEXPECTED_TOKEN, `expected how many rows — \`exactly N\`, \`N\`, \`at least N\`, \`at most N\`, \`no\` or \`every\` — found ${describeToken(tok)}`, tok.span, 'e.g. `expect exactly 1 row status equals 201`');
+    return null;
   }
 
   private tagsContinue(): boolean {

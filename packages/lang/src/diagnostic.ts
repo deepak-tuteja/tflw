@@ -597,6 +597,18 @@ export const Codes = {
    * written with a barrier that does nothing passes without the race.
    */
   TOGETHER_OUT_OF_PLACE: 'TF092',
+  /**
+   * `TF095` — **a `rows` block under a test with no `with each` table** (`G10`, `D1384`). There is one
+   * run and nothing to count across; the judgement belongs in the test body as an ordinary `expect`.
+   * (`TF093`/`TF094` are reserved for `M248`'s code-flow session.)
+   */
+  ROWS_WITHOUT_TABLE: 'TF095',
+  /**
+   * `TF096` — **a `rows` line whose subject a finished row cannot answer** (`G10`, `D1384`). A row is
+   * judged after it ends, from its last response and its bindings; its page is closed by then, so a
+   * locator, `page`, a dialog or a network observation has nothing left to read.
+   */
+  ROWS_SUBJECT_UNREADABLE: 'TF096',
 } as const;
 
 // ---------------------------------------------------------------------------

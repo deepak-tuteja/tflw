@@ -53,6 +53,8 @@ import type {
   ObjectLit,
   PathSegment,
   PauseStmt,
+  RowCount,
+  RowsCheck,
   Program,
   Step,
   MalformedStep,
@@ -287,7 +289,7 @@ export const PRINTABLE = new Set<string>([
  * field was normalised on the way in, because a normalisation is a spelling decision the AST
  * stopped recording.
  */
-export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'UploadFile', 'RetryAfterClause', 'SignClause', 'SignerRef', 'FillFormRow', 'EnvScopeRef']);
+export const CONTEXT_BOUND = new Set<string>(['Stage', 'Field', 'FormField', 'UploadFile', 'RetryAfterClause', 'SignClause', 'SignerRef', 'FillFormRow', 'EnvScopeRef', 'RowsBlock', 'RowsCheck']);
 
 /**
  * The kinds that refuse **by construction**, and will not gain a printer in any round (`A4-5`).
@@ -744,7 +746,33 @@ function printTest(t: TestDecl, level: number): string {
   if (t.workload) lines.push(printWorkload(t.workload, inner));
   for (const step of t.body) lines.push(printNode(step, inner));
   for (const th of t.thresholds) lines.push(pad(inner) + printThreshold(th));
+  // `G10` (`D1384`): the rows block sits under the test at the test's own depth, as it is written.
+  if (t.rows) {
+    lines.push(pad(level) + 'rows');
+    for (const c of t.rows.checks) lines.push(printRowsCheck(c, inner));
+  }
   return lines.join('\n');
+}
+
+function printRowCount(c: RowCount): string {
+  switch (c.kind) {
+    case 'no':
+      return 'no rows';
+    case 'every':
+      return 'every row';
+    case 'exactly':
+      return `exactly ${c.n} ${c.n === 1 ? 'row' : 'rows'}`;
+    case 'atLeast':
+      return `at least ${c.n} ${c.n === 1 ? 'row' : 'rows'}`;
+    case 'atMost':
+      return `at most ${c.n} ${c.n === 1 ? 'row' : 'rows'}`;
+    case 'bare':
+      return `${c.n} ${c.n === 1 ? 'row' : 'rows'}`;
+  }
+}
+
+function printRowsCheck(c: RowsCheck, level: number): string {
+  return `${pad(level)}${c.soft ? 'check' : 'expect'} ${printRowCount(c.count)} ${printSubject(c.subject)} ${printMatcher(c.matcher)}`;
 }
 
 /**

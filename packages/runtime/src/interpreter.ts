@@ -19,6 +19,7 @@ import type {
   CsrfStmt,
   EvidenceLevel,
   ExpectStmt,
+  RowCount,
   HookDecl,
   LetStmt,
   Locator as LocatorAst,
@@ -430,7 +431,9 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   // pair at all: an entry that reaches `report.total` without ever being announced makes a consumer
   // tailing the stream see a run begin, then a finished report naming something it was never told
   // about.
-  emit({ type: 'run:start', total: cases.length + scenarios.length + crawls.length, env: config.envName });
+  // `G10` (`D1384`): a `rows` block reports as one more entry after its test's rows.
+  const rowsBlocks = program.tests.filter((t) => t.rows && t.table && !t.workload && t.skip === undefined).length;
+  emit({ type: 'run:start', total: cases.length + scenarios.length + crawls.length + rowsBlocks, env: config.envName });
 
   const results: ReportEntry[] = [];
   const fileValues = new Map<string, unknown>();
@@ -517,6 +520,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     // `D1327`: a skipped test's one result, whatever its kind — it runs nothing (no hooks, no row,
     // no virtual user), so a `with each` table or a workload is one skipped entry, not N.
     const skippedResults = new Map<TestDecl, TestResult>();
+    // `G10` (`D1384`): a `rows` block's verdict, placed right after its test's rows in the report.
+    const rowsResults = new Map<TestDecl, TestResult>();
     const batches = partitionIntoBatches(program.tests);
     for (const batch of batches) {
       // D114: a multi-member `parallel` batch's live events would otherwise interleave mid-block
@@ -589,6 +594,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
         const rowsTogether = test.table?.concurrently === true && group.cases.length > 1;
         // `G1` (`D1381`): one barrier per concurrent test, which its rows meet at on each `together`.
         const rowBarrier = rowsTogether ? new RowBarrier(group.cases.length, test.body) : undefined;
+        // `G10` (`D1384`): one record per row, filled as each row ends, judged once all have.
+        const rowRecords: RowRecord[] | undefined = test.rows ? group.cases.map(() => ({})) : undefined;
         const runCase = async (j: number): Promise<void> => {
             const buffered = isBatched || rowsTogether;
             const kase = group.cases[j]!;
@@ -602,7 +609,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
             const caseEmit: EventSink = buffered ? (event) => eventBuffer.push(event) : emit;
-            const tc: TestCtx = { fileValues, ...(rowBarrier ? { rowBarrier } : {}), environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.reproSink ? { reproSink: opts.reproSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
+            const tc: TestCtx = { fileValues, ...(rowBarrier ? { rowBarrier } : {}), ...(rowRecords ? { rowRecord: rowRecords[j]! } : {}), environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.reproSink ? { reproSink: opts.reproSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
             // claimed a name it also opts into.
@@ -625,12 +632,21 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
               emit(endEvent);
             }
         };
+        const judge = async (): Promise<void> => {
+          if (!rowRecords) return;
+          emit({ type: 'test:start', name: `${test.name.value} — rows` });
+          const result = await judgeRows(test, rowRecords, config, fileTc);
+          rowsResults.set(test, result);
+          emit({ type: 'test:end', result });
+        };
         return (async () => {
           if (rowsTogether) {
             await Promise.all(group.cases.map((_, j) => runCase(j)));
+            await judge();
             return;
           }
           for (let j = 0; j < group.cases.length; j++) await runCase(j);
+          await judge();
         })();
       });
       // A singleton batch is awaited directly (D111) — today's exact sequential shape, preserved
@@ -666,6 +682,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
           const r = functionalResults[group.startIndex + j];
           if (r) results.push({ ...r, concurrency: test.concurrency });
         }
+        const judged = rowsResults.get(test);
+        if (judged) results.push({ ...judged, concurrency: test.concurrency });
       }
     }
     // M137c (D468) — **after every test in the file, before the after-file hooks.** Not in
@@ -2406,6 +2424,9 @@ interface TestCtx {
   /** `G1` (`D1381`) — the barrier the rows of one `with each concurrently` test meet at, set only on
    * those rows' contexts. */
   readonly rowBarrier?: RowBarrier;
+  /** `G10` (`D1384`) — where a row of a test with a `rows` block leaves its last body response and
+   * its bindings, for the judgement across rows. */
+  readonly rowRecord?: RowRecord;
   /** `M240-03` — set on the context an imported action's body runs under: the action's file,
    * relative to the run's cwd with `/` separators, as a test's own `file` is (`M243-07`). Stamped on
    * each step that body records, so a step's `line` names a line of the file it is in. Absent is the
@@ -2794,6 +2815,85 @@ async function refreshSessions(
  * ends (passed, failed, thrown) leaves every meeting point it had not reached, so a row that fails
  * in its setup cannot hold the others forever.
  */
+/** What one row left for its test's `rows` block (`G10`, `D1384`). */
+export interface RowRecord {
+  response?: ResponseTrace | null;
+  scope?: Map<string, unknown>;
+}
+
+/** Does `count` hold for `matched` rows of `total`? */
+function rowCountHolds(count: RowCount, matched: number, total: number): boolean {
+  switch (count.kind) {
+    case 'no':
+      return matched === 0;
+    case 'every':
+      return matched === total;
+    case 'atLeast':
+      return matched >= count.n;
+    case 'atMost':
+      return matched <= count.n;
+    default:
+      return matched === count.n;
+  }
+}
+
+function rowCountWords(count: RowCount): string {
+  switch (count.kind) {
+    case 'no':
+      return 'no rows';
+    case 'every':
+      return 'every row';
+    case 'atLeast':
+      return `at least ${count.n}`;
+    case 'atMost':
+      return `at most ${count.n}`;
+    default:
+      return `exactly ${count.n}`;
+  }
+}
+
+/**
+ * `G10` (`D1384`) — a test's `rows` block, judged once every row has ended: each line asks its
+ * subject and matcher of every row's last response (or bindings) and compares how many rows
+ * satisfied it with its count. Reported as one entry after the rows, named for the test, with one
+ * step per line; a failed `expect` stops the block, a failed `check` is recorded and the block goes on.
+ */
+async function judgeRows(test: TestDecl, records: readonly RowRecord[], config: ResolvedConfig, tc: TestCtx): Promise<TestResult> {
+  const start = performance.now();
+  const steps: StepResult[] = [];
+  const name = `${test.name.value} — rows`;
+  let ok = true;
+  let error: string | undefined;
+  for (const check of test.rows!.checks) {
+    const stepStart = performance.now();
+    const src = (tc.lines[check.span.start.line - 1] ?? '').trim();
+    const asExpect: ExpectStmt = { type: 'ExpectStmt', soft: false, quantifier: null, subject: check.subject, matcher: check.matcher, masks: [], span: check.span };
+    const matchedRows: number[] = [];
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i]!;
+      const ctx: EvalCtx = { scope: new Map(record.scope ?? tc.fileValues ?? []), environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar: new CookieJar() };
+      try {
+        const one = await execExpect(asExpect, record.response ?? null, null, ctx, src, stepStart, config, tc.baseDir);
+        if (one.ok) matchedRows.push(i + 1);
+      } catch {
+        // A row that cannot answer (no response yet, a missing binding) is a row that did not match.
+      }
+    }
+    const holds = rowCountHolds(check.count, matchedRows.length, records.length);
+    const which = matchedRows.length === 0 ? 'none' : `row${matchedRows.length === 1 ? '' : 's'} ${matchedRows.join(', ')}`;
+    const detail = holds
+      ? `${matchedRows.length} of ${records.length} row(s) matched (${which}) — ${rowCountWords(check.count)} asked`
+      : `expected ${rowCountWords(check.count)} of ${records.length} row(s) to match, but ${matchedRows.length} did (${which})`;
+    steps.push(mkStep(check.soft ? 'check' : 'expect', src, check.span, holds, stepStart, tc.redactor.redact(detail)));
+    if (!holds) {
+      ok = false;
+      error ??= detail;
+      if (!check.soft) break;
+    }
+  }
+  return { kind: 'functional', name, ok, durationMs: Math.round(performance.now() - start), steps, ...(error ? { error } : {}) };
+}
+
 export class RowBarrier {
   private active: number;
   private readonly rows: number;
@@ -3161,7 +3261,15 @@ async function runTestAttemptBody(
     }
   }
 
-  const exec = await execSteps(test.body, config, evalCtx, tc, name, registry);
+  // `G10` (`D1384`): a row of a test with a `rows` block leaves its last body response and its
+  // bindings behind for the judgement that runs once every row has ended. Overwritten per attempt,
+  // so a retried row is judged by the attempt that counted.
+  const lastOut = tc.rowRecord ? { response: null as ResponseTrace | null } : undefined;
+  const exec = await execSteps(test.body, config, evalCtx, tc, name, registry, lastOut);
+  if (tc.rowRecord && lastOut) {
+    tc.rowRecord.response = lastOut.response;
+    tc.rowRecord.scope = evalCtx.scope;
+  }
   steps.push(...exec.steps);
   let ok = exec.ok;
   let error = exec.error;
@@ -3547,7 +3655,7 @@ function locatorDetail(locatorAst: LocatorAst, name: string, via: string): strin
   return isTier1 ? base : `${base} (resolved via ${via})`;
 }
 
-async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: EvalCtx, tc: TestCtx, testName: string, registry: CallRegistry): Promise<StepsExec> {
+async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: EvalCtx, tc: TestCtx, testName: string, registry: CallRegistry, lastOut?: { response: ResponseTrace | null }): Promise<StepsExec> {
   const results: StepResult[] = [];
   let lastResponse: ResponseTrace | null = null;
   // M128b — the security pack's `authenticated-response-cacheable` rule has to know whether the
@@ -3617,6 +3725,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
               }
             }
             lastResponse = trace.response;
+            if (lastOut) lastOut.response = lastResponse;
             lastRequest = trace.request;
             lastOwnerIdentity = ownerIdentityFor(ctx, trace.request.url);
             // D287's first half. Live trace, not `redacted` — the report copy carries `cookieEvents: []`
@@ -3646,6 +3755,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
             const message = err instanceof RuntimeError ? err.message : `${(err as Error).message}`;
             const redactedMessage = tc.redactor.redact(message);
             lastResponse = null;
+            if (lastOut) lastOut.response = null;
             lastRequest = null;
             lastOwnerIdentity = {};
             lastConnectionError = redactedMessage;
@@ -3726,6 +3836,7 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           // that never met a `401`.
           results.push(...waited.refreshSteps);
           lastResponse = waited.response;
+          if (lastOut) lastOut.response = lastResponse;
           lastRequest = waited.request;
           lastOwnerIdentity = waited.request ? ownerIdentityFor(ctx, waited.request.url) : {};
           // `wait until api` never opts into catching a connection failure (checker-enforced,

@@ -166,6 +166,35 @@ export interface TestDecl extends Node {
    * to other file-level tests changes. */
   readonly concurrency: 'parallel' | 'sequential';
   readonly body: readonly Step[];
+  /** `rows` under a `with each` test (`G10`, `D1384`) — judgements over every row at once, run after
+   * the last row ends. Absent when unwritten, like `skip`. */
+  readonly rows?: RowsBlock;
+}
+
+/** How many rows a `rows` line asks for (`G10`, `D1384`). The spelling is kept so the line prints back
+ * as written: `exactly 1 row`, `1 row`, `at least 2 rows`, `at most 1 row`, `no rows`, `every row`. */
+export type RowCount =
+  | { readonly kind: 'exactly' | 'bare' | 'atLeast' | 'atMost'; readonly n: number }
+  | { readonly kind: 'no' }
+  | { readonly kind: 'every' };
+
+/** `expect exactly 1 row status equals 201` — one judgement across a table's rows: the subject and
+ * matcher are asked of each row's last response (or its bindings, for a `{value}` subject), and the
+ * count of rows that satisfy it is compared with `count`. Not a `Step`: it never runs inside a row. */
+export interface RowsCheck extends Node {
+  readonly type: 'RowsCheck';
+  readonly soft: boolean;
+  readonly count: RowCount;
+  readonly subject: Subject;
+  readonly matcher: Matcher;
+}
+
+/** `rows` — the block of `RowsCheck`s written directly under a `with each` test (`G10`, `D1384`). A
+ * race whose outcome lives only in the responses (one email registered five times at once) is judged
+ * here: each row sees only its own answer, and this is the one place that sees them all. */
+export interface RowsBlock extends Node {
+  readonly type: 'RowsBlock';
+  readonly checks: readonly RowsCheck[];
 }
 
 /**

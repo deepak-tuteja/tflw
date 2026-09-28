@@ -9803,6 +9803,14 @@ the report header.
 |---|---|---|
 | `D1383` | (mine, 2026-09-28, `G8`) | **`any`/`all` fan out across every array a path crosses**, rather than refusing the path. A property read that meets an array quantifies over its elements; an array's own properties (`length`) and `[n]` still read off it, and a path that ends on an array hands the matcher that array whole — so every path that worked before reads the same, and only paths that used to read `undefined` change. |
 
+### D1384
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1384` | (owner, 2026-09-29, `G10`) | **A `rows` block judges a table's rows together.** Written directly under a `with each` test; each line is `expect`/`check`, a count (`exactly N`, `N`, `at least N`, `at most N`, `no`, `every`), `row`/`rows`, a subject and a matcher, asked of every row's last body response (or bindings, for a `{value}` subject). Runs once after the last row; reports as its own entry after the rows, counted in `run:start`'s forecast. A failed `expect` stops the block, a failed `check` does not. No table is `TF095`; a subject a finished row cannot answer is `TF096`. `TF093`/`TF094` stay reserved for `M248`. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -14102,5 +14110,15 @@ parked: it is a browser-to-API bridge and runs into `D10`, and it gets its own p
 
 `D1352`, `D1353`, `D1356`, `D1359`, `D1360`. Lang, runtime, reporter, the page's pickers, the
 docs. Sibling `T-1` waits on it.
+
+### M248
+
+<sub>cited from SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+**§4 `M248` — a session that signs in through a browser**
+
+`D1354`. Lang, runtime, the page's Auth panel, the docs. Sibling `T-2` waits on it (the target's
+authorize endpoint and consent page). Its own milestone because it is the only slice with a
+listener, a browser and a token exchange in one declaration.
 
 <!-- GENERATED:decisions:end -->
