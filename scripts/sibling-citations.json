@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "refs/pull/121/head",
-  "sha": "85e83b551ebcaf4dd75dfbb2a96d26c6be2b8b99",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/85e83b551ebcaf4dd75dfbb2a96d26c6be2b8b99",
+  "ref": "refs/pull/123/head",
+  "sha": "eddf65cb43ccd222ea493c245cff600e9f64026d",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/eddf65cb43ccd222ea493c245cff600e9f64026d",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -24,7 +24,7 @@
     "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md",
     "tflw-acceptance/scan-door/README.md"
   ],
-  "codeFiles": 919,
+  "codeFiles": 928,
   "checkFixtures": [
     "TF001",
     "TF002",
@@ -100,7 +100,10 @@
     "TF084",
     "TF085",
     "TF086",
-    "TF087"
+    "TF087",
+    "TF088",
+    "TF089",
+    "TF090"
   ],
   "citations": {
     "D10": [
@@ -213,6 +216,13 @@
       "scripts/verify-construct-acceptance.mjs",
       "tests/.checkonly/config-directives/signer.config",
       "tflw.config"
+    ],
+    "D1356": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/elements/tflw.config",
+      "tests/.checkonly/unknown-element.tflw"
     ],
     "D17": [
       "tflw-acceptance/README.md",
@@ -2476,6 +2486,16 @@
       "tests/api/mechanics/signed-requests.tflw",
       "tflw.config"
     ],
+    "M247": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.checkonly/concurrently-one-row.tflw",
+      "tests/.checkonly/elements/tflw.config",
+      "tests/.checkonly/skip-unknown-env.tflw",
+      "tests/.checkonly/unknown-element.tflw"
+    ],
     "M25": [
       "README.md",
       "tests/api/orders/file-formats.tflw"
@@ -2858,6 +2878,14 @@
       "apiV2/src/signed/signed.controller.ts",
       "tests/api/mechanics/signed-requests.tflw",
       "tflw.config"
+    ],
+    "D1353": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/skip-unknown-env.tflw"
+    ],
+    "D1359": [
+      "scripts/verify-check-diagnostics.mjs",
+      "tests/.checkonly/concurrently-one-row.tflw"
     ],
     "D137": [
       "tests/.checkonly/action-call-cycle.tflw",
