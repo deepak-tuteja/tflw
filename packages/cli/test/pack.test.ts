@@ -137,7 +137,11 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/
   const { stdout: pkgText } = await execFileAsync('tar', ['-xzOf', tarballPath, 'package/package.json']);
   const pkg = JSON.parse(pkgText) as { dependencies?: Record<string, string>; private?: boolean };
   assert.equal(pkg.dependencies, undefined, 'a published API-only tool should declare zero runtime dependencies (P#43)');
-  assert.equal(pkg.private, undefined, '"private": true would make npm publish refuse outright (decision 74)');
+  // `D1379` (2026-09-28) inverts decision 74: `"private": true` makes `npm publish` refuse outright,
+  // and that refusal is now the point — nothing reaches npm without the owner's explicit word, and
+  // flipping this flag is the first line of the publish-day checklist (`D1351`), not an accident a
+  // stray `npm publish` can have.
+  assert.equal(pkg.private, true, 'the CLI stays unpublishable until the owner says otherwise (D1379)');
 });
 
 test('the optional peer constraints that govern the runtime are the ones the tarball declares (M92b, review `B6-09`)', async () => {
