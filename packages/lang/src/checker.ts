@@ -374,6 +374,8 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...(opts.knownSigners ? checkSigners(program, opts.knownSigners, opts.outOfScopeSigners).filter((d) => !notRunHere(d)) : []),
     ...(opts.knownEnvs ? checkSkipEnvs(program, opts.knownEnvs) : []),
     ...checkConcurrentTables(program),
+    ...checkTogether(program),
+    ...checkFileValues(program),
     ...checkActionDecls(program, opts),
     ...elementDiags,
     ...checkUnknownVariables(program),
@@ -1303,6 +1305,8 @@ function checkService(service: string | null, span: Span, knownServices: readonl
  */
 export function checkDataTables(program: Program): Diagnostic[] {
   const diags: Diagnostic[] = [];
+  // `G3` (`D1382`): a row's name may read what `before file` made, as its body may.
+  const shared = fileValueNames(program);
   for (const test of program.tests) {
     checkDataTableExtension(test.table, diags);
     if (!test.table || test.table.type !== 'InlineDataTable') continue;
@@ -1310,7 +1314,7 @@ export function checkDataTables(program: Program): Diagnostic[] {
     for (const part of test.name.parts) {
       if (part.kind !== 'interp' || part.ref.length === 0) continue;
       const first = part.ref[0]!;
-      if (first.kind !== 'prop' || columns.includes(first.name)) continue;
+      if (first.kind !== 'prop' || columns.includes(first.name) || shared.has(first.name)) continue;
       const hint = suggest(first.name, columns);
       diags.push({
         code: Codes.UNKNOWN_TABLE_COLUMN,
@@ -2942,10 +2946,11 @@ function refLabel(ref: readonly PathSegment[]): string {
  *
  * Scope model (mirrors the interpreter, `runtime/src/interpreter.ts`):
  *  - `before file` hooks share one scope in declaration order, and `after file` hooks share a
- *    second — mirroring `runFileHooks`, which threads one scope through every hook of one label
- *    and is called twice with nothing carried between the two. A `let` in the first `before file`
- *    is visible to the second; one bound in `before file` is *not* visible in `after file`
- *    (`A4-05`, D139).
+ *    second — mirroring `runFileHooks`, which threads one scope through every hook of one label.
+ *    A `let` in the first `before file` is visible to the second (`A4-05`, D139). Since `G3`
+ *    (`D1382`) what `before file` binds is also readable, read-only, by every test, each-scope
+ *    hook, row and `after file` — `after file` still sees nothing a test bound, and rebinding a
+ *    shared name is `TF091`.
  *  - `before`(each)/`after`(each) hooks share one scope with every test in the file; a `let` in
  *    `before` carries into that test's body and its `after` (P#10/19) — so, conservatively, every
  *    `before`(each) hook is checked (and its bindings accumulated) before each test, and every
@@ -2974,8 +2979,12 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
   // is unresolvable at run time, and the over-strict version catches it today by accident. Two
   // accumulating sets keep that true positive and drop the false one. The each-scope path below
   // was already right, and is the pattern here rather than the exception.
+  // `G3` (`D1382`): what `before file` binds is then readable, read-only, by everything after it
+  // in the file — every test, each-scope hook, row and `after file` — so its names seed every
+  // later scope below. `after file` still cannot read a test's own bindings.
+  const fileValues = new Set<string>();
   for (const when of ['before', 'after'] as const) {
-    const bound = new Set<string>();
+    const bound = when === 'before' ? fileValues : new Set<string>(fileValues);
     for (const hook of program.hooks) {
       if (hook.scope === 'file' && hook.when === when) checkStepSequence(hook.body, bound, diags);
     }
@@ -2996,10 +3005,10 @@ export function checkUnknownVariables(program: Program): Diagnostic[] {
     // M29 rather than threading hook scope through a second execution model; carried over
     // unchanged by M50's collapse).
     if (test.workload) {
-      checkStepSequence(test.body, new Set<string>(), diags);
+      checkStepSequence(test.body, new Set<string>(fileValues), diags);
       continue;
     }
-    const bound = new Set<string>();
+    const bound = new Set<string>(fileValues);
     if (test.table) for (const col of test.table.columns) bound.add(col);
     for (const hook of beforeEachHooks) checkStepSequence(hook.body, bound, diags);
     checkStepSequence(test.body, bound, diags);
@@ -3205,6 +3214,9 @@ function checkStepSequence(steps: readonly Step[], bound: Set<string>, diags: Di
         break;
       case 'PauseStmt':
         // `minMs`/`maxMs` are plain numbers (parser-level, ast.ts) — no `{var}` interpolation to check.
+        break;
+      case 'TogetherStmt':
+        // A bare barrier (`G1`) — nothing to resolve; where it may stand is `checkTogether`'s.
         break;
     }
     // Drop only `TF030` and only from here on. Filtering after the step, rather than gating each
@@ -4487,6 +4499,93 @@ export function checkConcurrentTables(program: Program): Diagnostic[] {
       span: t.span,
       hint: 'add the rows that should overlap — a race needs at least two — or drop `concurrently`',
     });
+  }
+  return diags;
+}
+
+/** Every step under `steps`, nested block bodies included, with whether it sits at the top level. */
+function* allSteps(steps: readonly Step[], top = true): Generator<{ step: Step; top: boolean }> {
+  for (const step of steps) {
+    yield { step, top };
+    const body = (step as { body?: unknown }).body;
+    if (Array.isArray(body)) yield* allSteps(body as readonly Step[], false);
+  }
+}
+
+/** `TF092` (`G1`, `D1381`) — `together` only at the top level of a `with each concurrently` test.
+ *  Anywhere else there are no rows to meet (a plain test, a hook, an action), or some rows could
+ *  pass the barrier while others never reach it (inside a block). */
+export function checkTogether(program: Program): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const refuse = (span: Span, message: string, hint: string): void => {
+    diags.push({ code: Codes.TOGETHER_OUT_OF_PLACE, severity: 'error', message, span, hint });
+  };
+  for (const test of program.tests) {
+    const concurrent = test.table?.concurrently === true;
+    for (const { step, top } of allSteps(test.body)) {
+      if (step.type !== 'TogetherStmt') continue;
+      if (!concurrent) {
+        refuse(step.span, `\`together\` in "${test.name.value}", whose rows do not run at once`, 'the barrier is where the rows of a `with each concurrently` test meet — add `concurrently` to the table, or drop `together`');
+      } else if (!top) {
+        refuse(step.span, '`together` inside a block, where some rows could pass it and others never reach it', 'write `together` at the top level of the test body, just before the step the rows should fire at once');
+      }
+    }
+  }
+  for (const hook of program.hooks) {
+    for (const { step } of allSteps(hook.body)) {
+      if (step.type === 'TogetherStmt') refuse(step.span, '`together` in a hook, which runs outside the rows', 'move it into the `with each concurrently` test body, just before the step the rows should fire at once');
+    }
+  }
+  for (const action of program.actions) {
+    for (const { step } of allSteps(action.body)) {
+      if (step.type === 'TogetherStmt') refuse(step.span, `\`together\` in action "${action.name}", where a caller's rows cannot see it`, 'write `together` in the calling test, just before the call the rows should make at once');
+    }
+  }
+  return diags;
+}
+
+/** The names `before file` binds (`G3`, `D1382`), which every test, each-scope hook, row and
+ *  `after file` in the file may read. */
+export function fileValueNames(program: Program): Set<string> {
+  const names = new Set<string>();
+  for (const hook of program.hooks) {
+    if (hook.scope !== 'file' || hook.when !== 'before') continue;
+    for (const { step } of allSteps(hook.body)) {
+      if (step.type === 'LetStmt' || step.type === 'CaptureStmt') names.add(step.name);
+    }
+  }
+  return names;
+}
+
+/** `TF091` (`G3`, `D1382`) — a test, an each-scope hook or `after file` rebinding a name
+ *  `before file` made, or a table column spelling one. */
+export function checkFileValues(program: Program): Diagnostic[] {
+  const shared = fileValueNames(program);
+  if (shared.size === 0) return [];
+  const diags: Diagnostic[] = [];
+  const refuse = (name: string, span: Span, where: string): void => {
+    diags.push({
+      code: Codes.FILE_VALUE_REBOUND,
+      severity: 'error',
+      message: `\`${name}\` is made once in \`before file\` and shared read-only; ${where} binds it again`,
+      span,
+      hint: `read \`{${name}}\` as it is, or bind the new value under another name`,
+    });
+  };
+  const scan = (steps: readonly Step[], where: string): void => {
+    for (const { step } of allSteps(steps)) {
+      if ((step.type === 'LetStmt' || step.type === 'CaptureStmt') && shared.has(step.name)) refuse(step.name, step.span, where);
+    }
+  };
+  for (const test of program.tests) {
+    scan(test.body, `test "${test.name.value}"`);
+    if (test.table?.type === 'InlineDataTable') {
+      for (const col of test.table.columns) if (shared.has(col)) refuse(col, test.table.span, `the table of "${test.name.value}"`);
+    }
+  }
+  for (const hook of program.hooks) {
+    if (hook.scope === 'file' && hook.when === 'before') continue;
+    scan(hook.body, hook.scope === 'file' ? '`after file`' : `a \`${hook.when}\` hook`);
   }
   return diags;
 }

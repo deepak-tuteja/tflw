@@ -257,6 +257,7 @@ const STEP_FORM: Readonly<Record<Step['type'], readonly [form: string, lenses: r
   GiveStmt: null, // an action's return; ends a step sequence, and a test is not an action
   CallStmt: ['  call an action()', []],
   PauseStmt: ['  pause 500ms', []],
+  TogetherStmt: ['  together', []],
   MalformedStep: null, // the parser's recovery node — the absence of a construct
 };
 

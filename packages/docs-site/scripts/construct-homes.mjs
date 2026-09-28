@@ -70,6 +70,8 @@ export const CONSTRUCT_HOMES = new Map(Object.entries({
   'step:capture': ['variables'],
   'step:log': ['debugging'],
   'step:give': ['actions'], //                   an action's return value; meaningless outside one
+  'step:together': ['data-and-hooks'], //        `G1` (`D1381`) — the rows of a concurrent table meet
+  //                                             there, so it is taught beside `with each concurrently`
   'step:hold': ['load-testing'],
   'step:threshold': ['load-results'], //         the chapter is literally *Thresholds, results &
   //                                             validation*; a threshold is its whole subject

@@ -130,12 +130,13 @@ test "exactly one reservation won"
 Each row is its own case in the report, and a failing row stops nothing. See [rows at
 once](/guide/data-and-hooks#concurrently).
 
-This works when each row's racing request is the whole row. A row that first needs its own setup (a
-shopper to register, a cart to fill) runs that setup inside the race, so the requests that matter no
-longer land together. And a value made once before the race, such as the product every row buys,
-cannot be handed to the rows: `before file` runs in its own scope. The project tflw is tested
-against still proves its races with a helper for both reasons, so no file there keeps this section
-true yet.
+A row that first needs its own setup (a shopper to register, a cart to fill) does it before
+[`together`](/guide/data-and-hooks#together), where the rows wait for one another, so the requests
+that matter still leave at once. A value made once before the race — the product every row buys, the
+coupon every row redeems — is made in `before file`, which shares it read-only with every row and
+with the test that judges the race afterwards. Kept true by `tests/api/orders/coupons.tflw`, whose
+oversell and single-use-coupon races run this way against the project's real stock and coupon
+tables.
 
 ## Signed in on both sides
 

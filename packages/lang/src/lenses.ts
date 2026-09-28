@@ -91,6 +91,8 @@ export const STEP_LENS: Readonly<Record<Step['type'], StepLens | null>> = {
   GiveStmt: null,
   CallStmt: null,
   PauseStmt: null,
+  // `G1`: a barrier between a test's own rows says nothing about what the test exercises.
+  TogetherStmt: null,
   MalformedStep: null,
 };
 

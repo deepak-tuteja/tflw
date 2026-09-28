@@ -339,11 +339,17 @@ test('checkUnknownVariables: one test\'s `let` is never visible in a different t
   assert.match(diags[0]!.message, /unknown variable "orderId"/);
 });
 
-test('checkUnknownVariables: a `before file`/`after file` hook has its own isolated scope, shared with no test', () => {
+test('checkUnknownVariables: what `before file` binds is read by every test in the file (G3, D1382)', () => {
+  // Was the opposite assertion until `G3`: a file hook's `let` could not reach a test, so a value
+  // made once before a race could not be named by the rows racing over it.
   const { program } = parseSource(`before file\n  let token = "abc"\n  api GET /health\n\ntest "ok"\n  api GET /orders/{token}\n`);
+  assert.deepEqual(checkUnknownVariables(program), []);
+});
+
+test('checkUnknownVariables: a test\'s own binding still does not reach another test (G3 control)', () => {
+  const { program } = parseSource(`before file\n  let token = "abc"\n\ntest "a"\n  let mine = "m"\n\ntest "b"\n  api GET /orders/{mine}/{token}\n`);
   const diags = checkUnknownVariables(program);
-  assert.equal(diags.length, 1, 'a file hook\'s `let` must not leak into a test body');
-  assert.match(diags[0]!.message, /unknown variable "token"/);
+  assert.deepEqual(diags.map((d) => d.message), ['unknown variable "mine"']);
 });
 
 test('checkProgram: diagnostics come back in source order, not grouped by pass (A4-14)', () => {
@@ -379,17 +385,16 @@ test('checkUnknownVariables: a second `before file` sees the first\'s bindings (
   assert.deepEqual(checkUnknownVariables(program), []);
 });
 
-test('checkUnknownVariables: `after file` still cannot see a `before file` binding (A4-05)', () => {
-  // The true positive the over-strict version caught by accident, kept deliberately. `runFileHooks`
-  // is called twice with a fresh `scope` each time, so this really is unresolvable.
-  // Control: use one shared set for all file hooks — the natural over-correction — and this
-  // silently returns [], which is the false negative D139 exists to refuse.
+test('checkUnknownVariables: `after file` reads a `before file` binding, and not an `after file`-only one before it is bound (A4-05, G3)', () => {
+  // `A4-05` kept `after file` blind to `before file`; `G3` (`D1382`) reverses that on purpose —
+  // cleanup of a shared fixture needs the fixture's id — while `after file`'s own bindings stay its
+  // own. Control for the direction that must still fail: an `after file` reading a name only a
+  // test bound.
   const { program } = parseSource(
-    `before file\n  let token = "abc"\n  api GET /health\n\nafter file\n  api GET /orders/{token}\n\ntest "ok"\n  api GET /health\n`,
+    `before file\n  let token = "abc"\n  api GET /health\n\nafter file\n  api GET /orders/{token}/{mine}\n\ntest "ok"\n  let mine = "m"\n  api GET /health\n`,
   );
   const diags = checkUnknownVariables(program);
-  assert.equal(diags.length, 1);
-  assert.match(diags[0]!.message, /unknown variable "token"/);
+  assert.deepEqual(diags.map((d) => d.message), ['unknown variable "mine"']);
 });
 
 test('checkUnknownVariables: a second `after file` sees the first\'s bindings too (A4-05)', () => {

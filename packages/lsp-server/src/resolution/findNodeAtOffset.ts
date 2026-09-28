@@ -139,6 +139,7 @@ function children(node: Node): readonly Node[] {
     case 'PerVuIterationsWorkload':
     case 'ThresholdDecl':
     case 'PauseStmt':
+    case 'TogetherStmt':
     case 'Stage':
       // `users`/`rps`/`overMs`/`forMs` (workload), `iterations`/`vus` (iteration-count workload),
       // `metric`/`op`/`value` (threshold), `minMs`/`maxMs` (pause), `mode`/`target`/`durationMs`

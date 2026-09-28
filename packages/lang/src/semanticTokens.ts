@@ -111,6 +111,9 @@ const KEYWORDS = new Set([
   // `M247` `D` (`D1356`) — the `element` declaration keyword, and `E` (`D1359`) the `with each`
   // modifier, both in the milestone that ships them.
   'element', 'concurrently',
+  // `G1` (`D1381`) — the barrier a concurrent table's rows meet at. Passes D427a's test: nobody
+  // names a value `together`.
+  'together',
   'authorized', 'target', 'reason', 'probe', 'mutating', 'oversized', 'traversal', 'ciphers', 'privileged',
   // M142 (`M136b-01`). `honoring` is the one of that row's four words that passes D427a's test:
   // `retry honoring "Retry-After" up to 3` is its only construction and nobody names a variable

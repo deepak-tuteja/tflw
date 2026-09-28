@@ -185,8 +185,9 @@ function generatorDetail(specId: string): string | undefined {
  *    in scope at this line, and the checker would say so (`TF030`).
  *  - A `before each` hook binds into every test body (`symbols.ts` walks it under the test's own
  *    scope), so its names are added when the cursor is in a test — without the above-cursor rule,
- *    since such a hook runs first whatever order it appears in the file. `before file` is *not*
- *    included: its scope does not reach a test body at run time.
+ *    since such a hook runs first whatever order it appears in the file. Since `G3` (`D1382`)
+ *    `before file`'s names are added the same way anywhere but inside `before file` itself and an
+ *    action: what it binds is shared, read-only, with every test, each-scope hook and `after file`.
  */
 export function variablesInScopeAt(program: Program, symbols: SymbolTable, offset: number): readonly string[] {
   const contains = (span: Span, at: number): boolean => span.start.offset <= at && at <= span.end.offset;
@@ -198,11 +199,15 @@ export function variablesInScopeAt(program: Program, symbols: SymbolTable, offse
   if (!enclosing) return [];
 
   const beforeEach = enclosingTest ? program.hooks.filter((h) => h.scope === 'each' && h.when === 'before') : [];
+  const inAction = !enclosingTest && program.actions.some((a) => contains(a.span, offset));
+  const beforeFile = program.hooks.filter((h) => h.scope === 'file' && h.when === 'before');
+  const sharesFile = !inAction && !beforeFile.some((h) => contains(h.span, offset));
   const names = new Set<string>();
   for (const def of symbols.defs) {
     if (def.kind !== 'variable' && def.kind !== 'param') continue;
     if (contains(enclosing, def.span.start.offset) && def.span.start.offset < offset) names.add(def.name);
     else if (beforeEach.some((h) => contains(h.span, def.span.start.offset))) names.add(def.name);
+    else if (sharesFile && beforeFile.some((h) => contains(h.span, def.span.start.offset))) names.add(def.name);
   }
   return [...names].sort();
 }

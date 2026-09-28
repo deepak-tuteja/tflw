@@ -488,6 +488,16 @@ export interface PauseStmt extends Node {
   readonly maxMs: number | null;
 }
 
+/** `together` — the rows of a `with each concurrently` test wait here for one another, then go on
+ * at once (`G1`, `D1381`). Each row does its own setup first (its own shopper, its own cart), so
+ * without a barrier the racing request leaves each row at a different moment and a server that is
+ * not atomic usually passes. A row that ends before reaching the barrier (failed, or skipped past
+ * it) no longer holds the others. The checker allows it only at the top level of a test whose
+ * table is `concurrently` (`TF092`); several may appear, each its own meeting point. */
+export interface TogetherStmt extends Node {
+  readonly type: 'TogetherStmt';
+}
+
 /**
  * A step the parser identified and then could not finish — the `api` line whose body would not
  * parse, the `capture` with no name after `as` (`M147c`, `M140-01`).
@@ -557,6 +567,7 @@ export type Step =
   | ScreenshotStmt
   | StubStmt
   | PauseStmt
+  | TogetherStmt
   | MalformedStep;
 
 /** `give <expr>` — an action's return value; ends its step sequence (P#17). */

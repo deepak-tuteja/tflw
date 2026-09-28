@@ -102,6 +102,7 @@ import type {
   OpenStmt,
   PathExpr,
   PauseStmt,
+  TogetherStmt,
   PathSegment,
   PressStmt,
   Program,
@@ -258,6 +259,8 @@ export const STATEMENT_KEYWORDS = [
   'screenshot',
   'stub',
   'pause',
+  // `G1` (`D1381`): the barrier a `with each concurrently` test's rows meet at.
+  'together',
   // FS-05: `think` was renamed to `pause`. It stays a statement keyword purely so the migration
   // diagnostic below can fire — dropping it outright would surface as `TF011: unknown statement`,
   // whose did-you-mean is an edit-distance search that will never reach `pause` from `think`.
@@ -1574,6 +1577,16 @@ class Parser {
     }
     this.endLine();
     const stmt: PauseStmt = { type: 'PauseStmt', minMs, maxMs, span: this.spanFrom(start) };
+    return stmt;
+  }
+
+  /** `together` (`G1`, `D1381`) — a bare word on its own line. Legal anywhere a step is at the
+   * parser level; where it means something is the checker's to say (`TF092`), the `pause` split. */
+  private parseTogether(): Step | null {
+    const start = this.peek().span.start;
+    this.advance(); // `together`
+    this.endLine();
+    const stmt: TogetherStmt = { type: 'TogetherStmt', span: this.spanFrom(start) };
     return stmt;
   }
 
@@ -3666,6 +3679,8 @@ class Parser {
           return this.parseStubStep();
         case 'pause':
           return this.parsePause();
+        case 'together':
+          return this.parseTogether();
         case 'think':
           this.refuse('think', tok.span);
           return null;

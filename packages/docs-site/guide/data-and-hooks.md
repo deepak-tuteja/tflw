@@ -43,23 +43,32 @@ one way and only one of them can hand a value to a test.
 body, and read again in `after` — one scope, three places, which is the whole reason the pattern
 above needs no plumbing.
 
-**File-scope hooks have a scope of their own**, isolated from every test in the file. A `let` bound
-in `before file` is not visible to any test:
+**File-scope hooks share what they make, read-only.** A `let` or a `capture` in `before file` is
+readable by every test in the file, by every row of a table, by the each-scope hooks and by
+`after file` — made once, before anything else runs:
 
-```text
+```tflw
 before file
-  let fixtureId = create widget(unique("Fixture"), 1.00)
+  api POST /widgets body { name: unique("Fixture"), price: 1.00 }
+  expect status equals 201
+  capture body.id as fixtureId
 
 test "reads the shared fixture"
-  api GET /widgets/{fixtureId}    # TF030 — unknown variable "fixtureId"
+  api GET /widgets/{fixtureId}
+  expect status equals 200
+
+after file
+  api DELETE /widgets/{fixtureId}
 ```
 
-That is a checker error rather than a runtime surprise: the squiggle is on the line as you type it.
+Read-only means what it says: a test that binds `fixtureId` again — a `let`, a `capture`, a table
+column of that name — is `TF091`, because the name would then mean two things depending on where it
+was read. Each test starts from its own copy of the shared values, so nothing a test binds reaches
+another test.
 
-So `before file` is for **side effects** — seeding a shared fixture, a warm-up call, a health probe
-— and not for values a test needs to read. When a test genuinely needs one, the two ways across are
-a [`session`](/guide/sessions) block or a shared [`action`](/guide/actions) that the test calls
-itself.
+A shared value is the right tool for **one thing many tests look at** — a fixture, a coupon a race is
+run over, the product whose stock it drains. Data a test changes still belongs to that test: each
+test building its own is what keeps the file runnable in any order, and in parallel.
 
 ### Two hooks with the same label
 
@@ -79,9 +88,8 @@ test "the suite is warm"
   expect status equals 200
 ```
 
-The two *labels* do not share with each other. `before file` and `after file` are two separate runs
-of that scope, so a value bound in one is unreadable in the other — the same `session`/`action`
-answer applies.
+`after file` starts from what `before file` made and binds into its own scope, so it can clean up
+the shared fixture by its id, and never sees what a test bound.
 
 ## Data-driven tests
 
@@ -139,6 +147,38 @@ decides. A table of one row marked `concurrently` is `TF090`, because nothing ru
 
 `concurrently` is about a table's rows. `parallel` on a test header runs neighbouring *tests* beside
 each other, and `--parallel N` runs *files*.
+
+### Meeting before the race — `together` {#together}
+
+A row often needs its own setup before the request that races — its own shopper, its own cart. That
+setup takes a different time on every row, so the racing requests would leave one setup apart and a
+server that is not atomic would usually pass. `together` is where the rows wait for one another:
+
+```tflw
+before file
+  api POST /coupons body { code: unique("RACE"), usageLimit: 1 }
+  capture body.code as coupon
+
+with each concurrently
+  | shopper |
+  | "a"     |
+  | "b"     |
+  | "c"     |
+test "{shopper} redeems the last use"
+  api POST /cart/items body { sku: "A-1" }
+  together
+  api POST /cart/checkout body { couponCode: "{coupon}" }
+
+test "the coupon was used once"
+  api GET /coupons/{coupon}
+  expect body.used equals 1
+```
+
+Every row runs up to `together`, waits until each row still running has reached it, then all go on
+at once. A row whose setup fails no longer holds the others, and the step says how many rows went on
+together. The coupon is made once in `before file`, so every row and the test after the race name the
+same one. `together` belongs at the top level of a `with each concurrently` test; anywhere else it
+is `TF092`, because there are no rows to meet.
 
 ## Rows from a file
 

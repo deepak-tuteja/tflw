@@ -171,9 +171,18 @@ export function collectSymbols(program: Program, source: string): SymbolTable {
   const afterEachHooks = program.hooks.filter((h) => h.scope === 'each' && h.when === 'after');
   const fileHooks = program.hooks.filter((h) => h.scope === 'file');
 
-  for (const hook of fileHooks) {
+  // `G3` (`D1382`): `before file` hooks share one scope, and what it binds is read, read-only, by
+  // every test, each-scope hook and `after file` — so a `{coupon}` in a test resolves to the
+  // `before file` line that made it. `after file` starts from a copy and binds into its own.
+  const fileBound = new Map<string, Span>();
+  for (const hook of fileHooks.filter((h) => h.when === 'before')) {
     const scopeId = `hook:${hook.when}:${hook.span.start.offset}`;
-    walkSteps(hook.body, new Map(), scopeId, source, actionDefs, pushDef, refs);
+    walkSteps(hook.body, fileBound, scopeId, source, actionDefs, pushDef, refs);
+  }
+  const afterFileBound = new Map<string, Span>(fileBound);
+  for (const hook of fileHooks.filter((h) => h.when === 'after')) {
+    const scopeId = `hook:${hook.when}:${hook.span.start.offset}`;
+    walkSteps(hook.body, afterFileBound, scopeId, source, actionDefs, pushDef, refs);
   }
 
   for (const test of program.tests) {
@@ -181,7 +190,7 @@ export function collectSymbols(program: Program, source: string): SymbolTable {
     if (test.table && test.table.type === 'FileDataTable') continue;
 
     const scopeId = `test:${test.span.start.offset}`;
-    const bound = new Map<string, Span>();
+    const bound = new Map<string, Span>(fileBound);
 
     if (test.table) {
       const table = test.table;
@@ -440,6 +449,9 @@ function walkSteps(
       // resolve; listed explicitly (not left as a silent switch fallthrough) so a future field
       // addition to `PauseStmt` shows up as a deliberate no-op here, not a gap.
       case 'PauseStmt':
+        break;
+      // `together` (`G1`) names nothing.
+      case 'TogetherStmt':
         break;
     }
   }
