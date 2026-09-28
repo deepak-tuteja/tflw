@@ -292,7 +292,7 @@ export function collectConfigSymbols(config: ConfigFile, source: string): Symbol
     }
   }
   for (const session of config.sessions) {
-    const headerEnd = session.oauth2 ? session.oauth2.span.start : (session.body[0]?.span.start ?? session.span.end);
+    const headerEnd = session.oauth2 ? session.oauth2.span.start : session.oauth2Code ? session.oauth2Code.span.end : (session.body[0]?.span.start ?? session.span.end);
     const [nameSpan] = findIdentifierSpans(source, { start: session.span.start, end: headerEnd }, [session.name]);
     pushDef({ name: session.name, kind: 'session', span: nameSpan ?? session.span, scopeId: 'config' });
 
@@ -306,6 +306,10 @@ export function collectConfigSymbols(config: ConfigFile, source: string): Symbol
       walkValue(session.oauth2.clientId, bound, scopeId, source, new Map(), refs);
       walkValue(session.oauth2.clientSecret, bound, scopeId, source, new Map(), refs);
       if (session.oauth2.scope) walkValue(session.oauth2.scope, bound, scopeId, source, new Map(), refs);
+    }
+    if (session.oauth2Code) {
+      const c = session.oauth2Code;
+      for (const v of [c.authorizeUrl, c.tokenUrl, c.clientId, c.clientSecret, c.redirect, c.scope]) if (v) walkValue(v, bound, scopeId, source, new Map(), refs);
     }
   }
 

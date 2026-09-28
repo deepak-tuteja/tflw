@@ -72,6 +72,10 @@ The first browser step in the report says what the page was given — *browser s
 with a token header, which a browser cannot hold; that page needs its own form login. See [a
 session signs the browser in](/guide/sessions#a-session-signs-the-browser-in).
 
+When the identity provider's only way in is a person signing in on its page, declare the session
+`oauth2 code`: its steps are that sign-in, run in a browser tflw opens, and the token comes back on a
+loopback redirect. See [signing in through a browser](/guide/sessions#oauth2-code).
+
 ## 4. Share what more than one file uses
 
 Three things get written once and imported:

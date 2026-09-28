@@ -598,9 +598,24 @@ export const Codes = {
    */
   TOGETHER_OUT_OF_PLACE: 'TF092',
   /**
+   * `TF093` — **a step in a code-flow session's body that is not a browser step** (`M248`,
+   * `D1354`). The body of `session … oauth2 code` is the sign-in a person would do on the consent
+   * page, run in the browser the flow opened; an `api` step (or any other request) there would go
+   * out without the session it is part of establishing, and the token the flow is for comes from
+   * the exchange, not from anything the body captures. An error.
+   */
+  OAUTH2_CODE_NON_BROWSER_STEP: 'TF093',
+  /**
+   * `TF094` — **a code-flow session whose `redirect` is missing or is not a loopback `http` URL**
+   * (`M248`, `D1354`). The code comes back to a listener tflw binds on this machine, so the redirect
+   * must name this machine (`127.0.0.1`, `localhost`, `[::1]`) over plain `http`; any other host
+   * would send the code somewhere tflw is not listening, which is the one thing PKCE's redirect
+   * rule is there to stop. An error.
+   */
+  OAUTH2_CODE_REDIRECT: 'TF094',
+  /**
    * `TF095` — **a `rows` block under a test with no `with each` table** (`G10`, `D1384`). There is one
    * run and nothing to count across; the judgement belongs in the test body as an ordinary `expect`.
-   * (`TF093`/`TF094` are reserved for `M248`'s code-flow session.)
    */
   ROWS_WITHOUT_TABLE: 'TF095',
   /**

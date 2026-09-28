@@ -160,6 +160,9 @@ const CONFIG_KEYWORDS = new Set([
   // `M241` `E` (`D1325`) — `runs keep N`. Config-only: in a `.tflw` file both are plausible names.
   'runs', 'keep',
   'oauth2', 'token', 'client', 'id', 'secret', 'scope',
+  // `M248` (`D1354`) — `session <name> oauth2 code` and its two new lines, `authorize url` and
+  // `redirect`. Config-only, where none of the three is an ordinary name.
+  'code', 'authorize', 'redirect',
   // `M246` (`D1344`–`D1347`) — the `signer` directive and its scheme words, and a session's `signed`
   // (`signed with`). Config-only, where none of them is an ordinary name.
   'signer', 'hmac', 'sigv4', 'sha1', 'sha256', 'sha512', 'signs', 'signed',

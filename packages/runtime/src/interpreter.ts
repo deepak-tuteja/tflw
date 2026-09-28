@@ -8,7 +8,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, posix, resolve as resolvePath } from 'node:path';
-import { Codes, elementRefs, elementsOf, inlineElements, isAbsoluteUrl, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr, type Locator } from '@tflw/lang';
+import { Codes, elementRefs, elementsOf, inlineElements, isAbsoluteUrl, loopbackRedirectRefusal, parseSource, quantifiable, renderDiagnostics, suggest, type ActionDecl, type CallExpr, type Locator } from '@tflw/lang';
 import type {
   FindingSeverity,
   Value,
@@ -27,6 +27,7 @@ import type {
   Matcher as AstMatcher,
   NetworkRequestRef,
   Oauth2SessionConfig,
+  Oauth2CodeConfig,
   PathSegment,
   Program,
   RampRpsWorkload,
@@ -44,6 +45,7 @@ import type {
   WaitUntilUiStmt,
   Workload,
 } from '@tflw/lang';
+import { authorizeUrlFor, newState, pkcePair, startRedirectListener, type RedirectListener } from './oauth2Code.js';
 import { evalValue, interpolatePath, navigate, resolveRef, RuntimeError, stringify, type BrowserAttemptContext, type EvalCtx } from './eval.js';
 import { evalMatcher, evalRequestMatcher, repr, type MatchOutcome } from './matcher.js';
 import { formatDurationMs, roundDurationMs } from './duration.js';
@@ -2468,6 +2470,10 @@ export interface SessionOutcome {
    * enterprise arc) — set from an `oauth2` session's `expires_in`, undefined for a hand-written
    * session (which has no built-in expiry concept; it still gets *reactive* refresh-on-401). */
   readonly expiresAt?: number;
+  /** `M248` (`D1354`) — the `refresh_token` a code-flow session's exchange returned, if any. When the
+   * outcome goes stale (`expiresAt`), the next establishment spends it at the token endpoint before
+   * falling back to a whole browser sign-in. Registered with the redactor, like the access token. */
+  readonly refreshToken?: string;
   /** M128b/D287 — what the security pack found in this session's own login responses, scanned once
    * here rather than re-derived at every assertion. Deduplicated by rule id + detail: a session
    * whose body makes three requests to the same host would otherwise report one `hsts-missing` per
@@ -2518,6 +2524,8 @@ export class SessionCache {
    */
   async ensure(name: string, decl: SessionDecl, config: ResolvedConfig, tc: TestCtx, isOwner: boolean): Promise<SessionOutcome> {
     let p = this.promises.get(name);
+    // `M248` — the expired outcome, for a code-flow session's refresh grant.
+    let stale: SessionOutcome | undefined;
     if (p) {
       // A TTL'd outcome (from an `oauth2` session's `expires_in`, decision 3c) past its expiry is
       // treated exactly like a cache miss — re-run it, same as decision 54's failed-establishment
@@ -2527,10 +2535,11 @@ export class SessionCache {
       if (cached.ok && cached.expiresAt !== undefined && Date.now() >= cached.expiresAt && this.promises.get(name) === p) {
         this.promises.delete(name);
         p = undefined;
+        stale = cached;
       }
     }
     if (!p) {
-      p = runSession(decl, config, tc);
+      p = runSession(decl, config, tc, stale);
       this.promises.set(name, p);
     }
     const outcome = await p;
@@ -2590,7 +2599,7 @@ export class SessionCache {
  * `--workers N>1`) so the values a session's steps generate are deterministic regardless of that
  * race (decision 53); `unique(...)`'s run-wide counter stays as-is — it was never seed-reproducible
  * by design (§7.4). */
-async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx): Promise<SessionOutcome> {
+async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx, stale?: SessionOutcome): Promise<SessionOutcome> {
   // M111 (`FU-06`) — derive the session's context *before* the split, not inside one arm of it.
   // The `oauth2` arm used to be handed the caller's raw `tc`, so M97c-03's rebase never reached it
   // at all: an `oauth2` session's step was rendered from the caller's text, and its `baseDir` and
@@ -2599,6 +2608,7 @@ async function runSession(decl: SessionDecl, config: ResolvedConfig, tc: TestCtx
   // the rebase exists. Applying it once, above the branch, is what makes that structural.
   const sessionTc = sessionCtx(decl.name, tc);
   if (decl.oauth2) return runOauth2Session(decl.name, decl.oauth2, config, sessionTc);
+  if (decl.oauth2Code) return runOauth2CodeSession(decl, decl.oauth2Code, config, sessionTc, stale);
   const headerSink: Record<string, string> = {};
   const csrfSink: Record<string, string> = {};
   const scope = new Map<string, unknown>();
@@ -2741,6 +2751,189 @@ async function runOauth2Session(name: string, oauth2: Oauth2SessionConfig, confi
     securityFindings: scanSessionObservations(name, [toObservation(request, response)]),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
   };
+}
+
+/** The token endpoint's answer, read the way both oauth2 session kinds read it. */
+function readTokenResponse(response: ResponseTrace): { accessToken?: string; refreshToken?: string; expiresAt?: number } {
+  const json = response.json as Record<string, unknown> | undefined;
+  const accessToken = json && typeof json.access_token === 'string' ? json.access_token : undefined;
+  const refreshToken = json && typeof json.refresh_token === 'string' ? json.refresh_token : undefined;
+  const expiresIn = json && typeof json.expires_in === 'number' ? json.expires_in : undefined;
+  // The same early margin `runOauth2Session` takes, for the same reason.
+  const expiresAt = expiresIn !== undefined ? Date.now() + Math.max(0, expiresIn * 1000 - Math.min(2000, expiresIn * 500)) : undefined;
+  return { ...(accessToken ? { accessToken } : {}), ...(refreshToken ? { refreshToken } : {}), ...(expiresAt !== undefined ? { expiresAt } : {}) };
+}
+
+/**
+ * `session <name> oauth2 code` (`M248`, `D1354`) — the authorization-code grant with PKCE, signed in
+ * through a browser. In order:
+ *
+ *  1. With a stale outcome that carries a `refresh_token`, spend it first (`grant_type=refresh_token`);
+ *     a refusal falls through to a whole sign-in rather than failing the session, because an expired
+ *     refresh token is the ordinary way a long run outlives one.
+ *  2. Mint the verifier, its `S256` challenge and a `state`; bind the loopback listener on the
+ *     declared redirect (port `0` → the OS's); open a fresh browser context on the authorize URL.
+ *  3. Run the body — browser steps only (`TF093`) — in that context: the sign-in and the consent.
+ *  4. Wait for the redirect. A `state` that is not the one sent is refused, and so is an `error=`.
+ *  5. Exchange the code with the verifier at `token url`; `access_token` becomes the session's
+ *     `Authorization: Bearer`, `expires_in` its TTL, `refresh_token` step 1's input next time.
+ *
+ * The code, the verifier and both tokens are registered with the run's redactor before anything
+ * that could carry them is recorded, so every report surface masks them (`results.json`,
+ * `report.html`, the live trace). Evidence is the session's steps as for any session: the authorize
+ * `open`, the body's steps, one `redirect` row, and the exchange as an `api` step.
+ */
+async function runOauth2CodeSession(decl: SessionDecl, code: Oauth2CodeConfig, config: ResolvedConfig, tc: TestCtx, stale?: SessionOutcome): Promise<SessionOutcome> {
+  const name = decl.name;
+  const scope = new Map<string, unknown>();
+  const cookieJar = new CookieJar();
+  const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar };
+  const steps: StepResult[] = [];
+  const lineOf = (span: Span): string => (tc.lines[span.start.line - 1] ?? '').trim();
+  const headerSrc = lineOf(code.span);
+  const fail = (error: string): SessionOutcome => ({ securityFindings: [], headers: {}, csrfHeaders: {}, cookieJar, ok: false, error, steps, requestSteps: steps });
+  const resolveUrl = (raw: string): string => (isAbsoluteUrl(raw) ? raw : `${resolveBaseUrl(null, config)}${ensureLeadingSlash(raw)}`);
+
+  let tokenUrl: string, authorizeUrl: string, clientId: string, clientSecret: string | undefined, scopeValue: string | undefined, redirect: string;
+  try {
+    tokenUrl = resolveUrl(String(evalValue(code.tokenUrl, ctx)));
+    authorizeUrl = resolveUrl(String(evalValue(code.authorizeUrl, ctx)));
+    clientId = String(evalValue(code.clientId, ctx));
+    clientSecret = code.clientSecret ? String(evalValue(code.clientSecret, ctx)) : undefined;
+    scopeValue = code.scope ? String(evalValue(code.scope, ctx)) : undefined;
+    redirect = code.redirect ? String(evalValue(code.redirect, ctx)) : '';
+  } catch (err) {
+    return fail(tc.redactor.redact(err instanceof RuntimeError ? err.message : (err as Error).message));
+  }
+  // `TF094` judges a literal redirect before the run; this is the same rule for one that only
+  // resolved now (`env(…)`), so a redirect off this machine is refused on both paths.
+  const refusal = code.redirect ? loopbackRedirectRefusal(redirect) : 'is missing';
+  if (refusal) return fail(`session "${name}": redirect ${redirect ? JSON.stringify(redirect) + ' ' : ''}${refusal} — the code must come back to a loopback listener tflw binds (TF094)`);
+
+  /** POST a form to the token endpoint, recorded as the session's `api` step. */
+  const tokenRequest = async (params: URLSearchParams, what: string): Promise<{ ok: true; response: ResponseTrace } | { ok: false; error: string }> => {
+    const start = performance.now();
+    const headers = { 'content-type': 'application/x-www-form-urlencoded' };
+    const request: RequestTrace = { method: 'POST', url: tokenUrl, headers, body: params.toString() };
+    let response: ResponseTrace;
+    try {
+      checkHostAllowed(tokenUrl, config);
+      response = await sendRequest({ method: 'POST', url: tokenUrl, headers, body: request.body, timeoutMs: config.timeouts.api, followRedirects: true, allowHosts: config.allowHosts });
+    } catch (err) {
+      const message = tc.redactor.redact(err instanceof RuntimeError ? err.message : (err as Error).message);
+      steps.push(mkStep('api', headerSrc, code.span, false, start, message, redactRequest(request, tc.redactor, config)));
+      return { ok: false, error: message };
+    }
+    const read = readTokenResponse(response);
+    if (read.accessToken) tc.redactor.register(`${name}.access_token`, read.accessToken);
+    if (read.refreshToken) tc.redactor.register(`${name}.refresh_token`, read.refreshToken);
+    const ok = response.status >= 200 && response.status < 300 && read.accessToken !== undefined;
+    const detail = ok
+      ? `${what} → ${response.status} (${formatDurationMs(response.durationMs)}ms)`
+      : response.status >= 200 && response.status < 300
+        ? `${what}: the token response has no string \`access_token\` field`
+        : `${what} failed: ${response.status} ${response.statusText}`;
+    steps.push(mkStep('api', headerSrc, code.span, ok, start, detail, redactRequest(request, tc.redactor, config), redactResponse(response, tc.redactor, config)));
+    return ok ? { ok: true, response } : { ok: false, error: detail };
+  };
+  const established = (response: ResponseTrace, observed: readonly Observation[]): SessionOutcome => {
+    const read = readTokenResponse(response);
+    return {
+      headers: { Authorization: `Bearer ${read.accessToken!}` },
+      csrfHeaders: {},
+      cookieJar,
+      ok: true,
+      steps,
+      requestSteps: steps,
+      securityFindings: scanSessionObservations(name, observed),
+      ...(read.expiresAt !== undefined ? { expiresAt: read.expiresAt } : {}),
+      ...(read.refreshToken ? { refreshToken: read.refreshToken } : {}),
+    };
+  };
+  const clientParams = (params: URLSearchParams): URLSearchParams => {
+    params.set('client_id', clientId);
+    if (clientSecret !== undefined) params.set('client_secret', clientSecret);
+    return params;
+  };
+
+  // 1. The refresh grant, when the last sign-in left one.
+  if (stale?.refreshToken) {
+    const params = clientParams(new URLSearchParams({ grant_type: 'refresh_token', refresh_token: stale.refreshToken }));
+    if (scopeValue !== undefined) params.set('scope', scopeValue);
+    const refreshed = await tokenRequest(params, 'oauth2 refresh');
+    if (refreshed.ok) return established(refreshed.response, []);
+    // Refused: sign in again, with the refusal left in the steps as the reason.
+  }
+
+  if (!tc.browserManager) {
+    return fail(`session "${name}" signs in through a browser (\`oauth2 code\`), and this run started none — install one with \`tflw install-browsers\``);
+  }
+
+  // 2. PKCE, state, listener, browser.
+  const { verifier, challenge } = pkcePair();
+  const state = newState();
+  tc.redactor.register(`${name}.code_verifier`, verifier);
+  let listener: RedirectListener;
+  try {
+    listener = await startRedirectListener(redirect);
+  } catch (err) {
+    return fail(`session "${name}": could not listen on ${redirect} for the redirect — ${(err as Error).message}`);
+  }
+  const redirectHost = new URL(listener.redirectUri).hostname;
+  const allowHosts = config.allowHosts ? [...config.allowHosts, redirectHost] : null;
+  const page = new BrowserPageState(capturesBinaryEvidence(config), allowHosts);
+  const authorizeWith = authorizeUrlFor(authorizeUrl, { clientId, redirectUri: listener.redirectUri, challenge, state, ...(scopeValue !== undefined ? { scope: scopeValue } : {}) });
+  try {
+    const openStart = performance.now();
+    try {
+      checkHostAllowed(authorizeWith, config);
+      const pwPage = await page.ensurePage(tc.browserManager);
+      await performOpen(pwPage, authorizeWith, config.timeouts.browser);
+    } catch (err) {
+      const message = tc.redactor.redact(err instanceof RuntimeError ? err.message : (err as Error).message);
+      steps.push(mkStep('open', headerSrc, code.span, false, openStart, `authorize: ${message}`));
+      return fail(message);
+    }
+    steps.push(mkStep('open', headerSrc, code.span, true, openStart, `authorize → ${tc.redactor.redact(authorizeWith)}`));
+
+    // 3. The sign-in.
+    const bodyCtx: EvalCtx = { ...ctx, browser: { manager: tc.browserManager, page, scope: null } };
+    const emptyRegistry: CallRegistry = { actions: new Map(), sources: new Map(), helpers: new Map() };
+    const exec = await execSteps(decl.body, config, bodyCtx, tc, `session ${name}`, emptyRegistry);
+    steps.push(...exec.steps);
+    if (!exec.ok) return fail(exec.error ?? `session "${name}": the sign-in failed`);
+
+    // 4. The redirect.
+    const waitStart = performance.now();
+    const arrival = await listener.arrival(config.timeouts.browser);
+    if (arrival === null) {
+      const message = `session "${name}": the sign-in ended and no redirect reached ${listener.redirectUri} within ${formatDurationMs(config.timeouts.browser)}ms — the consent was not given, or the authorization server redirected somewhere else`;
+      steps.push(mkStep('redirect', headerSrc, code.span, false, waitStart, message));
+      return fail(message);
+    }
+    if (arrival.state !== state) {
+      const message = `session "${name}": the redirect's \`state\` is not the one tflw sent — refused, since a redirect tflw did not ask for is how a code from someone else's sign-in would arrive`;
+      steps.push(mkStep('redirect', headerSrc, code.span, false, waitStart, message));
+      return fail(message);
+    }
+    if (arrival.kind === 'error') {
+      const message = `session "${name}": the authorization server refused — ${arrival.error}${arrival.description ? `: ${arrival.description}` : ''}`;
+      steps.push(mkStep('redirect', headerSrc, code.span, false, waitStart, tc.redactor.redact(message)));
+      return fail(tc.redactor.redact(message));
+    }
+    tc.redactor.register(`${name}.code`, arrival.code);
+    steps.push(mkStep('redirect', headerSrc, code.span, true, waitStart, `redirect → ${new URL(listener.redirectUri).origin} with a code and the state tflw sent`));
+
+    // 5. The exchange.
+    const params = clientParams(new URLSearchParams({ grant_type: 'authorization_code', code: arrival.code, redirect_uri: listener.redirectUri, code_verifier: verifier }));
+    const exchanged = await tokenRequest(params, 'oauth2 code exchange');
+    if (!exchanged.ok) return fail(exchanged.error);
+    return established(exchanged.response, []);
+  } finally {
+    await listener.close();
+    await page.finish(false).catch(() => undefined);
+    await page.close().catch(() => undefined);
+  }
 }
 
 interface SessionRefreshResult {

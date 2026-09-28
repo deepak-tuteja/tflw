@@ -30,6 +30,7 @@ import {
   checkAllowHostsCoversBaseUrls,
   checkConfigDeclaredEnvRefs,
   checkConfigBracedEnvRefs,
+  checkCodeFlowSessions,
   identityCensus,
   suggest,
   detectReuse,
@@ -1292,6 +1293,8 @@ async function loadAndValidate(
     // running that env.
     ...checkConfigDeclaredEnvRefs(parsedConfig.config, resolved.requiredEnv),
     ...checkConfigBracedEnvRefs(parsedConfig.config),
+    // `M248` (`D1354`) — `TF093`/`TF094`, whole file for the reason `checkCodeFlowSessions` gives.
+    ...checkCodeFlowSessions(parsedConfig.config),
     ...(await checkConfigFiles(parsedConfig.config, cwd)),
   ];
   // **Gate on errors, not on "any diagnostic".** This branch used to `return EXIT_USAGE` for

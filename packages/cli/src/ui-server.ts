@@ -505,6 +505,10 @@ export interface ProjectView {
       /** `session <name> oauth2` — the client-credentials sugar. Mutually exclusive with a body,
        *  so `steps` is 0 whenever this is true. */
       readonly oauth2: boolean;
+      /** `session <name> oauth2 code` (`M248`, `D1354`) — signs in through a browser; `steps` is
+       *  then the sign-in's browser steps, and `headers` is empty (the bearer comes from the
+       *  exchange, not from a `header` line). */
+      readonly oauth2Code: boolean;
       /** The header names its body sets — what running `as` this session adds to every request.
        *  Names only: a session header's *value* is where a token lives, and this view is served
        *  to a browser. */
@@ -958,6 +962,7 @@ function sessionViews(config: ConfigFile, resolved: ResolvedConfig): ProjectView
     name: s.name,
     privileged: s.privileged,
     oauth2: s.oauth2 !== null,
+    oauth2Code: s.oauth2Code !== undefined,
     // Names, never values. A session header is where a bearer token lives, and this object is
     // serialised to a browser — `redact` protects a *report*, and there is no redactor on this
     // route. The page has no use for the value either: Auth answers *what does running as this

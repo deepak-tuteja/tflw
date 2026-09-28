@@ -176,6 +176,10 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     verdict: 'n/a',
     reason: '`G10` (`D1384`). Walks `program.tests` for a `rows` block under a `with each` test; a session has no table and no rows, and runs once per run',
   },
+  checkCodeFlowSessions: {
+    verdict: 'n/a',
+    reason: '`M248` (`D1354`). A whole-`ConfigFile` walk called once at `cli.ts`, `checkConfigBracedEnvRefs`\' shape: `TF093`/`TF094` are about a code-flow session\'s own declaration, not about any step list `checkSessionBody` is handed, and neither depends on the env\'s roster — a code-flow session scoped to another env is wrong under every env',
+  },
   checkFileValues: {
     verdict: 'n/a',
     reason: '`G3` (`D1382`). Guards the names a `.tflw` file\'s `before file` shares with its tests; a session is declared in `tflw.config`, which has no `before file`, and its scope never reads a test file\'s values',

@@ -98,7 +98,40 @@ Posts a standard `client_credentials` grant, applies `access_token` as
 TTL from it (with a small safety margin so a request right at the boundary refreshes proactively
 instead of racing a live `401`). `client secret` is redacted in report evidence exactly like any
 other `env(...)`-sourced secret. A session block is either `oauth2` sugar or a hand-written
-sequence of steps, never both.
+sequence of steps, never both — except [`oauth2 code`](#oauth2-code), whose steps are the sign-in.
+
+## `oauth2 code` — signing in through a browser {#oauth2-code}
+
+Some identity providers offer no grant a program can use alone: a person signs in on their page and
+clicks *Allow*. `oauth2 code` does exactly that, in a browser tflw opens, and uses PKCE so the code
+it receives is useless to anyone else:
+
+```tflw-config fragment
+require env SSO_USER, SSO_PW
+
+session sso oauth2 code
+  authorize url "/oauth/authorize"
+  token url "/oauth/token"
+  client id "storefront-cli"
+  redirect "http://127.0.0.1:0/callback"
+  fill field "Email" with env(SSO_USER)
+  fill field "Password" with env(SSO_PW)
+  click button "Allow"
+```
+
+tflw opens the authorize URL with a fresh challenge and `state`, runs the steps under the config lines
+on that page, and listens on the `redirect` for the code (port `0` lets the OS pick one; the bound
+port is what the server is sent). It refuses a redirect whose `state` it did not send, exchanges the
+code with the verifier, and every test `as sso` carries the bearer token. `expires_in` sets the TTL,
+and a `refresh_token` is spent before signing in again.
+
+- The steps are the sign-in only. A step that makes a request of its own (`api`, `wait until api`,
+  `capture`) is `TF093` — the token comes from the exchange, not from anything the body reads.
+- The `redirect` must be this machine over plain `http` (`127.0.0.1`, `localhost`, `[::1]`) —
+  `TF094` otherwise, and when it is missing.
+- The code, the verifier and both tokens appear in the report as `•••(sso.code)`,
+  `•••(sso.code_verifier)`, `•••(sso.access_token)` and `•••(sso.refresh_token)`.
+- `client secret` is optional: a public client, the case PKCE was made for, has none.
 
 ## `privileged` — a principal that is meant to reach other people's data
 

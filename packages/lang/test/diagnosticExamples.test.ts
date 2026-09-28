@@ -49,6 +49,7 @@ import {
   checkAllowHostsCoversBaseUrls,
   checkConfigDeclaredEnvRefs,
   checkConfigBracedEnvRefs,
+  checkCodeFlowSessions,
   renderDiagnosticExample,
   type Diagnostic,
   type DiagnosticProbe,
@@ -68,7 +69,7 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
     // being wrong rather than the row. `TF078` needs nothing and is wired unconditionally, exactly
     // as it is in the CLI.
     const envRefs = probe.needs?.requiredEnv ? checkConfigDeclaredEnvRefs(parsed.config, probe.needs.requiredEnv) : [];
-    return [...parsed.diagnostics, ...allowHosts, ...envRefs, ...checkConfigBracedEnvRefs(parsed.config)];
+    return [...parsed.diagnostics, ...allowHosts, ...envRefs, ...checkConfigBracedEnvRefs(parsed.config), ...checkCodeFlowSessions(parsed.config)];
   }
   const source =
     probe.wrap === 'step'
@@ -131,6 +132,7 @@ const CONFIG_PHASE_RUN_BY_HARNESS = new Set([
   'checkAllowHostsCoversBaseUrls',
   'checkConfigDeclaredEnvRefs',
   'checkConfigBracedEnvRefs',
+  'checkCodeFlowSessions',
 ]);
 
 /** Passes `tflw check` runs over a config that a source-text probe cannot reach, each with why. */
