@@ -304,7 +304,31 @@ export interface RunOutput {
   readonly redactor: Redactor;
 }
 
+/**
+ * `skip "…" on env a, b` resolved against the run's env (`M247` `B`, `D1353`), once, at every entry
+ * point that reads `test.skip` — `runProgram`, `runLoadShard`, and the CLI before it merges shards.
+ * A skip whose envs do not include this one is **removed**, so the test runs exactly as if the
+ * clause had never been written; one whose envs do include it stays and is reported skipped.
+ *
+ * Rewriting the program rather than teaching each reader a second condition is the point: three
+ * sites filter on `test.skip` (the functional batch, the workload filter, the shard merge), and a
+ * condition taught to two of them is a sharded load test counted skipped by the parent while its
+ * shards ran it. Resolved from `tflw.config` alone — never from a response, which keeps the clause
+ * inside the fence (`D1353`). Returns the same object when nothing is conditional.
+ */
+export function resolveSkipEnv(program: Program, envName: string): Program {
+  if (!program.tests.some((t) => t.skipOn !== undefined)) return program;
+  const tests = program.tests.map((t) => {
+    if (t.skip === undefined || t.skipOn === undefined) return t;
+    if (t.skipOn.some((e) => e.name === envName)) return t;
+    const { skip: _skip, skipOn: _skipOn, ...runs } = t;
+    return runs as TestDecl;
+  });
+  return { ...program, tests };
+}
+
 export async function runProgram(program: Program, config: ResolvedConfig, opts: RunOptions): Promise<RunOutput> {
+  program = resolveSkipEnv(program, config.envName);
   // Ref-counted (tls.ts): safe even when several files share this same `insecure` config and run
   // concurrently under `--workers N>1` — only the first acquire sets it, only the last release
   // restores it, so one file finishing early can never silently re-enable verification for another
@@ -480,7 +504,11 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
       const batchScenarioCtx: ScenarioRunCtx = { ...scenarioCtx, runStart: batchRunStart };
       const tasks: Promise<void>[] = batch.map((test) => {
         if (test.skip !== undefined) {
-          const result: TestResult = { kind: 'functional', name: test.name.value, ok: true, durationMs: 0, steps: [], skipped: test.skip.value };
+          // `D1353` — an env skip that survived `resolveSkipEnv` holds in this env, and says so: the
+          // same test runs under every other env, so a reader of one run's report needs the env to
+          // know the skip is not unconditional.
+          const skippedText = test.skipOn ? `${test.skip.value} (on env ${config.envName})` : test.skip.value;
+          const result: TestResult = { kind: 'functional', name: test.name.value, ok: true, durationMs: 0, steps: [], skipped: skippedText, ...(test.skipOn ? { skippedOn: config.envName } : {}) };
           skippedResults.set(test, result);
           emit({ type: 'test:start', name: test.name.value });
           emit({ type: 'test:end', result });
@@ -1970,7 +1998,7 @@ function buildLoadShardResult(accumulators: readonly ScenarioAccumulator[], self
 }
 
 export async function runLoadShard(program: Program, config: ResolvedConfig, opts: LoadOptions & { readonly shard: { readonly index: number; readonly count: number } }): Promise<LoadShardResult> {
-  const { accumulators, selfDiagnosis } = await runLoadCore(program, config, opts);
+  const { accumulators, selfDiagnosis } = await runLoadCore(resolveSkipEnv(program, config.envName), config, opts);
   return buildLoadShardResult(accumulators, selfDiagnosis);
 }
 
@@ -2987,6 +3015,11 @@ async function runTestAttemptBody(
     // must never leak back into the session cache or a concurrently-running sibling test.
     cookieJar.mergeFrom(outcome.cookieJar.clone());
   }
+  // `M247` `A` (`D1352`) — the sessions' merged jar, as it stood before the test's first step, is
+  // what the browser is signed in with. Taken now rather than when the page opens so an API step
+  // the test itself runs first does not change what the page starts with: the seed is the
+  // session's identity, not whatever the test happened to have collected by then.
+  browserPageState?.seedFromSessions(test.sessions, cookieJar.browserCookies());
   const evalCtx: EvalCtx = {
     ...nameCtx,
     sessionHeaders,
@@ -3827,6 +3860,11 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
       // same failure-evidence handling as any other step failure.
       const refusalAfter = ctx.browser?.page.takeHostRefusal();
       if (refusalAfter) throw new AllowHostsError(refusalAfter);
+      // `M247` `A` — the step that created the context says what it was signed in with. Appended
+      // to the step's own detail rather than raised as a new step, so a test's step count (and
+      // every pin that counts them) is the same whether or not it names a session.
+      const seedNote = ctx.browser?.page.takeSeedNote();
+      if (seedNote) result = { ...result, detail: result.detail ? `${result.detail} — ${seedNote}` : seedNote };
       // Best-effort failure evidence (M3c, D12's "failure-first capture") — attached to whichever
       // step just failed, browser or API (a UI test's API step failing still benefits from seeing
       // page state). `currentPageIfAny()` never creates a browser process for an API-only test that
@@ -3858,7 +3896,10 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
       const refusalDuring = err instanceof AllowHostsError ? null : (ctx.browser?.page.takeHostRefusal() ?? null);
       const message = refusalDuring ?? (err instanceof RuntimeError ? err.message : `${(err as Error).message}`);
       const redacted = tc.redactor.redact(message);
-      let failed = mkStep(stepKind(step), src, step.span, false, stepStart, redacted);
+      // A failing first browser step still created the context, and whether it was signed in is
+      // often exactly why it failed — so the seed's sentence rides on the failure too.
+      const seedNoteFailed = ctx.browser?.page.takeSeedNote();
+      let failed = mkStep(stepKind(step), src, step.span, false, stepStart, seedNoteFailed ? `${redacted} — ${seedNoteFailed}` : redacted);
       if (ctx.browser && capturesBinaryEvidence(config)) {
         const screenshot = await captureFailureScreenshot(ctx.browser.page.currentPageIfAny());
         if (screenshot) failed = { ...failed, screenshot };

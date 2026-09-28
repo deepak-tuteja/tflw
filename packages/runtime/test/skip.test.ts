@@ -41,3 +41,40 @@ test('a run with no skip keeps its earlier shape — no `skipped` key at all', a
   assert.ok(!('skipped' in report.tests[0]!));
   await server.close();
 });
+
+// `M247` `B` (`D1353`) — `skip … on env`: the same file, run under two envs, skips in one and runs
+// in the other. The env is the only thing that differs between the two runs.
+test('`skip "…" on env ci` holds under `ci` and runs under `local`, and the skip names its env', async () => {
+  let hits = 0;
+  const server = await startFixtureServer({ '/': (_req, res) => { hits += 1; json(res, 200, {}); } });
+  const src = 'test "refunds settle" skip "no payments sandbox in CI" on env ci, staging\n  api GET /\n  expect status equals 200\n';
+  const program = parseSource(src).program;
+
+  const underCi = await runProgram(program, { ...testConfig(server.baseUrl), envName: 'ci' }, { source: src });
+  assert.equal(hits, 0, 'nothing is sent where the skip holds');
+  const skipped = underCi.report.tests[0]!;
+  assert.ok(skipped.kind === 'functional');
+  assert.equal(skipped.skipped, 'no payments sandbox in CI (on env ci)');
+  assert.equal(skipped.skippedOn, 'ci');
+  assert.equal(underCi.report.skipped, 1);
+
+  const underLocal = await runProgram(program, { ...testConfig(server.baseUrl), envName: 'local' }, { source: src });
+  assert.equal(hits, 1, 'the same test runs where the skip does not hold');
+  const ran = underLocal.report.tests[0]!;
+  assert.ok(ran.kind === 'functional');
+  assert.equal(ran.ok, true);
+  assert.ok(!('skipped' in ran) && !('skippedOn' in ran), 'a test the env skip did not hold for is an ordinary test');
+  assert.ok(!('skipped' in underLocal.report));
+  await server.close();
+});
+
+test('an unconditional skip carries no env, whatever env the run is under', async () => {
+  const server = await startFixtureServer({ '/': (_req, res) => json(res, 200, {}) });
+  const src = 'test "t" skip "down"\n  api GET /\n';
+  const { report } = await runProgram(parseSource(src).program, { ...testConfig(server.baseUrl), envName: 'ci' }, { source: src });
+  const t = report.tests[0]!;
+  assert.ok(t.kind === 'functional');
+  assert.equal(t.skipped, 'down');
+  assert.ok(!('skippedOn' in t));
+  await server.close();
+});

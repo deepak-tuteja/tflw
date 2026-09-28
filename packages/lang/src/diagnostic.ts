@@ -557,6 +557,14 @@ export const Codes = {
    * machine unsigned or signed over the wrong text, and the server's 401 would not say which.
    */
   SIGNER_DECL: 'TF087',
+  /**
+   * `TF088` — **a `skip … on env` naming an env the config does not declare** (`M247` `B`,
+   * `D1353`). A misspelt env would make the skip hold nowhere, so the test runs in the very env it
+   * was written to stay out of — the one outcome the author wrote the clause to prevent, and a run
+   * would not say why. Checked against every env block in `tflw.config`, not only the active one:
+   * naming another env is the clause's whole purpose.
+   */
+  SKIP_ENV_UNKNOWN: 'TF088',
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -32,6 +32,7 @@ import { RuntimeError, evalValue, type EvalCtx } from './eval.js';
 import { allowHostsRefusal, isHostAllowed } from './allowHosts.js';
 import { inferContentType } from './mime.js';
 import { computePlatformKey } from './snapshot.js';
+import type { BrowserSeedCookie } from './cookieJar.js';
 import type { ScreenshotAsset, TraceAsset } from './types.js';
 
 type PWModule = typeof import('playwright');
@@ -198,6 +199,17 @@ export type DialogKind = 'alert' | 'confirm' | 'prompt' | 'beforeunload';
  * `accept dialog with "…"`'s prompt answer (`D800`) and is `undefined` when the step omitted it,
  * which is not the same as the empty string: omitted means *accept with Playwright's default*,
  * and `with ""` means *answer this prompt with nothing*. */
+/** The host a seeded cookie lands on, for the trace line: a domain cookie's `.domain`, or a host-only
+ * cookie's origin host. Names only — a cookie's value never reaches the report. */
+function seedHost(cookie: BrowserSeedCookie): string {
+  if (cookie.domain) return cookie.domain;
+  try {
+    return new URL(cookie.url ?? '').host;
+  } catch {
+    return cookie.url ?? '?';
+  }
+}
+
 export interface DialogArming {
   readonly which: 'accept' | 'dismiss';
   /** `D800` — the `with` answer, already evaluated at arming time. `undefined` on a bare `accept
@@ -233,6 +245,13 @@ export class BrowserPageState {
   /** The first request this attempt refused, kept until a step boundary reads it (see
    * `takeHostRefusal`). */
   private hostRefusal: string | null = null;
+  /** `M247` `A` (`D1352`) — what this attempt's sessions hand the browser: the merged jar's cookies,
+   * taken once when the test's sessions were established and applied when the context is created.
+   * `null` for a test with no `as` clause, which keeps a session-less test's browser exactly as it
+   * was before the bridge. */
+  private sessionSeed: { readonly sessions: readonly string[]; readonly cookies: readonly BrowserSeedCookie[] } | null = null;
+  /** The sentence the first browser step's trace line carries about the seed, read once. */
+  private seedNote: string | null = null;
 
   constructor(captureBinaryEvidence = true, allowHosts: readonly string[] | null = null) {
     this.captureBinaryEvidence = captureBinaryEvidence;
@@ -348,6 +367,28 @@ export class BrowserPageState {
     });
   }
 
+  /** `M247` `A` (`D1352`) — D10 amended: the jar → context direction is bridged. Called once per
+   * attempt, before any step, with the sessions the test opted into and their merged jar. Nothing
+   * happens until a browser step creates the context, so an API-only test that names a session
+   * still never starts a browser. The reverse direction (the page's cookies → the jar) is **not**
+   * bridged: the browser's storage is its own, and an API step after a UI login still carries only
+   * what the session and the test's own API steps earned. */
+  seedFromSessions(sessions: readonly string[], cookies: readonly BrowserSeedCookie[]): void {
+    if (sessions.length === 0) return;
+    this.sessionSeed = { sessions, cookies };
+  }
+
+  /** The seed's one sentence for the report, cleared as it is read. Attached to the step that
+   * created the context, because that is the step a reader looks at when a page opened signed in
+   * (or did not). A session that captured headers only — a bearer token, an API key — has nothing a
+   * browser can hold, and the sentence says so rather than letting the page open signed out
+   * without a word. */
+  takeSeedNote(): string | null {
+    const note = this.seedNote;
+    this.seedNote = null;
+    return note;
+  }
+
   /** The refusal to raise, if this attempt has one pending, clearing it as it's read (M85).
    *
    * A refusal can't simply throw from the route handler — the handler runs on Playwright's own
@@ -415,6 +456,17 @@ export class BrowserPageState {
       // lets a trace viewer show the actual `.tflw` source alongside the DOM/network timeline.
       // Below `evidence full` it never starts at all (FS-01) — see `captureBinaryEvidence`.
       await this.wireAllowHostsGuard(this.context);
+      if (this.sessionSeed) {
+        const { sessions, cookies } = this.sessionSeed;
+        const named = sessions.map((n) => `"${n}"`).join(', ');
+        if (cookies.length > 0) {
+          await this.context.addCookies(cookies.map((c) => ({ ...c })));
+          const hosts = [...new Set(cookies.map(seedHost))].join(', ');
+          this.seedNote = `browser signed in from session ${named}: ${cookies.length} cookie${cookies.length === 1 ? '' : 's'} for ${hosts}`;
+        } else {
+          this.seedNote = `session ${named} carries headers only — the page opens signed out; sign in through the page's form`;
+        }
+      }
       if (this.captureBinaryEvidence) await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
       const page = await this.context.newPage();
       this.wireDialogHandler(page);

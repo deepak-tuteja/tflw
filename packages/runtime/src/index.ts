@@ -59,7 +59,7 @@ export type { Severity } from './finding.js';
 // an assertion three minutes in (P#46).
 export { MAX_SEEDED_PER_CLASS, SEEDED_ID_PREFIX, seededIds, seededPayloads } from './inputSeeded.js';
 export { TlsProber, type TlsProbePolicy } from './tlsProbe.js';
-export { runLoadShard, mergeLoadShardReports, spliceLoadReportIntoRunReport, type LoadOptions } from './interpreter.js';
+export { runLoadShard, mergeLoadShardReports, resolveSkipEnv, spliceLoadReportIntoRunReport, type LoadOptions } from './interpreter.js';
 // M89b (D-M89-5) — the CLI's pre-run `scenario "…" — <description>` line formats *this* value
 // through the reporter's one `describeWorkload`, instead of switching over the AST itself.
 export { workloadOf } from './interpreter.js';

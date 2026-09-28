@@ -113,10 +113,13 @@ TestDecl    := TAG* DataTable? 'test' STRING TestModifier* NEWLINE Block
 TestModifier := 'as' IDENT (',' IDENT)*      # sessions this test opts into (§3.3)
               | 'retry' NUMBER               # §4.4
               | 'parallel' | 'sequential'    # D105-D107, §4.5
-              | 'skip' STRING                # M242/D1327 — reported skipped, runs nothing; blank is TF084
+              | 'skip' STRING SkipEnvs?      # M242/D1327 — reported skipped, runs nothing; blank is TF084
               # Order-independent, each at most once (A2-06). `test "x" retry 2 as admin` and
               # `test "x" as admin retry 2` are the same test. A repeat is an error rather than
               # last-one-wins — list several sessions in one `as` clause, comma-separated.
+SkipEnvs    := 'on' 'env' IDENT (',' IDENT)* # M247/D1353 — the skip holds only under these env
+                                             #   blocks and the test runs elsewhere; an undeclared
+                                             #   name is TF088
 
 DataTable   := 'with' 'each' ('from' STRING)? NEWLINE
                ( '|' IDENT ('|' IDENT)* '|' NEWLINE          # inline: header row

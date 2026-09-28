@@ -41,6 +41,14 @@ interface JarEntry {
    * cookie — the overwhelming majority. Only a domain cookie can be read by an origin other than
    * the one that set it. */
   readonly domain?: string;
+  /** `M247` `A` (`D1352`) — the three attributes this jar never *enforces* (see the header comment)
+   * are still *remembered*, because the browser it now seeds does enforce them. A page must not be
+   * able to read from `document.cookie` a cookie its server marked `HttpOnly`, and a seed that
+   * dropped the flag would make a test pass against a page that a real signed-in user could not
+   * reproduce. */
+  readonly httpOnly?: boolean;
+  readonly secure?: boolean;
+  readonly sameSite?: 'Strict' | 'Lax' | 'None';
 }
 
 interface ParsedSetCookie {
@@ -49,6 +57,26 @@ interface ParsedSetCookie {
   readonly maxAgeSeconds?: number;
   readonly expiresAtMs?: number;
   readonly domain?: string;
+  readonly httpOnly: boolean;
+  readonly secure: boolean;
+  readonly sameSite?: 'Strict' | 'Lax' | 'None';
+}
+
+/** One cookie in the shape Playwright's `BrowserContext.addCookies` takes (`M247` `A`, `D1352`).
+ * Declared here rather than imported so `@tflw/runtime`'s jar stays free of a Playwright type; it
+ * is structurally the same object. A host-only cookie carries `url` (Playwright derives a host-only
+ * domain and `/` from an origin); a domain cookie carries `domain` with its leading dot and `path`,
+ * which is how a browser files one. `expires` is epoch **seconds**, absent for a session cookie. */
+export interface BrowserSeedCookie {
+  readonly name: string;
+  readonly value: string;
+  readonly url?: string;
+  readonly domain?: string;
+  readonly path?: string;
+  readonly expires?: number;
+  readonly httpOnly?: boolean;
+  readonly secure?: boolean;
+  readonly sameSite?: 'Strict' | 'Lax' | 'None';
 }
 
 /** Parses one `Set-Cookie` line's `name=value` pair plus `Max-Age`/`Expires`/`Domain`, ignoring
@@ -69,9 +97,17 @@ function parseSetCookieLine(line: string): ParsedSetCookie | null {
   let maxAgeSeconds: number | undefined;
   let expiresAtMs: number | undefined;
   let domain: string | undefined;
+  let httpOnly = false;
+  let secure = false;
+  let sameSite: 'Strict' | 'Lax' | 'None' | undefined;
   for (const attr of parts.slice(1)) {
     const eqIdx = attr.indexOf('=');
-    if (eqIdx === -1) continue;
+    if (eqIdx === -1) {
+      const flag = attr.toLowerCase();
+      if (flag === 'httponly') httpOnly = true;
+      else if (flag === 'secure') secure = true;
+      continue;
+    }
     const key = attr.slice(0, eqIdx).trim().toLowerCase();
     const rawVal = attr.slice(eqIdx + 1).trim();
     if (key === 'max-age') {
@@ -84,9 +120,12 @@ function parseSetCookieLine(line: string): ParsedSetCookie | null {
       // RFC 6265 §5.2.3: a leading dot is ignored, matching is case-insensitive.
       const d = rawVal.replace(/^\./, '').toLowerCase();
       if (d) domain = d;
+    } else if (key === 'samesite') {
+      const v = rawVal.toLowerCase();
+      sameSite = v === 'strict' ? 'Strict' : v === 'lax' ? 'Lax' : v === 'none' ? 'None' : undefined;
     }
   }
-  return { name, value, maxAgeSeconds, expiresAtMs, domain };
+  return { name, value, maxAgeSeconds, expiresAtMs, domain, httpOnly, secure, ...(sameSite ? { sameSite } : {}) };
 }
 
 /** `URL.origin`'s host half, for domain matching. Falls back to the raw string for a key that
@@ -163,7 +202,14 @@ export class CookieJar {
       }
       const expiresAt =
         parsed.maxAgeSeconds !== undefined ? now + parsed.maxAgeSeconds * 1000 : parsed.expiresAtMs;
-      this.bucket(origin).set(parsed.name, { value: parsed.value, expiresAt, ...(domain !== undefined ? { domain } : {}) });
+      this.bucket(origin).set(parsed.name, {
+        value: parsed.value,
+        expiresAt,
+        ...(domain !== undefined ? { domain } : {}),
+        ...(parsed.httpOnly ? { httpOnly: true } : {}),
+        ...(parsed.secure ? { secure: true } : {}),
+        ...(parsed.sameSite ? { sameSite: parsed.sameSite } : {}),
+      });
     }
   }
 
@@ -211,6 +257,46 @@ export class CookieJar {
       }
     }
     return origins;
+  }
+
+  /** Every unexpired cookie, as a browser context should be seeded with it (`M247` `A`, `D1352`).
+   *
+   * **The host is never rewritten.** A cookie set by `http://127.0.0.1:3000` is seeded for
+   * `127.0.0.1` and nothing else, so a page opened at `http://localhost:3000` starts signed out —
+   * the three loopback spellings (`127.0.0.1`, `localhost`, `::1`) are three hosts to a browser,
+   * and a seed that aliased them would sign in a page no real browser would. The runbook states
+   * the rule; the remedy is to name the same host in `api` and `web`.
+   *
+   * **Ports do not partition cookies in a browser**, and so do not here either: a host-only cookie
+   * from `:3000` is visible to the page at `:5173` on the same host. That is RFC 6265 §8.5 and is
+   * what makes the common dev shape (API on one port, SPA on another) sign in at all. Two origins on
+   * one host holding the same name are both seeded; the browser keeps the later, which is the
+   * jar's own insertion order.
+   *
+   * `SameSite=None` without `Secure` is a pair every current browser refuses at `Set-Cookie`, and
+   * Playwright refuses it at `addCookies`; the seed drops the `SameSite` rather than the cookie,
+   * which leaves the browser's default (`Lax`) — the closest thing to what the server asked for
+   * that a browser will hold. */
+  browserCookies(): BrowserSeedCookie[] {
+    const now = Date.now();
+    const out: BrowserSeedCookie[] = [];
+    for (const [origin, bucket] of this.byOrigin) {
+      for (const [name, entry] of bucket) {
+        if (isExpired(entry, now)) continue;
+        const where = entry.domain !== undefined ? { domain: `.${entry.domain}`, path: '/' } : { url: origin };
+        const sameSite = entry.sameSite === 'None' && !entry.secure ? undefined : entry.sameSite;
+        out.push({
+          name,
+          value: entry.value,
+          ...where,
+          ...(entry.expiresAt !== undefined ? { expires: Math.floor(entry.expiresAt / 1000) } : {}),
+          ...(entry.httpOnly ? { httpOnly: true } : {}),
+          ...(entry.secure ? { secure: true } : {}),
+          ...(sameSite ? { sameSite } : {}),
+        });
+      }
+    }
+    return out;
   }
 
   /** A copy — used to seed a test's own jar from a cached `session`'s jar without sharing the live,

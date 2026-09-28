@@ -242,12 +242,12 @@ export interface ProjectTest {
    * How many steps of each kind this test's body carries (`M206` `S4`) — what the Auth tab needs to
    * stop saying something false.
    *
-   * `S5b`'s panel said *who this file runs as* with no qualification. SPEC §3.3 says **a session
-   * does not log the browser in**: its cached state is never applied to the test's fresh browser
-   * context, because a cookie jar and a browser context's storage state are two representations
-   * `D10` deliberately never bridges. So a session reaches a test's **api** steps and nothing else,
-   * and on the 145 tests measured behind both the API and BROWSER doors the old sentence was true
-   * of half a file and false of the other half (`M206-01`).
+   * `S5b`'s panel said *who this file runs as* with no qualification. Until `M247` `A` a session
+   * did not log the browser in at all, so a session reached a test's **api** steps and nothing
+   * else, and on the 145 tests measured behind both the API and BROWSER doors the old sentence was
+   * true of half a file and false of the other half (`M206-01`). Since `D1352` a session's cookies
+   * seed the browser context, and the page counts still matter: a header credential reaches the
+   * api steps only, and a form login on the page never reaches them.
    *
    * Counts rather than a boolean, because *this test has 9 page steps and no api step* is a
    * different thing to tell an author than *this test is a browser test*. Computed by

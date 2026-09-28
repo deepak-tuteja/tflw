@@ -122,6 +122,11 @@ export interface TestDecl extends Node {
    *  nothing, not even its hooks. Absent when not written, so every earlier tree keeps its shape.
    *  A blank reason is `TF084`: a skip nobody explained is a checkbox. */
   readonly skip?: StringLit;
+  /** `skip "reason" on env a, b` (`M247` `B`, `D1353`) — the skip holds only when the run's env is
+   *  one of these; under any other env the test runs. Absent when the clause is not written, which
+   *  is the unconditional skip `D1327` shipped. Env-block names, not OS variables — `EnvScopeRef`
+   *  for the reason its own comment gives. An undeclared name is `TF088`. */
+  readonly skipOn?: readonly EnvScopeRef[];
   /** `with each` — one reported case per row, or null for an ordinary single-case test
    * (SPEC §4.3, P#10/24). Checker-rejected (D96) alongside a non-null `workload`. */
   readonly table: DataTable | null;

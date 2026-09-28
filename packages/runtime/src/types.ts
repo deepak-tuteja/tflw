@@ -86,6 +86,10 @@ export interface ResolvedTimeouts {
 
 export interface ResolvedConfig {
   readonly envName: string;
+  /** Every `env` block the config declares, in file order (`M247` `B`, `D1353`) — what `skip … on
+   *  env` is checked against (`TF088`). Optional so a hand-built config in a test need not state
+   *  it; absent reads as *unknown*, and the checker pass is skipped rather than guessed at. */
+  readonly envNames?: readonly string[];
   /** Default (bare `api`) base URL, or null if the env declares none. */
   readonly apiBaseUrl: string | null;
   /** Named services → base URL (P#29). */
@@ -475,6 +479,10 @@ export interface TestResult {
    *  `ok` — a run whose only non-passes are skips passes — and carries no steps; every reporter reads
    *  this field to show it as its own outcome rather than a pass. Absent on every test that ran. */
   readonly skipped?: string;
+  /** `skip "…" on env a, b` (`M247` `B`, `D1353`): the env this skip held in. Present only on an env
+   *  skip, so a reader can tell *skipped here* from *skipped everywhere*; `skipped` carries the same
+   *  env in its text for every reporter that shows one string. */
+  readonly skippedOn?: string;
   /** Every attempt actually run, in order, only present when more than one attempt ran. A
    * single-attempt test has no `attempts` field at all — same shape as before this field existed.
    * When present, `attempts[attempts.length - 1].steps === steps` (SPEC §4.4, PLAN decision 86). */

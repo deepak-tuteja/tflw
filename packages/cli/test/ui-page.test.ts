@@ -5690,8 +5690,9 @@ test('the strip is an address, and Compose keeps what you typed while you are lo
   await page.locator('[data-compose-discard]').click();
 });
 
-test('Auth says what a session does NOT reach, and a mixed test is where that matters', async () => {
-  // `M206` `S4`, closing `M206-01`. The shipped panel said *who this file runs as* and stopped.
+test('Auth says what a session reaches, and a mixed test with no session is where that matters', async () => {
+  // `M206` `S4`, closing `M206-01`; restated by `M247` `A` (`D1352`), which bridged the jar into the
+  // browser — the paragraph below is the history, and the assertions are today's rule. The shipped panel said *who this file runs as* and stopped.
   // SPEC §3.3: **a session does not log the browser in** — its cached state is never applied to the
   // test's fresh browser context, because a cookie jar and a browser context's storage state are
   // two representations `D10` deliberately never bridges. So the sentence was true of a file's api
@@ -5704,7 +5705,7 @@ test('Auth says what a session does NOT reach, and a mixed test is where that ma
   const dir = await mkdtemp(join(tmpdir(), 'tflw-auth-mixed-'));
   const fresh = await newPage();
   try {
-    await writeFile(join(dir, 'tflw.config'), 'env local\n  api "http://127.0.0.1:1"\n  web "http://localhost:3000"\n', 'utf8');
+    await writeFile(join(dir, 'tflw.config'), 'env local\n  api "http://127.0.0.1:1"\n  web "http://localhost:3000"\n\nsession admin\n  api POST /login\n', 'utf8');
     // One test that logs in twice — an API call for its api steps and a form for its page — which
     // is what SPEC §3.3 says a mixed test must do, and the shape the old sentence misdescribed.
     await writeFile(
@@ -5717,6 +5718,13 @@ test('Auth says what a session does NOT reach, and a mixed test is where that ma
         '  fill field "Email" with "sam@example.com"',
         '  click button "Sign in"',
         '  expect text "Signed in" is visible',
+        '',
+        // `M247` `A` — the same shape run as a session is signed in on both sides, and is the
+        // control for the mixed count: it must NOT be named.
+        'test "signed in by the session" as admin',
+        '  api GET /items',
+        '  expect status equals 200',
+        '  open "/"',
         '',
         'test "just the api"',
         '  api GET /items',
@@ -5741,17 +5749,22 @@ test('Auth says what a session does NOT reach, and a mixed test is where that ma
       // 4 page (open, fill, click and the `expect text … is visible`). An `expect` counts for the
       // kind of work its subject does — `StatusSubject` is api, `LocatorSubject` is browser — which
       // is the doors' own classification rather than a narrower one invented for this panel.
-      assert.equal(await fresh.locator('[data-auth-reach-api]').getAttribute('data-auth-reach-api'), '4', 'api work miscounted');
-      assert.equal(await fresh.locator('[data-auth-reach-page]').getAttribute('data-auth-reach-page'), '4', 'page work miscounted');
+      // `M247` `A` added a third test (2 api, 1 page), so 6 against 5.
+      assert.equal(await fresh.locator('[data-auth-reach-api]').getAttribute('data-auth-reach-api'), '6', 'api work miscounted');
+      assert.equal(await fresh.locator('[data-auth-reach-page]').getAttribute('data-auth-reach-page'), '5', 'page work miscounted');
 
-      // The refusal itself — the sentence the panel exists to stop implying the opposite of.
-      const bridge = await fresh.locator('[data-auth-no-bridge]').textContent();
-      assert.match(bridge ?? '', /session does not log the browser in/i);
+      // The bridge, as it stands since `D1352`: a session's cookies sign the page in, a header
+      // credential does not, and a page login never reaches the api steps.
+      const bridge = await fresh.locator('[data-auth-bridge]').textContent();
+      assert.match(bridge ?? '', /session signs the page in with its cookies/i);
+      assert.match(bridge ?? '', /a login made through the page never reaches them/);
 
-      // And the case it matters most in, named rather than counted: the test that establishes
-      // identity twice.
+      // And the case it matters most in, named rather than counted: the mixed test with no
+      // session, whose form login leaves its api steps signed out. The mixed test run `as admin`
+      // is not named.
       assert.equal(await fresh.locator('[data-auth-mixed]').getAttribute('data-auth-mixed'), '1');
       assert.match((await fresh.locator('[data-auth-mixed]').textContent()) ?? '', /signing in, both ways/);
+      assert.doesNotMatch((await fresh.locator('[data-auth-mixed]').textContent()) ?? '', /signed in by the session/);
 
       // NEGATIVE CONTROL, and the test is worth little without it: on a file with no page steps the
       // refusal is ABSENT. A warning shown unconditionally is decoration, and would pass every
@@ -5759,7 +5772,7 @@ test('Auth says what a session does NOT reach, and a mixed test is where that ma
       await fresh.goto(`${base}?token=${TOKEN}#/browser/auth/apionly.tflw`);
       await fresh.locator('[data-auth-reach-api]').waitFor();
       assert.equal(await fresh.locator('[data-auth-reach-page]').getAttribute('data-auth-reach-page'), '0');
-      assert.equal(await fresh.locator('[data-auth-no-bridge]').count(), 0, 'the refusal is shown on a file it does not apply to');
+      assert.equal(await fresh.locator('[data-auth-bridge]').count(), 0, 'the bridge sentence is shown on a file it does not apply to');
       assert.equal(await fresh.locator('[data-auth-mixed]').count(), 0);
     } finally {
       await ui.close();
@@ -5880,7 +5893,7 @@ test('the Auth block leads with the anonymous case, and each door gets only its 
         assert.equal(await fresh.locator('[data-auth-scan-caveat]').count(), door === 'scan' ? 1 : 0, `SCANS' caveat on the ${door} door`);
         // BROWSER's needs page work as well as the door, and `named.tflw` has none — so it is
         // absent on all four here, which is `S4`'s own control still holding under the door gate.
-        assert.equal(await fresh.locator('[data-auth-no-bridge]').count(), 0, `the bridge refusal on the ${door} door with no page steps`);
+        assert.equal(await fresh.locator('[data-auth-bridge]').count(), 0, `the bridge sentence on the ${door} door with no page steps`);
       }
     } finally {
       await ui.close();
@@ -8319,6 +8332,34 @@ test('`M210` `S5`: a header edit rewrites the header and not one byte of the bod
     assert.match(onDisk, /^before\n {2}api POST \/reset$/m, 'and the hook above it did not move');
     const { diagnostics } = parseSource(onDisk);
     assert.deepEqual(diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
+test('`M247` `B`: the skip row writes `on env` beside its reason, and a blank reason writes neither', async () => {
+  // `D1353` — the band's skip control gained the env list. Same comma idiom as `sessions`, because
+  // the file writes the list the same way.
+  await withEditFixture(BAND, async (p, base, dir) => {
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L9`);
+    await p.locator('[data-band-name]').waitFor();
+    await p.locator('[data-add-clause="test"] > summary').click();
+    await p.locator('[data-add-go="skip"]').click();
+    await p.locator('[data-band-skip-edit]').fill('no payments sandbox in CI');
+    await p.locator('[data-band-skip-env-edit]').fill('ci, staging');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    let onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^test "it places an order" as admin retry 2 skip "no payments sandbox in CI" on env ci, staging$/m);
+
+    // Read back into the field it was written from, and emptied again by clearing the reason: an
+    // env list without a reason is not a skip, so neither clause survives.
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L9`);
+    await p.locator('[data-band-skip-env-edit]').waitFor();
+    assert.equal(await p.locator('[data-band-skip-env-edit]').inputValue(), 'ci, staging');
+    await p.locator('[data-band-skip-edit]').fill('');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^test "it places an order" as admin retry 2$/m);
   });
 });
 
