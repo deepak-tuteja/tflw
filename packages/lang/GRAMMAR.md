@@ -111,7 +111,7 @@ ElementDecl := 'element' IDENT '=' Locator NEWLINE   # M247/D1356 (§8) — the 
 ## Tests & structure (§4)
 
 ```
-TestDecl    := TAG* DataTable? 'test' STRING TestModifier* NEWLINE Block
+TestDecl    := TAG* DataTable? 'test' STRING TestModifier* NEWLINE Block RowsBlock?
 TestModifier := 'as' IDENT (',' IDENT)*      # sessions this test opts into (§3.3)
               | 'retry' NUMBER               # §4.4
               | 'parallel' | 'sequential'    # D105-D107, §4.5
@@ -129,9 +129,20 @@ DataTable   := 'with' 'each' ('from' STRING)? 'concurrently'? NEWLINE   # M247/D
                # `from STRING` (a .csv/.json path) replaces the inline table entirely — mutually
                # exclusive with the `| col |` rows.
 
+RowsBlock   := 'rows' NEWLINE INDENT RowsCheck+ DEDENT   # G10/D1384 — judged once, after every row
+                                                         #   has run; without a DataTable it is TF095
+RowsCheck   := ('expect' | 'check') RowCount ('row' | 'rows') Subject Matcher NEWLINE
+                                                         # Subject is a response part or a captured
+                                                         #   `{name}`; a page is TF096
+RowCount    := 'exactly' NUMBER | NUMBER                 # a bare NUMBER means exactly
+             | 'at' ('least' | 'most') NUMBER
+             | 'no' | 'every'
+
 Block       := INDENT Step+ DEDENT
 Step        := ApiStep | WaitUntilApiStep | ExpectStmt | CheckStmt | LetStmt | CaptureStmt
              | GiveStmt | HeaderStmt | LogStmt | PauseStmt | UiStep   # UiStep: see §9, below
+             | TogetherStmt                 # G1/D1381 — top level of a `with each concurrently`
+TogetherStmt := 'together' NEWLINE           #   test only (TF092): the rows wait here, then go on
 
 # A `test`'s block additionally admits the workload clauses, in any order among the steps:
 TestBlock   := INDENT (Step | Workload | ThresholdDecl | CleanupDecl)+ DEDENT
