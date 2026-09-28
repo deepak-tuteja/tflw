@@ -5,7 +5,7 @@
 # A word added here and nowhere else fails that test — the drift B5-09 records, caught at once
 # rather than by the next milestone to audit two wordlists by hand.
 #
-# 243 words
+# 245 words
 
 DELETE
 GET
@@ -47,6 +47,7 @@ cleanup
 click
 client
 close
+concurrently
 connects
 console
 contains
@@ -72,6 +73,7 @@ drag
 drop
 duration
 each
+element
 email
 empty
 enabled

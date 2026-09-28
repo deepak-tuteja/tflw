@@ -924,10 +924,13 @@ export const INVALID: readonly Fixture[] = [
 `,
   },
   {
+    // `M247` `D` (`D1356`): a bare `statuss` is now read as an element name and its did-you-mean
+    // is the checker's (`element.test.ts`). The parser's own half of `TF013` is a misspelt locator
+    // keyword — a word followed by its selector string, which no element can be.
     name: 'unknown-subject',
     source: `test "bad subject"
-  api GET /health
-  expect statuss equals 200
+  open "/"
+  expect textt "Save" is visible
 `,
   },
   {
@@ -937,10 +940,14 @@ export const INVALID: readonly Fixture[] = [
     // mistyped `dialog message` was told by name that it was not a subject. Snapshotted because the
     // list is now derived from `SUBJECTS`: a subject added without a form to write it in is a diff
     // line here, which is the whole point of a reviewed artifact.
+    //
+    // `M247` `D` (`D1356`): a bare word alone is now an `element` reference (`TF089` at check time
+    // if nothing declares it), so this branch is reached by a word that is followed by a selector
+    // string — the shape of a locator keyword nobody has, which is a typo and not a name.
     name: 'unknown-subject-no-suggestion',
     source: `test "bad subject"
   api GET /health
-  expect nonesuch equals 200
+  expect nonesuch "Save" is visible
 `,
   },
   {

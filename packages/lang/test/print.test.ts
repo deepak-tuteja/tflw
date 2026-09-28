@@ -100,7 +100,10 @@ function stripSpans(node: unknown): unknown {
   if (node && typeof node === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(node)) {
-      if (k === 'span') continue;
+      // `nameSpan` (`ElementDecl`, `M247` `D`) is a position like `span` and moves the same way when
+      // the printer drops a comment above the declaration, so it is not part of what "the same
+      // program" means either.
+      if (k === 'span' || k.endsWith('Span')) continue;
       out[k] = stripSpans(v);
     }
     return out;
@@ -347,7 +350,9 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // `M245` (`D1343`): a three-file upload with a form field in `api.tflw` — its step and its
   // `expect`, the upload's files being context-bound and compared through their body. 587 -> 589.
   // `M246`: the signed-webhook test — the test, its two api steps and their two `expect`s. 589 -> 594.
-  const EXPECTED_NODES = 594;
+  // `M247` `D`: `basket.tflw`'s `element savedLine` declaration — its two uses replace two `css`
+  // locators one for one, so the declaration is the only new node. 594 -> 595.
+  const EXPECTED_NODES = 595;
   const EXPECTED_FILES = 28;
   assert.equal(filesRead, EXPECTED_FILES, `the corpus read ${filesRead} files, expected ${EXPECTED_FILES} — a fixture was added or lost`);
   assert.equal(total, EXPECTED_NODES, `the corpus round-tripped ${total} nodes, expected ${EXPECTED_NODES} — move the number in the change that moved the corpus`);

@@ -1890,27 +1890,11 @@ class Parser {
   private parseSessionEnvScope(): EnvScopeRef[] | null {
     if (!this.isKw(this.peek(), 'for')) return null;
     this.advance(); // `for`
-    if (!this.isKw(this.peek(), 'env')) {
-      this.error(
-        Codes.UNEXPECTED_TOKEN,
-        '`for` on a `session` header introduces an env scope, so it is followed by `env`',
-        this.peek().span,
-        'write `for env <name>` — e.g. `session console for env plaintext`. Unlike `header "X" is "Y" for <service>`, a session is scoped to the env it belongs to rather than to a service',
-      );
-      return null;
-    }
-    this.advance(); // `env`
-    const envs: EnvScopeRef[] = [];
-    for (;;) {
-      const tok = this.expect('ident', 'an env name after `for env`');
-      if (!tok) return envs.length > 0 ? envs : null;
-      envs.push({ type: 'EnvScopeRef', name: tok.value, span: tok.span });
-      // Line-terminated, so no trailing comma — D637's rule, which turns on what closes the list and
-      // not on what it holds. Same shape as `require env` and `allow hosts` two directives over.
-      if (!this.check('comma')) break;
-      this.advance();
-    }
-    return envs;
+    return this.parseEnvList(
+      'for',
+      '`for` on a `session` header introduces an env scope, so it is followed by `env`',
+      'write `for env <name>` — e.g. `session console for env plaintext`. Unlike `header "X" is "Y" for <service>`, a session is scoped to the env it belongs to rather than to a service',
+    );
   }
 
   /** `on env a, b` after `skip "reason"` (`M247` `B`, `D1353`) — `parseSessionEnvScope`'s list
@@ -1919,21 +1903,28 @@ class Parser {
    * the session clause already sided with. */
   private parseSkipEnvs(): EnvScopeRef[] | null {
     this.advance(); // `on`
+    return this.parseEnvList(
+      'on',
+      '`on` after a skip reason names the envs the skip holds in, so it is followed by `env`',
+      'write `skip "reason" on env <name>` — e.g. `skip "no sandbox in CI" on env ci, staging`',
+    );
+  }
+
+  /** `env a, b` after its preposition has been consumed — the one list both clauses read, so a
+   * rule about it (the `env` keyword, the comma, the name) is written once. */
+  private parseEnvList(preposition: 'for' | 'on', noEnvMessage: string, noEnvHint: string): EnvScopeRef[] | null {
     if (!this.isKw(this.peek(), 'env')) {
-      this.error(
-        Codes.UNEXPECTED_TOKEN,
-        '`on` after a skip reason names the envs the skip holds in, so it is followed by `env`',
-        this.peek().span,
-        'write `skip "reason" on env <name>` — e.g. `skip "no sandbox in CI" on env ci, staging`',
-      );
+      this.error(Codes.UNEXPECTED_TOKEN, noEnvMessage, this.peek().span, noEnvHint);
       return null;
     }
     this.advance(); // `env`
     const envs: EnvScopeRef[] = [];
     for (;;) {
-      const tok = this.expect('ident', 'an env name after `on env`');
+      const tok = this.expect('ident', `an env name after \`${preposition} env\``);
       if (!tok) return envs.length > 0 ? envs : null;
       envs.push({ type: 'EnvScopeRef', name: tok.value, span: tok.span });
+      // Line-terminated, so no trailing comma — D637's rule, which turns on what closes the list and
+      // not on what it holds. Same shape as `require env` and `allow hosts` two directives over.
       if (!this.check('comma')) break;
       this.advance();
     }
@@ -4509,11 +4500,13 @@ class Parser {
       }
       default: {
         const hint = suggest(tok.value, SUBJECT_OPENING_WORDS);
-        // `M247` `D` — a bare name that is not a near miss of a subject word is an `element`
-        // reference (`expect cartBadge is visible`). A near miss keeps its did-you-mean: `statuss`
-        // is a typo far more often than an element, and an element named one letter from `status`
-        // is the one name this rule cannot reach — the checker's `TF089` names the escape.
-        if (!hint && tok.type === 'ident' && this.peek(1).type !== 'string') {
+        // `M247` `D` — a bare name is an `element` reference (`expect cartBadge is visible`), even
+        // one a letter from a subject word. Whether `statuss` is a typo or a name is a question
+        // about what the file and its imports declare, which the parser cannot see: an element
+        // called `badge` is one letter from `page`. So the checker decides it (`checkElements`),
+        // and an undeclared near miss is still `TF013` with its did-you-mean, one pass later.
+        // A word followed by a string is a locator keyword nobody has, and stays a parse error.
+        if (tok.type === 'ident' && this.peek(1).type !== 'string') {
           this.advance();
           return { type: 'LocatorSubject', locator: this.elementRef(tok), span: this.spanFrom(start) };
         }

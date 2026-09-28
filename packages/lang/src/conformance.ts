@@ -189,6 +189,14 @@ export const RUNTIME_RULES: readonly RuntimeRule[] = [
     note: 'needs a live DOM',
   },
   {
+    id: 'browser-unknown-element',
+    file: 'browser.ts',
+    excerpt: 'unknown element \\`${name}\\`',
+    decidable: 'static',
+    checkerCode: 'TF089',
+    note: '`M247` `D` (`D1356`) — every declared `element` is inlined before a run, so the runtime throws only for a name nothing declares. The checker decides the same thing whenever it has read the imports (the CLI and the LSP always do); the throw is for a run nobody checked',
+  },
+  {
     id: 'browser-step-failed',
     file: 'browser.ts',
     excerpt: '${label} failed: ${firstLine}',

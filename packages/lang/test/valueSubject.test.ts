@@ -52,20 +52,30 @@ test('`check` takes a value subject too, not just `expect` (FU-11)', () => {
   assert.equal(stmt.type === 'ExpectStmt' && stmt.subject.type, 'ValueSubject');
 });
 
-test('a bare identifier is still not a subject — the collision stays an error (D129)', () => {
+test('a bare identifier is still not a value subject — the collision stays an error (D129, now `TF089`)', () => {
   // The whole reason subject position takes `{n}` and not `n`: `text`/`status`/`list`/… are
   // subject keywords, so a bare-ident rule would make `let text = "hi"` silently assert on a UI
   // locator. `n` is not a keyword, so it must be an error rather than quietly becoming one.
-  const { diagnostics } = parseSource(src('  let n = 5\n  expect n equals 5'));
-  assert.equal(diagnostics.length, 1);
-  assert.equal(diagnostics[0]!.code, 'TF013');
-  assert.match(diagnostics[0]!.hint ?? '', /write `\{n\}`/);
+  //
+  // `M247` `D` (`D1356`) moved *where* the error is decided, not whether: a bare name in subject
+  // position now parses as an `element` reference, so the parser is silent and the checker, which
+  // knows the file's element names, reports `TF089` with the same `{n}` reading offered. Control:
+  // the parse itself is clean, so this assertion is the checker's and nobody else's.
+  const { program, diagnostics } = parseSource(src('  let n = 5\n  expect n equals 5'));
+  assert.equal(diagnostics.length, 0);
+  const checked = checkProgram(program).filter((d) => d.code === 'TF089');
+  assert.equal(checked.length, 1);
+  assert.match(checked[0]!.hint ?? '', /write `\{n\}`/);
 });
 
 test('a *misspelled* keyword still gets its did-you-mean, not the brace hint (D133 #2)', () => {
   // The brace hint is gated on the did-you-mean being absent. Without that gate, `statuss` — an
   // obvious typo — would be told to write `{statuss}`, teaching the wrong fix.
-  const { diagnostics } = parseSource(src('  api GET /x\n  expect statuss equals 200'));
+  // `M247` `D`: decided by the checker now, which knows whether a file declares an element by
+  // that name; the parse is clean and the diagnostic is still `TF013`.
+  const { program, diagnostics: parsed } = parseSource(src('  api GET /x\n  expect statuss equals 200'));
+  assert.equal(parsed.length, 0);
+  const diagnostics = checkProgram(program).filter((d) => d.code === 'TF013');
   assert.equal(diagnostics.length, 1);
   assert.match(diagnostics[0]!.hint ?? '', /did you mean `status`\?/);
   assert.doesNotMatch(diagnostics[0]!.hint ?? '', /\{statuss\}/);

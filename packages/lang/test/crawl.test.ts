@@ -125,6 +125,6 @@ test('a second `as` clause on a crawl reports a repeat and keeps parsing (A2-06)
 
 test('the top-level error names `crawl` among the legal declarations', () => {
   const d = firstDiagnostic('cralw "surface"\n  seed traffic\n');
-  assert.match(d.message, /expected a `test`, `crawl`, `action`, `import`, `use`, `before`, or `after`/);
+  assert.match(d.message, /expected a `test`, `crawl`, `action`, `element`, `import`, `use`, `before`, or `after`/);
   assert.match(d.hint ?? '', /only `test`, `crawl`,/);
 });

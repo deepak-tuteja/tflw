@@ -2715,8 +2715,10 @@ const REGISTRY = [
     milestone: 'm147d',
     file: 'packages/lang/src/checker.ts',
     what: 'the diagnostic anchors on the `session` instead of on the name, and a session span runs to the end of its indented body — so a five-step login gets a caret under the whole paragraph to complain about one word. The reason `SessionDecl.envs` carries nodes rather than strings, deleted',
-    find: '        span: ref.span,',
-    replace: '        span: session.span,',
+    // `M247` `B`: `TF088` (`skip … on env`) writes the same line, so the find carries the message
+    // line above it to stay on `TF074`'s one site.
+    find: '        message: `unknown env "${ref.name}"`,\n        span: ref.span,',
+    replace: '        message: `unknown env "${ref.name}"`,\n        span: session.span,',
   },
   {
     id: 'tf028-forgets-the-scoping-hint',

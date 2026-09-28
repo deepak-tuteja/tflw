@@ -13,6 +13,7 @@
 // §1's own note — the thing it pointed at for authority — had already been corrected (`A4-19`).
 
 import type {
+  Locator,
   ActionDecl,
   ApiBody,
   ApiRequestSpec,
@@ -48,7 +49,7 @@ import { isDecodable, regexCompileError } from './literalValidity.js';
 import { hostMatchesAllowPattern } from './allowHostsPattern.js';
 import { classifyAddress } from './addressClass.js';
 import { absoluteUrlHost, isAbsoluteUrl } from './absoluteUrl.js';
-import { MATCHERS, MATCHER_ROW_BY_NAME, type SubjectKind } from './spec-data.js';
+import { MATCHERS, MATCHER_ROW_BY_NAME, SUBJECT_OPENING_WORDS, type SubjectKind } from './spec-data.js';
 import { parseStringParts } from './parser.js';
 import { elementRefs } from './elements.js';
 
@@ -346,6 +347,13 @@ function byPosition(diags: Diagnostic[]): Diagnostic[] {
 }
 
 export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
+  // `M247` `D` — one mistake, one diagnostic (`TF041`'s rule in `checkOneMatcherSubject`): a subject
+  // that names no element is reported as unknown (`TF013`/`TF089`), and `TF042`'s "this matcher
+  // can't read a locator" about the same statement would be judging a name nothing declared.
+  const elementDiags = checkElements(program, opts);
+  const unresolved = elementDiags.filter((d) => d.code === Codes.UNKNOWN_SUBJECT || d.code === Codes.UNKNOWN_ELEMENT).map((d) => d.span);
+  const judgesUnresolved = (d: Diagnostic): boolean =>
+    d.code === Codes.MATCHER_SUBJECT_MISMATCH && unresolved.some((u) => u.start.offset >= d.span.start.offset && u.end.offset <= d.span.end.offset);
   return byPosition([
     ...(opts.knownServices ? checkServices(program, opts.knownServices) : []),
     ...checkDataTables(program),
@@ -354,11 +362,11 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...(opts.knownEnvs ? checkSkipEnvs(program, opts.knownEnvs) : []),
     ...checkConcurrentTables(program),
     ...checkActionDecls(program, opts),
-    ...checkElements(program, opts),
+    ...elementDiags,
     ...checkUnknownVariables(program),
     ...checkRequestAssertions(program),
     ...checkValueSubjects(program),
-    ...checkMatcherSubjects(program),
+    ...checkMatcherSubjects(program).filter((d) => !judgesUnresolved(d)),
     ...checkReferencedFiles(program, opts),
     ...checkHelperDirs(program, opts),
     // `M147c` (`M140-03`) — `TF073`, wired beside `TF043` because they are one question asked of
@@ -1176,6 +1184,9 @@ export function checkSessionBody(
     checkValueSubjectsInSteps(session.body, diags);
     checkMatcherSubjectsInSteps(session.body, diags);
     checkNoCallsInSteps(session.body, session.name, diags);
+    // `M247` `D` — the `checkCalls` inversion again: `tflw.config` declares no `element`s, and the
+    // session runner inlines none, so a bare name in a session's browser step can never resolve.
+    checkNoElementsInSteps(session.body, session.name, diags);
     // M116/D152 — the three new passes. `checkBaseUrls` is the one that matters most here: an
     // un-prefixed `api` step is the dominant shape in a `session`, and a session's failure takes
     // down every test that names it.
@@ -1211,6 +1222,37 @@ function checkNoCallsInSteps(steps: readonly Step[], sessionName: string, diags:
     } else if (step.type === 'WithinBlock' || step.type === 'SwitchToNewTabBlock' || step.type === 'DownloadBlock') {
       checkNoCallsInSteps(step.body, sessionName, diags);
     }
+  }
+}
+
+/** The element references that stand as an `expect`/`check` subject — the one position where a
+ *  bare name competes with the subject words. Identity, not equality: `elementRefs` returns the
+ *  same node objects. */
+function subjectElementRefs(node: unknown): Set<Locator> {
+  const out = new Set<Locator>();
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    const obj = value as { type?: unknown; locator?: Locator };
+    if (obj.type === 'LocatorSubject' && obj.locator?.kind === 'element') out.add(obj.locator);
+    for (const child of Object.values(value)) visit(child);
+  };
+  visit(node);
+  return out;
+}
+
+function checkNoElementsInSteps(steps: readonly Step[], sessionName: string, diags: Diagnostic[]): void {
+  for (const ref of elementRefs(steps)) {
+    diags.push({
+      code: Codes.UNKNOWN_ELEMENT,
+      severity: 'error',
+      message: `unknown element \`${ref.value.value}\``,
+      span: ref.span,
+      hint: `\`element\`s are declared in \`.tflw\` files, and \`tflw.config\` has no access to them — so no name in \`session ${sessionName}\` can ever resolve. Write the locator out here (\`css "…"\`, \`button "…"\`), or, if \`${ref.value.value}\` is a value you bound, write \`{${ref.value.value}}\``,
+    });
   }
 }
 
@@ -1422,10 +1464,19 @@ export function checkElements(program: Program, opts: ProgramCheckOptions = {}):
   const closed = program.imports.length === 0 || opts.importedElements !== undefined;
   if (!closed) return diags;
   const known = [...seen.keys()];
+  const asSubject = subjectElementRefs(program);
   for (const ref of elementRefs(program)) {
     const name = ref.value.value;
     if (seen.has(name)) continue;
     const hint = suggest(name, known);
+    // An undeclared name in subject position one letter from a subject word is the typo it looks
+    // like — `TF013`, as the parser reported it before `element` existed. A near *element* name
+    // wins over a near subject word: that is the list the author was writing from.
+    const subjectHint = hint || !asSubject.has(ref) ? undefined : suggest(name, SUBJECT_OPENING_WORDS);
+    if (subjectHint) {
+      diags.push({ code: Codes.UNKNOWN_SUBJECT, severity: 'error', message: `unknown subject \`${name}\``, span: ref.span, hint: `did you mean \`${subjectHint}\`?` });
+      continue;
+    }
     diags.push({
       code: Codes.UNKNOWN_ELEMENT,
       severity: 'error',

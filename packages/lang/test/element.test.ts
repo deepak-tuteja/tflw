@@ -12,7 +12,7 @@ const FILE = [
   'test "the badge counts what was added"',
   '  open "/"',
   '  click checkout',
-  '  expect cartBadge has text "1"',
+  '  expect cartBadge has count 1',
   '  within list "Items"',
   '    expect cartBadge is visible',
   '',
@@ -44,10 +44,27 @@ test('a misspelt keyword with its selector keeps its did-you-mean, and so does a
   // `buton "Save"`: a string follows, so it is a keyword typo, not an element.
   const click = parseSource('test "t"\n  click buton "Save"\n').diagnostics;
   assert.match(click[0]?.hint ?? '', /did you mean `button`\?/);
-  // `statuss` is one letter from `status`, which the subject position still reads as a typo.
-  const subject = parseSource('test "t"\n  api GET /a\n  expect statuss equals 200\n').diagnostics;
-  assert.equal(subject[0]?.code, Codes.UNKNOWN_SUBJECT);
+  // `statuss` is one letter from `status`. The parser cannot know whether an element has that name,
+  // so it reads a name and the checker reports the typo — same code, same did-you-mean.
+  const program = parsed('test "t"\n  api GET /a\n  expect statuss equals 200\n');
+  const subject = checkProgram(program);
+  // One mistake, one diagnostic: no `TF042` about `equals` on a locator nobody declared.
+  assert.deepEqual(subject.map((d) => d.code), [Codes.UNKNOWN_SUBJECT]);
+  assert.equal(subject[0]?.message, 'unknown subject `statuss`');
   assert.match(subject[0]?.hint ?? '', /did you mean `status`\?/);
+});
+
+test('an element one letter from a subject word is usable once declared — `badge` is not a misspelt `page`', () => {
+  const declared = checkProgram(parsed('element badge = css ".badge"\n\ntest "t"\n  open "/"\n  expect badge is visible\n'));
+  assert.deepEqual(declared, []);
+  // Control: undeclared, the same line is the typo it looks like.
+  const undeclared = checkProgram(parsed('test "t"\n  open "/"\n  expect badge is visible\n'));
+  assert.equal(undeclared[0]?.code, Codes.UNKNOWN_SUBJECT);
+  assert.match(undeclared[0]?.hint ?? '', /did you mean `page`\?/);
+  // A near *element* name beats a near subject word, and outside a subject there is no subject word
+  // to be near: `click badg` is an unknown element.
+  const near = checkProgram(parsed('element badges = css ".b"\n\ntest "t"\n  open "/"\n  expect badge is visible\n  click badg\n'));
+  assert.deepEqual(near.map((d) => [d.code, d.hint]), [[Codes.UNKNOWN_ELEMENT, 'did you mean `badges`?'], [Codes.UNKNOWN_ELEMENT, 'did you mean `badges`?']]);
 });
 
 test('the right-hand side is a locator: an element naming an element, or a keyword as a name, is refused', () => {
@@ -117,7 +134,7 @@ function entry(path: string, source: string) {
 }
 
 test('a selector written in two files is one hint: every site, one declaration, the name from its words', () => {
-  const a = entry('tests/a.tflw', 'test "a"\n  open "/"\n  click css "[data-test=cart-count]"\n  expect css "[data-test=cart-count]" has text "1"\n');
+  const a = entry('tests/a.tflw', 'test "a"\n  open "/"\n  click css "[data-test=cart-count]"\n  expect css "[data-test=cart-count]" has count 1\n');
   const b = entry('tests/b.tflw', 'test "b"\n  open "/"\n  expect css "[data-test=cart-count]" is visible\n');
   const hints = detectElementReuse([a, b], 4);
   assert.equal(hints.length, 1);

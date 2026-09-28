@@ -154,6 +154,20 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     verdict: 'n/a',
     reason: 'M156b/D778. Walks a `Program`, so unreachable from a session for `checkDeclaredEnvRefs`\' reason exactly; `checkConfigBracedEnvRefs` is the half that sees a `session` body',
   },
+  checkElements: {
+    verdict: 'applies',
+    reason: '`M247` `D` (`D1356`). Inverted, like `checkCalls`: `tflw.config` declares no `element`s and the session runner inlines none, so a bare name in a session that logs in through the browser can never resolve — reported as `TF089` with a hint that says why, rather than thrown at the first test that opts in',
+    fixture: '  open "/login"\n  click signIn\n',
+    code: Codes.UNKNOWN_ELEMENT,
+  },
+  checkSkipEnvs: {
+    verdict: 'n/a',
+    reason: '`M247` `B` (`D1353`). `checkSkipReasons`\' reason: `skip … on env` is a test header clause, and a session has no header and is never skipped',
+  },
+  checkConcurrentTables: {
+    verdict: 'n/a',
+    reason: '`M247` `E` (`D1359`). Walks `program.tests` for a `with each concurrently` table; a session has no table and runs once per run, not once per row',
+  },
   checkSkipReasons: {
     verdict: 'n/a',
     reason: '`M242` `B` (`D1327`). Walks `program.tests` for the header clause `skip "reason"`, and a session has no header clauses and is never skipped: it is established when a test that opts into it runs, so a skipped test simply never establishes it',
