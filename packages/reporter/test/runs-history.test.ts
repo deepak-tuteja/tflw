@@ -121,3 +121,19 @@ test('a workload threshold\'s past values come back newest first, null kept as n
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// `M249` `C` (`D1369`) — `mergeRuns`, the fields a merge of finished runs has to get right.
+test('merge: findings are deduplicated by fingerprint, counts are re-derived, and an aborted input is not ok', async () => {
+  const { mergeRuns } = await import('../src/merge.js');
+  const finding = (fingerprint: string) => ({ scan: 'security', rule: 'sec/x', severity: 'serious', description: 'd', detail: 'x', endpoint: 'GET /a', fingerprint });
+  const a = { ...report('2026-09-29T10:00:00.000Z', [t('one', true)]), findings: [finding('f1'), finding('f2')] } as RunReport;
+  const b = { ...report('2026-09-29T10:00:05.000Z', [t('two', true)]), env: 'staging', findings: [finding('f2')], aborted: true } as RunReport;
+  const m = mergeRuns([{ dir: 'a', report: a }, { dir: 'b', report: b }]);
+  assert.deepEqual((m.findings ?? []).map((f) => f.fingerprint), ['f1', 'f2']);
+  assert.deepEqual([m.total, m.passed, m.failed], [2, 2, 0]);
+  assert.equal(m.ok, false, 'nothing failed, and an aborted input still means the merged run never reached a verdict');
+  assert.equal(m.env, 'local, staging');
+  assert.equal(m.startedAt, '2026-09-29T10:00:00.000Z');
+  assert.equal(m.durationMs, 5001, 'from the earliest start to the latest end');
+  assert.deepEqual(m.mergedFrom, ['a', 'b']);
+});

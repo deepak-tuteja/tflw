@@ -17,6 +17,7 @@ const watchFlags = CLI_FLAGS.filter((f) => f.command === 'watch');
 const migrateFlags = CLI_FLAGS.filter((f) => f.command === 'migrate');
 const fmtFlags = CLI_FLAGS.filter((f) => f.command === 'fmt');
 const exportFlags = CLI_FLAGS.filter((f) => f.command === 'export');
+const mergeFlags = CLI_FLAGS.filter((f) => f.command === 'merge');
 const uiFlags = CLI_FLAGS.filter((f) => f.command === 'ui');
 const specFlags = CLI_FLAGS.filter((f) => f.command === 'spec');
 const globalFlags = CLI_FLAGS.filter((f) => f.command === 'global');
@@ -323,6 +324,28 @@ directory (`report/` when none is named). A report records the run's start and e
 not when each test started, so the spans are laid end to end and each carries `tflw.timing =
 "reconstructed"`. Exits 0 when the collector answers 2xx, 1 when it answers anything else, and 2
 for a usage problem. See [CI, reporting & safety](/guide/ci-and-reporting#otlp).
+
+## `tflw merge <report-dir>...`
+
+`tflw merge <report-dir>... --out <dir> [--no-color]`
+
+<table>
+  <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr v-for="f in mergeFlags" :key="f.flag">
+      <td v-html="code(f.flag)" />
+      <td v-html="code(f.effect)" />
+    </tr>
+  </tbody>
+</table>
+
+Joins finished runs — the shards of a sharded CI job, or a sweep's groups — into one report. Tests
+keep their own files and appear in the order the directories were given; the counts are re-derived
+from them, findings are deduplicated by fingerprint so SARIF uploads each once, and the verdict is
+the one `tflw run` would give (an aborted input makes the merge not `ok`). `env` names every input's
+env and `mergedFrom` in `results.json` lists the inputs. Each input's `events.ndjson` is joined in
+order, and `assets/` is copied across. Exits 0 when the merged run passed, 1 when it did not, and 2
+for a usage problem. See [splitting a suite across CI jobs](/guide/ci-and-reporting#shard).
 
 ## `tflw ui [dir]`
 

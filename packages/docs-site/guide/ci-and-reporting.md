@@ -245,6 +245,20 @@ than in blocks, so a directory of slow files is spread over the jobs. `--tag`, `
 part — no job passes a file another would refuse. The header names the shard: `shard 2/4: 31 of 124
 files`.
 
+Each job writes its own `report/`. The last job joins them into one report with `tflw merge`, and its
+exit code is the verdict of the whole suite:
+
+```sh
+# after downloading every shard's report/ into shard-1/, shard-2/, …
+npx tflw merge shard-*/report --out report
+```
+
+The merged `results.json` holds every shard's tests in shard order, with counts re-derived from them,
+and `mergedFrom` naming the inputs. `junit.xml` and `report.html` are rendered from it, findings are
+deduplicated by fingerprint so `findings.sarif` uploads each once, and each shard's `events.ndjson`
+is joined in order. `tflw merge` exits 0 when the merged run passed and 1 when it did not, so a
+`needs:` job that runs it is the one check a branch protection rule has to name.
+
 ## Sending a run to your tracing backend — `tflw export otlp` {#otlp}
 
 ```sh

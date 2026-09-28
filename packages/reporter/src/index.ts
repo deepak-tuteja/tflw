@@ -46,6 +46,7 @@ export { buildSarifLog, writeSarif, runScanned, sarifUri, SARIF_FILE, SARIF_SCHE
 export { ARTIFACT_CONTRACT, type ArtifactContract } from './artifact-contract.js';
 export { RUN_OWNED_CONDITIONAL_MEMBERS, clearRunOwnedMembers } from './report-dir.js';
 export { RUN_OWNED_MEMBERS, RUNS_DIR, keepRun, listKeptRuns, pruneRuns, runIdFor, type KeptRun } from './runs.js';
+export { mergeRuns, copyAssets, type MergeInput } from './merge.js';
 export { readHistory, historyClause, isFlaky, testKey, type History, type TestHistory, type ThresholdHistory, type RunVerdict, type Verdict } from './history.js';
 export { resolveReportAssets, traceRelPath, DEFAULT_INLINE_BUDGET_BYTES, type ReportAssetFile, type ResolvedReportAssets } from './assets.js';
 

@@ -11,7 +11,7 @@ import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer, type Server } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
-import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, access, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -3128,6 +3128,44 @@ test('`M249` `A`/`B` (`D1362`): every run is kept, bounded by `runs keep`, and a
       const scratch = await run('--no-keep');
       assert.doesNotMatch(scratch.stdout, /kept: /);
       assert.deepEqual((await readdir(join(dir, 'report', 'runs'))).sort(), kept);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('`M249` `C` (`D1369`): `tflw merge` over three shards equals the unsharded run, up to ordering, and its exit is the verdict', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-merge-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      for (const [name, status] of [['a', 200], ['b', 200], ['c', 999], ['d', 200]] as const) {
+        await writeFile(join(dir, `${name}.tflw`), `test "${name} one"\n  api GET /health\n  expect status equals ${status}\n\ntest "${name} two"\n  api GET /health\n  expect status equals 200\n`, 'utf8');
+      }
+      const run = (...extra: string[]) => execFileAsync('node', [cliEntry, 'run', '--no-color', '--no-keep', ...extra], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
+      const shape = (r: { tests: { file?: string; name: string; ok: boolean }[] }) => r.tests.map((t) => `${t.file}|${t.name}|${t.ok}`).sort();
+
+      await run();
+      const whole = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8'));
+      for (const i of [1, 2, 3]) {
+        await run('--shard', `${i}/3`);
+        await rename(join(dir, 'report'), join(dir, `shard-${i}`));
+      }
+      const merged = await execFileAsync('node', [cliEntry, 'merge', 'shard-1', 'shard-2', 'shard-3', '--out', 'merged', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
+      assert.equal(merged.code, 1, 'one test failed in one shard, so the merge fails');
+      assert.match(merged.stdout, /merged 3 runs into merged\/report\.html/);
+      const m = JSON.parse(await readFile(join(dir, 'merged', 'results.json'), 'utf8'));
+      assert.deepEqual(shape(m), shape(whole), 'the same tests, files and verdicts as the unsharded run');
+      assert.deepEqual([m.total, m.passed, m.failed, m.ok], [whole.total, whole.passed, whole.failed, whole.ok]);
+      assert.deepEqual(m.mergedFrom, ['shard-1', 'shard-2', 'shard-3']);
+      for (const f of ['report.html', 'junit.xml', 'results.json']) await access(join(dir, 'merged', f));
+
+      // Usage: no --out, and an --out that is an input, are both refused before anything is written.
+      const noOut = await execFileAsync('node', [cliEntry, 'merge', 'shard-1'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
+      assert.equal(noOut.code, 2);
+      const intoInput = await execFileAsync('node', [cliEntry, 'merge', 'shard-1', 'shard-2', '--out', 'shard-2'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
+      assert.equal(intoInput.code, 2);
+      assert.match(intoInput.stderr, /is one of the inputs/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
