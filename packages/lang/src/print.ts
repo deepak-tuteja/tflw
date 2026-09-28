@@ -113,6 +113,7 @@ export const PRINTABLE = new Set<string>([
   'PathExpr',
   'ThresholdDecl',
   'PauseStmt',
+  'TogetherStmt',
   'RampUsersWorkload',
   'RampRpsWorkload',
   'HoldUsersWorkload',
@@ -366,6 +367,8 @@ function printNode(node: Node, level: number): string {
       return pad(level) + printThreshold(node as ThresholdDecl);
     case 'PauseStmt':
       return pad(level) + printPause(node as PauseStmt);
+    case 'TogetherStmt':
+      return pad(level) + 'together';
     case 'LetStmt':
       return pad(level) + printLet(node as LetStmt);
     case 'WaitUntilApiStmt':

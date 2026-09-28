@@ -198,6 +198,13 @@ export function startStorefront(port = PORT) {
         json(201, order, { ...echo, location: `/orders/${id}` });
       });
     }
+    // What a basket became: every order checked out from it. This is how a race is judged — not by
+    // either press, which each saw only its own answer, but by the state the presses left behind.
+    const fromBasket = /^\/baskets\/(bsk_\d+)\/orders$/.exec(path);
+    if (req.method === 'GET' && fromBasket) {
+      const placedFrom = [...orders.values()].filter((o) => o.basketId === fromBasket[1]);
+      return json(200, { basketId: fromBasket[1], count: placedFrom.length, refs: placedFrom.map((o) => o.ref) });
+    }
     // ---- fulfilment: the one thing here that finishes after the answer, not with it -------------
     //
     // `POST /orders/:id/fulfil` accepts the work and says so — `202`, not `201`, because nothing

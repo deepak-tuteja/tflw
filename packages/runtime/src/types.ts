@@ -258,7 +258,9 @@ export type StepKind =
   | 'dropFile'
   | 'screenshot'
   | 'stub'
-  | 'pause';
+  | 'pause'
+  /** `G1` (`D1381`) — the rows of a concurrent test met here and went on at once. */
+  | 'together';
 
 export interface RequestTrace {
   readonly method: string;

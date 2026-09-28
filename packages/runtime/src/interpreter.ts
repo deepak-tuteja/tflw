@@ -433,8 +433,9 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   emit({ type: 'run:start', total: cases.length + scenarios.length + crawls.length, env: config.envName });
 
   const results: ReportEntry[] = [];
-  const fileTc: TestCtx = { environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.reproSink ? { reproSink: opts.reproSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
-  const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit);
+  const fileValues = new Map<string, unknown>();
+  const fileTc: TestCtx = { fileValues, environ, redactor, emit, lines, baseDir, configDir, configLines, rng: mulberry32(runSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.reproSink ? { reproSink: opts.reproSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
+  const beforeFileOk = await runFileHooks(beforeFile, 'before file', config, fileTc, registry, results, emit, fileValues);
 
   // Phase 2b (D109/D111/D112): group `cases` back by originating `TestDecl` — `expandTestCases`
   // walks `program.tests` in order, so every `with each` test's row-cases are always contiguous
@@ -586,6 +587,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
         // whole on its `test:end`, D114's rule for a batch, because rows now interleave exactly the
         // way two parallel tests do.
         const rowsTogether = test.table?.concurrently === true && group.cases.length > 1;
+        // `G1` (`D1381`): one barrier per concurrent test, which its rows meet at on each `together`.
+        const rowBarrier = rowsTogether ? new RowBarrier(group.cases.length, test.body) : undefined;
         const runCase = async (j: number): Promise<void> => {
             const buffered = isBatched || rowsTogether;
             const kase = group.cases[j]!;
@@ -599,14 +602,20 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             // rejected withholding a whole batch's output until every member finished.
             const eventBuffer: RunEvent[] = [];
             const caseEmit: EventSink = buffered ? (event) => eventBuffer.push(event) : emit;
-            const tc: TestCtx = { environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.reproSink ? { reproSink: opts.reproSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
+            const tc: TestCtx = { fileValues, ...(rowBarrier ? { rowBarrier } : {}), environ, redactor, emit: caseEmit, lines, baseDir, configDir, configLines, rng: mulberry32(testSeed), runSeed, runClock, uniqueSeq, sessionCache, tlsProber, ...(opts.reproSink ? { reproSink: opts.reproSink } : {}), ...(opts.scanSink ? { scanSink: opts.scanSink } : {}), ...(opts.scanGate ? { scanGate: opts.scanGate } : {}), ...(opts.probeSeeded ? { probeSeeded: opts.probeSeeded } : {}), ...(capturesTraffic ? { trafficSink: traffic } : {}), browserManager: opts.browserManager, filePath, updateSnapshots };
             // Per session *name*, not per test — a test opting into several sessions at once can
             // own the splice for one of them and not another, if some earlier test already
             // claimed a name it also opts into.
             const sessionOwnership: ReadonlyMap<string, boolean> | undefined = opts.sessionSpliceOwners
               ? new Map(kase.test.sessions.map((name) => [name, opts.sessionSpliceOwners!.get(name) === globalIndex] as const))
               : undefined;
-            const result = await runTest(kase.test, config, tc, registry, beforeEach, afterEach, testSeed, kase.cells, sessionOwnership);
+            let result: TestResult;
+            try {
+              result = await runTest(kase.test, config, tc, registry, beforeEach, afterEach, testSeed, kase.cells, sessionOwnership);
+            } finally {
+              // A row that has ended — passed, failed, or thrown — holds no later meeting point.
+              rowBarrier?.leave();
+            }
             functionalResults[group.startIndex + j] = result;
             const endEvent: RunEvent = { type: 'test:end', result };
             if (buffered) {
@@ -1127,7 +1136,7 @@ async function runScenarioTask(acc: ScenarioAccumulator, ctx: ScenarioRunCtx): P
   const runIteration = async (pinnedAgents?: KeepAliveAgents): Promise<void> => {
     const index = globalIterationIndex(nextIterationIndex(), shard);
     const iterTc: TestCtx = { ...tc, rng: mulberry32(subSeed(runSeed, index)), pinnedAgents };
-    const scope = new Map<string, unknown>();
+    const scope = new Map<string, unknown>(tc.fileValues ?? []);
     // D44 (M37, PLAN_BROWSER_PERF_SECURITY.md §2.8): every iteration reads each session fresh
     // from the shared cache, instead of cloning a snapshot frozen before the VU loop started.
     // This is the fix for the bug D43 found: `refreshSessions` (below) only ever wrote a
@@ -2389,6 +2398,14 @@ interface TestCtx {
    * Undefined everywhere else (a plain `tflw run`, a session's own establishment run, `wait until
    * api` outside a load context) — those keep using `sendRequest`'s unpinned `fetch()`. */
   readonly pinnedAgents?: KeepAliveAgents;
+  /** `G3` (`D1382`) — what `before file` bound, shared read-only by every test, row, each-scope
+   * hook, virtual user and `after file` in the file. Each of those seeds its own scope from it, so a
+   * binding a test makes never reaches another test, and the checker refuses one that reuses a
+   * shared name (`TF091`). */
+  readonly fileValues?: ReadonlyMap<string, unknown>;
+  /** `G1` (`D1381`) — the barrier the rows of one `with each concurrently` test meet at, set only on
+   * those rows' contexts. */
+  readonly rowBarrier?: RowBarrier;
   /** `M240-03` — set on the context an imported action's body runs under: the action's file,
    * relative to the run's cwd with `/` separators, as a test's own `file` is (`M243-07`). Stamped on
    * each step that body records, so a step's `line` names a line of the file it is in. Absent is the
@@ -2770,6 +2787,54 @@ async function refreshSessions(
   return { ok: true, steps };
 }
 
+/**
+ * `G1` (`D1381`) — where the rows of one `with each concurrently` test meet. Each top-level
+ * `together` in the test body is its own meeting point; one opens when every row still running has
+ * reached it, and stays open, so a retry that reaches it later goes straight through. A row that
+ * ends (passed, failed, thrown) leaves every meeting point it had not reached, so a row that fails
+ * in its setup cannot hold the others forever.
+ */
+export class RowBarrier {
+  private active: number;
+  private readonly rows: number;
+  private readonly points = new Map<Step, number>();
+  private readonly waiting = new Map<number, (() => void)[]>();
+  private readonly opened = new Set<number>();
+  constructor(rows: number, body: readonly Step[]) {
+    this.rows = rows;
+    this.active = rows;
+    let k = 0;
+    for (const step of body) if (step.type === 'TogetherStmt') this.points.set(step, k++);
+  }
+  /** Resolves when the meeting point opens. `met` is how many rows went on together from it. */
+  async arrive(step: Step): Promise<{ late: boolean; met: number; rows: number; ended: number }> {
+    const k = this.points.get(step) ?? -1;
+    if (this.opened.has(k)) return { late: true, met: 0, rows: this.rows, ended: 0 };
+    let met = 0;
+    await new Promise<void>((resolve) => {
+      const list = this.waiting.get(k) ?? [];
+      list.push(() => {
+        met = list.length;
+        resolve();
+      });
+      this.waiting.set(k, list);
+      this.open(k);
+    });
+    return { late: false, met, rows: this.rows, ended: this.rows - met };
+  }
+  leave(): void {
+    this.active--;
+    for (const k of [...this.waiting.keys()]) this.open(k);
+  }
+  private open(k: number): void {
+    const list = this.waiting.get(k);
+    if (!list || this.opened.has(k) || list.length < this.active) return;
+    this.opened.add(k);
+    this.waiting.delete(k);
+    for (const go of list) go();
+  }
+}
+
 /** Run `before file`/`after file` hooks (own scope, isolated from any test), in declaration
  * order. A failure aborts — for `before file`, the tests never run at all (nothing was set up);
  * either way the failure surfaces as its own synthetic `TestResult` (P#16: never swallowed). */
@@ -2781,11 +2846,15 @@ async function runFileHooks(
   registry: CallRegistry,
   results: ReportEntry[],
   emit: EventSink,
+  scopeIn?: Map<string, unknown>,
 ): Promise<boolean> {
   // `D807`: every `durationMs` below is whole-millisecond and stays that way. A file-hook
   // batch is reported to a human in a test list; no percentile or threshold reads it.
   if (hooks.length === 0) return true;
-  const scope = new Map<string, unknown>();
+  // `G3` (`D1382`): `before file` binds into the file's shared map, which every later scope in the
+  // file seeds itself from; `after file` starts from a copy of it, so it reads what `before file`
+  // made and nothing a test bound.
+  const scope = scopeIn ?? new Map<string, unknown>(tc.fileValues ?? []);
   const ctx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar: new CookieJar() };
   const start = performance.now();
   emit({ type: 'test:start', name: label, hook: label });
@@ -2927,7 +2996,7 @@ async function runTestAttempt(
 ): Promise<TestResult> {
   // `D807`: whole-millisecond, on every exit path below. One test attempt is a human-scale
   // span; the milestone that unrounded latency deliberately left this alone.
-  const scope = new Map<string, unknown>();
+  const scope = new Map<string, unknown>(tc.fileValues ?? []);
   const nameCtx: EvalCtx = { scope, environ: tc.environ, redactor: tc.redactor, rng: tc.rng, runSeed: tc.runSeed, runClock: tc.runClock, uniqueSeq: tc.uniqueSeq, sessionHeaders: {}, sessionNames: [], cookieJar: new CookieJar() };
   const testStart = performance.now();
   const steps: StepResult[] = [];
@@ -2936,7 +3005,7 @@ async function runTestAttempt(
   try {
     if (cells) {
       for (const cell of cells) scope.set(cell.name, 'expr' in cell ? evalValue(cell.expr!, nameCtx) : cell.value);
-      checkNameColumns(test, cells);
+      checkNameColumns(test, cells, tc.fileValues);
     }
     name = evalValue(test.name, nameCtx) as string;
   } catch (err) {
@@ -3007,12 +3076,13 @@ async function runTestAttempt(
  * Inline tables reach it too, and that is not dead code: it is what `tflw run` says to anyone who
  * never ran `tflw check`, and it says it identically.
  */
-function checkNameColumns(test: TestDecl, cells: readonly RowCell[]): void {
+function checkNameColumns(test: TestDecl, cells: readonly RowCell[], fileValues?: ReadonlyMap<string, unknown>): void {
   const columns = cells.map((cell) => cell.name);
   for (const part of test.name.parts) {
     if (part.kind !== 'interp' || part.ref.length === 0) continue;
     const first = part.ref[0]!;
-    if (first.kind !== 'prop' || columns.includes(first.name)) continue;
+    // `G3` (`D1382`): a value `before file` made is as readable in a row's name as in its body.
+    if (first.kind !== 'prop' || columns.includes(first.name) || fileValues?.has(first.name)) continue;
     const from = test.table?.type === 'FileDataTable' ? ` from "${test.table.path.value}"` : '';
     const hint = suggest(first.name, columns);
     throw new RuntimeError(
@@ -3904,6 +3974,14 @@ async function execSteps(steps: readonly Step[], config: ResolvedConfig, ctx: Ev
           const page = await ensurePageForStep(ctx);
           await performStub(page, step.method, urlPattern, status, body);
           result = mkStep('stub', src, step.span, true, stepStart, `stub ${step.method} ${JSON.stringify(urlPattern)} → ${status}`);
+          break;
+        }
+        case 'TogetherStmt': {
+          // `G1` (`D1381`): wait for every row still running to reach this point, then go on at
+          // once. The checker admits `together` only at the top level of a concurrent test, so a
+          // context without a barrier is a library caller's hand-built AST — nothing to wait for.
+          const met = tc.rowBarrier ? await tc.rowBarrier.arrive(step) : null;
+          result = mkStep('together', src, step.span, true, stepStart, met === null ? 'together: no other rows to wait for' : met.late ? 'together: the other rows had already gone on (a retry reached it after them)' : `together: ${met.met} of ${met.rows} row(s) went on at once${met.ended ? `, ${met.ended} had ended before reaching it` : ''}`);
           break;
         }
         case 'PauseStmt': {
@@ -7014,6 +7092,8 @@ function stepKind(step: Step): StepResult['kind'] {
       return 'stub';
     case 'PauseStmt':
       return 'pause';
+    case 'TogetherStmt':
+      return 'together';
   }
 }
 

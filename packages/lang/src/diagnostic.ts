@@ -581,6 +581,22 @@ export const Codes = {
    * count is not known until the file is read.
    */
   CONCURRENTLY_ONE_ROW: 'TF090',
+  /**
+   * `TF091` — **a test rebinds a name `before file` made** (`G3`, `D1382`). A value bound in
+   * `before file` is shared, read-only, by every test, each-scope hook, row and `after file` in the
+   * file; a `let`, a `capture` or a table column of the same name inside a test would make one name
+   * mean two values depending on where it is read — and under `with each concurrently`, depending
+   * on which row read it. An error, because the file runs either reading and the author meant one.
+   */
+  FILE_VALUE_REBOUND: 'TF091',
+  /**
+   * `TF092` — **`together` where no rows can meet** (`G1`, `D1381`). The barrier is only meaningful
+   * at the top level of a test whose `with each` table is `concurrently`: in any other test there is
+   * nothing to wait for, and inside a block (`within`, a tab, a download) some rows could pass it
+   * and others never reach it, so the meeting point would not be one. An error, because a race
+   * written with a barrier that does nothing passes without the race.
+   */
+  TOGETHER_OUT_OF_PLACE: 'TF092',
 } as const;
 
 // ---------------------------------------------------------------------------

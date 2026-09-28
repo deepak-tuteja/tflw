@@ -66,7 +66,16 @@ performance arc closed 2026-08-02 and is included below.
 - **A test skipped on an env is not held to what only another env declares** (`M247-04`). Under
   that env, `TF026`, an unknown session and an unknown signer inside the test are not reported,
   so a skip written because the env lacks a service no longer blocks the run it exists for.
-- **`any`/`all` quantify into a nested array** (`G8`, the sibling's `TFLW-GAPS.md` row 11).
+- **Rows of a race can set up, then fire together** (`G1`, `D1381`). `together` is a new step: the
+  rows of a `with each concurrently` test each run up to it, wait for one another, and go on at once.
+  Each row's own setup no longer spreads the racing requests apart. A row that ends before the barrier
+  stops holding the others. Anywhere but the top level of a concurrent test it is `TF092`.
+- **What `before file` makes, the whole file reads** (`G3`, `D1382`). A `let` or `capture` in
+  `before file` is now readable, read-only, by every test, row, each-scope hook and `after file`. So a
+  race and the test that judges it can name the same coupon. Binding the name again is `TF091`.
+  **Breaking**, deliberately: a file that relied on the old isolation to reuse a name now gets
+  `TF091` and must rename one of them.
+- **`any`/`all` quantify into a nested array** (`G8`, `D1383`, the sibling's `TFLW-GAPS.md` row 11).
   `expect any body.orders.items.quantity equals 3` over orders that each carry `items[]` read
   `.items.quantity` off the second array as `undefined` and reported *none of N matched* with the
   matching item present. The path now fans out across every array it crosses, and a failure names

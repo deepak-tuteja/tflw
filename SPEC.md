@@ -1097,20 +1097,24 @@ finished, however it went" wants `after file`, not `after`. Spelled out because 
 and the difference is a factor of the iteration count.
 
 **Scope isolation:** `before`/`after` (each-scope) share one scope with the test they wrap — a
-`let` bound in `before` is visible in the test body and in `after`. `before file`/`after file` run
-in their **own, separate scope**, isolated from every test in the file — a `let` bound in `before
-file` can never be read by a test, or by an each-scope `before`/`after`. Use a `session` block
-(§3.3) or a shared `action` (§8) to hand data from file-level setup to individual tests; `before
-file` is for side effects (seeding shared fixtures, warm-up calls), not for values a test needs to
-read.
+`let` bound in `before` is visible in the test body and in `after`, and in no other test.
+
+**What `before file` binds is shared, read-only, with the whole file** (`G3`, `D1382`). A `let` or a
+`capture` in `before file` is readable by every test, every row of a `with each` table, every
+each-scope hook and `after file` — the coupon a race is run over, the product whose stock it drains,
+the fixture `after file` deletes. It is made once and nobody may change it: a test, a table column,
+an each-scope hook or `after file` that binds the same name again is `TF091`, because one name would
+then mean two values depending on where — and under `with each concurrently`, on which row — it was
+read. Each test starts from its own copy, so nothing a test binds reaches another test or
+`after file`. Until `G3` this paragraph said the opposite, and a value a race needed had to be
+fetched again by every row, inside the race.
 
 **Several hooks of the same label share one scope, in declaration order** — two `before file`
 blocks run one after the other against a single scope, so a `let` in the first is visible in the
-second. **`before file` and `after file` do not share with each other**: they are two separate runs
-of that scope, so a `let` bound in `before file` is not readable in `after file` (use a `session` or
-an `action` for that too). The same holds for each-scope `before`/`after`, which additionally share
-with the test they wrap. This paragraph is new in M97b: the spec had been silent on both points,
-and `A4-05` — the checker rejecting a valid second `before file` — happened in that silence.
+second. `after file` starts from what `before file` made and binds into its own scope; the same holds
+for each-scope `before`/`after`, which additionally share with the test they wrap. The second-hook
+rule is new in M97b: the spec had been silent on it, and `A4-05` — the checker rejecting a valid
+second `before file` — happened in that silence.
 
 ### 4.3 Data tables — `with each` (P#10, P#24)
 
@@ -1148,6 +1152,35 @@ test "invite {role}"
   It is the table's own modifier and independent of the test's `parallel`, which runs *tests*
   beside each other; `--parallel N` is about files. One inline row marked `concurrently` is
   `TF090`, a warning: nothing runs beside it, so a race test would pass without a race.
+- **`together`** (`G1`, `D1381`) — the rows of a `with each concurrently` test meet here: each row
+  runs up to it, waits until every row still running has reached it, and then all go on at once.
+  Rows usually need their own setup before a race — their own shopper, their own cart — and that
+  setup takes a different time per row, so without a barrier the racing request leaves each row at
+  a different moment and a server that is not atomic usually passes. A row that ends before the
+  barrier (a failed setup) no longer holds the others; the step reports how many rows went on
+  together. Several `together` lines are several meeting points, each once. Only at the top level
+  of a concurrent test (`TF092`): in a test whose rows run in turn, a hook or an action there is
+  nothing to wait for, and inside a block some rows could pass it while others never reach it.
+
+  ```
+  before file
+    api POST /coupons body { code: unique("RACE"), usageLimit: 1 }
+    capture body.code as coupon            # shared, read-only, by every row (§4.2)
+
+  with each concurrently
+    | shopper |
+    | "a"     |
+    | "b"     |
+    | "c"     |
+  test "{shopper} redeems the last use"
+    api POST /cart/items body { sku: "A-1" }  # each row's own setup
+    together                                  # every row waits here, then all fire
+    api POST /cart/checkout body { couponCode: "{coupon}" }
+
+  test "the coupon was used once"            # the race, judged by the state it left
+    api GET /coupons/{coupon}
+    expect body.used equals 1
+  ```
 
 `.csv` parsing (P#65): minimal RFC-4180 — a field may be quoted (`"Smith, John"`) to
 contain a comma verbatim, `""` inside a quoted field is an escaped quote. A numeric-looking cell
@@ -1407,6 +1440,7 @@ name (§17), and documenting them would be teaching a spelling that is itself an
 | browser | `drop` | `drop file "<path>" onto <locator>` | drop a real file onto a dropzone that has no `<input type="file">` | `drop file "./receipt.png" onto css "#dropzone"` |
 | browser | `screenshot` | `screenshot "<name>"` | capture the active page unconditionally; binary evidence, so only captured at `evidence full` | `screenshot "before payment"` |
 | browser | `stub` | `stub <METHOD> "<url-pattern>" respond status <N> [body …]` | intercept a matching network request and answer it, without touching the server | `stub POST "/api/payments/**" respond status 500` |
+| api | `together` | `together` | the rows of a `with each concurrently` test wait here for one another, then go on at once — each row does its own setup first, and the racing step leaves every row at the same moment (`G1`, `D1381`). Only at the top level of such a test (`TF092`) | `together` |
 | browser | `pause` | `pause <duration>` | wait a fixed duration. Renamed from `think` (FS-05); a real wait belongs in `wait until`, not here | `pause 500ms` |
 | workload | `ramp` | `ramp to N users over <dur>` / `ramp to N rps over <dur>` | linear ramp from zero to the target — makes the test workload-bearing | `ramp to 50 users over 30s` |
 | workload | `hold` | `hold N users for <dur>` / `hold N rps for <dur>` | a flat target for the whole duration, with no ramp-in | `hold 20 rps for 2m` |
@@ -2037,7 +2071,7 @@ expect all {items.price} is greater than 0     # over a captured array (§6.1)
 Three subjects can carry a quantifier: `body.<path>`, `body csv`, and a value subject. For a value
 subject the array must be reachable **inside** the braces — `{items.price}`, never `{items}.price`.
 
-The path quantifies across **every** array it crosses (`G8`). Over orders that each carry
+The path quantifies across **every** array it crosses (`G8`, `D1383`). Over orders that each carry
 `items[]`, `expect any body.orders.items.quantity equals 3` reads every item of every order: `any`
 holds when one leaf matches, `all` when every leaf does, and a parent whose array is empty adds no
 leaf. A failure names the leaf by all its indices (`body.orders[1].items[0].quantity`) and the
@@ -4388,6 +4422,8 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF088` | Checker (`M247` `B`, `D1353`): **a `skip … on env` naming an env `tflw.config` does not declare.** The skip would hold nowhere, so the test runs in the very env it was written to stay out of, and the run would not say why. Checked against every `env` block, not only the active one — naming another env is the clause's purpose. One diagnostic per unknown name. **An error**, matching `TF028`. | `test "refunds settle" skip "no sandbox in CI" on env cii` then `api GET /health` then `expect status equals 200` → `` did you mean `ci`? `` |
 | `TF089` | Checker (`M247` `D`, `D1356`): **an `element` reference naming no element.** A bare name in a locator position — `click cartBadge`, `expect cartBadge is visible` — is looked up in the file's own `element` declarations and then each imported file's, the `action` rule; like an unknown call it is decided only when the imports were read. In a subject position a bare name may also be a value meant as `{name}`, and the hint says so. **An error**: the step would have nothing to find. | a file declaring `cartBadge` and clicking `cartBadg` → `` did you mean `cartBadge`? `` |
 | `TF090` | Checker (`M247` `E`, `D1359`): **`with each concurrently` on an inline table of one row.** One row has nothing to run beside, so the clause promises an overlap the run cannot produce, and a test written to prove a race would pass without one ever happening. File-backed tables are not judged — their rows are read at run time. **A warning**: the test still means something; only the clause does not. | a one-row table marked `concurrently` → `has one row, so nothing runs beside it` |
+| `TF091` | Checker (`G3`, `D1382`): **a test rebinds a name `before file` made.** What `before file` binds is shared, read-only, by every test, each-scope hook, row and `after file` in the file (SPEC §4.2) — the coupon a race is run over, the product whose stock it drains. A `let`, a `capture` or an inline table column of the same name would make one name mean two values depending on where it is read, and under `with each concurrently` on which row read it. **An error**: the file runs either reading, and the author meant one. | a test rebinding a `before file` value → `` is made once in `before file` and shared read-only `` |
+| `TF092` | Checker (`G1`, `D1381`): **`together` where no rows can meet.** The barrier holds the rows of a `with each concurrently` test until every row still running has reached it. In a test whose rows run in turn, in a hook or in an action there is nothing to wait for; inside a block (`within`, a tab, a download) some rows could pass it while others never reach it. **An error**: a race written with a barrier that does nothing passes without the race. | `together` in a test with no concurrent table → `whose rows do not run at once` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

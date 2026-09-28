@@ -9771,6 +9771,30 @@ the report header.
 |---|---|---|
 | `D1360` | L9 | **The cookbook is one section per fence refusal**, each with the ask, why the fence refuses, the shape that works, a link to the dogfood plant: flag · per-env value · response-driven · env skip · five at once · signed in on both sides · every page of a list · a fixed wait · an outbound call. |
 
+### D1381
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1381` | (owner, 2026-09-28, `G1`) | **`together` is the barrier a `with each concurrently` test's rows meet at.** A bare step at the top level of the test body; each row runs up to it, waits until every row still running has reached it, then all go on at once. A row that ends before it (a failed setup) leaves every meeting point it had not reached, so it cannot hold the others; a meeting point that opened stays open, so a retry goes straight through. Several are several meeting points. Anywhere else — a plain or sequential-table test, a block, a hook, an action — is `TF092`, an error. |
+
+### D1382
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1382` | (owner, 2026-09-28, `G3`) | **What `before file` binds is shared, read-only, with the whole file** — every test, row, each-scope hook, virtual user and `after file` seeds its own scope from it, so nothing a test binds reaches another test. Rebinding a shared name (a `let`, a `capture`, an inline column, in a test, an each-scope hook or `after file`) is `TF091`, an error. Reverses SPEC §4.2's isolation on purpose; `after file` reading `before file` is part of it (cleaning up a shared fixture needs its id). |
+
+### D1383
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1383` | (mine, 2026-09-28, `G8`) | **`any`/`all` fan out across every array a path crosses**, rather than refusing the path. A property read that meets an array quantifies over its elements; an array's own properties (`length`) and `[n]` still read off it, and a path that ends on an array hands the matcher that array whole — so every path that worked before reads the same, and only paths that used to read `undefined` change. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>

@@ -16,6 +16,17 @@
 # **Each test builds its own basket.** Nothing here leans on a test that ran before it: `capture`
 # is scoped to one test, and tests may run in parallel. A file whose third test only passes because
 # its second one ran is the commonest way an example stops being runnable.
+#
+# **The one exception is made once, before any test, and nobody may change it.** The last two tests
+# race over a single basket, so `before file` makes it. A value `before file` binds is read,
+# read-only, by every test in the file — `tflw check` refuses a test that binds `raceBasket` again
+# (`TF091`) — which is what lets a race and the check after it name the same thing.
+
+before file
+  api POST /baskets body { customer: { email: "noor@example.com", name: "Noor Haddad" }, lines: [{ itemId: 1, qty: 1 }] }
+  expect status equals 201
+  capture body.id as raceBasket
+  let raceKey = unique("two-tabs")
 
 @checkout @functional
 test "a basket prices what is in it, line by line"
@@ -96,3 +107,29 @@ test "an address missing its city and postcode is refused field by field"
   # The refusal carries the correlation id too — an id that survives only the happy path is no use
   # on the day you need it.
   expect header "X-Request-Id" equals "req-9002"
+
+# Two tabs open on the same checkout, and both press pay at the same instant. Each row does its own
+# setup first — here it reads the shelf — and then waits at `together` for the other, so the two
+# presses leave at once rather than one setup apart. A shop that checks the key and then writes the
+# order in two steps would sell twice here, and almost never in a test without the barrier.
+@checkout @functional
+with each concurrently
+  | tab     |
+  | "left"  |
+  | "right" |
+test "two tabs press pay at once ({tab})"
+  api GET /items
+  expect status equals 200
+  together
+  api POST /orders/checkout body { basketId: {raceBasket}, shipping: { line1: "3 Mill Row", city: "York", postcode: "YO1 7HH", country: "GB" } }
+    header "Authorization" is "Bearer shelf-demo-token"
+    header "Idempotency-Key" is "{raceKey}"
+  expect body.status equals "confirmed"
+  expect body.basketId equals "{raceBasket}"
+
+# The race is judged by what it left behind, not by either press — each saw only its own answer.
+@checkout @functional
+test "the two presses left one order"
+  api GET /baskets/{raceBasket}/orders
+  expect status equals 200
+  expect body.count equals 1

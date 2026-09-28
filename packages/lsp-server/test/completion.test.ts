@@ -383,15 +383,24 @@ test('variablesInScopeAt: a `before each` hook binds into every test body (M96)'
   assert.deepEqual(variablesInScopeAt(program, symbols, offset), ['token']);
 });
 
-test('variablesInScopeAt: a `before file` hook does NOT bind into a test body (M96)', () => {
-  // The paired control. `before file` has its own response scope and its own variable scope at run
-  // time (`runFileHooks` builds a fresh `Map`), so offering its names would suggest a completion
-  // the checker then rejects with `TF030` — a suggestion that cannot compile is worse than none.
+test('variablesInScopeAt: a `before file` binding is offered in a test body (M96, G3)', () => {
+  // Was the paired control until `G3` (`D1382`): `before file`'s names now reach every test,
+  // read-only, so the checker accepts them there and completion offers them.
   const source = ['before file', '  let setup = "s"', '', 'test "a"', '  expect ', ''].join('\n');
   const offset = source.indexOf('  expect ') + '  expect '.length;
   const { program } = parseSource(source);
   const symbols = collectSymbols(program, source);
-  assert.deepEqual(variablesInScopeAt(program, symbols, offset), []);
+  assert.deepEqual(variablesInScopeAt(program, symbols, offset), ['setup']);
+});
+
+test('variablesInScopeAt: a `before file` binding is not offered inside an action (G3 control)', () => {
+  // An action's scope is its parameters (P#17); `before file` shares with the file's tests, and an
+  // action may be called from another file entirely.
+  const source = ['before file', '  let setup = "s"', '', 'action go(x)', '  expect ', ''].join('\n');
+  const offset = source.indexOf('  expect ') + '  expect '.length;
+  const { program } = parseSource(source);
+  const symbols = collectSymbols(program, source);
+  assert.deepEqual(variablesInScopeAt(program, symbols, offset), ['x']);
 });
 
 test('variablesInScopeAt: outside any test/action/hook, nothing is in scope (M96)', () => {

@@ -83,3 +83,15 @@ with each from "./payloads/rows.csv"
 test "creates {sku} from a file-backed table"
   api POST /v1/items body { sku: "{sku}" }
   expect status equals 201
+
+@printer
+with each concurrently
+  | shopper |
+  | "a"     |
+  | "b"     |
+test "{shopper} races for the last one"
+  api POST /v1/carts body { shopper: "{shopper}" }
+  expect status equals 201
+  together
+  api POST /v1/checkout
+  expect status equals 201
