@@ -6166,12 +6166,20 @@ test('the Auth tab says who this file runs as, and every editable thing lands in
         '',                                                                             // 14
         'session ops for env staging',                                                  // 15
         '  api POST /login',                                                            // 16
+        '',                                                                             // 17
+        'session sso oauth2 code',                                                      // 18
+        '  authorize url "/oauth/authorize"',                                           // 19
+        '  token url "/oauth/token"',                                                   // 20
+        '  client id "storefront-cli"',                                                 // 21
+        '  redirect "http://127.0.0.1:0/callback"',                                     // 22
+        '  fill field "Email" with "ada@example.com"',                                  // 23
+        '  click button "Allow"',                                                       // 24
       ].join('\n') + '\n',
       'utf8',
     );
     await writeFile(
       join(dir, 'orders.tflw'),
-      ['test "the ledger" as admin', '  api GET /orders', '  expect status equals 200', '', 'test "ops too" as ops', '  api GET /orders', '  expect status equals 200', '', 'test "the catalogue"', '  api GET /products', '  expect status equals 200', ''].join('\n'),
+      ['test "the ledger" as admin', '  api GET /orders', '  expect status equals 200', '', 'test "ops too" as ops', '  api GET /orders', '  expect status equals 200', '', 'test "signed in" as sso', '  api GET /orders', '  expect status equals 200', '', 'test "the catalogue"', '  api GET /products', '  expect status equals 200', ''].join('\n'),
       'utf8',
     );
     const base = `http://127.0.0.1:${await ui.listen(0)}`;
@@ -6192,10 +6200,17 @@ test('the Auth tab says who this file runs as, and every editable thing lands in
     assert.equal(await ops.getAttribute('data-auth-session-resolves'), 'false');
     assert.match(await ops.locator('[data-auth-session-what]').innerText(), /declared for `staging` and you are on `local`/);
 
+    // 2b. `M248` (`D1354`): a code-flow session says it signs in through a browser and how many
+    //     sign-in steps that takes — its bearer comes from the exchange, so there is no header to name.
+    const sso = fresh.locator('[data-auth-session="sso"]');
+    assert.equal(await sso.getAttribute('data-auth-session-resolves'), 'true');
+    assert.match(await sso.innerText(), /oauth2 code/);
+    assert.match(await sso.locator('[data-auth-session-what]').innerText(), /signs in through a browser on its authorize URL \(2 sign-in steps\), takes the code at a loopback redirect/);
+
     // 3. `anonymous`, counted. It is the one principal nobody declares, so it is the one a reader
     //    cannot find by looking at the config — which is why it is stated rather than implied by
     //    an absent `as` clause.
-    assert.match(await fresh.locator('[data-auth-anonymous-tests]').innerText(), /1 of 3 tests in orders\.tflw run as anonymous: the catalogue/);
+    assert.match(await fresh.locator('[data-auth-anonymous-tests]').innerText(), /1 of 4 tests in orders\.tflw run as anonymous: the catalogue/);
 
     // 4. An authorized target, with its `probe` opt-in rendered as WHAT IT GRANTS — Q6's answer.
     //    A checkbox cannot express this declaration and neither can the clause's own name.

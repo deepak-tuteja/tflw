@@ -1854,6 +1854,11 @@ export interface SessionDecl extends Node {
    * — keep the position, flatten at the point of use. */
   readonly envs: readonly EnvScopeRef[] | null;
   readonly oauth2: Oauth2SessionConfig | null;
+  /** `session <name> oauth2 code` (`M248`, `D1354`) — the authorization-code grant with PKCE: the
+   * runtime opens `authorizeUrl` in a browser, runs `body` (browser steps only, `TF093`) to sign in
+   * and consent, receives the code on a loopback listener, and exchanges it. Absent for every other
+   * session; when present `oauth2` is `null` and `body` is the sign-in, not the whole session. */
+  readonly oauth2Code?: Oauth2CodeConfig;
   readonly body: readonly Step[];
   /** `session <name> [oauth2] privileged` (M130b, D307/D310) — this principal is *supposed* to be
    * able to read other principals' resources, so `has no authorization violations` excludes it from
@@ -1895,6 +1900,20 @@ export interface Oauth2SessionConfig extends Node {
   readonly tokenUrl: Value;
   readonly clientId: Value;
   readonly clientSecret: Value;
+  readonly scope: Value | null;
+}
+
+/** `session <name> oauth2 code` config lines (`M248`, `D1354`). `clientSecret` is `null` for a
+ * public client, which is the case PKCE exists for. `redirect` is `null` when the line is missing so
+ * the checker can say so (`TF094`) with the declaration still parsed; it must be a loopback `http`
+ * URL, and a port of `0` asks the OS for one, substituted into the URL the browser is sent. */
+export interface Oauth2CodeConfig extends Node {
+  readonly type: 'Oauth2CodeConfig';
+  readonly authorizeUrl: Value;
+  readonly tokenUrl: Value;
+  readonly clientId: Value;
+  readonly clientSecret: Value | null;
+  readonly redirect: Value | null;
   readonly scope: Value | null;
 }
 

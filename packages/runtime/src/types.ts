@@ -260,7 +260,9 @@ export type StepKind =
   | 'stub'
   | 'pause'
   /** `G1` (`D1381`) — the rows of a concurrent test met here and went on at once. */
-  | 'together';
+  | 'together'
+  /** `M248` (`D1354`) — a code-flow session's redirect reached tflw's loopback listener (or did not). */
+  | 'redirect';
 
 export interface RequestTrace {
   readonly method: string;

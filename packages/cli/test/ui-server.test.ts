@@ -928,10 +928,10 @@ test('readProject carries who runs as what: the sessions declared, the sessions 
     // Declared, in the active env, with what running `as` it adds to a request. Header NAMES and
     // never values: a session header is where a bearer token lives and this object is serialised
     // to a browser.
-    assert.deepEqual(sessions[0], { name: 'admin', privileged: true, oauth2: false, headers: ['Authorization'], steps: 2, line: 11, outOfScope: null });
+    assert.deepEqual(sessions[0], { name: 'admin', privileged: true, oauth2: false, oauth2Code: false, headers: ['Authorization'], steps: 2, line: 11, outOfScope: null });
     // Declared for another env, which is the state the Auth tab exists to make visible: the test
     // that names it runs anonymous and `tflw check` is the only other place that says so.
-    assert.deepEqual(sessions[1], { name: 'ops', privileged: false, oauth2: false, headers: [], steps: 1, line: 15, outOfScope: ['staging'] });
+    assert.deepEqual(sessions[1], { name: 'ops', privileged: false, oauth2: false, oauth2Code: false, headers: [], steps: 1, line: 15, outOfScope: ['staging'] });
 
     // `as` on the test itself, so the page can show which of the declared sessions this FILE uses
     // — a list that differs from the declared one in every project that has ever deleted a test.

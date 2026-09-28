@@ -729,6 +729,7 @@ ViewportDecl    := 'viewport' NUMBER NUMBER                       # width height
                                                                    # own default (1280×720)
 
 SessionDecl     := 'session' IDENT EnvScope? SignedWith? ('oauth2' 'privileged'? NEWLINE INDENT Oauth2Config DEDENT
+                                              | 'oauth2' 'code' 'privileged'? NEWLINE INDENT Oauth2CodeLine+ DEDENT
                                               | 'privileged'? NEWLINE Block)
                                                                   # `privileged` (§3.3, M130b, D307) — this
                                                                   #   principal is meant to reach other
@@ -772,6 +773,13 @@ Oauth2Config    := 'token' 'url' Value NEWLINE
                     'client' 'id' Value NEWLINE
                     'client' 'secret' Value NEWLINE
                     ('scope' Value NEWLINE)?
+Oauth2CodeLine  := ('authorize' 'url' | 'token' 'url' | 'client' 'id' | 'client' 'secret'
+                    | 'redirect' | 'scope') Value NEWLINE
+                  | Step                                          # M248 (§3.3, D1354) — any order;
+                                                                  #   `authorize url`, `token url` and
+                                                                  #   `client id` required, `redirect`
+                                                                  #   required and loopback (TF094); a
+                                                                  #   step that makes a request is TF093
 CsrfStmt        := 'csrf' 'from' Subject 'send' 'as' 'header' STRING NEWLINE
                                                                   # session bodies only (§3.3, M137b,
                                                                   #   D433) — capture the token this

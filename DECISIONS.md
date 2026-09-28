@@ -9747,6 +9747,14 @@ the report header.
 |---|---|---|
 | `D1353` | L7 | **`skip "reason" on env a, b`** is a header clause resolved at plan time from `tflw.config` (never from a response — inside the fence), reported as skipped with its reason. **`--skip-tag a,b`** excludes tests carrying any listed tag, combinable with `--tag`. |
 
+### D1354
+
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1354` | L3 | **`session x oauth2 code`**, PKCE: `authorize url`, `token url`, `client id`, `redirect`, `scope`; the session body may hold browser steps to complete the provider's login; tflw mints verifier and challenge, binds the redirect listener, exchanges the code; the token rides API steps as Bearer. Device code and API-key sugar: not taken. |
+
 ### D1356
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
@@ -9781,7 +9789,7 @@ the report header.
 
 ### D1381
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9805,7 +9813,7 @@ the report header.
 
 ### D1384
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -14113,7 +14121,7 @@ docs. Sibling `T-1` waits on it.
 
 ### M248
 
-<sub>cited from SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§4 `M248` — a session that signs in through a browser**
 

@@ -98,6 +98,7 @@ import type {
   NetworkRequestRef,
   NumberLit,
   Oauth2SessionConfig,
+  Oauth2CodeConfig,
   ObjectLit,
   OpenStmt,
   PathExpr,
@@ -1720,6 +1721,17 @@ class Parser {
       );
       this.advance(); // `privileged`
     }
+    if (this.isKw(this.peek(), 'oauth2') && this.isKw(this.peek(1), 'code')) {
+      this.advance(); // `oauth2`
+      this.advance(); // `code`
+      const privileged = this.parsePrivilegedModifier() || misordered;
+      this.lateEnvScope(name.value, envs);
+      const headerSpan = this.headerSpanFrom(start);
+      this.endLine();
+      const parsed = this.parseOauth2CodeBlock(start, headerSpan);
+      if (!parsed) return null;
+      return { type: 'SessionDecl', name: name.value, envs, oauth2: null, oauth2Code: parsed.config, body: parsed.body, privileged, ...(signer ? { signer } : {}), span: this.spanFrom(start) };
+    }
     if (this.isKw(this.peek(), 'oauth2')) {
       this.advance(); // `oauth2`
       const privileged = this.parsePrivilegedModifier() || misordered;
@@ -2072,6 +2084,99 @@ class Parser {
       return null;
     }
     return { type: 'Oauth2SessionConfig', tokenUrl, clientId, clientSecret, scope, span: this.spanFrom(start) };
+  }
+
+  /** `session <name> oauth2 code` body (`M248`, `D1354`) — the grant's config lines and the
+   * sign-in's browser steps, in one indented block. A config line is recognised by its first word
+   * (`authorize`, `token`, `client`, `redirect`, `scope` — none of them begins a step), so the two
+   * can be written in any order; everything else is a step, and a step that is not a browser step is
+   * the checker's `TF093`, not a parse error, so the whole body is still there to point at.
+   *
+   * `redirect` is optional *here* and required by the checker (`TF094`), for the same reason: a
+   * missing redirect is a statement about the grant, not about the text, and refusing the
+   * declaration outright would leave nothing for the editor to complete. */
+  private parseOauth2CodeBlock(start: Position, headerSpan: Span): { config: Oauth2CodeConfig; body: Step[] } | null {
+    if (!this.check('indent')) {
+      this.error(
+        Codes.EMPTY_BLOCK,
+        'this `session … oauth2 code` has no config',
+        headerSpan,
+        'indent `authorize url`, `token url`, `client id` and `redirect` under the `session … oauth2 code` line, then the steps that sign in',
+      );
+      return null;
+    }
+    this.advance(); // indent
+    const values: Record<'authorize url' | 'token url' | 'client id' | 'client secret' | 'redirect' | 'scope', Value | null> = {
+      'authorize url': null, 'token url': null, 'client id': null, 'client secret': null, redirect: null, scope: null,
+    };
+    const body: Step[] = [];
+    const takeValue = (field: keyof typeof values): void => {
+      const v = this.parseValue();
+      if (v) {
+        values[field] = v;
+        this.endLine();
+      } else this.synchronize();
+    };
+    while (!this.check('dedent') && !this.atEof()) {
+      if (this.check('newline')) {
+        this.advance();
+        continue;
+      }
+      const before = this.pos;
+      const tok = this.peek();
+      if (this.isKw(tok, 'authorize') || this.isKw(tok, 'token')) {
+        this.advance();
+        if (this.expectKw('url')) takeValue(tok.value === 'authorize' ? 'authorize url' : 'token url');
+        else this.synchronize();
+      } else if (this.isKw(tok, 'client')) {
+        this.advance();
+        const kindTok = this.peek();
+        if (this.isKw(kindTok, 'id') || this.isKw(kindTok, 'secret')) {
+          this.advance();
+          takeValue(kindTok.value === 'id' ? 'client id' : 'client secret');
+        } else {
+          this.error(Codes.UNEXPECTED_TOKEN, `expected \`id\` or \`secret\` after \`client\`, found ${describeToken(kindTok)}`, kindTok.span);
+          this.synchronize();
+        }
+      } else if (this.isKw(tok, 'redirect') || this.isKw(tok, 'scope')) {
+        this.advance();
+        takeValue(tok.value === 'redirect' ? 'redirect' : 'scope');
+      } else {
+        const step = this.parseStep();
+        if (step) body.push(step);
+        else {
+          const gap = this.malformedStepAt(before);
+          if (gap) body.push(gap);
+          this.synchronize();
+        }
+      }
+      if (this.pos === before) this.advance(); // guarantee progress
+    }
+    if (this.check('dedent')) this.advance();
+    const authorizeUrl = values['authorize url'];
+    const tokenUrl = values['token url'];
+    const clientId = values['client id'];
+    if (!authorizeUrl || !tokenUrl || !clientId) {
+      // The required lines are the example's keys — an object, not an array of strings, so the
+      // vocabulary extractor (`vocabulary.test.ts`, shape `A`) does not read two-word labels as words.
+      const example = {
+        'authorize url': '"https://id.example.com/oauth/authorize"',
+        'token url': '"https://id.example.com/oauth/token"',
+        'client id': '"my-cli"',
+      } as const;
+      const missing = (Object.keys(example) as (keyof typeof example)[]).filter((f) => !values[f]);
+      this.error(
+        Codes.CONFIG_UNEXPECTED,
+        `an oauth2 code session needs ${listAnd(missing)}`,
+        this.spanFrom(start),
+        `indent ${missing.length === 1 ? 'it' : 'them'} under the \`session … oauth2 code\` line, e.g.\n${missing.map((f) => `    ${f} ${example[f]}`).join('\n')}`,
+      );
+      return null;
+    }
+    const config: Oauth2CodeConfig = {
+      type: 'Oauth2CodeConfig', authorizeUrl, tokenUrl, clientId, clientSecret: values['client secret'], redirect: values.redirect, scope: values.scope, span: headerSpan,
+    };
+    return { config, body };
   }
 
   /** Like `parseBlock`, but also accepts a bare `header "…" is …` line (only valid inside a

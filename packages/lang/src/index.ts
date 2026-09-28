@@ -110,6 +110,8 @@ export {
   checkConfigDeclaredEnvRefs,
   checkBracedEnvRefs,
   checkConfigBracedEnvRefs,
+  checkCodeFlowSessions,
+  loopbackRedirectRefusal,
   identityCensus,
   type IdentityCensus,
   RESERVED_PRINCIPAL,

@@ -317,6 +317,7 @@ function SessionRow({ name, tests, session, envName, onEdit }: {
         <code>{name}</code>
         {session?.privileged ? <span className="chip" title="excluded from the authorization probe set — this principal is *meant* to reach other principals’ resources">privileged</span> : null}
         {session?.oauth2 ? <span className="chip" title="an OAuth2 client-credentials grant, not a hand-written login">oauth2</span> : null}
+        {session?.oauth2Code ? <span className="chip" title="an OAuth2 authorization-code grant with PKCE, signed in through a browser">oauth2 code</span> : null}
         {session === null ? null : (
           <button className="linkish" onClick={() => onEdit(session.line)} data-auth-edit={`session:${name}`} aria-label={`edit the ${name} session in tflw.config`} data-tip={`open tflw.config at line ${session.line}`}>
             [edit]
@@ -330,6 +331,8 @@ function SessionRow({ name, tests, session, envName, onEdit }: {
             ? scopeNote(session, envName)
             : session.oauth2
               ? 'obtains a bearer token from its token URL before the run and sends it on every request made under it'
+              : session.oauth2Code
+                ? `signs in through a browser on its authorize URL (${session.steps} sign-in step${session.steps === 1 ? '' : 's'}), takes the code at a loopback redirect, and sends the bearer token it exchanges for on every request made under it`
               : session.headers.length > 0
                 ? `adds ${session.headers.map((h) => `\`${h}\``).join(', ')} to every request made under it, after ${session.steps} establishing step${session.steps === 1 ? '' : 's'}`
                 : `${session.steps} establishing step${session.steps === 1 ? '' : 's'}, and no \`header\` line — what it carries is whatever cookies those steps set`}

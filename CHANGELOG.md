@@ -17,6 +17,20 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — a session that signs in through a browser (M248)
+
+- **`session <name> oauth2 code`** (`D1354`): the authorization-code grant with PKCE, for identity
+  providers whose only grant is a person signing in on a page. The block holds `authorize url`,
+  `token url`, `client id`, an optional `client secret` and `scope`, a loopback `redirect` (port `0`
+  for one the OS chooses), and the sign-in's browser steps. tflw opens the authorize URL, runs the
+  sign-in, takes the code at the redirect, checks `state`, and exchanges the code with the verifier.
+  Tests `as` it carry the bearer. `expires_in` sets the TTL and a `refresh_token` is spent before
+  signing in again. The code, the verifier and both tokens are masked in every report.
+- **`TF093`**: a sign-in step that makes a request of its own (`api`, `wait until api`, `capture`).
+  **`TF094`**: a missing `redirect`, or one that is not a loopback `http` URL.
+- The page's Auth panel marks the session *oauth2 code* and says what it does; the runbook's
+  *Sessions* section and the sessions guide show the block.
+
 ### Added — the language joins its sessions to the browser (M247)
 
 - **A session signs the browser in** (`D1352`, amending `D10`). `test "…" as shopper` starts its

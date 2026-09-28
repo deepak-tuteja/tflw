@@ -33,6 +33,7 @@ import type {
   PathSegment,
   Program,
   SessionDecl,
+  Oauth2CodeConfig,
   SignerRef,
   Step,
   StringLit,
@@ -1223,6 +1224,72 @@ export function checkSessionBody(
     checkAbsoluteUrlsInSteps(session.body, envAllowHosts ? { envAllowHosts } : {}, diags);
   }
   return byPosition(diags);
+}
+
+/** The steps a code-flow session's sign-in may not hold (`TF093`, `M248`, `D1354`): the ones that
+ * send a request of their own or read the last one. The sign-in runs in the browser the flow opened,
+ * so its requests are the page's; the flow's own request is the token exchange, which is not a step. */
+const OAUTH2_CODE_REFUSED = new Set<Step['type']>(['ApiStep', 'WaitUntilApiStmt', 'CaptureStmt']);
+
+/** `TF093`/`TF094` over every `session … oauth2 code` in a config (`M248`, `D1354`). Its own pass
+ * rather than a line in `checkSessionBody`, and over the whole file rather than the env's roster:
+ * neither rule depends on an env, a service map or a base URL, so the config probe harness can run
+ * it as `tflw check` does, and a code-flow session scoped to another env is wrong under every env. */
+export function checkCodeFlowSessions(config: ConfigFile): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const session of config.sessions) if (session.oauth2Code) checkOauth2CodeSession(session, session.oauth2Code, diags);
+  return byPosition(diags);
+}
+
+function checkOauth2CodeSession(session: SessionDecl, code: Oauth2CodeConfig, diags: Diagnostic[]): void {
+  for (const step of session.body) {
+    if (!OAUTH2_CODE_REFUSED.has(step.type)) continue;
+    const what = step.type === 'CaptureStmt' ? 'a `capture`' : step.type === 'WaitUntilApiStmt' ? 'a `wait until api`' : 'an `api` step';
+    diags.push({
+      code: Codes.OAUTH2_CODE_NON_BROWSER_STEP,
+      severity: 'error',
+      message: `${what} in the sign-in of \`session ${session.name} oauth2 code\`, whose body runs in the browser the flow opened`,
+      span: step.span,
+      hint: 'sign in with browser steps (`fill`, `click`, `expect page …`); the token comes from the code exchange tflw makes after the redirect, so nothing here needs to request or capture it',
+    });
+  }
+  if (!code.redirect) {
+    diags.push({
+      code: Codes.OAUTH2_CODE_REDIRECT,
+      severity: 'error',
+      message: `\`session ${session.name} oauth2 code\` has no \`redirect\``,
+      span: code.span,
+      hint: 'add `redirect "http://127.0.0.1:0/callback"` — the code comes back to a listener tflw binds on this machine; port `0` lets the OS choose one',
+    });
+    return;
+  }
+  // An `env(…)` or an interpolated redirect is judged by the runtime, which refuses the same URLs.
+  if (code.redirect.type !== 'StringLit' || code.redirect.parts.some((part) => part.kind !== 'text')) return;
+  const text = code.redirect.value;
+  const refusal = loopbackRedirectRefusal(text);
+  if (refusal) {
+    diags.push({
+      code: Codes.OAUTH2_CODE_REDIRECT,
+      severity: 'error',
+      message: `\`redirect ${JSON.stringify(text)}\` ${refusal}`,
+      span: code.redirect.span,
+      hint: 'the code comes back to a listener tflw binds on this machine, so the redirect names it over plain `http`: `http://127.0.0.1:<port>/<path>`, `http://localhost:…` or `http://[::1]:…` (port `0` lets the OS choose)',
+    });
+  }
+}
+
+/** Why `text` is not a redirect tflw can listen on, or `null` when it is (`TF094`). Exported for the
+ * runtime, which refuses the same URLs when a value only resolves at run time. */
+export function loopbackRedirectRefusal(text: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return 'is not a URL';
+  }
+  if (url.protocol !== 'http:') return `is \`${url.protocol.slice(0, -1)}\`, and a loopback listener speaks plain \`http\``;
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return `names \`${url.hostname}\`, which is not this machine`;
+  return null;
 }
 
 /** `checkCalls` inverted for a session body (M97b, D142) — see `checkSessionBody`. */

@@ -454,7 +454,7 @@ session billing oauth2
 - `client secret`'s value is redacted in report evidence exactly like any other `env(...)`-sourced
   secret (§3.4) — no separate redaction wiring needed.
 - Mutually exclusive with a hand-written body: a `session` block is either `oauth2` or a sequence
-  of steps, never both.
+  of steps, never both. (`oauth2 code`, below, is the one kind with both: its body is the sign-in.)
 - **Relative paths in a session body resolve against `tflw.config`'s own directory**, not against
   the test file that happened to trigger the session. This is the one deliberate exception to the
   "relative to this file" convention `matches file`/`body from`/`upload`/`snapshots` otherwise
@@ -464,6 +464,52 @@ session billing oauth2
   decided by run order — so
   `body from "./creds.json"` in a session is always the `creds.json` sitting next to the
   `tflw.config` you wrote it in, whichever suite, file, or worker establishes the session.
+
+#### `session … oauth2 code` — signing in through a browser (M248) ✅
+
+For an identity provider that only offers the authorization-code grant — a person signs in on a
+page and consents — the session does what that person does, in a browser tflw opens, and PKCE
+(RFC 7636) keeps the code useless to anyone who intercepts it:
+
+```
+session sso oauth2 code
+  authorize url "/oauth/authorize"
+  token url "/oauth/token"
+  client id "storefront-cli"
+  redirect "http://127.0.0.1:0/callback"
+  scope "orders:read"
+  fill field "Email" with env(SSO_USER)
+  fill field "Password" with env(SSO_PW)
+  click button "Allow"
+```
+
+- `authorize url`, `token url` and `client id` are required; `client secret` is optional (a public
+  client, which is the case PKCE exists for), and so is `scope`. Relative URLs resolve against the
+  active env's default `api` base, as the client-credentials sugar's do. The config lines and the
+  sign-in's steps may come in any order.
+- **At first use:** tflw mints a verifier and its `S256` challenge and a `state`, binds a listener on
+  the `redirect` (port `0` asks the OS for one, and the bound port is what the authorization server is
+  sent), opens a fresh browser context on the authorize URL, and runs the sign-in steps there. The
+  authorization server's redirect lands on the listener; tflw exchanges the code with the verifier at
+  `token url`, and `access_token` becomes the session's `Authorization: Bearer` — from there on it is
+  a session like any other.
+- **The body is the sign-in, and only that** — browser steps, `expect`s about the page, `let`, `log`.
+  A request of its own (`api`, `wait until api`, `capture`) is `TF093`: the flow's request is the
+  token exchange, which is not a step.
+- **`redirect` must name this machine** — `127.0.0.1`, `localhost` or `[::1]`, over plain `http` —
+  and is required (`TF094`). An `env(…)` redirect is refused the same way when the run resolves it.
+- A redirect whose `state` is not the one sent is **refused** and nothing is exchanged: that is how
+  a code from someone else's sign-in would arrive. An `error=` redirect fails the session with the
+  server's own `error` and `error_description`.
+- `expires_in` sets the TTL as for the client-credentials sugar. When the exchange returned a
+  `refresh_token`, the expired session spends it first (`grant_type=refresh_token`) and only signs in
+  through the browser again if that is refused.
+- **The code, the verifier and both tokens are masked** in every report surface (`results.json`,
+  `report.html`, the live trace) as `•••(sso.code)`, `•••(sso.code_verifier)`,
+  `•••(sso.access_token)`, `•••(sso.refresh_token)`, without a `redact` pattern.
+- The evidence is the session's steps, as for any session: the authorize `open`, the sign-in's steps,
+  one `redirect` row, and the exchange as an `api` step.
+- Needs a browser: a run with none fails the session and says how to install one.
 
 #### `csrf from … send as header "…"` (M137b) ✅
 
@@ -4449,6 +4495,8 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF090` | Checker (`M247` `E`, `D1359`): **`with each concurrently` on an inline table of one row.** One row has nothing to run beside, so the clause promises an overlap the run cannot produce, and a test written to prove a race would pass without one ever happening. File-backed tables are not judged — their rows are read at run time. **A warning**: the test still means something; only the clause does not. | a one-row table marked `concurrently` → `has one row, so nothing runs beside it` |
 | `TF091` | Checker (`G3`, `D1382`): **a test rebinds a name `before file` made.** What `before file` binds is shared, read-only, by every test, each-scope hook, row and `after file` in the file (SPEC §4.2) — the coupon a race is run over, the product whose stock it drains. A `let`, a `capture` or an inline table column of the same name would make one name mean two values depending on where it is read, and under `with each concurrently` on which row read it. **An error**: the file runs either reading, and the author meant one. | a test rebinding a `before file` value → `` is made once in `before file` and shared read-only `` |
 | `TF092` | Checker (`G1`, `D1381`): **`together` where no rows can meet.** The barrier holds the rows of a `with each concurrently` test until every row still running has reached it. In a test whose rows run in turn, in a hook or in an action there is nothing to wait for; inside a block (`within`, a tab, a download) some rows could pass it while others never reach it. **An error**: a race written with a barrier that does nothing passes without the race. | `together` in a test with no concurrent table → `whose rows do not run at once` |
+| `TF093` | Checker (config, `M248`, `D1354`): **a step in the sign-in of a `session … oauth2 code` that sends or reads a request of its own** — `api`, `wait until api` or `capture`. The body runs in the browser the flow opened, the way a person signs in on the consent page; the token comes from the code exchange tflw makes after the redirect. **An error**: a request there would go out without the session it is part of establishing. | an `api` step in the sign-in → `in the sign-in of` |
+| `TF094` | Checker (config, `M248`, `D1354`): **a `session … oauth2 code` with no `redirect`, or one that is not a loopback `http` URL.** The code comes back to a listener tflw binds on this machine, so the redirect names it — `127.0.0.1`, `localhost` or `[::1]` over plain `http`, port `0` for one the OS chooses. A redirect written through `env(…)` is refused the same way at run time. **An error**: any other host would receive the code where tflw is not listening. | an `https` redirect to another host → `a loopback listener speaks plain` |
 | `TF095` | Checker (`G10`, `D1384`): **a `rows` block under a test with no `with each` table.** One run has nothing to count across; the judgement belongs in the test body as an ordinary `expect`. **An error.** (`TF093`/`TF094` are reserved for `M248`'s code-flow session.) | a `rows` block under a plain test → `` which has no `with each` table `` |
 | `TF096` | Checker (`G10`, `D1384`): **a `rows` line whose subject a finished row cannot answer.** A row is judged after it ends, from its last response and its bindings; its page is closed by then, so a locator, `page`, a dialog or a network observation has nothing left to read. **An error.** | a `rows` line about a locator → `can read a row's last response and its bindings` |
 <!-- GENERATED:diagnostics:end -->
