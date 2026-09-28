@@ -3403,7 +3403,7 @@ async function runCrawlDecl(crawl: CrawlDecl, config: ResolvedConfig, tc: TestCt
       step.span,
       false,
       performance.now(),
-      `this assertion had no power to fail on this crawl: no rule applied on any of the ${tally.stoodDown} route${tally.stoodDown === 1 ? '' : 's'} it judged (D285, judged over the surface). ` +
+      `this assertion had no power to fail on this crawl: no rule applied on any of the ${tally.stoodDown} route${tally.stoodDown === 1 ? '' : 's'} it judged — a crawl's assertion is judged over the whole surface, so one route it can judge is enough. ` +
         'Each route above says which precondition went unmet; give the crawl a seed that reaches a route one of them can judge, or lower the severity floor.',
     );
     steps.push(result);
