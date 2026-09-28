@@ -246,7 +246,11 @@ export default defineConfig({
       '/runbook/': [
         {
           text: 'Runbook',
-          items: [{ text: 'Setting up a project', link: '/runbook/project' }],
+          items: [
+            { text: 'Installing tflw', link: '/runbook/install' },
+            { text: 'Setting up a project', link: '/runbook/project' },
+            { text: 'Running a suite', link: '/runbook/running' },
+          ],
         },
       ],
       '/ui/': [
