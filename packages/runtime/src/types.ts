@@ -683,6 +683,10 @@ export interface RunReport {
    * written before this and every fixture keeps its shape.
    */
   readonly ranBy?: { readonly user: string; readonly host: string; readonly version: string };
+  /** `M249` `C` (`D1369`) — set by `tflw merge`: the report directories this one joins, in the order
+   *  given. Absent on every run's own report, so its presence is what says *this is a merge* — and
+   *  why `env` may read `ci, staging` and `seed` is only the first input's. */
+  readonly mergedFrom?: readonly string[];
   /** True when this run had `insecure true` active (TLS verification disabled) — surfaced as a
    * visible warning in the CLI summary and report header, never silently (decision 78). */
   readonly insecure: boolean;

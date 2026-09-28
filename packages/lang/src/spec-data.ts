@@ -248,7 +248,7 @@ export const STEP_KEYWORDS: readonly StepKeywordEntry[] = [
  * table, decision 16.10) and a later LSP's signature help. */
 export interface CliFlagEntry {
   readonly flag: string;
-  readonly command: 'run' | 'check' | 'init' | 'install-browsers' | 'pick' | 'record' | 'watch' | 'migrate' | 'fmt' | 'export' | 'ui' | 'spec' | 'global';
+  readonly command: 'run' | 'check' | 'init' | 'install-browsers' | 'pick' | 'record' | 'watch' | 'migrate' | 'fmt' | 'export' | 'merge' | 'ui' | 'spec' | 'global';
   readonly effect: string;
 }
 
@@ -666,6 +666,8 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--check`', command: 'fmt', effect: 'writes nothing; lists every file that would change and exits 1 if any would — the CI form. Without it, files are rewritten in place and each one that changed is named' },
   { flag: '`--endpoint <url>`', command: 'export', effect: 'where `tflw export otlp` POSTs the trace — a collector\'s OTLP/HTTP traces address, e.g. `http://localhost:4318/v1/traces` (`M242`, `D1331`); required' },
   { flag: '`--header <name=value>`', command: 'export', effect: 'a header sent with the trace, for a collector\'s auth; repeatable' },
+  { flag: '`--out <dir>`', command: 'merge', effect: 'where `tflw merge` writes the merged `report.html`, `junit.xml`, `results.json` and `findings.sarif` (`M249`, `D1369`); required, and never one of the inputs' },
+  { flag: '`--no-color`', command: 'merge', effect: 'plain text for the merged summary, as `run --no-color`' },
   { flag: '`--port <n>`', command: 'ui', effect: 'the loopback port the page is served on (default 4141); `0` lets the OS pick and the chosen port is printed' },
   { flag: '`--no-open`', command: 'ui', effect: 'do not open the page in a browser after the server starts — the URL is printed either way, which is the form a tunnel (`ssh -L`) or a script wants' },
   { flag: '`--json`', command: 'spec', effect: "emits the construct manifest as JSON instead of the human listing — the form `testFlow-tests`' conformance gate reads (`M154a`). Spelled as a boolean rather than `--format json` (D738): `spec` has one machine format and one human one, so there is no open set of renderings to name" },

@@ -134,6 +134,8 @@ import {
   writeEventsNdjson,
   clearRunOwnedMembers,
   keepRun,
+  mergeRuns,
+  copyAssets,
   readHistory,
   renderCliSummary,
   describeWorkload,
@@ -373,6 +375,8 @@ async function main(argv: string[]): Promise<number> {
       return fmtCommand(rest);
     case 'export':
       return exportCommand(rest);
+    case 'merge':
+      return mergeCommand(rest);
     case 'ui':
       return uiCommand(rest);
     case '--version':
@@ -387,7 +391,7 @@ async function main(argv: string[]): Promise<number> {
       return command === undefined ? EXIT_USAGE : EXIT_OK;
     default:
       err(
-        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw spec\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, \`tflw migrate\`, \`tflw fmt\`, \`tflw export otlp\`, or \`tflw ui\`.`,
+        `unknown command \`${command}\`. Try \`tflw run\`, \`tflw check\`, \`tflw init\`, \`tflw docs\`, \`tflw spec\`, \`tflw lsp\`, \`tflw install-browsers\`, \`tflw pick\`, \`tflw watch\`, \`tflw refactor apply\`, \`tflw migrate\`, \`tflw fmt\`, \`tflw export otlp\`, \`tflw merge\`, or \`tflw ui\`.`,
       );
       return EXIT_USAGE;
   }
@@ -2654,6 +2658,76 @@ async function exportCommand(argv: string[]): Promise<number> {
   return EXIT_OK;
 }
 
+/**
+ * `tflw merge <report-dir>... --out <dir> [--no-color]` — `M249` `C` (`D1369`). Several finished runs
+ * as one: `report.html`, `junit.xml`, `results.json`, and `findings.sarif` when any input scanned,
+ * written to `--out`, plus the inputs' `events.ndjson` joined in the order the directories were
+ * given. See `@tflw/reporter`'s `merge.ts` for what each run-level field means once merged. Exits
+ * 0 when the merged run passed, 1 when it did not, 2 for a usage problem — so a CI step can run it
+ * last and let its exit code be the job's verdict.
+ */
+async function mergeCommand(argv: string[]): Promise<number> {
+  const dirs: string[] = [];
+  let out: string | undefined;
+  let noColor = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === '--out') out = flagValue(argv, ++i, a);
+    else if (a.startsWith('--out=')) out = inlineFlagValue(a, '--out');
+    else if (a === '--no-color') noColor = true;
+    else if (a.startsWith('--')) unknownFlag('merge', a);
+    else dirs.push(a);
+  }
+  if (dirs.length === 0) {
+    err('`tflw merge` needs the report directories to merge — e.g. `tflw merge shard-*/report --out report`');
+    return EXIT_USAGE;
+  }
+  if (out === undefined) {
+    err('`tflw merge` needs `--out <dir>` — where the merged report is written; it never writes into an input');
+    return EXIT_USAGE;
+  }
+  const cwd = process.cwd();
+  const outDir = resolve(cwd, out);
+  if (dirs.some((d) => resolve(cwd, d) === outDir)) {
+    err(`\`--out ${out}\` is one of the inputs — the merge would overwrite a run it is reading; name another directory`);
+    return EXIT_USAGE;
+  }
+  const inputs: { dir: string; report: RunReport }[] = [];
+  for (const dir of dirs) {
+    try {
+      inputs.push({ dir, report: JSON.parse(await readFile(join(resolve(cwd, dir), 'results.json'), 'utf8')) as RunReport });
+    } catch (e) {
+      err(`\`${dir}\` holds no readable results.json (${(e as Error).message}) — each input is a report directory a \`tflw run\` wrote`);
+      return EXIT_USAGE;
+    }
+  }
+  const merged = mergeRuns(inputs);
+  await mkdir(outDir, { recursive: true });
+  await clearRunOwnedMembers(outDir);
+  await copyAssets(dirs.map((d) => resolve(cwd, d)), outDir);
+  const htmlPath = await writeReport(merged, outDir);
+  await writeJunitXml(merged, outDir);
+  await writeResultsJson(merged, outDir);
+  const sourceRoot = sourceRootOf(cwd);
+  await writeSarif(merged, outDir, { version: await getVersion(), ...(sourceRoot ? { sourceRoot, fileBase: cwd } : {}) });
+  // The event streams, joined: each input's lines in its own order, inputs in the order given.
+  const streams: string[] = [];
+  for (const dir of dirs) {
+    try {
+      streams.push(await readFile(join(resolve(cwd, dir), 'events.ndjson'), 'utf8'));
+    } catch {
+      // an input run without `--format ndjson` has no stream; the merge says so by omission
+    }
+  }
+  if (streams.length > 0) await writeFile(join(outDir, 'events.ndjson'), streams.map((t) => (t.endsWith('\n') ? t : `${t}\n`)).join(''), 'utf8');
+  const color = !noColor && process.stdout.isTTY === true;
+  process.stdout.write(renderCliSummary(merged, color) + '\n');
+  process.stdout.write(`\nmerged ${inputs.length} run${inputs.length === 1 ? '' : 's'} into ${relative(cwd, htmlPath).split(sep).join('/')}\n`);
+  if (merged.aborted) return EXIT_ABORTED;
+  if (merged.inconclusive) return EXIT_INCONCLUSIVE;
+  return merged.ok ? EXIT_OK : EXIT_FAIL;
+}
+
 async function fmtCommand(argv: string[]): Promise<number> {
   const paths: string[] = [];
   let check = false;
@@ -4352,6 +4426,10 @@ function printUsage(): void {
       '                                                      send a finished run to an OpenTelemetry collector as one trace (run →',
       '                                                      file → test → step) over OTLP/HTTP JSON; report-dir defaults to report/.',
       '                                                      Times are laid end to end from the run\'s start and every span says so',
+      '  tflw merge <report-dir>... --out <dir> [--no-color]',
+      '                                                      join finished runs (shards, a sweep\'s groups) into one report: tests in',
+      '                                                      the order given, counts re-derived, findings deduplicated by fingerprint;',
+      '                                                      exits 0 when the merged run passed, 1 when it did not',
       '  tflw ui [dir] [--port <n>] [--no-open]             serve the page for a project on 127.0.0.1: the files and their',
       '                                                      tests, a run started from the page as `tflw run --format ndjson` with',
       '                                                      its stream relayed live, and every report directory the project holds.',
