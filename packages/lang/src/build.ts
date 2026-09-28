@@ -163,6 +163,9 @@ export interface TestSpec {
   /** `skip "reason"` (`M242` `B`, `D1327`) — carried for `S5a`'s reason: a rebuild that dropped it
    *  would un-skip a test whose name somebody edited. Absent or blank means not skipped. */
   readonly skip?: string;
+  /** `on env a, b` after the skip (`M247` `B`, `D1353`) — carried for the same reason as `skip`.
+   *  Written only beside a non-blank reason; an empty list writes none. */
+  readonly skipOn?: readonly string[];
 }
 
 /** A whole `test`. `sessions` stopped being a hardcoded default in `A2-3`, and `retry`, `table` and
@@ -189,6 +192,9 @@ export function buildTest(spec: TestSpec): BuildResult<TestDecl> {
       sessions: spec.sessions ?? [],
       retry: spec.retry ?? 0,
       ...(spec.skip === undefined || spec.skip.trim() === '' ? {} : { skip: stringLit(spec.skip) }),
+      ...(spec.skip === undefined || spec.skip.trim() === '' || !spec.skipOn || spec.skipOn.length === 0
+        ? {}
+        : { skipOn: spec.skipOn.map((name) => ({ type: 'EnvScopeRef' as const, name, span: SYNTHETIC })) }),
       table: spec.table ?? null,
       workload: spec.workload,
       thresholds: spec.thresholds,

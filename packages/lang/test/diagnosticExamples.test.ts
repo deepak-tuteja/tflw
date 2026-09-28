@@ -81,6 +81,7 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
       ...(probe.needs?.services ? { knownServices: probe.needs.services } : {}),
       ...(probe.needs?.sessions ? { knownSessions: probe.needs.sessions } : {}),
       ...(probe.needs?.signers ? { knownSigners: probe.needs.signers } : {}),
+      ...(probe.needs?.envs ? { knownEnvs: probe.needs.envs } : {}),
       ...(probe.needs?.missingFiles ? { missingFiles: new Set(probe.needs.missingFiles) } : {}),
       ...(probe.needs?.importsWithErrors ? { importsWithErrors: new Set(probe.needs.importsWithErrors) } : {}),
       ...(probe.needs?.importedActions

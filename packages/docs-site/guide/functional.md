@@ -67,11 +67,11 @@ Four things in that file are worth naming, each with a chapter behind it.
   imported from another file; `before` and `after` are [hooks](/guide/data-and-hooks).
 - **`unique("Widget")` and `unique email` are generators, not fixtures** — see
   [variables](/guide/variables) for what that buys and what it costs on a retry.
-- **`as admin` reaches the `api` steps and not the browser.** A session is the api steps' headers
-  and cookie jar; the browser context it does not touch. This test asks the browser to do
-  something a signed-out visitor can do, which is why it never logs the page in. A test that needs
-  an authenticated *page* establishes identity twice, on purpose — see [Sessions &
-  auth](/guide/sessions).
+- **`as admin` signs in both halves.** The session gives the `api` steps its headers and cookie
+  jar, and hands the same cookies to the browser, so the catalog page opens signed in as admin with
+  no form login in the test. A session that signs in by header alone reaches only the `api` steps —
+  see [Sessions & auth](/guide/sessions#a-session-signs-the-browser-in) for that and the other
+  limits.
 - **The last assertion is the point.** Everything before it proves the page did something;
   `api GET …/watchers` proves the something reached the backend. That crossing is what stays
   awkward when the UI and the API are two tools.

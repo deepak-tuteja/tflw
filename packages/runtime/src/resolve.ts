@@ -221,6 +221,7 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
 
   return {
     envName: env.name,
+    envNames: config.envs.map((e) => e.name),
     apiBaseUrl,
     services,
     webBaseUrl,

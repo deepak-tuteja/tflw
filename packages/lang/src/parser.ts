@@ -1875,6 +1875,33 @@ class Parser {
     return envs;
   }
 
+  /** `on env a, b` after `skip "reason"` (`M247` `B`, `D1353`) — `parseSessionEnvScope`'s list
+   * under the other preposition. `on` because a skip is a condition on where the run is, not a
+   * scope a declaration belongs to; `env` because the names are env blocks, the majority meaning
+   * the session clause already sided with. */
+  private parseSkipEnvs(): EnvScopeRef[] | null {
+    this.advance(); // `on`
+    if (!this.isKw(this.peek(), 'env')) {
+      this.error(
+        Codes.UNEXPECTED_TOKEN,
+        '`on` after a skip reason names the envs the skip holds in, so it is followed by `env`',
+        this.peek().span,
+        'write `skip "reason" on env <name>` — e.g. `skip "no sandbox in CI" on env ci, staging`',
+      );
+      return null;
+    }
+    this.advance(); // `env`
+    const envs: EnvScopeRef[] = [];
+    for (;;) {
+      const tok = this.expect('ident', 'an env name after `on env`');
+      if (!tok) return envs.length > 0 ? envs : null;
+      envs.push({ type: 'EnvScopeRef', name: tok.value, span: tok.span });
+      if (!this.check('comma')) break;
+      this.advance();
+    }
+    return envs;
+  }
+
   /** `session admin privileged for env local` — the clause in the one position it is not read from
    * (`M147d`, D642), reported the way D310 reports its own misordering: one diagnostic naming the
    * spelling that works, rather than an `endLine()` failure followed by the body being parsed as
@@ -3057,14 +3084,23 @@ class Parser {
     let sawAs = false;
     let sawRetry = false;
     let skip: StringLit | undefined;
+    let skipOn: EnvScopeRef[] | undefined;
     for (;;) {
       const tok = this.peek();
       // `D1327`: `skip "reason"`, anywhere among the other header clauses, once.
       if (this.isKw(tok, 'skip')) {
-        if (skip !== undefined) this.error(Codes.UNEXPECTED_TOKEN, 'this test is already skipped', tok.span, 'one `skip "reason"` says it — keep the reason you meant');
+        const repeat = skip !== undefined;
+        if (repeat) this.error(Codes.UNEXPECTED_TOKEN, 'this test is already skipped', tok.span, 'one `skip "reason"` says it — keep the reason you meant');
         this.advance();
         const reason = this.expectString('the reason as a string, e.g. `skip "the payments sandbox is down until the 3rd"`');
-        if (reason && skip === undefined) skip = reason;
+        if (reason && !repeat) skip = reason;
+        // `M247` `B` (`D1353`): `on env a, b` belongs to the skip it follows and nowhere else, so it
+        // is read here rather than as a clause of its own — `test "x" on env ci` would be a skip
+        // condition with nothing to condition.
+        if (reason && this.isKw(this.peek(), 'on')) {
+          const envs = this.parseSkipEnvs();
+          if (envs && !repeat) skipOn = envs;
+        }
         continue;
       }
       if (this.isKw(tok, 'as')) {
@@ -3132,7 +3168,7 @@ class Parser {
     // same layering as D19's browser-step rejection (checker.ts's `checkWorkloadTests`), since
     // it's a semantic rule about the fully-formed node, not a grammar ambiguity.
     const { workload, thresholds, body } = this.parseTestBody('test', headerSpan);
-    return { type: 'TestDecl', name, tags, sessions, retry, ...(skip === undefined ? {} : { skip }), table, workload, thresholds, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
+    return { type: 'TestDecl', name, tags, sessions, retry, ...(skip === undefined ? {} : { skip }), ...(skipOn === undefined ? {} : { skipOn }), table, workload, thresholds, concurrency: concurrency ?? 'sequential', body, span: this.spanFrom(start) };
   }
 
   private tagsContinue(): boolean {

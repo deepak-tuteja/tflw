@@ -75,6 +75,7 @@ import {
   type PathExists,
   runLoadShard,
   mergeLoadShardReports,
+  resolveSkipEnv,
   spliceLoadReportIntoRunReport,
   resolveConfig,
   selectEnv,
@@ -912,8 +913,10 @@ interface RunArgs {
    * decision 52). */
   readonly nowRaw?: string | undefined;
   /** `--tag a,b,c` (decision 97, closes TFLW-GAPS.md gap #14): comma-separated, OR semantics — a
-   * test runs if it carries *any* listed tag. No exclusion syntax (`--tag !x`), scoped out. Still
-   * combines with `--only` as AND (unchanged). */
+   * test runs if it carries *any* listed tag. A `!`-prefixed tag excludes, and exclusions AND
+   * together (`M242` `B`, `D1327` — `tagsKeep` in `run-flags.ts`); this comment said *no exclusion
+   * syntax* for five milestones after it shipped, and `M247` planned a `--skip-tag` flag on the
+   * strength of it before a measurement withdrew it. Still combines with `--only` as AND. */
   readonly tags?: string[] | undefined;
   /** `--only "<exact test name>"` (decision 94) — runs a single test by its exact declared name,
    * for the VS Code extension's per-test "Run test" CodeLens (`--tag` alone can't target one test,
@@ -1344,6 +1347,7 @@ async function loadAndValidate(
       outOfScopeSessions: { envName: resolved.envName, declaredElsewhere: resolved.sessionsOutOfScope },
       // `M246` (`TF086`) — the active env's signers, with the scoped-elsewhere set for the hint.
       knownSigners: Array.from(resolved.signers?.keys() ?? []),
+      ...(resolved.envNames ? { knownEnvs: resolved.envNames } : {}),
       outOfScopeSigners: { envName: resolved.envName, declaredElsewhere: resolved.signersOutOfScope ?? new Map() },
       importedActions: imports.actions,
       importsWithErrors: imports.unparseable,
@@ -2044,7 +2048,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
           // M56 (Phase 3, D117): `main.report`'s own workload entries are only shard-0's partial
           // share (`runProgramInner`'s own doc comment) — splice in the real, merged result (and
           // hoist the merged selfDiagnosis/inconclusive/aborted) once every shard is combined.
-          const mergedLoadReport = mergeLoadShardReports(program, [main.loadShardResult!, ...children], {
+          const mergedLoadReport = mergeLoadShardReports(resolveSkipEnv(program, resolved.envName), [main.loadShardResult!, ...children], {
             startedAt: main.report.startedAt,
             durationMs: main.report.durationMs,
             seed,
@@ -3013,6 +3017,7 @@ async function checkPendingRewrite(pending: ReadonlyMap<string, string>, loaded:
         privilegedSessions,
         outOfScopeSessions: { envName: loaded.resolved.envName, declaredElsewhere: loaded.resolved.sessionsOutOfScope },
         knownSigners: Array.from(loaded.resolved.signers?.keys() ?? []),
+        ...(loaded.resolved.envNames ? { knownEnvs: loaded.resolved.envNames } : {}),
         outOfScopeSigners: { envName: loaded.resolved.envName, declaredElsewhere: loaded.resolved.signersOutOfScope ?? new Map() },
         importedActions: imports.actions,
         importsWithErrors: imports.unparseable,

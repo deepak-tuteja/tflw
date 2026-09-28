@@ -69,6 +69,10 @@ export interface ProgramCheckOptions {
   /** `M246` (`D1345`) — the signers the active env has, for `TF086` on a step's `sign with`. Same
    * `undefined`-vs-`[]` rule as `knownSessions`: undefined skips the pass. */
   readonly knownSigners?: readonly string[];
+  /** `M247` `B` (`D1353`) — every env block `tflw.config` declares, for `TF088` on `skip … on env`.
+   * Every env and not only the active one: a skip names the envs it holds in, which are by design
+   * not the one the author happens to be checking under. Same `undefined`-vs-`[]` rule. */
+  readonly knownEnvs?: readonly string[];
   /** The signers declared for other envs only, for `TF086`'s scoped hint — `outOfScopeSessions`'
    * shape and reason. */
   readonly outOfScopeSigners?: OutOfScopeSessions;
@@ -335,6 +339,7 @@ export function checkProgram(program: Program, opts: ProgramCheckOptions = {}): 
     ...checkDataTables(program),
     ...(opts.knownSessions ? checkSessions(program, opts.knownSessions, opts.outOfScopeSessions) : []),
     ...(opts.knownSigners ? checkSigners(program, opts.knownSigners, opts.outOfScopeSigners) : []),
+    ...(opts.knownEnvs ? checkSkipEnvs(program, opts.knownEnvs) : []),
     ...checkActionDecls(program, opts),
     ...checkUnknownVariables(program),
     ...checkRequestAssertions(program),
@@ -4321,6 +4326,30 @@ export function checkSkipReasons(program: Program): Diagnostic[] {
       span: reason.span,
       hint: 'say why it is skipped and when it comes back — `skip "the payments sandbox is down until the 3rd"`. A skip nobody explained is a test nobody will turn back on',
     });
+  }
+  return diags;
+}
+
+/** `TF088` (`M247` `B`, `D1353`) — `skip "…" on env <name>` against the config's env blocks. One
+ *  diagnostic per unknown name, underlining that name, `TF028`'s rule for a session list. */
+export function checkSkipEnvs(program: Program, knownEnvs: readonly string[]): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  for (const test of program.tests) {
+    for (const ref of test.skipOn ?? []) {
+      if (knownEnvs.includes(ref.name)) continue;
+      const hint = suggest(ref.name, knownEnvs);
+      diags.push({
+        code: Codes.SKIP_ENV_UNKNOWN,
+        severity: 'error',
+        message: `unknown env "${ref.name}" in \`skip … on env\``,
+        span: ref.span,
+        hint: hint
+          ? `did you mean \`${hint}\`?`
+          : knownEnvs.length
+            ? `\`on env\` names \`env\` blocks in tflw.config, and it declares: ${knownEnvs.join(', ')} — as written the skip holds nowhere and the test runs everywhere`
+            : 'tflw.config declares no `env` blocks, so the skip could never hold — drop `on env` to skip everywhere',
+      });
+    }
   }
   return diags;
 }

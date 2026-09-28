@@ -38,3 +38,44 @@ test('a rebuilt header keeps its skip, and a blank one writes none', () => {
   const none = buildTest({ name: 't', tags: [], workload: null, thresholds: [], body: [], skip: '  ' });
   assert.ok(none.ok && !('skip' in none.node));
 });
+
+// --- `skip … on env` (`M247` `B`, `D1353`) ---
+
+test('`skip "…" on env a, b` parses to the env list, in any header position, and prints back', () => {
+  for (const header of ['test "t" skip "no sandbox in CI" on env ci', 'test "t" as shopper skip "x" on env ci, staging retry 2', 'test "t" skip "x" on env ci parallel']) {
+    const { program, diagnostics } = parseSource(`${header}\n${body}`);
+    assert.deepEqual(diagnostics, [], header);
+    assert.ok((program.tests[0]!.skipOn?.length ?? 0) > 0, header);
+  }
+  const t = parseSource('test "t" skip "x" on env ci, staging\n' + body).program.tests[0]!;
+  assert.deepEqual(t.skipOn?.map((e) => e.name), ['ci', 'staging']);
+  assert.equal(t.skipOn?.[1]?.span.start.column, 'test "t" skip "x" on env ci, '.length + 1, 'each name carries its own span');
+  const printed = print(t);
+  assert.ok(printed.ok);
+  assert.equal(printed.text.split('\n')[0], 'test "t" skip "x" on env ci, staging');
+  assert.ok(!('skipOn' in parseSource('test "t" skip "x"\n' + body).program.tests[0]!), 'absent when not written');
+});
+
+test('`on` must be followed by `env`, and `on env` needs a name', () => {
+  assert.match(parseSource('test "t" skip "x" on ci\n' + body).diagnostics[0]!.message, /followed by `env`/);
+  assert.ok(parseSource('test "t" skip "x" on env\n' + body).diagnostics.length > 0);
+});
+
+test('`TF088`: an env the config does not declare, one diagnostic per name, on that name', () => {
+  const src = 'test "t" skip "x" on env ci, stagin, qa\n' + body;
+  const diags = checkProgram(parseSource(src).program, { knownEnvs: ['local', 'ci', 'staging'] }).filter((d) => d.code === Codes.SKIP_ENV_UNKNOWN);
+  assert.deepEqual(diags.map((d) => d.message), ['unknown env "stagin" in `skip … on env`', 'unknown env "qa" in `skip … on env`']);
+  assert.equal(diags[0]!.hint, 'did you mean `staging`?');
+  assert.match(diags[1]!.hint ?? '', /the skip holds nowhere and the test runs everywhere/);
+  assert.equal(diags[0]!.span.start.column, 'test "t" skip "x" on env ci, '.length + 1);
+  // Negative controls: declared names are clean, and with no config the pass does not run at all.
+  assert.deepEqual(checkProgram(parseSource('test "t" skip "x" on env ci\n' + body).program, { knownEnvs: ['ci'] }).filter((d) => d.code === Codes.SKIP_ENV_UNKNOWN), []);
+  assert.deepEqual(checkProgram(parseSource(src).program).filter((d) => d.code === Codes.SKIP_ENV_UNKNOWN), []);
+});
+
+test('a rebuilt header keeps its env list, and an env list without a reason writes none', () => {
+  const kept = buildTest({ name: 't', tags: [], workload: null, thresholds: [], body: [], skip: 'down', skipOn: ['ci'] });
+  assert.ok(kept.ok && kept.node.skipOn?.[0]?.name === 'ci');
+  const none = buildTest({ name: 't', tags: [], workload: null, thresholds: [], body: [], skip: '', skipOn: ['ci'] });
+  assert.ok(none.ok && !('skipOn' in none.node));
+});

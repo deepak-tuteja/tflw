@@ -317,12 +317,21 @@ session admin
 - Runtime: each session executes **once per run per worker**; results are cached.
 - A test opting in with `test "…" as admin` (§4.1) starts with the session's declared headers and
   cookie jar applied to its **api** steps.
-- **A session does not log the browser in.** Its cached state is never applied to the test's fresh
-  browser context — a cookie jar and a browser context's storage state are two separate
-  representations, and D10 deliberately never bridges them (§10). A mixed UI+API test establishes
-  identity twice: an API login for the api steps, a UI form login for the page. Until B4-07 this
-  bullet claimed the opposite, in the section where a reader looks for it, while §10 stated the
-  truth and called it deliberate — of the two, §10 was the one describing the shipped tool.
+- **A session signs the browser in with its cookies** (`M247` `A`, `D1352`, amending D10). A test
+  that opts in with `as <session>` starts its browser context holding the session's cookie jar, so
+  the first `open` is already signed in — no form login in the test. The seed is the jar as it
+  stood before the test's first step, with `HttpOnly`/`Secure`/`SameSite` kept. Three limits, each
+  stated rather than bridged:
+  - **Cookies only.** A session that captured headers only (a bearer token, an API key) has
+    nothing a browser can hold; the page opens signed out and the first browser step's trace line
+    says *carries headers only*. A page that keeps its token in `localStorage` still signs in
+    through its form.
+  - **The host is never rewritten.** `127.0.0.1`, `localhost` and `::1` are three hosts to a
+    browser, so a jar filed under `127.0.0.1` signs in nothing at `localhost`. Name the same host
+    in `api` and `web`. Ports do not partition cookies, so an API and a page on two ports of one
+    host share them.
+  - **One direction.** The jar seeds the browser; a login through the page does not flow back into
+    the jar, so an `api` step after a UI form login is still carried by the session alone.
 - There is no separate "auth preset" concept.
 - A test may opt into **more than one independent, unrelated session at once**:
   `test "..." as admin, userA` (P#96, closing TFLW-GAPS.md gap #7). Each session's headers
@@ -1157,7 +1166,7 @@ It is suppressed on a `flaky` pass, where `(flaky)` already states the same fact
 a retry *saved* this test, rather than merely that retries happened (`FU-25`, M125d). A test that ran
 once carries no count at all.
 
-#### 4.4.1 `skip "reason"` (`M242`, `D1327`)
+#### 4.4.1 `skip "reason" [on env …]` (`M242`, `D1327`; `M247`, `D1353`)
 
 `test "refunds settle" skip "the payments sandbox is down until the 3rd"` keeps the test in the file
 and runs none of it — no hooks, no steps, no row of its `with each` table, no virtual user of its
@@ -1168,6 +1177,16 @@ testcase in `junit.xml` with the suite's `skipped` count, and `"skipped": "<reas
 `results.json` with a run-level `skipped` count (absent when there were none). It raises no SARIF
 finding, and a run whose only non-passes are skips passes. The reason is required: a blank one is
 `TF084`, for `TF082`'s reason — a skip nobody explained is a test nobody turns back on.
+
+**`on env a, b`** (`M247` `B`, `D1353`) makes the skip conditional on the run's env:
+`test "refunds settle" skip "no payments sandbox in CI" on env ci, staging` is skipped under `ci`
+and `staging` and runs, as an ordinary test, under every other env. The names are `env` blocks —
+the same meaning `session … for env` gives the word — resolved from `tflw.config` before any step,
+never from a response. An env skip that holds is reported like any skip, with the env appended to
+its reason (`no payments sandbox in CI (on env ci)`), a `skippedOn` field on the test in
+`results.json`, and the summary's count split (`2 skipped (1 by env)`). An env the config does not
+declare is `TF088`: the skip would hold nowhere, and the test would run in the env it was written
+to stay out of. Leaving a test out of one CI job by tag is `--tag !slow` (§12), not a skip.
 
 ### 4.5 Load testing — workload-bearing tests (M29/M30, M50-M56, D16-D19/D24a/D26/D70/D93-D122)
 
@@ -3735,12 +3754,11 @@ a runtime-only diagnostic has no check-time door for its probes to run through (
 *attempt* shipped in M3a (D13) — one shared browser process for the whole run, a clean context per
 test so a retried test never inherits a failed attempt's leftover UI state. Since M3b, a context
 can hold several open tabs at once (§9.5) — still just the one context per attempt; `switch to new
-tab`/`switch to tab N`/`close tab` move between pages within it, not across contexts. 🔮 Not yet
-built:
-applying a `session`'s cached storage state to a browser context — SPEC §3.3/§9's cookie jar and a
-browser context's storage state are two separate representations that are deliberately never
-bridged (D10); a mixed UI+API test establishes identity twice (an API login call and a UI form
-login), each independently cached.
+tab`/`switch to tab N`/`close tab` move between pages within it, not across contexts. ✅ Since
+`M247` `A` (`D1352`, amending D10) a test's `as <session>` seeds that context with the session's
+cookie jar, so the page opens signed in (§3.3 states the three limits). 🔮 Not built, by decision:
+the reverse direction — a browser context's storage state (its cookies after a form login, its
+`localStorage`) is never folded back into the jar.
 
 Context-per-file is rejected — ordering coupling. Login flows still get their own dedicated tests.
 
@@ -4315,6 +4333,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF085` | Checker (`M242` `C`, `D1328`): **a `body graphql` on a `GET`.** This body kind is GraphQL-over-HTTP's POST shape — `{"query", "variables", "operationName"}` as JSON — and a `GET` carries its query in the URL instead, so on a `GET` the query is a body most servers ignore and the response answers nothing that was asked. **An error**: the request cannot do what it says. The repair is the method, `api POST …`. | an `api GET` whose body is `body graphql` → `` this request is a `GET` `` |
 | `TF086` | Checker (`M246`, `D1345`): **a `sign with <name>` or `session … signed with <name>` naming no signer.** A step's name is checked against the signers the active env has, the way `TF028` checks `as <session>`; a session's is checked in `tflw.config` against every declaration. A signer declared `for env` other envs only is the same code with a hint naming them. **An error**: the request would go out unsigned, and the server's 401 would not say why. | `api POST /webhooks/stripe body { id: "evt_1" }` then `sign with strpe` → `` did you mean `stripe`? `` |
 | `TF087` | Checker (config, `M246`, `D1346`): **a signer that cannot sign as written** — a `{placeholder}` the signer does not fill (`signs` fills `{body}`, `{method}`, `{path}`, `{query}`, `{timestamp}` and `{body sha256}`; a `header` fills `{signature}` and `{timestamp}`), `{signature}` inside the string being signed, no `header` line carrying `{signature}`, or two signers of one name. Each is a request signed over the wrong text or not signed at all. | `signer stripe hmac sha256 hex secret env(STRIPE_WEBHOOK_SECRET)` then `signs "{timestmp}.{body}"` then `header "Stripe-Signature" is "t={timestamp},v1={signature}"` in `tflw.config` → `` did you mean `{timestamp}`? `` |
+| `TF088` | Checker (`M247` `B`, `D1353`): **a `skip … on env` naming an env `tflw.config` does not declare.** The skip would hold nowhere, so the test runs in the very env it was written to stay out of, and the run would not say why. Checked against every `env` block, not only the active one — naming another env is the clause's purpose. One diagnostic per unknown name. **An error**, matching `TF028`. | `test "refunds settle" skip "no sandbox in CI" on env cii` then `api GET /health` then `expect status equals 200` → `` did you mean `ci`? `` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

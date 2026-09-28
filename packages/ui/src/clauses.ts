@@ -99,7 +99,7 @@ export function bandWithout(key: string): Partial<HeaderEdit> {
     case 'sessions': return { sessions: '' };
     case 'retry': return { retry: '0', parallel: false };
     // `D1327` — unskipping is emptying the reason; a blank reason writes no `skip` at all.
-    case 'skip': return { skip: '' };
+    case 'skip': return { skip: '', skipOn: '' };
     case 'table': return { tableKind: 'none', tablePath: '', rows: [], columns: [] };
     default: return {};
   }

@@ -70,9 +70,12 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
   // step with the same code rather than with two accounts that can disagree (`D1043`'s habit).
   const apiSteps = (file?.tests ?? []).reduce((n, t) => n + t.steps.api, 0);
   const pageSteps = (file?.tests ?? []).reduce((n, t) => n + t.steps.browser, 0);
-  /** The tests where the old sentence was worst: both kinds in one body, identity established
-   *  twice, and a panel claiming one session covered it. */
-  const mixed = (file?.tests ?? []).filter((t) => t.steps.api > 0 && t.steps.browser > 0);
+  /** `M247` `A` (`D1352`) — the one shape the bridge does not cover: both kinds of work in one body
+   *  and no session. A login made through the page never reaches the api steps (the bridge runs
+   *  jar → browser only), so these are the tests where an author most plausibly believes a form
+   *  login signed in both halves. A mixed test *with* `as` is signed in on both sides and is not
+   *  named. */
+  const mixed = (file?.tests ?? []).filter((t) => t.steps.api > 0 && t.steps.browser > 0 && t.sessions.length === 0);
 
   // `M207` `Q4` — the two sets `probeSetFor` (`interpreter.ts:5111`) divides the env's sessions
   // into. Derived here from the same wire field the SCANS door reads, so the page cannot disagree
@@ -134,7 +137,7 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
           </li>
           <li className={pageSteps > 0 ? 'warn' : ''} data-auth-reach-page={pageSteps}>
             <strong>{pageSteps}</strong> {pageSteps === 1 ? 'statement does' : 'statements do'} page work —{' '}
-            {pageSteps === 0 ? 'none here' : 'identity on the page is established by the page'}
+            {pageSteps === 0 ? 'none here' : "a session's cookies sign the page in; a header credential does not reach it"}
           </li>
         </ul>
 
@@ -143,17 +146,18 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
             reader who did not come through the door it belongs to — which is the whole correction
             `Q2` makes, since the BROWSER one was being shown to all four. */}
         {door === 'browser' && pageSteps > 0 ? (
-          <p className="muted" data-auth-no-bridge>
-            {/* `M240-05`: why — the jar and the storage state are never bridged — is the legend's. */}
-            <strong>A session does not log the browser in.</strong> Whatever this file runs <em>as</em> below is a fact about its
-            api steps only.
+          <p className="muted" data-auth-bridge>
+            {/* `M247` `A` (`D1352`, amending `D10`): the jar → browser direction is bridged. */}
+            <strong>A session signs the page in with its cookies.</strong> A test run <em>as</em> a session below opens its pages
+            signed in; a session that signs in by header — a bearer token, <code>oauth2</code> — reaches only the api steps, and
+            a login made through the page never reaches them.
             {mixed.length === 0 ? null : (
               <>
                 {' '}
                 <span data-auth-mixed={mixed.length}>
-                  {mixed.length} {mixed.length === 1 ? 'test' : 'tests'} here {mixed.length === 1 ? 'carries' : 'carry'} both kinds —{' '}
-                  <em data-user-data>{mixed.map((t) => t.name).join(', ')}</em> — so {mixed.length === 1 ? 'it establishes' : 'they establish'} identity
-                  twice: an API login for the api steps, a form login for the page.
+                  {mixed.length} {mixed.length === 1 ? 'test' : 'tests'} here {mixed.length === 1 ? 'does' : 'do'} both kinds of work
+                  with no session — <em data-user-data>{mixed.map((t) => t.name).join(', ')}</em> — so a form login on the page
+                  leaves {mixed.length === 1 ? 'its' : 'their'} api steps signed out; <code>as &lt;session&gt;</code> signs in both.
                 </span>
               </>
             )}

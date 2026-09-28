@@ -187,7 +187,7 @@ Two consequences for a pipeline:
 A `has no security violations` assertion needs no flag at all — it inspects a response your suite
 already asked for, so there is no extra packet to authorize.
 
-## Skipping a test — `skip "reason"` {#skip}
+## Skipping a test — `skip "reason"`, everywhere or on some envs {#skip}
 
 ```tflw
 test "refunds settle" skip "the payments sandbox is down until the 3rd"
@@ -201,6 +201,19 @@ line, a grey `skipped` row in `report.html`, and a `<skipped message="…"/>` te
 `junit.xml`, so a CI dashboard counts it as skipped rather than passed. A run whose only non-passes
 are skips still passes. The reason is required — `skip ""` is `TF084` — because it is the only record
 of why the test stopped and when it comes back.
+
+A skip can hold in some envs only. `on env` names the `env` blocks from `tflw.config` where the
+test is skipped; everywhere else it runs as if the clause were not there:
+
+```tflw
+test "refunds settle" skip "no payments sandbox in CI" on env ci, staging
+  api POST /refunds body { orderId: 7 }
+  expect status equals 202
+```
+
+Under `--env ci` the report reads `no payments sandbox in CI (on env ci)` and the summary says
+`1 skipped (1 by env)`; under `--env local` the test runs. A name the config does not declare is
+`TF088`, because a misspelt env would make the skip hold nowhere.
 
 Leaving a test out of one CI job is a different thing, and it belongs on the command line:
 `--tag !slow` runs everything not tagged `@slow`. Inclusions OR together, exclusions AND together,

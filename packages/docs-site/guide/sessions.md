@@ -27,13 +27,33 @@ A test can opt into more than one independent session at once (`as admin, userA`
 session's headers and cookie jar fold into the test's starting state in listed order, a later
 session winning any header/cookie-name conflict against an earlier one.
 
-::: warning A session does not log the browser in
-`as admin` applies to a test's **`api`** steps — its headers and its cookie jar. It does not touch
-the fresh browser context the test gets, so a page opened with `open "/orders"` is logged out.
+## A session signs the browser in
 
-A cookie jar and a browser context's storage state are two separate representations, and tflw
-deliberately never bridges them. A mixed UI+API test establishes identity twice: the session for
-the api steps, a UI form login for the page.
+`as admin` gives a test's **`api`** steps the session's headers and cookie jar, and it hands the
+same cookies to the test's browser — so a page opened with `open "/orders"` is already signed in,
+with no form login in the test:
+
+```tflw
+test "the orders page lists the signed-in user's orders" as shopper
+  open "/orders"
+  expect text "Your orders" is visible
+```
+
+The first browser step's line in the report says what the page was given — *browser signed in from
+session "shopper": 2 cookies for shop.test* — with names and hosts, never values. Cookies keep
+their `HttpOnly`, `Secure` and `SameSite` flags, so the page's own script sees exactly what it
+would for a real signed-in visitor.
+
+::: warning Three limits
+- **Cookies only.** A session that signs in with a header — a bearer token, an API key — has
+  nothing a browser can hold. The page opens signed out and the report says *carries headers
+  only*. An app that keeps its token in `localStorage` still signs in through its form.
+- **The host must match.** `127.0.0.1`, `localhost` and `::1` are three different hosts to a
+  browser. A session that logged in against `api "http://127.0.0.1:3000"` signs in nothing at
+  `web "http://localhost:5173"`; name the same host in both. Ports do not matter — an API and a
+  page on two ports of one host share their cookies, as they do in any browser.
+- **One direction.** The session signs the browser in; a login made *through the page* does not
+  flow back to the `api` steps. Use a session for any identity both halves need.
 :::
 
 ## Cookie jar, automatically

@@ -2391,6 +2391,11 @@ resolution is reported.**
 - Consequence to document loudly: a test that logs in *through the UI form* and then issues an
   `api` step finds that step unauthenticated. This will surprise people once; the teaching error
   points at "use a session for shared identity."
+- **Amended 2026-09-28 by `M247` `A` (`D1352`): the jar → context direction is bridged.** A test's
+  `as <session>` seeds its browser context with the session's cookies, so the page opens signed in
+  and the second, UI login is no longer needed where the app authenticates by cookie. The other
+  direction is unchanged: a browser context's storage state is never folded back into the jar, and
+  the consequence above still holds for a login made *through the page*.
 
 ### D11
 
@@ -9726,6 +9731,14 @@ the report header.
   does. `at <time>` is evaluated against this clock too, so `at now - 10 minutes` is ten minutes
   before the request, not before the run.
 
+### D1352
+
+<sub>cited from SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1352` | L2 | **A session seeds the browser's cookies.** A test that opts into a session starts its browser context with that session's jar, so the first `open` is signed in. The limit — a token in `localStorage` still needs the form — is documented, not bridged. `D10` amended. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -14016,5 +14029,14 @@ new protocol.
 
 Scoped 2026-09-27 by grilling, from `PLAN_M239` §8's parked `L5`. PKCE / authorization-code stays
 parked: it is a browser-to-API bridge and runs into `D10`, and it gets its own plan.
+
+### M247
+
+<sub>cited from SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+**§3 `M247` — the language joins its sessions to the browser**
+
+`D1352`, `D1353`, `D1356`, `D1359`, `D1360`. Lang, runtime, reporter, the page's pickers, the
+docs. Sibling `T-1` waits on it.
 
 <!-- GENERATED:decisions:end -->

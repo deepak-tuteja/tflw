@@ -1013,6 +1013,9 @@ export interface HeaderEdit {
   readonly parallel: boolean;
   /** `skip "reason"`'s reason — blank is not skipped (`D1327`). */
   readonly skip: string;
+  /** `on env a, b` after the reason (`M247` `B`, `D1353`), comma-separated like `sessions` — blank
+   *  is the unconditional skip. */
+  readonly skipOn: string;
   /** A hook's whole header is these two words — `each` has no keyword, so `before` alone is the
    *  per-test one and `before file` the once-per-file one. */
   readonly when: HookDecl['when'];
@@ -1033,6 +1036,7 @@ export function headerEditOf(decl: OutlineHook | OutlineTest): HeaderEdit {
     retry: String(test?.retry ?? 0),
     parallel: test?.node.concurrency === 'parallel',
     skip: test?.node.skip?.value ?? '',
+    skipOn: (test?.node.skipOn ?? []).map((e) => e.name).join(', '),
     when: decl.kind === 'hook' ? decl.when : 'before',
     scope: decl.kind === 'hook' ? decl.scope : 'each',
     tableKind: table === null ? 'none' : table.type === 'InlineDataTable' ? 'inline' : 'file',
@@ -2554,9 +2558,16 @@ export function TestBand({ decl, door, editing, lastRun }: {
           <li data-band-skip={test.node.skip === undefined ? 'no' : 'yes'}>
             skip{' '}
             {live ? (
-              <input value={v.skip} onChange={(e) => change({ skip: e.target.value })} data-band-skip-edit aria-label="skip reason" placeholder="why, and until when" />
+              <>
+                <input value={v.skip} onChange={(e) => change({ skip: e.target.value })} data-band-skip-edit aria-label="skip reason" placeholder="why, and until when" />{' '}
+                on env{' '}
+                <input value={v.skipOn} onChange={(e) => change({ skipOn: e.target.value })} data-band-skip-env-edit aria-label="skip only on these envs" placeholder="every env" />
+              </>
             ) : (
-              <span className="skip-reason">{test.node.skip?.value}</span>
+              <>
+                <span className="skip-reason">{test.node.skip?.value}</span>
+                {test.node.skipOn ? <span data-band-skip-env> — on env {test.node.skipOn.map((e) => e.name).join(', ')}</span> : null}
+              </>
             )}
           </li>
           ) : null}

@@ -718,6 +718,7 @@ function printTest(t: TestDecl, level: number): string {
   if (t.sessions.length > 0) header += ' as ' + t.sessions.join(', ');
   if (t.retry > 0) header += ' retry ' + String(t.retry);
   if (t.skip) header += ' skip ' + printString(t.skip);
+  if (t.skip && t.skipOn && t.skipOn.length > 0) header += ' on env ' + t.skipOn.map((e) => e.name).join(', ');
   if (t.concurrency === 'parallel') header += ' parallel';
   // `with each` sits between the tags and the header — outside the declaration it belongs to,
   // which is why it is emitted here and not from the body loop (`A1-2`).

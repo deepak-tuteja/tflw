@@ -40,7 +40,10 @@ export function renderCliSummary(report: RunReport, color = true): string {
     lines.push(...failureLines(test, c));
   }
   // `D1327`: a skip is its own number, never folded into passed — `3/5 passed, 2 skipped`.
-  const tally = `${report.passed}/${report.total} passed${report.failed ? `, ${report.failed} failed` : ''}${report.skipped ? `, ${report.skipped} skipped` : ''}`;
+  // `D1353` — how many of those skips hold only in this env, since those tests run elsewhere.
+  const byEnv = report.tests.filter((t) => t.kind === 'functional' && t.skippedOn !== undefined).length;
+  const skipTally = report.skipped ? `, ${report.skipped} skipped${byEnv ? ` (${byEnv} by env)` : ''}` : '';
+  const tally = `${report.passed}/${report.total} passed${report.failed ? `, ${report.failed} failed` : ''}${skipTally}`;
   // `FU-07` — three states, not two. `report.ok` alone said `PASS` over a run that was Ctrl-C'd
   // at 6s of a 30s plan; the `⚠ aborted` line four rows below is not where a skimming reader or a
   // log-scraping CI job looks. Same red as `FAIL`, because the one thing an aborted run is not is

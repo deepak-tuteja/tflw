@@ -251,3 +251,45 @@ test('mergeFrom() copies entries, so mutating the merged jar never reaches the s
   merged.applySetCookieLines(A, ['extra=1']);
   assert.equal(source.serialize(A), 'session=cached');
 });
+
+// --- the browser seed (`M247` `A`, `D1352`) ---
+
+test('browserCookies: a host-only cookie is seeded by its origin url, with its flags kept and no path invented', () => {
+  const jar = new CookieJar();
+  jar.applySetCookieLines(A, ['sid=v1; Path=/app; HttpOnly; Secure; SameSite=Strict', 'theme=dark']);
+  assert.deepEqual(jar.browserCookies(), [
+    { name: 'sid', value: 'v1', url: A, httpOnly: true, secure: true, sameSite: 'Strict' },
+    { name: 'theme', value: 'dark', url: A },
+  ]);
+});
+
+test('browserCookies: a domain cookie is seeded under its dotted domain at `/`', () => {
+  const jar = new CookieJar();
+  jar.applySetCookieLines('http://api.shop.test:4001', ['sso=s; Domain=shop.test']);
+  assert.deepEqual(jar.browserCookies(), [{ name: 'sso', value: 's', domain: '.shop.test', path: '/' }]);
+});
+
+test('browserCookies: expiry is epoch seconds; an expired cookie and a deleted one are not seeded', () => {
+  const jar = new CookieJar();
+  const before = Math.floor(Date.now() / 1000);
+  jar.applySetCookieLines(A, ['live=1; Max-Age=3600', 'gone=1; Expires=Thu, 01 Jan 1970 00:00:01 GMT', 'bye=1', 'bye=; Max-Age=0']);
+  const seeded = jar.browserCookies();
+  assert.deepEqual(seeded.map((c) => c.name), ['live']);
+  const expires = seeded[0]!.expires!;
+  assert.ok(expires >= before + 3599 && expires <= before + 3601, String(expires));
+});
+
+test('browserCookies: `SameSite=None` without `Secure` keeps the cookie and drops the attribute', () => {
+  const jar = new CookieJar();
+  jar.applySetCookieLines(A, ['x=1; SameSite=None', 'y=1; SameSite=None; Secure']);
+  assert.deepEqual(jar.browserCookies(), [
+    { name: 'x', value: '1', url: A },
+    { name: 'y', value: '1', url: A, secure: true, sameSite: 'None' },
+  ]);
+});
+
+test('browserCookies: the attributes do not change what the api half sends', () => {
+  const jar = new CookieJar();
+  jar.applySetCookieLines(A, ['sid=v1; HttpOnly; Secure; SameSite=Strict']);
+  assert.equal(jar.serialize(A), 'sid=v1');
+});
