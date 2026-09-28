@@ -168,6 +168,14 @@ const PASSES: Readonly<Record<string, PassVerdict>> = {
     verdict: 'n/a',
     reason: '`M247` `E` (`D1359`). Walks `program.tests` for a `with each concurrently` table; a session has no table and runs once per run, not once per row',
   },
+  checkTogether: {
+    verdict: 'n/a',
+    reason: '`G1` (`D1381`). Walks tests, hooks and actions for `together`; a session body admits only `api`/`header`/`capture`/`let`/`csrf` (SPEC §3.3), so the parser never lets `together` into one, and a session has no rows to meet',
+  },
+  checkFileValues: {
+    verdict: 'n/a',
+    reason: '`G3` (`D1382`). Guards the names a `.tflw` file\'s `before file` shares with its tests; a session is declared in `tflw.config`, which has no `before file`, and its scope never reads a test file\'s values',
+  },
   checkSkipReasons: {
     verdict: 'n/a',
     reason: '`M242` `B` (`D1327`). Walks `program.tests` for the header clause `skip "reason"`, and a session has no header clauses and is never skipped: it is established when a test that opts into it runs, so a skipped test simply never establishes it',

@@ -43,6 +43,7 @@ const CATALOGUE: readonly { readonly kind: Step['type']; readonly label: string;
   { kind: 'StubStmt', label: 'stub', about: 'answer a request the page makes, without the real service' },
   { kind: 'SwitchToTabStmt', label: 'switch to tab', about: 'work against a tab that is already open, by number' },
   { kind: 'CloseTabStmt', label: 'close tab', about: 'close the tab in front and go back to the one before it' },
+  { kind: 'TogetherStmt', label: 'together', about: 'the rows of a concurrent table wait here for one another, then go on at once' },
   { kind: 'SwitchToNewTabBlock', label: 'switch to new tab', about: 'the gesture inside it runs against the tab the page just opened' },
   { kind: 'DownloadBlock', label: 'download as', about: 'bind the file the gesture inside it downloads' },
   { kind: 'DragStmt', label: 'drag', about: 'drag one element onto another' },
@@ -117,6 +118,7 @@ export function defaultEdit(kind: Step['type']): StatementEdit | null {
       return { kind: 'press', keys: 'Enter', locatorKind: 'field', locator: '' };
     case 'DismissDialogStmt':
     case 'CloseTabStmt':
+    case 'TogetherStmt':
       return { kind: 'bare', of: kind };
     case 'AcceptDialogStmt':
       return { kind: 'acceptDialog', text: '' };

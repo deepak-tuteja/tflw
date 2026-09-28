@@ -17,6 +17,7 @@ import {
   buildCheck,
   buildClick,
   buildCloseTab,
+  buildTogether,
   buildDismissDialog,
   buildDownload,
   buildDrag,
@@ -110,7 +111,7 @@ export function buildStatement(next: StatementEdit, original: Step | null): Buil
         return buildCheck({ locator, ticked: next.of === 'TickStmt' });
       }
       case 'bare':
-        return next.of === 'CloseTabStmt' ? buildCloseTab() : buildDismissDialog();
+        return next.of === 'CloseTabStmt' ? buildCloseTab() : next.of === 'TogetherStmt' ? buildTogether() : buildDismissDialog();
       case 'acceptDialog':
         return buildAcceptDialog(next.text);
       case 'switchToTab':
@@ -211,6 +212,8 @@ export function statementLead(node: Step): string {
       return 'dismiss dialog';
     case 'CloseTabStmt':
       return 'close tab';
+    case 'TogetherStmt':
+      return 'together';
     case 'SwitchToTabStmt':
       return 'switch to tab';
     case 'SwitchToNewTabBlock':

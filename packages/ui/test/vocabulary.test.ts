@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildAcceptDialog, buildApiStep, buildCall, buildCapture, buildCheck, buildClick, buildCloseTab,
   buildDismissDialog, buildDownload, buildDrag, buildDropFile, buildExpect, buildFill, buildFillForm,
-  buildGive, buildHover, buildLet, buildLog, buildOpen, buildPause, buildPress, buildScreenshot,
+  buildGive, buildHover, buildLet, buildLog, buildOpen, buildPause, buildPress, buildScreenshot, buildTogether,
   buildScroll, buildSelect, buildStub, buildSwitchToNewTab, buildSwitchToTab, buildWaitUntilApi,
   buildWaitUntilUi, buildWithin, print, stringLit, STEP_LENS, SYNTHETIC, type Step,
 } from '@tflw/lang';
@@ -59,6 +59,7 @@ const SAMPLES: Readonly<Record<string, Step>> = {
   CallStmt: ok(buildCall({ name: 'sign in', args: [] })),
   GiveStmt: ok(buildGive('1')),
   PauseStmt: ok(buildPause({ min: '1ms', max: '' })),
+  TogetherStmt: ok(buildTogether()),
   OpenStmt: ok(buildOpen('/')),
   ClickStmt: ok(buildClick({ locator: { kind: 'button', value: 'Buy' }, kind: 'single' })),
   FillStmt: ok(buildFill({ locator: { kind: 'field', value: 'Email' }, value: '"a"' })),

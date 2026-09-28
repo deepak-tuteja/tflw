@@ -12,7 +12,7 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { AcceptDialogStmt, ActionDecl, CrawlDecl, CrawlSeed, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ExpectStmt, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
+import type { AcceptDialogStmt, ActionDecl, CrawlDecl, CrawlSeed, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, TogetherStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ExpectStmt, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
 import { pollable, quantifiable } from './ast.js';
 import { parse as parseTokens, parsePathText, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
@@ -1074,6 +1074,10 @@ export function buildScroll(spec: LocatorSpec): BuildResult<ScrollStmt> {
  *  one construction path the pane cannot step around (`D1087`). */
 export function buildDismissDialog(): BuildResult<DismissDialogStmt> {
   return { ok: true, node: { type: 'DismissDialogStmt', span: SYNTHETIC } };
+}
+
+export function buildTogether(): BuildResult<TogetherStmt> {
+  return { ok: true, node: { type: 'TogetherStmt', span: SYNTHETIC } };
 }
 
 export function buildCloseTab(): BuildResult<CloseTabStmt> {

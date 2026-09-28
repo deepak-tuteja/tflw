@@ -181,7 +181,7 @@ export interface DoorVocabulary {
 
 /** The neutral kinds every door's Compose can already edit — `statementEditOf`'s own list. */
 const NEUTRAL_CONSTRUCTS: readonly Step['type'][] = [
-  'ExpectStmt', 'CaptureStmt', 'LetStmt', 'LogStmt', 'CallStmt', 'GiveStmt', 'PauseStmt',
+  'ExpectStmt', 'CaptureStmt', 'LetStmt', 'LogStmt', 'CallStmt', 'GiveStmt', 'PauseStmt', 'TogetherStmt',
 ];
 
 export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
