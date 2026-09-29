@@ -9811,6 +9811,30 @@ the report header.
 |---|---|---|
 | `D1365` | U5 | **Reduced motion and live regions, gated** (a stylesheet gate that every transition sits under `prefers-reduced-motion: no-preference`; `aria-live` for run start/end and save); **the VoiceOver pass is a runcard** the user runs once on this Mac. |
 
+### D1366
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1366` | E2 | **The LSP gains code actions** (apply a reuse hint as a workspace edit through the functions `refactor apply` uses; fix-its where a diagnostic carries *did you mean*), **document symbols** (`collectSymbols`), **references**, **folding**. Workspace symbols: not taken. |
+
+### D1367
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1367` | E3 | **A Test Explorer**: a `TestController` discovering from the parse, running through `tflw run --only` as a child process, reading verdicts and failure text from `results.json` into tree and gutter; *rerun failed* → `--failed`. CodeLens delegates to it. |
+
+### D1368
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1368` | E1 | **CI packages the `.vsix` and attaches it to each GitHub release**; Marketplace and Open VSX listings are prepared (publisher, README, changelog, icon) and published on 1.0 day. `editor.md` points at the release asset. |
+
 ### D1369
 
 <sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
@@ -9867,6 +9891,14 @@ the report header.
 |---|---|---|
 | `D1377` | P4 | **A macOS CI job** in the Windows job's shape (build + typecheck + test, Node 22, Chromium), not a required check until it has been green a week. First run expected red; its rows are the deliverable. |
 
+### D1379
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1379` | (owner, 2026-09-28) | **Nothing is published without the owner's explicit word** — not npm, not the VS Code Marketplace, not Open VSX, not the GitHub Action's repository, not a `.vsix` on a release. Every "published on 1.0 day" in this plan (`D1351`, `D1368`, `D1378`) means *prepared*, and the publish itself waits for that word. Enforced, not just stated: `packages/cli` is now `"private": true` like every other package (inverting decision 74, which kept it publishable), `pack.test.ts` asserts it, and no workflow holds a publish step or a registry token. |
+
 ### D1381
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
@@ -9914,6 +9946,14 @@ the report header.
 | id | row | decision |
 |---|---|---|
 | `D1387` | (owner, 2026-09-29, `M250` `B`) | **A control's tooltip sentence describes it from the moment it is drawn, not while its tip is shown** (`M235-06`). Every authored `data-tip` is pointed (`aria-describedby`) at a hidden element holding the same sentence, kept in step with the page by one observer in `TooltipLayer`; the visible tip is presentation only and writes no attribute. A derived tip (`D1127`) gets no description — its text is the row's own name. Another description the control carries is kept beside ours. |
+
+### D1389
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1389` | (owner, 2026-09-29, amends `D1368`) | **CI packages the `.vsix` on every PR as a workflow artifact, never onto a release by itself.** Attaching it to a GitHub release is a separate `workflow_dispatch` workflow, run only on the owner's word (`D1379`); `M251`'s green line is the `.vsix` attached to `v1.0.0-rc.1` by that workflow, on the word. No tag triggers a publish. |
 
 ### D1391
 
@@ -14304,6 +14344,15 @@ listener, a browser and a token exchange in one declaration.
 **§6 `M250` — the page completes and explains**
 
 `D1361`, `D1363`, `D1364`, `D1365`. Page and CLI server. Sibling `T-4` waits on it.
+
+### M251
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+**§7 `M251` — the editor becomes a run surface**
+
+`D1366`, `D1367`, `D1368`. LSP server, extension, CI. No sibling slice (D9 stands: the editor is
+not in the sweep).
 
 ### M252
 

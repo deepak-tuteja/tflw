@@ -8,8 +8,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { mkdtemp, writeFile, mkdir, rm, readFile, readdir } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { createMessageConnection, type MessageConnection } from 'vscode-jsonrpc/node';
 import { startServer } from '../src/server.js';
 import { parseSource, displayAnchor } from '@tflw/lang';
@@ -74,6 +77,10 @@ test('initialize: advertises capabilities for every LSP feature this server impl
   assert.ok(result.capabilities.signatureHelpProvider);
   assert.ok(result.capabilities.semanticTokensProvider);
   assert.equal(result.capabilities.documentFormattingProvider, true);
+  assert.equal(result.capabilities.documentSymbolProvider, true);
+  assert.equal(result.capabilities.referencesProvider, true);
+  assert.equal(result.capabilities.foldingRangeProvider, true);
+  assert.deepEqual(result.capabilities.codeActionProvider, { codeActionKinds: ['quickfix', 'refactor.extract'] });
   client.dispose();
 });
 
@@ -532,4 +539,213 @@ test('formatting: one whole-document edit with `tflw fmt`\'s text, and none when
   openDocument(broken.client, broken.uri, 'test "ok"\n  api GET /x $\n');
   assert.deepEqual(await broken.client.sendRequest('textDocument/formatting', { textDocument: { uri: broken.uri }, options: opts }), []);
   broken.client.dispose();
+});
+
+// ---- `M251` `A` (`D1366`): the outline, the folds, find-all-references -------------------------
+
+type LspRange = { start: LspPosition; end: LspPosition };
+const OUTLINE_FILE = [
+  '# a header note',
+  '# on two lines',
+  'element badge = css ".badge"',
+  '',
+  'action add item(sku)',
+  '  api POST /cart body { sku: {sku} }',
+  '  expect status equals 201',
+  '',
+  'before',
+  '  api GET /health',
+  '',
+  '@smoke',
+  'test "adds one"',
+  '  let sku = unique("s")',
+  '  add item(sku)',
+  '  within css ".cart"',
+  '    click css ".go"',
+  '',
+].join('\n');
+
+test('documentSymbol: a file\'s element, action, hook and test in file order, each selecting its name (M251 A)', async () => {
+  const { client, uri } = await connectServer();
+  openDocument(client, uri, OUTLINE_FILE);
+  const result = (await client.sendRequest('textDocument/documentSymbol', { textDocument: { uri } })) as {
+    name: string; kind: number; detail?: string; range: LspRange; selectionRange: LspRange;
+  }[];
+  assert.deepEqual(result.map((s) => [s.name, s.kind]), [['badge', 8], ['add item', 12], ['before', 24], ['adds one', 6]]);
+  const test = result.find((s) => s.name === 'adds one')!;
+  assert.equal(test.detail, '@smoke');
+  assert.equal(OUTLINE_FILE.slice(offsetAt(OUTLINE_FILE, test.selectionRange.start), offsetAt(OUTLINE_FILE, test.selectionRange.end)), '"adds one"');
+  const badge = result.find((s) => s.name === 'badge')!;
+  assert.equal(OUTLINE_FILE.slice(offsetAt(OUTLINE_FILE, badge.selectionRange.start), offsetAt(OUTLINE_FILE, badge.selectionRange.end)), 'badge');
+  for (const s of result) {
+    assert.ok(offsetAt(OUTLINE_FILE, s.range.start) <= offsetAt(OUTLINE_FILE, s.selectionRange.start), `${s.name}: selection inside range`);
+    assert.ok(offsetAt(OUTLINE_FILE, s.selectionRange.end) <= offsetAt(OUTLINE_FILE, s.range.end), `${s.name}: selection inside range`);
+  }
+  client.dispose();
+});
+
+test('documentSymbol: a tflw.config lists its envs and sessions (M251 A)', async () => {
+  const { client } = await connectServer();
+  const uri = pathToFileURL(join('/tmp/tflw-lsp-protocol-test', 'tflw.config')).href;
+  const text = 'env local default\n  api "http://127.0.0.1:1"\n\nsession shopper\n  api POST /login\n  expect status equals 200\n';
+  client.sendNotification('textDocument/didOpen', { textDocument: { uri, languageId: 'tflw-config', version: 1, text } });
+  const result = (await client.sendRequest('textDocument/documentSymbol', { textDocument: { uri } })) as { name: string; detail?: string }[];
+  assert.deepEqual(result.map((s) => [s.name, s.detail]), [['local', 'default'], ['shopper', undefined]]);
+  client.dispose();
+});
+
+test('foldingRange: every offside block folds from its header to its last line, nested ones too, and a comment run folds as a comment (M251 A)', async () => {
+  const { client, uri } = await connectServer();
+  openDocument(client, uri, OUTLINE_FILE);
+  const result = (await client.sendRequest('textDocument/foldingRange', { textDocument: { uri } })) as { startLine: number; endLine: number; kind?: string }[];
+  assert.deepEqual(result.map((f) => [f.startLine, f.endLine, f.kind ?? 'region']), [
+    [0, 1, 'comment'],
+    [4, 6, 'region'],
+    [8, 9, 'region'],
+    [12, 16, 'region'],
+    [15, 16, 'region'],
+  ]);
+  client.dispose();
+});
+
+test('references: a variable\'s uses, with and without its declaration (M251 A)', async () => {
+  const { client, uri } = await connectServer();
+  const text = 'test "a"\n  let token = unique("t")\n  api GET /health\n  let copy = token\n  log "{token}"\n';
+  openDocument(client, uri, text);
+  const position = positionAt(text, text.indexOf('token') + 1);
+  const ask = async (includeDeclaration: boolean) =>
+    ((await client.sendRequest('textDocument/references', { textDocument: { uri }, position, context: { includeDeclaration } })) as { uri: string; range: LspRange }[])
+      .map((l) => offsetAt(text, l.range.start)).sort((a, b) => a - b);
+  const decl = text.indexOf('token');
+  const uses = [text.indexOf('token', decl + 1), text.indexOf('{token}') + 1];
+  assert.deepEqual(await ask(true), [decl, ...uses]);
+  assert.deepEqual(await ask(false), uses);
+  client.dispose();
+});
+
+test('references: an action is found in the files that import it, and nowhere it is merely spelt alike (M251 A)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tflw-lsp-refs-'));
+  try {
+    await mkdir(join(root, 'shared'));
+    await writeFile(join(root, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n');
+    const shared = 'action add item(sku)\n  api POST /cart body { sku: {sku} }\n  expect status equals 201\n';
+    const a = 'import "./shared/cart.tflw"\n\ntest "one"\n  add item("a")\n  add item("b")\n';
+    const b = 'import "./shared/cart.tflw"\n\ntest "two"\n  add item("c")\n  log "add item"\n';
+    await writeFile(join(root, 'shared', 'cart.tflw'), shared);
+    await writeFile(join(root, 'a.tflw'), a);
+    await writeFile(join(root, 'b.tflw'), b);
+    const { client } = await connectServer();
+    const uri = pathToFileURL(join(root, 'a.tflw')).href;
+    openDocument(client, uri, a);
+    const result = (await client.sendRequest('textDocument/references', {
+      textDocument: { uri }, position: positionAt(a, a.indexOf('add item') + 1), context: { includeDeclaration: true },
+    })) as { uri: string; range: LspRange }[];
+    const byFile = new Map<string, number>();
+    for (const l of result) { const f = l.uri.slice(l.uri.lastIndexOf('/') + 1); byFile.set(f, (byFile.get(f) ?? 0) + 1); }
+    assert.deepEqual(Object.fromEntries([...byFile].sort()), { 'a.tflw': 2, 'b.tflw': 1, 'cart.tflw': 1 });
+    client.dispose();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// ---- `M251` `B` (`D1367`): code actions -----------------------------------------------------
+
+test('codeAction: a diagnostic whose hint says `did you mean` offers the one-word fix, and nothing else is offered for it (M251 B)', async () => {
+  const { client, uri } = await connectServer();
+  const text = 'test "a"\n  api GET /health\n  expct status equals 200\n';
+  const diagnosticsPromise = nextDiagnostics(client, 'a misspelt step');
+  openDocument(client, uri, text);
+  const { diagnostics } = await diagnosticsPromise;
+  const d = diagnostics.find((x) => x.code === 'TF011')!;
+  assert.ok(d, 'TF011 for `expct`');
+  const actions = (await client.sendRequest('textDocument/codeAction', {
+    textDocument: { uri }, range: d.range, context: { diagnostics: [d] },
+  })) as { title: string; kind: string; edit: { changes: Record<string, { range: LspRange; newText: string }[]> } }[];
+  assert.deepEqual(actions.map((a) => [a.title, a.kind]), [['Change to `expect`', 'quickfix']]);
+  const [edit] = actions[0]!.edit.changes[uri]!;
+  assert.equal(text.slice(0, offsetAt(text, edit!.range.start)) + edit!.newText + text.slice(offsetAt(text, edit!.range.end)), text.replace('expct', 'expect'));
+  // `only` is honoured: asking for refactors alone gets no quick fix.
+  const refactorsOnly = (await client.sendRequest('textDocument/codeAction', {
+    textDocument: { uri }, range: d.range, context: { diagnostics: [d], only: ['refactor'] },
+  })) as unknown[];
+  assert.deepEqual(refactorsOnly, []);
+  client.dispose();
+});
+
+const CLI_ENTRY = fileURLToPath(new URL('../../cli/dist/cli.cjs', import.meta.url));
+const REUSE_SUITE = {
+  'tflw.config': 'env local default\n  api "http://127.0.0.1:1"\n',
+  'orders.tflw': [
+    'test "create widget order"',
+    '  api POST /orders body { name: "Widget", qty: 3 }',
+    '  expect status equals 201',
+    '  api GET /health',
+    '  expect status equals 200',
+    '',
+    'test "create gadget order"',
+    '  api POST /orders body { name: "Gadget", qty: 3 }',
+    '  expect status equals 201',
+    '  api GET /health',
+    '  expect status equals 200',
+    '',
+  ].join('\n'),
+};
+
+async function tree(dir: string, base = dir): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const e of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) Object.assign(out, await tree(full, base));
+    else out[full.slice(base.length + 1).split('\\').join('/')] = await readFile(full, 'utf8');
+  }
+  return out;
+}
+
+/** Applies a `WorkspaceEdit`'s `documentChanges` to disk the way an editor would: a create makes an
+ * empty file, a text edit splices its ranges into the file's current text. */
+async function applyWorkspaceEdit(edit: { documentChanges: ({ kind: 'create'; uri: string } | { textDocument: { uri: string }; edits: { range: LspRange; newText: string }[] })[] }): Promise<void> {
+  for (const change of edit.documentChanges) {
+    if ('kind' in change) {
+      const path = fileURLToPath(change.uri);
+      await mkdir(join(path, '..'), { recursive: true });
+      await writeFile(path, '');
+      continue;
+    }
+    const path = fileURLToPath(change.textDocument.uri);
+    let text = await readFile(path, 'utf8');
+    const edits = [...change.edits].sort((a, b) => offsetAt(text, b.range.start) - offsetAt(text, a.range.start));
+    for (const e of edits) text = text.slice(0, offsetAt(text, e.range.start)) + e.newText + text.slice(offsetAt(text, e.range.end));
+    await writeFile(path, text);
+  }
+}
+
+test('codeAction: the editor\'s extraction writes the bytes `tflw refactor apply` writes for the same hint — one planner, two writers (M251 B)', async () => {
+  const cmd = await mkdtemp(join(tmpdir(), 'tflw-lsp-reuse-cmd-'));
+  const ed = await mkdtemp(join(tmpdir(), 'tflw-lsp-reuse-ed-'));
+  try {
+    for (const dir of [cmd, ed]) for (const [f, t] of Object.entries(REUSE_SUITE)) await writeFile(join(dir, f), t);
+
+    execFileSync(process.execPath, [CLI_ENTRY, 'refactor', 'apply', 'RF001'], { cwd: cmd, encoding: 'utf8' });
+
+    const { client } = await connectServer();
+    const uri = pathToFileURL(join(ed, 'orders.tflw')).href;
+    openDocument(client, uri, REUSE_SUITE['orders.tflw']);
+    const actions = (await client.sendRequest('textDocument/codeAction', {
+      textDocument: { uri }, range: { start: { line: 1, character: 2 }, end: { line: 1, character: 2 } }, context: { diagnostics: [] },
+    })) as { title: string; kind: string; edit: Parameters<typeof applyWorkspaceEdit>[0] }[];
+    const extract = actions.filter((a) => a.kind === 'refactor.extract');
+    assert.deepEqual(extract.map((a) => a.title), ['Extract into action `post orders` (RF001)']);
+    await applyWorkspaceEdit(extract[0]!.edit);
+    client.dispose();
+
+    const [byCommand, byEditor] = [await tree(cmd), await tree(ed)];
+    assert.deepEqual(Object.keys(byEditor).sort(), ['orders.tflw', 'shared/post-orders.tflw', 'tflw.config']);
+    assert.deepEqual(byEditor, byCommand);
+    // Negative control: the edit is not the suite unchanged.
+    assert.notEqual(byEditor['orders.tflw'], REUSE_SUITE['orders.tflw']);
+  } finally {
+    await rm(cmd, { recursive: true, force: true });
+    await rm(ed, { recursive: true, force: true });
+  }
 });

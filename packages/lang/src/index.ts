@@ -181,3 +181,4 @@ export function parseConfigSource(source: string): ParsedConfig {
 }
 export { elementRefs, elementsOf, inlineElements } from './elements.js';
 export { detectElementReuse, proposeElementName, ELEMENT_DECLARATION_FILE, type ElementReuseHint, type ElementReuseOccurrence } from './elementReuse.js';
+export { allReuseHints, planReuseApply, type ReuseApplyPlan, type ReuseApplyResult } from './reuseApply.js';

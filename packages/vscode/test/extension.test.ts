@@ -13,7 +13,7 @@
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,7 +40,7 @@ test('activate registers both commands and the CodeLens provider unconditionally
   const context = makeContext();
   activate(context as never);
 
-  assert.deepEqual([...vscodeMock.registeredCommands.keys()].sort(), ['tflw.runFile', 'tflw.runTest']);
+  assert.deepEqual([...vscodeMock.registeredCommands.keys()].sort(), ['tflw.runFailed', 'tflw.runFile', 'tflw.runTest']);
   assert.notEqual(vscodeMock.registeredCodeLensProvider, undefined);
   // disposables for: codeLens provider, 2 commands, and (only if a client started) its stop hook
   assert.ok(context.subscriptions.length >= 3);
@@ -148,39 +148,109 @@ test('tflw.runFile against a file outside any tflw project warns instead of send
   assert.equal(vscodeMock.terminals.length, 0);
 });
 
-test('tflw.runFile sends a `tflw run` command in an integrated terminal, cd\'d into the project root', () => {
+// ---- `M251` `C` (`D1368`): the Test Explorer ------------------------------------------------
+//
+// A fake `tflw` stands in the project's `node_modules/.bin`, where `resolveTflwBin` looks first.
+// It records its argv and replays `results.json`-shaped entries as `--format ndjson` events —
+// `test:start`, then `test:end` carrying the entry — filtered by `--only`, the shape the real CLI
+// streams. The controller's verdicts are then read back off the mock run.
+
+const RESULTS = [
+  { kind: 'functional', name: 'lists products', ok: true, durationMs: 12, steps: [], file: 'shop.tflw' },
+  {
+    kind: 'functional', name: 'adds to cart', ok: false, durationMs: 30, file: 'shop.tflw',
+    steps: [
+      { ok: true, source: 'api POST /cart', line: 6, file: 'shop.tflw' },
+      { ok: false, source: '  expect status equals 201', detail: 'expected status to equal 201, but got 500', line: 7, file: 'shop.tflw' },
+    ],
+  },
+  { kind: 'functional', name: 'checks out', ok: true, skipped: 'payments are down', durationMs: 0, steps: [], file: 'shop.tflw' },
+];
+const SHOP = ['test "lists products"', '  api GET /products', '', 'test "adds to cart"', '  api GET /health', '  api POST /cart', '  expect status equals 201', '', 'test "checks out"', '  api POST /checkout', ''].join('\n');
+
+function projectWithFakeTflw(opts: { results?: unknown[]; exitWithout?: boolean } = {}): string {
   const root = makeTflwProject();
+  writeFileSync(join(root, 'tflw.config'), 'defaults\n  report "./out"\n\nenv local default\n  api "http://127.0.0.1:1"\n');
+  writeFileSync(join(root, 'shop.tflw'), SHOP);
+  writeFileSync(join(root, 'results.fixture.json'), JSON.stringify(opts.results ?? RESULTS));
+  mkdirSync(join(root, 'node_modules', '.bin'), { recursive: true });
+  const bin = join(root, 'node_modules', '.bin', 'tflw');
+  writeFileSync(bin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const argv = process.argv.slice(2);
+fs.writeFileSync('argv.json', JSON.stringify(argv));
+${opts.exitWithout ? "process.stderr.write('error: no tflw.config here\\n'); process.exit(2);" : ''}
+const only = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : undefined;
+for (const r of JSON.parse(fs.readFileSync('results.fixture.json', 'utf8'))) {
+  if (only !== undefined && r.name !== only) continue;
+  process.stdout.write(JSON.stringify({ type: 'test:start', name: r.name, file: r.file }) + '\\n');
+  process.stdout.write(JSON.stringify({ type: 'step:end', test: r.name, step: {} }) + '\\n');
+  process.stdout.write(JSON.stringify({ type: 'test:end', result: r, file: r.file }) + '\\n');
+}
+`);
+  chmodSync(bin, 0o755);
+  return root;
+}
+
+const argvOf = (root: string): string[] => JSON.parse(readFileSync(join(root, 'argv.json'), 'utf8'));
+const controller = () => vscodeMock.controllers[0]!;
+const lastRun = () => controller().runs[controller().runs.length - 1]!;
+const verdicts = () => lastRun().calls.filter((c) => c[0] !== 'enqueued' && c[0] !== 'started').map((c) => [c[0], c[1].slice(c[1].indexOf('::') + 2)]);
+
+test('activate creates one `tflw` test controller with a default Run profile, and the workspace\'s files as items (M251 C)', async () => {
+  const root = projectWithFakeTflw();
+  vscodeMock.__setWorkspaceTflwFiles([join(root, 'shop.tflw')]);
   activate(makeContext() as never);
-  const runFile = vscodeMock.registeredCommands.get('tflw.runFile')!;
-
-  runFile({ fsPath: join(root, 'tests', 'a.tflw') });
-
-  assert.equal(vscodeMock.terminals.length, 1);
-  const terminal = vscodeMock.terminals[0]!;
-  assert.equal(terminal.shown, true);
-  assert.equal(terminal.sent.length, 1);
-  assert.equal(terminal.sent[0], `cd ${JSON.stringify(root)} && tflw run "tests/a.tflw"`);
+  assert.equal(vscodeMock.controllers.length, 1);
+  assert.deepEqual(controller().profiles.map((p) => [p.label, p.kind, p.isDefault]), [['Run', vscodeMock.TestRunProfileKind.Run, true]]);
+  await controller().resolveHandler!();
+  const file = controller().items.get(join(root, 'shop.tflw'))!;
+  assert.equal(file.label, 'shop.tflw');
+  await controller().resolveHandler!(file);
+  const names: string[] = [];
+  file.children.forEach((c) => names.push(`${c.label}@${(c.range as unknown as { startLine: number }).startLine}`));
+  assert.deepEqual(names, ['lists products@0', 'adds to cart@3', 'checks out@8']);
 });
 
-test('tflw.runTest passes --only with the given test name', () => {
-  const root = makeTflwProject();
+test('running a file: one `tflw run <file> --format ndjson`, each test started, then passed, failed at its step, or skipped; the report is linked (M251 C)', async () => {
+  const root = projectWithFakeTflw();
   activate(makeContext() as never);
-  const runTest = vscodeMock.registeredCommands.get('tflw.runTest')!;
-
-  runTest({ fsPath: join(root, 'a.tflw') }, 'my test');
-
-  const terminal = vscodeMock.terminals[0]!;
-  assert.equal(terminal.sent[0], `cd ${JSON.stringify(root)} && tflw run "a.tflw" --only "my test"`);
+  await vscodeMock.registeredCommands.get('tflw.runFile')!({ fsPath: join(root, 'shop.tflw') });
+  assert.deepEqual(argvOf(root), ['run', 'shop.tflw', '--format', 'ndjson', '--no-color']);
+  assert.deepEqual(verdicts(), [['passed', 'lists products'], ['failed', 'adds to cart'], ['skipped', 'checks out']]);
+  assert.equal(lastRun().calls.filter((c) => c[0] === 'started').length, 3);
+  const failed = lastRun().calls.find((c) => c[0] === 'failed')!;
+  const message = failed[2] as InstanceType<typeof vscodeMock.TestMessage>;
+  assert.equal(message.message, 'expect status equals 201\nexpected status to equal 201, but got 500');
+  assert.equal((message.location!.range as InstanceType<typeof vscodeMock.Position>).line, 6, 'the failing step\'s line, 0-based');
+  assert.equal((message.location!.uri as { fsPath: string }).fsPath, join(root, 'shop.tflw'));
+  assert.match(lastRun().output, new RegExp(`report — file://${join(root, 'out', 'report.html').replace(/[.\\/]/g, '\\$&')}`));
+  assert.equal(lastRun().ended, true);
 });
 
-test('a second run reuses the same named terminal instead of creating a new one', () => {
-  const root = makeTflwProject();
+test('the Run test lens runs that one test with `--only`, and only it is reported (M251 C)', async () => {
+  const root = projectWithFakeTflw();
   activate(makeContext() as never);
-  const runFile = vscodeMock.registeredCommands.get('tflw.runFile')!;
+  await vscodeMock.registeredCommands.get('tflw.runTest')!({ fsPath: join(root, 'shop.tflw') }, 'adds to cart');
+  assert.deepEqual(argvOf(root), ['run', 'shop.tflw', '--only', 'adds to cart', '--format', 'ndjson', '--no-color']);
+  assert.deepEqual(verdicts(), [['failed', 'adds to cart']]);
+});
 
-  runFile({ fsPath: join(root, 'a.tflw') });
-  runFile({ fsPath: join(root, 'a.tflw') });
+test('a run that dies before a test reports errors that test with the tail of stderr, rather than leaving it spinning (M251 C)', async () => {
+  const root = projectWithFakeTflw({ exitWithout: true });
+  activate(makeContext() as never);
+  await vscodeMock.registeredCommands.get('tflw.runTest')!({ fsPath: join(root, 'shop.tflw') }, 'lists products');
+  const errored = lastRun().calls.filter((c) => c[0] === 'errored');
+  assert.equal(errored.length, 1);
+  assert.match((errored[0]![2] as InstanceType<typeof vscodeMock.TestMessage>).message, /exited 2 before this test reported[\s\S]*no tflw\.config here/);
+});
 
-  assert.equal(vscodeMock.terminals.length, 1);
-  assert.equal(vscodeMock.terminals[0]!.sent.length, 2);
+test('rerun failed is `tflw run --failed`, and a test it did not re-run is not marked at all (M251 C)', async () => {
+  const root = projectWithFakeTflw({ results: [RESULTS[1]] });
+  vscodeMock.__setWorkspaceFolders([{ uri: { fsPath: root } }]);
+  activate(makeContext() as never);
+  await vscodeMock.registeredCommands.get('tflw.runFile')!({ fsPath: join(root, 'shop.tflw') });
+  await vscodeMock.registeredCommands.get('tflw.runFailed')!();
+  assert.deepEqual(argvOf(root), ['run', '--failed', '--format', 'ndjson', '--no-color']);
+  assert.deepEqual(verdicts(), [['failed', 'adds to cart']]);
 });

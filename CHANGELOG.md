@@ -17,6 +17,27 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — the editor becomes a run surface (M251)
+
+- **The Test Explorer** (`D1368`). The VS Code extension lists every `.tflw` file and its tests;
+  a file or a test runs as `tflw run` with `--format ndjson`, each verdict lands beside the test and
+  a failure at the step that failed, and the run's `report.html` is linked from its output.
+  *tflw: Re-run the previous run's failed tests* is `--failed`. The ▶ lenses run through it.
+- **An outline, references and folding** (`D1366`). `tflw lsp` answers `documentSymbol` (tests,
+  crawls, actions, elements and hooks; a config's envs, sessions and signers), `references` (the
+  rename's own grouping, across importers for an action, session or element, with or without the
+  declaration) and `foldingRange` (every block the lexer's offside rule opens, and comment runs).
+- **Code actions** (`D1367`). Each reuse hint is *Extract into action* / *Extract into element*,
+  built by `@tflw/lang`'s `planReuseApply` — the planner `tflw refactor apply` now calls too, so the
+  editor's edit and the command's write are the same bytes, and a test holds them equal. A
+  diagnostic whose help says *did you mean `x`?* offers the one-word fix.
+- **Distribution, prepared** (`D1389`). CI packages the `.vsix` on every PR as an artifact;
+  `release-vsix.yml` attaches it to a tag's release, run by hand on the owner's word (`D1379`). The
+  listing (categories, `CHANGELOG.md`, README) is complete for the Marketplace and Open VSX.
+  Nothing is published.
+- **Docs.** [Working in the editor](https://deepak-tuteja.github.io/tflw/runbook/editor) in the
+  runbook; the editor page's install and run sections.
+
 ### Added — WebKit, the Action, the flake table (M252)
 
 - **WebKit, once**: CI runs a real UI test under `--browser webkit` on its Linux jobs and checks the

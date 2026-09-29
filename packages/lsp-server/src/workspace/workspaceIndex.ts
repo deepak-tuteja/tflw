@@ -5,12 +5,16 @@
 // need a rename never pays this cost, per the plan's stated cold-start concern.
 
 import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { parseSource, parseConfigSource, collectSymbols, collectConfigSymbols, type SymbolKind } from '@tflw/lang';
 import type { Span } from '@tflw/lang';
 
-export async function discoverProjectFiles(root: string): Promise<string[]> {
+export async function discoverProjectFiles(root: string, exclude: readonly string[] = [], reportDir?: string): Promise<string[]> {
   const found: string[] = [];
+  // `M251` `B`: `exclude` and the report directory as `packages/cli/src/project.ts`'s
+  // `discoverTests` applies them, so the reuse pass the editor offers reads the suite `tflw check`
+  // reads. Rename passes neither and walks every file, as it always has.
+  const skipReport = reportDir === undefined ? undefined : relative(root, resolve(root, reportDir)).split('\\').join('/');
   const walk = async (dir: string): Promise<void> => {
     let entries;
     try {
@@ -21,6 +25,9 @@ export async function discoverProjectFiles(root: string): Promise<string[]> {
     for (const e of entries) {
       if (e.name.startsWith('.') || e.name === 'node_modules') continue;
       const full = join(dir, e.name);
+      const rel = relative(root, full).split('\\').join('/');
+      if (exclude.includes(rel)) continue;
+      if (skipReport !== undefined && skipReport !== '' && rel === skipReport) continue;
       if (e.isDirectory()) await walk(full);
       else if (e.isFile() && e.name.endsWith('.tflw')) found.push(full);
     }
@@ -32,6 +39,8 @@ export async function discoverProjectFiles(root: string): Promise<string[]> {
 export interface CrossFileRenameEdit {
   readonly absPath: string;
   readonly spans: readonly Span[];
+  /** Which of `spans` are declarations (`M251` `A`): find-all-references may leave them out. */
+  readonly defs: readonly Span[];
 }
 
 /**
@@ -54,11 +63,9 @@ export async function findCrossFileRenameEdits(root: string, kind: SymbolKind, n
     }
     const parsed = parseSource(text);
     const table = collectSymbols(parsed.program, text);
-    const spans: Span[] = [
-      ...table.defs.filter((d) => d.kind === kind && d.name === name).map((d) => d.span),
-      ...table.refs.filter((r) => r.kind === kind && r.name === name).map((r) => r.span),
-    ];
-    if (spans.length > 0) edits.push({ absPath: file, spans });
+    const defs = table.defs.filter((d) => d.kind === kind && d.name === name).map((d) => d.span);
+    const spans: Span[] = [...defs, ...table.refs.filter((r) => r.kind === kind && r.name === name).map((r) => r.span)];
+    if (spans.length > 0) edits.push({ absPath: file, spans, defs });
   }
 
   if (kind === 'session') {
@@ -68,7 +75,7 @@ export async function findCrossFileRenameEdits(root: string, kind: SymbolKind, n
       const parsedConfig = parseConfigSource(configText);
       const table = collectConfigSymbols(parsedConfig.config, configText);
       const spans = table.defs.filter((d) => d.kind === 'session' && d.name === name).map((d) => d.span);
-      if (spans.length > 0) edits.push({ absPath: configPath, spans });
+      if (spans.length > 0) edits.push({ absPath: configPath, spans, defs: spans });
     } catch {
       // no tflw.config, or unreadable — nothing to add.
     }

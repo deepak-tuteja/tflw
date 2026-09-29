@@ -611,7 +611,7 @@ function elementImportsFor(draft: DraftHint, entries: readonly SuiteEntry[], act
 
 /** Posix path helpers over the cwd-relative display paths `SuiteEntry` carries. The language
  *  package has no `node:path` dependency, and these paths are always `/`-separated here. */
-function dirnamePosix(path: string): string {
+export function dirnamePosix(path: string): string {
   const i = path.replace(/\\/g, '/').lastIndexOf('/');
   return i === -1 ? '.' : path.replace(/\\/g, '/').slice(0, i);
 }
@@ -624,7 +624,7 @@ function joinPosix(dir: string, rel: string): string {
   }
   return out.join('/');
 }
-function relativePosix(fromDir: string, to: string): string {
+export function relativePosix(fromDir: string, to: string): string {
   const a = fromDir === '.' ? [] : fromDir.split('/');
   const b = to.split('/');
   let i = 0;

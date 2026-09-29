@@ -6,9 +6,10 @@
 //      spawn-and-parse path. The selector names **both** language ids (`M136b`, D427) — decision A
 //      means the config buffer gets real diagnostics too, so there's no exclusion filter to write
 //      here, but since `tflw.config` stopped sharing the `tflw` id it has to be asked for by name.
-//   2. Run: a CodeLens above every `test "..."` line ("Run test" via `--only`, "Run file" without
-//      it), both sending the command to a shared integrated terminal — unchanged, client-side only
-//      (decision 17.3), untouched by this rewrite.
+//   2. Run: a Test Explorer controller (`M251` `C`, `D1368`) runs a file or a test as `tflw run`
+//      with `--format ndjson` and shows each verdict where the test is; the CodeLens above every
+//      `test "..."` line ("Run test" via `--only`, "Run file" without it) delegates to it, and
+//      `tflw.runFailed` is `--failed`. Client-side only (decision 17.3).
 //   3. Snippets: contributed separately in snippets/tflw.json (declarative, no code needed here).
 //
 // **`tflw.config` has its own language id (`tflw-config`) since `M136b`** — a TextMate grammar binds
@@ -24,10 +25,13 @@
 
 import * as vscode from 'vscode';
 import { LanguageClient, TransportKind, type LanguageClientOptions, type ServerOptions } from 'vscode-languageclient/node';
-import { dirname, relative, sep } from 'node:path';
-import { findProjectRoot, resolveTflwBin, parseTestDeclarationLine } from './lib.js';
+import { dirname, relative, sep, join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { findProjectRoot, resolveTflwBin, parseTestDeclarationLine, testsInText, runArgs, spawnSpec, LineReader, parseExplorerEvent, reportDirOf, type Verdict } from './lib.js';
 
 let client: LanguageClient | undefined;
+let explorer: Explorer | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -37,9 +41,11 @@ export function activate(context: vscode.ExtensionContext): void {
     // Narrowing the selector to what the split now makes explicit changes no observable behaviour;
     // widening it would register a provider that is guaranteed to return an empty array.
     vscode.languages.registerCodeLensProvider({ language: 'tflw' }, new TflwCodeLensProvider()),
-    vscode.commands.registerCommand('tflw.runFile', (uri?: vscode.Uri) => runInTerminal(resolveTargetUri(uri))),
-    vscode.commands.registerCommand('tflw.runTest', (uri: vscode.Uri, testName: string) => runInTerminal(uri, testName)),
+    vscode.commands.registerCommand('tflw.runFile', (uri?: vscode.Uri) => runFromLens(resolveTargetUri(uri))),
+    vscode.commands.registerCommand('tflw.runTest', (uri: vscode.Uri, testName: string) => runFromLens(uri, testName)),
+    vscode.commands.registerCommand('tflw.runFailed', () => runFailed()),
   );
+  explorer = createExplorer(context);
 
   const root = resolveWorkspaceRoot();
   if (!root) return; // no tflw.config found anywhere open — CodeLens/run commands still work, no LSP to start
@@ -90,29 +96,190 @@ function resolveTargetUri(uri: vscode.Uri | undefined): vscode.Uri | undefined {
   return uri ?? vscode.window.activeTextEditor?.document.uri;
 }
 
-function getOrCreateTerminal(): vscode.Terminal {
-  return vscode.window.terminals.find((t) => t.name === 'tflw') ?? vscode.window.createTerminal('tflw');
-}
-
-function runInTerminal(uri: vscode.Uri | undefined, testName?: string): void {
+/** The CodeLens commands (`M251` `C`): they delegate to the Test Explorer, so a lens run and an
+ * explorer run are one run with one result. The warnings for a missing file or project stay. */
+function runFromLens(uri: vscode.Uri | undefined, testName?: string): Promise<void> | undefined {
   if (!uri) {
     void vscode.window.showWarningMessage('tflw: no .tflw file to run — open one first.');
-    return;
+    return undefined;
   }
   const root = findProjectRoot(dirname(uri.fsPath));
   if (!root) {
     void vscode.window.showWarningMessage('tflw: no tflw.config found above this file — not a tflw project.');
-    return;
+    return undefined;
   }
-  const bin = resolveTflwBin(root);
-  // `M243-16`: `/` on every OS — the form tflw's own reports name files in (`M243-07`), and one
-  // every shell a terminal can open accepts.
-  const relFile = relative(root, uri.fsPath).split(sep).join('/');
-  const args = [bin, 'run', JSON.stringify(relFile)];
-  if (testName !== undefined) args.push('--only', JSON.stringify(testName));
-  const terminal = getOrCreateTerminal();
-  terminal.show(true);
-  terminal.sendText(`cd ${JSON.stringify(root)} && ${args.join(' ')}`);
+  return explorer?.runFile(root, uri, testName);
+}
+
+function runFailed(): Promise<void> | undefined {
+  const root = resolveWorkspaceRoot();
+  if (!root) {
+    void vscode.window.showWarningMessage('tflw: no tflw.config found — not a tflw project.');
+    return undefined;
+  }
+  return explorer?.runFailed(root);
+}
+
+// ---- `M251` `C` (`D1368`): the Test Explorer ---------------------------------------------------
+//
+// Items are files and their tests, discovered with the same line scan the CodeLens uses — on
+// activation over the workspace, and again for a file on open and on save. A run is `tflw run`
+// as a child process with `--format ndjson`: `test:start` marks an item started, `test:end`
+// carries the same `ReportEntry` `results.json` holds, which is the verdict and the failure text.
+// The run's `report.html` is linked from its output. Nothing here parses `.tflw` beyond the
+// declaration line, and nothing here decides a verdict: tflw's own report does.
+
+interface Explorer {
+  runFile(root: string, uri: vscode.Uri, only?: string): Promise<void>;
+  runFailed(root: string): Promise<void>;
+}
+
+const relPath = (root: string, file: string): string => relative(root, file).split(sep).join('/');
+
+function createExplorer(context: vscode.ExtensionContext): Explorer {
+  const controller = vscode.tests.createTestController('tflw', 'tflw');
+  context.subscriptions.push(controller);
+
+  const fileItem = (uri: vscode.Uri): vscode.TestItem => {
+    const id = uri.fsPath;
+    let item = controller.items.get(id);
+    if (!item) {
+      item = controller.createTestItem(id, relative(findProjectRoot(dirname(uri.fsPath)) ?? dirname(uri.fsPath), uri.fsPath).split(sep).join('/'), uri);
+      item.canResolveChildren = true;
+      controller.items.add(item);
+    }
+    return item;
+  };
+
+  const refresh = (uri: vscode.Uri, text: string): vscode.TestItem => {
+    const file = fileItem(uri);
+    const children: vscode.TestItem[] = [];
+    for (const t of testsInText(text)) {
+      const child = controller.createTestItem(`${uri.fsPath}::${t.name}`, t.name, uri);
+      child.range = new vscode.Range(t.line, 0, t.line, 0);
+      children.push(child);
+    }
+    file.children.replace(children);
+    return file;
+  };
+
+  controller.resolveHandler = async (item) => {
+    if (item?.uri) {
+      refresh(item.uri, readFileSync(item.uri.fsPath, 'utf8'));
+      return;
+    }
+    for (const uri of await vscode.workspace.findFiles('**/*.tflw', '**/node_modules/**')) fileItem(uri);
+  };
+  const onDoc = (doc: vscode.TextDocument): void => {
+    if (doc.languageId === 'tflw' && doc.uri.scheme === 'file') refresh(doc.uri, doc.getText());
+  };
+  context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(onDoc), vscode.workspace.onDidSaveTextDocument(onDoc));
+  for (const doc of vscode.workspace.textDocuments as readonly vscode.TextDocument[]) if (doc.uri) onDoc(doc);
+
+  /** Runs `tflw run <args>` in `root` and maps each event onto `items` (by file and test name).
+   * With `expectAll`, an item the run never reported is errored with the tail of stderr — a run
+   * that died, or a name `--only` did not match; `--failed` runs only what tflw chooses, so there
+   * an unreported item is simply one it did not re-run. */
+  const execute = (run: vscode.TestRun, root: string, args: string[], items: Map<string, vscode.TestItem>, expectAll: boolean, token?: vscode.CancellationToken): Promise<void> =>
+    new Promise((done) => {
+      const spec = spawnSpec(resolveTflwBin(root), args);
+      const child = spawn(spec.command, spec.args, { cwd: root, shell: spec.shell });
+      token?.onCancellationRequested(() => child.kill('SIGINT'));
+      const ended = new Set<string>();
+      const reader = new LineReader();
+      let stderr = '';
+      const keyOf = (file: string | undefined, name: string): string | undefined => {
+        if (file !== undefined) return `${join(root, file)}::${name}`;
+        return [...items.keys()].find((k) => k.endsWith(`::${name}`));
+      };
+      const onLine = (line: string): void => {
+        const e = parseExplorerEvent(line);
+        if (!e) return;
+        const key = keyOf(e.file, e.name);
+        const item = key === undefined ? undefined : items.get(key);
+        if (!item) return;
+        if (e.kind === 'start') run.started(item);
+        else {
+          ended.add(key!);
+          report(run, item, root, e.verdict);
+        }
+      };
+      child.stdout?.setEncoding('utf8').on('data', (c: string) => reader.push(c).forEach(onLine));
+      child.stderr?.setEncoding('utf8').on('data', (c: string) => { stderr += c; });
+      child.on('error', (err) => { stderr += String(err); });
+      child.on('close', (code) => {
+        reader.flush().forEach(onLine);
+        for (const [key, item] of items) {
+          if (expectAll && !ended.has(key)) run.errored(item, new vscode.TestMessage(`tflw run exited ${code ?? 'on a signal'} before this test reported.\n${stderr.trim().split('\n').slice(-8).join('\n')}`));
+        }
+        const html = join(root, reportDirOf(safeRead(join(root, 'tflw.config'))), 'report.html');
+        run.appendOutput(`tflw: report — ${vscode.Uri.file(html).toString()}\r\n`);
+        done();
+      });
+    });
+
+  const testsOf = (item: vscode.TestItem): vscode.TestItem[] => {
+    if (item.children.size === 0) return item.id.includes('::') ? [item] : [];
+    const out: vscode.TestItem[] = [];
+    item.children.forEach((c) => out.push(c));
+    return out;
+  };
+
+  /** One run of `request`: a whole file is one `tflw run <file>`, a single test is `--only`. */
+  const runHandler = async (request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> => {
+    const run = controller.createTestRun(request);
+    const roots: vscode.TestItem[] = [];
+    if (request.include) roots.push(...request.include);
+    else controller.items.forEach((i) => roots.push(i));
+    for (const item of roots) {
+      if (token.isCancellationRequested || !item.uri) break;
+      const root = findProjectRoot(dirname(item.uri.fsPath));
+      if (!root) continue;
+      const isFile = !item.id.includes('::');
+      if (isFile && item.children.size === 0) refresh(item.uri, readFileSync(item.uri.fsPath, 'utf8'));
+      const tests = testsOf(item);
+      const map = new Map(tests.map((t) => [t.id, t]));
+      tests.forEach((t) => run.enqueued(t));
+      const args = runArgs({ file: relPath(root, item.uri.fsPath), ...(isFile ? {} : { only: item.label }) });
+      await execute(run, root, args, map, true, token);
+    }
+    run.end();
+  };
+  controller.createRunProfile('Run', vscode.TestRunProfileKind.Run, runHandler, true);
+
+  return {
+    async runFile(root, uri, only) {
+      const file = refresh(uri, readFileSync(uri.fsPath, 'utf8'));
+      const target = only === undefined ? file : file.children.get(`${uri.fsPath}::${only}`) ?? file;
+      await runHandler(new vscode.TestRunRequest([target]), new vscode.CancellationTokenSource().token);
+    },
+    async runFailed(root) {
+      // `--failed` re-runs the previous run's failures, which only tflw knows; every item is a
+      // candidate, and the ones the run reports are the ones it re-ran.
+      const run = controller.createTestRun(new vscode.TestRunRequest());
+      const map = new Map<string, vscode.TestItem>();
+      controller.items.forEach((f) => f.children.forEach((t) => map.set(t.id, t)));
+      await execute(run, root, runArgs({ failed: true }), map, false);
+      run.end();
+    },
+  };
+}
+
+function safeRead(path: string): string {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function report(run: vscode.TestRun, item: vscode.TestItem, root: string, v: Verdict): void {
+  if (v.state === 'passed') return run.passed(item, v.durationMs);
+  if (v.state === 'skipped') return run.skipped(item);
+  const message = new vscode.TestMessage(v.message ?? 'failed');
+  const file = v.file !== undefined ? vscode.Uri.file(join(root, v.file)) : item.uri;
+  if (file && v.line !== undefined) message.location = new vscode.Location(file, new vscode.Position(v.line - 1, 0));
+  run.failed(item, message, v.durationMs);
 }
 
 class TflwCodeLensProvider implements vscode.CodeLensProvider {

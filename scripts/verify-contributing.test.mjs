@@ -395,6 +395,18 @@ const CLASSIFIED = [
     why: "the sibling's gate set against its own CONTRIBUTING.md, which points here for the cross-repo diagnostic-code pair — so this asserts that pointer resolves against the head under review rather than against whatever is on `main`. Needs both trees; same reasoning",
   },
 
+  // --- ci.yml, job `vsix` (`M251` `D`, `D1389`) ------------------------------------------------
+  { wf: 'ci.yml', job: 'vsix', cmd: 'npm ci', class: 'setup', why: 'dependency install' },
+  { wf: 'ci.yml', job: 'vsix', cmd: 'npm run build', class: 'setup', why: 'the bundle the `.vsix` carries; the build gate itself is the `test` job\'s' },
+  { wf: 'ci.yml', job: 'vsix', cmd: 'npm run package -w tflw-vscode -- -o "$RUNNER_TEMP/tflw.vsix"', class: 'ci-only', why: 'the `.vsix` as a workflow artifact on every PR (`D1389`) — never onto a release from here; a contributor packages locally with the same script if they want one' },
+
+  // --- release-vsix.yml, job `attach` (`M251` `D`, `D1389`) — run by hand, on the owner's word -
+  { wf: 'release-vsix.yml', job: 'attach', cmd: 'npm ci', class: 'setup', why: 'dependency install' },
+  { wf: 'release-vsix.yml', job: 'attach', cmd: 'npm run build', class: 'setup', why: 'the bundle the `.vsix` carries' },
+  { wf: 'release-vsix.yml', job: 'attach', cmd: 'npm run package -w tflw-vscode -- -o "$RUNNER_TEMP/tflw-$TAG.vsix"', class: 'ci-only', why: 'packages the tag\'s `.vsix` — a release step, started by hand on the owner\'s word (`D1379`), not a gate' },
+  { wf: 'release-vsix.yml', job: 'attach', cmd: 'gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "The VS Code extension for tflw $TAG, as a .vsix — install it with Extensions: Install from VSIX…"', class: 'ci-only', why: 'the tag\'s release, created as a pre-release when there is none — a release step, not a gate' },
+  { wf: 'release-vsix.yml', job: 'attach', cmd: 'gh release upload "$TAG" "$RUNNER_TEMP/tflw-$TAG.vsix" --clobber', class: 'ci-only', why: 'attaches the `.vsix` to the release — a release step, not a gate' },
+
   // --- docs.yml, job `build` --------------------------------------------------------------------
   { wf: 'docs.yml', job: 'build', cmd: 'npm ci', class: 'setup', why: 'dependency install' },
   { wf: 'docs.yml', job: 'build', cmd: 'npm run build -w @tflw/lang', class: 'setup', why: 'the playground/editor pages import it directly; built subset of the `npm run build` gate' },

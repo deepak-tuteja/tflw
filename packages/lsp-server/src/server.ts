@@ -15,7 +15,7 @@
 // during cross-file resolution never need this direction (we only ever read *their* AST spans,
 // already line/column-tagged, never receive an LSP position for them).
 
-import { createConnection, TextDocuments, TextDocumentSyncKind, DiagnosticSeverity, SemanticTokensBuilder, ResponseError, LSPErrorCodes } from 'vscode-languageserver/node';
+import { createConnection, TextDocuments, TextDocumentSyncKind, DiagnosticSeverity, SemanticTokensBuilder, ResponseError, LSPErrorCodes, SymbolKind as LspSymbolKind, FoldingRangeKind, CodeActionKind } from 'vscode-languageserver/node';
 import type {
   Diagnostic as LspDiagnostic,
   Location,
@@ -27,15 +27,22 @@ import type {
   TextEdit,
   SemanticTokens,
   SemanticTokensLegend,
+  DocumentSymbol,
+  FoldingRange,
+  CodeAction,
+  TextDocumentEdit,
+  CreateFile,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import type { Diagnostic as TflwDiagnostic, Span } from '@tflw/lang';
 import { spanContains } from './resolution/findNodeAtOffset.js';
 import { findDefinition } from './resolution/definition.js';
 import { getHover } from './resolution/hover.js';
 import { getCompletions, variablesInScopeAt } from './resolution/completion.js';
-import { findRenameTargets } from './resolution/rename.js';
+import { findRenameTargets, findReferences } from './resolution/rename.js';
+import { programOutline, configOutline, foldingRanges, type OutlineKind } from './resolution/outline.js';
 import { getSignatureHelp } from './resolution/signatureHelp.js';
 import { getCompletionContext, getConfigCompletionContext, collectSemanticTokens, lex, format as formatSource } from '@tflw/lang';
 
@@ -47,11 +54,23 @@ const SEMANTIC_TOKENS_LEGEND: SemanticTokensLegend = {
   tokenTypes: ['keyword', 'operator', 'type', 'function', 'number', 'variable', 'parameter', 'property'],
   tokenModifiers: [],
 };
+/** `M251` `A`: how each outline entry is drawn in the editor's outline and breadcrumbs. */
+const OUTLINE_SYMBOL_KIND: Record<OutlineKind, LspSymbolKind> = {
+  test: LspSymbolKind.Method,
+  crawl: LspSymbolKind.Method,
+  action: LspSymbolKind.Function,
+  element: LspSymbolKind.Field,
+  hook: LspSymbolKind.Event,
+  session: LspSymbolKind.Object,
+  signer: LspSymbolKind.Key,
+  env: LspSymbolKind.Namespace,
+};
 const SEMANTIC_TOKEN_TYPE_INDEX = new Map(SEMANTIC_TOKENS_LEGEND.tokenTypes.map((t, i) => [t, i]));
 import { DocumentStore } from './workspace/documentStore.js';
 import { loadProjectConfig } from './workspace/configResolution.js';
 import { CrossFileResolver } from './workspace/crossFile.js';
 import { findCrossFileRenameEdits } from './workspace/workspaceIndex.js';
+import { reuseActionsAt, type ReuseAction } from './workspace/reuseActions.js';
 
 function toLspRange(span: Span): Range {
   return {
@@ -63,6 +82,24 @@ function toLspRange(span: Span): Range {
 function toLspLocation(uri: string, span: Span): Location {
   return { uri, range: toLspRange(span) };
 }
+
+/** The range covering all of `text`, for a whole-file replacement. */
+function wholeRange(text: string): Range {
+  const lines = text.split('\n');
+  return { start: { line: 0, character: 0 }, end: { line: lines.length - 1, character: lines[lines.length - 1]!.length } };
+}
+
+/** Does an editor's `context.only` filter admit an action of `kind`? A requested kind covers its
+ * own sub-kinds (`refactor` admits `refactor.extract`), as the protocol defines it. */
+function kindWanted(only: readonly string[] | undefined, kind: string): boolean {
+  return only === undefined || only.some((k) => kind === k || kind.startsWith(`${k}.`));
+}
+
+/** `M251` `B`'s did-you-mean quick fix reads the suggestion off the message's hint line; it is
+ * offered only when both the flagged text and the suggestion are one word, so a hint that names a
+ * phrase or a whole construct never becomes a blind splice. */
+const DID_YOU_MEAN = /did you mean `([^`]+)`\?/;
+const ONE_WORD = /^[\w{}.$-]+$/;
 
 const LINE_ONE: Range = { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } };
 
@@ -150,6 +187,12 @@ export function startServer(options: StartServerOptions = {}): void {
         semanticTokensProvider: { legend: SEMANTIC_TOKENS_LEGEND, full: true },
         // `M191` (`D997`): the same `format` the CLI runs, so format-on-save needs no extension code.
         documentFormattingProvider: true,
+        // `M251` `A` (`D1366`): the outline, find-all-references and folds.
+        documentSymbolProvider: true,
+        referencesProvider: true,
+        foldingRangeProvider: true,
+        // `M251` `B` (`D1367`): the reuse pass's extractions and the did-you-mean quick fixes.
+        codeActionProvider: { codeActionKinds: [CodeActionKind.QuickFix, CodeActionKind.RefactorExtract] },
       },
     };
   });
@@ -166,6 +209,112 @@ export function startServer(options: StartServerOptions = {}): void {
     if (!r.ok || r.formatted === text) return [];
     return [{ range: { start: { line: 0, character: 0 }, end: doc.positionAt(text.length) }, newText: r.formatted }];
   });
+
+  connection.onDocumentSymbol(async (params): Promise<DocumentSymbol[]> => {
+    const analysis = await store.analyze(params.textDocument.uri, envSetting);
+    if (!analysis) return [];
+    const items = analysis.program ? programOutline(analysis.program, analysis.symbols) : analysis.config ? configOutline(analysis.config, analysis.symbols) : [];
+    return items.map((i) => ({
+      name: i.name,
+      kind: OUTLINE_SYMBOL_KIND[i.kind],
+      ...(i.detail ? { detail: i.detail } : {}),
+      range: toLspRange(i.span),
+      selectionRange: toLspRange(i.selectionSpan),
+    }));
+  });
+
+  // Every block the parser sees, and runs of comment lines. Read off the open buffer's text alone,
+  // so it needs no analysis and answers for a file that does not parse yet.
+  connection.onFoldingRanges((params): FoldingRange[] => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return [];
+    return foldingRanges(doc.getText()).map((f) => ({
+      startLine: f.startLine,
+      endLine: f.endLine,
+      ...(f.kind === 'comment' ? { kind: FoldingRangeKind.Comment } : {}),
+    }));
+  });
+
+  // The rename's own grouping (`findReferences`), and for a symbol other files can name — a
+  // session, an action, an element — the same project walk the rename does.
+  connection.onReferences(async (params): Promise<Location[]> => {
+    const doc = documents.get(params.textDocument.uri);
+    const info = store.get(params.textDocument.uri);
+    if (!doc || !info) return [];
+    const analysis = await store.analyze(params.textDocument.uri, envSetting);
+    if (!analysis) return [];
+    const withDecl = params.context.includeDeclaration;
+    const result = findReferences(analysis.symbols, doc.offsetAt(params.position), withDecl);
+    if (!result) return [];
+    const out: Location[] = result.spans.map((s) => toLspLocation(params.textDocument.uri, s));
+    if (result.crossFile && info.root && info.absPath) {
+      const same = (a: Span, b: Span): boolean => a.start.offset === b.start.offset && a.end.offset === b.end.offset;
+      for (const edit of await findCrossFileRenameEdits(info.root, result.kind, result.name, info.absPath)) {
+        const uri = pathToUri(edit.absPath);
+        for (const s of edit.spans) if (withDecl || !edit.defs.some((d) => same(d, s))) out.push(toLspLocation(uri, s));
+      }
+    }
+    return out;
+  });
+
+  connection.onCodeAction(async (params): Promise<CodeAction[]> => {
+    const uri = params.textDocument.uri;
+    const doc = documents.get(uri);
+    const info = store.get(uri);
+    if (!doc || !info) return [];
+    const only = params.context.only;
+    const actions: CodeAction[] = [];
+
+    if (kindWanted(only, CodeActionKind.QuickFix)) {
+      for (const d of params.context.diagnostics) {
+        if (d.source !== 'tflw') continue;
+        const suggestion = DID_YOU_MEAN.exec(typeof d.message === 'string' ? d.message : d.message.value)?.[1];
+        const current = doc.getText(d.range);
+        if (!suggestion || suggestion === current || !ONE_WORD.test(current) || !ONE_WORD.test(suggestion)) continue;
+        actions.push({
+          title: `Change to \`${suggestion}\``,
+          kind: CodeActionKind.QuickFix,
+          diagnostics: [d],
+          isPreferred: true,
+          edit: { changes: { [uri]: [{ range: d.range, newText: suggestion }] } },
+        });
+      }
+    }
+
+    // A pathless buffer is in no project, so there is no suite to find a repetition in (D215).
+    if (kindWanted(only, CodeActionKind.RefactorExtract) && info.kind === 'test' && info.root && info.absPath) {
+      const project = await loadProjectConfig(info.root, envSetting).catch(() => undefined);
+      const found = await reuseActionsAt({
+        root: info.root,
+        absPath: info.absPath,
+        fromLine: params.range.start.line,
+        toLine: params.range.end.line,
+        exclude: project?.resolved?.exclude ?? [],
+        ...(project?.resolved?.reportDir !== undefined ? { reportDir: project.resolved.reportDir } : {}),
+        openText: (abs) => documents.get(pathToUri(abs))?.getText(),
+      }).catch(() => [] as ReuseAction[]);
+      for (const a of found) actions.push({ title: a.title, kind: CodeActionKind.RefactorExtract, edit: reuseEdit(info.root, a) });
+    }
+    return actions;
+  });
+
+  /** One undoable edit: create the new file and write it, and replace each rewritten file whole —
+   * the plan's text is the file's text, so a whole-file replacement is the plan, byte for byte. */
+  function reuseEdit(root: string, a: ReuseAction): WorkspaceEdit {
+    const changes: (TextDocumentEdit | CreateFile)[] = [];
+    for (const [path, text] of a.plan.files) {
+      const abs = join(root, path);
+      const uri = pathToUri(abs);
+      const before = a.before.get(abs);
+      if (before === undefined) {
+        changes.push({ kind: 'create', uri, options: { overwrite: false, ignoreIfExists: false } });
+        changes.push({ textDocument: { uri, version: null }, edits: [{ range: LINE_ONE, newText: text }] });
+      } else {
+        changes.push({ textDocument: { uri, version: documents.get(uri)?.version ?? null }, edits: [{ range: wholeRange(before), newText: text }] });
+      }
+    }
+    return { documentChanges: changes };
+  }
 
   connection.onDidChangeConfiguration((change) => {
     const settings = change.settings as { tflw?: { env?: string } } | undefined;

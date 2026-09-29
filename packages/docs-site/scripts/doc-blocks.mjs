@@ -199,7 +199,7 @@ export const ROADMAP_PHRASES = [
  * exemption and has to be re-declared, and that is the pressure that keeps this list honest.
  *
  * Every entry here is also a **publish-time worklist**: when `package.json` comes off
- * `private: true`, these thirteen lines are exactly the sentences that must change, and the
+ * `private: true`, these lines are exactly the sentences that must change, and the
  * unused-entry check below turns finishing that sweep into a green run rather than a memory.
  */
 export const DECLARED_ROADMAP = new Map([
@@ -209,19 +209,6 @@ export const DECLARED_ROADMAP = new Map([
       {
         includes: 'Pre-1.0, not yet published',
         why: 'true: `package.json` is `private: true` and nothing has been published to npm',
-      },
-    ],
-  ],
-  [
-    'editor.md',
-    [
-      {
-        includes: 'a listing is planned for later',
-        why: 'true: the VS Code extension is not on the Marketplace, and telling a reader otherwise is the defect',
-      },
-      {
-        includes: 'once it ships',
-        why: 'the same sentence continued — this section shrinks to one `ext install` line when the listing lands',
       },
     ],
   ],

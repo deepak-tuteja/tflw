@@ -251,6 +251,7 @@ export default defineConfig({
             { text: 'Setting up a project', link: '/runbook/project' },
             { text: 'Running a suite', link: '/runbook/running' },
             { text: 'Working on the page', link: '/runbook/page' },
+            { text: 'Working in the editor', link: '/runbook/editor' },
           ],
         },
       ],

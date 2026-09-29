@@ -125,3 +125,23 @@ test('the .vsix attributes every third-party package its bundle inlined (M92a, r
   // rather than sharing one written for the repo.
   assert.match(notices, /Blue Oak Model License/, 'minimatch ships under BlueOak-1.0.0; its text must be reproduced');
 });
+
+// ---- `M251` `D` (`D1368`, `D1389`): what a Marketplace or Open VSX listing reads ----------------
+//
+// Nothing is published before the owner's word (`D1379`); the listing is complete ahead of it, so
+// 1.0 day is a publish command and not an afternoon of fields. `vsce` and `ovsx` read these.
+const CATEGORIES = new Set(['Azure', 'Data Science', 'Debuggers', 'Education', 'Extension Packs', 'Formatters', 'Keymaps', 'Language Packs', 'Linters', 'Machine Learning', 'Notebooks', 'Other', 'Programming Languages', 'SCM Providers', 'Snippets', 'Testing', 'Themes', 'Visualization', 'AI', 'Chat']);
+
+test('the listing fields are present, and the categories are the Marketplace\'s own and say what it does (M251 D)', async () => {
+  const pkg = JSON.parse(await readFile(join(pkgRoot, 'package.json'), 'utf8')) as Record<string, unknown> & { categories: string[]; files: string[]; engines: { vscode: string }; repository: { url: string } };
+  for (const field of ['name', 'displayName', 'description', 'version', 'publisher', 'license', 'icon']) {
+    assert.ok(typeof pkg[field] === 'string' && (pkg[field] as string).length > 0, `package.json has no ${field}`);
+  }
+  assert.match(pkg.engines.vscode, /^\^1\.\d+\.\d+$/);
+  assert.match(pkg.repository.url, /github\.com\/deepak-tuteja\/tflw/);
+  for (const c of pkg.categories) assert.ok(CATEGORIES.has(c), `\`${c}\` is not a Marketplace category`);
+  for (const c of ['Programming Languages', 'Testing']) assert.ok(pkg.categories.includes(c), `the listing must be found under ${c}`);
+  for (const f of ['README.md', 'CHANGELOG.md', 'LICENSE']) assert.ok(pkg.files.includes(f), `${f} must be in "files" — the listing shows it`);
+  const changelog = await readFile(join(pkgRoot, 'CHANGELOG.md'), 'utf8');
+  assert.match(changelog, new RegExp(`^## ${(pkg.version as string).replace(/\./g, '\\.')}\\b`, 'm'), 'CHANGELOG.md has a section for the version being packaged');
+});

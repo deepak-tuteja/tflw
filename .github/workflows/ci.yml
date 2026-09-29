@@ -507,6 +507,27 @@ jobs:
           args: run --tag functional
       - run: test "${{ steps.tflw.outputs.exit-code }}" = 0 && test -f "$RUNNER_TEMP/storefront/report/junit.xml"
 
+  # `M251` `D` (`D1389`): the `.vsix` is packaged on every PR and kept as this run's artifact —
+  # never attached to a release from here, and no tag triggers anything. Attaching it is
+  # `release-vsix.yml`, run by hand on the owner's word (`D1379`).
+  vsix:
+    name: the .vsix, packaged
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run package -w tflw-vscode -- -o "$RUNNER_TEMP/tflw.vsix"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tflw-vsix
+          path: ${{ runner.temp }}/tflw.vsix
+
   supply-chain:
     name: audit + SBOM
     runs-on: ubuntu-latest

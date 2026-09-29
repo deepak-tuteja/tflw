@@ -36,8 +36,18 @@ test "a customer can check out"
   letter or `_`, continuing with letters, digits or `_` — and you get told why if it isn't, instead
   of a rename that silently leaves the file unparseable. tflw's keywords are contextual, so
   `status`, `let` and `expect` are all legal variable names and are not refused.
-- **Run CodeLenses** above every `test` and at the top of every file: *Run this test* and *Run all
-  tests in this file*, which shell out to your project's own `tflw` binary.
+- **Your tests in the Test Explorer.** Every `.tflw` file in the workspace and the tests in it. Run
+  a file, one test, or *tflw: Re-run the previous run's failed tests*; each verdict shows beside the
+  test, a failure at the step that failed with tflw's own message, and the run's `report.html` is
+  linked from its output. The ▶ *Run test* / *Run file* lenses above every `test` run through the
+  same explorer, with your project's own `tflw` binary.
+- **An outline, references and folding.** Tests, actions, elements and hooks in the Outline view and
+  the breadcrumbs (and `tflw.config`'s envs and sessions); *Find All References* across every file
+  that imports an action or names a session or element; every block and every run of comments
+  folds.
+- **Refactors and quick fixes.** Each reuse hint `tflw check` prints is a code action — *Extract
+  into action* or *Extract into element* — and it writes exactly what `tflw refactor apply` would.
+  A diagnostic that says *did you mean `expect`?* offers that change as a quick fix.
 - **Snippets** for the shapes worth not retyping: a `test` skeleton, an `expect`, a `session`, the
   four hook forms (`before`, `before file`, `after`, `after file`), and a data-driven `with each`
   table.

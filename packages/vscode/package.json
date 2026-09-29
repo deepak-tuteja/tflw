@@ -1,7 +1,7 @@
 {
   "name": "tflw-vscode",
   "displayName": "tflw",
-  "description": "Syntax highlighting, inline diagnostics, and run CodeLenses for testFlow .tflw test files and tflw.config.",
+  "description": "The tflw testing language in VS Code: highlighting, diagnostics, completion, an outline, refactors, and your tests in the Test Explorer.",
   "version": "0.1.0",
   "private": true,
   "publisher": "deepak-tuteja",
@@ -10,7 +10,8 @@
   "icon": "icon.png",
   "activationEvents": [
     "onLanguage:tflw",
-    "onLanguage:tflw-config"
+    "onLanguage:tflw-config",
+    "workspaceContains:**/tflw.config"
   ],
   "files": [
     "dist",
@@ -20,13 +21,17 @@
     "icon.png",
     "LICENSE",
     "README.md",
+    "CHANGELOG.md",
     "THIRD-PARTY-NOTICES.md"
   ],
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Testing",
+    "Snippets",
+    "Formatters"
   ],
   "keywords": [
     "tflw",
@@ -98,6 +103,10 @@
       {
         "command": "tflw.runTest",
         "title": "tflw: Run this test"
+      },
+      {
+        "command": "tflw.runFailed",
+        "title": "tflw: Re-run the previous run's failed tests"
       }
     ],
     "configuration": {
