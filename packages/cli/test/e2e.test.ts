@@ -452,6 +452,22 @@ test('`tflw pick <url> --browser <unknown>` is a usage error', async () => {
   );
 });
 
+test('`--cdp-port` on `pick` and `record` refuses a port that is not one, and an engine with no DevTools endpoint (G12)', async () => {
+  for (const verb of ['pick', 'record']) {
+    for (const [args, message] of [
+      [['--cdp-port', 'abc'], /--cdp-port expects a port number from 1 to 65535, got "abc"/],
+      [['--cdp-port=70000'], /--cdp-port expects a port number from 1 to 65535, got "70000"/],
+      [['--cdp-port', '9333', '--browser', 'firefox'], /--cdp-port needs --browser chromium: firefox has no DevTools endpoint/],
+    ] as const) {
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, verb, 'http://localhost:1', ...args]),
+        (e: unknown) => (e as { code?: number; stderr?: string }).code === 2 && message.test((e as { stderr: string }).stderr),
+        `${verb} ${args.join(' ')}`,
+      );
+    }
+  }
+});
+
 test('`tflw pick <url> <extra>` (too many positional args) is a usage error', async () => {
   await assert.rejects(
     execFileAsync('node', [cliEntry, 'pick', 'http://localhost:1', 'extra']),

@@ -9789,7 +9789,7 @@ the report header.
 
 ### D1369
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +5 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9797,7 +9797,7 @@ the report header.
 
 ### D1370
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/regression.mjs +2 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9850,6 +9850,14 @@ the report header.
 | id | row | decision |
 |---|---|---|
 | `D1384` | (owner, 2026-09-29, `G10`) | **A `rows` block judges a table's rows together.** Written directly under a `with each` test; each line is `expect`/`check`, a count (`exactly N`, `N`, `at least N`, `at most N`, `no`, `every`), `row`/`rows`, a subject and a matcher, asked of every row's last body response (or bindings, for a `{value}` subject). Runs once after the last row; reports as its own entry after the rows, counted in `run:start`'s forecast. A failed `expect` stops the block, a failed `check` does not. No table is `TF095`; a subject a finished row cannot answer is `TF096`. `TF093`/`TF094` stay reserved for `M248`. |
+
+### D1385
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1385` | (owner, 2026-09-29, `G12`) | **`record` and `pick` take `--cdp-port <n>`.** The headed browser opens its DevTools endpoint on `127.0.0.1:<n>` — the address is passed explicitly, never left to Chromium's default — so a script can `connectOverCDP` and act in the window a person would. Chromium only: `--browser firefox`/`webkit` with the flag is a usage error, as is a port outside 1–65535. The endpoint is announced on stderr once the page is ready, so `record`'s stdout stays steps only. |
 
 ### M0
 
@@ -14163,7 +14171,7 @@ listener, a browser and a token exchange in one declaration.
 
 ### M249
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§5 `M249` — the CLI and the reports remember**
 

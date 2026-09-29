@@ -521,6 +521,27 @@ function resolvePlaywrightCli(): { cli: string; version: string } {
 
 const ABSOLUTE_URL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 
+/**
+ * `G12` — `--cdp-port <n>` on `record` and `pick`: the headed browser's DevTools endpoint on
+ * `127.0.0.1:<n>`, so a script can connect with Playwright's `connectOverCDP` and act in the window
+ * a person would otherwise act in. Loopback only, and Chromium only — Firefox and WebKit have no
+ * CDP endpoint to offer, and a flag that silently did nothing under them would leave the script
+ * connecting to whatever else holds the port. `undefined` when the flag was not given.
+ */
+function cdpPortOf(command: string, raw: string | undefined, engine: BrowserEngine): number | undefined | 'usage' {
+  if (raw === undefined) return undefined;
+  const port = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    err(`--cdp-port expects a port number from 1 to 65535, got "${raw}"`);
+    return 'usage';
+  }
+  if (engine !== 'chromium') {
+    err(`--cdp-port needs --browser chromium: ${engine} has no DevTools endpoint for \`tflw ${command}\` to open`);
+    return 'usage';
+  }
+  return port;
+}
+
 /** Opens a real, visible browser at `<url>` and prints one verified tflw locator per click
  * (`startPickSession` in `@tflw/runtime` — every printed locator is confirmed to resolve to
  * exactly the clicked element, D6/D7, not a guess). Runs until the window is closed or Ctrl+C.
@@ -529,21 +550,24 @@ const ABSOLUTE_URL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 async function pickCommand(argv: string[]): Promise<number> {
   let url: string | undefined;
   let browserRaw: string | undefined;
+  let cdpRaw: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
+    else if (a === '--cdp-port') cdpRaw = flagValue(argv, ++i, a);
+    else if (a.startsWith('--cdp-port=')) cdpRaw = inlineFlagValue(a, '--cdp-port');
     // Before the `url === undefined` case, or a mistyped flag becomes the URL and is reported as
     // "isn't an absolute URL" — B6-11's third shape.
     else if (a.startsWith('--')) unknownFlag('pick', a);
     else if (url === undefined) url = a;
     else {
-      err(`unexpected argument \`${a}\`. Usage: tflw pick <url> [--browser chromium|firefox|webkit]`);
+      err(`unexpected argument \`${a}\`. Usage: tflw pick <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]`);
       return EXIT_USAGE;
     }
   }
   if (!url) {
-    err('tflw pick needs a URL. Usage: tflw pick <url> [--browser chromium|firefox|webkit]');
+    err('tflw pick needs a URL. Usage: tflw pick <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]');
     return EXIT_USAGE;
   }
   if (!ABSOLUTE_URL_RE.test(url)) {
@@ -558,6 +582,8 @@ async function pickCommand(argv: string[]): Promise<number> {
     }
     engine = browserRaw as BrowserEngine;
   }
+  const cdpPort = cdpPortOf('pick', cdpRaw, engine);
+  if (cdpPort === 'usage') return EXIT_USAGE;
 
   let resolveClosed: () => void = () => {};
   const closed = new Promise<void>((res) => {
@@ -627,11 +653,13 @@ async function pickCommand(argv: string[]): Promise<number> {
       engine,
       (picked) => process.stdout.write(`${picked.syntax}\n`),
       () => resolveClosed(),
+      { cdpPort },
     );
     // Ctrl+C landed mid-launch and the launch nevertheless completed: nobody is waiting on this
     // browser, so close it here or it is genuinely orphaned. Not currently reachable — Playwright
     // closes its browsers on SIGINT, so an interrupted launch rejects rather than resolves — and
     // deliberately left unproved rather than covered by a test that cannot fail (decision 190).
+    if (!interrupted && cdpPort !== undefined) process.stderr.write(`devtools: http://127.0.0.1:${cdpPort} — connect with Playwright's connectOverCDP to drive this window.\n`);
     if (interrupted) void session.close();
     else process.stdout.write('ready — click any element to print its locator. Close the window or press Ctrl+C to stop.\n');
   } catch (e) {
@@ -666,19 +694,22 @@ async function pickCommand(argv: string[]): Promise<number> {
 async function recordCommand(argv: string[]): Promise<number> {
   let url: string | undefined;
   let browserRaw: string | undefined;
+  let cdpRaw: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--browser') browserRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--browser=')) browserRaw = inlineFlagValue(a, '--browser');
+    else if (a === '--cdp-port') cdpRaw = flagValue(argv, ++i, a);
+    else if (a.startsWith('--cdp-port=')) cdpRaw = inlineFlagValue(a, '--cdp-port');
     else if (a.startsWith('--')) unknownFlag('record', a);
     else if (url === undefined) url = a;
     else {
-      err(`unexpected argument \`${a}\`. Usage: tflw record <url> [--browser chromium|firefox|webkit]`);
+      err(`unexpected argument \`${a}\`. Usage: tflw record <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]`);
       return EXIT_USAGE;
     }
   }
   if (!url) {
-    err('tflw record needs a URL. Usage: tflw record <url> [--browser chromium|firefox|webkit]');
+    err('tflw record needs a URL. Usage: tflw record <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]');
     return EXIT_USAGE;
   }
   if (!ABSOLUTE_URL_RE.test(url)) {
@@ -693,6 +724,8 @@ async function recordCommand(argv: string[]): Promise<number> {
     }
     engine = browserRaw as BrowserEngine;
   }
+  const cdpPort = cdpPortOf('record', cdpRaw, engine);
+  if (cdpPort === 'usage') return EXIT_USAGE;
 
   let resolveClosed: () => void = () => {};
   const closed = new Promise<void>((res) => {
@@ -736,7 +769,9 @@ async function recordCommand(argv: string[]): Promise<number> {
         else process.stderr.write(`skipped one ${action.kind}: ${line.reason}\n`);
       },
       () => resolveClosed(),
+      { cdpPort },
     );
+    if (!interrupted && cdpPort !== undefined) process.stderr.write(`devtools: http://127.0.0.1:${cdpPort} — connect with Playwright's connectOverCDP to drive this window.\n`);
     if (interrupted) void session.close();
     else process.stderr.write('ready — use the page as a user would. Close the window or press Ctrl+C to stop.\n');
   } catch (e) {
@@ -4491,7 +4526,7 @@ const VERB_HELP: readonly VerbHelp[] = [
     verb: 'pick',
     summary: 'click an element in a real browser, print its locator',
     lines: [
-        '  tflw pick <url> [--browser chromium|firefox|webkit]',
+        '  tflw pick <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]',
         '                                                      click an element in a real browser window, print its best locator;',
         '                                                      runs until the window is closed or Ctrl+C — <url> must be absolute',
     ],
@@ -4500,7 +4535,7 @@ const VERB_HELP: readonly VerbHelp[] = [
     verb: 'record',
     summary: 'use a page in a real browser, print one step per action',
     lines: [
-        '  tflw record <url> [--browser chromium|firefox|webkit]',
+        '  tflw record <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]',
         '                                                      use a page in a real browser window, print one tflw step per action;',
         '                                                      `pick` is inert and this one is not — a click navigates, a form submits.',
         '                                                      Actions only: expectations are yours to add. Runs until the window is closed or Ctrl+C',

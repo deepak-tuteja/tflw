@@ -196,6 +196,23 @@ within css "[aria-label=\"Product 2\"]"
 An ancestor that narrows the name but cannot be named is skipped — a `within` naming a position is
 no better than the selector it would replace. When nothing qualifies, a CSS path is still written.
 
+### Driving the window from a script
+
+`--cdp-port <n>` opens the browser's DevTools endpoint on `127.0.0.1:<n>` and says so on stderr.
+Anything that speaks the Chrome DevTools Protocol can then act in the window, and every action is
+recorded exactly as a person's would be — which is how a recorded session can be checked in CI
+against a golden file:
+
+```js
+import { chromium } from 'playwright';
+
+const browser = await chromium.connectOverCDP('http://127.0.0.1:9333');
+const [page] = browser.contexts()[0].pages();
+await page.getByRole('link', { name: 'Shop' }).click();
+```
+
+Chromium only, and only ever on loopback. `pick` takes the same flag.
+
 ### What is not recorded
 
 Clicks the browser synthesised. Pressing `Enter` in a text field submits the form, and the browser

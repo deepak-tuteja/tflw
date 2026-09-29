@@ -17,6 +17,14 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — a script can drive `record` and `pick` (M247)
+
+- **`--cdp-port <n>`** on `tflw record` and `tflw pick` (`D1385`): the headed browser's DevTools
+  endpoint on `127.0.0.1:<n>`, announced on stderr, so a script can connect with Playwright's
+  `connectOverCDP` and act in the window. A recorded session can now be checked against a golden
+  file without a person at the keyboard. Chromium only; any other `--browser`, or a port outside
+  1–65535, is a usage error.
+
 ### Added — the CLI and the reports remember (M249)
 
 - **Every run is kept** (`D1362`). `tflw run` copies what it wrote into `report/runs/<id>/`, the

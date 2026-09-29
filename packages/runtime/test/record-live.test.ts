@@ -17,7 +17,8 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 
-import { wireRecordSession, type RecordedAction } from '../src/browser.js';
+import { createServer as createNetServer } from 'node:net';
+import { BrowserManager, cdpArgs, wireRecordSession, type RecordedAction } from '../src/browser.js';
 
 /** A form with the two fields and the submit button the dogfood session used. Served over HTTP
  *  rather than `setContent`, because `addInitScript` has to run for a real document load. */
@@ -307,4 +308,50 @@ test('`M231` `C`: a second tab is recorded — the click becomes the block, and 
     ],
     `the tab that opened is recorded, and so is the way back to the one that opened it:\n${JSON.stringify(out, null, 1)}`,
   );
+});
+
+// `G12` (`D1385`) — `--cdp-port`: the recorded window, driven by a second client that is not the
+// process recording it. `startRecordSession` is this manager plus `wireRecordSession`, headed; the
+// headed half is a display, not a behaviour, so the manager is launched headless here and the claim
+// is the rest of it — the endpoint is where the flag says, and a gesture that arrives through it is
+// recorded like a person's.
+
+test('G12: cdpArgs puts the endpoint on loopback, for chromium only', () => {
+  assert.deepEqual(cdpArgs('chromium', 9333), ['--remote-debugging-port=9333', '--remote-debugging-address=127.0.0.1']);
+  assert.deepEqual(cdpArgs('chromium', undefined), []);
+  assert.deepEqual(cdpArgs('firefox', 9333), [], 'no CDP flags on an engine with no CDP endpoint');
+});
+
+test('G12: a click sent over the CDP endpoint is recorded like a person\'s', async () => {
+  const port = await new Promise<number>((resolve) => {
+    const probe = createNetServer().listen(0, '127.0.0.1', () => {
+      const p = (probe.address() as AddressInfo).port;
+      probe.close(() => resolve(p));
+    });
+  });
+  const manager = new BrowserManager({ engine: 'chromium', headless: true, cdpPort: port });
+  const out: RecordedAction[] = [];
+  let driver: Browser | undefined;
+  try {
+    const own = await manager.getBrowser();
+    const page = await own.newPage();
+    await wireRecordSession(page, (a) => out.push(a), () => undefined);
+    await page.goto(base);
+
+    // The control: nothing is recorded until the second client acts.
+    assert.equal(out.filter((a) => a.kind !== 'open').length, 0);
+
+    driver = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    const remote = driver.contexts().flatMap((c) => c.pages()).find((p) => p.url() === base);
+    assert.ok(remote, `the recorded page is reachable through the endpoint (saw ${driver.contexts().flatMap((c) => c.pages()).map((p) => p.url()).join(', ')})`);
+    await remote.click('#plain');
+
+    for (let i = 0; i < 40 && !out.some((a) => a.kind === 'click'); i++) await page.waitForTimeout(100);
+    const clicks = out.filter((a) => a.kind === 'click');
+    assert.equal(clicks.length, 1, `one click through the endpoint, one recorded click — got ${JSON.stringify(out)}`);
+    assert.match(JSON.stringify(clicks[0]), /Plain/);
+  } finally {
+    await driver?.close().catch(() => {});
+    await manager.close();
+  }
 });
