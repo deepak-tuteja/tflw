@@ -1420,7 +1420,7 @@ test('`M250` `G13` (`D1391`): a row moves past its neighbour whole, notes and su
     '',
     '  # checks the second',
     '  api GET /b',
-    '    header "x" = "1"',
+    '    header "x" is "1"',
     '  log "done"',
     '',
   ].join('\n');
@@ -1432,7 +1432,7 @@ test('`M250` `G13` (`D1391`): a row moves past its neighbour whole, notes and su
     'test "t"',
     '  # checks the second',
     '  api GET /b',
-    '    header "x" = "1"',
+    '    header "x" is "1"',
     '',
     '  # the first request',
     '  api GET /a',

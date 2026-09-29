@@ -60,22 +60,22 @@ test('`M250` `G13` (`D1391`): the rows a move trades are the rows the sequence d
   const text = [
     'test "t"',
     '  let who = "a"',
+    '  log "before"',
     '  api GET /a',
     '  expect status equals 200',
-    '  expect body.id equals 1',
-    '  log "between"',
+    '  log "under the request"',
     '  api GET /b',
     '',
   ].join('\n');
   const body = (fileOutline('m.tflw', text).declarations[0] as OutlineTest).body;
-  // A request carries its attachments; a lone statement is its own row.
-  assert.deepEqual(moveUnits(body).map((u) => [...u]), [[0], [1, 2, 3], [4], [5]]);
+  // A request carries every statement under it until the next request; a lone statement is its own row.
   const units = moveUnits(body);
+  assert.deepEqual(units.map((u) => [...u]), [[0], [1], [2, 3, 4], [5]]);
   assert.equal(moveOf(units, 0, -1), null, 'the first row has no up');
   assert.equal(moveOf(units, 5, 1), null, 'the last row has no down');
-  assert.deepEqual(moveOf(units, 4, -1), { steps: [4], over: [1, 2, 3] }, 'a row passes the whole request above it');
-  // An attached statement heads no row, so it offers no move of its own.
-  assert.equal(moveOf(units, 2, -1), null);
+  assert.deepEqual(moveOf(units, 5, -1), { steps: [5], over: [2, 3, 4] }, 'a row passes the whole request above it');
+  // A statement under a request heads no body row, so it offers no body move of its own.
+  assert.equal(moveOf(units, 3, -1), null);
+  assert.equal(lineOfStep(body, 5), 7);
   assert.equal(lineOfStep(body, 4), 6);
-  assert.equal(lineOfStep(body, 1), 3);
 });
