@@ -3291,11 +3291,14 @@ const REGISTRY = [
   {
     id: 'a-kept-run-copies-the-runs-it-sits-in',
     milestone: 'm192',
-    pkg: 'tflw',
-    file: 'packages/cli/src/ui-server.ts',
+    // `M249` `A` (`D1362`): the copy moved from the page's server into `@tflw/reporter`'s `keepRun`,
+    // which every `tflw run` calls, and it now names what it copies rather than skipping `runs/` —
+    // so the mutation adds `runs/` to that list, which is the same defect in the new spelling.
+    pkg: '@tflw/reporter',
+    file: 'packages/reporter/src/runs.ts',
     what: 'the copy that keeps a run aside no longer skips `runs/`, so each kept run carries every earlier kept run inside it — the report directory grows by its own history on every run',
-    find: "      if (entry.name === 'runs') continue;",
-    replace: "      if (entry.name === 'never') continue;",
+    find: '  for (const member of [...RUN_OWNED_MEMBERS, ...RUN_OWNED_CONDITIONAL_MEMBERS]) {',
+    replace: '  for (const member of [...RUN_OWNED_MEMBERS, ...RUN_OWNED_CONDITIONAL_MEMBERS, `${RUNS_DIR}/`]) {',
   },
   {
     id: 'cancel-forgets-to-mark-the-run',
