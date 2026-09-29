@@ -24,7 +24,7 @@
 // The index is NOT door-filtered, and that is `D1044` rather than an oversight: what a test shows
 // is decided by its constructs and never by the door you came through. Every test in the file is
 // listed; the door is a mark on the row and never a reason to omit one.
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import type { diagnose } from './diagnose';
 import { Editor, scrollEditorTo } from './Editor';
 import type { FileView } from './api';
@@ -42,6 +42,9 @@ export function SourcePanel({ file, pending, diagnostics, project, door, onText 
   /** The door the reader came through, for the `also` badges. It marks rows; it hides none. */
   readonly door: Lens;
 }) {
+  // The sessions the active env declares, for completion after `as` (`M250` `A`) — the same list
+  // the Auth tab reads, so the editor cannot offer a name that tab would call undeclared.
+  const sessionNames = useMemo(() => project.authorization.sessions.map((x) => x.name), [project.authorization.sessions]);
   const pendingText = pending.ok ? pending.text : null;
   const unwritten = pendingText !== null && file !== null && pendingText !== file.text;
   const shown = unwritten ? pendingText : (file?.text ?? '');
@@ -136,6 +139,7 @@ export function SourcePanel({ file, pending, diagnostics, project, door, onText 
             onChange={onText}
             dialect="test"
             diagnostics={diagnostics}
+            sessions={sessionNames}
             contentAttributes={{ 'data-preview': '', 'aria-label': "the file's source" }}
           />
         )}

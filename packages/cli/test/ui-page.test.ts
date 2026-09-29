@@ -6204,8 +6204,12 @@ test('the Auth tab says who this file runs as, and every editable thing lands in
     // 2b. `M248` (`D1354`): a code-flow session says it signs in through a browser and how many
     //     sign-in steps that takes — its bearer comes from the exchange, so there is no header to name.
     const sso = fresh.locator('[data-auth-session="sso"]');
+    // one-shot: the tab drew once after the `goto` whose `[data-api-auth]` wait is above, and nothing
+    // has acted on the page since — the same footing as `admin` and `ops` just before it.
     assert.equal(await sso.getAttribute('data-auth-session-resolves'), 'true');
+    // one-shot: the same row of the same render.
     assert.match(await sso.innerText(), /oauth2 code/);
+    // one-shot: the same row of the same render.
     assert.match(await sso.locator('[data-auth-session-what]').innerText(), /signs in through a browser on its authorize URL \(2 sign-in steps\), takes the code at a loopback redirect/);
 
     // 3. `anonymous`, counted. It is the one principal nobody declares, so it is the one a reader
@@ -9650,6 +9654,45 @@ test('`M241` `A` (`D1321`): Source is an editor — an edit is the draft Compose
   });
 });
 
+test('`M250` `A` (`D1361`): the editor completes — the language server\'s list appears as you type, Enter takes it, in Paper and in Terminal', async () => {
+  await withRemovalFixture(LEGIBLE, async (p, base) => {
+    for (const theme of ['paper', 'terminal']) {
+      await p.goto(`${base}/?token=${TOKEN}#/api/source/x.tflw`);
+      // one-shot: a write, not a read — the theme is the inline script's to apply on the next load.
+      await p.locator('html').evaluate((el, t) => el.ownerDocument.defaultView!.localStorage.setItem('tflw.theme', t), theme);
+      await p.reload();
+      await p.locator(`html[data-tflw-theme="${theme}"]`).waitFor();
+      const content = p.locator('[data-preview]');
+      await p.locator('[data-source="written"]').waitFor();
+      await content.click();
+      await p.keyboard.press('ControlOrMeta+End');
+      await p.keyboard.insertText('\ntest "completed"\n  ');
+      // Typed key by key: a list opens on typing, and `insertText` is a paste, which opens none.
+      await p.keyboard.type('ex');
+      const list = p.locator('.cm-tooltip-autocomplete');
+      await list.waitFor();
+      // Waited on by value, not read: the list redraws as the source answers, so a read would be one frame.
+      await list.locator('[aria-selected="true"]').filter({ hasText: /^expect/ }).waitFor(); // the first entry is the step `ex` begins
+      await list.filter({ hasText: /hard assertion/ }).waitFor(); // and it says what it is, in the editor extension's words
+      await p.keyboard.press('Enter');
+      await list.waitFor({ state: 'detached' });
+      assert.match(await editorText(content), /test "completed"\n {2}expect$/, `Enter wrote the chosen word in place of the two typed letters (${theme})`);
+      // The control: a space opens nothing, so the list is a response to typing, not to every key.
+      await p.keyboard.type(' ');
+      await p.waitForTimeout(300);
+      // one-shot: proving an absence, after the 300 ms a list would have needed to open; the population
+      // is established — the same locator was on the page and detached two lines above.
+      assert.equal(await list.count(), 0, 'nothing typed, nothing offered');
+      // Back to the bytes on disk before the next theme's reload, so it starts from no draft.
+      // one-shot: a loop guard, not a claim — each pass undoes one step and the wait below is the claim.
+      for (let i = 0; i < 12 && (await p.locator('[data-source="written"]').count()) === 0; i++) await p.keyboard.press('ControlOrMeta+z');
+      await p.locator('[data-source="written"]').waitFor();
+    }
+    // one-shot: the same write, undone.
+    await p.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.removeItem('tflw.theme'));
+  });
+});
+
 test('`M216` `B0`/`A2`: the project pane is the reader’s width — nudged, dragged, clamped at both ends, and remembered', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base) => {
     await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
@@ -12965,10 +13008,12 @@ test('`M249` `B` (`D1362`): a test\'s past is drawn beside it — dots oldest fi
     await fails.waitFor({ timeout: 60_000 });
     await settle(async () => (await fails.locator('[data-history]').getAttribute('data-history').catch(() => null)) ?? '', untilEqual('pass,fail'), { attempts: 60, delayMs: 100, page: p });
     await fails.locator('[data-history-flaky]').waitFor();
-    assert.match((await fails.locator('[data-history]').getAttribute('data-tip')) ?? '', /1 of the last 2 kept runs failed — the verdict changed with no change to the file/);
+    const tip = await settle(async () => (await fails.locator('[data-history]').getAttribute('data-tip').catch(() => null)) ?? '', untilMeasurable('a tip on the dots', (t) => t.length > 0), { attempts: 60, delayMs: 100, page: p });
+    assert.match(tip.value, /1 of the last 2 kept runs failed — the verdict changed with no change to the file/);
     // The control: the test that did not flip has dots and no pill.
     const passes = p.locator('[data-test][data-name="a passes"]');
-    assert.equal(await passes.locator('[data-history]').getAttribute('data-history'), 'pass,pass');
+    await settle(async () => (await passes.locator('[data-history]').getAttribute('data-history').catch(() => null)) ?? '', untilEqual('pass,pass'), { attempts: 60, delayMs: 100, page: p });
+    // one-shot: the pill and the dots are one render of one row, and the dots settled on the line above.
     assert.equal(await passes.locator('[data-history-flaky]').count(), 0);
   });
 });

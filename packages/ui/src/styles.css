@@ -714,6 +714,13 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .source-editor .cm-scroller { max-height: 60vh; overflow: auto; }
 /* A warning is not a refusal: the editor underlines both, and says which by colour. */
 .editor .squiggle.warning { background-image: linear-gradient(to right, var(--warn) 0 2px, transparent 2px 4px); }
+/* `M250` `A` — the completion list, in the page's own colours. CodeMirror draws it inside the editor,
+   so it takes the theme from the same tokens the text does; the chosen entry is the selection's hue. */
+.editor .cm-tooltip.cm-tooltip-autocomplete { background: var(--panel); color: var(--fg); border: var(--border) solid var(--line); border-radius: var(--radius); font-family: var(--mono); }
+.editor .cm-tooltip-autocomplete > ul > li { padding: 2px calc(var(--unit) * 1.2); }
+.editor .cm-tooltip-autocomplete > ul > li[aria-selected] { background: color-mix(in srgb, var(--accent) 28%, transparent); color: var(--fg); }
+.editor .cm-completionDetail { color: var(--muted); font-style: normal; margin-left: calc(var(--unit) * 1.2); }
+.editor .cm-completionMatchedText { text-decoration: none; font-weight: 600; }
 
 /* The document switcher (M208 S2). Deliberately NOT a second `.tabstrip`: the strip above it is
    the file's five stages and this is a choice *inside* one of them, so painting them alike would
