@@ -434,7 +434,13 @@ button.cancel { background: var(--warn); }
 .hdot.skip { border: 1px solid var(--muted); }
 .history .badge { margin-left: 4px; }
 .sparkline { color: var(--muted); vertical-align: middle; }
-.dot.running { background: var(--accent); animation: pulse 1s infinite alternate; }
+.dot.running { background: var(--accent); }
+/* `M250` `C` (`D1365`) — motion only for a reader who has not asked for less. Every `transition` and
+   `animation` in this file sits in a block like this one; `test/motion.test.ts` holds it there. With
+   the preference set the dot is simply lit, which still says *running*. */
+@media (prefers-reduced-motion: no-preference) {
+  .dot.running { animation: pulse 1s infinite alternate; }
+}
 @keyframes pulse { from { opacity: 0.4; } to { opacity: 1; } }
 
 .report-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 14px; margin-bottom: 6px; }
