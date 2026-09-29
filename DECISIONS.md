@@ -9843,6 +9843,14 @@ the report header.
 |---|---|---|
 | `D1373` | D2 | **Eight project shapes move onto the real project** in `tests/.tflw-ui/`: compose-edit, source-conflict, config, run-tab, report, load, scans, follow. Fixture shapes stay in tflw. |
 
+### D1375
+
+<sub>cited from CHANGELOG.md, RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1375` | D7 | **A flake is logged at first sight** in the maintainer's `RUNBOOK.md` (date, job, test, run URL) **and filed as an S4 row at the second**. This week's two open the table. |
+
 ### D1376
 
 <sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
@@ -14071,7 +14079,7 @@ Status: **SCOPED 2026-09-21; §4 settled by measurement the same day; A/B/C BUIL
 
 ### M223
 
-<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M223_PANES_FIT.md`</sub>
+<sub>cited from RUNBOOK.md, tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M223_PANES_FIT.md`</sub>
 
 **`M223` — the panes fit what they hold, and a divider says so**
 
@@ -14299,11 +14307,22 @@ listener, a browser and a token exchange in one declaration.
 
 ### M252
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§8 `M252` — platform, proofs and distribution**
 
 `D1374` (tflw's half), `D1375`, `D1377`, `D1378`. CI and `e2e`. Sibling `T-5` has no dependency
 and runs beside it.
+
+### M253
+
+<sub>cited from RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+**`M247`–`M253` — the whole product, made publishable**
+
+**Scoped 2026-09-28 by grilling** (`REVIEW_WHOLE_PRODUCT.md` → 27 questions, one at a time, in
+its §9 order → the 29 decisions in §2). **Nothing is built.** The sibling's half is
+`testFlow-tests/PLAN_M247_DOGFOOD_WHOLE_PRODUCT.md`, slices `T-1`..`T-5`, each naming the tflw
+milestone it waits on. Both files are gitignored; the repositories are public.
 
 <!-- GENERATED:decisions:end -->

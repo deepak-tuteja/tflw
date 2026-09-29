@@ -39,6 +39,9 @@ jobs:
     # nothing in this job grows the way the mutation registry does, so there is nothing left here to
     # re-measure per milestone.
     timeout-minutes: 60
+    # `M252` `B`: the one job family that installs WebKit says so, and the test that needs it runs.
+    env:
+      TFLW_E2E_WEBKIT: '1'
     strategy:
       fail-fast: false
       matrix:
@@ -57,8 +60,9 @@ jobs:
       # and pick-session tests, packages/cli's watch/e2e --browser firefox test) — `playwright`
       # has no postinstall download hook, so without this every launch fails with "Executable
       # doesn't exist" (confirmed on the first CI run after the browser arc landed, run 30316651481).
-      # Only the two engines the suite actually exercises; webkit is a documented `--browser`
-      # option but nothing launches it yet.
+      # Chromium and Firefox everywhere; WebKit on these Linux jobs only (`M252` `B`, `D1374`): one
+      # `e2e.test.ts` test runs a real UI test under it and stamps the engine, gated on
+      # `TFLW_E2E_WEBKIT` above so a failed install reddens the job instead of skipping the test.
       #
       # M143a — no `--with-deps`, and that is a measurement rather than a preference.
       #
@@ -84,7 +88,7 @@ jobs:
       # If an engine ever does fail to launch, Playwright names the missing library on stderr:
       # install that one, by name, here. Never the closure again.
       - name: Install Playwright browsers
-        run: npx playwright install chromium firefox
+        run: npx playwright install chromium firefox webkit
 
       - run: npm run build
 
@@ -465,6 +469,34 @@ jobs:
   # carries a known high-or-critical advisory, and what IS installed is written down as a CycloneDX
   # SBOM anyone can diff. Its own job because it needs one `npm ci` and no browser, and a
   # supply-chain red should read as one rather than as a leg of the matrix.
+  # `M252` `C` (`D1378`) — the Action, run the way a user's workflow runs it, against the example
+  # storefront, with the CLI packed from this commit (nothing is on npm before 1.0 day — `D1379`).
+  # The storefront is copied out of the tree first: `npm i` inside `examples/` would walk up to this
+  # repository's own `package.json` and install into the workspace, which no user's project has.
+  action-dry-run:
+    name: the Action, dry-run against the storefront
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm pack -w tflw --pack-destination "$RUNNER_TEMP"
+      - run: echo "TFLW_TGZ=$(ls "$RUNNER_TEMP"/tflw-*.tgz)" >> "$GITHUB_ENV"
+      - run: cp -R examples/storefront "$RUNNER_TEMP/storefront"
+      - run: node "$RUNNER_TEMP/storefront/server.mjs" &
+      - id: tflw
+        uses: ./.github/action
+        with:
+          package: ${{ env.TFLW_TGZ }}
+          working-directory: ${{ runner.temp }}/storefront
+          args: run --tag functional
+      - run: test "${{ steps.tflw.outputs.exit-code }}" = 0 && test -f "$RUNNER_TEMP/storefront/report/junit.xml"
+
   supply-chain:
     name: audit + SBOM
     runs-on: ubuntu-latest

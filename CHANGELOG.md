@@ -17,6 +17,18 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — WebKit, the Action, the flake table (M252)
+
+- **WebKit, once**: CI runs a real UI test under `--browser webkit` on its Linux jobs and checks the
+  engine is recorded in `results.json`. Chromium and Firefox stay the engines the whole suite uses.
+- **A GitHub Action** (`.github/action/`): installs tflw and its peers into the project, downloads
+  the browsers, runs, uploads the report, annotates each failing test's file, and exits with
+  tflw's code. CI dry-runs it on every pull request against the example storefront, with the CLI
+  packed from the commit under test. It is published as its own repository on 1.0 day, not before.
+- **The flake table** in `RUNBOOK.md` (`D1375`): a flake is logged at first sight and filed at the
+  second. Three rows open it.
+- **The runbook's *In CI* section** names the three platforms and the Action.
+
 ### Added — CI on macOS (M252)
 
 - **A macOS job** (`D1377`): build, typecheck and the whole test suite on `macos-latest`, Node 22,
