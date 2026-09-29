@@ -95,11 +95,16 @@ export async function writeJunitXml(report: RunReport, dir: string): Promise<str
  * that named a file nobody wrote would be worse than the duplicate it replaces. `traceRelPath` is
  * shared with the writer for exactly that reason.
  */
+/** `M249` `F` — where the two schemas are published (the docs site's `/schema/`). */
+export const RESULTS_SCHEMA_URL = 'https://deepak-tuteja.github.io/tflw/schema/results.schema.json';
+export const EVENTS_SCHEMA_URL = 'https://deepak-tuteja.github.io/tflw/schema/events.schema.json';
+
 export async function writeResultsJson(report: RunReport, dir: string): Promise<string> {
   const outDir = resolve(dir);
   await mkdir(outDir, { recursive: true });
   const path = join(outDir, 'results.json');
-  await writeFile(path, JSON.stringify(withTracePaths(report), null, 2) + '\n', 'utf8');
+  // `M249` `F` (R2) — the file names its schema, so an editor or a validator finds it unprompted.
+  await writeFile(path, JSON.stringify({ $schema: RESULTS_SCHEMA_URL, ...withTracePaths(report) }, null, 2) + '\n', 'utf8');
   return path;
 }
 

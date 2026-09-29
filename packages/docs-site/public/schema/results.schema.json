@@ -1,0 +1,1465 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deepak-tuteja.github.io/tflw/schema/results.schema.json",
+  "title": "tflw results.json",
+  "description": "One finished run: every test's verdict and steps, the scans' findings, and how the run was made. Generated from @tflw/runtime's RunReport; objects are open, so a later tflw may add fields.",
+  "$ref": "#/$defs/RunReport",
+  "$defs": {
+    "AttemptResult": {
+      "type": "object",
+      "properties": {
+        "attempt": {
+          "type": "number"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StepResult"
+          }
+        },
+        "error": {
+          "type": "string"
+        },
+        "trace": {
+          "$ref": "#/$defs/TraceAsset"
+        }
+      },
+      "required": [
+        "attempt",
+        "ok",
+        "durationMs",
+        "steps"
+      ]
+    },
+    "AuthorizedTarget": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "probeMutating": {
+          "description": "The indented `probe mutating` sub-clause (M130b, D311/D330) — may an authorization probe re-issue a mutating request under another principal against this host?",
+          "type": "boolean"
+        },
+        "probeOversized": {
+          "description": "`probe oversized` (M134a, D372) — may an input-handling scan send a 64 KiB value at this host's inputs? Opt-in because D21 layer 4 names **resource exhaustion** by that name.",
+          "type": "boolean"
+        },
+        "probeTraversal": {
+          "description": "`probe traversal` (M134a, D372) — may an input-handling scan send `../`-shaped payloads at this host's inputs? Detection-oriented (it attempts a read, never a write), but still an attempt at unauthorized access, which is the other class D21 layer 4 names.",
+          "type": "boolean"
+        },
+        "probeCiphers": {
+          "description": "`probe ciphers` (M137g, D485/D486) — may the TLS probe open one handshake per candidate suite against this host, so `sec/tls-weak-cipher` judges the host's *offer* and not merely the suite tflw's own client negotiated?",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target",
+        "reason",
+        "probeMutating",
+        "probeOversized",
+        "probeTraversal",
+        "probeCiphers"
+      ]
+    },
+    "BackOffDiagnosis": {
+      "type": "object",
+      "properties": {
+        "ratio": {
+          "type": "number"
+        },
+        "warning": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ratio",
+        "warning"
+      ]
+    },
+    "BaselineAudit": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "description": "The path as the run was given it — the flag's value or the config key's.",
+          "type": "string"
+        },
+        "accepted": {
+          "type": "number"
+        },
+        "matched": {
+          "type": "number"
+        },
+        "stale": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BaselineEntry"
+          }
+        },
+        "narrowedBy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "accepted",
+        "matched",
+        "stale"
+      ]
+    },
+    "BaselineEntry": {
+      "type": "object",
+      "properties": {
+        "fingerprint": {
+          "type": "string"
+        },
+        "rule": {
+          "description": "Carried so a human reading the file knows what they accepted. Never part of the match — a rule renamed upstream must not silently un-accept every entry that mentioned it.",
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "fingerprint",
+        "rule",
+        "endpoint"
+      ]
+    },
+    "CookieEvent": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "description": "`scheme://host:port` — `URL.origin`, so a default port normalizes away and the key is the same string whichever client produced it.",
+          "type": "string"
+        },
+        "setCookie": {
+          "description": "This hop's `Set-Cookie` values, one array entry per header line — never joined. The `\\n`-joined form in `headers['set-cookie']` exists because a header map is `Record<string, string>`; here there is no such constraint, and a jar wants the lines anyway.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "origin",
+        "setCookie"
+      ]
+    },
+    "CrawlResult": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "crawl"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StepResult"
+          }
+        },
+        "file": {
+          "type": "string"
+        },
+        "sourceHash": {
+          "description": "`M249` `A` (`D1362`) — a hash of the source of the file this test came from, stamped beside `file`. History reads it to tell *flaky* (the verdict changed and the file did not) from *changed* (someone edited it). The file, not the test: a row-expanded name cannot be mapped back to its declaration from here, and a coarser hash only ever withholds the word *flaky*, never invents it.",
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "surface": {
+          "$ref": "#/$defs/CrawlSurfaceReport"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "ok",
+        "durationMs",
+        "steps",
+        "surface"
+      ]
+    },
+    "CrawlSurfaceReport": {
+      "type": "object",
+      "properties": {
+        "discovered": {
+          "description": "Every operation the seeds described, before any of them was accepted or refused.",
+          "type": "number"
+        },
+        "withheld": {
+          "description": "Enumerated and disclosed, but not sent: `exclude`d, unsynthesizable, or a write with no `probe mutating` on its origin (`D465`).",
+          "type": "number"
+        },
+        "sent": {
+          "type": "number"
+        },
+        "reached": {
+          "description": "Sent requests that landed on real code, and whose responses were therefore judged (`D436`).",
+          "type": "number"
+        },
+        "seeds": {
+          "description": "Per seed, so a provenance claim has a denominator behind it — `D437`'s discriminator says which seed found a *finding*; this says what each seed found at all. `source` is the document URL for an `openapi` seed and absent for `traffic`, which has no address.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "seed": {
+                "enum": [
+                  "openapi",
+                  "traffic",
+                  "spider"
+                ]
+              },
+              "source": {
+                "type": "string"
+              },
+              "discovered": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "seed",
+              "discovered"
+            ]
+          }
+        },
+        "walked": {
+          "description": "`M137f` (`D483`) — pages the spider fetched, and whether the walk stopped on a bound.",
+          "type": "number"
+        },
+        "walkCapped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "discovered",
+        "withheld",
+        "sent",
+        "reached",
+        "seeds"
+      ]
+    },
+    "HistogramBucket": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "number"
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "value",
+        "count"
+      ]
+    },
+    "LoadDurationStats": {
+      "type": "object",
+      "properties": {
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "avg": {
+          "type": "number"
+        },
+        "p50": {
+          "type": "number"
+        },
+        "p90": {
+          "type": "number"
+        },
+        "p95": {
+          "type": "number"
+        },
+        "p99": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "min",
+        "max",
+        "avg",
+        "p50",
+        "p90",
+        "p95",
+        "p99"
+      ]
+    },
+    "LoadMetrics": {
+      "type": "object",
+      "properties": {
+        "iterations": {
+          "type": "number"
+        },
+        "failures": {
+          "type": "number"
+        },
+        "assertions": {
+          "description": "`M146b` (`B3-17`) — how many `expect`/`check` steps this scope's iterations actually ran.",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "errorRate": {
+          "description": "`failures / iterations`, `0` when `iterations === 0`.",
+          "type": "number"
+        },
+        "durations": {
+          "$ref": "#/$defs/LoadDurationStats"
+        },
+        "histogram": {
+          "description": "M32 (R4) — this metric's own duration distribution, bucketed (not raw samples) — small enough to inline into `report.html` for the response-time distribution histogram chart, and reused verbatim by `results.json` consumers that want the full distribution rather than just the five summary percentiles in `durations`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HistogramBucket"
+          }
+        },
+        "timeline": {
+          "description": "M32 (R3/R4) — one point per second of wall-clock run time this metric's iterations landed in (`durations`' scope: combined = every scenario, a scenario report = just that scenario's own iterations) — the timeline SVGs (latency-over-time, throughput, error-rate) are built from this, sorted ascending by `offsetSeconds`. Empty for a run with zero iterations.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TimelinePoint"
+          }
+        },
+        "successful": {
+          "description": "M89a (`B3-02`, D-M89-0/D-M89-3) — the **successful-only** duration population, which is what a `threshold pNN duration` clause actually reads. `durations`/`histogram` above stay all-iterations and keep their exact prior meaning, so this field is purely additive: a `results.json` consumer that never looked here sees no change.",
+          "type": "object",
+          "properties": {
+            "iterations": {
+              "type": "number"
+            },
+            "durations": {
+              "$ref": "#/$defs/LoadDurationStats"
+            },
+            "histogram": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HistogramBucket"
+              }
+            }
+          },
+          "required": [
+            "iterations",
+            "durations",
+            "histogram"
+          ]
+        }
+      },
+      "required": [
+        "iterations",
+        "failures",
+        "assertions",
+        "errorRate",
+        "durations",
+        "histogram",
+        "timeline",
+        "successful"
+      ]
+    },
+    "LoadThresholdResult": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "description": "Human-readable label, e.g. `p95 duration` / `error rate`, for console/report display.",
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "lessThan",
+            "greaterThan"
+          ]
+        },
+        "target": {
+          "description": "ms for a duration threshold, a 0-1 fraction for an error-rate threshold — same units as `actual`.",
+          "type": "number"
+        },
+        "actual": {
+          "description": "M89a (D-M89-1) — `null` when a **duration** threshold had **no successful iterations** to measure: there is no percentile, and saying so is the only honest answer. Such a threshold is never `ok`.",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "label",
+        "op",
+        "target",
+        "actual",
+        "ok"
+      ]
+    },
+    "LoadWorkloadRampableStage": {
+      "type": "object",
+      "properties": {
+        "ramped": {
+          "type": "boolean"
+        },
+        "target": {
+          "type": "number"
+        },
+        "durationMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ramped",
+        "target",
+        "durationMs"
+      ]
+    },
+    "LoadWorkloadStage": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "number"
+        },
+        "durationMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "target",
+        "durationMs"
+      ]
+    },
+    "RequestTrace": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "url",
+        "headers"
+      ]
+    },
+    "ResponseTrace": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "number"
+        },
+        "statusText": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "bodyText": {
+          "type": "string"
+        },
+        "bodyBytes": {
+          "description": "bytes, as JSON.stringify writes a Buffer",
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Buffer"
+            },
+            "data": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ]
+        },
+        "json": {
+          "description": "Parsed JSON if the body parsed as JSON, else undefined."
+        },
+        "durationMs": {
+          "description": "Wall-clock time for this request, milliseconds, **unrounded** (`M160`/`D807`).",
+          "type": "number"
+        },
+        "finalUrl": {
+          "description": "Where the chain actually ended — equal to the requested URL whenever nothing redirected.",
+          "type": "string"
+        },
+        "cookieEvents": {
+          "description": "Every hop of this chain that carried `Set-Cookie`, in the order they arrived. Empty for the overwhelming majority of responses.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CookieEvent"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "statusText",
+        "headers",
+        "bodyText",
+        "bodyBytes",
+        "durationMs",
+        "finalUrl",
+        "cookieEvents"
+      ]
+    },
+    "RunReport": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "description": "**Did this run pass?** — not \"did nothing that ran fail\", which is `failed === 0` one line down. A run that never reached a verdict is `ok: false` even with an empty `failed` count: `aborted` (Ctrl-C before the planned duration) and `inconclusive` (tflw's own generator saturated) each say which kind of no-verdict it was. `M114` (review row `M111-01`) — until then an aborted run's `results.json` read `{\"ok\": true, \"failed\": 0, \"aborted\": true}`, and a CI job branching on the field named for exactly this question read a clean pass off a run cut short.",
+          "type": "boolean"
+        },
+        "env": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        },
+        "passed": {
+          "type": "number"
+        },
+        "failed": {
+          "type": "number"
+        },
+        "skipped": {
+          "description": "`D1327` — tests not run because they are `skip`ped; `total` is `passed + failed + skipped`. Omitted when none were, so a report from a run with no skips keeps its earlier shape.",
+          "type": "number"
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TestResult"
+              },
+              {
+                "$ref": "#/$defs/WorkloadTestResult"
+              },
+              {
+                "$ref": "#/$defs/CrawlResult"
+              }
+            ]
+          }
+        },
+        "seed": {
+          "description": "The `random`/`unique` run seed — reproduce this exact run with `tflw run --seed <n>` (P#23).",
+          "type": "number"
+        },
+        "now": {
+          "description": "The run clock (ISO 8601) that `today`/`now`/date generators derived from — reproduce the exact same absolute dates alongside `--seed` with `tflw run --seed <n> --now <iso>` (decision 52).",
+          "type": "string"
+        },
+        "ranBy": {
+          "description": "**Who ran this, where, with which tflw** — `M241` `E` (`D1325`, the review's E4). The OS user, the host name and the tflw version, so a report read later — or beside another team's — says whose machine produced it. Set by the CLI when it writes the report; optional, so every report written before this and every fixture keeps its shape.",
+          "type": "object",
+          "properties": {
+            "user": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "user",
+            "host",
+            "version"
+          ]
+        },
+        "mergedFrom": {
+          "description": "`M249` `C` (`D1369`) — set by `tflw merge`: the report directories this one joins, in the order given. Absent on every run's own report, so its presence is what says *this is a merge* — and why `env` may read `ci, staging` and `seed` is only the first input's.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "insecure": {
+          "description": "True when this run had `insecure true` active (TLS verification disabled) — surfaced as a visible warning in the CLI summary and report header, never silently (decision 78).",
+          "type": "boolean"
+        },
+        "demo": {
+          "description": "True when this run's `api` was tflw's bundled demo service (`tflw://demo`, M118/`FU-04`/D202), not a service of the user's. Surfaced in the CLI summary and the report header for `insecure`'s reason: a green `PASS 1/1` from the quickstart must never be mistakable for evidence about a real system. Optional and omitted when false, so every existing fixture keeps compiling.",
+          "type": "boolean"
+        },
+        "authorizedTargets": {
+          "description": "The `authorized target` declarations in force for this run (M128b, D291). Recorded here so that the claim which *permitted* a security scan travels in the same artifact as the scan's findings — a report showing security results with no record of who said the scan was allowed is half a document, and the half it is missing is the one an auditor asks for.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuthorizedTarget"
+          }
+        },
+        "findings": {
+          "description": "M134b (D376/D385) — every finding all three security scans produced this run, in the order they were raised, each carrying R8's stable `fingerprint`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScanFinding"
+          }
+        },
+        "baseline": {
+          "$ref": "#/$defs/BaselineAudit"
+        },
+        "scanCoverage": {
+          "description": "M134b (D389) — which rules each scan applied and which stood down, with the reason.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScanRuleCensus"
+          }
+        },
+        "scanBlindSpot": {
+          "description": "`M136a` (D418a) — what the scans could not put a question to, as opposed to `scanCoverage` above, which is what their rules declined to judge.",
+          "type": "object",
+          "properties": {
+            "coverage": {
+              "type": "object",
+              "properties": {
+                "apiSteps": {
+                  "type": "number"
+                },
+                "withOwner": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "apiSteps",
+                "withOwner"
+              ]
+            },
+            "declines": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "scan": {
+                    "enum": [
+                      "security",
+                      "authorization",
+                      "input-handling"
+                    ]
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "scan",
+                  "subject",
+                  "reason",
+                  "count"
+                ]
+              }
+            }
+          }
+        },
+        "unmaskableSecrets": {
+          "description": "Names declared secret — via `env(NAME)`/`require env`, or a `capture` whose subject a `redact` pattern covers — whose value was too short for `MIN_REDACTABLE_LENGTH` to mask safely, so it ships in the clear (review finding `A12-01`). Surfaced as a warning beside `insecure`'s, for the same reason: the run declining to protect a value it was told was a secret is exactly the kind of trade-off that must not be silent. Optional and omitted when empty, so the common case adds nothing to the report and every existing `RunReport` fixture keeps compiling.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidenceLevel": {
+          "description": "FS-01 (review finding V2-01) — the `evidence` level this run actually ran at, carried into the report so `report.html`'s footer can describe what the file contains instead of asserting a fixed claim about it. The reporter cannot infer this from the contents alone: \"no screenshots\" is equally true of a clean API-only run at `evidence full` and a browser run at `evidence none`, and those two deserve different sentences. Optional so every fixture built directly against `RunReport` (unit tests across `runtime`/`reporter`) keeps compiling; absent is rendered as `full`, the default.",
+          "enum": [
+            "none",
+            "full",
+            "headers-only"
+          ]
+        },
+        "teardown": {
+          "description": "`D785` — what to say about teardown, and the numbers that make it worth saying.",
+          "type": "object",
+          "properties": {
+            "level": {
+              "enum": [
+                "always",
+                "on-success",
+                "never"
+              ]
+            },
+            "iterations": {
+              "type": "number"
+            },
+            "skipped": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "level",
+            "iterations",
+            "skipped"
+          ]
+        },
+        "browserEngine": {
+          "description": "The Playwright engine this run's browser steps ran against (M3c, D11: \"engine is a run-level property in the report header\"). Undefined only for a run given no `BrowserManager` at all (a hand-built test harness, never a real `tflw run` invocation, which always supplies one).",
+          "enum": [
+            "chromium",
+            "firefox",
+            "webkit"
+          ]
+        },
+        "selfDiagnosis": {
+          "$ref": "#/$defs/SelfDiagnosis"
+        },
+        "inconclusive": {
+          "description": "M56 (Phase 3, D117) — `selfDiagnosis.saturated` lifted to run level, `true` if *any* contributing file's generator saturated (a saturated generator anywhere invalidates that file's own workload numbers, and CI must not read the merged run as a trustworthy \"system passed\" while that's true). Always `false`/absent on a purely functional run.",
+          "type": "boolean"
+        },
+        "aborted": {
+          "description": "M56 (Phase 3, D117) — `true` if Ctrl-C stopped any file's workload-bearing test before its planned duration elapsed; every workload entry in `tests` still reflects whatever iterations completed. Absent (not merely `false`) on a run with no abort.",
+          "type": "boolean"
+        },
+        "abortedMessage": {
+          "description": "Human-readable \"aborted at Ns of Nm planned\" for the (first) file that was aborted — only present alongside `aborted: true`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "env",
+        "startedAt",
+        "durationMs",
+        "total",
+        "passed",
+        "failed",
+        "tests",
+        "seed",
+        "now",
+        "insecure"
+      ]
+    },
+    "RuntimeWarning": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "description": "The `TF0xx` code, so this reads and greps identically to a check-time diagnostic.",
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "line": {
+          "description": "The source line the warning is *about* — the step that armed, not the step that tripped it.",
+          "type": "number"
+        },
+        "source": {
+          "description": "That line as written, so a reporter can echo it without re-reading the file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "line",
+        "source"
+      ]
+    },
+    "ScanFinding": {
+      "type": "object",
+      "properties": {
+        "scan": {
+          "enum": [
+            "security",
+            "authorization",
+            "input-handling"
+          ]
+        },
+        "rule": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "minor",
+            "moderate",
+            "serious",
+            "critical"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "invariant": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "description": "R8's stable identity — the same weakness across runs, distinct weaknesses on one endpoint.",
+          "type": "string"
+        },
+        "seeded": {
+          "description": "Present exactly when D369's seeded layer drew this payload. Carries what it takes to promote the payload into the fixed corpus, which is the section's entire call to action.",
+          "type": "object",
+          "properties": {
+            "seed": {
+              "type": "number"
+            },
+            "payload": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "seed",
+            "payload"
+          ]
+        },
+        "via": {
+          "description": "`M137c` (D437/D461/D470) — **which discovery source reached this route**, present exactly when a `crawl` issued the request and absent for every finding an authored `api` step produced.",
+          "enum": [
+            "openapi",
+            "traffic",
+            "spider"
+          ]
+        },
+        "withheld": {
+          "description": "Why this finding did not fail the build, absent when it did.",
+          "enum": [
+            "baseline",
+            "fail-on",
+            "seeded"
+          ]
+        },
+        "file": {
+          "description": "The test file and line whose assertion raised it, so a report can point at the source.",
+          "type": "string"
+        },
+        "line": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "scan",
+        "rule",
+        "severity",
+        "description",
+        "detail",
+        "endpoint"
+      ]
+    },
+    "ScanRuleCensus": {
+      "type": "object",
+      "properties": {
+        "scan": {
+          "enum": [
+            "security",
+            "authorization",
+            "input-handling"
+          ]
+        },
+        "applied": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notApplicable": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rule": {
+                "type": "string"
+              },
+              "because": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "rule",
+              "because"
+            ]
+          }
+        }
+      },
+      "required": [
+        "scan",
+        "applied",
+        "notApplicable"
+      ]
+    },
+    "ScreenshotAsset": {
+      "type": "object",
+      "properties": {
+        "base64": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "base64"
+      ]
+    },
+    "SelfDiagnosis": {
+      "type": "object",
+      "properties": {
+        "avgEventLoopLagMs": {
+          "type": "number"
+        },
+        "maxEventLoopLagMs": {
+          "type": "number"
+        },
+        "cpuPercent": {
+          "description": "Percent of one CPU core consumed over the run's wall-clock duration — can exceed 100 on a multi-threaded workload (libuv's thread pool), though a single generator process's own JS-thread-bound work rarely does.",
+          "type": "number"
+        },
+        "saturated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "avgEventLoopLagMs",
+        "maxEventLoopLagMs",
+        "cpuPercent",
+        "saturated"
+      ]
+    },
+    "SnapshotDiffAsset": {
+      "type": "object",
+      "properties": {
+        "baseline": {
+          "description": "Absent only when this run just created the very first baseline (nothing to diff against).",
+          "type": "string"
+        },
+        "actual": {
+          "type": "string"
+        },
+        "diff": {
+          "description": "Present only when a same-platform baseline existed and its dimensions matched — i.e. whenever a real pixel compare actually ran.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actual"
+      ]
+    },
+    "StepResult": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "api",
+            "expect",
+            "check",
+            "let",
+            "capture",
+            "log",
+            "wait",
+            "call",
+            "give",
+            "header",
+            "csrf",
+            "seed",
+            "open",
+            "click",
+            "fill",
+            "select",
+            "checkbox",
+            "uncheckbox",
+            "press",
+            "hover",
+            "scroll",
+            "within",
+            "dialog",
+            "switchTab",
+            "closeTab",
+            "download",
+            "drag",
+            "dropFile",
+            "screenshot",
+            "stub",
+            "pause",
+            "together",
+            "redirect"
+          ]
+        },
+        "source": {
+          "description": "The original source line, for the report timeline (mirrors source, SPEC §13).",
+          "type": "string"
+        },
+        "line": {
+          "type": "number"
+        },
+        "file": {
+          "description": "`M240-03` — the file `line` is a line of, present only when that is not the test's own file: a step of an action imported from another file. Relative to the run's cwd with `/` separators, as `TestResult.file` is.",
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "durationMs": {
+          "description": "Whole milliseconds — deliberately still rounded (`D807`). A single step really can be sub-millisecond, which makes this the one arguable site in that split; it stays rounded because it is printed per step in the report and read by no percentile, threshold or assertion. `pauseMs` in the load path sums these, which is why that subtraction is whole-millisecond too.",
+          "type": "number"
+        },
+        "detail": {
+          "description": "One-line human summary: `status = 200`, `orderId = 42 (captured)`, or a failure reason.",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestTrace"
+        },
+        "response": {
+          "$ref": "#/$defs/ResponseTrace"
+        },
+        "endpoint": {
+          "description": "Set only on a `kind: 'api'` result (M43, D67/D68) — this request's stable endpoint identity: its `ApiStep.tag` (`as \"label\"`) when present, else the automatic `METHOD path.raw` derived from the *source template*, not `request.url` (which is the resolved, interpolated URL and would fragment identity across otherwise-identical requests, the exact normalization problem this field exists to avoid). Read by the per-scenario endpoint accumulator to build `LoadScenarioReport.endpoints`; unused (but harmless, negligible size) outside a load run.",
+          "type": "string"
+        },
+        "screenshot": {
+          "$ref": "#/$defs/ScreenshotAsset"
+        },
+        "snapshotDiff": {
+          "$ref": "#/$defs/SnapshotDiffAsset"
+        },
+        "level": {
+          "description": "Set only on a `kind: 'log'` step (M27, PLAN_LOG.md decision 117) — the statement's own level and its *effective* destination (per-statement `to …` if given, else the resolved `logDestination` config/CLI default at the time this step ran, decision 116/121). Always present on every `log` step regardless of that destination — a step whose destination excludes a given renderer is still recorded, only not displayed there (decision 119).",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
+        },
+        "destination": {
+          "enum": [
+            "console",
+            "html",
+            "both",
+            "none"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "line",
+        "ok",
+        "durationMs"
+      ]
+    },
+    "TestResult": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "M56 (Phase 3, D116) — discriminates a `ReportEntry` from a `WorkloadTestResult`. Always `'functional'`; every construction site sets it explicitly (or inherits it via `{ ...result }` spread from one that did) so a plain `test.ok` narrows correctly wherever `ReportEntry` is consumed, without a duck-typed guess (e.g. \"does it have `.metrics`?\").",
+          "const": "functional"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StepResult"
+          }
+        },
+        "file": {
+          "description": "The `.tflw` file this test came from, relative to the run's cwd — stamped by the CLI once all of a file's tests are back from `runProgram` (report.html groups by this, per-test tabs, TFLW-GAPS.md-adjacent UX ask). Optional so every existing fixture/report built directly against `TestResult` (unit tests across `runtime`/`reporter`) keeps compiling unchanged; a report with no `file` groups every test under one untitled group.",
+          "type": "string"
+        },
+        "sourceHash": {
+          "description": "`M249` `A` (`D1362`) — a hash of the source of the file this test came from, stamped beside `file`. History reads it to tell *flaky* (the verdict changed and the file did not) from *changed* (someone edited it). The file, not the test: a row-expanded name cannot be mapped back to its declaration from here, and a coarser hash only ever withholds the word *flaky*, never invents it.",
+          "type": "string"
+        },
+        "error": {
+          "description": "The fatal error that ended the test early, if any.",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Runtime diagnostics raised while this test ran, in the order they were raised (`D801`). Absent, not empty, when there were none — so a report built before this field existed, and a test that raised nothing, have the same shape. Never affects `ok`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RuntimeWarning"
+          }
+        },
+        "flaky": {
+          "description": "`true` when this test failed at least once before passing on a `retry` attempt — reported as passed but flagged, never silently green (SPEC §4.4, P#10).",
+          "type": "boolean"
+        },
+        "skipped": {
+          "description": "`skip \"reason\"` (`M242` `B`, `D1327`): the test was not run, and this is why. A skipped test is `ok` — a run whose only non-passes are skips passes — and carries no steps; every reporter reads this field to show it as its own outcome rather than a pass. Absent on every test that ran.",
+          "type": "string"
+        },
+        "skippedOn": {
+          "description": "`skip \"…\" on env a, b` (`M247` `B`, `D1353`): the env this skip held in. Present only on an env skip, so a reader can tell *skipped here* from *skipped everywhere*; `skipped` carries the same env in its text for every reporter that shows one string.",
+          "type": "string"
+        },
+        "attempts": {
+          "description": "Every attempt actually run, in order, only present when more than one attempt ran. A single-attempt test has no `attempts` field at all — same shape as before this field existed. When present, `attempts[attempts.length - 1].steps === steps` (SPEC §4.4, PLAN decision 86).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AttemptResult"
+          }
+        },
+        "trace": {
+          "$ref": "#/$defs/TraceAsset"
+        },
+        "concurrency": {
+          "description": "`parallel`/`sequential` (D105-D107/D115) — this test's own declared relation to its file neighbors, threaded through purely for `report.html`'s badge (M56); never affects scheduling here, that's the interpreter's job. Undefined for a report built without this field (every pre-M56 fixture/unit test), rendered the same as `'sequential'` (no badge).",
+          "enum": [
+            "parallel",
+            "sequential"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "ok",
+        "durationMs",
+        "steps"
+      ]
+    },
+    "TimelinePoint": {
+      "type": "object",
+      "properties": {
+        "offsetSeconds": {
+          "description": "Seconds since the run started, floored — the bucket key.",
+          "type": "number"
+        },
+        "count": {
+          "type": "number"
+        },
+        "failures": {
+          "type": "number"
+        },
+        "rps": {
+          "description": "`count` for this one second — already a rate since the bucket width is exactly 1s.",
+          "type": "number"
+        },
+        "errorRate": {
+          "type": "number"
+        },
+        "min": {
+          "type": "number"
+        },
+        "mean": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "p50": {
+          "type": "number"
+        },
+        "p95": {
+          "type": "number"
+        },
+        "p99": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "offsetSeconds",
+        "count",
+        "failures",
+        "rps",
+        "errorRate",
+        "min",
+        "mean",
+        "max",
+        "p50",
+        "p95",
+        "p99"
+      ]
+    },
+    "TraceAsset": {
+      "type": "object",
+      "properties": {
+        "base64": {
+          "description": "The archive's bytes. Present everywhere except `results.json`.",
+          "type": "string"
+        },
+        "path": {
+          "description": "`assets/traces/<hash>.zip`, relative to the report directory. `results.json` only.",
+          "type": "string"
+        }
+      }
+    },
+    "WorkloadTestResult": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "workload"
+        },
+        "file": {
+          "type": "string"
+        },
+        "sourceHash": {
+          "description": "`M249` `A` (`D1362`) — a hash of the source of the file this test came from, stamped beside `file`. History reads it to tell *flaky* (the verdict changed and the file did not) from *changed* (someone edited it). The file, not the test: a row-expanded name cannot be mapped back to its declaration from here, and a coarser hash only ever withholds the word *flaky*, never invents it.",
+          "type": "string"
+        },
+        "concurrency": {
+          "enum": [
+            "parallel",
+            "sequential"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "workload": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "shape": {
+                  "const": "ramp"
+                },
+                "model": {
+                  "enum": [
+                    "open",
+                    "closed"
+                  ]
+                },
+                "target": {
+                  "type": "number"
+                },
+                "overMs": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "shape",
+                "model",
+                "target",
+                "overMs"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "shape": {
+                  "const": "hold"
+                },
+                "model": {
+                  "enum": [
+                    "open",
+                    "closed"
+                  ]
+                },
+                "target": {
+                  "type": "number"
+                },
+                "forMs": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "shape",
+                "model",
+                "target",
+                "forMs"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "shape": {
+                  "const": "step"
+                },
+                "model": {
+                  "enum": [
+                    "open",
+                    "closed"
+                  ]
+                },
+                "stages": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/LoadWorkloadStage"
+                  }
+                }
+              },
+              "required": [
+                "shape",
+                "model",
+                "stages"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "shape": {
+                  "const": "spike"
+                },
+                "model": {
+                  "enum": [
+                    "open",
+                    "closed"
+                  ]
+                },
+                "stages": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/LoadWorkloadRampableStage"
+                  }
+                }
+              },
+              "required": [
+                "shape",
+                "model",
+                "stages"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "shape": {
+                  "const": "iterations"
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "vus": {
+                  "type": "number"
+                },
+                "perVu": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "shape",
+                "iterations",
+                "vus",
+                "perVu"
+              ]
+            }
+          ]
+        },
+        "metrics": {
+          "$ref": "#/$defs/LoadMetrics"
+        },
+        "thresholds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoadThresholdResult"
+          }
+        },
+        "ok": {
+          "description": "Every threshold *this scenario* declared passed (vacuously `true` when it declares none).",
+          "type": "boolean"
+        },
+        "backOff": {
+          "$ref": "#/$defs/BackOffDiagnosis"
+        },
+        "teardownSkipped": {
+          "description": "`D785` (`M157d`) — iterations of this scenario whose `after` hooks did not run because `teardown` was not `always`. Optional and omitted when zero, like `backOff`, so every existing fixture and `results.json` consumer is unaffected.",
+          "type": "number"
+        },
+        "endpoints": {
+          "description": "M43 (R6's per-endpoint axis, D67-D69) — this scenario's iterations broken down by `api` step identity (explicit `as \"label\"` tag, or automatic `METHOD path.raw`). Each entry's `metrics` covers only that one step's own `durationMs` across every iteration, e.g. `checkout-burst`'s `for \"checkout\"` scoped threshold reads from the `\"checkout\"` entry here, not the scenario's whole-iteration `metrics` above (which still sums every `api` step, unchanged). Additive field — existing `results.json` consumers are unaffected. Ordered by first appearance in source.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "identity": {
+                "type": "string"
+              },
+              "metrics": {
+                "$ref": "#/$defs/LoadMetrics"
+              }
+            },
+            "required": [
+              "identity",
+              "metrics"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "workload",
+        "metrics",
+        "thresholds",
+        "ok",
+        "endpoints"
+      ]
+    }
+  }
+}

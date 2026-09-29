@@ -17,12 +17,15 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "schema"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test": "node --import tsx --test \"test/**/*.test.ts\""
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && npm run schemas:check",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "schemas": "node scripts/gen-schemas.mjs",
+    "schemas:check": "node scripts/gen-schemas.mjs --check"
   },
   "dependencies": {
     "@tflw/runtime": "*"

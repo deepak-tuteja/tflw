@@ -24,10 +24,15 @@ export async function writeEventsNdjson(events: Iterable<RunEvent>, dir: string)
   const path = join(outDir, 'events.ndjson');
   const sink = createWriteStream(path, { encoding: 'utf8' });
   const failed = new Promise<never>((_, reject) => sink.once('error', reject));
+  let first = true;
   for (const event of events) {
+    // `M249` `F` (R2) — the file's first line names the schema every line follows. Only the file:
+    // the live stream on stdout is unchanged, so a consumer of `--format ndjson` sees what it saw.
+    const line = first ? { $schema: 'https://deepak-tuteja.github.io/tflw/schema/events.schema.json', ...event } : event;
+    first = false;
     // Backpressure honoured: a `false` from `write` means the OS buffer is full, and waiting for
     // `drain` is what keeps the process's memory flat on a stream the size of the one above.
-    if (!sink.write(JSON.stringify(event) + '\n')) await Promise.race([once(sink, 'drain'), failed]);
+    if (!sink.write(JSON.stringify(line) + '\n')) await Promise.race([once(sink, 'drain'), failed]);
   }
   await Promise.race([new Promise<void>((done) => sink.end(done)), failed]);
   return path;

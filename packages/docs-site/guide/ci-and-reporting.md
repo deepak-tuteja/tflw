@@ -8,6 +8,14 @@ Every run writes `report/report.html` (step timeline, full request/response deta
 report as JSON — read a run's outcome from a file instead of scraping stdout) — they all fall out of
 the same event stream `tflw run` already emits, nothing to wire up.
 
+**Both machine-readable files name their schema.** `results.json` opens with
+`"$schema": "https://deepak-tuteja.github.io/tflw/schema/results.schema.json"`, and the first line
+of `events.ndjson` names [`events.schema.json`](/schema/events.schema.json). The schemas are generated
+from the types tflw writes the files from, so an editor autocompletes a script that reads a run, and
+a validator can check one. Objects are open on purpose: a later tflw adds fields, and a reader built
+against the schema keeps working. Every run is also kept under `report/runs/<id>/`, with the same
+files ([running a suite](/runbook/running)).
+
 A run that evaluated a security, authorization or input-handling assertion writes a fourth file,
 [`report/findings.sarif`](/guide/findings-and-baselines#sarif), for GitHub code scanning. It is the
 one artifact that is **not** written unconditionally, and that is deliberate: an empty SARIF document
