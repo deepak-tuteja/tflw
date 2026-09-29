@@ -9749,7 +9749,7 @@ the report header.
 
 ### D1354
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +3 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9779,6 +9779,14 @@ the report header.
 |---|---|---|
 | `D1360` | L9 | **The cookbook is one section per fence refusal**, each with the ask, why the fence refuses, the shape that works, a link to the dogfood plant: flag · per-env value · response-driven · env skip · five at once · signed in on both sides · every page of a list · a fixed wait · an outbound call. |
 
+### D1361
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1361` | U2 | **The page's editor completes** from `@tflw/lang`'s completion context (keywords, matchers, subjects, directives, names in scope). No hover, no signature help. |
+
 ### D1362
 
 <sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/archive-check.mjs, tflw-tests/scripts/verify-artifact-contract.mjs · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
@@ -9786,6 +9794,22 @@ the report header.
 | id | row | decision |
 |---|---|---|
 | `D1362` | U3/R1 | **`runs keep N` applies to every run**, so `tflw run` accrues `report/runs/`. The Run tab draws the last N verdicts per test, marks *flaky* when the verdict changed across kept runs with no source change, and draws a threshold's values as a sparkline; the CLI summary says *failed — 3 of the last 10 kept runs*. Computed from disk; nothing new stored. |
+
+### D1364
+
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1364` | U6 | **The page's coverage floor is a decision**: the page is graded by its four browser suites; `packages/ui`'s unit floor is a ratchet, stated in the maintainer's runbook. |
+
+### D1365
+
+<sub>cited from CHANGELOG.md, packages/cli/test/MANUAL_VOICEOVER.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1365` | U5 | **Reduced motion and live regions, gated** (a stylesheet gate that every transition sits under `prefers-reduced-motion: no-preference`; `aria-live` for run start/end and save); **the VoiceOver pass is a runcard** the user runs once on this Mac. |
 
 ### D1369
 
@@ -9813,7 +9837,7 @@ the report header.
 
 ### D1376
 
-<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9845,7 +9869,7 @@ the report header.
 
 ### D1384
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +9 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -14054,13 +14078,21 @@ from a gesture the grammar refuses.
 
 ### M234
 
-<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M234_CORPUS_AND_SITE.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +1 more · lifted from `PLAN_M234_CORPUS_AND_SITE.md`</sub>
 
 **`M234` — the corpus the docs photograph, and the site that shows it**
 
 *Scoped 2026-09-22 by grilling. Stages `A`-`C` BUILT and merged 2026-09-22 (`tflw#228`, rebase,
 3 commits) — the example corpus, the coverage gate that landed red, and the per-package floor.
 Stages `D`-`H`, the docs site itself, are not built.*
+
+### M235
+
+<sub>cited from packages/cli/test/MANUAL_VOICEOVER.md · lifted from `PLAN_M235_PAGE_SUITE_STABILITY.md`</sub>
+
+**`M235` — the page suite stops flaking**
+
+*Scoped 2026-09-23 by measurement, against the CI record 2026-09-18 → 2026-09-23. Nothing built.*
 
 ### M238
 
@@ -14161,7 +14193,7 @@ docs. Sibling `T-1` waits on it.
 
 ### M248
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +9 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§4 `M248` — a session that signs in through a browser**
 
@@ -14176,5 +14208,13 @@ listener, a browser and a token exchange in one declaration.
 **§5 `M249` — the CLI and the reports remember**
 
 `D1362`, `D1369`, `D1370`, K1, R2. CLI, reporter, the page's Run tab. Sibling `T-3` waits on it.
+
+### M250
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+**§6 `M250` — the page completes and explains**
+
+`D1361`, `D1363`, `D1364`, `D1365`. Page and CLI server. Sibling `T-4` waits on it.
 
 <!-- GENERATED:decisions:end -->
