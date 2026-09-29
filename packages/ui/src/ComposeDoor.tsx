@@ -55,6 +55,8 @@ import {
   buildLet,
   buildThreshold,
   buildElement,
+  buildRowCount,
+  type RowsCheck,
   buildWorkload,
   type CaptureSpec,
   type LocatorSpec,
@@ -99,6 +101,7 @@ import {
   type StatementEdit,
   type ThresholdEdit,
   type ElementEdit,
+  type RowCountEdit,
   type Ran,
   type RanIndex,
   ELEMENT_DATALIST_ID,
@@ -921,6 +924,29 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         return;
       }
       const out = replaceInSource(draft ?? file.text, { kind: 'file', what: 'element', index, node: built === null ? null : built.node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /** One `rows` line's count — `M250` `G11`. Held while typed, like a threshold's bound: `1` on
+   *  its way to `12` passes through a count the author did not mean, and `` is not one at all. */
+  const [rowsCount, setRowsCount] = useState<{ key: string; values: RowCountEdit } | null>(null);
+  const applyRowsCount = useCallback(
+    (decl: OutlineTest, index: number, check: RowsCheck, next: RowCountEdit | null) => {
+      if (!file) return;
+      setRowsCount(next === null ? null : { key: `rows:${decl.index}:${index}`, values: next });
+      const count = next === null ? null : buildRowCount(next.kind, next.n);
+      if (count !== null && !count.ok) {
+        setEditProblem(count.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'rowsCheck', decl: decl.index, index, node: count === null ? null : { ...check, count: count.node } });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -2543,6 +2569,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     setHeader(null);
     setThreshold(null);
     setElementEdit(null);
+    setRowsCount(null);
     setNoting(null);
     onWritten(path);
   }, [file, draft, path, onFileWritten, onDraft, onWritten]);
@@ -2635,6 +2662,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
             setHeader(null);
             setThreshold(null);
             setElementEdit(null);
+            setRowsCount(null);
             setNoting(null);
             onDraft(file !== null && text === file.text ? null : text);
           }}
@@ -2706,6 +2734,8 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
             onFileDecl: applyFileDecl,
             element: elementEdit,
             onElement: applyElement,
+            rowsCount,
+            onRowsCount: applyRowsCount,
             /* **`pick` reaches the door whose rows carry locators** (`D1106`), which since `M219`
                `A` is decided by the vocabulary rather than by which branch of a fork we are in.
                `null` on a door with no locator in its constructs — a locator-fixer on a row with
@@ -2751,7 +2781,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           busy={busy}
           problem={problem}
           onWrite={() => void writeDraft()}
-          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setElementEdit(null); setNoting(null); setEditProblem(null); }}
+          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setElementEdit(null); setRowsCount(null); setNoting(null); setEditProblem(null); }}
           door={door}
           /* `D1235` — the footer yields to a live playback region, and this is the one bit of the
              Stage the pane is told about. It is the same `stageTrace` the `Grip` below turns on,

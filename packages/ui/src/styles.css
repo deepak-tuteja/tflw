@@ -969,6 +969,9 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .element-rows { display: inline-flex; flex-direction: column; gap: 4px; vertical-align: top; }
 .element-row { display: inline-flex; align-items: center; gap: 6px; }
 .element-rows > button { align-self: flex-start; }
+/* `M250` `G11` — a test's `rows` judgements, one line each. */
+.rows-checks { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.rows-check { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 .request-card { border: var(--border) solid var(--line); border-radius: var(--radius); padding: calc(var(--unit) * 1.8); background: var(--panel); }
 .request-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }

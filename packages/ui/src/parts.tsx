@@ -58,6 +58,9 @@ import {
   type ApiBody,
   type ClickKind,
   type ElementDecl,
+  type RowCount,
+  type RowsCheck,
+  printRowsCheck,
   type ExpectStmt,
   type FindingSeverity,
   type Lens,
@@ -323,6 +326,9 @@ export interface RowEditing {
    *  written is not one the builder takes, and the field must not snap back under the cursor.
    *  `null` as the value removes the line. */
   readonly element: { readonly key: string; readonly values: ElementEdit } | null;
+  /** One `rows` line's count (`M250`, `G11`), held while typed; `null` as the value removes the line. */
+  readonly rowsCount: { readonly key: string; readonly values: RowCountEdit } | null;
+  readonly onRowsCount: ((test: OutlineTest, index: number, check: RowsCheck, next: RowCountEdit | null) => void) | null;
   readonly onElement: ((index: number, next: ElementEdit | null) => void) | null;
   /**
    * The row whose **new** note is open, by the same key.
@@ -1064,6 +1070,25 @@ export function tableSpecOf(edit: HeaderEdit): DataTableSpec | null {
   if (edit.tableKind === 'none') return null;
   if (edit.tableKind === 'file') return { kind: 'file', path: edit.tablePath, concurrently: edit.tableConcurrently };
   return { kind: 'inline', columns: edit.columns, rows: edit.rows, concurrently: edit.tableConcurrently };
+}
+
+/** What a `rows` line's count holds (`M250`, `G11`) — the number as typed, so a half-written one
+ *  stays in the field. */
+export interface RowCountEdit {
+  readonly kind: RowCount['kind'];
+  readonly n: string;
+}
+
+export function rowCountEditOf(c: RowCount): RowCountEdit {
+  return { kind: c.kind, n: c.kind === 'no' || c.kind === 'every' ? '1' : String(c.n) };
+}
+
+/** The count's six spellings, as the parser reads them. */
+const ROW_COUNT_WORDS: Record<RowCount['kind'], string> = { exactly: 'exactly', bare: '(just the number)', atLeast: 'at least', atMost: 'at most', no: 'no', every: 'every' };
+
+/** What a `rows` line says after its count — its subject and matcher, in the file's own spelling. */
+function rowsCheckTail(c: RowsCheck): string {
+  return printRowsCheck({ ...c, count: { kind: 'every' } }, 0).replace(/^(expect|check) every row /, '');
 }
 
 /** What an `element` row holds (`M250`, `G2`): its name and its locator, as the fields show them. */
@@ -2722,6 +2747,39 @@ export function TestBand({ decl, door, editing, lastRun }: {
               test.thresholds.length
             )}
           </li>
+          ) : null}
+          {/* `M250` `G11` — a race's judgement, drawn under the test it judges. Written as text
+              (the editor completes it); the count is the field, because the count is what a
+              reader changes when the race is widened or narrowed. */}
+          {test !== null && test.node.rows ? (
+            <li data-band-rows={test.node.rows.checks.length}>
+              rows
+              <div className="rows-checks">
+                {test.node.rows.checks.map((c, i) => {
+                  const v = editing.rowsCount !== null && editing.rowsCount.key === `rows:${decl.index}:${i}` ? editing.rowsCount.values : rowCountEditOf(c.count);
+                  const numbered = v.kind !== 'no' && v.kind !== 'every';
+                  const set = (next: RowCountEdit | null) => editing.onRowsCount?.(test, i, c, next);
+                  const editable = live && editing.onRowsCount !== null;
+                  if (!editable) return <code key={i} className="rows-check" data-rows-check={i}>{printRowsCheck(c, 0)}</code>;
+                  return (
+                    <span key={i} className="rows-check" data-rows-check={i}>
+                      <span className="muted">{c.soft ? 'check' : 'expect'}</span>
+                      <select value={v.kind} onChange={(e) => set({ ...v, kind: e.target.value as RowCount['kind'] })} data-rows-count-kind={i} aria-label={`rows line ${i + 1} count`}>
+                        {(Object.keys(ROW_COUNT_WORDS) as RowCount['kind'][]).map((k) => (
+                          <option key={k} value={k}>{ROW_COUNT_WORDS[k]}</option>
+                        ))}
+                      </select>
+                      {numbered ? <input className="narrow" value={v.n} onChange={(e) => set({ ...v, n: e.target.value })} data-rows-count-n={i} aria-label={`rows line ${i + 1} number`} inputMode="numeric" /> : null}
+                      <span className="muted">{v.kind === 'every' || (numbered && v.n.trim() === '1') ? 'row' : 'rows'}</span>
+                      <code data-rows-tail={i}>{rowsCheckTail(c)}</code>
+                      <button onClick={() => set(null)} data-rows-remove={i} data-tip="take this judgement out; the last one takes the `rows` line with it">
+                        remove
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            </li>
           ) : null}
           {live && test !== null ? (
             <li className="band-add">
