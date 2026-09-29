@@ -5,7 +5,7 @@
 # A word added here and nowhere else fails that test — the drift B5-09 records, caught at once
 # rather than by the next milestone to audit two wordlists by hand.
 #
-# 248 words
+# 251 words
 
 DELETE
 GET
@@ -28,6 +28,7 @@ api
 as
 at
 authorization
+authorize
 authorized
 base64
 baseline
@@ -47,6 +48,7 @@ cleanup
 click
 client
 close
+code
 concurrently
 connects
 console
@@ -174,6 +176,7 @@ random
 rate
 reason
 redact
+redirect
 redirects
 report
 request

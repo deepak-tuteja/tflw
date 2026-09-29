@@ -7,7 +7,7 @@
 #   V  a `<expr>.value === '…'` comparison
 #   S  a `case '…':` label in a switch on `<expr>.value`
 #
-# 276 words
+# 279 words
 
 A   DELETE
 A   GET
@@ -31,6 +31,7 @@ AKS api
 K   as
 AK  at
 A   authorization
+KV  authorize
 AS  authorized
 AV  base64
 AS  baseline
@@ -50,6 +51,7 @@ AK  cleanup
 AKS click
 K   client
 AS  close
+K   code
 K   concurrently
 AS  connects
 A   console
@@ -121,7 +123,7 @@ K   hosts
 A   hours
 AS  hover
 A   html
-K   id
+KV  id
 A   im
 AK  import
 AK  in
@@ -192,6 +194,7 @@ V   random
 K   rate
 K   reason
 AS  redact
+KV  redirect
 K   redirects
 AS  report
 KS  request
