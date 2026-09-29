@@ -20,7 +20,8 @@ test('writeEventsNdjson writes one JSON object per line, in order', async () => 
     const text = await readFile(path, 'utf8');
     const lines = text.trim().split('\n');
     assert.equal(lines.length, 2);
-    assert.deepEqual(JSON.parse(lines[0]!), events[0]);
+    // `M249` `F`: the file's first line also names its schema; the event is otherwise untouched.
+    assert.deepEqual(JSON.parse(lines[0]!), { $schema: 'https://deepak-tuteja.github.io/tflw/schema/events.schema.json', ...events[0] });
     assert.deepEqual(JSON.parse(lines[1]!), events[1]);
   } finally {
     await rm(dir, { recursive: true, force: true });
