@@ -9749,7 +9749,7 @@ the report header.
 
 ### D1354
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9787,9 +9787,17 @@ the report header.
 |---|---|---|
 | `D1372` | D1 | **The discovered tree owes every construct in a real test, gated**: `verify:journeys`' floor extends from 21 browser statements to every family (steps, declarations, subjects, matchers, generators at ≥ 1 test under `tests/`; browser stays ≥ 3 journeys; every config directive in `tflw.config`). `.constructs` keeps only the known-answers a journey cannot state. |
 
+### D1376
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1376` | D9 | **What a new construct owes, in order**, written in both `CONTRIBUTING.md`s and held by `verify:contributing`: lang golden + checker case + printer corpus → runtime known-answer → one use in `examples/storefront` → one journey in the sibling's `tests/` → a `.constructs` plant only for a known-answer no journey can state. |
+
 ### D1381
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9813,7 +9821,7 @@ the report header.
 
 ### D1384
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -14121,7 +14129,7 @@ docs. Sibling `T-1` waits on it.
 
 ### M248
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§4 `M248` — a session that signs in through a browser**
 
