@@ -1,9 +1,9 @@
 {
   "comment": "GitHub's own heading anchors for SPEC.md, fetched from the ref below. Never hand-edit: the point of this file is that nothing in this repository computed it. Refresh with `node scripts/refresh-spec-anchors.mjs --ref <ref>`.",
   "repo": "deepak-tuteja/tflw",
-  "ref": "m248",
-  "sha": "959593ce2839fc708e63dbcd408350bb603eb3d1",
-  "source": "https://github.com/deepak-tuteja/tflw/blob/959593ce2839fc708e63dbcd408350bb603eb3d1/SPEC.md",
+  "ref": "m253",
+  "sha": "645bcb22703b462bb0d426bddfdb0280aafae07c",
+  "source": "https://github.com/deepak-tuteja/tflw/blob/645bcb22703b462bb0d426bddfdb0280aafae07c/SPEC.md",
   "headings": [
     [
       "testFlow — SPEC",
@@ -234,7 +234,7 @@
       "8-actions-imports-element-aliases-p2-p1718-"
     ],
     [
-      "9. UI steps (P#8–9, P#26) 🔧",
+      "9. UI steps (P#8–9, P#26) ✅",
       "9-ui-steps-p89-p26-"
     ],
     [
@@ -246,8 +246,8 @@
       "92-fill-form-p26-"
     ],
     [
-      "9.3 Locators (P#8–9) ✅ (`element` aliases not yet built)",
-      "93-locators-p89--element-aliases-not-yet-built"
+      "9.3 Locators (P#8–9) ✅",
+      "93-locators-p89-"
     ],
     [
       "9.4 Waiting & UI subjects ✅",
@@ -294,11 +294,11 @@
       "914-remediation-and-findingssarif-m135-d402d417-"
     ],
     [
-      "9.15 Active crawl — the `crawl` declaration (M137c, D432/D443/D450) 🔧",
+      "9.15 Active crawl — the `crawl` declaration (M137c, D432/D443/D450) ✅",
       "915-active-crawl--the-crawl-declaration-m137c-d432d443d450-"
     ],
     [
-      "10. Sessions & isolation (P#20, P#31) 🔧",
+      "10. Sessions & isolation (P#20, P#31) ✅",
       "10-sessions--isolation-p20-p31-"
     ],
     [
@@ -306,24 +306,24 @@
       "11-js-escape-hatch-p11-"
     ],
     [
-      "12. CLI 🔧",
+      "12. CLI ✅",
       "12-cli-"
     ],
     [
-      "13. Events, report, CI outputs (P#4–5, P#23, P#30) 🔧",
+      "13. Events, report, CI outputs (P#4–5, P#23, P#30) ✅",
       "13-events-report-ci-outputs-p45-p23-p30-"
     ],
     [
-      "14. Architecture (P#1, P#12) 🔧",
+      "14. Architecture (P#1, P#12) ✅",
       "14-architecture-p1-p12-"
     ],
     [
-      "15. Distribution (P#35–39, amended by P#41–50) 🔧",
-      "15-distribution-p3539-amended-by-p4150-"
+      "15. Distribution (P#35–39, amended by P#41–50) 🔧 (the publish waits for the owner's word, `D1379`)",
+      "15-distribution-p3539-amended-by-p4150--the-publish-waits-for-the-owners-word-d1379"
     ],
     [
-      "16. Out of v1 (parking lot) 🔮",
-      "16-out-of-v1-parking-lot-"
+      "16. Out of v1 (parking lot)",
+      "16-out-of-v1-parking-lot"
     ],
     [
       "17. Diagnostic codes (TF0xx) ✅",
