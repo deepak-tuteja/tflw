@@ -22,6 +22,15 @@ performance arc closed 2026-08-02 and is included below.
 - **A macOS job** (`D1377`): build, typecheck and the whole test suite on `macos-latest`, Node 22,
   beside Linux and Windows. It is not a required check until it has been green for a week.
 
+### Fixed — what macOS's first run found (M252)
+
+- **Large output is no longer cut off when piped** (`D1395`): the CLI waits for stdout and stderr to
+  drain before it exits. On macOS a pipe is asynchronous, and `tflw spec --json | …` arrived cut at
+  64 KiB; Linux writes pipes synchronously, so no Linux run could show it.
+- **A symlinked `TFLW_SOURCE_ROOT` anchors SARIF results again** (`D1396`): the named root is
+  resolved to its real path. A symlinked spelling of the run's own directory rebased every result
+  outside the root, and the SARIF shipped with no file annotations — without an error.
+
 ### Added — the page completes and explains (M250)
 
 - **Completion in the page's editor** (`D1361`): Source and Config offer the language server's own

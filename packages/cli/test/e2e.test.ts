@@ -11,7 +11,7 @@ import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer, type Server } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
-import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, access, rename } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile, readdir, access, rename, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -5177,6 +5177,12 @@ test('the built dist/cli.cjs anchors a SARIF result to the `.git` root, or to TF
     assert.equal(await uriAfter({}), 'suite/hygiene.tflw', 'the walk finds the marker one level up and the URI carries the subdirectory');
     assert.equal(await uriAfter({ TFLW_SOURCE_ROOT: run }), 'hygiene.tflw', 'the variable names the run directory as the root and the URI is bare');
     assert.equal(await uriAfter({ TFLW_SOURCE_ROOT: join(top, 'not-a-directory') }), 'suite/hygiene.tflw', 'CONTROL — a value that is not a directory is ignored, not trusted');
+    // `M252` (`D1396`, `G18`): a symlinked spelling of the same directory names the same root. It
+    // anchored nothing before — the run's own side is `process.cwd()`, always the real path, so
+    // every URI came out `../…` and was refused. macOS's tmpdir is such a spelling, which is how
+    // its first CI run found this; the link makes it a case on every platform.
+    await symlink(run, join(top, 'link'), 'dir');
+    assert.equal(await uriAfter({ TFLW_SOURCE_ROOT: join(top, 'link') }), 'hygiene.tflw', 'a symlink to the run directory is the run directory');
   } finally {
     await rm(top, { recursive: true, force: true });
     server.closeAllConnections();

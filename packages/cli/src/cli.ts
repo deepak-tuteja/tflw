@@ -9,7 +9,7 @@
 //   → writeReport(report.html) + writeJunitXml + renderCliSummary → exit code (0 pass / 1 test failure / 2 usage).
 
 import { readFile, readdir, writeFile, access, mkdir, stat } from 'node:fs/promises';
-import { watch as fsWatch, existsSync, readFileSync, statSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs';
+import { watch as fsWatch, existsSync, readFileSync, statSync, realpathSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs';
 // M92b (`B6-09`) — `install-browsers` resolves the consumer's own `playwright` instead of letting
 // `npx --yes` fetch an unpinned one from the registry.
 import { createHash } from 'node:crypto';
@@ -1528,10 +1528,14 @@ function sourceRootOf(from: string): string | undefined {
   // one tree per worker, without `.git` — has no root of its own to find, and the walk lands on
   // the real repository, so every URI starts with the copy's own path. The environment names
   // the root in that case; a value that is not a directory is ignored, not trusted.
+  // `M252` (`D1396`, `G18`): through `realpath`, because the file side of every URI is rebased
+  // from `process.cwd()`, which is always the real path. A symlinked spelling of the same
+  // directory (macOS's `/var` for `/private/var`, a symlinked checkout) made every URI `../…`,
+  // which `sarifUri` refuses — and the SARIF shipped with no annotation, silently.
   const forced = process.env.TFLW_SOURCE_ROOT?.trim();
   if (forced) {
     try {
-      if (statSync(forced).isDirectory()) return resolve(forced);
+      if (statSync(forced).isDirectory()) return realpathSync(forced);
     } catch {
       /* fall through to the walk */
     }
@@ -4681,16 +4685,35 @@ function printUsage(): void {
   );
 }
 
+/**
+ * `M252` (`D1395`, `G17`) — `process.exit` drops whatever a stream still has queued, and on macOS a
+ * pipe is asynchronous: `tflw spec --json | …` arrived cut at byte 65 397. Linux writes pipes
+ * synchronously, which is why no Linux run ever showed it. An empty write's callback fires once
+ * every write before it has been flushed — writes are ordered — so waiting on one per stream is
+ * the whole drain. A TTY or a file answers at once.
+ */
+function drained(stream: NodeJS.WriteStream): Promise<void> {
+  return new Promise((resolve) => {
+    if (stream.destroyed || !stream.writable) resolve();
+    else stream.write('', () => resolve());
+  });
+}
+
+async function exitWith(code: number): Promise<never> {
+  await Promise.all([drained(process.stdout), drained(process.stderr)]);
+  process.exit(code);
+}
+
 main(process.argv.slice(2))
   .then(async (code) => {
     // M35c — a no-op if this run never used mTLS (the worker child is only ever spawned lazily,
     // on the first request that needs it); otherwise stops it from outliving the run.
     await shutdownMtlsWorker();
-    process.exit(code);
+    await exitWith(code);
   })
   .catch(async (e) => {
     err(e instanceof Error ? e.message : String(e));
     await shutdownMtlsWorker();
-    process.exit(EXIT_USAGE);
+    await exitWith(EXIT_USAGE);
   });
 

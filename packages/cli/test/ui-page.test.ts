@@ -9754,6 +9754,10 @@ test('`M250` `A` (`D1361`): the editor completes — the language server\'s list
       // Waited on by value, not read: the list redraws as the source answers, so a read would be one frame.
       await list.locator('[aria-selected="true"]').filter({ hasText: /^expect/ }).waitFor(); // the first entry is the step `ex` begins
       await list.filter({ hasText: /hard assertion/ }).waitFor(); // and it says what it is, in the editor extension's words
+      // one-shot: CodeMirror refuses Enter for `interactionDelay` (75 ms) after a list opens, so a
+      // key pressed with the list is not taken as a choice — the product's guard, not a race to win.
+      // The waits above can all land inside it on a fast runner (macOS's first CI run, Terminal).
+      await p.waitForTimeout(150);
       await p.keyboard.press('Enter');
       await list.waitFor({ state: 'detached' });
       assert.match(await editorText(content), /test "completed"\n {2}expect$/, `Enter wrote the chosen word in place of the two typed letters (${theme})`);
