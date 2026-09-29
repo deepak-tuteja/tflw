@@ -29,11 +29,17 @@ const PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ['SPEC.md', /SPEC\.md/],
 ];
 
-test('`tflw --help` names no milestone, decision or SPEC section, and points at the docs site', async () => {
-  const { stdout } = await execFileAsync(process.execPath, ['--import', tsxLoader, cliEntry, '--help'], { env: { ...process.env, FORCE_COLOR: '0' } });
-  const lines = stdout.split('\n');
-  assert.ok(lines.length > 60, `the help is ${lines.length} lines — the command printed something else`);
-  const found = lines.flatMap((line, i) => PATTERNS.filter(([, re]) => re.test(line)).map(([what]) => `line ${i + 1}: ${what} — ${line.trim()}`));
+test('`tflw --help` and every verb\'s `--help` name no milestone, decision or SPEC section, and point at the docs site', async () => {
+  // `M249` `E`: the flags moved under each verb, rendered from `CLI_FLAGS` whose effects carry record
+  // ids for the docs site — `plainEffect` strips them, and this is what says it did, on every page.
+  const run = async (...args: string[]) => (await execFileAsync(process.execPath, ['--import', tsxLoader, cliEntry, ...args], { env: { ...process.env, FORCE_COLOR: '0' } })).stdout;
+  const global = await run('--help');
+  const verbs = [...global.matchAll(/^  tflw ([a-z-]+) /gm)].map((m) => m[1]!);
+  assert.ok(verbs.length >= 15, `the global help lists ${verbs.length} verbs — the command printed something else`);
+  const pages: [string, string][] = [['--help', global], ...(await Promise.all(verbs.map(async (v) => [`${v} --help`, await run(v, '--help')] as [string, string])))];
+  const found = pages.flatMap(([page, text]) =>
+    text.split('\n').flatMap((line, i) => PATTERNS.filter(([, re]) => re.test(line)).map(([what]) => `${page} line ${i + 1}: ${what} — ${line.trim()}`)),
+  );
   assert.deepEqual(found, [], found.join('\n'));
-  assert.match(stdout, /https:\/\/deepak-tuteja\.github\.io\/tflw\//, 'the long form is the docs site, and the help says where it is');
+  for (const [page, text] of pages) assert.match(text, /https:\/\/deepak-tuteja\.github\.io\/tflw\//, `${page} says where the long form is`);
 });

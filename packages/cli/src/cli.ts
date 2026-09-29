@@ -335,6 +335,9 @@ async function checkFileArgs(cwd: string, typed: readonly string[], exclude: rea
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
+  // `M249` `E` — `tflw <verb> --help` (or `-h`), before the verb parses anything: every verb's own
+  // parser refuses an unknown flag, and `--help` must never be one.
+  if (command !== undefined && (rest.includes('--help') || rest.includes('-h')) && printVerbHelp(command)) return EXIT_OK;
   switch (command) {
     case 'run':
       return runCommand(rest);
@@ -4362,124 +4365,281 @@ function dim(color: boolean, s: string): string {
   return color ? `\x1b[2m${s}\x1b[0m` : s;
 }
 
+/**
+ * Each verb's help — `M249` `E` (K1). Its usage line and paragraph, as `tflw --help` printed them
+ * before that became a list of verbs, and the one-line `summary` the list prints. `tflw <verb> --help`
+ * prints the paragraph and then the verb's own rows of `CLI_FLAGS` — the rows the reference page
+ * renders — so a flag documented once is on every surface that describes its verb.
+ */
+interface VerbHelp {
+  readonly verb: string;
+  readonly summary: string;
+  readonly lines: readonly string[];
+}
+
+const VERB_HELP: readonly VerbHelp[] = [
+  {
+    verb: 'run',
+    summary: 'run .tflw tests — functional, browser, load and scans — and write report/',
+    lines: [
+        '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
+        '            [--failed] [--shard i/n] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots] [--no-helpers] [--no-keep]',
+        '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
+        '            [--teardown always|on-success|never]',
+        '            [--log-output console|html|both|none]',
+        '            [--fail-on minor|moderate|serious|critical] [--baseline <file>] [--baseline-write <file>] [--probe-seeded <n>]',
+        '            [--log-level debug|info|warn|error]',
+        '                                                      run .tflw tests (default: all under cwd), functional and workload-bearing (a `ramp to …`',
+        '                                                      line, or another of the 5 workload shapes) alike, in file declaration order — a `parallel`/',
+        '                                                      `sequential` header modifier controls each test\'s concurrency with its file-siblings',
+        '                                                      --now replays the exact run-clock instant',
+        '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
+        '                                                      --verbose prints one line per step, not just per test',
+        '                                                      --only runs a single test by its exact declared name',
+        '                                                      --tag a,b runs a test carrying any of the listed tags (OR); --tag !x leaves out every test tagged x',
+        '                                                      --shard i/n runs every nth file of the sorted suite from the ith, so n jobs run it all once',
+        '                                                      --failed re-runs only the previous run\'s failing tests',
+        '                                                      --bail stops after the first failing test',
+        '                                                      --format ndjson streams the event log as JSON lines',
+        '                                                      --log-file <path> duplicates console output to a file (plain text)',
+        '                                                      --browser switches every browser step to one engine (default chromium)',
+        '                                                      --headed shows the browser window instead of running headless',
+        '                                                      --trace keeps the browser trace even when everything passed (needs --evidence full; open it with `npx playwright show-trace`)',
+        '                                                      every run is kept under report/runs/<id>/ (the newest `runs keep N`, 50 by default); --no-keep skips that for a scratch run',
+        '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines',
+        '                                                      --no-helpers refuses every `use` before the first request',
+        '                                                      --forbid-insecure refuses to run at all if `insecure true` is active for this env (a CI policy gate)',
+        '                                                      --evidence <level> how much request/response detail the report keeps: full (default), headers-only, none',
+        '                                                      --teardown <level> when a workload iteration\'s `after` hooks run: always (default), on-success, never;',
+        '                                                      anything but always leaves that run\'s data in place and says so in the summary',
+        '                                                      --allow-public-target <origin> affirms an originating scan may reach a host outside the private',
+        '                                                      ranges (TF065); repeatable, must match an `authorized target`; no tflw.config key by design',
+        '                                                      --log-output <dest> where a bare `log "…"` goes: console|html|both|none',
+        '                                                      --fail-on <severity> security findings below this severity are reported but do not fail the',
+        '                                                      build; it can only relax the matcher a test wrote, never tighten it',
+        '                                                      --baseline <file> accepted findings, matched by fingerprint; they still render, marked known/accepted;',
+        '                                                      overrides tflw.config\'s `baseline "<file>"` key for this run',
+        '                                                      --baseline-write <file> writes this run\'s findings out as the accepted set — only this',
+        '                                                      run\'s, so write it from a full run (a --tag run legitimately produces a subset);',
+        '                                                      entries in --baseline that matched nothing are named after the run, never failed',
+        '                                                      --probe-seeded <n> n generated mutation payloads per already-granted class, on top of the fixed',
+        '                                                      corpus; reported and never gating, and it cannot widen what `authorized target` permitted',
+        '                                                      --log-level <level> minimum level a `log` step must clear to be rendered: debug|info|warn|error',
+        '                                                      --parallel <n> runs up to n *files* concurrently in this process (default: tflw.config\'s `workers`)',
+        '                                                      --workers <n> forks n *processes* to generate one file\'s workload-bearing tests\' load;',
+        '                                                      a no-op warning on a file with none (unrelated to --parallel; default: 1, no forking)',
+        '                                                      --skip-workload skips every workload-bearing test, for fast iteration on functional tests alone',
+        '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json} — workload-bearing',
+        '                                                      tests render inline alongside functional ones, no separate load-* artifacts',
+        '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
+        '                                                      Ctrl-C flushes a partial report; exit 3 = inconclusive (generator saturated), 130 = aborted, else 0/1',
+    ],
+  },
+  {
+    verb: 'check',
+    summary: 'parse and check without running anything; no secrets needed',
+    lines: [
+        '  tflw check [files...] [--env <name>] [--no-color] [--format json] [--allow-public-target <origin>]',
+        '                                                      validate only — no execution, no secrets needed;',
+        '                                                      --format json is for editor integrations (VS Code)',
+        '                                                      --allow-public-target <origin> the same affirmation `run` takes, so a suite that legitimately',
+        '                                                      scans a public host can still get a clean check (repeatable)',
+    ],
+  },
+  {
+    verb: 'init',
+    summary: 'scaffold tflw.config and a first test',
+    lines: [
+        '  tflw init [--load] [--scan]                        scaffold tflw.config + example.tflw',
+        '                                                      --load also scaffolds load.tflw (a workload-bearing `test`)',
+        '                                                      --scan also scaffolds scan.tflw + a commented `authorized target`',
+    ],
+  },
+  {
+    verb: 'docs',
+    summary: 'print a language cheatsheet section',
+    lines: [
+        '  tflw docs [topic]                                  print a language cheatsheet section; no topic lists them all',
+    ],
+  },
+  {
+    verb: 'spec',
+    summary: 'print this build\'s construct manifest',
+    lines: [
+        '  tflw spec [--json]                                 print this build\'s construct manifest — every step keyword, matcher, generator,',
+        '                                                      locator, config word and diagnostic code it dispatches, plus a build stamp',
+        '                                                      (version, commit, build time). --json is the machine form a conformance gate reads',
+    ],
+  },
+  {
+    verb: 'lsp',
+    summary: 'run the Language Server over stdio',
+    lines: [
+        '  tflw lsp                                           run the Language Server over stdio (for editor integrations)',
+    ],
+  },
+  {
+    verb: 'install-browsers',
+    summary: 'download a browser for UI steps',
+    lines: [
+        '  tflw install-browsers [--browser chromium|firefox|webkit]',
+        '                                                      download a browser binary for UI steps; default chromium.',
+        '                                                      Needs the optional `playwright` peer installed first (npm install -D playwright)',
+    ],
+  },
+  {
+    verb: 'pick',
+    summary: 'click an element in a real browser, print its locator',
+    lines: [
+        '  tflw pick <url> [--browser chromium|firefox|webkit]',
+        '                                                      click an element in a real browser window, print its best locator;',
+        '                                                      runs until the window is closed or Ctrl+C — <url> must be absolute',
+    ],
+  },
+  {
+    verb: 'record',
+    summary: 'use a page in a real browser, print one step per action',
+    lines: [
+        '  tflw record <url> [--browser chromium|firefox|webkit]',
+        '                                                      use a page in a real browser window, print one tflw step per action;',
+        '                                                      `pick` is inert and this one is not — a click navigates, a form submits.',
+        '                                                      Actions only: expectations are yours to add. Runs until the window is closed or Ctrl+C',
+    ],
+  },
+  {
+    verb: 'watch',
+    summary: 're-run headed on every save',
+    lines: [
+        '  tflw watch [files...] [--env <name>] [--seed <n>] [--browser chromium|firefox|webkit] [--no-color]',
+        '                                                      re-run headed on every save, one browser window for the whole session;',
+        '                                                      saving tflw.config re-runs everything; runs until Ctrl+C',
+    ],
+  },
+  {
+    verb: 'refactor',
+    summary: 'apply a reuse-pass extraction `tflw check` offered',
+    lines: [
+        '  tflw refactor apply <id>                           apply a reuse-pass extraction;',
+        '                                                      `tflw check` prints available ids (RF001, RF002, …) alongside its diagnostics',
+    ],
+  },
+  {
+    verb: 'migrate',
+    summary: 'rewrite past deprecations the checker names',
+    lines: [
+        '  tflw migrate [files...] [--env <name>] [--no-color]',
+        '                                                      mechanically rewrite past checker-flagged deprecations;',
+        '                                                      rewrites `scenario`→`test`, `think`→`pause`, `uncheck`→`untick`. Any diagnostic that says',
+        '                                                      "run `tflw migrate` to apply this automatically" is one it can act on — bare `check <locator>`',
+        '                                                      deliberately is not, since only you can say whether it meant `tick` or an assertion.',
+        '                                                      Works on files that do not parse; exits 2 if errors remain after the rewrite',
+    ],
+  },
+  {
+    verb: 'fmt',
+    summary: 'format .tflw files in place',
+    lines: [
+        '  tflw fmt [paths...] [--check]                      format `.tflw` files in place: two-space blocks, one space between',
+        '                                                      tokens, padded objects `{ a: 1 }`, aligned tables, comments where they are;',
+        '                                                      a directory is walked, no path means the current directory. --check writes',
+        '                                                      nothing, lists the files that would change and exits 1. A file that does not',
+        '                                                      lex is reported and left alone',
+    ],
+  },
+  {
+    verb: 'export',
+    summary: 'send a finished run to an OpenTelemetry collector',
+    lines: [
+        '  tflw export otlp [report-dir] --endpoint <url> [--header <name=value>]',
+        '                                                      send a finished run to an OpenTelemetry collector as one trace (run →',
+        '                                                      file → test → step) over OTLP/HTTP JSON; report-dir defaults to report/.',
+        '                                                      Times are laid end to end from the run\'s start and every span says so',
+    ],
+  },
+  {
+    verb: 'doctor',
+    summary: 'what this machine and project will run with, offline',
+    lines: [
+        '  tflw doctor [--env <name>] [--json]              what this machine and project will run with — versions, the env\'s services,',
+        '                                                      proxy and TLS, the suite, the browsers; offline. Exits 1 only for no',
+        '                                                      config, Node below 22, or browser tests with no browser installed',
+    ],
+  },
+  {
+    verb: 'merge',
+    summary: 'join finished runs (shards, groups) into one report',
+    lines: [
+        '  tflw merge <report-dir>... --out <dir> [--no-color]',
+        '                                                      join finished runs (shards, a sweep\'s groups) into one report: tests in',
+        '                                                      the order given, counts re-derived, findings deduplicated by fingerprint;',
+        '                                                      exits 0 when the merged run passed, 1 when it did not',
+    ],
+  },
+  {
+    verb: 'ui',
+    summary: 'serve the page for a project on 127.0.0.1',
+    lines: [
+        '  tflw ui [dir] [--port <n>] [--no-open]             serve the page for a project on 127.0.0.1: the files and their',
+        '                                                      tests, a run started from the page as `tflw run --format ndjson` with',
+        '                                                      its stream relayed live, and every report directory the project holds.',
+        '                                                      Loopback only — reach it from elsewhere over `ssh -L`. --port defaults',
+        '                                                      to 4141; --no-open skips opening the browser',
+    ],
+  },
+];
+
+/** A `CLI_FLAGS` effect as help prints it: without markdown ticks, and without the parenthesised
+ * record ids the manifest carries for the docs site — help says why, never which decision said so
+ * (`D1313`). */
+export function plainEffect(effect: string): string {
+  return effect
+    .replace(/(?:SPEC\s)?§\s?[\d.]+(?:\(\d+\))?/g, '')
+    .replace(/\s*\((?:[^()]*?(?:\b[MD]\d{1,4}[a-z]?(?:-\d+)?\b|P#\d+[a-z]?|§|\bdecision \d+)[^()]*?)\)/g, '')
+    // A bare id left in running prose — `after M131a the answer depends on it` — goes with the
+    // preposition that introduced it, so the sentence still reads.
+    .replace(/\b(?:after|since|in|per|until|from|as of)\s+`?[MD]\d{1,4}[a-z]?(?:-\d+)?`?,?\s*/g, '')
+    .replace(/`?\b[MD]\d{2,4}[a-z]?(?:-\d+)?\b`?/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/`/g, '')
+    .replace(/\s+([,;.)])/g, '$1')
+    .replace(/\(\s*[,/;\s]*\)/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/** `tflw <verb> --help`: the verb's paragraph, then its flags. `false` for a verb with no help. */
+function printVerbHelp(verb: string): boolean {
+  const help = VERB_HELP.find((v) => v.verb === verb);
+  if (!help) return false;
+  const flags = CLI_FLAGS.filter((f) => f.command === verb);
+  const width = Math.max(0, ...flags.map((f) => f.flag.replace(/`/g, '').length));
+  process.stdout.write(
+    [
+      `tflw ${verb} — ${help.summary}`,
+      '',
+      ...help.lines,
+      ...(flags.length > 0 ? ['', 'flags:', ...flags.map((f) => `  ${f.flag.replace(/`/g, '').padEnd(width)}  ${plainEffect(f.effect)}`)] : []),
+      '',
+      '  docs: https://deepak-tuteja.github.io/tflw/reference/cli',
+      '',
+    ].join('\n'),
+  );
+  return true;
+}
+
 function printUsage(): void {
+  const width = Math.max(...VERB_HELP.map((v) => v.verb.length), '--version, -v'.length);
   process.stdout.write(
     [
       'tflw — a testing-only DSL for API tests (.tflw files), reports first.',
       '',
-      'usage:',
-      '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
-      '            [--failed] [--shard i/n] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots] [--no-helpers] [--no-keep]',
-      '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
-      '            [--teardown always|on-success|never]',
-      '            [--log-output console|html|both|none]',
-      '            [--fail-on minor|moderate|serious|critical] [--baseline <file>] [--baseline-write <file>] [--probe-seeded <n>]',
-      '            [--log-level debug|info|warn|error]',
-      '                                                      run .tflw tests (default: all under cwd), functional and workload-bearing (a `ramp to …`',
-      '                                                      line, or another of the 5 workload shapes) alike, in file declaration order — a `parallel`/',
-      '                                                      `sequential` header modifier controls each test\'s concurrency with its file-siblings',
-      '                                                      --now replays the exact run-clock instant',
-      '                                                      alongside --seed, e.g. --seed 42 --now 2026-07-06T00:00:00Z',
-      '                                                      --verbose prints one line per step, not just per test',
-      '                                                      --only runs a single test by its exact declared name',
-      '                                                      --tag a,b runs a test carrying any of the listed tags (OR); --tag !x leaves out every test tagged x',
-      '                                                      --shard i/n runs every nth file of the sorted suite from the ith, so n jobs run it all once',
-      '                                                      --failed re-runs only the previous run\'s failing tests',
-      '                                                      --bail stops after the first failing test',
-      '                                                      --format ndjson streams the event log as JSON lines',
-      '                                                      --log-file <path> duplicates console output to a file (plain text)',
-      '                                                      --browser switches every browser step to one engine (default chromium)',
-      '                                                      --headed shows the browser window instead of running headless',
-      '                                                      --trace keeps the browser trace even when everything passed (needs --evidence full; open it with `npx playwright show-trace`)',
-      '                                                      every run is kept under report/runs/<id>/ (the newest `runs keep N`, 50 by default); --no-keep skips that for a scratch run',
-      '                                                      --update-snapshots writes/overwrites `matches snapshot` baselines',
-      '                                                      --no-helpers refuses every `use` before the first request',
-      '                                                      --forbid-insecure refuses to run at all if `insecure true` is active for this env (a CI policy gate)',
-      '                                                      --evidence <level> how much request/response detail the report keeps: full (default), headers-only, none',
-      '                                                      --teardown <level> when a workload iteration\'s `after` hooks run: always (default), on-success, never;',
-      '                                                      anything but always leaves that run\'s data in place and says so in the summary',
-      '                                                      --allow-public-target <origin> affirms an originating scan may reach a host outside the private',
-      '                                                      ranges (TF065); repeatable, must match an `authorized target`; no tflw.config key by design',
-      '                                                      --log-output <dest> where a bare `log "…"` goes: console|html|both|none',
-      '                                                      --fail-on <severity> security findings below this severity are reported but do not fail the',
-      '                                                      build; it can only relax the matcher a test wrote, never tighten it',
-      '                                                      --baseline <file> accepted findings, matched by fingerprint; they still render, marked known/accepted;',
-      '                                                      overrides tflw.config\'s `baseline "<file>"` key for this run',
-      '                                                      --baseline-write <file> writes this run\'s findings out as the accepted set — only this',
-      '                                                      run\'s, so write it from a full run (a --tag run legitimately produces a subset);',
-      '                                                      entries in --baseline that matched nothing are named after the run, never failed',
-      '                                                      --probe-seeded <n> n generated mutation payloads per already-granted class, on top of the fixed',
-      '                                                      corpus; reported and never gating, and it cannot widen what `authorized target` permitted',
-      '                                                      --log-level <level> minimum level a `log` step must clear to be rendered: debug|info|warn|error',
-      '                                                      --parallel <n> runs up to n *files* concurrently in this process (default: tflw.config\'s `workers`)',
-      '                                                      --workers <n> forks n *processes* to generate one file\'s workload-bearing tests\' load;',
-      '                                                      a no-op warning on a file with none (unrelated to --parallel; default: 1, no forking)',
-      '                                                      --skip-workload skips every workload-bearing test, for fast iteration on functional tests alone',
-      '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json} — workload-bearing',
-      '                                                      tests render inline alongside functional ones, no separate load-* artifacts',
-      '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
-      '                                                      Ctrl-C flushes a partial report; exit 3 = inconclusive (generator saturated), 130 = aborted, else 0/1',
-      '  tflw check [files...] [--env <name>] [--no-color] [--format json] [--allow-public-target <origin>]',
-      '                                                      validate only — no execution, no secrets needed;',
-      '                                                      --format json is for editor integrations (VS Code)',
-      '                                                      --allow-public-target <origin> the same affirmation `run` takes, so a suite that legitimately',
-      '                                                      scans a public host can still get a clean check (repeatable)',
-      '  tflw init [--load] [--scan]                        scaffold tflw.config + example.tflw',
-      '                                                      --load also scaffolds load.tflw (a workload-bearing `test`)',
-      '                                                      --scan also scaffolds scan.tflw + a commented `authorized target`',
-      '  tflw docs [topic]                                  print a language cheatsheet section; no topic lists them all',
-      '  tflw spec [--json]                                 print this build\'s construct manifest — every step keyword, matcher, generator,',
-      '                                                      locator, config word and diagnostic code it dispatches, plus a build stamp',
-      '                                                      (version, commit, build time). --json is the machine form a conformance gate reads',
-      '  tflw lsp                                           run the Language Server over stdio (for editor integrations)',
-      '  tflw install-browsers [--browser chromium|firefox|webkit]',
-      '                                                      download a browser binary for UI steps; default chromium.',
-      '                                                      Needs the optional `playwright` peer installed first (npm install -D playwright)',
-      '  tflw pick <url> [--browser chromium|firefox|webkit]',
-      '                                                      click an element in a real browser window, print its best locator;',
-      '                                                      runs until the window is closed or Ctrl+C — <url> must be absolute',
-      '  tflw record <url> [--browser chromium|firefox|webkit]',
-      '                                                      use a page in a real browser window, print one tflw step per action;',
-      '                                                      `pick` is inert and this one is not — a click navigates, a form submits.',
-      '                                                      Actions only: expectations are yours to add. Runs until the window is closed or Ctrl+C',
-      '  tflw watch [files...] [--env <name>] [--seed <n>] [--browser chromium|firefox|webkit] [--no-color]',
-      '                                                      re-run headed on every save, one browser window for the whole session;',
-      '                                                      saving tflw.config re-runs everything; runs until Ctrl+C',
-      '  tflw refactor apply <id>                           apply a reuse-pass extraction;',
-      '                                                      `tflw check` prints available ids (RF001, RF002, …) alongside its diagnostics',
-      '  tflw migrate [files...] [--env <name>] [--no-color]',
-      '                                                      mechanically rewrite past checker-flagged deprecations;',
-      '                                                      rewrites `scenario`→`test`, `think`→`pause`, `uncheck`→`untick`. Any diagnostic that says',
-      '                                                      "run `tflw migrate` to apply this automatically" is one it can act on — bare `check <locator>`',
-      '                                                      deliberately is not, since only you can say whether it meant `tick` or an assertion.',
-      '                                                      Works on files that do not parse; exits 2 if errors remain after the rewrite',
-      '  tflw fmt [paths...] [--check]                      format `.tflw` files in place: two-space blocks, one space between',
-      '                                                      tokens, padded objects `{ a: 1 }`, aligned tables, comments where they are;',
-      '                                                      a directory is walked, no path means the current directory. --check writes',
-      '                                                      nothing, lists the files that would change and exits 1. A file that does not',
-      '                                                      lex is reported and left alone',
-      '  tflw export otlp [report-dir] --endpoint <url> [--header <name=value>]',
-      '                                                      send a finished run to an OpenTelemetry collector as one trace (run →',
-      '                                                      file → test → step) over OTLP/HTTP JSON; report-dir defaults to report/.',
-      '                                                      Times are laid end to end from the run\'s start and every span says so',
-      '  tflw doctor [--env <name>] [--json]              what this machine and project will run with — versions, the env\'s services,',
-      '                                                      proxy and TLS, the suite, the browsers; offline. Exits 1 only for no',
-      '                                                      config, Node below 22, or browser tests with no browser installed',
-      '  tflw merge <report-dir>... --out <dir> [--no-color]',
-      '                                                      join finished runs (shards, a sweep\'s groups) into one report: tests in',
-      '                                                      the order given, counts re-derived, findings deduplicated by fingerprint;',
-      '                                                      exits 0 when the merged run passed, 1 when it did not',
-      '  tflw ui [dir] [--port <n>] [--no-open]             serve the page for a project on 127.0.0.1: the files and their',
-      '                                                      tests, a run started from the page as `tflw run --format ndjson` with',
-      '                                                      its stream relayed live, and every report directory the project holds.',
-      '                                                      Loopback only — reach it from elsewhere over `ssh -L`. --port defaults',
-      '                                                      to 4141; --no-open skips opening the browser',
-      '  tflw --version, -v                                 print the installed version',
-      '  tflw --help, -h                                    show this message',
+      'usage: tflw <command> [args] — `tflw <command> --help` lists its flags',
       '',
-      // `M240` `D` (`D1313`) — the lines above used to cite `SPEC §`-numbers and milestone ids, and
-      // this footer pointed at `SPEC.md` so a reader could follow them. They carry the reason now,
-      // and the long form is the docs site.
+      ...VERB_HELP.map((v) => `  tflw ${v.verb.padEnd(width)}  ${v.summary}`),
+      `  tflw ${'--version, -v'.padEnd(width)}  print the installed version`,
+      `  tflw ${'--help, -h'.padEnd(width)}  show this message`,
+      '',
+      // `M240` `D` (`D1313`) — the long form is the docs site.
       '  docs: https://deepak-tuteja.github.io/tflw/',
       '',
     ].join('\n'),
