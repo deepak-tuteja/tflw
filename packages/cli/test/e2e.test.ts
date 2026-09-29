@@ -3466,7 +3466,16 @@ test('C4/B3-11: a file mixing a functional and a workload test emits exactly one
         'utf8',
       );
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
+      // `M252-05`: the burst's verdict is the host's, not this test's — a 100 ms ramp on a slow
+      // Windows runner read as a saturated generator and the run exited 3 (inconclusive, #265). What
+      // is asserted here is the stream's shape, which an inconclusive run emits all the same.
+      const stdout = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir }).then(
+        (r) => r.stdout,
+        (e: { code?: number; stdout?: string }) => {
+          if (e.code !== 3) throw e;
+          return e.stdout ?? '';
+        },
+      );
       const events = stdout.trim().split('\n').map((l) => JSON.parse(l) as { type: string; name?: string; result?: { name: string }; report?: { total: number; tests: { name: string }[] } });
       const report = events.find((e) => e.type === 'run:end')!.report!;
 
