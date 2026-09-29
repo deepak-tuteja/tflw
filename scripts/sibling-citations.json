@@ -2,8 +2,8 @@
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
   "ref": "refs/pull/127/head",
-  "sha": "67402d4968e62b248676ae894c190d15bdc688bd",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/67402d4968e62b248676ae894c190d15bdc688bd",
+  "sha": "f2c1344efdc8e04b257e61600ed9688f7498fa07",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/f2c1344efdc8e04b257e61600ed9688f7498fa07",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -238,8 +238,7 @@
     ],
     "D1376": [
       "CONTRIBUTING.md",
-      "scripts/verify-contributing.mjs",
-      "scripts/verify-provenance.mjs"
+      "scripts/verify-contributing.mjs"
     ],
     "D1381": [
       "CONSTRUCTS.md",
@@ -257,7 +256,6 @@
       "scripts/lib/journeys.mjs",
       "scripts/verify-check-diagnostics.mjs",
       "scripts/verify-construct-acceptance.mjs",
-      "scripts/verify-provenance.mjs",
       "tests/.checkonly/rows-page-subject.tflw",
       "tests/.checkonly/rows-without-table.tflw",
       "tests/.constructs/config-keys/rows-counted.tflw",
@@ -2945,7 +2943,6 @@
     ],
     "D1354": [
       "scripts/verify-check-diagnostics.mjs",
-      "scripts/verify-provenance.mjs",
       "tests/api/identity/sso.tflw",
       "tflw.config"
     ],
@@ -4062,7 +4059,6 @@
       "apiV2/src/oauth/oauth-code.service.ts",
       "apiV2/src/oauth/oauth.service.ts",
       "scripts/verify-check-diagnostics.mjs",
-      "scripts/verify-provenance.mjs",
       "tests/api/identity/sso.tflw",
       "tflw.config"
     ],
