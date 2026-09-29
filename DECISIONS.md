@@ -9837,7 +9837,7 @@ the report header.
 
 ### D1376
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
