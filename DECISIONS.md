@@ -9915,6 +9915,14 @@ the report header.
 |---|---|---|
 | `D1396` | (`M252` `A`, 2026-09-29, `G18`) | **`TFLW_SOURCE_ROOT` is resolved through `realpath`.** The run's own directory is `process.cwd()`, which is always the real path; a root named by a symlinked spelling (`/var/folders/…` for `/private/var/folders/…` on macOS, a symlinked checkout anywhere) rebased every result to `../…`, which `sarifUri` refuses, and the SARIF shipped with no annotation at all — silently. |
 
+### D1398
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1398` | (`M252` `A`, 2026-09-29, `G19`) | **A file argument is spelled the way `cwd` is**: its directory through `realpath`, its own name kept (`canonicalFile`). `process.cwd()` is real, so a file named through a symlinked directory made every `relative(cwd, file)` climb out and back in, and `TF083` refused every `use "./helpers/…"`. The file itself is not followed, so a symlinked test file keeps the place its `use` and `import` resolve from. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>

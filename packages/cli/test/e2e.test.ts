@@ -5190,6 +5190,39 @@ test('the built dist/cli.cjs anchors a SARIF result to the `.git` root, or to TF
   }
 });
 
+// `M252` (`D1398`, `G19`) — a file named through a symlinked directory. `process.cwd()` is the real
+// path, so `relative(cwd, file)` climbed out and back in, and `TF083` judged every
+// `use "./helpers/…"` to be outside `helpers`. macOS's tmpdir is such a directory, which is how its
+// first CI run found this (the docs' truth gate, four guide snippets); the link makes it a case on
+// every platform. The CONTROL is the same check through the real path.
+test('the built dist/cli.cjs checks a file named through a symlinked directory as the file it is (G19)', async () => {
+  const top = await mkdtemp(join(tmpdir(), 'tflw-e2e-symdir-'));
+  const real = join(top, 'real');
+  try {
+    await mkdir(join(real, 'helpers'), { recursive: true });
+    await writeFile(join(real, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    await writeFile(join(real, 'helpers', 'label.ts'), 'export function makeLabel(ctx: unknown, id: string): string {\n  return id;\n}\n', 'utf8');
+    await writeFile(join(real, 'a.tflw'), 'use "./helpers/label.ts"\n\ntest "labels"\n  let label = make label("x")\n  log "{label}"\n', 'utf8');
+    await symlink(real, join(top, 'link'), 'dir');
+    const check = async (file: string) => {
+      try {
+        const { stdout, stderr } = await execFileAsync('node', [cliEntry, 'check', '--no-color', file], { cwd: real });
+        return { code: 0, out: stdout + stderr };
+      } catch (e) {
+        const x = e as { code?: number; stdout?: string; stderr?: string };
+        return { code: x.code ?? -1, out: (x.stdout ?? '') + (x.stderr ?? '') };
+      }
+    };
+    const control = await check(join(real, 'a.tflw'));
+    assert.equal(control.code, 0, `CONTROL — the real path checks clean:\n${control.out}`);
+    const linked = await check(join(top, 'link', 'a.tflw'));
+    assert.equal(linked.code, 0, `the same file through the link checks clean too:\n${linked.out}`);
+    assert.doesNotMatch(linked.out, /TF083/);
+  } finally {
+    await rm(top, { recursive: true, force: true });
+  }
+});
+
 // M135b (D404) — the other half of the write condition, and the one whose failure is silent.
 //
 // `upload-sarif` reads an empty `results` array as *everything previously reported is fixed* and
