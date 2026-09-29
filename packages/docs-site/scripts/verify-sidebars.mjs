@@ -13,7 +13,7 @@
 // an editorial decision per page, and the only mechanical version of it would re-implement
 // VitePress's longest-prefix resolution here — which is what shipped the bug.
 
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,6 +53,9 @@ const EXPECTED = [
   { page: 'ui/index.html', shows: 'The UI', hides: 'More' },
   { page: 'ui/doors.html', shows: 'The UI', hides: 'More' },
   { page: 'ui/load.html', shows: 'The UI', hides: 'More' },
+  // The adopter's runbook (`M253` `A`, `D1350`): its index and a page added with it.
+  { page: 'runbook/index.html', shows: 'Runbook', hides: 'More' },
+  { page: 'runbook/troubleshoot.html', shows: 'Runbook', hides: 'More' },
 ];
 
 /** Each pillar overview is reachable from the rail, and it is the group's own title that reaches it.
@@ -146,6 +149,27 @@ for (const { page, link, group } of PILLAR_OVERVIEWS) {
     failures++;
   } else {
     console.log(`✓ ${page} — ${group} → ${link}`);
+  }
+}
+
+// `M253` `A`: every page in `runbook/` is in the runbook's rail. A section assembled one page per
+// milestone is exactly where a page lands on disk and never in the sidebar — reachable only from a
+// search result, which is the failure `FU-30` above describes from the reader's side. Read off the
+// directory, so a new page is asked about the day it is written.
+{
+  const pages = (await readdir(join(ROOT, 'runbook'))).filter((f) => f.endsWith('.md') && f !== 'index.md').map((f) => f.replace(/\.md$/, ''));
+  let rail = '';
+  try {
+    rail = sidebarOf(await readFile(join(DIST, 'runbook/index.html'), 'utf8'));
+  } catch {
+    // reported by the EXPECTED row above
+  }
+  const missing = pages.filter((p) => !rail.includes(`/runbook/${p}.html"`) && !rail.includes(`/runbook/${p}"`));
+  if (pages.length === 0 || missing.length > 0) {
+    console.error(`✗ runbook/ — ${missing.length > 0 ? `not in the rail: ${missing.join(', ')}` : 'no pages found'}`);
+    failures++;
+  } else {
+    console.log(`✓ runbook/ — all ${pages.length} pages are in the rail`);
   }
 }
 

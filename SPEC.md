@@ -2728,7 +2728,7 @@ test "pay for an order"
   that is a frame is its own candidate. No IDE code action yet (P#2's other
   named entry point) — `tflw refactor apply <id>` is the only way to apply a hint today.
 
-## 9. UI steps (P#8–9, P#26) 🔧
+## 9. UI steps (P#8–9, P#26) ✅
 
 Browser half, `0.2.0` (M3), landing in slices — see `PLAN_BROWSER_PERF_SECURITY.md` §1.12. **M3a
 ✅ shipped**: the core interaction steps below, the selector model, strict ambiguity, `within`
@@ -2886,7 +2886,7 @@ Each row's left cell is a quoted field name — same resolution as a bare `fill 
 row executes and reports as its own sub-step. No fill-and-remember auto-verify — audits are
 explicit `check`/`expect` lines.
 
-### 9.3 Locators (P#8–9) ✅ (`element` aliases not yet built)
+### 9.3 Locators (P#8–9) ✅
 
 - The **noun picks the resolution strategy** (D6) — cascading isn't the sin, cascading
   *invisibly* is:
@@ -3793,7 +3793,7 @@ and a tracking system keyed on identity would mint a permanent new alert on ever
 would flatten *applied and silent* into *never applicable*, which is the one distinction the census
 exists to make.
 
-### 9.15 Active crawl — the `crawl` declaration (M137c, D432/D443/D450) 🔧
+### 9.15 Active crawl — the `crawl` declaration (M137c, D432/D443/D450) ✅
 
 ✅ The declaration, its seeds, its two structural rules (`TF068`, `TF070`), route synthesis from an
 OpenAPI document, the captured-traffic seed, the reachability channel and the crawl's own report entry
@@ -3905,7 +3905,7 @@ either door. **And when the surface resolved but nothing landed** — requests s
 would be a claim about an application the crawl never touched. One code rather than a new one, because
 a runtime-only diagnostic has no check-time door for its probes to run through (`D456`).
 
-## 10. Sessions & isolation (P#20, P#31) 🔧
+## 10. Sessions & isolation (P#20, P#31) ✅
 
 ✅ The `session` block half shipped in M2.6 (§3.3). ✅ Fresh browser context (and page) per test
 *attempt* shipped in M3a (D13) — one shared browser process for the whole run, a clean context per
@@ -3913,7 +3913,7 @@ test so a retried test never inherits a failed attempt's leftover UI state. Sinc
 can hold several open tabs at once (§9.5) — still just the one context per attempt; `switch to new
 tab`/`switch to tab N`/`close tab` move between pages within it, not across contexts. ✅ Since
 `M247` `A` (`D1352`, amending D10) a test's `as <session>` seeds that context with the session's
-cookie jar, so the page opens signed in (§3.3 states the three limits). 🔮 Not built, by decision:
+cookie jar, so the page opens signed in (§3.3 states the three limits). Not built, by decision:
 the reverse direction — a browser context's storage state (its cookies after a form login, its
 `localStorage`) is never folded back into the jar.
 
@@ -3940,13 +3940,13 @@ in Node's own voice, unchanged. (With *no* `package.json` above the helper at al
 nothing — the trigger is a manifest missing the key, not a missing manifest, which is why
 `tflw init` scaffolds one with the key already set rather than leaving the file out.)
 
-## 12. CLI 🔧
+## 12. CLI ✅
 
 **✅ Shipped:**
 
 | Command | Purpose |
 |---|---|
-| `tflw init [--load]` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) + `package.json` (`{"private": true, "type": "module"}`) — P#82; API-only — `--ui` is still 🔮 planned and unscheduled (the browser arc M3a–M3c shipped without it), and `initCommand` now *rejects* it rather than ignoring it: any `--…` other than `--load` exits 2 via `unknownFlag`. Every file after `tflw.config` is written **only if absent**, never merged into or overwritten; `package.json` is there so the §11 `.ts` escape hatch doesn't make Node guess the module type on first use (M125b2, `FU-15`). The scaffolded config points `api` at `tflw://demo` (§3.1, M118/`FU-04`), so `tflw init` followed by `tflw run` is green in an empty directory — swapping that one line for your own service is the intended first edit. `--load` (M29/D30) additionally scaffolds a `load.tflw` holding a workload-bearing `test` in the open (`rps`) model, run by plain `tflw run` like any other file |
+| `tflw init [--load]` | scaffold `tflw.config` + `example.tflw` + `.env.example` + `.gitignore` (`.env`/`report/`, appended without duplicating if the file already exists) + `package.json` (`{"private": true, "type": "module"}`) — P#82; API-only — `--ui` is not planned (the browser arc M3a–M3c shipped without it; see *Not planned* below), and `initCommand` now *rejects* it rather than ignoring it: any `--…` other than `--load` exits 2 via `unknownFlag`. Every file after `tflw.config` is written **only if absent**, never merged into or overwritten; `package.json` is there so the §11 `.ts` escape hatch doesn't make Node guess the module type on first use (M125b2, `FU-15`). The scaffolded config points `api` at `tflw://demo` (§3.1, M118/`FU-04`), so `tflw init` followed by `tflw run` is green in an empty directory — swapping that one line for your own service is the intended first edit. `--load` (M29/D30) additionally scaffolds a `load.tflw` holding a workload-bearing `test` in the open (`rps`) model, run by plain `tflw run` like any other file |
 | `tflw run [files] [--env E] [--tag T[,T...]] [--only NAME] [--seed S] [--now ISO] [--parallel N] [--workers N] [--skip-workload] [--no-color] [--verbose] [--forbid-insecure] [--evidence LEVEL] [--teardown LEVEL] [--failed] [--bail] [--format ndjson] [--no-timestamps] [--log-file PATH] [--browser chromium\|firefox\|webkit] [--headed] [--log-output console\|html\|both\|none] [--log-level debug\|info\|warn\|error] [--fail-on minor\|moderate\|serious\|critical] [--baseline FILE] [--baseline-write FILE] [--probe-seeded N]` | run; exit code for CI. A failing test's diff always prints live (no flag, no TTY required — P#91); `--verbose` additionally prints one line per step (pass or fail), buffered per-file under `--parallel > 1` so concurrent files' step logs never interleave. `--tag` takes a comma-separated list with OR semantics — a test runs if it carries any listed tag (M2.21). `--only` runs a single test by its exact declared name (composes with `--tag`'s OR-list as AND) — P#94, for the VS Code extension's per-test CodeLens. `--parallel N` runs up to N *files* concurrently in this process (default: `tflw.config`'s `workers` key); `--workers N` is the unrelated, workload-only axis (§4.5, D111/D113): it forks N generator *processes* to produce one file's workload-bearing test(s)' load, a no-op warning on a file with none. `--skip-workload` (D110, renamed from `--skip-load` in M53) drops every workload-bearing test from the run for fast iteration on the functional ones alone. `--forbid-insecure` (P#101b) is a CI policy gate: fail before any test runs if `insecure true` (§3.5) is active for the env actually running. `--evidence full\|headers-only\|none` (P#101c) overrides `tflw.config`'s `evidence` key (§13) for this run only. `--teardown always\|on-success\|never` (`D783`) overrides `tflw.config`'s `teardown` key (§13) for this run only, and does not persist. `--failed`/`--bail`/`--format ndjson`/`--no-timestamps`/`--log-file` are P#111 (enterprise arc cluster 6) — see §13. `--browser` (M3c, D11) switches the whole run's browser steps to one engine (default chromium), stamped on the report header; `--headed` shows a real browser window instead of running headless. `--log-output`/`--log-level` (M27, PLAN_LOG.md) override `tflw.config`'s `log destination`/`log level` keys (§3.10) for `log` statements (§7.7) — `--log-output` only reaches a bare `log "…"` call (an explicit `to …` clause always wins), `--log-level` filters rendering only, never recording. `--fail-on`/`--baseline`/`--baseline-write`/`--probe-seeded` (M134b, §9.13) govern what the three security scans do with a finding after a rule raises it: the first two can only **relax** an assertion, never tighten it, and never silently — a withheld finding still renders, badged with which relaxation withheld it. `--baseline-write` produces the accepted set (fingerprints are hashes; hand-transcribing them is not an adoption path), and `--probe-seeded N` adds N generated mutation payloads per already-granted class whose findings are reported and never gate |
 | `tflw check [files] [--env E] [--no-color] [--format json]` | validate only: parse + the full checker pipeline `run` executes before it does anything (config parse/validate + `checkSessionServices`, then `checkProgram` — the one composed per-file pass list, `checkServices`/`checkDataTables`/`checkSessions`/`checkActionDecls`/`checkUnknownVariables`/`checkRequestAssertions`/`checkWorkloadTests` — shared verbatim with the language server and the docs-site editor demo since M60, so all three report the same thing), teaching diagnostics, exit 0/2, **no execution** — lint in CI/pre-commit without touching a live API or needing `require env` secrets, P#75 (M2.8). Text output by default; `--format json` (P#94) prints JSON instead, for editor and CI integrations: an array with **one `{ "file": "<path>", "diagnostics": [ … ] }` entry per file checked**, in discovery order, paths relative to the cwd and POSIX-separated. Clean files are listed with an empty `diagnostics` array — a consumer that draws diagnostics needs to know a file was checked and found clean in order to clear the ones it drew last time (M70; before that this was a flat `Diagnostic[]` concatenated across files, and `Diagnostic` carries a span but no file, so it only worked when exactly one file was named). A config-level failure (broken `tflw.config`, unknown session service) still prints text to stderr and exits 2 with an empty array on stdout — which under this shape means "nothing was checked" rather than being ambiguous with "everything was clean". Text mode also runs the reuse pass (M6, §8, P#2) across every file just checked and prints any hints (`RF001`, …) after the usual diagnostics — advisory, never affects the exit code; `--format json` skips this — a reuse hint is a cross-file suggestion carrying a diff preview, not a diagnostic anchored to a span, so it does not belong in a per-file diagnostics array |
 | `tflw --version`, `-v` | print the installed version — injected at bundle time via esbuild `--define`, P#74 (M2.8) |
@@ -3995,13 +3995,13 @@ Every flag listed above also appears in `tflw --help`, and a test enforces that 
 `packages/lang/src/spec-data.ts` is the list this table, the docs-site reference page, and
 `--help` are all checked against).
 
-**🔮 Planned:**
+**Not planned** (no milestone owns it, so it is not badged as planned):
 
 | Command | Purpose |
 |---|---|
 | `tflw init --ui` | also scaffold a UI test + prompt for `tflw install-browsers`. **Unscheduled** — the browser arc (M3a–M3c) shipped without it, so the milestone this row used to name has come and gone; nothing is currently planned to add it. Until then `tflw init --ui` exits 2 with `` error: unknown flag `--ui` for `tflw init`. `` and creates nothing (`V4-15`) |
 
-## 13. Events, report, CI outputs (P#4–5, P#23, P#30) 🔧
+## 13. Events, report, CI outputs (P#4–5, P#23, P#30) ✅
 
 ✅ Everything API-side: the event stream, req/res panels, per-`check` rows, generated values
 inline, seed header, redaction, CLI summary, `junit.xml`/`results.json`, exit codes, `--failed`/
@@ -4012,8 +4012,8 @@ screenshots, Playwright trace on failure and every retry attempt (§9.6). M3d's 
 network-panel evidence was added; the full request/response is inspectable via the kept Playwright
 trace (§9.6) when one exists. M3e's `page has no … a11y violations` reports the same way — its
 failure detail text lists up to 5 real axe-core findings inline (§9.8) rather than gaining its own
-report panel; a kept Playwright trace still has the DOM these findings point at. 🔮 Visual
-regression baselines (their own before/after/diff evidence) wait for M4b.
+report panel; a kept Playwright trace still has the DOM these findings point at. ✅ Visual
+regression (§9.9, M4b) carries its own before/after/diff triptych in `report.html`.
 
 - Interpreter emits `step:start` / `step:end` (timing + screenshot when one was captured for a
   browser step, full req/res trace for API steps); reporter is a pure consumer.
@@ -4289,7 +4289,7 @@ certify that anything is safe to share.
 - `--log-file <path>` — duplicates console output to a file, always plain text (ANSI stripped)
   regardless of stdout's own color state.
 
-## 14. Architecture (P#1, P#12) 🔧
+## 14. Architecture (P#1, P#12) ✅
 
 ✅ `lang`/`runtime` (fetch binding + Playwright binding, M3a)/`reporter`/`cli`/`lsp-server`/`vscode`/`docs-site`, bundled via
 esbuild for publish (esbuild marks `playwright` external — M3a's optional peer must never be
@@ -4326,11 +4326,12 @@ a packed tarball the way a user would (M4/P#43). It replaced `automationTestPOC`
   it's an optional peer dependency now (D5), dynamically imported only on a test's first browser
   step, so an API-only consumer's install/bundle is completely unaffected.
 
-## 15. Distribution (P#35–39, amended by P#41–50) 🔧
+## 15. Distribution (P#35–39, amended by P#41–50) 🔧 (the publish waits for the owner's word, `D1379`)
 
 Describes the whole release plan; individual bullets below are already true (posture, packaging
-mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `0.3.0`/`0.4.0` internal
-milestones and the eventual `1.0.0` publish — see P#112).
+mechanism, Node ≥ 22, versioning promise) or are 🔮 future events (the `1.0.0` publish — see
+P#112 — which waits for the owner's word, `D1379`; the `0.3.0`/`0.4.0` internal milestones were
+never published and never will be).
 
 - **Posture:** public-grade from day one (public GitHub repo — own repo, MIT, CI, P#48 —
   stranger-readable README, `npm pack`-clean layout). The mechanical publish-readiness bar
@@ -4383,21 +4384,22 @@ milestones and the eventual `1.0.0` publish — see P#112).
 - **Onboarding:** README quickstart hits a green **API** test in <5 minutes (no browser download
   in the funnel), SPEC.md is the reference, `examples/` mirrors the dogfood suite (P#39).
 
-## 16. Out of v1 (parking lot) 🔮
+## 16. Out of v1 (parking lot)
 
 Mobile/unit testing, DB assertions (P#3) — **not** performance or security/pen-test testing,
 which are committed in-scope arcs per `PLAN_BROWSER_PERF_SECURITY.md` (decisions D1/D16–D22),
-gating `1.0.0` rather than parked; recorder, dashboards
-(P#6, v2 list); faker realism (P#22); `dataset` construct
-(P#24); binary/XML bodies (P#32; GraphQL shipped in `M242`, §5.2); response downloads (P#33 — cookie subjects, P#33's other
-half, shipped: §3.3's automatic cookie jar); `dependsOn` stays rejected (P#10); standalone binary,
-Docker image, official GitHub Action,
-docs site, separately published `@tflw/lang` (P#36–39); `tflw fmt` canonical formatter (P#83 —
-offside-rule grammar already constrains layout; revisit at M5/M6 with the source-rewriting
-machinery); `tflw check --format json` machine-readable diagnostics (P#75 — waits for a real
-consumer, the LSP); Windows CI/support beyond WSL (P#79, on demand); community files
-(CONTRIBUTING/SECURITY/issue templates) + npm provenance via a workflow publish, when
-contributions open (P#80).
+gating `1.0.0` rather than parked; dashboards (P#6, v2 list); faker realism (P#22); `dataset`
+construct (P#24); binary/XML bodies (P#32; GraphQL shipped in `M242`, §5.2); response downloads
+(P#33 — cookie subjects, P#33's other half, shipped: §3.3's automatic cookie jar); `dependsOn`
+stays rejected (P#10); standalone binary, Docker image, separately published `@tflw/lang`
+(P#36–39); npm provenance via a workflow publish (P#80 — the 1.0 publish is from a workstation,
+`D1379`).
+
+**Parked here once, since shipped** — kept so a reader who remembers the old list finds where each
+went: the recorder (`tflw record`, §12); the docs site; `tflw fmt` (P#83, §12); `tflw check --format
+json` (P#75, §12); Windows CI (P#79 — `M243` runs the whole suite on native Windows, and `M252` adds
+macOS); `CONTRIBUTING.md` and `SECURITY.md` (P#80); the official GitHub Action (built in `M252`,
+shipped with `1.0.0`).
 
 ## 17. Diagnostic codes (TF0xx) ✅
 

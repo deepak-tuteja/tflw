@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitepress';
+import { PUBLISHED } from './published';
 import tflwGrammar from '../../vscode/syntaxes/tflw.tmLanguage.json' with { type: 'json' };
 
 // The top nav is Home · Guide · Reference · Grammar · Editor · Playground · Changelog. `appearance`
@@ -106,6 +107,12 @@ const GUIDE_SIDEBAR = [
 ];
 
 export default defineConfig({
+  // `M253` `F`: the home page's tagline has a published twin in its frontmatter; the flag picks.
+  transformPageData(pageData) {
+    const hero = pageData.frontmatter.hero as { tagline?: string; taglinePublished?: string } | undefined;
+    if (PUBLISHED && hero?.taglinePublished) hero.tagline = hero.taglinePublished;
+  },
+
   title: 'tflw',
   description: 'A testing DSL for API and browser tests — reports first, syntax second.',
   // Deployed to https://deepak-tuteja.github.io/tflw/ (a project subpath, not the domain root),
@@ -216,7 +223,7 @@ export default defineConfig({
       // `M247` `F` (`D1350`) — the adopter's runbook: how to run a project, grown one page per
       // milestone rather than written at the end. Its index, glossary and troubleshooting pages
       // arrive with `M253`.
-      { text: 'Runbook', link: '/runbook/project' },
+      { text: 'Runbook', link: '/runbook/' },
       { text: 'Reference', link: '/reference/matchers' },
       { text: 'Grammar', link: '/grammar' },
       { text: 'Editor', link: '/editor' },
@@ -246,12 +253,15 @@ export default defineConfig({
       '/runbook/': [
         {
           text: 'Runbook',
+          link: '/runbook/',
           items: [
             { text: 'Installing tflw', link: '/runbook/install' },
             { text: 'Setting up a project', link: '/runbook/project' },
             { text: 'Running a suite', link: '/runbook/running' },
             { text: 'Working on the page', link: '/runbook/page' },
             { text: 'Working in the editor', link: '/runbook/editor' },
+            { text: 'Troubleshooting', link: '/runbook/troubleshoot' },
+            { text: 'Glossary', link: '/runbook/glossary' },
           ],
         },
       ],

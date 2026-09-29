@@ -15,7 +15,9 @@ more, live as you type.
   service, so the quickstart is green before you've wired anything up, and repointing it at your
   service is one line.
 
-## Using tflw from a checkout (no npm registry needed)
+## Installing tflw
+
+<Published :when="false">
 
 tflw is pre-1.0 and **not published to npm yet**, so this is how you install it today. From a clone,
 `packages/cli/dist/cli.cjs` is the exact runnable artifact after `npm run build`:
@@ -36,6 +38,16 @@ At 1.0 that becomes one line. It does **not** work yet:
 ```sh
 npm i -D tflw   # not published — see the two commands above
 ```
+
+</Published>
+
+<Published>
+
+```sh
+npm install -D tflw
+```
+
+</Published>
 
 ## Quickstart
 

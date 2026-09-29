@@ -52,4 +52,18 @@ Two lines are worth reading even when doctor is green:
 - **tls** — `insecure true` in the env turns certificate checks off, and doctor says so in capitals.
   A client certificate that is *not on disk yet* is fine when a `before all` hook writes it.
 
+## 4. Upgrading
+
+```sh
+npm install -D tflw@latest
+npx tflw migrate              # rewrites deprecated syntax in place and prints what changed
+npx tflw check
+npx tflw install-browsers     # again, if the upgrade moved your playwright
+```
+
+From `1.0.0` the language only grows: a file that checks today still checks after an upgrade. What
+a release deprecates, `tflw check` warns about with the replacement, and `tflw migrate` rewrites
+mechanically — `scenario` → `test`, `think` → `pause`, `uncheck` → `untick` today. Run it on a
+clean working tree, so the diff it leaves is the migration and nothing else.
+
 Next: [setting up a project](/runbook/project), or [running it](/runbook/running).

@@ -60,6 +60,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { mkdtemp, cp, rm, readFile, writeFile, mkdir, symlink } from 'node:fs/promises';
+// `M252-02`: Windows holds a file a browser has just closed for a moment after the process exits, and
+// a plain `rm` of the test's temp directory then fails the test with `EBUSY` — twice in CI, in two
+// different tests, with nothing wrong in either. `rm`'s own retry covers exactly that window.
+const RM_RETRY = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 } as const;
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -242,7 +246,7 @@ after(async () => {
   await page?.close();
   await browser?.close();
   await server?.close();
-  if (scratch !== undefined) await rm(scratch, { recursive: true, force: true });
+  if (scratch !== undefined) await rm(scratch, RM_RETRY);
 });
 
 /**
@@ -1491,7 +1495,7 @@ test('the explorer’s create keeps its place on a project with a real file coun
     });
     assert.deepEqual(through.leaks, [], `something shows through \`+ new file\`'s strip (${through.width}px wide in a ${through.side}px pane)`);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
