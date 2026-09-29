@@ -22,6 +22,7 @@
 
 import { cp, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ARTIFACT_CONTRACT } from './artifact-contract.js';
 import { finalizeVerdict, mergeSelfDiagnosis, type RunReport, type ScanFinding, type ScanRuleCensus, type SelfDiagnosis } from '@tflw/runtime';
 
 export interface MergeInput {
@@ -95,7 +96,7 @@ export function mergeRuns(inputs: readonly MergeInput[]): RunReport {
     // `baseline` is a per-run audit of one document against one run's findings; a merge of several
     // audits is not an audit, so it is dropped rather than half-joined.
     baseline: undefined,
-    mergedFrom: inputs.map((i) => i.dir),
+    [ARTIFACT_CONTRACT.results.mergedFrom]: inputs.map((i) => i.dir),
   });
 }
 
