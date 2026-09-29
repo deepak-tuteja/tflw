@@ -17,6 +17,13 @@
 // and message on the line's `title`. It never decides what is wrong, so the page cannot hold two
 // opinions about one file.
 //
+// COMPLETION IS THE LANGUAGE SERVER'S — `M250` `A` (`D1361`). `@codemirror/autocomplete` (MIT by its
+// `LICENSE`, read 2026-09-29) draws the list; what is in it is `getCompletions` from
+// `@tflw/lsp-server/pure`, the function the editor extension's list comes from, asked at the cursor
+// by `getCompletionContext`. So the page and the editor extension cannot offer different words for
+// one position. The names it needs from outside the text — the project's sessions — are the
+// caller's, like the diagnostics; the file's own values and elements are read from the buffer.
+//
 // THE TEXT IS THE CALLER'S TOO. `value` in, `onChange` out, and a `value` that differs from the
 // document replaces it: the buffer lives in `App` (`D1079`'s one buffer), which is what makes
 // Compose and Source two views of one draft rather than two drafts.
@@ -25,7 +32,9 @@ import { EditorState, RangeSetBuilder, StateEffect, StateField, type Extension }
 import { Decoration, EditorView, ViewPlugin, keymap, lineNumbers, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { indentUnit } from '@codemirror/language';
+import { autocompletion, type CompletionContext as CmCompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import type { Diagnostic, Dialect } from '@tflw/lang';
+import { completeAt } from './complete';
 import { highlightLines } from './highlight';
 
 /** `null` is text the page does not colour — the accepted-findings document is JSON, not tflw. */
@@ -56,6 +65,18 @@ function colours(dialect: Dialect): Extension {
     },
     { decorations: (v) => v.decorations },
   );
+}
+
+function completion(dialect: Dialect, sessions: () => readonly string[]): Extension {
+  return autocompletion({
+    override: [
+      (cx: CmCompletionContext): CompletionResult | null => {
+        const at = completeAt(cx.state.doc.toString(), cx.pos, dialect, sessions(), cx.explicit);
+        // `filter: false` — the list is already the language's, ranked and filtered by prefix.
+        return at === null ? null : { from: at.from, options: at.options, filter: false };
+      },
+    ],
+  });
 }
 
 const setProblems = StateEffect.define<readonly Diagnostic[]>();
@@ -99,15 +120,24 @@ export interface EditorProps {
   /** A line to bring into view and select, when it changes. */
   readonly focusLine?: number | null;
   readonly className?: string;
+  /** The sessions the project declares, for completion after `as`. The file's own names are read
+   *  from the text. */
+  readonly sessions?: readonly string[];
 }
 
-export function Editor({ value, onChange, dialect, diagnostics = [], contentAttributes, focusLine = null, className }: EditorProps) {
+const NO_SESSIONS: readonly string[] = [];
+
+export function Editor({ value, onChange, dialect, diagnostics = [], contentAttributes, focusLine = null, className, sessions = NO_SESSIONS }: EditorProps) {
   const host = useRef<HTMLDivElement | null>(null);
   const view = useRef<EditorView | null>(null);
   // The latest callback, read by the listener the editor was built with — rebuilding the editor
   // on every render would drop the undo history and the selection.
   const changed = useRef(onChange);
   changed.current = onChange;
+  // Read by the completion source when it runs, for the same reason: the session list can change
+  // without the editor being rebuilt.
+  const known = useRef(sessions);
+  known.current = sessions;
 
   useEffect(() => {
     if (host.current === null) return;
@@ -121,6 +151,9 @@ export function Editor({ value, onChange, dialect, diagnostics = [], contentAttr
           // Tab indents, because tflw's blocks are indentation: an editor where Tab leaves the
           // text cannot write the language. Escape first and Tab then moves focus on, which is
           // CodeMirror's own rule for the keyboard trap this would otherwise be.
+          // `autocompletion` brings its own keys at a higher precedence than this keymap, so Enter
+          // takes an open list's choice before it inserts a line, and does only that with none open.
+          ...(dialect === null ? [] : [completion(dialect, () => known.current)]),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           indentUnit.of('  '),
           // `tabindex="0"` names what is already true — the content is `contenteditable` and in the
