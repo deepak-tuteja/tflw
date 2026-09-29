@@ -77,6 +77,7 @@ import {
   buildAction,
   buildCrawl,
   insertIntoSource,
+  format,
 } from '@tflw/lang';
 import { pickLocators, recordActions, putFile, getFile, dropScratch, startRun, subscribe, getReports, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
@@ -2551,15 +2552,25 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
    */
   const writeDraft = useCallback(async () => {
     if (!file || draft === null) return;
+    // **The server takes formatted text only** (`ui-server.ts`'s `422`), and Compose's edits are
+    // formatted on the way in — but Source writes the buffer as typed, so a stray blank line was a
+    // refused ⌘S with nothing on Source saying so (found by `M250` `C`'s box run). The buffer is
+    // formatted here, by the function the server checks against, and the file is what it gives.
+    const formatted = format(draft);
+    if (!formatted.ok) {
+      setProblem(`the text cannot be formatted, so it cannot be written: ${formatted.reason ?? 'it does not lex'}`);
+      return;
+    }
+    const text = formatted.formatted;
     setBusy(true);
     setProblem(null);
-    const res = await putFile(path, draft, file.etag);
+    const res = await putFile(path, text, file.etag);
     setBusy(false);
     if (!res.ok) {
       setProblem(res.status === 409 ? `${res.error} — the file changed under this page; reopen it and apply this again` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
       return;
     }
-    onFileWritten({ path, text: draft, etag: res.etag });
+    onFileWritten({ path, text, etag: res.etag });
     onDraft(null);
     setEdit(null);
     // …and the assertion row's, for the same reason: the buffer is the file now, so every row's
@@ -2648,6 +2659,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
       {tab === 'source' ? (
         <SourcePanel
           file={file}
+          problem={ownProblem}
           pending={sourcePending}
           diagnostics={diagnostics}
           project={project}

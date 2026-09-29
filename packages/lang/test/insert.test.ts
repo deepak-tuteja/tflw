@@ -794,7 +794,7 @@ test('`M250` `G2`: an `element` line is a file line — under the imports behind
   const first = replaceInSource(file, { kind: 'file', what: 'element', index: 0, node: badge.node });
   assert.equal(first.ok, true, first.ok ? '' : first.reason);
   assert.match(first.text ?? '', /^import "\.\/shared\/helpers\.tflw"\n\nelement cartBadge = css "\[data-test=cart-count\]"\n\ntest "it opens"$/m);
-  assert.equal(format(first.text!), first.text, 'the place it lands is the place `format` leaves it');
+  assert.equal(format(first.text!).formatted, first.text, 'the place it lands is the place `format` leaves it');
   assert.deepEqual(parseSource(first.text!).program.elements?.map((e) => e.name), ['cartBadge']);
 
   // A second goes under the first, in the same table; a replacement rewrites its own line.

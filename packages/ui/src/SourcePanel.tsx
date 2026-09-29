@@ -31,8 +31,11 @@ import type { FileView } from './api';
 import type { Lens, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
 
-export function SourcePanel({ file, pending, diagnostics, project, door, onText }: {
+export function SourcePanel({ file, pending, diagnostics, project, door, onText, problem = null }: {
   readonly file: FileView | null;
+  /** Why the last write was refused — said here too, because ⌘S from Source was otherwise a
+   *  refusal only the Compose pane could show. */
+  readonly problem?: string | null;
   /** The editor's text, into the page's one buffer (`D1321`) — the same `draft` Compose writes. */
   readonly onText: (text: string) => void;
   readonly pending: { ok: true; text: string } | { ok: false; reason: string };
@@ -63,6 +66,7 @@ export function SourcePanel({ file, pending, diagnostics, project, door, onText 
 
   return (
     <div className="authoring source-panel" data-source={unwritten ? 'pending' : 'written'}>
+      {problem === null ? null : <p className="warn" role="alert" data-source-problem>{problem}</p>}
       <p className="muted" data-source-state>
         {file === null
           ? 'no file open'
