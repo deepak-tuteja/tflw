@@ -9897,7 +9897,7 @@ the report header.
 
 | id | row | decision |
 |---|---|---|
-| `D1379` | (owner, 2026-09-28) | **Nothing is published without the owner's explicit word** — not npm, not the VS Code Marketplace, not Open VSX, not the GitHub Action's repository, not a `.vsix` on a release. Every "published on 1.0 day" in this plan (`D1351`, `D1368`, `D1378`) means *prepared*, and the publish itself waits for that word. Enforced, not just stated: `packages/cli` is now `"private": true` like every other package (inverting decision 74, which kept it publishable), `pack.test.ts` asserts it, and no workflow holds a publish step or a registry token. |
+| `D1379` | (owner, 2026-09-28) | **Nothing is published without the owner's explicit word** — not npm, not the VS Code Marketplace, not Open VSX, not the GitHub Action's repository, not a `.vsix` on a release. Every "published on 1.0 day" in this plan (`D1351`, `D1368`, `D1378`) means *prepared*, and the publish itself waits for that word. Enforced, not just stated: `packages/cli` is now `"private": true` like every other package (inverting `P#74`, which kept it publishable), `pack.test.ts` asserts it, and no workflow holds a publish step or a registry token. |
 
 ### D1381
 
