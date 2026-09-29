@@ -9779,6 +9779,30 @@ the report header.
 |---|---|---|
 | `D1360` | L9 | **The cookbook is one section per fence refusal**, each with the ask, why the fence refuses, the shape that works, a link to the dogfood plant: flag · per-env value · response-driven · env skip · five at once · signed in on both sides · every page of a list · a fixed wait · an outbound call. |
 
+### D1362
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1362` | U3/R1 | **`runs keep N` applies to every run**, so `tflw run` accrues `report/runs/`. The Run tab draws the last N verdicts per test, marks *flaky* when the verdict changed across kept runs with no source change, and draws a threshold's values as a sparkline; the CLI summary says *failed — 3 of the last 10 kept runs*. Computed from disk; nothing new stored. |
+
+### D1369
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1369` | K2 | **`tflw merge <dirs…> --out <dir>`** joins `results.json`, `junit.xml`, `findings.sarif` (deduplicated by fingerprint) and renders one `report.html` from the joined stream. The sibling's `merge-reports` job becomes a call to it. |
+
+### D1370
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1370` | K3 | **`tflw doctor [--env E] [--json]`**, read-only: versions, the resolved env (services, sessions, signers, timeouts, evidence, redaction, allow hosts, helpers), browsers installed, proxy variables honoured, report directory and runs kept. Exits non-zero only on what would stop a run. |
+
 ### D1372
 
 <sub>cited from tflw-tests/scripts/lib/journeys.mjs, tflw-tests/scripts/verify-journeys.mjs, tflw-tests/tests/api/catalog/graphql.tflw +3 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
@@ -14136,5 +14160,13 @@ docs. Sibling `T-1` waits on it.
 `D1354`. Lang, runtime, the page's Auth panel, the docs. Sibling `T-2` waits on it (the target's
 authorize endpoint and consent page). Its own milestone because it is the only slice with a
 listener, a browser and a token exchange in one declaration.
+
+### M249
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+**§5 `M249` — the CLI and the reports remember**
+
+`D1362`, `D1369`, `D1370`, K1, R2. CLI, reporter, the page's Run tab. Sibling `T-3` waits on it.
 
 <!-- GENERATED:decisions:end -->
