@@ -39,9 +39,10 @@ jobs:
     # nothing in this job grows the way the mutation registry does, so there is nothing left here to
     # re-measure per milestone.
     timeout-minutes: 60
-    # `M252` `B`: the one job family that installs WebKit says so, and the test that needs it runs.
+    # `M252` `B`: the one job that installs WebKit says so, and the test that needs it runs there.
+    # Node 24 only — WebKit's libraries come from apt (below), and one test does not earn two fetches.
     env:
-      TFLW_E2E_WEBKIT: '1'
+      TFLW_E2E_WEBKIT: ${{ matrix.node-version == 24 && '1' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -60,7 +61,7 @@ jobs:
       # and pick-session tests, packages/cli's watch/e2e --browser firefox test) — `playwright`
       # has no postinstall download hook, so without this every launch fails with "Executable
       # doesn't exist" (confirmed on the first CI run after the browser arc landed, run 30316651481).
-      # Chromium and Firefox everywhere; WebKit on these Linux jobs only (`M252` `B`, `D1374`): one
+      # Chromium and Firefox everywhere; WebKit on the Node 24 Linux job only (`M252` `B`, `D1374`): one
       # `e2e.test.ts` test runs a real UI test under it and stamps the engine, gated on
       # `TFLW_E2E_WEBKIT` above so a failed install reddens the job instead of skipping the test.
       #
@@ -88,7 +89,16 @@ jobs:
       # If an engine ever does fail to launch, Playwright names the missing library on stderr:
       # install that one, by name, here. Never the closure again.
       - name: Install Playwright browsers
-        run: npx playwright install chromium firefox webkit
+        run: npx playwright install chromium firefox ${{ matrix.node-version == 24 && 'webkit' || '' }}
+
+      # `M252-03`: WebKit is the engine `ubuntu-latest` does NOT carry the closure for — its first
+      # launch named thirty-four missing libraries (run 36613993753). These are the packages that
+      # own them, by name, as the rule above says; not `install-deps`, which is the closure M143a
+      # measured. Node 24 only, and bounded, so an apt stall reads as this step and not as the job.
+      - name: Install WebKit's libraries (Node 24 only)
+        if: matrix.node-version == 24
+        timeout-minutes: 10
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgtk-4-1 libgraphene-1.0-0 libevent-2.1-7t64 libavif16 libflite1 libgles2 libgstreamer-plugins-base1.0-0 libgstreamer-gl1.0-0 libgstreamer-plugins-bad1.0-0 libharfbuzz-icu0 libhyphen0 libmanette-0.2-0 libopus0 libsecret-1-0 libwayland-server0 libx264-164
 
       - run: npm run build
 
