@@ -35,7 +35,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readFile, readdir, stat, cp, mkdir, writeFile, rename, unlink, realpath } from 'node:fs/promises';
+import { readFile, readdir, stat, mkdir, writeFile, rename, unlink, realpath } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { pageRunFlags } from './run-flags.js';
 import { join, resolve, relative, dirname, extname, sep, basename } from 'node:path';

@@ -94,7 +94,7 @@ test('`tflw run --no-helpers` refuses every `use` before the first request, nami
     const checked = await tflw(dir, 'check', '--no-color');
     assert.equal(checked.code, 0, checked.stderr);
     // `--help` carries the flag, from the same manifest the docs render.
-    const help = await tflw(dir, '--help');
+    const help = await tflw(dir, 'run', '--help'); // `M249` `E`: a verb's flags are on its own help
     assert.match(help.stdout + help.stderr, /--no-helpers/);
   } finally {
     await rm(dir, { recursive: true, force: true });

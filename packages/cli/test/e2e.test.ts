@@ -460,9 +460,11 @@ test('`tflw pick <url> <extra>` (too many positional args) is a usage error', as
   );
 });
 
-test('`tflw --help` mentions `tflw pick`', async () => {
+test('`tflw --help` mentions `tflw pick`, and `tflw pick --help` gives its usage (M249 E)', async () => {
   const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
-  assert.match(stdout, /tflw pick <url>/);
+  assert.match(stdout, /^  tflw pick +\S/m);
+  const own = await execFileAsync('node', [cliEntry, 'pick', '--help']);
+  assert.match(own.stdout, /tflw pick <url>/);
 });
 
 // ---- M63 (review finding A12-04): the flag surface, and its two silent holes ----------------
@@ -1328,9 +1330,11 @@ test "two"
   }
 });
 
-test('`tflw --help` mentions `tflw refactor apply`', async () => {
+test('`tflw --help` mentions `tflw refactor apply`, and `tflw refactor --help` gives its usage (M249 E)', async () => {
   const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
-  assert.match(stdout, /tflw refactor apply <id>/);
+  assert.match(stdout, /^  tflw refactor +\S/m);
+  const own = await execFileAsync('node', [cliEntry, 'refactor', '--help']);
+  assert.match(own.stdout, /tflw refactor apply <id>/);
 });
 
 test('`tflw refactor apply` extracts a real duplicated API flow, and the rewritten suite still runs green (M6, P#2)', async () => {
@@ -1390,9 +1394,11 @@ test "create gadget order"
 
 // ---- tflw migrate (P#38, decision 45's 1.0-gate deliverable) ---------------
 
-test('`tflw --help` mentions `tflw migrate`', async () => {
+test('`tflw --help` mentions `tflw migrate`, and `tflw migrate --help` gives its usage (M249 E)', async () => {
   const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
-  assert.match(stdout, /tflw migrate \[files/);
+  assert.match(stdout, /^  tflw migrate +\S/m);
+  const own = await execFileAsync('node', [cliEntry, 'migrate', '--help']);
+  assert.match(own.stdout, /tflw migrate \[files/);
 });
 
 test('`tflw migrate` against a real, checker-clean suite reports nothing to migrate and touches no files (decision 45)', async () => {
@@ -3301,7 +3307,11 @@ test('--format ndjson streams one JSON-parseable, file-tagged RunEvent per line,
       // test below. This run has no secrets at all, so they must still match exactly.
       const ndjsonPath = join(dir, 'report', 'events.ndjson');
       const fileLines = (await readFile(ndjsonPath, 'utf8')).trim().split('\n');
-      assert.deepEqual(fileLines.map((l) => JSON.parse(l)), events);
+      // `M249` `F`: the file's first line names its schema; the live stream on stdout does not.
+      const fileEvents = fileLines.map((l) => JSON.parse(l) as Record<string, unknown>);
+      assert.match(String(fileEvents[0]!.$schema), /events\.schema\.json$/);
+      delete fileEvents[0]!.$schema;
+      assert.deepEqual(fileEvents, events);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

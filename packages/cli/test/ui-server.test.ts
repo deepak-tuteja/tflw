@@ -479,7 +479,9 @@ test('the server writes through exactly one call site — the green condition, n
   assert.doesNotMatch(body('export async function writeBaselineDoc'), /resolveWritablePath/);
   assert.match(body('export async function resolveBaselineDoc'), /safeJoin\(/, 'and the project boundary still runs, because a person can type `baseline "../.."`');
   assert.doesNotMatch(source, /appendFile|createWriteStream|openSync|writeSync|truncate\(/, 'no other write verb (D985)');
-  assert.match(source, /\bcp\(/, 'the one copy it makes — a report directory kept aside — is here');
+  // `M249` `A` (`D1362`): the copy is gone. `tflw run` keeps its own run under `runs/<id>/` and the
+  // server only names the id (`TFLW_KEEP_ID`), so the page writes nothing but these three routes.
+  assert.doesNotMatch(source, /\bcp\(/, 'the server copies nothing — every run keeps itself');
   // The refusal the config route did NOT dissolve. Asserted here rather than only in
   // `writeProjectFile refuses …` below, because this is the clause about the *architecture*: the
   // page can write a config, and it still cannot write one through the route that writes tests.
