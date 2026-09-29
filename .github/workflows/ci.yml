@@ -432,6 +432,35 @@ jobs:
 
       - run: npm test
 
+  # `M252` `A` (`D1377`, `D1390`). The Windows job's shape on `macos-latest`: a Mac is where many
+  # adopters will run the page and the CLI, and the box and the other jobs are Linux. **Not a
+  # required check** until it has been green for a week — the first run is red by design and its
+  # rows are the slice's deliverable. It is debugged from this job's log alone: tests never run on
+  # the maintainer's Mac, not even to reproduce a macOS failure (`D1390`). No xvfb: a macOS runner
+  # has a window server, as a Windows runner has a desktop.
+  macos:
+    name: build + typecheck + test (macOS, Node 22)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium firefox
+
+      - run: npm run build
+
+      - run: npm run typecheck
+
+      - run: npm test
+
   # `M239` `E` (`D1320`). Two facts about the dependency tree, on every push: nothing installed
   # carries a known high-or-critical advisory, and what IS installed is written down as a CycloneDX
   # SBOM anyone can diff. Its own job because it needs one `npm ci` and no browser, and a
