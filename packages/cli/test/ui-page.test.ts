@@ -10033,161 +10033,62 @@ test('`M216` `B1`/`B2`: the hover is our element, and it covers neither the cont
   });
 });
 
-test('`M216` `B1`: it appears on keyboard focus, and describes without renaming (`D1129`)', async () => {
+test('`M216` `B1`: it appears on keyboard focus, and describes without renaming (`D1129`, `M250` `B`)', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base) => {
     await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
     await p.locator('[data-seq-row]').first().waitFor();
 
-    /* `M237` `B2` — **THE INSTRUMENT THAT NAMES THE EVENT, AFTER `B` NAMED THE MECHANISM.**
-       `B`'s sweep (2 red of 168) established that `hide()` ran: the tip element is GONE at the
-       moment the attribute is absent, which refutes the re-render reading. It left exactly one
-       question. `Tooltip.tsx` reaches `hide()` from SEVEN places — `pointerover` onto anything
-       that asks for no tip, `pointerdown`, `focusin` onto the same, `focusout`, `Escape`,
-       `scroll` and `resize` — and the occurrence named none of them. The row names three; the
-       listener list is the authority, and it is seven.
-       So this records all seven at capture phase beside the two removals that matter, and the
-       LAST EVENT BEFORE `aria-describedby -> REMOVED` is the culprit rather than a candidate.
-       **THE ORDERING IS WHY THIS WORKS, AND IT IS NOT LUCK.** `hide()` calls `removeAttribute`
-       synchronously inside the app's own listener, which was registered first and therefore runs
-       BEFORE this one — so a naive "record the attribute, then the event" would invert them. A
-       `MutationObserver` callback is a microtask delivered after the whole dispatch completes, so
-       the event is always recorded before the removal it caused, whichever listener ran first.
-       **NOTHING HERE TOUCHES `packages/ui/src`.** `M237` §6's rule, stated before the sweep, is
-       that the product moves only if the re-render mechanism is the one named — and it is not.
-       This is a test-side observer: seven passive listeners and one attribute-filtered observer. */
-    await p.locator('body').evaluate((el) => {
-      // **No DOM lib in this package** (see `selectedText`), so every name below is structural:
-      // `Element`, `EventTarget` and `MutationObserver` are not names in this file.
-      type TNode = {
-        id?: string;
-        tagName?: string;
-        getAttribute?: (name: string) => string | null;
-        closest?: (sel: string) => unknown;
-      };
-      type TRec = {
-        attributeName: string | null;
-        target: TNode;
-        addedNodes: ArrayLike<TNode>;
-        removedNodes: ArrayLike<TNode>;
-      };
-      const doc = el.ownerDocument as unknown as {
-        documentElement: unknown;
-        defaultView: {
-          performance: { now: () => number };
-          scrollX: number;
-          scrollY: number;
-          innerWidth: number;
-          innerHeight: number;
-          MutationObserver: new (cb: (rs: TRec[]) => void) => { observe: (t: unknown, o: unknown) => void };
-          addEventListener: (type: string, h: () => void, capture?: boolean) => void;
-          __tipTrace?: string[];
-        };
-        addEventListener: (type: string, h: (e: { target: TNode | null }) => void, capture?: boolean) => void;
-      };
-      const win = doc.defaultView;
-      const trace: string[] = [];
-      win.__tipTrace = trace;
-      // **NOT ONE NAMED FUNCTION IN THIS CALLBACK, AND THAT IS THE WHOLE OF WHY IT RUNS.**
-      // The first draft factored the push into `const note = (s) => …` and a `const where = …`
-      // beside it, which is what anyone would write. It threw `ReferenceError: __name is not
-      // defined` on every run of this test: `tsx` is esbuild, esbuild's `keepNames` wraps any
-      // function that gets an INFERRED NAME as `__name(fn, "note")` to preserve `fn.name`, and
-      // that helper is defined in the Node module scope — while Playwright serialises this
-      // callback's source and evaluates it in the BROWSER, where no such name exists.
-      // The rule is narrower than "no functions": an arrow passed INLINE AS AN ARGUMENT has no
-      // inferred name and is never wrapped, which is why every listener and the observer callback
-      // below are fine exactly as written and a `const` helper is not. `tsc` cannot see any of
-      // this — it is the sibling of `selectedText`'s note about types being stripped unchecked —
-      // and neither can any test that does not run the line. A control run caught it.
-      // The `trace.length` guard is repeated rather than factored for the same reason: a page
-      // that scrolls under a pointer emits these by the hundred and only the tail is ever read.
-      for (const type of ['pointerover', 'pointerdown', 'focusin', 'focusout', 'keydown']) {
-        doc.addEventListener(type, (e) => {
-          const t = e.target;
-          const at = t === null
-            ? 'nothing'
-            : t.closest !== undefined && t.closest('[data-seq-remove]') !== null
-              ? 'THE CONTROL'
-              : t.tagName ?? 'non-element';
-          if (trace.length < 400) trace.push(`${Math.round(win.performance.now())}ms ${type} on ${at}`);
-        }, true);
-      }
-      win.addEventListener('scroll', () => {
-        if (trace.length < 400) trace.push(`${Math.round(win.performance.now())}ms scroll to ${win.scrollX},${win.scrollY}`);
-      }, true);
-      win.addEventListener('resize', () => {
-        if (trace.length < 400) trace.push(`${Math.round(win.performance.now())}ms resize to ${win.innerWidth}x${win.innerHeight}`);
+    /* `M250` `B` — **THE DESCRIPTION NO LONGER WAITS FOR THE HOVER.** This test used to focus the
+       control, wait for `#tflw-tip`, and then read `aria-describedby -> tflw-tip`; it failed ~1% of
+       runs because `hide()` could run between the two (`M235-06`, measured over 520 box runs and
+       two instruments, never pinned to a caller). The owner's call was to remove the dependency:
+       a control is described by a hidden copy of its own sentence from the moment it is drawn, so
+       the claim is read AT REST, before anything is focused or hovered, and nothing a hover does
+       can take it away. */
+    const x = p.locator('[data-seq-remove]').first();
+    const own = async (): Promise<{ ids: string | null; says: string | null; tip: string | null; shown: boolean }> =>
+      x.evaluate((el) => {
+        // No DOM lib in this package (see `selectedText`), so the one lookup used is named here.
+        const ids: string | null = el.getAttribute('aria-describedby');
+        const doc = el.ownerDocument as unknown as { getElementById: (id: string) => { textContent: string | null } | null };
+        const says = (ids ?? '').split(' ').filter((t: string) => t !== '')
+          .map((t: string) => doc.getElementById(t)?.textContent ?? '').join(' ');
+        return { ids, says: ids === null ? null : says, tip: el.getAttribute('data-tip'), shown: doc.getElementById('tflw-tip') !== null };
       });
-      new win.MutationObserver((records) => {
-        for (const r of records) {
-          if (r.attributeName === 'aria-describedby' && trace.length < 400) {
-            trace.push(`${Math.round(win.performance.now())}ms aria-describedby -> ${r.target.getAttribute?.('aria-describedby') ?? 'REMOVED'}`);
-          }
-          for (const n of Array.from(r.removedNodes)) {
-            if (n.id === 'tflw-tip' && trace.length < 400) trace.push(`${Math.round(win.performance.now())}ms #tflw-tip REMOVED`);
-          }
-          for (const n of Array.from(r.addedNodes)) {
-            if (n.id === 'tflw-tip' && trace.length < 400) trace.push(`${Math.round(win.performance.now())}ms #tflw-tip added`);
-          }
-        }
-      }).observe(doc.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ['aria-describedby'],
+    const atRest = await settle(own, untilMeasurable('the control has been described', (v) => v.ids !== null), { attempts: 40, delayMs: 50, page: p });
+    assert.equal(atRest.value.shown, false, 'nothing is shown in the same look, so this is the at-rest reading');
+    assert.ok(atRest.value.tip !== null && atRest.value.tip.trim() !== '', 'the control asks for a tip');
+    assert.equal(atRest.value.says, atRest.value.tip!.trim(), `described by its own sentence, before any hover (${atRest.attempts} look(s))`);
+
+    // **Every authored tip on the page, not the one control.** An at-rest claim over one control is
+    // the bug's shape repeated; the observer is the mechanism, so its reach is the thing to gate.
+    // one-shot: the population is read after the settle above established the page is described
+    // No named function inside this callback: esbuild wraps one as `__name(fn, …)`, which exists
+    // in Node and not in the browser this runs in — the trap `M237`'s tooltip recorder hit first.
+    const wrong = await p.locator('[data-tip], [data-tip-derived]').evaluateAll((els) => {
+      const doc = els[0]!.ownerDocument;
+      return els.flatMap((el) => {
+        const authored = (el.getAttribute('data-tip') ?? '').trim();
+        const got = (el.getAttribute('aria-describedby') ?? '').split(' ').filter((t: string) => t.startsWith('tflw-desc-'))
+          .map((t: string) => doc.getElementById(t)?.textContent ?? '(missing)').join(' ');
+        if (authored !== '' && got !== authored) return [`${el.outerHTML.slice(0, 120)} says ${JSON.stringify(got)}`];
+        // A derived tip is the row's own text, already its name — it gets no description.
+        if (authored === '' && got !== '') return [`${el.outerHTML.slice(0, 120)} (derived) says ${JSON.stringify(got)}`];
+        return [];
       });
     });
+    assert.deepEqual(wrong, [], 'every authored tip is described by exactly its sentence, and no derived one is');
 
     // **A tooltip a keyboard cannot reach is a tooltip some readers do not have**, and `title` had
-    // exactly that property.
-    const x = p.locator('[data-seq-remove]').first();
+    // exactly that property. The visible tip still comes on focus — it is presentation now, and
+    // showing it changes nothing a screen reader is told.
     await x.focus();
     await p.locator('#tflw-tip').waitFor();
-    /* `M235` `E` — **THE SWEEP FOUND THIS ONE AND THE CLASSIFIER'S ORDERING DID NOT** (1 of 56 runs,
-       `null !== 'tflw-tip'`, 121 ms). The wait above is on the TIP; the read below is on the
-       CONTROL. One effect mounts the tip and points the control at it, and waiting for the first
-       half of that effect says nothing about the second — so the read lands on an element that is
-       attached, focused, and not yet described. `getAttribute` auto-waits for the element and not
-       for the attribute, which is the whole distinction.
-       `C1` flagged this read correctly as `NEVER-WAITED`; it banded it `LOW`, and `C2` converted
-       the HIGH read in this same test and left this one. The band is where to start, not where the
-       risk ends — see §`E`. */
-    /* `M235` `E`, SECOND SWEEP — **the conversion did its job and the failure changed meaning.**
-       It failed again, 1 of 56, and now as `(40 look(s)) null !== 'tflw-tip'`: the retry spent its
-       whole 2s budget and the attribute was still not there. Under `M141` that is no longer *read
-       too early*, it is *measured absent* — a claim about the page, which is what a settle is for.
-       Two mechanisms fit, and `Tooltip.tsx` allows both. `#tflw-tip` renders only while `shown` is
-       set, and `go()` sets `aria-describedby` and `setShown` together, so the attribute is present
-       the instant the tip is. Either (a) something called `hide()` after the `waitFor` above —
-       `focusout`, `pointerover` off the control, `scroll` are all bound — which removes the
-       attribute and unmounts the tip, or (b) the control re-rendered: the attribute is written with
-       `el.setAttribute` on a DOM node, outside React, so a re-render drops it while `anchor.current`
-       keeps pointing at the detached node and the tip stays up. The two disagree about exactly one
-       observable, so the read takes it and the message names it. Nothing is repaired on a mechanism
-       nobody has reproduced; the next occurrence will say which one it is. */
-    const described = await settle(
-      async () => ({
-        points: await x.getAttribute('aria-describedby'),
-        tip: await p.locator('#tflw-tip').count(),
-      }),
-      untilMeasurable('the control has been given something to be described by', (v) => v.points !== null),
-      { attempts: 40, delayMs: 50, page: p },
-    );
-    // `M237` `B2` — read whatever the recorder above collected, always, so the message carries the
-    // page's own account of the failure rather than a second guess at it. Fourteen entries is the
-    // tail that matters: the settle spends 40 looks and the culprit is adjacent to the removal.
-    const trace = await p.locator('body').evaluate((el) =>
-      ((el.ownerDocument as unknown as { defaultView: { __tipTrace?: string[] } }).defaultView.__tipTrace ?? [])
-        .slice(-14),
-    );
-    assert.equal(
-      described.value.points,
-      'tflw-tip',
-      `the control points at what describes it (${described.attempts} look(s); the tip element is `
-      + `${described.value.tip > 0 ? 'STILL ON SCREEN -> the control re-rendered out from under an imperative setAttribute' : 'GONE -> the layer was hidden after the wait'})`
-      + `\n      what the page did, last 14: ${trace.length === 0 ? '(nothing recorded)' : trace.join(' | ')}`,
-    );
     assert.equal(await p.locator('#tflw-tip').getAttribute('role'), 'tooltip');
+    // Bounded, and retrying toward the at-rest value: a read taken while the tip mounts is exactly
+    // the moment `M235-06` lived in, so it is not trusted to one look.
+    const onFocus = await settle(async () => (await own()).ids, untilEqual<string | null>(atRest.value.ids), { attempts: 40, delayMs: 50, page: p });
+    assert.equal(onFocus.value, atRest.value.ids, `showing the tip does not re-point the control (${onFocus.attempts} look(s))`);
 
     // **And the name survived the migration.** On an icon-only control `title` was doing two jobs;
     // moving it to `data-tip` without this leaves the button announced as "button" and nothing
@@ -10215,18 +10116,12 @@ test('`M216` `B1`: it appears on keyboard focus, and describes without renaming 
         .map((e) => e.outerHTML.slice(0, 160)));
     assert.deepEqual(nameless, [], `every icon-only control still carries its own accessible name (of ${tipped.value})`);
 
+    // **The tip goes and the description stays** — the reverse of what this test used to assert,
+    // and the whole of `M235-06`: nothing that hides the tip can un-describe the control.
     await p.keyboard.press('Escape');
     await p.locator('#tflw-tip').waitFor({ state: 'detached' });
-    /* The same pair in reverse, and the same gap: the tip leaving does not mean the control has
-       been un-pointed. `untilEqual` rather than `untilMeasurable` because here `null` IS the wanted
-       reading, so there is no unreadable state to wait out — this is retrying on the assertion, and
-       it stays honest only because the budget is bounded (`settle.ts`). */
-    const dropped = await settle(
-      () => x.getAttribute('aria-describedby'),
-      untilEqual<string | null>(null),
-      { attempts: 40, delayMs: 50, page: p },
-    );
-    assert.equal(dropped.value, null, `and the pointer is dropped when it goes (${dropped.attempts} look(s))`);
+    const after = await settle(async () => (await own()).says, untilEqual<string | null>(atRest.value.says), { attempts: 40, delayMs: 50, page: p });
+    assert.equal(after.value, atRest.value.says, `the control is still described once the tip has gone (${after.attempts} look(s))`);
   });
 });
 

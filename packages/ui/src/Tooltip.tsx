@@ -42,10 +42,74 @@
 // announced as "button" and nothing else — a silent regression no rendering shows. So the tooltip
 // is `aria-describedby` and never a name, every icon-only control in the reach carries its own
 // `aria-label`, and `ui-page` gates that rather than trusting it.
+//
+// ── THE DESCRIPTION IS THE CONTROL'S, NOT THE HOVER'S (`M250` `B`, `M235-06`) ──────────────────
+//
+// Until `M250` the control pointed at `#tflw-tip` only while the tip was up, so a screen reader
+// heard a control's sentence exactly when a sighted reader was also shown it — and `hide()` running
+// between the tip's mount and a read left a control described by nothing (`M235-06`, ~1% of runs,
+// measured to be `hide()` and never pinned to which of its seven callers). The owner's call was to
+// remove the dependency rather than name the caller: every authored `data-tip` is described **from
+// the moment it is drawn** by a hidden element holding the same sentence, and the visible tip is
+// presentation only and touches no attribute. A derived tip gets no description at all — its text
+// is the row's own, which is already its name, and the truncation it rescues is visual.
+// Still no wrapper around any control: one observer keeps the descriptions in step with the page,
+// so a control React re-creates is described again in the same task it appears.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-/** The one tooltip element's id — `aria-describedby` points at it while it is shown. */
+/** The one visible tooltip element's id. Nothing points at it (`M250` `B`): see `describeTips`. */
 export const TIP_ID = 'tflw-tip';
+/** The hidden holder of every authored sentence, and the prefix of each sentence's own id. */
+export const DESCRIPTIONS_ID = 'tflw-tip-descriptions';
+export const DESCRIPTION_PREFIX = 'tflw-desc-';
+
+/**
+ * A control's `aria-describedby` with ours set to `id` (or removed, for `null`) and every other
+ * token kept — a control may already be described by something of its own. Pure, so the merge is
+ * asked its awkward cases in `tooltip.test.ts`.
+ */
+export function describedByWith(existing: string | null, id: string | null): string | null {
+  const kept = (existing ?? '').split(/\s+/).filter((t) => t !== '' && !t.startsWith(DESCRIPTION_PREFIX));
+  const next = id === null ? kept : [...kept, id];
+  return next.length === 0 ? null : next.join(' ');
+}
+
+/**
+ * Point every authored `data-tip` under `root` at a hidden element holding its sentence, one element
+ * per distinct sentence, and drop the ones nothing uses any more. Idempotent: a second call over an
+ * unchanged page writes nothing, which is what lets the observer that calls it watch its own writes.
+ */
+export function describeTips(root: Element, holder: Element): void {
+  const doc = root.ownerDocument;
+  const byText = new Map<string, Element>();
+  for (const el of Array.from(holder.children)) byText.set(el.textContent ?? '', el);
+  const used = new Set<Element>();
+  let next = holder.children.length;
+  // A control that has lost its `data-tip` is read too, so it does not keep pointing at a sentence
+  // that is about to be dropped.
+  for (const el of Array.from(root.querySelectorAll(`[data-tip], [aria-describedby*="${DESCRIPTION_PREFIX}"]`))) {
+    const text = (el.getAttribute('data-tip') ?? '').trim();
+    let target: Element | null = null;
+    if (text !== '') {
+      target = byText.get(text) ?? null;
+      if (target === null) {
+        while (doc.getElementById(`${DESCRIPTION_PREFIX}${next}`) !== null) next += 1;
+        target = doc.createElement('span');
+        target.id = `${DESCRIPTION_PREFIX}${next}`;
+        target.textContent = text;
+        holder.appendChild(target);
+        byText.set(text, target);
+      }
+      used.add(target);
+    }
+    const want = describedByWith(el.getAttribute('aria-describedby'), target === null ? null : target.id);
+    if (want !== el.getAttribute('aria-describedby')) {
+      if (want === null) el.removeAttribute('aria-describedby');
+      else el.setAttribute('aria-describedby', want);
+    }
+  }
+  for (const el of Array.from(holder.children)) if (!used.has(el)) el.remove();
+}
 /** Ours, and shorter than the platform's ~1 s: a hover held on purpose should not be a wait. */
 const DELAY_MS = 280;
 const GAP = 8;
@@ -135,7 +199,6 @@ export function TooltipLayer() {
 
   const hide = useCallback(() => {
     if (timer.current !== null) { clearTimeout(timer.current); timer.current = null; }
-    anchor.current?.removeAttribute('aria-describedby');
     anchor.current = null;
     setShown(null);
     setSpot(null);
@@ -149,13 +212,40 @@ export function TooltipLayer() {
     anchor.current = el;
     const go = () => {
       timer.current = null;
-      // The description, never the name (`D1129`).
-      el.setAttribute('aria-describedby', TIP_ID);
+      // No attribute here (`M250` `B`): the control has been described since it was drawn.
       setShown({ text });
     };
     if (delay === 0) go();
     else timer.current = setTimeout(go, delay);
   }, [hide]);
+
+  // **The descriptions, kept in step with the page.** The holder lives outside React's tree so no
+  // render can reconcile its children away. The observer watches `aria-describedby` as well as
+  // `data-tip`, because React owns that attribute on a control that sets its own (the context
+  // menu's refusals) and may write over ours on an update; our own writes come back through it and
+  // find nothing to change. Mutations inside an editor are skipped — typing is most of the traffic
+  // and no editor line carries a tip.
+  useEffect(() => {
+    const holder = document.createElement('div');
+    holder.id = DESCRIPTIONS_ID;
+    holder.hidden = true;
+    holder.setAttribute('data-tip-descriptions', '');
+    document.body.appendChild(holder);
+    const sync = (): void => describeTips(document.body, holder);
+    sync();
+    const watch = new MutationObserver((records) => {
+      const relevant = records.some((r) => {
+        const t = r.target instanceof Element ? r.target : r.target.parentElement;
+        return t === null || (t.closest('.cm-content') === null && !holder.contains(t));
+      });
+      if (relevant) sync();
+    });
+    watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-tip', 'aria-describedby'] });
+    return () => {
+      watch.disconnect();
+      holder.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const under = (target: EventTarget | null): Element | null =>
