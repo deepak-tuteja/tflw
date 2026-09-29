@@ -9749,7 +9749,7 @@ the report header.
 
 ### D1354
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +3 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9837,7 +9837,7 @@ the report header.
 
 ### D1376
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9869,7 +9869,7 @@ the report header.
 
 ### D1384
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +9 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -14201,7 +14201,7 @@ docs. Sibling `T-1` waits on it.
 
 ### M248
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +9 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§4 `M248` — a session that signs in through a browser**
 
