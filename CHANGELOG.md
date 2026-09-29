@@ -30,6 +30,9 @@ performance arc closed 2026-08-02 and is included below.
 - **A symlinked `TFLW_SOURCE_ROOT` anchors SARIF results again** (`D1396`): the named root is
   resolved to its real path. A symlinked spelling of the run's own directory rebased every result
   outside the root, and the SARIF shipped with no file annotations — without an error.
+- **A file named through a symlinked directory checks as itself** (`D1398`): file arguments are
+  spelled the way the working directory is. Every `use "./helpers/…"` in such a file was refused
+  with `TF083` as loading from outside `helpers`.
 
 ### Added — the page completes and explains (M250)
 

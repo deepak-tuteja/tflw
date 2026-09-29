@@ -522,6 +522,23 @@ function resolvePlaywrightCli(): { cli: string; version: string } {
 const ABSOLUTE_URL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 /**
+ * `M252` (`D1398`, `G19`) — a file argument, spelled the way `cwd` is. `process.cwd()` is always
+ * the real path, so a file named through a symlinked directory (macOS's `/var` for
+ * `/private/var`, a symlinked checkout) made every `relative(cwd, file)` climb out and back in —
+ * and `TF083` judged every `use "./helpers/…"` outside `helpers`, because the path it judged was
+ * `../../…/var/…`. Only the directory goes through `realpath`: a test file that is itself a
+ * symlink keeps its own name and place, which is where its `use` and `import` resolve from.
+ */
+function canonicalFile(cwd: string, f: string): string {
+  const full = resolve(cwd, f);
+  try {
+    return join(realpathSync(dirname(full)), basename(full));
+  } catch {
+    return full; // a directory that is not there: `checkFileArgs` has already said so
+  }
+}
+
+/**
  * `G12` — `--cdp-port <n>` on `record` and `pick`: the headed browser's DevTools endpoint on
  * `127.0.0.1:<n>`, so a script can connect with Playwright's `connectOverCDP` and act in the window
  * a person would otherwise act in. Loopback only, and Chromium only — Firefox and WebKit have no
@@ -854,10 +871,10 @@ async function watchCommand(argv: string[]): Promise<number> {
     engine = args.browserRaw as BrowserEngine;
   }
   const seed = resolveRunSeed(seedArg);
-  // Normalized the same way `runCommand`'s own file args eventually are (`resolve(cwd, f)`) so a
+  // Normalized the same way `runCommand`'s own file args eventually are (`canonicalFile`) so a
   // watch event's cwd-relative `filename` compares equal regardless of how the user typed it
-  // (`./foo.tflw`, `foo.tflw`, an absolute path, …).
-  const watchFiles = args.files.map((f) => resolve(cwd, f));
+  // (`./foo.tflw`, `foo.tflw`, an absolute path, one through a symlinked directory, …).
+  const watchFiles = args.files.map((f) => canonicalFile(cwd, f));
 
   // Up front, and not only inside `loadAndValidate` (M82, C5). `runOne` discards `runCommand`'s
   // exit code — it has to, since a failing test must not stop the watcher — so a usage error there
@@ -1367,7 +1384,7 @@ async function loadAndValidate(
     const bad = await checkFileArgs(cwd, filesArg, resolved.exclude, resolved.reportDir);
     if (bad !== undefined) return bad;
   }
-  const files = filesArg.length > 0 ? filesArg.map((f) => resolve(cwd, f)) : await discoverTests(cwd, resolved.exclude, resolved.reportDir);
+  const files = filesArg.length > 0 ? filesArg.map((f) => canonicalFile(cwd, f)) : await discoverTests(cwd, resolved.exclude, resolved.reportDir);
   if (files.length === 0) {
     err('no `.tflw` test files given or found (looked for *.tflw under the current directory).');
     return EXIT_USAGE;
