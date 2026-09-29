@@ -22,7 +22,19 @@ export interface CompletionOption {
  * where nothing is typed yet unless the list was asked for (Ctrl+Space), so a space never opens one.
  */
 export function completeAt(text: string, pos: number, dialect: Dialect, sessions: readonly string[], explicit: boolean): { from: number; options: CompletionOption[] } | null {
-  const ctx = dialect === 'test' ? getCompletionContext(text, pos) : getConfigCompletionContext(text, pos);
+  let ctx = dialect === 'test' ? getCompletionContext(text, pos) : getConfigCompletionContext(text, pos);
+  // A typed `{or` does not lex as a subject — an unclosed brace is not a token the completion
+  // parser reads — so the position is asked again with the brace taken out, which is the question
+  // the author is asking: *which value is this*. Only a subject answer is kept (found by the box
+  // run: the page's own test for this had never reached a list).
+  if (ctx === null && dialect === 'test') {
+    const typed = /\{([A-Za-z_][A-Za-z0-9_]*)?$/.exec(text.slice(0, pos));
+    if (typed !== null) {
+      const unbraced = text.slice(0, pos - typed[0].length) + (typed[1] ?? '');
+      const again = getCompletionContext(unbraced, unbraced.length);
+      if (again !== null && again.kind === 'subject') ctx = again;
+    }
+  }
   if (ctx === null || (ctx.prefix === '' && !explicit)) return null;
   const sources: { -readonly [K in keyof CompletionSources]: CompletionSources[K] } = { knownSessions: sessions };
   if (dialect === 'test' && (ctx.kind === 'subject' || ctx.kind === 'locator')) {

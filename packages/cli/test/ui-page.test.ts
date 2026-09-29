@@ -9804,7 +9804,13 @@ test('`M250` `C` (`D1365`): one polite region, there from the first render, says
     await p.keyboard.insertText('\n');
     await p.locator('[data-source="pending"]').waitFor();
     await p.keyboard.press('ControlOrMeta+s');
-    await p.locator('[data-announcer]').filter({ hasText: /^saved a\.tflw$/ }).waitFor({ state: 'attached' });
+    // The write first, so a failure here says whether the save or its announcement is missing.
+    // The stray blank line is not formatted text, which the server refuses with a `422`: the page
+    // formats the buffer before it writes, so this save lands (the box run found it refused, and
+    // silent on Source).
+    await p.locator('[data-source="written"]').waitFor();
+    const saved = await settle(said, untilMeasurable('the save announced', (t) => /saved a\.tflw/.test(t)), { attempts: 60, delayMs: 100, page: p });
+    assert.match(saved.value, / \| saved a\.tflw$/, 'and the save is the last thing said');
   });
 });
 
