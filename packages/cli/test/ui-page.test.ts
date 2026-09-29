@@ -8494,37 +8494,43 @@ test('`M250` `G11`: the band draws a test\'s `rows` block, and the count is a fi
   });
 });
 
-test('`M250` `G13` (`D1391`): a row moves one place with ↑/↓ and with Alt+↑/↓, a request with its assertions', async () => {
+test('`M250` `G13` (`D1391`): a row moves one place with ↑/↓, a request with its assertions, and Alt+↑ moves one under a request among its siblings', async () => {
   const MOVES = [
     'test "moves"',
     '  let who = "a"',
+    '  log "between"',
     '  api GET /a',
     '  expect status equals 200',
-    '  log "between"',
+    '  expect body.id equals 1',
     '',
   ].join('\n');
   await withEditFixture(MOVES, async (p, base, dir) => {
     await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L1`);
     await p.locator('[data-seq-row="request"]').waitFor();
-    // The ends offer nothing: the first row has no ↑, the last no ↓.
-    await p.locator('[data-seq-line="2"] [data-seq-move="down"]').waitFor();
+    // The ends offer nothing: the first row has no ↑.
+    await p.locator('[data-seq-line="2"] > [data-seq-move="down"]').waitFor();
     // one-shot: the row above was waited for; its missing ↑ is drawn in the same render
-    assert.equal(await p.locator('[data-seq-line="2"] [data-seq-move="up"]').count(), 0);
+    assert.equal(await p.locator('[data-seq-line="2"] > [data-seq-move="up"]').count(), 0);
 
-    // ↑ on the log: it passes the request and its assertion whole.
-    await p.locator('[data-seq-line="5"] > [data-seq-move="up"]').click();
+    // ↑ on the request: it passes the log with both of its assertions.
+    await p.locator('[data-seq-line="4"] > [data-seq-move="up"]').click();
     await p.locator('[data-compose-write]').click();
     await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
     let onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
-    assert.match(onDisk, /let who = "a"\n {2}log "between"\n {2}api GET \/a\n {2}expect status equals 200\n/);
+    assert.match(onDisk, /let who = "a"\n {2}api GET \/a\n {2}expect status equals 200\n {2}expect body\.id equals 1\n {2}log "between"\n/);
 
-    // Alt+↑ on the focused request row takes it back above the log — the key is the row's own ↑.
-    await p.locator('[data-seq-line="4"] > [data-seq-pick]').focus();
+    // Alt+↑ on the second assertion under the request swaps it with the first — among its siblings,
+    // never out of the request's row — and the key is that row's own ↑.
+    await p.locator('[data-seq-line="5"] > [data-seq-pick]').focus();
     await p.keyboard.press('Alt+ArrowUp');
     await p.locator('[data-compose-write]').click();
     await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
     onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
-    assert.match(onDisk, /let who = "a"\n {2}api GET \/a\n {2}expect status equals 200\n {2}log "between"\n/);
+    assert.match(onDisk, /api GET \/a\n {2}expect body\.id equals 1\n {2}expect status equals 200\n {2}log "between"\n/);
+    // The first statement under a request has no ↑: it does not leave its request.
+    await p.locator('[data-seq-line="4"] > [data-seq-move="down"]').waitFor();
+    // one-shot: drawn in the same render as the ↓ just waited for
+    assert.equal(await p.locator('[data-seq-line="4"] > [data-seq-move="up"]').count(), 0);
     assert.deepEqual(parseSource(onDisk).diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
   });
 });

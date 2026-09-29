@@ -1824,7 +1824,14 @@ export class UiServer {
    */
   private async adoptShellRun(): Promise<void> {
     if (this.closing) return;
-    const reportDir = await this.reportDirFor();
+    // A directory with no `tflw.config` has no report directory to look in, and the list must still
+    // answer (`M240` `B`'s landing reads it before any project exists).
+    let reportDir: string;
+    try {
+      reportDir = await this.reportDirFor();
+    } catch {
+      return;
+    }
     let marker: { pid?: unknown; id?: unknown; startedAt?: unknown; files?: unknown };
     try {
       marker = JSON.parse(await readFile(join(reportDir, RUNNING_MARKER), 'utf8')) as typeof marker;

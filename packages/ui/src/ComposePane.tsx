@@ -1356,16 +1356,19 @@ export function ComposePane(props: ComposePaneProps) {
   const statements = decl === null ? [] : decl.body.preamble;
   /** The rows a move trades between, and the control for the one starting at `first` (`D1391`). */
   const units = decl === null ? [] : moveUnits(decl.body);
-  const mover = (first: number | undefined, what: string): ReactNode => {
+  const mover = (first: number | undefined, what: string, among: readonly (readonly number[])[] = units): ReactNode => {
     if (decl === null || onMoveSteps === null || first === undefined) return null;
     const go = (by: -1 | 1): (() => void) | null => {
-      const m = moveOf(units, first, by);
+      const m = moveOf(among, first, by);
       return m === null ? null : () => onMoveSteps(decl, m.steps, m.over, by);
     };
     const up = go(-1);
     const down = go(1);
     return up === null && down === null ? null : <Move what={what} up={up} down={down} />;
   };
+  /** The statements under one request, each its own row to move among (`D1391`). */
+  const siblingsOf = (r: OutlineRequest): readonly (readonly number[])[] =>
+    r.attached.filter((a) => a.stepPath !== null && a.inner === null).map((a) => [a.stepPath!.step]);
 
   /**
    * **One statement's row, wherever the fold put it** — `M219` `B`.
@@ -1375,7 +1378,9 @@ export function ComposePane(props: ComposePaneProps) {
    * two of those were two copies of the same eleven lines. A third and fourth copy is how a row in
    * one place quietly stops carrying the menu, or the refusal, or the `✕` that the others have.
    */
-  const statementRow = (s: OutlineStatement, keyPrefix: string): ReactNode => {
+  /** `among` is the rows this one moves between — the body's, or, for a statement under a request,
+   *  its siblings under that request (`D1391`): it moves among them and never out of the group. */
+  const statementRow = (s: OutlineStatement, keyPrefix: string, among: readonly (readonly number[])[] = units): ReactNode => {
     if (decl === null) return null;
     /**
      * **A scope is a qualifier on the row it scopes** — `M219` `D` (`D1163`).
@@ -1408,7 +1413,7 @@ export function ComposePane(props: ComposePaneProps) {
             trailing={
               onRemoveSteps === null || s.stepPath === null ? null : (
                 <>
-                  {s.inner === null ? mover(s.stepPath.step, 'statement') : null}
+                  {s.inner === null ? mover(s.stepPath.step, 'statement', among) : null}
                   <Remove what="statement" onGo={() => remove(decl, s.line, statementRemoval(s))} refusal={refusalFor(s.line)} onClear={clearRefusal} />
                 </>
               )
@@ -1452,7 +1457,7 @@ export function ComposePane(props: ComposePaneProps) {
                   ⤹
                 </button>
               ) : null}
-              {mover(s.stepPath.step, 'statement')}
+              {mover(s.stepPath.step, 'statement', among)}
               <Remove what="statement" onGo={() => remove(decl, s.line, statementRemoval(s))} refusal={refusalFor(s.line)} onClear={clearRefusal} />
             </>
           )
@@ -1515,7 +1520,7 @@ export function ComposePane(props: ComposePaneProps) {
           }
         />
         {r.attached.length === 0 ? null : (
-          <ol className="seq attached">{r.attached.map((s) => statementRow(s, 'att'))}</ol>
+          <ol className="seq attached">{r.attached.map((s) => statementRow(s, 'att', siblingsOf(r)))}</ol>
         )}
       </li>
     );

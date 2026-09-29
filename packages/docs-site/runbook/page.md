@@ -13,7 +13,8 @@ another machine, and the pasted URL carries the token.
 
 **Compose** writes tests, hooks, actions and crawls through forms. Each row of a test has **↑** and
 **↓** to move it one place (**Alt+↑**/**Alt+↓** on a focused row); a request moves with the
-assertions under it, and nothing moves out of its own test or hook. **Source** is an editor over the
+assertions under it, those assertions move among themselves, and nothing moves out of its own
+test, hook or request. **Source** is an editor over the
 file itself — highlighting, the checker's answer underlined as you type, undo, and completion: start
 typing a step, a subject, a matcher or a session name and the list is the one the editor extension
 offers at the same position. **Ctrl+Space** asks for it where nothing is typed yet; **Enter** takes
