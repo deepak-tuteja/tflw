@@ -2441,7 +2441,7 @@ resolution is reported.**
 
 ### D14
 
-<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/discover-mutation-kills.mjs +3 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, RUNBOOK.md, SPEC.md +4 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Extended UI capabilities — all four in scope (D14)**
 
@@ -6030,7 +6030,7 @@ merges if they keep listing commands.
 
 ### D511
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +6 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+<sub>cited from CONTRIBUTING.md, RUNBOOK.md, tflw-tests/CONTRIBUTING.md +7 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **D511 — tflw merges first, and the two PRs are chained**
 
@@ -8522,7 +8522,7 @@ the count is filed with it.
 
 ### D943
 
-<sub>cited from tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+<sub>cited from RUNBOOK.md, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
 
 **`D943` — a pending citation is declared, and the declaration expires.** The sibling's
 `verify:provenance` accepts an identifier that does not yet resolve **only** when it is declared
@@ -9019,7 +9019,7 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
 
 ### D1023
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/lib/bundle-identity.mjs, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+<sub>cited from CONTRIBUTING.md, RUNBOOK.md, tflw-tests/scripts/lib/bundle-identity.mjs +1 more · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
 
 - **D1023 — the `M195` rule's gate line carries `TFLW_BIN`.** `M196-01`, found when S1's first
   measurement did not move: the sibling's `regression.mjs` resolves the *released* tflw (its
@@ -9483,7 +9483,7 @@ stored default.
 
 ### D1316
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/regression.mjs, tflw-tests/scripts/verify-cli-refusals.mjs +1 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, tflw-tests/scripts/regression.mjs +2 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **`D1316` — the page is opened by a token, and the token has three carriers because the browser has three ways of asking.** A 32-byte token minted per `tflw ui` start travels in the URL the command prints and nowhere else. The page's own `fetch` sends it as `Authorization: Bearer`; its two `EventSource` streams, which cannot set a header, send it as `?token=`; and the token-bearing page load sets a `SameSite=Strict; HttpOnly` cookie that only the two navigational surfaces accept — the report files a reader opens in a tab or downloads (whose own screenshots and trace link resolve relatively), and the trace viewer's assets under `/trace/`. Every other `/api/` route refuses the cookie, so a same-site page on another loopback port cannot spend it: `GET /api/pick` spawns a browser, and an `<img src>` must not be able to. Behind the token, `Host` must name a loopback host — judged on the hostname only, because `ssh -L 9000:127.0.0.1:4141` is the documented remote path and the browser's `Host` then carries the local port — and `Origin`, when sent, must equal `http://<Host>`. A body under `/api/` is `application/json` or 415 before a byte is read, and over 1 MiB it is 413. A bare `http://127.0.0.1:4141/` answers a one-sentence 401 page, or a 302 to the token URL when the browser holds the cookie, so a reload keeps working. Not taken: a `--host` team-serving mode (the page spawns processes and reads files; the answer to "serve it to the team" is `ssh -L`), and cookie-only carriage (a same-site neighbour would spend it on a side-effecting `GET`).
 
@@ -9495,25 +9495,39 @@ stored default.
 
 ### D1318
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **`D1318` — every response carries its headers, every document its own policy, and a Node error stays in the terminal.** `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` on every response; `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` on JSON and assets. The page is served under `default-src 'self'` with a per-response nonce that the bundle's one inline script carries via a placeholder the server substitutes; `report.html` and the trace viewer's documents admit exactly their own inline scripts by SHA-256, never `'unsafe-inline'` for script. The trace viewer's policy names no `frame-src` and no `default-src`, measured rather than assumed: it renders each DOM snapshot in a frame whose document its service worker synthesises, and Chromium checks `frame-src` against that response's URL, which is empty and matches no source — so the viewer's policy says `object-src`, `media-src` and `manifest-src` explicitly and leaves framing open, with script, connect and worker sources still `'self'`. The gate is tflw's own `sec/*` rules run over the served page, so the scanner and the product cannot disagree, plus a page suite that records every `securitypolicyviolation` in every frame. A route that throws answers one sentence and logs the stack to the terminal, because the review read an absolute path off the page of an empty directory. Not taken: `'unsafe-inline'` for the viewer (its one inline script hashes fine), and a Report-Only policy first (the page suite is the report).
 
 ### D1319
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +9 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **`D1319` — `helpers` names where a `use` may load from, the checker judges it as text, and `--no-helpers` is the same rule with an empty list.** A top-level `tflw.config` directive, `helpers "./lib"[, "./more"]`, relative to the config; a config declaring none allows `./helpers` and `./tests/helpers`, which is the dogfood's shape already. The checker resolves a `use` literal against the checked file's own directory — the runtime's rule — and requires the result inside one of the directories; outside is `TF083`, an error, because this is the one declaration that decides what code a run executes. Textual on purpose: no `stat`, no symlink following, so the checker keeps its no-I/O rule and cannot disagree with the runtime about which module a `use` names; a missing module stays `TF043`. The same policy reaches the editor (relative to the config it found) and the page (through `ProjectView.helpers` and the file's own path), so the three judge alike. `tflw check` prints one `helper <module> — \`use\` in <files>` line per module before its verdict; `tflw run --no-helpers` reports every `use` as `TF083` naming the flag. The field is absent-when-empty on `ConfigFile`, for the goldens' sake. Not taken: off by default (the escape hatch would stay unfenced for every existing project), and a per-env key (which code a suite may run does not vary by environment, and a per-env answer would be the loophole).
 
 ### D1320
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **`D1320` — the process: a policy, an audit, an SBOM, and a bot that opens pull requests.** `SECURITY.md` at both roots with GitHub private vulnerability reporting and a 72-hour acknowledgement; a `supply-chain` CI job running `npm audit --audit-level=high` and publishing a CycloneDX SBOM (`npm sbom`) as an artefact; Dependabot weekly, grouped, for npm and for GitHub Actions in both repositories, merged by hand. The security guide states what tflw itself does — no telemetry, no network beyond the named targets, the helper fence, the token model, the headers — and the support statement: Node 22 and 24, latest release only before 1.0. Turning on private vulnerability reporting is a repository setting, and Dependabot opens pull requests on its own schedule; both are outward-facing and land on the user's word, not the plan's. Not taken: `SECURITY.md` alone (a policy with no audit behind it is a promise), and auto-merge (a dependency bump in a testing tool changes what every user's run executes).
 
+### D1321
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M241_AUTHORING.md`</sub>
+
+**`D1321` — the Source and Config tabs are one CodeMirror 6 editor, and there is one draft owner
+at a time.** `@codemirror/state`, `view`, `language` and `commands` (history, default keymap).
+Highlighting is `highlight.ts` through a `ViewPlugin`; diagnostics are `diagnose()` on the
+editor's text, drawn as marks with the code and message in the line's tooltip. `⌘S` saves through
+`writeProjectFile` with the file's etag — the path Compose uses — and a `409` is shown, never
+retried. `App` holds `draftOwner: 'compose' | 'source' | null`; switching tabs flushes the leaving
+owner's draft into the one buffer both read, so Compose and Source cannot disagree about a file.
+Config gets the same editor with the config dialect, keeping its `D1052` rule (an error blocks the
+save, a warning does not). The Source index (`D1067`) stays, scrolling the editor instead of spans.
+
 ### D1322
 
-<sub>cited from tflw-tests/tests/.tflw-ui/authoring.tflw · lifted from `PLAN_M241_AUTHORING.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/authoring.tflw · lifted from `PLAN_M241_AUTHORING.md`</sub>
 
 **`D1322` — an action is a declaration with an address.** `StepPath` gains `space: 'decl' |
 'action' | 'crawl'` (absent means `'decl'`, so every existing caller is unchanged), each space
@@ -9528,7 +9542,7 @@ each one, which is a diagnostic the author reads rather than an edit the page ma
 
 ### D1323
 
-<sub>cited from tflw-tests/tests/.tflw-ui/authoring.tflw · lifted from `PLAN_M241_AUTHORING.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/authoring.tflw · lifted from `PLAN_M241_AUTHORING.md`</sub>
 
 **`D1323` — a crawl is a declaration with an address, and SCANS can make one.** The `'crawl'`
 space of `D1322`; `buildCrawl` (seeds `openapi` / `traffic` / `spider`, sessions, excludes, limits,
@@ -9537,9 +9551,22 @@ SCANS gets `+ new crawl` (start URL or spec, depth, limits, severity matcher) an
 statements are editable rows. `D1238`'s read-only sentence and its remove-guard are retired; the
 limits page's *does not write every construct* shrinks to the config-only pair.
 
+### D1324
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M241_AUTHORING.md`</sub>
+
+**`D1324` — the run flags are a table, and the strip's `more…` renders a subject's rows.**
+`RUN_FLAGS` in `packages/cli` names each `tflw run` flag with its spelling, value shape and the
+subject that can spend it (`scan`, `browser`, `workload`, or `always`); `parseRunArgs` reads it,
+and `runArgv` is built from it, so a flag added to the CLI is one row and reaches the page with
+no second list. `more…` is a disclosure under the strip: fail-on and baseline while a scan is in
+the run, browser and seed while a browser test is, skip-workload while a workload is; bail,
+parallel, evidence and now always. Values persist per project in the browser (a convenience —
+the argv is what runs). The subject is the run's lens set (`D1250`), never the door.
+
 ### D1325
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +6 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +7 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
 
 **`D1325` — the explorer scales, the census is judged, and a run says who ran it.** The tree is
 virtualised with `@tanstack/react-virtual`; collapse-all; a *this door only* view toggle that
@@ -9553,7 +9580,7 @@ the report header.
 
 ### D1326
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +3 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +4 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1326` — `has count at least|at most N`, `is empty`, `is not empty` are matchers.** `is empty`
   holds for `""`, `[]`, `{}` and nothing else (not `null`, which has `is null`); on any other type
@@ -9562,7 +9589,7 @@ the report header.
 
 ### D1327
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +7 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1327` — `skip "reason"` is a header clause, and skipped is a third outcome.** Written after the
   name, beside `retry`/tags. An empty or blank reason is `TF084` (error), for `TF082`'s reason: a
@@ -9574,7 +9601,7 @@ the report header.
 
 ### D1328
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/apiV2/src/graphql/graphql.controller.ts +2 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +3 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1328` — `body graphql` is a request body kind.** `body graphql """…"""` with optional
   `variables { … }` and `operationName "…"` lines under it; sent as
@@ -9588,7 +9615,7 @@ the report header.
 
 ### D1329
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +2 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +3 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1329` — `length of x`, `x joined with y`, and `capture <subject> matching /re/ as n`.**
   `length of` is sugar evaluating exactly as `.length`; `joined with` takes a list and a string
@@ -9598,7 +9625,7 @@ the report header.
 
 ### D1330
 
-<sub>cited from tflw-tests/scripts/verify-cli-flags.mjs · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-cli-flags.mjs · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1330` — `--shard i/n`** partitions the sorted discovered list by index modulo `n` (file `k`
   runs in shard `k mod n + 1`), prints `shard i/n: F of T files` in the header, and refuses
@@ -9607,7 +9634,7 @@ the report header.
 
 ### D1331
 
-<sub>cited from SPEC.md, tflw-tests/ops/otel/config.yaml, tflw-tests/scripts/regression.mjs +1 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/ops/otel/config.yaml +2 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1331` — `tflw export otlp <report-dir> --endpoint URL`** reads `results.json` and posts
   OTLP/HTTP JSON: one trace per run, spans run → file → test → step, a failed step's span status
@@ -9620,7 +9647,7 @@ the report header.
 
 ### D1332
 
-<sub>cited from tflw-tests/tests/cookbook/feature-flag.tflw · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/cookbook/feature-flag.tflw · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 - **`D1332` — the cookbook is `guide/patterns.md`**, the three hard-fence patterns the sibling's
   `S-4a` plants — a feature flag, a per-env value, branching on a response — each citing the plant
@@ -9629,7 +9656,7 @@ the report header.
 
 ### D1333
 
-<sub>cited from README.md · lifted from `PLAN_M243_PLATFORM.md`</sub>
+<sub>cited from CHANGELOG.md, README.md · lifted from `PLAN_M243_PLATFORM.md`</sub>
 
 - **`D1333` — Windows runs build, typecheck and the whole `npm test`, as its own job.** Not a leg of
   the `test` matrix: every step below `npm test` there (coverage, the `verify:*` gates, the
@@ -9638,9 +9665,26 @@ the report header.
   red rather than a smaller number. No xvfb (a Windows runner has a desktop). Node 22 only — the
   Node line is covered on Linux.
 
+### D1334
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+
+**D1334. `Position` stays UTF-16 and is documented as such; the display coordinate is derived in the
+renderer and exists nowhere else.**
+
+### D1342
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M162_FIXTURE_OWNERSHIP.md`</sub>
+
+**D1342 — the `KNOWN INTERMITTENT` header is replaced by the measurement, not deleted**
+
+`storefront.tflw:194`'s header is the right artefact for an undiagnosed flake and it is why this
+row is actionable at all. It is rewritten to carry the result of `D818` — the loop count, the arm
+that failed or the bound that held — and stays as a header if the intermittent survives the fix.
+
 ### D1343
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M245_MULTI_UPLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M245_MULTI_UPLOAD.md`</sub>
 
 - **`D1343` — an `upload` names a list of files.** `upload "<path>" as "<field>" [type "<mime>"]`,
   then any number more after a comma, then the optional `form k=v, …`. One line, line-terminated
@@ -9652,7 +9696,7 @@ the report header.
 
 ### D1344
 
-<sub>cited from SPEC.md, tflw-tests/apiV2/src/signed/signed.controller.ts, tflw-tests/tests/api/mechanics/signed-requests.tflw +1 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/apiV2/src/signed/signed.controller.ts +2 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1344` — scope.** HMAC and SigV4 together, on one mechanism: a signing hook that runs **after
   the body is serialised and before the request is sent**, so a signature covers the exact bytes on
@@ -9720,7 +9764,7 @@ the report header.
 
 ### D1349
 
-<sub>cited from SPEC.md, tflw-tests/apiV2/src/signed/signed.controller.ts, tflw-tests/tests/api/mechanics/signed-requests.tflw +1 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/apiV2/src/signed/signed.controller.ts +2 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1349` — the signing clock is the run clock advanced by the run's elapsed time** (taken while
   building, 2026-09-27). The run clock is a fixed instant, the run's first second. Read literally, a
@@ -9730,6 +9774,22 @@ the report header.
   `--now` still pins where it starts, so a signed run stays reproducible, and it moves as the run
   does. `at <time>` is evaluated against this clock too, so `at now - 10 minutes` is ten minutes
   before the request, not before the run.
+
+### D1350
+
+<sub>cited from CHANGELOG.md, RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1350` | X9 | **Two runbooks.** The adopter's is a docs-site section (`runbook/`: install · project · running · page · editor · troubleshoot · glossary), and **every slice owes its page before it is green**. The maintainer's is a `RUNBOOK.md` in each repo, written once in `M253`. |
+
+### D1351
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1351` | P1 | **Publishable at the end, not published.** Every publish-day item lands in this arc (the docs' 13 exemptions, README and getting-started, listings prepared, grammar rows decided); `npm publish 1.0.0` is a later word. |
 
 ### D1352
 
@@ -9893,7 +9953,7 @@ the report header.
 
 ### D1379
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, RUNBOOK.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -10002,6 +10062,14 @@ the report header.
 | id | row | decision |
 |---|---|---|
 | `D1396` | (`M252` `A`, 2026-09-29, `G18`) | **`TFLW_SOURCE_ROOT` is resolved through `realpath`.** The run's own directory is `process.cwd()`, which is always the real path; a root named by a symlinked spelling (`/var/folders/…` for `/private/var/folders/…` on macOS, a symlinked checkout anywhere) rebased every result to `../…`, which `sarifUri` refuses, and the SARIF shipped with no annotation at all — silently. |
+
+### D1397
+
+<sub>cited from CHANGELOG.md, RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1397` | (owner, 2026-09-29, amends the sibling's squash-merge convention) | **The sibling's pull requests merge with a merge commit, not a squash.** tflw pins the sibling's pull-request head (D511: tflw merges first), and a squash — or a restack after the pin — leaves that commit outside the sibling's history, so `verify:sibling-pin` on tflw `main` went red after every pair (`main` red from 2026-09-28 21:06). GitHub's *rebase and merge* would not fix it: it always re-writes the commits. A merge commit keeps the pinned commit an ancestor of `main`, and the next stacked pull request needs no restack. tflw's own pull requests still rebase-merge. |
 
 ### D1398
 
@@ -13839,7 +13907,7 @@ a per-push sweep of the whole registry bought nothing the ledger could show.
 
 ### M195
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +7 more · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, RUNBOOK.md +8 more · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
 
 **`M195` — the parts of tflw no phase drives**
 
@@ -14030,7 +14098,7 @@ Successor to `M210`, which made Compose *read* the file. This round makes it **r
 
 ### M213
 
-<sub>cited from CHANGELOG.md, tflw-tests/tflw-acceptance/load-door/README.md, tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M213_TFLW_UI.md`</sub>
+<sub>cited from CHANGELOG.md, RUNBOOK.md, tflw-tests/tflw-acceptance/load-door/README.md +1 more · lifted from `PLAN_M213_TFLW_UI.md`</sub>
 
 **M213 — the tflw UI: a theme, a base layer, and three doors that can compose**
 
@@ -14204,9 +14272,19 @@ from a gesture the grammar refuses.
 - **`M232` BUILT** — `M213-06`, `M213-07`, `M213-19`, `M215-01`, `M220-02`, `M222-02` closed and
   `M232-01` filed and closed in the round that found it; ledger **6 → 0**.
 
+### M233
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M233_DOCS_SITE.md`</sub>
+
+**`M233` — the site catches up with the page, and with twenty-six milestones**
+
+**Decision numbering is no longer provisional.** `M232` closed at `D1276`, so this round's
+decisions are **`D1277`–`D1277`** — nine, one more than the eight scoped, because §6's tagline fork
+was taken rather than deferred.
+
 ### M234
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +1 more · lifted from `PLAN_M234_CORPUS_AND_SITE.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, tflw-tests/CONSTRUCTS.md +2 more · lifted from `PLAN_M234_CORPUS_AND_SITE.md`</sub>
 
 **`M234` — the corpus the docs photograph, and the site that shows it**
 
@@ -14216,15 +14294,35 @@ Stages `D`-`H`, the docs site itself, are not built.*
 
 ### M235
 
-<sub>cited from packages/cli/test/MANUAL_VOICEOVER.md · lifted from `PLAN_M235_PAGE_SUITE_STABILITY.md`</sub>
+<sub>cited from CHANGELOG.md, packages/cli/test/MANUAL_VOICEOVER.md · lifted from `PLAN_M235_PAGE_SUITE_STABILITY.md`</sub>
 
 **`M235` — the page suite stops flaking**
 
 *Scoped 2026-09-23 by measurement, against the CI record 2026-09-18 → 2026-09-23. Nothing built.*
 
+### M236
+
+<sub>cited inside a range only · lifted from `PLAN_M236_LEDGER_DRAWDOWN.md`</sub>
+
+**`M236` — the ledger drawdown: nine open rows, and they are not one kind of work**
+
+**Status: SCOPED 2026-09-23. Slices `A`, `B` and `C` BUILT the same day** — see §10. Successor to
+`M235`, which closed on `tflw#234`.
+
+### M237
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M237_THE_REMAINING_FIVE.md`</sub>
+
+**`M237` — the remaining five**
+
+This is a drawdown round, not a feature round. `M236` `G` took the ledger to four open rows; scoping
+this one **found a fifth** and **contradicted a sixth's headline**, both by running a control that a
+previous round had reasoned about instead of running. That is the round's shape in one sentence, and
+§1 is the evidence for it.
+
 ### M238
 
-<sub>cited from SPEC.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-construct-acceptance.mjs · lifted from `PLAN_M238_BASELINE_STALE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/lib/constructs.mjs +1 more · lifted from `PLAN_M238_BASELINE_STALE.md`</sub>
 
 **`M238` — the baseline's other half, and the corpus that would have proved it**
 
@@ -14235,7 +14333,7 @@ graded. **`M234-04` closed 2026-09-25 when slice `C` merged there** (tflw-tests#
 
 ### M239
 
-<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONSTRUCTS.md +15 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +16 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **§3 `M239` — the boundary: token, origin, confinement, helpers, process**
 
@@ -14256,7 +14354,7 @@ on this milestone and is not built here.
 
 ### M241
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +7 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +8 more · lifted from `PLAN_M241_AUTHORING.md`</sub>
 
 **`M241` — authoring completeness: the Source editor, actions, crawls, the strip, scale**
 
@@ -14279,7 +14377,7 @@ changed. Decisions `D1326`–`D1332`, free by `collectAnchors` on the day (the c
 
 ### M243
 
-<sub>cited from README.md, SPEC.md · lifted from `PLAN_M243_PLATFORM.md`</sub>
+<sub>cited from CHANGELOG.md, README.md, SPEC.md · lifted from `PLAN_M243_PLATFORM.md`</sub>
 
 **`M243` — the platform: Windows, and the arc's close-out**
 
@@ -14287,9 +14385,19 @@ The arc's last milestone (`PLAN_M239_ENTERPRISE_READINESS.md` §7, review decisi
 Scoped 2026-09-26. Decisions from `D1333`, free by `collectAnchors` on the day (the corpus's highest
 was `M242`'s `D1332`).
 
+### M244
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M244_LEDGER_DRAWDOWN.md`</sub>
+
+**`M244` — the ledger after the enterprise arc**
+
+Scoped 2026-09-27, once `M243` (tflw#245) and `S-3d` (tflw-tests#117) closed the `M239` arc.
+The ledger's live queue is **5 open: S2 0 · S3 4 · S4 1**. This milestone takes all five in turn,
+ordered by who can be hurt by each one. Every row was re-read against main before it was scheduled.
+
 ### M245
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/apiV2/src/common/content-negotiation.middleware.ts +3 more · lifted from `PLAN_M245_MULTI_UPLOAD.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +4 more · lifted from `PLAN_M245_MULTI_UPLOAD.md`</sub>
 
 **`M245` — several files in one multipart request**
 
@@ -14303,7 +14411,7 @@ new protocol.
 
 ### M246
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +13 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +14 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 **`M246` — signed requests: HMAC and AWS SigV4**
 
@@ -14356,7 +14464,7 @@ not in the sweep).
 
 ### M252
 
-<sub>cited from CHANGELOG.md, RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, RUNBOOK.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§8 `M252` — platform, proofs and distribution**
 
@@ -14365,7 +14473,7 @@ and runs beside it.
 
 ### M253
 
-<sub>cited from RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **`M247`–`M253` — the whole product, made publishable**
 

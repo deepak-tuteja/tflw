@@ -3,6 +3,7 @@ import DefaultTheme from 'vitepress/theme';
 import { h } from 'vue';
 import HeroEyebrow from './HeroEyebrow.vue';
 import HeroCodePanel from './HeroCodePanel.vue';
+import Published from './Published.vue';
 import './custom.css';
 
 /**
@@ -91,7 +92,9 @@ export default {
       'home-hero-image': () => h(HeroCodePanel),
     });
   },
-  enhanceApp() {
+  enhanceApp({ app }) {
+    // `M253` `F`: the pre-1.0 / published text pairs (`../published.ts`).
+    app.component('Published', Published);
     // The build renders every page in Node, where there is no document. Guarded rather than moved
     // into a component's `onMounted`, because the listeners are delegated and belong to the app.
     if (typeof window === 'undefined') return;

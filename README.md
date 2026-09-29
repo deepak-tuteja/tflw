@@ -187,4 +187,4 @@ records this repository does not publish; both resolve in [DECISIONS.md](DECISIO
 
 Running from a clone without publishing to npm, or embedding `tflw` in another local project
 without a registry: see
-[Getting started](https://deepak-tuteja.github.io/tflw/getting-started#using-tflw-from-a-checkout-no-npm-registry-needed).
+[Getting started](https://deepak-tuteja.github.io/tflw/getting-started#installing-tflw).

@@ -63,6 +63,10 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdtemp, cp, rm, readFile, writeFile, mkdir, symlink, utimes, readdir, stat } from 'node:fs/promises';
+// `M252-02`: Windows holds a file a browser has just closed for a moment after the process exits, and
+// a plain `rm` of the test's temp directory then fails the test with `EBUSY` — twice in CI, in two
+// different tests, with nothing wrong in either. `rm`'s own retry covers exactly that window.
+const RM_RETRY = { recursive: true, force: true, maxRetries: 10, retryDelay: 100 } as const;
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -337,7 +341,7 @@ after(async () => {
      run with zero tests in it.
 
      `scripts/verify-zero-match.mjs` is why a twelfth file cannot arrive here unnoticed. */
-  if (scratch !== undefined) await rm(scratch, { recursive: true, force: true });
+  if (scratch !== undefined) await rm(scratch, RM_RETRY);
 });
 
 /**
@@ -1428,7 +1432,7 @@ test('a report holding the same finding many times renders one row saying how ma
   } finally {
     await fresh.close();
     await new Promise<void>((r) => ui.server.close(() => r()));
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -1500,7 +1504,7 @@ test('a file that does not parse is badged as recovered, and the landing stops c
   } finally {
     await fresh.close();
     await new Promise<void>((r) => ui.server.close(() => r()));
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -1560,7 +1564,7 @@ test('an index row scrolls the text to its own line, and puts that line in the m
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -1651,7 +1655,7 @@ test('a fragment file is in the tree, reads `—`, and is not dimmed', async () 
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -1691,7 +1695,7 @@ test('a long name at depth is one line and an ellipsis, with the whole path in r
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -2742,7 +2746,7 @@ test('`M240` `A`: a door with nothing behind it says so and offers a file, inste
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -2821,7 +2825,7 @@ test('`M240` `F` (`M239-06`): two failures are two notices, top-right; one close
     await fresh.clock.install();
     await fresh.goto(`${pageUrl}${API_RUN}`);
     await fresh.locator('[data-report-row="gone-b"]').waitFor();
-    for (const d of dirs) await rm(d, { recursive: true, force: true });
+    for (const d of dirs) await rm(d, RM_RETRY);
     await fresh.locator('[data-report-row="gone-a"]').click();
     await fresh.locator('[data-notice]').first().waitFor();
     await fresh.locator('[data-report-row="gone-b"]').click();
@@ -2842,7 +2846,7 @@ test('`M240` `F` (`M239-06`): two failures are two notices, top-right; one close
     await fresh.clock.fastForward(1_500);
     await fresh.locator('[data-notices]').waitFor({ state: 'detached' });
   } finally {
-    for (const d of dirs) await rm(d, { recursive: true, force: true });
+    for (const d of dirs) await rm(d, RM_RETRY);
     await fresh.close();
   }
 });
@@ -3020,7 +3024,7 @@ test('`M240` `B` (`D1310`): over a directory with no tflw.config the landing nam
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -3876,7 +3880,7 @@ test('SCANS’ Compose predicts and Auth enumerates — one tflw.config, two cla
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -4521,7 +4525,7 @@ test('`M219` `B`: an `open` starts a session, and so does a `call` the project i
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -4605,7 +4609,7 @@ test('`M219` `D`: one statement in a `within` is one row carrying both; more tha
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -4738,7 +4742,7 @@ test('`M219` `E`/`G`: `+ step…` previews the buffer, and the subject offer fol
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -4826,7 +4830,7 @@ test('a pick session outlives a tab switch and dies with the door — asserted o
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -5042,7 +5046,7 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -5148,7 +5152,7 @@ test('`M213` `S4`: `pick` fixes the locator on the row it is pressed on, from a 
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -5248,7 +5252,7 @@ test('a project with no `authorized target`: the SCANS door says so, shows the T
       await readFile(join(fromTerminal, 'tflw.config'), 'utf8'),
       'including the commented-out declaration, which is the whole of `D1053`',
     );
-    await rm(fromTerminal, { recursive: true, force: true });
+    await rm(fromTerminal, RM_RETRY);
 
     // 3. **THE NOTICE**, which is now region 2's `scan` segment rather than a banner on a form
     //    (`M228` `A`, `D1239`). The declaration is commented out, so the env authorizes nothing,
@@ -5346,7 +5350,7 @@ test('a project with no `authorized target`: the SCANS door says so, shows the T
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -5391,7 +5395,7 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
     const fromTerminal = await mkdtemp(join(tmpdir(), 'tflw-terminal-'));
     execFileSync(process.execPath, ['--import', tsxLoader, cliEntry, 'init', '--load'], { cwd: fromTerminal, stdio: 'pipe' });
     assert.equal(scaffold, await readFile(join(fromTerminal, 'load.tflw'), 'utf8'), 'the page and the terminal write the same bytes');
-    await rm(fromTerminal, { recursive: true, force: true });
+    await rm(fromTerminal, RM_RETRY);
 
     // 3. Point the new project at the fixture server, so a run has something to call.
     const config = await readFile(join(dir, 'tflw.config'), 'utf8');
@@ -5465,7 +5469,7 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -5783,7 +5787,7 @@ test('Auth says what a session reaches, and a mixed test with no session is wher
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -5904,7 +5908,7 @@ test('the Auth block leads with the anonymous case, and each door gets only its 
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -5958,7 +5962,7 @@ test('no step carries the LOAD lens, so the wire no longer ships a bucket that c
       await ui.close();
     }
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6052,7 +6056,7 @@ test('the affirmation this door refuses to make is one the author can make on th
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6133,7 +6137,7 @@ test('the reason for authorized targets lives on the door that owns it, in both 
     }
   } finally {
     await fresh.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6248,7 +6252,7 @@ test('the Auth tab says who this file runs as, and every editable thing lands in
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6324,7 +6328,7 @@ test('the Config tab makes the edit the product had been telling the author to m
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6380,7 +6384,7 @@ test('a test written from Compose appears in the Source index without a reload',
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6692,7 +6696,7 @@ test('a note is collapsed to its first line with a count, opens to the rest, and
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6732,7 +6736,7 @@ test('a request can be added to a test from the body’s own sequence', async ()
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6815,7 +6819,7 @@ test('a new .tflw file can be made from the page, and the page then opens it', a
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6934,7 +6938,7 @@ test('`M222`: the create dialog reads the door — BROWSER scaffolds `open`, and
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -6994,7 +6998,7 @@ test('a new test goes into the open file through the same builders the pane’s 
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -7110,7 +7114,7 @@ test('a clause the file does not write is not a field — it is in a menu that n
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -7155,7 +7159,7 @@ test('a clause the file DOES write is drawn without being asked for', async () =
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -7224,7 +7228,7 @@ test('every request in the declaration is on the pane, in the file’s own order
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -7253,7 +7257,7 @@ test('clicking a collapsed request opens it, and the one that was open collapses
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -7309,7 +7313,7 @@ test('the file’s facts are outside the test card, and on the page whether or n
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -7382,7 +7386,7 @@ test('no scope but the selected one is in the tab order, and the selected one is
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -7458,7 +7462,7 @@ test('the file row carries what the file brings in, comma-separated, and says `n
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -7616,7 +7620,7 @@ const withEditFixture = async (body: string, run: (page: Page, base: string, dir
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 };
 
@@ -8842,7 +8846,7 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
     await new Promise<void>((resolve) => target.close(() => resolve()));
   }
 });
@@ -8873,7 +8877,7 @@ const withRemovalFixture = async (body: string, run: (page: Page, base: string, 
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 };
 
@@ -9396,7 +9400,7 @@ test('`M223` `E`: with a trace up, the playback height is the reader’s — and
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -10797,7 +10801,7 @@ const withProjectFixture = async (
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 };
 
@@ -11590,7 +11594,7 @@ test('`M218` `D2`: the recovery sentence is about this file, and degrades rather
     assert.equal(await ask('never-committed.tflw'), 'untracked', 'an uncommitted file in a repository is NOT recoverable');
   } finally {
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -11971,7 +11975,7 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
     await p.close();
     await ui.close();
     await new Promise<void>((resolve) => target.close(() => resolve()));
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -12118,7 +12122,7 @@ test('`M225` `H`: region 2 never nests one scroller inside another, in any of it
     await p.close();
     await ui.close();
     await new Promise<void>((resolve) => target.close(() => resolve()));
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -12260,7 +12264,7 @@ test('`M226` `A`: a workload declaration puts region 2 at the foot of the pane, 
     await p.close();
     await ui.close();
     await new Promise<void>((resolve) => target.close(() => resolve()));
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -12516,7 +12520,7 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
     await p.close();
     await ui.close();
     await new Promise<void>((resolve) => target.close(() => resolve()));
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -12649,7 +12653,7 @@ test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D12
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -12789,7 +12793,7 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -12912,7 +12916,7 @@ test('`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, sca
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -13204,7 +13208,7 @@ test('`M228` `C` / `M241` `C`: a `crawl` is drawn in the tree and in the pane, a
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -13281,7 +13285,7 @@ test('`M228` `D`: every matcher is drawn on every subject, and the ones `TF042` 
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -13427,7 +13431,7 @@ test('`M228` `F`: SCANS offers no recorder and BROWSER still does (`D1245`), eve
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 
@@ -13538,7 +13542,7 @@ test('`M228` `F4`: the `scan` segment and the pane’s `TF060` preview both foll
   } finally {
     await fresh.close();
     await ui.close();
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, RM_RETRY);
   }
 });
 

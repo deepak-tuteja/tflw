@@ -183,3 +183,28 @@ Secrets (`env(NAME)`) are redacted from every report automatically — see
 [CI, reporting & safety](/guide/ci-and-reporting). For what a run actually prints, `--verbose`,
 isolating a failing test, and reading `report.html`, see
 [Running & debugging tests](/guide/debugging).
+
+## Worked examples
+
+tflw's dogfood repository keeps sixteen files that each teach one part of the language against a
+real API, with a comment on every step saying why it is written that way. They run in its CI, so
+they stay true.
+
+| File | What it shows |
+|---|---|
+| [`hooks-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/hooks-explained.tflw) | `before`/`after` around each test, and `before file`/`after file` once |
+| [`capture-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/capture-explained.tflw) | `capture` — a response value bound for later steps |
+| [`request-shapes-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/request-shapes-explained.tflw) | a request line's optional pieces: query, headers, body |
+| [`response-subjects-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/response-subjects-explained.tflw) | what `expect`, `check` and `capture` can see after a response |
+| [`matchers-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/matchers-explained.tflw) | the matcher set and `not` |
+| [`quantifiers-and-subset-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/quantifiers-and-subset-explained.tflw) | `any`/`all` over an array, and subset matching |
+| [`expressions-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/expressions-explained.tflw) | arithmetic, comparisons and string building |
+| [`generators-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/generators-explained.tflw) | `unique(...)` and the other generators |
+| [`data-tables-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/data-tables-explained.tflw) | `with each` — one test per table row |
+| [`retry-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/retry-explained.tflw) | `retry N` on a test |
+| [`wait-until-api-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/wait-until-api-explained.tflw) | `wait until` — polling instead of failing fast |
+| [`tags-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/tags-explained.tflw) | `@tags` and `--tag` |
+| [`services-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/services-explained.tflw) | more than one service in an env |
+| [`sessions-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/sessions-explained.tflw) | sessions, and a test that runs `as` one |
+| [`actions-and-js-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/actions-and-js-explained.tflw) | `action`, `import` and a `use` helper |
+| [`security-explained.tflw`](https://github.com/deepak-tuteja/tflw-tests/blob/main/tests/examples/security-explained.tflw) | the security and config checks |

@@ -5,6 +5,7 @@ hero:
   name: tflw
   text: Test <span class="hero-accent">APIs and browsers</span> in one language.
   tagline: Reports first, syntax second — a self-contained report.html, junit.xml, and teaching-quality diagnostics fall out of every run, no glue code between tools. Four pillars share one grammar — API, browser, load (validated against k6 on real contended workloads) and security scanning. Pre-1.0, not yet published.
+  taglinePublished: Reports first, syntax second — a self-contained report.html, junit.xml, and teaching-quality diagnostics fall out of every run, no glue code between tools. Four pillars share one grammar — API, browser, load (validated against k6 on real contended workloads) and security scanning.
   actions:
     - theme: brand
       text: Get started

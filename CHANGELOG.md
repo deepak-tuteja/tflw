@@ -17,6 +17,26 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — the runbooks, and a site ready for 1.0 (M253)
+
+- **The adopter's runbook, assembled** (`D1350`). The site's Runbook section opens on an index of
+  the operator's day, and gains [Troubleshooting](https://deepak-tuteja.github.io/tflw/runbook/troubleshoot)
+  — by symptom: TLS, a proxy, `allow hosts`, missing browsers, the page's `401`, `TF083`, Windows —
+  a [Glossary](https://deepak-tuteja.github.io/tflw/runbook/glossary) of the page's and report's own
+  words, and an upgrade section with `tflw migrate`. The sidebar gate asks about every page in
+  `runbook/`. The sixteen annotated `*-explained.tflw` examples are linked from the first guide page.
+- **The maintainer's runbooks.** `RUNBOOK.md` — the box, closing out a milestone, merging a pair
+  (sibling PRs merge with a merge commit, `D1397`), the gates by name, coverage, the flake table and
+  the publish-day checklist — and the sibling's own `RUNBOOK.md`.
+- **SPEC's badges tell the truth** (X7). Seven of the eight open section badges no longer described
+  their section; the parking lot listed the recorder, the docs site and `tflw fmt` as out of v1. A
+  gate now holds every 🔮/🔧 heading to an owner that resolves in `DECISIONS.md`.
+- **Publishable** (`D1351`). Every sentence the site declares true only before 1.0 sits behind a
+  `PUBLISHED` flag beside the text 1.0 day needs, held by a test; publish day flips one constant.
+  `private` stays `true` (`D1379`).
+- **This file** gains `M233`–`M246`.
+- **Fixed:** the page suite's temp-directory cleanup retries Windows' transient `EBUSY` (`M252-02`).
+
 ### Added — the editor becomes a run surface (M251)
 
 - **The Test Explorer** (`D1368`). The VS Code extension lists every `.tflw` file and its tests;
@@ -213,6 +233,86 @@ performance arc closed 2026-08-02 and is included below.
   `.items.quantity` off the second array as `undefined` and reported *none of N matched* with the
   matching item present. The path now fans out across every array it crosses, and a failure names
   both indices.
+
+### Added — signed requests (M246)
+
+- **`signer`** in `tflw.config` (`D1344`–`D1349`): an HMAC template — `signs "{timestamp}.{body}"`,
+  a `header` line carrying `{signature}`/`{timestamp}` — or AWS SigV4, written on `node:crypto` with
+  no dependency. A step opts in with `sign with <name>`, a session with `signed with <name>`. The
+  bytes that are signed are the bytes sent, multipart boundary included. Negatives are overrides on
+  the line: `secret "wrong"`, `at now - 10 minutes`, `then body { … }`. GitHub, Stripe, Slack and a
+  partner scheme are recipes in [Signed requests](https://deepak-tuteja.github.io/tflw/guide/signed-requests).
+
+### Added — an upload names a list of files (M245)
+
+- `upload "./a.png" as "files", "./b.pdf" as "files" type "application/pdf"` sends one multipart
+  request with one part per file, in the order written, then the `form` fields (`D1343`). A
+  one-file upload prints byte-identical. An unreadable file fails the step naming `file i of n`,
+  and nothing is sent.
+
+### Fixed — the ledger after the enterprise arc (M244)
+
+- An imported action's steps are reported at the action file's own lines, under the test that
+  called them (`M240-03`); `StepResult.file` says which file.
+- Nine decision ids that two records each defined are renumbered (`D1334`–`D1342`).
+- A screenshot compared under a different font set is named as the likely cause, with the
+  baseline's key; the key itself is unchanged (`M243-15`).
+
+### Added — the platform (M243)
+
+- CI builds, typechecks and runs the whole suite on native Windows under Node 22 (`D1333`); what
+  it found was repaired or excluded by name with its reason.
+
+### Added — the language (M242)
+
+- **Matchers** (`D1326`): `has count at least N`, `has count at most N`, `is empty`, `is not empty`.
+- **`skip "reason"`** (`D1327`) — skipped is a third outcome in every reporter; `--tag !x` excludes.
+- **GraphQL** (`D1328`): `body graphql "…" [variables {…}] [operation "…"]`.
+- **Strings** (`D1329`): `length of x`, `x joined with ", "`, `capture … matching "re" as n`.
+- **`--shard i/n`** (`D1330`) and **`tflw export otlp`** (`D1331`), which posts a run as
+  OTLP/HTTP spans with no SDK. A cookbook of patterns, each kept true by a sibling plant (`D1332`).
+
+### Added — the page authors every declaration (M241)
+
+- Source and Config are a real editor — undo, the language's colours, errors underlined in place
+  (`D1321`); an action is a declaration with its own band (`D1322`); a crawl is built on SCANS
+  (`D1323`); the run strip offers only the flags a run can take (`D1324`).
+- Every control is at least 24 px and every text 11 px; the file list collapses, filters and
+  virtualises; every report records who ran it, where, with which tflw; `runs keep N` (`D1325`).
+
+### Added — the page's first five minutes (M240)
+
+- A landing that opens on the project, one Tab stop per region with arrow keys inside it, six
+  shortcuts and a `?` legend, and an axe gate over every view in both themes (108 violations → 0).
+- Product text gives a reason or a docs link, never an internal identifier, held by
+  `verify:no-internal-refs` (`D1309`–`D1315`).
+
+### Added — the page gets a boundary, `use` gets a fence (M239)
+
+- `tflw ui` serves on loopback behind a per-start token in its URL (`D1316`–`D1318`).
+- `helpers "./dir"` in `tflw.config` names where a `use` may load from; `TF083` elsewhere;
+  `tflw run --no-helpers`; `tflw check` lists every helper a run would load (`D1319`).
+- `SECURITY.md`, a supply-chain CI job (`npm audit`, a CycloneDX SBOM) and Dependabot (`D1320`).
+
+### Fixed — a baseline names what it no longer matches (M238)
+
+- A run with a baseline names the accepted entries that matched no finding, in the console and in
+  `results.json`'s `baseline` block — advisory, never the exit code. A narrowed `--baseline-write`
+  says which entries it dropped.
+
+### Fixed — the page suite, and the ledger (M235–M237)
+
+- The page suite's reads that answer against one frame are found by a classifier
+  (`verify:settled-reads`) and repaired; the twelve tests that were red in CI for that reason
+  alone are green, and the count is a ratchet.
+- `drag` holds its source; the cross-repo gates learn a clock; a coverage run no longer loses a
+  file's second transpilation to the source map.
+
+### Added — the docs site photographs the example (M233, M234)
+
+- The site's UI section: one page per door, pictures cut from `examples/storefront`, the runnable
+  example, in both themes, with zoom.
+- Per-package coverage floors in `coverage-floors.json`, each one point under its measured value.
 
 ### Added — enterprise arc (M9–M28)
 
