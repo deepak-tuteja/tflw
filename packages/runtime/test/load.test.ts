@@ -1339,8 +1339,14 @@ test('a rising target against a healthy finite-capacity server produces no diagn
 // `M243-17`'s second member: the same 5 ms timer fixture, the same Windows quantisation, four
 // sightings on 2026-09-27 at ratios 0.283–0.290 against a 0.25 line. The ledger row said a third
 // sighting names it here.
+//
+// `M252-04`: and on Linux too, once — ratio 0.265 on a Node 22 coverage run (#265, 2026-09-29). The
+// halves are compared by their mean, and at 5 ms a host drift of about 2 ms (coverage
+// instrumentation, a GC late in the run) is a third of the signal. At 25 ms the same drift is under a
+// tenth, well inside the 0.2 line, while 1500 ms still gives each half ~150 iterations against
+// MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF's 10. The Windows skip stays: a 15.6 ms quantum is not drift.
 test('a uniformly fast server does not trigger a backOff warning', { skip: WINDOWS_TIMERS }, async () => {
-  const server = await startFixtureServer({ '/health': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 5) });
+  const server = await startFixtureServer({ '/health': (_req, res) => setTimeout(() => json(res, 200, { ok: true }), 25) });
   const source = 'test "Healthy"\n  hold 5 users for 1500ms\n  api GET /health\n  expect status equals 200\n';
   const { program } = parseSource(source);
   const report = await runWorkload(program, testConfig(server.baseUrl), { source });
@@ -1348,8 +1354,8 @@ test('a uniformly fast server does not trigger a backOff warning', { skip: WINDO
   // Asserted, not `if (s.backOff)`-guarded as it was before M107. A guard makes this control pass
   // for free the moment the diagnostic stops applying to this workload kind at all — dropping
   // `HoldUsersWorkload` from `CLOSED_USERS_KINDS` used to leave it green (`backoff-hold-kind` in
-  // scripts/mutate.mjs, which now kills it). 1500ms at a flat 5ms clears
-  // MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) by two orders of magnitude on both halves.
+  // scripts/mutate.mjs, which now kills it). 1500ms at a flat 25ms clears
+  // MIN_ITERATIONS_PER_HALF_FOR_BACK_OFF (10) by an order of magnitude on both halves.
   assert.ok(s.backOff, 'expected a defined backOff diagnosis — a closed `hold` scenario carries one (D98)');
   assert.equal(s.backOff!.warning, false, `unexpected back-off warning against a healthy server, ratio ${s.backOff!.ratio}`);
   await server.close();
