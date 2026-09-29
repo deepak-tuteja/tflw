@@ -9789,7 +9789,7 @@ the report header.
 
 ### D1369
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +5 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9797,7 +9797,7 @@ the report header.
 
 ### D1370
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/regression.mjs +2 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9853,7 +9853,7 @@ the report header.
 
 ### D1385
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/regression.mjs +2 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -13713,7 +13713,7 @@ running the extracted actions against the stack.
 
 ### M197
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +22 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +23 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
 
 **`M197` — the sweep runs its four groups at once**
 
@@ -14152,7 +14152,7 @@ parked: it is a browser-to-API bridge and runs into `D10`, and it gets its own p
 
 ### M247
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +16 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +17 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§3 `M247` — the language joins its sessions to the browser**
 
@@ -14171,7 +14171,7 @@ listener, a browser and a token exchange in one declaration.
 
 ### M249
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§5 `M249` — the CLI and the reports remember**
 
