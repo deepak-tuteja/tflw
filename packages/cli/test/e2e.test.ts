@@ -3750,6 +3750,30 @@ test('`tflw run --browser firefox` runs a real UI test end-to-end and stamps the
   });
 });
 
+// `M252` `B` (`D1374`) — WebKit, once. `--browser webkit` was documented and never launched by
+// anything. It runs where CI installs it — the Linux jobs, which set `TFLW_E2E_WEBKIT` beside the
+// install — and is skipped by name elsewhere: the box is Fedora, where Playwright ships no WebKit.
+// Gated on the variable, not on finding the browser, so a failed install is a red job, not a skip.
+const WEBKIT_HERE = process.env.TFLW_E2E_WEBKIT === '1' ? false : 'M252 B: WebKit runs on the Linux CI jobs only (TFLW_E2E_WEBKIT=1)';
+
+test('`tflw run --browser webkit` runs a real UI test end-to-end and stamps the engine on the report', { skip: WEBKIT_HERE }, async () => {
+  await withWebFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-browser-webkit-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  web "${baseUrl}"\n`, 'utf8');
+      await writeFile(join(dir, 'ui.tflw'), `test "storefront"\n  open "/"\n  click button "Add to cart"\n`, 'utf8');
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--browser', 'webkit', '--no-color'], { cwd: dir });
+      assert.match(stdout, /1\/1 passed/);
+
+      const resultsJson = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { browserEngine?: string };
+      assert.equal(resultsJson.browserEngine, 'webkit');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 test('`tflw run --browser <bogus>` is a usage error, not a silent fall-back to chromium', async () => {
   await withWebFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-browser-bogus-'));

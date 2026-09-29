@@ -48,6 +48,24 @@ Each load threshold gets a sparkline of its last values.
 `--forbid-insecure` refuses to run an env that turns certificate checks off. The
 [CI guide](/guide/ci-and-reporting) covers `junit.xml`, SARIF, evidence levels and redaction.
 
+### Linux, macOS and Windows
+
+tflw's own CI runs its whole test suite on all three, on Node 22 — and on Node 24 on Linux — with
+Chromium and Firefox, and runs one real UI test under WebKit on Linux. A suite that passes on one
+of them is expected to pass on the others; a difference is a tflw bug, and worth reporting with the
+platform named.
+
+On Linux, `npx playwright install --with-deps chromium` installs the browser and the system
+libraries it needs; a CI image built for browsers usually has the libraries already, and then
+`tflw install-browsers` alone is enough.
+
+### The GitHub Action
+
+A composite Action ships with 1.0. It installs tflw and its two peers into the project, downloads
+the browsers the suite's UI steps use, runs `tflw` with the arguments you give it, uploads
+`report/` whatever happened, marks each failing test's file with an annotation, and exits with
+tflw's own code. Until then the four lines above are the same run without the annotations.
+
 ## Sharded
 
 ```sh
