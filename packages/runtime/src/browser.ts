@@ -103,6 +103,13 @@ export function chromiumDeterministicRenderArgs(engine: BrowserEngine): string[]
     : undefined;
 }
 
+/** `G12` — the flags that put Chromium's DevTools endpoint on `127.0.0.1:<port>`. The address is
+ *  stated rather than left to Chromium's default so the endpoint can never be reached from another
+ *  machine, whatever that default becomes. Nothing for other engines, which the CLI refuses first. */
+export function cdpArgs(engine: BrowserEngine, port: number | undefined): string[] {
+  return engine === 'chromium' && port !== undefined ? [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1'] : [];
+}
+
 export interface BrowserManagerOptions {
   /** D11: chromium default. */
   readonly engine?: BrowserEngine;
@@ -110,6 +117,9 @@ export interface BrowserManagerOptions {
   readonly headless?: boolean;
   /** `viewport <w> <h>` (M3c) — `null`/omitted lets Playwright use its own default. */
   readonly viewport?: { readonly width: number; readonly height: number } | null;
+  /** `--cdp-port <n>` on `record`/`pick` (`G12`) — Chromium's DevTools endpoint on loopback, so a
+   *  script can drive the headed session with `connectOverCDP`. Chromium only; the CLI refuses the rest. */
+  readonly cdpPort?: number | undefined;
 }
 
 /** One per `tflw run` invocation (D13) — owned by the CLI, passed through `RunOptions`. Launches
@@ -121,18 +131,21 @@ export class BrowserManager {
   readonly engine: BrowserEngine;
   readonly viewport: { readonly width: number; readonly height: number } | null;
   private readonly headless: boolean;
+  private readonly cdpPort: number | undefined;
   private browserPromise: Promise<PWBrowser> | undefined;
 
   constructor(opts: BrowserManagerOptions = {}) {
     this.engine = opts.engine ?? 'chromium';
     this.headless = opts.headless ?? true;
     this.viewport = opts.viewport ?? null;
+    this.cdpPort = opts.cdpPort;
   }
 
   async getBrowser(): Promise<PWBrowser> {
     if (!this.browserPromise) {
+      const args = [...(chromiumDeterministicRenderArgs(this.engine) ?? []), ...cdpArgs(this.engine, this.cdpPort)];
       this.browserPromise = loadPlaywright().then((pw) =>
-        pw[this.engine].launch({ headless: this.headless, args: chromiumDeterministicRenderArgs(this.engine) }),
+        pw[this.engine].launch({ headless: this.headless, args: args.length > 0 ? args : undefined }),
       );
     }
     return this.browserPromise;
@@ -2329,8 +2342,9 @@ export async function startRecordSession(
   engine: BrowserEngine,
   onAction: (action: RecordedAction) => void,
   onClosed: () => void,
+  opts: { readonly cdpPort?: number | undefined } = {},
 ): Promise<RecordSessionHandle> {
-  const manager = new BrowserManager({ engine, headless: false });
+  const manager = new BrowserManager({ engine, headless: false, cdpPort: opts.cdpPort });
   const browser = await manager.getBrowser();
   const page = await browser.newPage();
   await wireRecordSession(page, onAction, onClosed);
@@ -2351,8 +2365,9 @@ export async function startPickSession(
   engine: BrowserEngine,
   onPick: (picked: PickedLocator) => void,
   onClosed: () => void,
+  opts: { readonly cdpPort?: number | undefined } = {},
 ): Promise<PickSessionHandle> {
-  const manager = new BrowserManager({ engine, headless: false });
+  const manager = new BrowserManager({ engine, headless: false, cdpPort: opts.cdpPort });
   const browser = await manager.getBrowser();
   const page = await browser.newPage();
   await wirePickSession(page, onPick, onClosed);

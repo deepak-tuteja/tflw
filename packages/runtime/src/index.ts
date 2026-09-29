@@ -70,7 +70,7 @@ export { shutdownMtlsWorker } from './mtlsWorker.js';
 // `M160`/`D809` — rounding at the render boundary, for every consumer that prints a duration.
 export { roundDurationMs, formatDurationMs } from './duration.js';
 export { resolveRunSeed, resolveRunClock } from './seed.js';
-export { BrowserManager, SUPPORTED_BROWSER_ENGINES, type BrowserEngine, type BrowserManagerOptions } from './browser.js';
+export { BrowserManager, cdpArgs, SUPPORTED_BROWSER_ENGINES, type BrowserEngine, type BrowserManagerOptions } from './browser.js';
 export { startPickSession, wirePickSession, type PickedLocator, type PickLocatorKind, type PickSessionHandle } from './browser.js';
 // `M213` `S5` — the recorder (`D1095`). `RecordCoalescer` and `pathOfUrl` are exported for the
 // same reason `wirePickSession` is: they are where the judgement lives, and a test that had to
