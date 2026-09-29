@@ -9835,6 +9835,14 @@ the report header.
 |---|---|---|
 | `D1372` | D1 | **The discovered tree owes every construct in a real test, gated**: `verify:journeys`' floor extends from 21 browser statements to every family (steps, declarations, subjects, matchers, generators at ≥ 1 test under `tests/`; browser stays ≥ 3 journeys; every config directive in `tflw.config`). `.constructs` keeps only the known-answers a journey cannot state. |
 
+### D1373
+
+<sub>cited from tflw-tests/scripts/verify-ui-page.mjs, tflw-tests/tests/.tflw-ui/compose-edit.tflw, tflw-tests/tests/.tflw-ui/config.tflw +6 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1373` | D2 | **Eight project shapes move onto the real project** in `tests/.tflw-ui/`: compose-edit, source-conflict, config, run-tab, report, load, scans, follow. Fixture shapes stay in tflw. |
+
 ### D1376
 
 <sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
@@ -9885,7 +9893,7 @@ the report header.
 
 ### D1385
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/regression.mjs +2 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/regression.mjs +1 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9909,7 +9917,7 @@ the report header.
 
 ### D1392
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-ui-page.mjs +1 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9917,7 +9925,7 @@ the report header.
 
 ### D1393
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/source-conflict.tflw · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
