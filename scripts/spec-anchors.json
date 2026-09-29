@@ -1,9 +1,9 @@
 {
   "comment": "GitHub's own heading anchors for SPEC.md, fetched from the ref below. Never hand-edit: the point of this file is that nothing in this repository computed it. Refresh with `node scripts/refresh-spec-anchors.mjs --ref <ref>`.",
   "repo": "deepak-tuteja/tflw",
-  "ref": "m247-language",
-  "sha": "60f733cdcd617ad5688f919d241e8350a868fb99",
-  "source": "https://github.com/deepak-tuteja/tflw/blob/60f733cdcd617ad5688f919d241e8350a868fb99/SPEC.md",
+  "ref": "m248",
+  "sha": "959593ce2839fc708e63dbcd408350bb603eb3d1",
+  "source": "https://github.com/deepak-tuteja/tflw/blob/959593ce2839fc708e63dbcd408350bb603eb3d1/SPEC.md",
   "headings": [
     [
       "testFlow — SPEC",
@@ -32,6 +32,10 @@
     [
       "3.3 `session` blocks — the single auth concept (P#20, P#31) ✅",
       "33-session-blocks--the-single-auth-concept-p20-p31-"
+    ],
+    [
+      "`session … oauth2 code` — signing in through a browser (M248) ✅",
+      "session--oauth2-code--signing-in-through-a-browser-m248-"
     ],
     [
       "`csrf from … send as header \"…\"` (M137b) ✅",
