@@ -1,11 +1,11 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 930,
-    "atRisk": 845,
+    "reads": 933,
+    "atRisk": 848,
     "high": 332,
     "medium": 61,
-    "low": 452,
+    "low": 455,
     "declared": 58,
     "inPage": 107,
     "inRetry": 46
@@ -415,7 +415,7 @@
       "the Auth tab says who this file runs as, and every editable thing lands in Config on its own line": {
         "high": 1,
         "medium": 0,
-        "low": 9
+        "low": 12
       },
       "the Config tab makes the edit the product had been telling the author to make": {
         "high": 4,
