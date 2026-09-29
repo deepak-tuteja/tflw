@@ -9781,7 +9781,7 @@ the report header.
 
 ### D1362
 
-<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/archive-check.mjs, tflw-tests/scripts/verify-artifact-contract.mjs +1 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/archive-check.mjs, tflw-tests/scripts/verify-artifact-contract.mjs · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9789,7 +9789,7 @@ the report header.
 
 ### D1369
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +5 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9797,7 +9797,7 @@ the report header.
 
 ### D1370
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/regression.mjs +2 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/regression.mjs +1 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -14171,7 +14171,7 @@ listener, a browser and a token exchange in one declaration.
 
 ### M249
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +7 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§5 `M249` — the CLI and the reports remember**
 
