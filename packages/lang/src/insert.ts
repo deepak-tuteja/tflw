@@ -958,7 +958,16 @@ function lineAt(text: string, offset: number): number {
 function lineRun(text: string, byLine: ReadonlyMap<number, { kind: string }>, span: Span, floor: number): { from: number; to: number } {
   let end = span.end.offset;
   while (end > span.start.offset && /\s/.test(text[end - 1] ?? '')) end -= 1;
-  const last = lineAt(text, Math.max(end - 1, span.start.offset));
+  let last = lineAt(text, Math.max(end - 1, span.start.offset));
+  // A span runs to the start of the next statement, and a comment is not a token — so the note above
+  // the NEXT statement reads as this one's tail. It is that statement's note (`D1077`), and removing
+  // or moving this one must leave it where it is (`M250` `G13`, found moving a row back).
+  // Only a note at this statement's own depth or shallower: a comment indented under it is inside its
+  // sub-block and goes with it.
+  const depth = span.start.column - 1;
+  const all = text.split('\n');
+  const indentOf = (line: number): number => (all[line - 1] ?? '').length - (all[line - 1] ?? '').trimStart().length;
+  while (last > span.start.line && (byLine.get(last)?.kind === 'blank' || (byLine.get(last)?.kind === 'comment' && indentOf(last) <= depth))) last -= 1;
   let first = span.start.line;
   let above = first - 1;
   while (above > floor && byLine.get(above)?.kind === 'blank') above -= 1;

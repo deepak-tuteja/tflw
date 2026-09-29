@@ -1456,3 +1456,20 @@ test('`M250` `G13` (`D1391`): a row moves past its neighbour whole, notes and su
   const across = replaceInSource(`${text}\ntest "u"\n  log "x"\n`, { kind: 'move', decl: 0, steps: [3], over: [4] });
   if (across.ok) assert.fail('moved across into the next test');
 });
+
+test('`M250` `G13`: removing a statement leaves the note on the statement below it, and a note inside its sub-block goes with it', () => {
+  const text = [
+    'test "t"',
+    '  api GET /a',
+    '    header "x" is "1"',
+    '    # about the header',
+    '',
+    '  # about the second request',
+    '  api GET /b',
+    '',
+  ].join('\n');
+  const out = replaceInSource(text, { kind: 'remove', decl: 0, steps: [0] });
+  if (!out.ok) assert.fail(out.reason);
+  assert.match(out.text, /# about the second request\n {2}api GET \/b/);
+  assert.doesNotMatch(out.text, /about the header/);
+});
