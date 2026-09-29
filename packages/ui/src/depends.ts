@@ -142,3 +142,52 @@ export function statementRemoval(statement: OutlineStatement): { lines: number[]
 
 /** Every statement of a body, for callers that want the flat list without importing two modules. */
 export { statementsOf };
+
+/**
+ * **The rows a move trades between** — `M250` `G13` (`D1391`).
+ *
+ * The sequence draws a request with its attachments as one row, and a statement, a scoping block
+ * and a session's head as one each; a move trades a row with the row next to it, so the units are
+ * those rows' step runs, in body order. A statement attached to a request is inside its request's
+ * run and heads none of its own, so it offers no move — moving it alone would split the row.
+ */
+export function moveUnits(body: OutlineBody): readonly (readonly number[])[] {
+  const out: number[][] = [];
+  const walk = (b: OutlineBody): void => {
+    for (const s of b.preamble) if (s.stepPath !== null && s.inner === null) out.push([s.stepPath.step]);
+    for (const r of b.requests) out.push(requestRemoval(r).steps.slice().sort((x, y) => x - y));
+    for (const ses of b.sessions) {
+      if (ses.head.stepPath !== null && ses.head.inner === null) out.push([ses.head.stepPath.step]);
+      walk(ses.body);
+    }
+  };
+  walk(body);
+  return out.sort((a, b) => a[0]! - b[0]!);
+}
+
+/** The move a row starting at `first` makes one place `by`, or `null` at an end or where the
+ *  neighbour is not a whole row (a step the sequence does not draw as one sits between them). */
+export function moveOf(units: readonly (readonly number[])[], first: number, by: -1 | 1): { steps: readonly number[]; over: readonly number[] } | null {
+  const i = units.findIndex((u) => u[0] === first);
+  if (i < 0) return null;
+  const own = units[i]!;
+  const other = units[i + by];
+  if (other === undefined) return null;
+  const touching = by < 0 ? other[other.length - 1]! + 1 === own[0] : own[own.length - 1]! + 1 === other[0];
+  return touching ? { steps: own, over: other } : null;
+}
+
+/** The line a body's step `step` starts on, as the outline drew it — `null` when no row has it. */
+export function lineOfStep(body: OutlineBody, step: number): number | null {
+  for (const s of body.preamble) if (s.stepPath?.step === step && s.inner === null) return s.line;
+  for (const r of body.requests) {
+    if (r.stepPath.step === step) return r.line;
+    for (const a of r.attached) if (a.stepPath?.step === step && a.inner === null) return a.line;
+  }
+  for (const ses of body.sessions) {
+    if (ses.head.stepPath?.step === step && ses.head.inner === null) return ses.head.line;
+    const inner = lineOfStep(ses.body, step);
+    if (inner !== null) return inner;
+  }
+  return null;
+}

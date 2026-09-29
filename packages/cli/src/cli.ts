@@ -9,7 +9,7 @@
 //   → writeReport(report.html) + writeJunitXml + renderCliSummary → exit code (0 pass / 1 test failure / 2 usage).
 
 import { readFile, readdir, writeFile, access, mkdir, stat } from 'node:fs/promises';
-import { watch as fsWatch, existsSync, readFileSync, statSync, realpathSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs';
+import { watch as fsWatch, existsSync, readFileSync, statSync, realpathSync, mkdirSync, openSync, writeSync, closeSync, writeFileSync, unlinkSync } from 'node:fs';
 // M92b (`B6-09`) — `install-browsers` resolves the consumer's own `playwright` instead of letting
 // `npx --yes` fetch an unpinned one from the registry.
 import { createHash } from 'node:crypto';
@@ -135,6 +135,9 @@ import {
   writeEventsNdjson,
   clearRunOwnedMembers,
   keepRun,
+  runIdFor,
+  RUNNING_MARKER,
+  RUNNING_EVENTS,
   mergeRuns,
   copyAssets,
   readHistory,
@@ -2065,6 +2068,14 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     readonly report: RunReport;
   }
 
+  // `M250` `G15` (`D1392`) — a run started from a shell can be followed by the page. It says it is
+  // running in `report/.running.json` and streams its events, redacted, to `report/.running.ndjson`;
+  // both go when it has been kept. Not for a run the page started (`TFLW_KEEP_ID`: the page already
+  // reads that one's stdout) nor for `watch`, which calls this once per save.
+  const follow = watchOpts === undefined && process.env.TFLW_KEEP_ID === undefined
+    ? openFollow(join(cwd, resolved.reportDir), redactor, runnable.map(({ file }) => relative(cwd, file).split(sep).join('/')))
+    : null;
+
   const fileResults = await runWithConcurrency(
     runnable,
     parallel,
@@ -2074,7 +2085,8 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
       // `/`-separated tree. `relative` answers with `\` on Windows.
       const fileLabel = relative(cwd, file).split(sep).join('/');
       const buffered = useBufferedVerbose ? bufferedEmit(out, color, args.verbose, githubActions, timestamps, resolved.logLevel) : undefined;
-      const rawSink = buffered?.sink ?? sharedHumanEmit ?? sharedNdjsonEmit;
+      const ownSink = buffered?.sink ?? sharedHumanEmit ?? sharedNdjsonEmit;
+      const rawSink: EventSink | undefined = follow === null ? ownSink : ownSink === undefined ? follow.emit : (ev) => { ownSink(ev); follow.emit(ev); };
       const fileEmit = rawSink ? withFileTag(rawSink, fileLabel) : undefined;
       let previousTick: LoadProgressSnapshot | undefined;
       const printProgress = (snapshot: LoadProgressSnapshot): void => {
@@ -2376,7 +2388,9 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // record it shows and the directory on disk are one id; nothing else sets it.
   const kept = args.noKeep
     ? null
-    : await keepRun(reportDir, { startedAt: merged.startedAt, keep: resolved.runsKeep, ...(process.env.TFLW_KEEP_ID ? { id: process.env.TFLW_KEEP_ID } : {}) });
+    : await keepRun(reportDir, { startedAt: merged.startedAt, keep: resolved.runsKeep, ...(process.env.TFLW_KEEP_ID ? { id: process.env.TFLW_KEEP_ID } : follow !== null ? { id: follow.id } : {}) });
+  // The page that followed this run finds it kept under the id the marker named, and then stops.
+  follow?.close();
 
   // `M249` `B` — the kept runs this one joins, read only when a test failed: a green run's summary
   // has no line a history clause would attach to, so it does not pay for the read.
@@ -4148,6 +4162,51 @@ function bufferedEmit(
  * concurrent files unlike the human ticker: each line is self-contained, so interleaving across
  * `--workers > 1` needs no special-casing the way verbose human text does. `collected` also feeds
  * `report/events.ndjson` (decision 111.4 — a permanent artifact, not just a live stream). */
+/**
+ * Open the marker and the live event file — `M250` `G15` (`D1392`).
+ *
+ * Synchronous and best-effort on purpose: a run is never refused because it could not announce
+ * itself, and a write that fails stops the stream rather than the run. The process's `exit` removes
+ * both files whatever path the run leaves by, so only a kill the process cannot see leaves them
+ * behind — and the page ignores a marker whose process is gone.
+ */
+function openFollow(reportDir: string, redactor: Redactor, files: readonly string[]): { readonly id: string; readonly emit: EventSink; readonly close: () => void } | null {
+  const marker = join(reportDir, RUNNING_MARKER);
+  const stream = join(reportDir, RUNNING_EVENTS);
+  let fd: number;
+  const startedAt = new Date().toISOString();
+  const id = runIdFor(startedAt);
+  try {
+    mkdirSync(reportDir, { recursive: true });
+    fd = openSync(stream, 'w');
+    writeFileSync(marker, `${JSON.stringify({ pid: process.pid, id, startedAt, files })}\n`);
+  } catch {
+    return null;
+  }
+  let closed = false;
+  const close = (): void => {
+    if (closed) return;
+    closed = true;
+    try { closeSync(fd); } catch { /* already closed */ }
+    for (const p of [marker, stream]) {
+      try { unlinkSync(p); } catch { /* already gone */ }
+    }
+  };
+  process.once('exit', close);
+  return {
+    id,
+    emit: (ev) => {
+      if (closed) return;
+      try {
+        writeSync(fd, `${JSON.stringify(redactEvent(ev, redactor))}\n`);
+      } catch {
+        close();
+      }
+    },
+    close,
+  };
+}
+
 function ndjsonEmit(out: { write: (text: string) => void }, collected: RunEvent[]): EventSink {
   return (ev) => {
     collected.push(ev);

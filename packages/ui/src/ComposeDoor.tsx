@@ -81,6 +81,7 @@ import {
 } from '@tflw/lang';
 import { pickLocators, recordActions, putFile, getFile, dropScratch, startRun, subscribe, getReports, getResults, type FileView } from './api';
 import { diagnose } from './diagnose';
+import { lineOfStep } from './depends';
 import { matches, SHORTCUTS } from './shortcuts';
 import { indexFromReport, indexFromSend, belongsTo, playScratchOf } from './ran';
 import { VOCABULARY } from './vocabulary';
@@ -1135,6 +1136,42 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   );
 
   /**
+   * **↑/↓ — a row moves one place** — `M250` `G13` (`D1391`).
+   *
+   * `replaceInSource`'s `move` does the edit, so the page and the lang tests share one answer to
+   * what a move writes. The address follows the row to where it landed, and so does the focus: the
+   * row's own ↑ or ↓ is focused again when it still has one, so a second press moves it again, which
+   * is what a keyboard reader holding Alt expects.
+   */
+  const moveSteps = useCallback(
+    (decl: OutlineDecl, steps: readonly number[], over: readonly number[], by: -1 | 1) => {
+      if (!file) return;
+      const out = replaceInSource(draft ?? file.text, { kind: 'move', decl: decl.index, steps: [...steps], over: [...over], space: spaceOfDecl(decl) });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+      // Where the row's first statement now sits: up, it starts where its neighbour started; down,
+      // the neighbour's statements come first.
+      const first = by < 0 ? Math.min(...over) : Math.min(...steps) + over.length;
+      const after = fileOutline(path, out.text, opensPage);
+      const moved = after.declarations.find((d) => spaceOfDecl(d) === spaceOfDecl(decl) && d.index === decl.index);
+      const line = moved === undefined ? null : lineOfStep(moved.body, first);
+      onTab('compose', line ?? moved?.line ?? 1);
+      if (line !== null) {
+        requestAnimationFrame(() => {
+          const row = document.querySelector(`[data-seq-line="${line}"]`);
+          const again = row?.querySelector(`:scope > [data-seq-move="${by < 0 ? 'up' : 'down'}"]`) ?? row?.querySelector(':scope > [data-seq-pick]');
+          if (again instanceof HTMLElement) again.focus();
+        });
+      }
+    },
+    [file, draft, settle, path, onTab, opensPage],
+  );
+
+  /**
    * **`✕` on a statement inside a scoping block** — `M219` `D` (`D1163`).
    *
    * `removeSteps` takes indices into a body and a statement inside a block is not one of them, so
@@ -2087,6 +2124,9 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
   );
 
   const [ownProblem, setProblem] = useState<string | null>(null);
+  /** The last write was refused with `409` — the file changed on disk under this draft (`G14`). */
+  const [conflicted, setConflicted] = useState(false);
+  useEffect(() => setConflicted(false), [path]);
   /** A read failure is the shell's to discover and this pane's to say — there is no third place a
    *  reader looks, and a form that stayed silent about it would show an empty file as an empty
    *  form, which is the `M210` §0 defect wearing a different hat. */
@@ -2567,9 +2607,11 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     const res = await putFile(path, text, file.etag);
     setBusy(false);
     if (!res.ok) {
-      setProblem(res.status === 409 ? `${res.error} — the file changed under this page; reopen it and apply this again` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
+      setConflicted(res.status === 409);
+      setProblem(res.status === 409 ? `${res.error} — the file changed on disk since this page read it; nothing was written` : res.code ? `${res.code} at line ${res.line}: ${res.error}` : res.error);
       return;
     }
+    setConflicted(false);
     onFileWritten({ path, text, etag: res.etag });
     onDraft(null);
     setEdit(null);
@@ -2584,6 +2626,34 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     setNoting(null);
     onWritten(path);
   }, [file, draft, path, onFileWritten, onDraft, onWritten]);
+
+  /**
+   * **Re-read from disk** — `M250` `G14` (`D1393`), Config's gesture on Source and Compose.
+   *
+   * Offered only after a `409`, and a button rather than a link because taking it drops the draft:
+   * the page then shows the file as it is on disk, and the author re-applies what they meant to.
+   * Nothing is merged — a merge is a decision about two texts, and the page will not make it.
+   */
+  const reread = useCallback(async () => {
+    try {
+      const view = await getFile(path);
+      onFileWritten({ path, text: view.text, etag: view.etag });
+    } catch (e) {
+      setProblem(`the file could not be read again: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    onDraft(null);
+    setEdit(null);
+    setExpectEdit(null);
+    setHeader(null);
+    setThreshold(null);
+    setElementEdit(null);
+    setRowsCount(null);
+    setNoting(null);
+    setEditProblem(null);
+    setProblem(null);
+    setConflicted(false);
+  }, [path, onFileWritten, onDraft]);
 
   /* `M240` `C` (`D1311`) — ⌘S/Ctrl+S writes the draft from anywhere on the page, a field included,
      and never opens the browser's own *save page* dialog, even with nothing to write. */
@@ -2660,6 +2730,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
         <SourcePanel
           file={file}
           problem={ownProblem}
+          onReread={conflicted ? () => void reread() : null}
           pending={sourcePending}
           diagnostics={diagnostics}
           project={project}
@@ -2773,6 +2844,8 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onAddAfter={addRequestAfter} onDuplicate={duplicateRequest} menuFor={seqMenuFor} onMenu={onMenu}
           made={made}
           onRemoveSteps={removeSteps}
+          onMoveSteps={moveSteps}
+          onReread={conflicted ? () => void reread() : null}
           onRemoveDecl={removeDecl}
           /* `D1176` — ▶ is a vocabulary row, so the door asks the table rather than its own name. */
           onPlay={VOCABULARY[door].plays ? (d) => void play(d) : null}

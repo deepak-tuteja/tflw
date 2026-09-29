@@ -491,6 +491,7 @@ function spaceOf(r: Replacement): DeclSpace | undefined {
     case 'header':
     case 'remove':
     case 'removeDecl':
+    case 'move':
       return r.space;
     default:
       return undefined;
@@ -570,7 +571,20 @@ export type Replacement =
   | { readonly kind: 'remove'; readonly decl: number; readonly steps: readonly number[]; readonly space?: DeclSpace }
   /** A whole declaration, its header, its tags, its body and its note. `D1117`'s other half: the
    *  sequence column's first row is the test, so the test has a `✕` like everything under it. */
-  | { readonly kind: 'removeDecl'; readonly decl: number; readonly space?: DeclSpace };
+  | { readonly kind: 'removeDecl'; readonly decl: number; readonly space?: DeclSpace }
+  /**
+   * **Move a row one place** — `M250` `G13` (`D1391`).
+   *
+   * `steps` (the row being moved) and `over` (the row directly above or below it) are each a
+   * contiguous run of one declaration's body, and they trade places: a request moves with the
+   * assertions attached to it, and it passes a neighbour whole, because a row is what the page
+   * draws and a row split by a move would read a different response. Each statement keeps its note,
+   * and the blank lines between the two runs stay where they were, so the file's spacing is the
+   * author's before and after. The body is the one block a `StepPath` can name, so a move cannot
+   * cross into a hook, another declaration or a `rows` block by construction. Runs that are not
+   * contiguous, not adjacent, or empty are refused rather than approximated.
+   */
+  | { readonly kind: 'move'; readonly decl: number; readonly steps: readonly number[]; readonly over: readonly number[]; readonly space?: DeclSpace };
 
 /**
  * What a note is a note **on** (`D1077`, widened by `M210` `S5`).
@@ -626,6 +640,7 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
   if (replacement.kind === 'note') return replaceNote(text, declarations, replacement.owner, replacement.lines);
   if (replacement.kind === 'remove') return removeSteps(text, declarations, replacement.decl, replacement.steps);
   if (replacement.kind === 'removeDecl') return removeDeclaration(text, declarations, replacement.decl);
+  if (replacement.kind === 'move') return moveSteps(text, declarations, replacement.decl, replacement.steps, replacement.over);
 
   const decl = declarations[replacement.path.decl];
   if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.path.decl}` };
@@ -988,6 +1003,46 @@ function removeSteps(text: string, declarations: readonly Declaration[], index: 
     ranges.push(lineRun(text, byLine, node.span, floor));
   }
   return dropLines(text, ranges);
+}
+
+function moveSteps(text: string, declarations: readonly Declaration[], index: number, steps: readonly number[], over: readonly number[]): InsertResult {
+  const decl = declarations[index];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${index}` };
+  const run = (xs: readonly number[]): [number, number] | null => {
+    if (xs.length === 0) return null;
+    const sorted = [...xs].sort((a, b) => a - b);
+    for (let k = 1; k < sorted.length; k += 1) if (sorted[k] !== sorted[k - 1]! + 1) return null;
+    return [sorted[0]!, sorted[sorted.length - 1]!];
+  };
+  const a = run(steps);
+  const b = run(over);
+  if (a === null || b === null) return { ok: false, reason: 'a move names two runs of whole statements, each without a gap' };
+  if (b[1] + 1 !== a[0] && a[1] + 1 !== b[0]) return { ok: false, reason: 'a row moves past the row next to it, and these two are not next to each other' };
+  for (const k of [a[0], a[1], b[0], b[1]]) if (!decl.body[k]) return { ok: false, reason: `that declaration has no step ${k}` };
+  const { lines: records } = lex(text);
+  const byLine = new Map(records.map((r) => [r.line, { kind: r.kind as string }]));
+  const floor = decl.span.start.line;
+  const lines = ([from, to]: [number, number]): { from: number; to: number } => ({
+    from: lineRun(text, byLine, decl.body[from]!.span, floor).from,
+    to: lineRun(text, byLine, decl.body[to]!.span, floor).to,
+  });
+  const [early, late] = a[0] < b[0] ? [lines(a), lines(b)] : [lines(b), lines(a)];
+  // Line numbers are 1-based and `to` is exclusive, as `dropLines` reads them.
+  const all = text.split('\n');
+  const take = (r: { from: number; to: number }): string[] => all.slice(r.from - 1, r.to - 1);
+  const moved = [
+    ...all.slice(0, early.from - 1),
+    ...take(late),
+    ...all.slice(early.to - 1, late.from - 1),
+    ...take(early),
+    ...all.slice(late.to - 1),
+  ];
+  const out = format(moved.join('\n'));
+  if (!out.ok) return { ok: false, reason: `the edit does not lex: ${out.reason ?? 'unknown'}` };
+  const check = parseSource(out.formatted);
+  const broke = check.diagnostics.find((d) => d.severity === 'error');
+  if (broke) return { ok: false, reason: `the edit does not parse: ${broke.code} at line ${broke.span.start.line}` };
+  return { ok: true, text: out.formatted };
 }
 
 function removeDeclaration(text: string, declarations: readonly Declaration[], index: number): InsertResult {

@@ -3,7 +3,7 @@
 // attached to it. Written in `M241` `E`, which found the module read by the page and by no unit test.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bindsName, holds, orderedOf, readsNames, requestRemoval, statementRemoval } from '../src/depends';
+import { bindsName, holds, lineOfStep, moveOf, moveUnits, orderedOf, readsNames, requestRemoval, statementRemoval } from '../src/depends';
 import { fileOutline, type OutlineTest } from '../src/outline';
 
 const FILE = [
@@ -54,4 +54,28 @@ test('removing a request takes its attachments; a statement removes itself alone
   assert.deepEqual(r.lines, [post!.line, ...post!.attached.map((s) => s.line)]);
   assert.equal(r.steps.length, r.lines.length);
   assert.deepEqual(statementRemoval(capture), { lines: [capture.line], steps: [capture.stepPath!.step] });
+});
+
+test('`M250` `G13` (`D1391`): the rows a move trades are the rows the sequence draws, and the ends offer nothing', () => {
+  const text = [
+    'test "t"',
+    '  let who = "a"',
+    '  api GET /a',
+    '  expect status equals 200',
+    '  expect body.id equals 1',
+    '  log "between"',
+    '  api GET /b',
+    '',
+  ].join('\n');
+  const body = (fileOutline('m.tflw', text).declarations[0] as OutlineTest).body;
+  // A request carries its attachments; a lone statement is its own row.
+  assert.deepEqual(moveUnits(body).map((u) => [...u]), [[0], [1, 2, 3], [4], [5]]);
+  const units = moveUnits(body);
+  assert.equal(moveOf(units, 0, -1), null, 'the first row has no up');
+  assert.equal(moveOf(units, 5, 1), null, 'the last row has no down');
+  assert.deepEqual(moveOf(units, 4, -1), { steps: [4], over: [1, 2, 3] }, 'a row passes the whole request above it');
+  // An attached statement heads no row, so it offers no move of its own.
+  assert.equal(moveOf(units, 2, -1), null);
+  assert.equal(lineOfStep(body, 4), 6);
+  assert.equal(lineOfStep(body, 1), 3);
 });

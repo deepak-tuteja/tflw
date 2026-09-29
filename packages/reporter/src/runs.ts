@@ -96,3 +96,11 @@ export async function listKeptRuns(reportDir: string): Promise<string[]> {
     return [];
   }
 }
+
+/** `report/.running.json` — `M250` `G15` (`D1392`): `{ pid, id, startedAt, files }` while a run
+ *  started from a shell is in flight, so `tflw ui` can follow it. `tflw run` writes it and removes
+ *  it once the run is kept; the page ignores one whose process is gone. */
+export const RUNNING_MARKER = '.running.json';
+/** `report/.running.ndjson` — that run's events so far, one redacted JSON line each, file-tagged
+ *  as `--format ndjson` prints them. Removed with the marker. */
+export const RUNNING_EVENTS = '.running.ndjson';

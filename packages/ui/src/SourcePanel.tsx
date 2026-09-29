@@ -31,11 +31,13 @@ import type { FileView } from './api';
 import type { Lens, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
 
-export function SourcePanel({ file, pending, diagnostics, project, door, onText, problem = null }: {
+export function SourcePanel({ file, pending, diagnostics, project, door, onText, problem = null, onReread = null }: {
   readonly file: FileView | null;
   /** Why the last write was refused — said here too, because ⌘S from Source was otherwise a
    *  refusal only the Compose pane could show. */
   readonly problem?: string | null;
+  /** After a `409`: drop the draft and show the file as it is on disk (`M250` `G14`, `D1393`). */
+  readonly onReread?: (() => void) | null;
   /** The editor's text, into the page's one buffer (`D1321`) — the same `draft` Compose writes. */
   readonly onText: (text: string) => void;
   readonly pending: { ok: true; text: string } | { ok: false; reason: string };
@@ -66,7 +68,19 @@ export function SourcePanel({ file, pending, diagnostics, project, door, onText,
 
   return (
     <div className="authoring source-panel" data-source={unwritten ? 'pending' : 'written'}>
-      {problem === null ? null : <p className="warn" role="alert" data-source-problem>{problem}</p>}
+      {problem === null ? null : (
+        <p className="warn" role="alert" data-source-problem>
+          {problem}
+          {onReread === null ? null : (
+            <>
+              {' '}
+              <button type="button" onClick={onReread} data-source-reread data-tip="drop this draft and show the file as it is on disk">
+                re-read from disk
+              </button>
+            </>
+          )}
+        </p>
+      )}
       <p className="muted" data-source-state>
         {file === null
           ? 'no file open'

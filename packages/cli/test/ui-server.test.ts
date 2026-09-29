@@ -6,8 +6,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink, cp } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink, cp, appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { spawn, spawnSync } from 'node:child_process';
 import { join, dirname, basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1321,4 +1322,80 @@ test('DELETE /api/scratch drops the file, which the project view never counted',
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('`M250` `G15` (`D1392`): a run started from a shell is followed from its marker, and ends when the marker goes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-follow-'));
+  await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+  const report = join(dir, 'report');
+  await mkdir(report, { recursive: true });
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(dir, 'no-static') });
+  try {
+    const base = `http://127.0.0.1:${await ui.listen(0)}`;
+    const runs = async (): Promise<RunRecord[]> => (await (await api(`${base}/api/runs`)).json()) as RunRecord[];
+
+    // A marker whose process is gone is left alone — a `kill -9` leaves one, and following it would
+    // draw a run that never ends.
+    const dead = spawnSync(process.execPath, ['-e', '']).pid;
+    await writeFile(join(report, '.running.ndjson'), '', 'utf8');
+    await writeFile(join(report, '.running.json'), JSON.stringify({ pid: dead, id: 'gone', startedAt: '2026-01-01T00:00:00.000Z', files: ['a.tflw'] }), 'utf8');
+    assert.deepEqual((await runs()).map((r) => r.id), [], 'a dead process is not a run');
+
+    // A live one — this test's own process stands in for the shell's `tflw run`.
+    const id = '2026-01-01T00-00-00-000Z';
+    await writeFile(join(report, '.running.ndjson'), `${JSON.stringify({ type: 'run:start', total: 1, env: 'local', file: 'a.tflw' })}\n`, 'utf8');
+    await writeFile(join(report, '.running.json'), JSON.stringify({ pid: process.pid, id, startedAt: '2026-01-01T00:00:00.000Z', files: ['a.tflw'] }), 'utf8');
+    const listed = (await runs()).find((r) => r.id === id);
+    assert.equal(listed?.status, 'running');
+    assert.equal(listed?.followed, true);
+    assert.deepEqual(listed?.request.files, ['a.tflw']);
+    // Not the page's to cancel: it did not start it.
+    assert.deepEqual(await (await api(`${base}/api/runs/${id}/cancel`, { method: 'POST' })).json(), { cancelled: false });
+
+    const stream = readSse(`${base}/api/runs/${id}/events`);
+    await appendFile(join(report, '.running.ndjson'), `${JSON.stringify({ type: 'run:end', file: 'a.tflw' })}\n`, 'utf8');
+    // What the CLI does at its end: keep the run, then take the marker and the stream away.
+    await mkdir(join(report, 'runs', id), { recursive: true });
+    await writeFile(join(report, 'runs', id, 'results.json'), '{}', 'utf8');
+    await new Promise((r) => setTimeout(r, 400));
+    await rm(join(report, '.running.json'));
+    await rm(join(report, '.running.ndjson'));
+    const { data, end } = await stream;
+    assert.deepEqual(data.map((l) => (JSON.parse(l) as { type: string }).type), ['run:start', 'run:end'], 'both lines, the one written before the page looked and the one after');
+    assert.equal(end?.status, 'done');
+    assert.equal(end?.kept, `report/runs/${id}`);
+  } finally {
+    await ui.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`M250` `G15` (`D1392`): `tflw run` from a shell says it is running, streams its events, and takes both away once kept', async () => {
+  await withFixtureServer(async (baseUrl, slow) => {
+    const dir = await fixtureProject(baseUrl);
+    const env: NodeJS.ProcessEnv = { ...process.env, FORCE_COLOR: '0' };
+    delete env.TFLW_KEEP_ID; // a shell run: nothing named it
+    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, 'run', '--no-color', 'deep/slow.tflw'], { cwd: dir, env, stdio: 'ignore' });
+    const exited = new Promise<number | null>((done) => child.on('exit', (code) => done(code)));
+    try {
+      // The run is parked on `/slow`, so what it says about itself can be read while it is running.
+      for (let i = 0; i < 200 && slow.held() === 0; i++) await new Promise((r) => setTimeout(r, 50));
+      assert.equal(slow.held(), 1, 'the run reached its held request');
+      const marker = JSON.parse(await readFile(join(dir, 'report', '.running.json'), 'utf8')) as { pid: number; id: string; files: string[] };
+      assert.equal(marker.pid, child.pid);
+      assert.deepEqual(marker.files, ['deep/slow.tflw']);
+      const events = (await readFile(join(dir, 'report', '.running.ndjson'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l) as { type: string; file?: string });
+      assert.equal(events[0]?.type, 'run:start');
+      assert.equal(events[0]?.file, 'deep/slow.tflw', 'file-tagged, as `--format ndjson` prints it');
+
+      slow.release();
+      assert.equal(await exited, 0);
+      await assert.rejects(access(join(dir, 'report', '.running.json')), 'the marker goes with the run');
+      await assert.rejects(access(join(dir, 'report', '.running.ndjson')), 'and so does the stream');
+      await access(join(dir, 'report', 'runs', marker.id, 'results.json'));
+    } finally {
+      child.kill();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

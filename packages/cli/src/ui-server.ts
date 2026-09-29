@@ -37,12 +37,13 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile, readdir, stat, mkdir, writeFile, rename, unlink, realpath } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
+import { open as openFile, type FileHandle } from 'node:fs/promises';
 import { pageRunFlags } from './run-flags.js';
 import { join, resolve, relative, dirname, extname, sep, basename } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { DEFAULT_RUNS_KEPT, parseSource, parseConfigSource, format, lensesOfTest, lensesOfCrawl, stepLensCounts, pageOpening, LENSES, type ConfigFile, type EnvBlock, type Lens, type StepLens } from '@tflw/lang';
-import { readHistory } from '@tflw/reporter';
+import { readHistory, RUNNING_EVENTS, RUNNING_MARKER } from '@tflw/reporter';
 import { parseBaseline, resolveConfig, selectEnv, type ResolvedConfig } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 import { buildStamp, type BuildStamp } from './buildStamp.js';
@@ -686,6 +687,10 @@ export interface RunRecord {
   kept: string | null;
   /** Stdout lines this server no longer holds for replay (`D1317`); absent until the first one. */
   dropped?: number;
+  /** **Started outside the page** — a `tflw run` in a shell, followed through its `report/.running.*`
+   *  (`M250` `G15`, `D1392`). The page cannot cancel it, and its exit code is not this server's to
+   *  know; its verdict is in the report it keeps. */
+  followed?: boolean;
 }
 
 export interface ReportEntry {
@@ -1549,7 +1554,8 @@ const REPORT_MEMBERS = ['results.json', 'report.html', 'junit.xml', 'events.ndjs
 
 interface LiveRun {
   readonly record: RunRecord;
-  readonly child: ChildProcess;
+  /** `null` for a run this server follows rather than started (`D1392`). */
+  readonly child: ChildProcess | null;
   /** Every stdout line so far — a subscriber that arrives late replays from here. */
   readonly lines: string[];
   readonly stderr: string[];
@@ -1591,7 +1597,8 @@ export class UiServer {
   }
 
   async close(): Promise<void> {
-    for (const run of this.runs.values()) if (run.record.status === 'running') run.child.kill('SIGINT');
+    for (const run of this.runs.values()) if (run.record.status === 'running') run.child?.kill('SIGINT');
+    this.closing = true;
     this.server.closeAllConnections();
     await new Promise<void>((resolveClose, reject) => this.server.close((e) => (e ? reject(e) : resolveClose())));
   }
@@ -1803,9 +1810,94 @@ export class UiServer {
     live.record.kept = relative(this.opts.root, dest).split(sep).join('/');
   }
 
+  /** Set by `close()`, so a followed run's tail stops polling a directory nobody is serving. */
+  private closing = false;
+
+  /**
+   * **Follow a run started from a shell** — `M250` `G15` (`D1392`).
+   *
+   * `tflw run` announces itself in `report/.running.json` and streams its events to
+   * `report/.running.ndjson`. A marker naming a process that is alive and a run this server does
+   * not already hold becomes a record like any other, so the page's own follow (`M239-08`) draws it
+   * with no new path. A marker whose process is gone is ignored: a run killed where its `exit`
+   * handler could not run leaves one behind, and following it would draw a run that never ends.
+   */
+  private async adoptShellRun(): Promise<void> {
+    if (this.closing) return;
+    const reportDir = await this.reportDirFor();
+    let marker: { pid?: unknown; id?: unknown; startedAt?: unknown; files?: unknown };
+    try {
+      marker = JSON.parse(await readFile(join(reportDir, RUNNING_MARKER), 'utf8')) as typeof marker;
+    } catch {
+      return;
+    }
+    const { pid, id, startedAt, files } = marker;
+    if (typeof pid !== 'number' || typeof id !== 'string' || typeof startedAt !== 'string' || this.runs.has(id) || !processAlive(pid)) return;
+    let handle: FileHandle;
+    try {
+      handle = await openFile(join(reportDir, RUNNING_EVENTS), 'r');
+    } catch {
+      return;
+    }
+    const named = Array.isArray(files) ? files.filter((f): f is string => typeof f === 'string') : [];
+    const record: RunRecord = { id, startedAt, request: { files: named }, argv: ['run', ...named], status: 'running', exitCode: null, signal: null, endedAt: null, kept: null, followed: true };
+    const live: LiveRun = { record, child: null, lines: [], stderr: [], subscribers: new Set(), ended: Promise.resolve() };
+    this.runs.set(id, live);
+    live.ended = this.tail(live, handle, reportDir, pid);
+  }
+
+  /** Read the followed run's events as they land, until its marker goes or its process does. The
+   *  handle stays open across the CLI's `unlink`, so the lines written just before it are still read. */
+  private async tail(live: LiveRun, handle: FileHandle, reportDir: string, pid: number): Promise<void> {
+    const chunk = Buffer.alloc(64 * 1024);
+    let buffered = '';
+    let position = 0;
+    const drain = async (): Promise<void> => {
+      for (;;) {
+        const { bytesRead } = await handle.read(chunk, 0, chunk.length, position);
+        if (bytesRead === 0) return;
+        position += bytesRead;
+        buffered += chunk.toString('utf8', 0, bytesRead);
+        let nl = buffered.indexOf('\n');
+        while (nl !== -1) {
+          const line = buffered.slice(0, nl);
+          buffered = buffered.slice(nl + 1);
+          if (line.length > 0) this.emit(live, line);
+          nl = buffered.indexOf('\n');
+        }
+      }
+    };
+    const stillRunning = async (): Promise<boolean> => {
+      if (this.closing || !processAlive(pid)) return false;
+      try {
+        const now = JSON.parse(await readFile(join(reportDir, RUNNING_MARKER), 'utf8')) as { id?: unknown };
+        return now.id === live.record.id;
+      } catch {
+        return false;
+      }
+    };
+    try {
+      while (await stillRunning()) {
+        await drain();
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      await drain();
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+    live.record.endedAt = new Date().toISOString();
+    live.record.status = 'done';
+    await this.keep(live).catch(() => undefined);
+    for (const res of live.subscribers) {
+      res.write(`event: end\ndata: ${JSON.stringify({ status: live.record.status, exitCode: live.record.exitCode, kept: live.record.kept })}\n\n`);
+      res.end();
+    }
+    live.subscribers.clear();
+  }
+
   cancel(id: string): boolean {
     const live = this.runs.get(id);
-    if (!live || live.record.status !== 'running') return false;
+    if (!live || live.record.status !== 'running' || live.child === null) return false;
     live.record.status = 'cancelled';
     // SIGINT, the terminal's own gesture — `tflw run` handles it (EXIT_ABORTED, D-M32) and still
     // writes what it has, which is what makes the cancelled run's record openable.
@@ -2233,6 +2325,8 @@ export class UiServer {
     }
 
     if (path === '/api/runs' && method === 'GET') {
+      // The page reads this list every five seconds, so this is where a shell's run is noticed.
+      await this.adoptShellRun();
       return json(res, 200, [...this.runs.values()].map((r) => r.record).reverse());
     }
 
@@ -2421,5 +2515,16 @@ export function openInBrowser(url: string): void {
     spawn(cmd[0]!, cmd.slice(1), { detached: true, stdio: 'ignore' }).unref();
   } catch {
     // no browser to open is not an error the server should die of
+  }
+}
+
+/** Whether a process is alive — `kill(pid, 0)` delivers nothing and says whether it could. `EPERM`
+ *  is a process that exists and belongs to someone else, which is still alive. */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
   }
 }

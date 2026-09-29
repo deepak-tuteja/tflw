@@ -91,7 +91,7 @@ import {
 import { statementLead } from './statements';
 import { DOOR_BY_ID } from './doors';
 import { SessionPanel, type Session, type SessionLine } from './SessionPanel';
-import { holds, requestRemoval, statementRemoval } from './depends';
+import { holds, moveOf, moveUnits, requestRemoval, statementRemoval } from './depends';
 import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type BodiedDecl, type OutlineCrawl, type OutlineDecl, type OutlineHook, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
 import type { Prefix, SendForm } from './outline';
 import { VOCABULARY, type AddGesture } from './vocabulary';
@@ -292,6 +292,26 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
  *  line that is holding the thing. 81% of bindings are read downstream, so the refusal is the
  *  common case rather than the corner, and hiding the reason in a `title` would make the commonest
  *  outcome the invisible one. */
+/** **↑ and ↓ — move this row one place** (`M250` `G13`, `D1391`). Only the directions that exist
+ *  are drawn: the first row has no ↑ and the last no ↓, so a control never answers *nothing
+ *  happened*. Alt+↑/↓ on a focused row is the same move, handled on the sequence list. */
+function Move({ what, up, down }: { readonly what: string; readonly up: (() => void) | null; readonly down: (() => void) | null }) {
+  return (
+    <>
+      {up === null ? null : (
+        <button type="button" className="seq-x" onClick={up} data-seq-move="up" data-tip={`move this ${what} up one place (Alt+↑)`} aria-label={`move this ${what} up`}>
+          ↑
+        </button>
+      )}
+      {down === null ? null : (
+        <button type="button" className="seq-x" onClick={down} data-seq-move="down" data-tip={`move this ${what} down one place (Alt+↓)`} aria-label={`move this ${what} down`}>
+          ↓
+        </button>
+      )}
+    </>
+  );
+}
+
 function Remove({ what, onGo, refusal, onClear }: {
   readonly what: string;
   readonly onGo: () => void;
@@ -672,6 +692,9 @@ export interface ComposePaneProps {
    *  never calls this while anything is holding one of them. */
   readonly onRemoveSteps: ((decl: OutlineDecl, steps: readonly number[]) => void) | null;
   readonly onRemoveDecl: ((decl: OutlineDecl) => void) | null;
+  /** **↑/↓ — move a row one place** — `M250` `G13` (`D1391`). `steps` is the row, `over` the row
+   *  next to it; both are runs of the body's own indices, as `moveUnits` draws them. */
+  readonly onMoveSteps: ((decl: OutlineDecl, steps: readonly number[], over: readonly number[], by: -1 | 1) => void) | null;
   /** **▶ on the declaration head** — `M220` `A` (`D1168`). `null` on a door whose `vocabulary.ts`
    *  row says it does not play, and on a hook, which `--only` cannot name. */
   readonly onPlay: ((decl: OutlineTest) => void) | null;
@@ -713,6 +736,8 @@ export interface ComposePaneProps {
   readonly dirty: boolean;
   readonly busy: boolean;
   readonly problem: string | null;
+  /** After a `409`: drop the draft and show the file as it is on disk (`M250` `G14`, `D1393`). */
+  readonly onReread: (() => void) | null;
   readonly onWrite: () => void;
   readonly onDiscard: () => void;
   readonly door: Lens;
@@ -874,7 +899,7 @@ const fitEditor = (px: number, column: number, lower: number = LOWER_MIN): numbe
   Math.max(EDITOR_MIN, Math.min(Math.round(px), Math.max(EDITOR_MIN, column - 6 - lower)));
 
 export function ComposePane(props: ComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, onNewDecl, crawls, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, stage, authorization, onProjectTab, tab, onEditorTab: setTab } = props;
+  const { path, outline, at, focusLine, onLine, onNew, onNewDecl, crawls, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onMoveSteps, onReread, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, stage, authorization, onProjectTab, tab, onEditorTab: setTab } = props;
   /** The foot's gestures for the declaration in hand — see the foot's own comment. */
   const footAdds: readonly AddGesture[] =
     at === null || at.decl.kind === 'hook' ? [] : at.decl.kind === 'test' ? adds : at.decl.kind === 'action' ? adds.filter((a) => a.key !== 'record') : CRAWL_ADDS;
@@ -1329,6 +1354,18 @@ export function ComposePane(props: ComposePaneProps) {
   /** The selected declaration's workload, or `null` — the one fact `D1209`'s segment turns on. */
   const planWorkload = planWorkloadOf(at);
   const statements = decl === null ? [] : decl.body.preamble;
+  /** The rows a move trades between, and the control for the one starting at `first` (`D1391`). */
+  const units = decl === null ? [] : moveUnits(decl.body);
+  const mover = (first: number | undefined, what: string): ReactNode => {
+    if (decl === null || onMoveSteps === null || first === undefined) return null;
+    const go = (by: -1 | 1): (() => void) | null => {
+      const m = moveOf(units, first, by);
+      return m === null ? null : () => onMoveSteps(decl, m.steps, m.over, by);
+    };
+    const up = go(-1);
+    const down = go(1);
+    return up === null && down === null ? null : <Move what={what} up={up} down={down} />;
+  };
 
   /**
    * **One statement's row, wherever the fold put it** — `M219` `B`.
@@ -1370,7 +1407,10 @@ export function ComposePane(props: ComposePaneProps) {
             refusal={refusalFor(s.line)}
             trailing={
               onRemoveSteps === null || s.stepPath === null ? null : (
-                <Remove what="statement" onGo={() => remove(decl, s.line, statementRemoval(s))} refusal={refusalFor(s.line)} onClear={clearRefusal} />
+                <>
+                  {s.inner === null ? mover(s.stepPath.step, 'statement') : null}
+                  <Remove what="statement" onGo={() => remove(decl, s.line, statementRemoval(s))} refusal={refusalFor(s.line)} onClear={clearRefusal} />
+                </>
               )
             }
           />
@@ -1412,6 +1452,7 @@ export function ComposePane(props: ComposePaneProps) {
                   ⤹
                 </button>
               ) : null}
+              {mover(s.stepPath.step, 'statement')}
               <Remove what="statement" onGo={() => remove(decl, s.line, statementRemoval(s))} refusal={refusalFor(s.line)} onClear={clearRefusal} />
             </>
           )
@@ -1466,7 +1507,10 @@ export function ComposePane(props: ComposePaneProps) {
           }
           trailing={
             removable === null ? null : (
-              <Remove what="request" onGo={() => remove(decl, r.line, requestRemoval(r))} refusal={refusalFor(r.line)} onClear={clearRefusal} />
+              <>
+                {mover(r.stepPath.step, 'request')}
+                <Remove what="request" onGo={() => remove(decl, r.line, requestRemoval(r))} refusal={refusalFor(r.line)} onClear={clearRefusal} />
+              </>
             )
           }
         />
@@ -1515,7 +1559,10 @@ export function ComposePane(props: ComposePaneProps) {
           refusal={refusalFor(s.line)}
           trailing={
             onRemoveSteps === null || s.stepPath === null ? null : (
-              <Remove what="statement" onGo={() => remove(decl, s.line, statementRemoval(s))} refusal={refusalFor(s.line)} onClear={clearRefusal} />
+              <>
+                {s.inner === null ? mover(s.stepPath.step, 'statement') : null}
+                <Remove what="statement" onGo={() => remove(decl, s.line, statementRemoval(s))} refusal={refusalFor(s.line)} onClear={clearRefusal} />
+              </>
             )
           }
         />
@@ -1582,6 +1629,14 @@ export function ComposePane(props: ComposePaneProps) {
         {problem !== null ? (
           <span className="warn" data-compose-problem>
             {problem}
+            {onReread === null ? null : (
+              <>
+                {' '}
+                <button type="button" onClick={onReread} data-compose-reread data-tip="drop this draft and show the file as it is on disk">
+                  re-read from disk
+                </button>
+              </>
+            )}
           </span>
         ) : null}
         {dirty ? (
@@ -1628,7 +1683,22 @@ export function ComposePane(props: ComposePaneProps) {
       >
         {/* ── region 2: the sequence (`D1112`) ─────────────────────────────────────────── */}
         <div className="seq-col" data-seq-col={decl === null ? 0 : requestsOf(decl.body).length}>
-          <ol className="seq" data-body-sequence={decl === null ? 0 : requestsOf(decl.body).length} data-seq-rows={rowCount} data-seq-sessions={decl === null ? 0 : decl.body.sessions.length}>
+          <ol
+            className="seq"
+            data-body-sequence={decl === null ? 0 : requestsOf(decl.body).length}
+            data-seq-rows={rowCount}
+            data-seq-sessions={decl === null ? 0 : decl.body.sessions.length}
+            onKeyDown={(e) => {
+              // Alt+↑/↓ on a row is its ↑/↓ button (`D1391`): the row's own control is found and
+              // pressed, so the key can never make a move the row does not offer.
+              if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+              const row = e.target instanceof Element ? e.target.closest('[data-seq-row]') : null;
+              const own = row?.querySelector(`:scope > [data-seq-move="${e.key === 'ArrowUp' ? 'up' : 'down'}"]`);
+              if (!(own instanceof HTMLElement)) return;
+              e.preventDefault();
+              own.click();
+            }}
+          >
             {decl === null ? null : (
               <SeqRow
                 line={decl.line}
