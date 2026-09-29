@@ -33,6 +33,7 @@ import { declarationsIn, lex, parseSource, print, STEP_LENS, type DeclSpace, typ
 import { landingDecl } from './landingRule';
 import type {
   ActionDecl,
+  ElementDecl,
   ApiBody,
   ApiRequestSpec,
   ApiStep,
@@ -298,6 +299,8 @@ export interface OutlineFileRow {
   readonly imports: readonly ImportDecl[];
   readonly uses: readonly UseDecl[];
   readonly actions: readonly ActionDecl[];
+  /** `element` declarations (`M250`, `G2`) — the file's own, in line order. */
+  readonly elements: readonly ElementDecl[];
   /** The file header comment — 1616 lines of it across 118 of the sibling's 139 files. */
   readonly header: Note | null;
   /** A note the file ends on, owning nothing. One file in 139. */
@@ -709,7 +712,7 @@ export function fileOutline(path: string, source: string, opensPage: ReadonlySet
   const declarations: OutlineDecl[] = [...indexed, ...crawls, ...actions].sort((a, b) => a.line - b.line);
   return {
     path,
-    file: { imports: program.imports, uses: program.uses, actions: program.actions, header: notes.header, tail: notes.tail },
+    file: { imports: program.imports, uses: program.uses, actions: program.actions, elements: program.elements ?? [], header: notes.header, tail: notes.tail },
     declarations,
     diagnostics,
   };

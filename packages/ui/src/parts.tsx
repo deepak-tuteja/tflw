@@ -57,6 +57,7 @@ import {
   quantifiable,
   type ApiBody,
   type ClickKind,
+  type ElementDecl,
   type ExpectStmt,
   type FindingSeverity,
   type Lens,
@@ -318,6 +319,11 @@ export interface RowEditing {
   readonly onWorkload: ((decl: OutlineTest, next: WorkloadEdit | null) => void) | null;
   /** One `import` or `use` line of the file. `null` as the path removes it. */
   readonly onFileDecl: ((what: 'import' | 'use', index: number, path: string | null) => void) | null;
+  /** One `element` line of the file (`M250`, `G2`), held while it is being typed — a name half
+   *  written is not one the builder takes, and the field must not snap back under the cursor.
+   *  `null` as the value removes the line. */
+  readonly element: { readonly key: string; readonly values: ElementEdit } | null;
+  readonly onElement: ((index: number, next: ElementEdit | null) => void) | null;
   /**
    * The row whose **new** note is open, by the same key.
    *
@@ -1058,6 +1064,17 @@ export function tableSpecOf(edit: HeaderEdit): DataTableSpec | null {
   if (edit.tableKind === 'none') return null;
   if (edit.tableKind === 'file') return { kind: 'file', path: edit.tablePath, concurrently: edit.tableConcurrently };
   return { kind: 'inline', columns: edit.columns, rows: edit.rows, concurrently: edit.tableConcurrently };
+}
+
+/** What an `element` row holds (`M250`, `G2`): its name and its locator, as the fields show them. */
+export interface ElementEdit {
+  readonly name: string;
+  readonly kind: LocatorKind;
+  readonly value: string;
+}
+
+export function elementEditOf(node: ElementDecl): ElementEdit {
+  return { name: node.name, kind: node.locator.kind, value: node.locator.value.value };
 }
 
 /** What a threshold row holds. A `duration` metric carries a percentile; an `errorRate` does not,
@@ -2972,8 +2989,8 @@ function Joined({ items }: { readonly items: readonly string[] }) {
 
 /** The one pinned file row (`D1074`): what this file brings in, and what it declares for itself. */
 export function FileRow({ outline, editing }: { readonly outline: FileOutline; readonly editing: RowEditing }) {
-  const { imports, uses, actions, header, tail } = outline.file;
-  const empty = imports.length === 0 && uses.length === 0 && actions.length === 0 && header === null;
+  const { imports, uses, actions, elements, header, tail } = outline.file;
+  const empty = imports.length === 0 && uses.length === 0 && actions.length === 0 && elements.length === 0 && header === null;
   const live = editing.onFileDecl !== null;
   const writingNote = editing.noting === 'file';
   return (
@@ -3011,6 +3028,18 @@ export function FileRow({ outline, editing }: { readonly outline: FileOutline; r
             <Joined items={uses.map((u) => u.path.value)} />
           )}
         </li>
+        {/* `M250` `G2` — the file's `element` declarations. Until this row the locator picker
+            listed the names and nothing on the page showed what one of them stood for. */}
+        <li data-file-elements={elements.length}>
+          elements{' '}
+          {editing.onElement !== null ? (
+            <ElementRows elements={elements} held={editing.element} onChange={editing.onElement} />
+          ) : elements.length === 0 ? (
+            <span className="muted">none</span>
+          ) : (
+            <Joined items={elements.map((e) => e.name)} />
+          )}
+        </li>
         {/* **The actions are named and not drawn, and that is this round's own §0 defect one
             declaration kind over.** `fileOutline` walks hooks and tests; an `action` has a body —
             requests, captures, and all 8 of the corpus's `give` statements — and none of it is on
@@ -3026,6 +3055,49 @@ export function FileRow({ outline, editing }: { readonly outline: FileOutline; r
           a reader must not lose to a projection. */}
       {tail ? <NoteBlock note={tail} what="the file's last word" /> : null}
     </div>
+  );
+}
+
+/** The locator kinds an `element` may be declared with: every kind but `element` itself. */
+const DECLARABLE_KINDS = LOCATOR_KINDS.filter((k) => k !== 'element');
+
+/** The `element` lines, a name and a locator each. A blank name is that line removed — the rule
+ *  `PathRows` and a note follow, so there is no second gesture for taking one away. */
+function ElementRows({ elements, held, onChange }: {
+  readonly elements: readonly ElementDecl[];
+  readonly held: { readonly key: string; readonly values: ElementEdit } | null;
+  readonly onChange: (index: number, next: ElementEdit | null) => void;
+}) {
+  const valuesAt = (i: number, e: ElementDecl): ElementEdit => (held !== null && held.key === `el:${i}` ? held.values : elementEditOf(e));
+  const taken = new Set(elements.map((e) => e.name));
+  let n = elements.length + 1;
+  while (taken.has(`element${n}`)) n += 1;
+  return (
+    <span className="element-rows" data-element-rows={elements.length}>
+      {elements.map((e, i) => {
+        const v = valuesAt(i, e);
+        const set = (next: ElementEdit) => onChange(i, next.name.trim() === '' ? null : next);
+        return (
+          <span key={i} className="element-row" data-file-element={i}>
+            <input value={v.name} onChange={(ev) => set({ ...v, name: ev.target.value })} data-element-name={i} aria-label={`element ${i + 1} name`} data-tip="the name a step writes in place of the locator; blank removes the line" />
+            <span className="muted">=</span>
+            <select value={v.kind} onChange={(ev) => set({ ...v, kind: ev.target.value as LocatorKind })} data-element-kind={i} aria-label={`element ${i + 1} kind`}>
+              {DECLARABLE_KINDS.map((k) => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+            <input value={v.value} onChange={(ev) => set({ ...v, value: ev.target.value })} data-element-value={i} aria-label={`element ${i + 1} locator`} />
+          </span>
+        );
+      })}
+      <button
+        onClick={() => onChange(elements.length, { name: `element${n}`, kind: 'css', value: '[data-test=…]' })}
+        data-element-add
+        data-tip="a locator declared once and named, so a selector the page owns is written in one place"
+      >
+        + element
+      </button>
+    </span>
   );
 }
 

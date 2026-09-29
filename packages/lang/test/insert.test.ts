@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { tflwIn } from '../../../scripts/tflw-corpus.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildApiStep, buildWaitUntilApi, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildDataTable, buildGive, buildLet, buildLog, buildPause, SYNTHETIC, buildLocator, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit, type TestDecl } from '../src/index.js';
+import { buildApiStep, buildWaitUntilApi, buildCall, buildCapture, buildClick, buildExpect, buildFill, buildDataTable, buildGive, buildLet, buildLog, buildPause, SYNTHETIC, buildLocator, buildElement, buildOpen, buildTest, buildThreshold, buildWithin, buildWorkload, format, insertIntoSource, parseSource, print, replaceInSource, stringLit, LOCATOR_KINDS, type ApiStepSpec, type ExpectSpec, type ExpectStmt, type Insertion, type StringLit, type TestDecl } from '../src/index.js';
 
 /** Every result has to be something the write route would accept. */
 function acceptable(text: string, what: string): void {
@@ -781,6 +781,57 @@ test('S5a: a threshold and an import are edited, added and removed where they be
   assert.equal(dropped.ok, true, dropped.ok ? '' : dropped.reason);
   assert.doesNotMatch(dropped.text ?? '', /helpers\.tflw/);
   assert.match(dropped.text ?? '', /^import "\.\/shared\/more\.tflw"$/m);
+});
+
+test('`M250` `G2`: an `element` line is a file line — under the imports behind a blank, and `buildElement` refuses what the parser does', () => {
+  const file = ['# the file', '', 'import "./shared/helpers.tflw"', '', 'test "it opens"', '  open "/"', ''].join('\n');
+  const badge = buildElement({ name: 'cartBadge', locator: { kind: 'css', value: '[data-test=cart-count]' } });
+  assert.equal(badge.ok, true, badge.ok ? '' : badge.reason);
+  if (!badge.ok) return;
+
+  // The first one goes under the `import` block with a blank line between — `print`'s grouping,
+  // so `format` would not move it — and not above the first line of code, where an import goes.
+  const first = replaceInSource(file, { kind: 'file', what: 'element', index: 0, node: badge.node });
+  assert.equal(first.ok, true, first.ok ? '' : first.reason);
+  assert.match(first.text ?? '', /^import "\.\/shared\/helpers\.tflw"\n\nelement cartBadge = css "\[data-test=cart-count\]"\n\ntest "it opens"$/m);
+  assert.equal(format(first.text!), first.text, 'the place it lands is the place `format` leaves it');
+  assert.deepEqual(parseSource(first.text!).program.elements?.map((e) => e.name), ['cartBadge']);
+
+  // A second goes under the first, in the same table; a replacement rewrites its own line.
+  const buy = buildElement({ name: 'buy', locator: { kind: 'button', value: 'Buy' } });
+  assert.equal(buy.ok, true);
+  if (!buy.ok) return;
+  const twice = replaceInSource(first.text!, { kind: 'file', what: 'element', index: 1, node: buy.node });
+  assert.equal(twice.ok, true, twice.ok ? '' : twice.reason);
+  assert.match(twice.text ?? '', /^element cartBadge = css "\[data-test=cart-count\]"\nelement buy = button "Buy"$/m);
+  const renamed = buildElement({ name: 'badge', locator: { kind: 'css', value: '#badge' } });
+  assert.equal(renamed.ok, true);
+  if (!renamed.ok) return;
+  const replaced = replaceInSource(twice.text!, { kind: 'file', what: 'element', index: 0, node: renamed.node });
+  assert.equal(replaced.ok, true, replaced.ok ? '' : replaced.reason);
+  assert.match(replaced.text ?? '', /^element badge = css "#badge"\nelement buy = button "Buy"$/m);
+  const dropped = replaceInSource(replaced.text!, { kind: 'file', what: 'element', index: 0, node: null });
+  assert.equal(dropped.ok, true, dropped.ok ? '' : dropped.reason);
+  assert.doesNotMatch(dropped.text ?? '', /badge/);
+  assert.match(dropped.text ?? '', /^element buy = button "Buy"$/m);
+
+  // A file with no import: above the first line of code, like an import.
+  const bare = ['# the file', '', 'test "it opens"', '  open "/"', ''].join('\n');
+  const lone = replaceInSource(bare, { kind: 'file', what: 'element', index: 0, node: badge.node });
+  assert.equal(lone.ok, true, lone.ok ? '' : lone.reason);
+  assert.match(lone.text ?? '', /^# the file\n\nelement cartBadge = css "\[data-test=cart-count\]"\n\ntest "it opens"$/m);
+
+  // The parser's three refusals, said by the builder before any text is written.
+  for (const [name, kind, value, why] of [
+    ['two words', 'css', '#a', /one word/],
+    ['css', 'css', '#a', /locator keyword/],
+    ['alias', 'element', 'cartBadge', /not with another element/],
+    ['empty', 'css', '  ', /needs something to match/],
+  ] as const) {
+    const out = buildElement({ name, locator: { kind, value } });
+    assert.equal(out.ok, false, `${name}: refused`);
+    if (!out.ok) assert.match(out.reason, why);
+  }
 });
 
 test('S5: a note on a declaration and a note on the file are the same edit with different floors', () => {

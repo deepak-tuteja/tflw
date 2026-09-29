@@ -12,7 +12,7 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { AcceptDialogStmt, ActionDecl, CrawlDecl, CrawlSeed, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, TogetherStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ExpectStmt, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
+import type { AcceptDialogStmt, ActionDecl, CrawlDecl, CrawlSeed, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, TogetherStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ElementDecl, ExpectStmt, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
 import { pollable, quantifiable } from './ast.js';
 import { parse as parseTokens, parsePathText, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
@@ -973,6 +973,28 @@ export function buildLocator(spec: LocatorSpec): BuildResult<Locator> {
   }
   if (spec.kind === 'element') return { ok: true, node: { type: 'Locator', kind: 'element', value: { type: 'StringLit', value: spec.value.trim(), parts: [{ kind: 'text', value: spec.value.trim() }], span: SYNTHETIC }, span: SYNTHETIC } };
   return { ok: true, node: { type: 'Locator', kind: spec.kind, value: stringLit(spec.value), span: SYNTHETIC } };
+}
+
+export interface ElementSpec {
+  readonly name: string;
+  readonly locator: LocatorSpec;
+}
+
+/**
+ * `element cartBadge = css "[data-test=cart-count]"` — `M250` `G2`.
+ *
+ * The parser's three refusals, said in a field instead of at the next parse: a name that is not
+ * one word, a name that is a locator keyword, and a right-hand side that is itself an element —
+ * `parseElementDecl` refuses that last one so that resolution is one lookup and never a chain.
+ */
+export function buildElement(spec: ElementSpec): BuildResult<ElementDecl> {
+  const name = spec.name.trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return bad(`an element is named by one word — letters, digits and \`_\`; \`${spec.name}\` is not one`);
+  if (LOCATOR_KINDS.includes(name as LocatorKind)) return bad(`\`${name}\` is a locator keyword and cannot name an element`);
+  if (spec.locator.kind === 'element') return bad('an element is declared with a locator — `button "…"`, `css "…"`, … — not with another element\'s name');
+  const locator = buildLocator(spec.locator);
+  if (!locator.ok) return locator;
+  return { ok: true, node: { type: 'ElementDecl', name, nameSpan: SYNTHETIC, locator: locator.node, span: SYNTHETIC } };
 }
 
 /** `open "/checkout"` — `M200` `A3-5`. The path is a plain interpolation-aware string, so unlike

@@ -965,6 +965,10 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .seq-request .seq-goto:hover { background: var(--panel); }
 .seq-request .seq-goto code { color: var(--fg); }
 .file-facts ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: var(--muted); }
+/* `M250` `G2` — one `element` line per row: name, `=`, kind, locator. */
+.element-rows { display: inline-flex; flex-direction: column; gap: 4px; vertical-align: top; }
+.element-row { display: inline-flex; align-items: center; gap: 6px; }
+.element-rows > button { align-self: flex-start; }
 
 .request-card { border: var(--border) solid var(--line); border-radius: var(--radius); padding: calc(var(--unit) * 1.8); background: var(--panel); }
 .request-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
