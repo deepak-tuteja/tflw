@@ -3529,8 +3529,11 @@ const REGISTRY = [
     pkg: 'tflw',
     file: 'packages/cli/src/ui-server.ts',
     what: 'the server keeps whatever `report/` holds as the record of a run that wrote nothing — a usage error after any earlier run gets the earlier run\'s report as its own',
-    find: "    if (written.getTime() < Date.parse(live.record.startedAt)) return;",
-    replace: "    if (written.getTime() < 0) return;",
+    // `M249` `A` moved the judgement: the CLI keeps the run itself, so the server asks whether
+    // `runs/<id>/results.json` exists. Asking of the report directory instead is the old defect —
+    // any earlier run's report taken as this one's.
+    find: "      await stat(join(dest, 'results.json'));",
+    replace: "      await stat(reportDir);",
   },
   {
     id: 'the-tags-fold-at-any-count',
