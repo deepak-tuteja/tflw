@@ -9883,6 +9883,14 @@ the report header.
 |---|---|---|
 | `D1385` | (owner, 2026-09-29, `G12`) | **`record` and `pick` take `--cdp-port <n>`.** The headed browser opens its DevTools endpoint on `127.0.0.1:<n>` — the address is passed explicitly, never left to Chromium's default — so a script can `connectOverCDP` and act in the window a person would. Chromium only: `--browser firefox`/`webkit` with the flag is a usage error, as is a port outside 1–65535. The endpoint is announced on stderr once the page is ready, so `record`'s stdout stays steps only. |
 
+### D1387
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1387` | (owner, 2026-09-29, `M250` `B`) | **A control's tooltip sentence describes it from the moment it is drawn, not while its tip is shown** (`M235-06`). Every authored `data-tip` is pointed (`aria-describedby`) at a hidden element holding the same sentence, kept in step with the page by one observer in `TooltipLayer`; the visible tip is presentation only and writes no attribute. A derived tip (`D1127`) gets no description — its text is the row's own name. Another description the control carries is kept beside ours. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>

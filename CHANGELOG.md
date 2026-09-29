@@ -32,6 +32,9 @@ performance arc closed 2026-08-02 and is included below.
 - **A test's `rows` block on the page**: the band lists each judgement under a `with each` test,
   with its count (`exactly`, `at least`, `at most`, `no`, `every`, or just the number) as a field
   and a remove button; removing the last one takes the `rows` line with it.
+- **A control's tooltip is its description all the time** (`D1387`): a screen reader hears a
+  control's hover sentence whenever it reaches the control, not only while the tip happens to be
+  on screen, and hiding the tip no longer leaves the control described by nothing.
 - **The page's coverage floor is stated** (`D1364`): `packages/ui`'s unit floor is a ratchet, and
   the page is graded by the suites that drive it in a browser. No number moved.
 - **Docs**: the runbook gains *Working on the page*; *What the page will not do* no longer sends a

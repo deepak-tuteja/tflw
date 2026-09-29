@@ -12,7 +12,7 @@
 // — below, flipping above — is amended, because below a row in a list **is** the next row.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { place, type Box } from '../src/Tooltip';
+import { describedByWith, place, type Box } from '../src/Tooltip';
 
 const VIEW = { width: 1440, height: 900 };
 const TIP = { width: 300, height: 40 };
@@ -89,4 +89,18 @@ test('`M216` `B2`: when nothing can be clear of both, the control wins and the r
   const next = box(10, 114, 300, 24);
   const spot = place(anchor, { width: 300, height: 80 }, tiny, next);
   assert.equal(hits(rectOf(spot, { width: 300, height: 80 }), anchor), false, 'never the control');
+});
+
+test('`M250` `B` (`M235-06`): a control keeps its own descriptions when ours is set, swapped or dropped', () => {
+  assert.equal(describedByWith(null, 'tflw-desc-0'), 'tflw-desc-0');
+  assert.equal(describedByWith('', 'tflw-desc-0'), 'tflw-desc-0');
+  // Another description of the control's own survives every one of our writes.
+  assert.equal(describedByWith('ctx-why-2', 'tflw-desc-3'), 'ctx-why-2 tflw-desc-3');
+  assert.equal(describedByWith('ctx-why-2 tflw-desc-3', 'tflw-desc-4'), 'ctx-why-2 tflw-desc-4');
+  assert.equal(describedByWith('ctx-why-2 tflw-desc-3', null), 'ctx-why-2');
+  // Dropping the only one removes the attribute rather than leaving it empty.
+  assert.equal(describedByWith('tflw-desc-3', null), null);
+  // Idempotent: the value it produces is the value it keeps, which is what lets the observer see
+  // its own write and change nothing.
+  assert.equal(describedByWith('ctx-why-2 tflw-desc-3', 'tflw-desc-3'), 'ctx-why-2 tflw-desc-3');
 });
