@@ -4197,7 +4197,9 @@ certify that anything is safe to share.
 
   **`ok` answers "did this run pass?" — not "did nothing that ran fail?" (M114).** They are
   different questions whenever a run reaches no verdict at all: `aborted` (Ctrl-C before the
-  planned duration elapsed) and `inconclusive` (tflw's own generator saturated, so the numbers
+  planned duration elapsed, or — since `D1394` — before every test of a run without a workload had
+  started: the first Ctrl-C starts nothing new, lets what is running finish, and keeps the partial
+  report) and `inconclusive` (tflw's own generator saturated, so the numbers
   describe tflw rather than the system under test). Such a run is `ok: false` **with `failed: 0`**,
   and that pair is not a contradiction — it reads "this run did not pass, and no test failed",
   which is exactly what an abort is. The narrow question has its own field: `failed === 0`.

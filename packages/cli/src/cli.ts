@@ -1941,12 +1941,13 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
       }
     }
   }
-  // M32 (R5), carried over from `tflw load`: first Ctrl-C requests a graceful stop for any
-  // in-flight workload-bearing test (no new iterations; its `loadReport.aborted` flushes whatever
-  // completed); a second one before that resolves force-quits immediately. Only installed when
-  // this invocation actually has a workload-bearing test anywhere — a purely functional run keeps
-  // today's default Node SIGINT behavior (immediate exit) unchanged, since functional execution has
-  // no notion of a graceful mid-test abort to offer instead.
+  // M32 (R5), carried over from `tflw load`: first Ctrl-C requests a graceful stop; a second one
+  // before that resolves force-quits immediately. `G16` (`D1394`) made the stop the same for every
+  // run: no new file and no new test starts, the tests in flight finish, a workload issues no new
+  // iteration, and the partial report is written and kept, marked aborted. It used to stop only
+  // workloads — every functional test in a mixed run ran on to the end (157 s on the sibling's whole
+  // project) — and a run with no workload exited at once with no report. The page's Cancel sends
+  // this signal, so both are the same stop. `watch` keeps its own handler.
   const abortController = new AbortController();
   let interrupted = false;
   const onSigint = (): void => {
@@ -1958,7 +1959,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     abortController.abort();
     process.stdout.write('\n' + dim(color, 'aborting… flushing a partial report (Ctrl-C again to force-quit)') + '\n');
   };
-  if (anyWorkload) process.on('SIGINT', onSigint);
+  if (watchOpts === undefined) process.on('SIGINT', onSigint);
   const githubActions = process.env.GITHUB_ACTIONS === 'true';
   const timestamps = !args.noTimestamps;
 
@@ -2244,6 +2245,8 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     // failure. `TestResult.ok` is already the final, post-retry verdict (same one `flaky` uses),
     // so a mid-retry failing attempt never trips this early.
     args.bail ? (r: FileRunResult) => !r.report.ok : undefined,
+    // `D1394`: an interrupt stops the pool claiming files, as `--bail` does, before any result.
+    () => abortController.signal.aborted,
   );
   process.removeListener('SIGINT', onSigint);
   const reports = fileResults.map((r) => r.report);
@@ -3628,13 +3631,14 @@ async function runWithConcurrency<T, R>(
   limit: number,
   worker: (item: T, index: number) => Promise<R>,
   shouldBail?: (result: R) => boolean,
+  stopped?: () => boolean,
 ): Promise<R[]> {
   const results: (R | undefined)[] = new Array(items.length);
   let next = 0;
   let bailed = false;
   async function runNext(): Promise<void> {
     for (;;) {
-      if (bailed) return;
+      if (bailed || stopped?.()) return;
       const i = next++;
       if (i >= items.length) return;
       const r = await worker(items[i]!, i);

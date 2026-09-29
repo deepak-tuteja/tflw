@@ -1399,3 +1399,34 @@ test('`M250` `G15` (`D1392`): `tflw run` from a shell says it is running, stream
     }
   });
 });
+
+test('`M250` `G16` (`D1394`): the first Ctrl-C stops a functional run gracefully — the test in flight finishes, none starts after, and the partial report is kept', { skip: SIGNALS_UNOBSERVABLE }, async () => {
+  await withFixtureServer(async (baseUrl, slow) => {
+    const dir = await fixtureProject(baseUrl);
+    await writeFile(join(dir, 'two.tflw'), 'test "held"\n  api GET /slow\n  expect status equals 200\n\ntest "never started"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+    const env: NodeJS.ProcessEnv = { ...process.env, FORCE_COLOR: '0' };
+    delete env.TFLW_KEEP_ID;
+    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, 'run', '--no-color', 'two.tflw'], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout!.on('data', (d) => (out += d));
+    const exited = new Promise<number | null>((done) => child.on('exit', (code) => done(code)));
+    try {
+      for (let i = 0; i < 200 && slow.held() === 0; i++) await new Promise((r) => setTimeout(r, 50));
+      assert.equal(slow.held(), 1, 'the run reached its held request');
+      child.kill('SIGINT');
+      // The stop waits for the test in flight: let its request answer.
+      await new Promise((r) => setTimeout(r, 300));
+      slow.release();
+      assert.equal(await exited, 130, `exit 130, the interrupted code; output:\n${out}`);
+      assert.match(out, /aborting/);
+      const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as { aborted?: boolean; tests: { name: string; ok: boolean }[] };
+      assert.equal(results.aborted, true, 'the report says it was interrupted');
+      assert.deepEqual(results.tests.map((t) => [t.name, t.ok]), [['held', true]], 'the test in flight finished; the next never started');
+      const kept = await readdir(join(dir, 'report', 'runs'));
+      assert.equal(kept.length, 1, 'and the partial run was kept');
+    } finally {
+      child.kill('SIGKILL');
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

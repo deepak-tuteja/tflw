@@ -20,7 +20,7 @@ when it says nothing. `--no-keep` skips that for a scratch run.
 | 1 | a test failed |
 | 2 | it could not run — a usage error, a config that does not check, a file that does not parse |
 | 3 | a load test was inconclusive — tflw's own generator could not keep up, so no verdict |
-| 130 | the run was interrupted before a verdict (Ctrl+C) |
+| 130 | the run was interrupted before a verdict (Ctrl+C, or Cancel on the page): nothing new started after it, the tests in flight finished, and the partial report was kept |
 
 ## History, and flaky tests
 

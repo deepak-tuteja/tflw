@@ -56,6 +56,9 @@ performance arc closed 2026-08-02 and is included below.
   a request moves with the assertions under it, and nothing leaves its own test or hook.
 - **A refused save offers a way back** (`D1393`): when the file changed on disk under a draft, the
   refusal carries *re-read from disk*, which shows the file as it is and drops the draft.
+- **Ctrl-C and Cancel stop every run the same way** (`D1394`): no new test starts, the ones running
+  finish, and the partial report is kept, marked aborted; a second Ctrl-C quits at once. A run with
+  no workload used to exit with nothing, and a mixed one ran every functional test to its end.
 - **The page follows a run started from a terminal** (`D1392`): `tflw run` writes
   `report/.running.json` and a live `report/.running.ndjson` while it runs and removes both once the
   run is kept; `tflw ui` draws that run on the Run tab as it goes.
