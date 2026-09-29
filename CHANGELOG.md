@@ -17,6 +17,29 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — the CLI and the reports remember (M249)
+
+- **Every run is kept** (`D1362`). `tflw run` copies what it wrote into `report/runs/<id>/`, the
+  newest `runs keep N` (50 by default) — the layout the page already kept its own runs in, so one
+  reader serves every run however it was started. `--no-keep` for a scratch run. Each test in
+  `results.json` carries its file's `sourceHash`.
+- **History, read from the kept runs** (`D1362`). A failing test's summary line says *failed in 3
+  of its last 10 kept runs*, and *flaky* when the verdict changed between two runs of the same file.
+  The page's Run tab draws a dot per kept run, a *flaky across runs* pill, and a sparkline per load
+  threshold.
+- **`tflw merge <report-dir>... --out <dir>`** (`D1369`). Joins the report directories of a sharded
+  job or a sweep's groups into one: tests in the order given, counts re-derived, findings
+  deduplicated by fingerprint, `mergedFrom` naming the inputs, and an exit code that is the merged
+  verdict.
+- **`tflw doctor`** (`D1370`). What this machine and project will run with, offline: versions, the
+  env's services, proxy and TLS facts, the suite, the downloaded browsers. `--json` for scripts. It
+  exits 1 only for no config, Node below 22, or browser tests with no browser.
+- **`tflw <verb> --help`** prints that verb's flags; `tflw --help` lists the verbs, one line each.
+- **Schemas** for `results.json` and `events.ndjson`, generated from the types and published at
+  `/schema/`; both files name theirs in `$schema`.
+- **Docs**: the runbook gains *Installing tflw* and *Running a suite*; the CI guide's shard section
+  ends in `tflw merge`.
+
 ### Added — a session that signs in through a browser (M248)
 
 - **`session <name> oauth2 code`** (`D1354`): the authorization-code grant with PKCE, for identity
