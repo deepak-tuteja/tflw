@@ -3751,10 +3751,10 @@ test('`tflw run --browser firefox` runs a real UI test end-to-end and stamps the
 });
 
 // `M252` `B` (`D1374`) — WebKit, once. `--browser webkit` was documented and never launched by
-// anything. It runs where CI installs it — the Linux jobs, which set `TFLW_E2E_WEBKIT` beside the
+// anything. It runs where CI installs it — the Node 24 Linux job, which sets `TFLW_E2E_WEBKIT` beside the
 // install — and is skipped by name elsewhere: the box is Fedora, where Playwright ships no WebKit.
 // Gated on the variable, not on finding the browser, so a failed install is a red job, not a skip.
-const WEBKIT_HERE = process.env.TFLW_E2E_WEBKIT === '1' ? false : 'M252 B: WebKit runs on the Linux CI jobs only (TFLW_E2E_WEBKIT=1)';
+const WEBKIT_HERE = process.env.TFLW_E2E_WEBKIT === '1' ? false : 'M252 B: WebKit runs on the Node 24 Linux CI job only (TFLW_E2E_WEBKIT=1)';
 
 test('`tflw run --browser webkit` runs a real UI test end-to-end and stamps the engine on the report', { skip: WEBKIT_HERE }, async () => {
   await withWebFixtureServer(async (baseUrl) => {

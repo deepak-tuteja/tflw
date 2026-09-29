@@ -99,9 +99,16 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
-    cmd: 'npx playwright install chromium firefox webkit',
+    cmd: "npx playwright install chromium firefox ${{ matrix.node-version == 24 && 'webkit' || '' }}",
     class: 'setup',
-    why: 'playwright has no postinstall download hook; the browser-arc suites launch real Chromium/Firefox, and one `e2e.test.ts` test launches WebKit on these Linux jobs (`M252` `B`, gated on `TFLW_E2E_WEBKIT` and skipped by name without it — a contributor need not install WebKit). Once per clone locally, not per run. No `--with-deps` since `M143a` — CONTRIBUTING keeps it because a fresh developer machine may genuinely lack the libraries, and pays the apt cost once rather than fourteen times per run',
+    why: 'playwright has no postinstall download hook; the browser-arc suites launch real Chromium/Firefox, and one `e2e.test.ts` test launches WebKit on the Node 24 Linux job (`M252` `B`, gated on `TFLW_E2E_WEBKIT` and skipped by name without it — a contributor need not install WebKit). Once per clone locally, not per run. No `--with-deps` since `M143a` — CONTRIBUTING keeps it because a fresh developer machine may genuinely lack the libraries, and pays the apt cost once rather than fourteen times per run',
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
+    cmd: 'sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgtk-4-1 libgraphene-1.0-0 libevent-2.1-7t64 libavif16 libflite1 libgles2 libgstreamer-plugins-base1.0-0 libgstreamer-gl1.0-0 libgstreamer-plugins-bad1.0-0 libharfbuzz-icu0 libhyphen0 libmanette-0.2-0 libopus0 libsecret-1-0 libwayland-server0 libx264-164',
+    class: 'ci-only',
+    why: 'the libraries WebKit needs and `ubuntu-latest` lacks, named package by package (`M252-03`) — not the closure `M143a` measured. Node 24 only, bounded at 10 minutes. A contributor who wants the WebKit test runs `npx playwright install-deps webkit` once, on their own machine',
   },
   { wf: 'ci.yml', job: 'test', cmd: 'npm run build', class: 'gate', local: 'npm run build', why: 'every workspace compiles, and produces the same bundle `npm publish` would ship' },
   { wf: 'ci.yml', job: 'test', cmd: 'npm run typecheck', class: 'gate', local: 'npm run typecheck', why: 'types across all seven workspaces' },
