@@ -12,6 +12,11 @@ let textDocumentsState: Array<{ languageId: string; fileName: string }> = [];
 let workspaceFoldersState: Array<{ uri: { fsPath: string } }> | undefined;
 let activeTextEditorState: { document: { uri: unknown } } | undefined;
 let configurationState: Record<string, unknown> = {};
+export const controllers: MockTestController[] = [];
+export let workspaceTflwFiles: string[] = [];
+export function __setWorkspaceTflwFiles(files: string[]): void {
+  workspaceTflwFiles = files;
+}
 
 // Plain `export let` bindings can't be reassigned from outside the module (ESM live bindings are
 // read-only to importers) — these setters are the test-facing way to seed fixture state.
@@ -38,6 +43,8 @@ export function __reset(): void {
   workspaceFoldersState = undefined;
   activeTextEditorState = undefined;
   configurationState = {};
+  controllers.length = 0;
+  workspaceTflwFiles = [];
 }
 
 export class MockTerminal {
@@ -71,6 +78,15 @@ export const window = {
 };
 
 export const workspace = {
+  async findFiles(_include: string, _exclude?: string) {
+    return workspaceTflwFiles.map((p) => Uri.file(p));
+  },
+  onDidOpenTextDocument(_cb: unknown) {
+    return { dispose() {} };
+  },
+  onDidSaveTextDocument(_cb: unknown) {
+    return { dispose() {} };
+  },
   get textDocuments() {
     return textDocumentsState;
   },
@@ -122,3 +138,107 @@ export class CodeLens {
 
 // Test helpers construct plain `{ fsPath }` objects and pass them wherever a real `vscode.Uri`
 // would go — `extension.ts` only ever reads `.fsPath` off a Uri, never constructs one.
+
+
+// ---- `M251` `C`: the testing API, enough of it for the explorer --------------------------------
+
+export const Uri = {
+  file(fsPath: string) {
+    return { fsPath, scheme: 'file', toString: () => `file://${fsPath}` };
+  },
+};
+
+export class Position {
+  constructor(public line: number, public character: number) {}
+}
+export class Location {
+  constructor(public uri: unknown, public range: unknown) {}
+}
+export class TestMessage {
+  location?: Location;
+  constructor(public message: string) {}
+}
+export enum TestRunProfileKind {
+  Run = 1,
+  Debug = 2,
+  Coverage = 3,
+}
+export class TestRunRequest {
+  constructor(public include?: MockTestItem[]) {}
+}
+export class CancellationTokenSource {
+  token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) };
+}
+
+export class MockTestItemCollection {
+  private readonly map = new Map<string, MockTestItem>();
+  get size(): number {
+    return this.map.size;
+  }
+  get(id: string): MockTestItem | undefined {
+    return this.map.get(id);
+  }
+  add(item: MockTestItem): void {
+    this.map.set(item.id, item);
+  }
+  replace(items: readonly MockTestItem[]): void {
+    this.map.clear();
+    for (const i of items) this.map.set(i.id, i);
+  }
+  forEach(cb: (item: MockTestItem) => void): void {
+    this.map.forEach((i) => cb(i));
+  }
+}
+
+export class MockTestItem {
+  children = new MockTestItemCollection();
+  range?: Range;
+  canResolveChildren = false;
+  constructor(public id: string, public label: string, public uri?: { fsPath: string }) {}
+}
+
+export type RunCall = [string, string, ...unknown[]];
+export class MockTestRun {
+  calls: RunCall[] = [];
+  output = '';
+  ended = false;
+  constructor(public request: TestRunRequest) {}
+  enqueued(item: MockTestItem): void { this.calls.push(['enqueued', item.id]); }
+  started(item: MockTestItem): void { this.calls.push(['started', item.id]); }
+  passed(item: MockTestItem, duration?: number): void { this.calls.push(['passed', item.id, duration]); }
+  skipped(item: MockTestItem): void { this.calls.push(['skipped', item.id]); }
+  failed(item: MockTestItem, message: TestMessage, duration?: number): void { this.calls.push(['failed', item.id, message, duration]); }
+  errored(item: MockTestItem, message: TestMessage): void { this.calls.push(['errored', item.id, message]); }
+  appendOutput(text: string): void { this.output += text; }
+  end(): void { this.ended = true; }
+}
+
+export class MockTestController {
+  items = new MockTestItemCollection();
+  runs: MockTestRun[] = [];
+  profiles: { label: string; kind: TestRunProfileKind; handler: (req: TestRunRequest, token: unknown) => Promise<void>; isDefault?: boolean }[] = [];
+  resolveHandler?: (item?: MockTestItem) => Promise<void>;
+  constructor(public id: string, public label: string) {}
+  createTestItem(id: string, label: string, uri?: { fsPath: string }): MockTestItem {
+    return new MockTestItem(id, label, uri);
+  }
+  createRunProfile(label: string, kind: TestRunProfileKind, handler: (req: TestRunRequest, token: unknown) => Promise<void>, isDefault?: boolean) {
+    const p = { label, kind, handler, ...(isDefault !== undefined ? { isDefault } : {}) };
+    this.profiles.push(p);
+    return p;
+  }
+  createTestRun(request: TestRunRequest): MockTestRun {
+    const r = new MockTestRun(request);
+    this.runs.push(r);
+    return r;
+  }
+  dispose(): void {}
+}
+
+export const tests = {
+  createTestController(id: string, label: string): MockTestController {
+    const c = new MockTestController(id, label);
+    controllers.push(c);
+    return c;
+  },
+};

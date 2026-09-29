@@ -37,9 +37,7 @@ import {
   suggest,
   detectReuse,
   detectElementReuse,
-  type ElementReuseHint,
-  renderCallSiteReplacement,
-  importInsertionOffset,
+  planReuseApply,
   collectMigrations,
   applyMigrations,
   CLI_FLAGS,
@@ -53,7 +51,6 @@ import {
   type LogDestination,
   type LogLevel,
   type SuiteEntry,
-  type ReuseOccurrence,
   type TestDecl,
   type Workload,
   format as formatSource,
@@ -3111,14 +3108,6 @@ async function checkCommand(argv: string[]): Promise<number> {
 
 // ---- tflw refactor apply <id> (M6, P#2, SPEC §12) --------------------------
 
-/** POSIX-separated relative import path from `fromDir` to `toFileAbs`, always `./`- or `../`-
- * prefixed — matches the `import "./shared/x.tflw"` shape every hand-written import already uses
- * (SPEC §8). */
-function toImportPath(fromDir: string, toFileAbs: string): string {
-  const rel = relative(fromDir, toFileAbs).split('\\').join('/');
-  return rel.startsWith('.') ? rel : `./${rel}`;
-}
-
 /**
  * Apply one reuse-pass extraction (P#2): re-run the same deterministic detection `tflw check`
  * would over the whole default suite (no `[files]` argument here — SPEC §12's table gives this
@@ -3139,107 +3128,43 @@ async function refactorCommand(argv: string[]): Promise<number> {
   if (typeof loaded === 'number') return loaded;
 
   const entries: SuiteEntry[] = loaded.parsedFiles.map((f) => ({ path: relative(cwd, f.file), source: f.source, program: f.program }));
-  const hints = detectReuse(entries);
-  const elementHints = detectElementReuse(entries, hints.length + 1);
-  const elementHint = elementHints.find((h) => h.id === id);
-  if (elementHint) return applyElementHint(elementHint, loaded, cwd, color);
-  const hint = hints.find((h) => h.id === id);
-  if (!hint) {
-    const available = [...hints, ...elementHints].map((h) => h.id).join(', ') || '(none)';
-    err(`no reuse hint \`${id}\` found. Run \`tflw check\` for current ids (they can shift as the suite changes) — available right now: ${available}.`);
+  // `M251` `B` (`D1367`): the plan is `@tflw/lang`'s, shared with the editor's code action, so the
+  // two write the same bytes; what is this command's own is the refusals, the re-check and the write.
+  const readExisting = (path: string): string | null => {
+    try {
+      return readFileSync(join(cwd, path), 'utf8');
+    } catch {
+      return null;
+    }
+  };
+  const planned = planReuseApply(entries, id, readExisting);
+  if (!planned.ok && planned.reason === 'unknown-id') {
+    err(`no reuse hint \`${id}\` found. Run \`tflw check\` for current ids (they can shift as the suite changes) — available right now: ${planned.available.join(', ') || '(none)'}.`);
     return EXIT_USAGE;
   }
-
-  const actionFileAbs = join(cwd, hint.actionFile);
-  if (await exists(actionFileAbs)) {
-    err(`\`${hint.actionFile}\` already exists — remove it or rename the conflicting file, then re-run \`tflw check\` for fresh ids.`);
+  if (!planned.ok) {
+    err(`\`${planned.file}\` already exists — remove it or rename the conflicting file, then re-run \`tflw check\` for fresh ids.`);
     return EXIT_USAGE;
   }
-
-  const byPath = new Map<string, ReuseOccurrence[]>();
-  for (const occ of hint.occurrences) {
-    const list = byPath.get(occ.path) ?? [];
-    list.push(occ);
-    byPath.set(occ.path, list);
-  }
+  const { plan } = planned;
 
   // Every byte this command would write, built in memory first — nothing reaches disk above the
   // re-check below (`B5-02` half 3, M97c/D143).
-  const pending = new Map<string, string>([[actionFileAbs, hint.actionSource]]);
-  const changedFiles: string[] = [];
-  for (const [path, occs] of byPath) {
-    const abs = join(cwd, path);
-    const parsedFile = loaded.parsedFiles.find((f) => f.file === abs)!;
-    let source = parsedFile.source;
-
-    const edits: { start: number; end: number; text: string }[] = occs.map((occ) => renderCallSiteReplacement(hint.actionName, occ, source));
-    const importPath = toImportPath(dirname(abs), actionFileAbs);
-    const alreadyImported = parsedFile.program.imports.some((imp) => imp.path.value === importPath);
-    if (!alreadyImported) {
-      const at = importInsertionOffset(parsedFile.program, source);
-      edits.push({ start: at, end: at, text: `import "${importPath}"\n` });
-    }
-
-    // Apply widest-first (descending start) so an earlier edit's offset shift never invalidates a
-    // later one still expressed in terms of the *original* source.
-    edits.sort((a, b) => b.start - a.start);
-    for (const e of edits) source = source.slice(0, e.start) + e.text + source.slice(e.end);
-
-    pending.set(abs, source);
-    changedFiles.push(path);
-  }
-
+  const pending = new Map<string, string>([...plan.files].map(([path, text]) => [join(cwd, path), text]));
   const rejected = await checkPendingRewrite(pending, loaded, color);
   if (rejected !== undefined) return rejected;
 
-  await mkdir(dirname(actionFileAbs), { recursive: true });
-  for (const [abs, source] of pending) await writeFile(abs, source, 'utf8');
-
-  process.stdout.write(`applied ${hint.id}: extracted \`action ${hint.actionName}(${hint.params.join(', ')})\` into ${hint.actionFile}\n`);
-  process.stdout.write(`  updated: ${changedFiles.sort().join(', ')}\n`);
-  return EXIT_OK;
-}
-
-/**
- * `refactor apply` for a locator hint (`M247` `D`, `D1356`). The declaration is written into
- * `shared/elements.tflw` — appended when the file exists, since a file of element names is a list
- * that grows, unlike an action file that is one extraction — and every site's `css "…"` is replaced
- * by the bare name, with an `import` added to each rewritten file that lacks one. Everything is
- * built in memory and put through `checkPendingRewrite` before one byte is written, the action
- * path's doctrine (`B5-02` half 3): a rewrite that would not check is refused, not rolled back.
- */
-async function applyElementHint(hint: ElementReuseHint, loaded: ValidatedProject, cwd: string, color: boolean): Promise<number> {
-  const declAbs = join(cwd, hint.declarationFile);
-  const existing = await readFile(declAbs, 'utf8').catch(() => null);
-  const pending = new Map<string, string>([[declAbs, existing === null ? `${hint.declaration}\n` : `${existing.replace(/\n*$/, '\n')}${hint.declaration}\n`]]);
-
-  const byPath = new Map<string, typeof hint.occurrences[number][]>();
-  for (const occ of hint.occurrences) byPath.set(occ.path, [...(byPath.get(occ.path) ?? []), occ]);
-  const changedFiles: string[] = [];
-  for (const [path, occs] of byPath) {
-    const abs = join(cwd, path);
-    const parsedFile = loaded.parsedFiles.find((f) => f.file === abs)!;
-    let source = abs === declAbs ? pending.get(declAbs)! : parsedFile.source;
-    const edits: { start: number; end: number; text: string }[] = occs.map((o) => ({ start: o.span.start.offset, end: o.span.end.offset, text: hint.elementName }));
-    if (abs !== declAbs) {
-      const importPath = toImportPath(dirname(abs), declAbs);
-      if (!parsedFile.program.imports.some((imp) => imp.path.value === importPath)) {
-        const at = importInsertionOffset(parsedFile.program, source);
-        edits.push({ start: at, end: at, text: `import "${importPath}"\n` });
-      }
-    }
-    edits.sort((a, b) => b.start - a.start);
-    for (const e of edits) source = source.slice(0, e.start) + e.text + source.slice(e.end);
-    pending.set(abs, source);
-    changedFiles.push(path);
+  for (const [abs, source] of pending) {
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, source, 'utf8');
   }
-
-  const rejected = await checkPendingRewrite(pending, loaded, color);
-  if (rejected !== undefined) return rejected;
-  await mkdir(dirname(declAbs), { recursive: true });
-  for (const [abs, source] of pending) await writeFile(abs, source, 'utf8');
-  process.stdout.write(`applied ${hint.id}: declared \`${hint.declaration}\` in ${hint.declarationFile}\n`);
-  process.stdout.write(`  updated: ${changedFiles.sort().join(', ')}\n`);
+  const { hint } = plan;
+  if ('actionFile' in hint) {
+    process.stdout.write(`applied ${hint.id}: extracted \`action ${hint.actionName}(${hint.params.join(', ')})\` into ${hint.actionFile}\n`);
+  } else {
+    process.stdout.write(`applied ${hint.id}: declared \`${hint.declaration}\` in ${hint.declarationFile}\n`);
+  }
+  process.stdout.write(`  updated: ${plan.changed.join(', ')}\n`);
   return EXIT_OK;
 }
 

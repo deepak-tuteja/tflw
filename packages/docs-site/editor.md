@@ -28,15 +28,16 @@ not in these demos.
 
 ## Install
 
-The extension isn't on the VS Code Marketplace yet (a listing is planned for later — this section
-will shrink to one `ext install` line once it ships). For now, install it from a checkout:
+Until 1.0 the extension is a `.vsix` attached to a
+[GitHub release](https://github.com/deepak-tuteja/tflw/releases) — download it and install it with
+**Extensions: Install from VSIX…**, or:
 
 ```sh
-git clone https://github.com/deepak-tuteja/tflw.git
-cd tflw && npm ci && npm run build
-cd packages/vscode && npx @vscode/vsce package --no-dependencies
 code --install-extension tflw-vscode-0.1.0.vsix
 ```
+
+On 1.0 day it is listed on the Visual Studio Marketplace and Open VSX, and this section becomes one
+`ext install` line. [Working in the editor](/runbook/editor) is the day-to-day guide.
 
 Reload VS Code, open a `.tflw` file or a `tflw.config`, and the extension activates automatically.
 
@@ -112,9 +113,17 @@ its shape:
 
 ## Run from the editor
 
-Every `test "..."` line gets two CodeLenses: **▶ Run test** (runs just that test, via `--only`) and
-**▶ Run file** (runs every test in the file). Both shell out to the same `tflw` binary the
-[CLI reference](/reference/cli) covers, in a shared integrated terminal.
+Every test is in the **Test Explorer**: run a file, one test, or the previous run's failures, and
+each verdict shows beside the test — a failure at the step that failed. The **▶ Run test** and
+**▶ Run file** lenses above every `test "..."` line run through the same explorer, with the same
+`tflw` binary the [CLI reference](/reference/cli) covers.
+
+## Outline, references and code actions
+
+The Outline view lists a file's tests, actions, elements and hooks; **Find All References** follows
+an action, session or element into every file that uses it; every block folds. Each reuse hint
+`tflw check` prints is a code action — *Extract into action* or *Extract into element* — that writes
+what `tflw refactor apply` writes, and a *did you mean* diagnostic offers its fix.
 
 ## Settings
 

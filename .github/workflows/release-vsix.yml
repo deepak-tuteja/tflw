@@ -1,0 +1,38 @@
+name: Attach the .vsix to a release
+
+# `M251` `D` (`D1389`, `D1379`) — the one place a `.vsix` reaches a GitHub release, and it runs
+# only when started by hand, on the owner's word. It packages the extension from the tag it is
+# given, creates that tag's release as a pre-release if there is none, and uploads the `.vsix`.
+# It holds no registry token: the Marketplace and Open VSX are published from a workstation on
+# 1.0 day (`RUNBOOK.md`'s publish-day checklist), not from here.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing tag to package and attach to, e.g. v1.0.0-rc.1
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    name: package the .vsix and attach it to the tag's release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run package -w tflw-vscode -- -o "$RUNNER_TEMP/tflw-$TAG.vsix"
+      - run: gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "The VS Code extension for tflw $TAG, as a .vsix — install it with Extensions: Install from VSIX…"
+      - run: gh release upload "$TAG" "$RUNNER_TEMP/tflw-$TAG.vsix" --clobber

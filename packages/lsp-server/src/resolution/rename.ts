@@ -50,3 +50,13 @@ export function findRenameTargets(table: SymbolTable, offset: number): RenameRes
 
   return { kind, name, spans, crossFile: kind === 'session' || kind === 'action' || kind === 'importedAction' || kind === 'element' };
 }
+
+/** `M251` `A` (`D1366`) — find-all-references. The same grouping as a rename, because a reference
+ * the rename would not touch is not a reference to *this* symbol, and one it would touch is; the
+ * only difference is that the protocol lets the caller leave the declarations out. */
+export function findReferences(table: SymbolTable, offset: number, includeDeclaration: boolean): RenameResult | null {
+  const found = findRenameTargets(table, offset);
+  if (!found || includeDeclaration) return found;
+  const isDef = (s: Span): boolean => table.defs.some((d) => spansEqual(d.span, s));
+  return { ...found, spans: found.spans.filter((s) => !isDef(s)) };
+}
