@@ -467,46 +467,54 @@ test('`tflw --help` mentions `tflw pick`', async () => {
 
 // ---- M63 (review finding A12-04): the flag surface, and its two silent holes ----------------
 
-test('`tflw --help` lists every flag CLI_FLAGS documents — the help text is a third surface that had drifted', async () => {
+/** `M249` `E` (K1): the global help lists verbs; each verb's own `--help` carries its flags. */
+const HELP_VERBS = [...new Set(CLI_FLAGS.filter((f) => f.command !== 'global').map((f) => f.command))];
+
+test('every flag CLI_FLAGS documents is in its own verb\'s `--help` — the help text is a third surface that had drifted', async () => {
   // A12-04: `--forbid-insecure`, `--evidence`, `--log-output` and `--log-level` were implemented,
-  // accepted, listed in SPEC §12, and listed in the docs-site reference table (both generate from
-  // CLI_FLAGS) — and absent from `--help`. The two a user reaches for when they care about
-  // credential exposure and TLS policy were the two you could only find by opening SPEC.md.
-  // Same shape as M60's checker-pass drift: three surfaces claiming to describe one thing, one of
-  // them assembled by hand. This test is the thing that makes forgetting the hand-written one fail.
-  const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
-  const missing = CLI_FLAGS.filter((f) => f.command !== 'global')
-    .map((f) => /`(--[a-z-]+)`/.exec(f.flag)?.[1])
-    .filter((name): name is string => name !== undefined)
-    .filter((name) => !stdout.includes(name));
-  assert.deepEqual([...new Set(missing)], [], 'every documented flag must appear in `tflw --help`');
-});
-
-test('…and the reverse: every flag `tflw --help` shows is in CLI_FLAGS (M62)', async () => {
-  // The test above checks one direction only, and the gap on the other side had four flags in it:
-  // `check --env`, `check --no-color`, `init --load` and `install-browsers --browser` were all
-  // accepted by the parser and printed by `--help`, but missing from CLI_FLAGS — so the docs-site
-  // reference page, which *generates* its tables from that list, simply didn't have them, and
-  // `reference/cli.md` carried a hand-written sentence apologising for the omission. `--load` had
-  // been shipping since M29. Found by M62's docs guard, which validates every documented
-  // invocation against this same registry; a one-directional check on a list is half a check.
-  const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
-  const documented = new Set(CLI_FLAGS.flatMap((f) => [...f.flag.matchAll(/(--[a-z][a-z-]*)/g)].map((m) => m[1])));
-
-  // Usage lines only (`  tflw check [files...] [--env <name>] …`) — the prose beneath each command
-  // explains flags in sentences, where a match would be a mention rather than a declaration.
-  const undocumented = new Set<string>();
-  for (const line of stdout.split('\n')) {
-    if (!/^\s{2}tflw /.test(line)) continue;
-    // `m[1]` is `string | undefined` to the compiler even though a matched group is always present:
-    // `RegExpMatchArray` is indexed as `string[]` under `noUncheckedIndexedAccess`. Named rather than
-    // asserted, so the reader sees the guard is about the type and not about the regex.
-    for (const m of line.matchAll(/(--[a-z][a-z-]*)/g)) {
-      const flag = m[1];
-      if (flag && !documented.has(flag)) undocumented.add(flag);
+  // accepted, listed in SPEC and on the docs-site reference table (both generate from CLI_FLAGS) — and
+  // absent from `--help`. Since `M249` `E` a verb's flags print under `tflw <verb> --help`, rendered
+  // from its CLI_FLAGS rows, so this asks each verb for its own and fails naming the ones missing.
+  const missing: string[] = [];
+  for (const verb of HELP_VERBS) {
+    const { stdout } = await execFileAsync('node', [cliEntry, verb, '--help']);
+    for (const f of CLI_FLAGS.filter((row) => row.command === verb)) {
+      const name = /`(--[a-z-]+)`/.exec(f.flag)?.[1];
+      if (name && !stdout.includes(name)) missing.push(`${verb} ${name}`);
     }
   }
-  assert.deepEqual([...undocumented], [], 'every flag `--help` prints must be in CLI_FLAGS, which the reference page generates from');
+  assert.deepEqual(missing, [], 'every documented flag must appear in its verb\'s `--help`');
+});
+
+test('…and the reverse: every flag a verb\'s usage line shows is one of THAT verb\'s CLI_FLAGS rows (M62)', async () => {
+  // The gap on this side had four flags in it once — `check --env`, `check --no-color`, `init --load`
+  // and `install-browsers --browser` were accepted and printed by `--help`, and missing from
+  // CLI_FLAGS, so the reference page (which generates its tables from that list) did not have them.
+  // Per verb since `M249` `E`: a flag on `run`'s usage line that only `check` documents is wrong too.
+  const wrong: string[] = [];
+  for (const verb of HELP_VERBS) {
+    const documented = new Set(CLI_FLAGS.filter((f) => f.command === verb).flatMap((f) => [...f.flag.matchAll(/(--[a-z][a-z-]*)/g)].map((m) => m[1])));
+    const { stdout } = await execFileAsync('node', [cliEntry, verb, '--help']);
+    // Usage lines only (`  tflw check [files...] [--env <name>] …`) — the prose explains flags in
+    // sentences, where a match would be a mention rather than a declaration.
+    for (const line of stdout.split('\n')) {
+      if (!/^\s{2}tflw /.test(line)) continue;
+      for (const m of line.matchAll(/(--[a-z][a-z-]*)/g)) {
+        const flag = m[1];
+        if (flag && !documented.has(flag)) wrong.push(`${verb} ${flag}`);
+      }
+    }
+  }
+  assert.deepEqual(wrong, [], 'every flag a usage line prints must be in its verb\'s CLI_FLAGS rows, which the reference page generates from');
+});
+
+test('`tflw --help` is one line per verb, and `tflw <verb> --help` / `-h` exits 0 without running the verb', async () => {
+  const { stdout } = await execFileAsync('node', [cliEntry, '--help']);
+  for (const verb of HELP_VERBS) assert.match(stdout, new RegExp(`^  tflw ${verb} +\\S`, 'm'), `${verb} has its line`);
+  assert.doesNotMatch(stdout, /--fail-on/, 'flags live under their verb now, not in the list');
+  const short = await execFileAsync('node', [cliEntry, 'merge', '-h']);
+  assert.match(short.stdout, /^tflw merge — /);
+  assert.match(short.stdout, /--out <dir>/);
 });
 
 // ---- tflw spec (M154a) ------------------------------------------------------
