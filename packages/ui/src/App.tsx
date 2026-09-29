@@ -142,6 +142,16 @@ export function App() {
    * failures are two notices — the second no longer overwrites the first.
    */
   const [notices, setNotices] = useState<readonly Notice[]>([]);
+  /* `M250` `C` (`D1365`) — what a screen reader hears when the page changes under it: a run starting,
+     a run ending, a file saved. One polite region, in the DOM from the first render, because a region
+     inserted together with its words is one many readers never announce; the notices below appear and
+     go, so they could not be it. */
+  const [announced, setAnnounced] = useState('');
+  const announce = useCallback((text: string) => {
+    // Cleared first, so saying the same sentence twice is heard twice.
+    setAnnounced('');
+    requestAnimationFrame(() => setAnnounced(text));
+  }, []);
   const noticeSeq = useRef(0);
   const notify = useCallback((text: string, tone: Notice['tone'] = 'fail') => {
     noticeSeq.current += 1;
@@ -696,14 +706,15 @@ export function App() {
           /* **A followed run that ends while another tab is open says so** — `M240` `F`
              (`M239-08`). The Run tab draws the verdict itself; anywhere else the only mark was the
              tab's `runMark` going quiet. One notice, naming the verdict (`M239-06`'s layer). */
+          const verdict = end.status === 'cancelled' ? 'cancelled' : end.exitCode === 0 ? 'passed' : end.exitCode === 1 ? 'failed' : `ended with exit ${end.exitCode}`;
+          announce(`the run ${verdict}`);
           if (tabRef.current !== 'run') {
-            const verdict = end.status === 'cancelled' ? 'cancelled' : end.exitCode === 0 ? 'passed' : end.exitCode === 1 ? 'failed' : `ended with exit ${end.exitCode}`;
             notify(`the run ${verdict}${end.kept ? ` — its report is on the Run tab` : ''}`, 'info');
           }
         },
       });
     },
-    [refreshLists, notify],
+    [refreshLists, notify, announce],
   );
 
   /* A viewer is about one report; choosing another run is leaving it (`D1179`). */
@@ -782,6 +793,7 @@ export function App() {
            thing after `watch`, and moving it four statements down was cheaper than a ref kept
            current by an effect. Nothing between the two positions calls it. */
         const record = await startRun({ ...runLevel(), ...request });
+        announce('the run started');
         setSelected({ kind: 'run', id: record.id });
         await refreshLists();
         watch(record.id);
@@ -789,7 +801,7 @@ export function App() {
         notify(e instanceof Error ? e.message : String(e));
       }
     },
-    [refreshLists, watch, runLevel],
+    [refreshLists, watch, runLevel, announce],
   );
 
   /** The request exactly as `tflw run` takes it — a field is present only when it narrows. */
@@ -1430,6 +1442,7 @@ export function App() {
             for the whole page (`M216` `B1`), and the shell owns the menu (`M218` `A`) because one
             opened from a sidebar row must be able to paint over the pane. */}
         <TooltipLayer />
+        <div className="sr-only" role="status" aria-live="polite" data-announcer>{announced}</div>
         <Notices notices={notices} onDismiss={dismiss} />
         <ContextMenuLayer menu={menu} onClose={() => setMenu(null)} />
         {/* The theme is a fact about the reader and not about the project, so it is reachable from
@@ -1477,7 +1490,7 @@ export function App() {
             empty={path === '' ? <EmptyDoor door={door} onNew={() => startCreating('file')} /> : undefined}
             door={door}
             project={project}
-            onWritten={() => void readProjectView()}
+            onWritten={(written) => { announce(`saved ${written}`); void readProjectView(); }}
             tab={tab}
             onTab={setTab}
             path={path}

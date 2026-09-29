@@ -9693,6 +9693,41 @@ test('`M250` `A` (`D1361`): the editor completes — the language server\'s list
   });
 });
 
+test('`M250` `C` (`D1365`): one polite region, there from the first render, says the run started, how it ended, and what was saved', async () => {
+  await withProjectFixture({ 'a.tflw': 'test "logs"\n  log "ok"\n' }, async (p, base) => {
+    await p.goto(`${base}/?token=${TOKEN}#/api/run`);
+    const region = p.locator('[data-announcer]');
+    await region.waitFor({ state: 'attached' });
+    // In the DOM, empty, before anything has happened — a region inserted with its words is one
+    // many readers never announce.
+    assert.equal(await region.getAttribute('aria-live'), 'polite');
+    assert.equal(await region.getAttribute('role'), 'status');
+    // Every text the region takes, in order: a run this short can start and end inside one wait.
+    // one-shot: installs the recorder; nothing is read here.
+    await region.evaluate((el) => {
+      const said: string[] = [];
+      const w = el.ownerDocument.defaultView as unknown as { said: string[]; MutationObserver: new (cb: () => void) => { observe(target: unknown, options: object): void } };
+      w.said = said;
+      new w.MutationObserver(() => { const t = (el.textContent ?? '').trim(); if (t !== '') said.push(t); }).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+    const said = (): Promise<string> => region.evaluate((el) => (el.ownerDocument.defaultView as unknown as { said: string[] }).said.join(' | '));
+
+    await p.locator('[data-run]').click();
+    const run = await settle(said, untilMeasurable('the run started and ended', (t) => /the run passed/.test(t)), { attempts: 120, delayMs: 100, page: p });
+    assert.match(run.value, /^the run started \| the run passed$/, 'started, then passed, and nothing else');
+
+    await p.goto(`${base}/?token=${TOKEN}#/api/source/a.tflw`);
+    const content = p.locator('[data-preview]');
+    await p.locator('[data-source="written"]').waitFor();
+    await content.click();
+    await p.keyboard.press('ControlOrMeta+End');
+    await p.keyboard.insertText('\n');
+    await p.locator('[data-source="pending"]').waitFor();
+    await p.keyboard.press('ControlOrMeta+s');
+    await p.locator('[data-announcer]').filter({ hasText: /^saved a\.tflw$/ }).waitFor({ state: 'attached' });
+  });
+});
+
 test('`M216` `B0`/`A2`: the project pane is the reader’s width — nudged, dragged, clamped at both ends, and remembered', async () => {
   await withRemovalFixture(LEGIBLE, async (p, base) => {
     await p.goto(`${base}/?token=${TOKEN}#/api/compose/x.tflw/L4`);
