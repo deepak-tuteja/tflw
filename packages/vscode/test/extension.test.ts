@@ -174,8 +174,11 @@ function projectWithFakeTflw(opts: { results?: unknown[]; exitWithout?: boolean 
   writeFileSync(join(root, 'shop.tflw'), SHOP);
   writeFileSync(join(root, 'results.fixture.json'), JSON.stringify(opts.results ?? RESULTS));
   mkdirSync(join(root, 'node_modules', '.bin'), { recursive: true });
-  const bin = join(root, 'node_modules', '.bin', 'tflw');
-  writeFileSync(bin, `#!/usr/bin/env node
+  // The script is `tflw.js`, with the two launchers npm itself writes beside it: a shebang `tflw`
+  // and a `tflw.cmd` — `resolveTflwBin` looks for the `.cmd` on Windows, and a fixture that planted
+  // only the POSIX one sent every Windows run to a `tflw` on PATH that is not there.
+  const script = join(root, 'node_modules', '.bin', 'tflw.js');
+  writeFileSync(script, `#!/usr/bin/env node
 const fs = require('node:fs');
 const argv = process.argv.slice(2);
 fs.writeFileSync('argv.json', JSON.stringify(argv));
@@ -188,7 +191,10 @@ for (const r of JSON.parse(fs.readFileSync('results.fixture.json', 'utf8'))) {
   process.stdout.write(JSON.stringify({ type: 'test:end', result: r, file: r.file }) + '\\n');
 }
 `);
+  const bin = join(root, 'node_modules', '.bin', 'tflw');
+  writeFileSync(bin, `#!/bin/sh\nexec node "$(dirname "$0")/tflw.js" "$@"\n`);
   chmodSync(bin, 0o755);
+  writeFileSync(join(root, 'node_modules', '.bin', 'tflw.cmd'), '@node "%~dp0\\tflw.js" %*\r\n');
   return root;
 }
 
