@@ -9773,7 +9773,7 @@ the report header.
 
 ### D1372
 
-<sub>cited from tflw-tests/scripts/lib/journeys.mjs, tflw-tests/scripts/verify-journeys.mjs, tflw-tests/scripts/verify-provenance.mjs +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from tflw-tests/scripts/lib/journeys.mjs, tflw-tests/scripts/verify-journeys.mjs, tflw-tests/tests/api/catalog/graphql.tflw +3 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9781,7 +9781,7 @@ the report header.
 
 ### D1381
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/lib/journeys.mjs +3 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9789,7 +9789,7 @@ the report header.
 
 ### D1382
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs +4 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs +3 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -9805,7 +9805,7 @@ the report header.
 
 ### D1384
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +10 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -13665,7 +13665,7 @@ running the extracted actions against the stack.
 
 ### M197
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +24 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +22 more · lifted from `PLAN_M197_PARALLEL_SWEEP.md`</sub>
 
 **`M197` — the sweep runs its four groups at once**
 
