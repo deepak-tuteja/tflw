@@ -17,6 +17,20 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — the page completes and explains (M250)
+
+- **Completion in the page's editor** (`D1361`): Source and Config offer the language server's own
+  list as you type — steps, subjects, matchers, generators, config keys, the file's values and
+  elements, the project's sessions. Ctrl+Space asks where nothing is typed; Enter takes the entry.
+- **Announcements and reduced motion** (`D1365`): one polite status region says a run started, how
+  it ended, and which file was saved; the page's only animation stops for a reader who asked the
+  system for reduced motion. A VoiceOver runcard (`packages/cli/test/MANUAL_VOICEOVER.md`) covers
+  what no automated suite can hear.
+- **The page's coverage floor is stated** (`D1364`): `packages/ui`'s unit floor is a ratchet, and
+  the page is graded by the suites that drive it in a browser. No number moved.
+- **Docs**: the runbook gains *Working on the page*; *What the page will not do* no longer sends a
+  cross-file move to a `tflw refactor` that does not do one.
+
 ### Added — a script can drive `record` and `pick` (M247)
 
 - **`--cdp-port <n>`** on `tflw record` and `tflw pick` (`D1385`): the headed browser's DevTools

@@ -250,10 +250,17 @@ npm run verify:ledger                  # § never runs in CI, by decision
   renders the sidebar it belongs to. Separate from `npm test` because it reads the **built**
   `.vitepress/dist`, so it needs `npm run build` first. This is the gate the ledger row that
   produced this file forgot to list.
-- **`xvfb-run -a npm run coverage`** — **† conditional.** It gates: the floor lives in `.c8rc.json`
-  (`check-coverage`) and its derivation is documented at length in `scripts/coverage.mjs`. **Do not
-  lower it to make a red run green** — write the test the uncovered line is asking for. In CI it
-  runs on the Node 22 leg only, since it is the same source under either runtime.
+- **`xvfb-run -a npm run coverage`** — **† conditional.** It gates: the floors are per package in
+  `coverage-floors.json` (`M234`), each pinned one point under its own measured value, and their
+  derivation is documented in `scripts/coverage-floors.mjs`. **Do not lower one to make a red run
+  green** — write the test the uncovered line is asking for. In CI it runs on the Node 22 leg only,
+  since it is the same source under either runtime.
+
+  **`packages/ui`'s floor is low on purpose, and it is a ratchet, not a target** (`D1364`). The page
+  is graded by the four suites that drive the built page and its server the way a person does —
+  `ui-page`, `ui-appearance`, `ui-headers` and `ui-server` in `packages/cli/test` — and those are
+  what unit coverage cannot see. Its unit floor only guarantees the pure modules it does cover stay covered: it rises when the
+  number rises and stays risen, like every other floor, and nobody writes a unit test to move it.
 - **`node scripts/mutate.mjs <milestone>`** — **§ CI does not run it.** From `M124` to `M192` the
   registry ran on every pull request across a matrix of two-core runners (six, then thirty-three),
   packed by a cost table and watched by a re-shard trigger, and the maintenance of that arrangement

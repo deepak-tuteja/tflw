@@ -39,16 +39,19 @@ sequence and a stage side by side. Below that it stacks, and nothing is designed
 **Sessions and envs are written in Config, not in a form.** Compose writes tests, hooks, actions
 and crawls, and anything its forms do not cover the **Source** tab edits directly — an editor over
 the real file, with the language's own highlighting, the checker's answer underlined as you type,
-and undo. The two things a file resolves against rather than holds, `session` and `env` blocks,
+undo, and the language's own completion as you type. The two things a file resolves against rather than holds, `session` and `env` blocks,
 live in `tflw.config`, and the Config tab is the same editor over that file. A second, form-shaped
 editor over one file would be two answers to one question.
 
 **Auth is read-only.** It shows the sessions and targets a file resolves against, and each row
 links to the line in Config that declares it.
 
-**The page does not author across files.** Composing works on the file you have selected. A
-refactor that moves a session or a hook between files is `tflw refactor`'s job, from the command
-line.
+**The page does not move a declaration between files.** Composing works on the file you have
+selected. The page moves, renames and deletes whole files, shows what each would change first, and
+rewrites every `import` that names them; moving one session, hook or action from one file to
+another is an edit in each file, made in Source or Config. The one cross-file rewrite tflw makes
+for you is extracting a repeated run of steps into a shared action: `tflw check` names each one as
+an `RF0xx` hint, and `tflw refactor apply <id>` writes it, from the command line.
 
 ## Where to go instead
 

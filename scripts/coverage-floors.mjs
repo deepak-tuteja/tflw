@@ -17,6 +17,15 @@
 // lower it to make a red run green."* A package that improves gets re-pinned upward; a package that
 // slips is named, with its own number, rather than being averaged out of sight.
 //
+// ## `packages/ui`'s floor is a ratchet, not a target (`D1364`)
+//
+// It sits twenty-odd points under every other package's and that is a decision, not a debt: the
+// page is graded by the four suites that drive the built page and its server as a person does
+// (`ui-page`, `ui-appearance`, `ui-headers`, `ui-server` in `packages/cli/test`), which this report
+// cannot see. Its
+// unit floor holds only what its pure modules already cover. It is raised like every other floor,
+// when the number rises and stays risen; nobody writes a unit test to move it.
+//
 // ## Read it against the report, never instead of it
 //
 // This reads `coverage/lcov.info`, which c8 has already written. It computes nothing c8 did not —
