@@ -24,6 +24,7 @@ import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:c
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chromium, type Browser } from 'playwright';
 
 // `M243-06`: Windows delivers no signal from one process to another — `child.kill('SIGINT')` there
 // terminates the child outright, so what a test proves by sending SIGINT (a flush, exit 130, a clean
@@ -248,6 +249,38 @@ test('the readiness line prints only once the page is actually up', { skip: SIGN
       );
       await pick.waitForStdout('ready — click any element to print its locator');
       assertInterruptedCleanly(pick, await pick.interrupt());
+    },
+  );
+});
+
+test('`--cdp-port`: a second client drives the picking window — its click prints a locator, its close ends the session (G12)', { skip: SIGNALS_UNOBSERVABLE }, async () => {
+  // The usage errors are `e2e.test.ts`'s; this is the flag doing its job through the CLI, the way
+  // a script uses it: the endpoint announced, then a client connecting over CDP, clicking in the
+  // window — which `pick` answers with a locator, as it does a person's click — and closing it,
+  // which ends the session cleanly. A free port is borrowed from the OS and handed back first.
+  const free = createServer();
+  await new Promise<void>((resolve) => free.listen(0, '127.0.0.1', resolve));
+  const port = (free.address() as { port: number }).port;
+  await new Promise<void>((resolve) => free.close(() => resolve()));
+  await withServer(
+    (_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(PAGE_HTML),
+    async (url) => {
+      const pick = startPick(url, ['--cdp-port', String(port)]);
+      let driver: Browser | undefined;
+      try {
+        await pick.waitForStdout('ready — click any element to print its locator');
+        assert.match(pick.stderr(), new RegExp(`devtools: http://127\\.0\\.0\\.1:${port} `), 'the endpoint is announced');
+        driver = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+        const remote = driver.contexts().flatMap((c) => c.pages()).find((p) => p.url() === url);
+        assert.ok(remote, 'the picking window is reachable through the endpoint');
+        await remote.click('#go');
+        await pick.waitForStdout('Go');
+        await remote.close();
+        assert.equal(await Promise.race([pick.exited, new Promise<'HUNG'>((r) => setTimeout(() => r('HUNG'), 30_000))]), 0, 'closing the window ends `pick`, exit 0');
+      } finally {
+        await driver?.close().catch(() => {});
+        if (pick.descendants().length > 0) await pick.interrupt().catch(() => null);
+      }
     },
   );
 });
