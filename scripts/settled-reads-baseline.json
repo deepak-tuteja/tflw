@@ -1,14 +1,14 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 933,
-    "atRisk": 848,
-    "high": 332,
+    "reads": 936,
+    "atRisk": 851,
+    "high": 333,
     "medium": 61,
-    "low": 455,
+    "low": 457,
     "declared": 58,
     "inPage": 107,
-    "inRetry": 46
+    "inRetry": 47
   },
   "tests": {
     "packages/cli/test/ui-page.test.ts": {
@@ -896,6 +896,11 @@
         "high": 0,
         "medium": 0,
         "low": 3
+      },
+      "`M249` `B` (`D1362`): a test's past is drawn beside it — dots oldest first, and a pill when it flipped on the same file": {
+        "high": 1,
+        "medium": 0,
+        "low": 2
       },
       "`M228` `C` / `M241` `C`: a `crawl` is drawn in the tree and in the pane, and its band and rows edit it (`D1238`, `D1323`)": {
         "high": 8,
