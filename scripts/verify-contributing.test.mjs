@@ -589,3 +589,16 @@ test('CONTRIBUTING.md points at the sibling repo for the cross-repo pair', () =>
     'CONTRIBUTING.md must point at `testFlow-tests/CONTRIBUTING.md` for the cross-repo diagnostic-code pair. A tflw milestone that assigns a TF0xx code is not done until its companion PR there has merged, and nothing automatic catches it.',
   );
 });
+
+test('CONTRIBUTING.md says what a new construct owes, in order (`D1376`)', () => {
+  // The sibling carries the same heading and holds it with its own `verify:contributing`; this is
+  // tflw's half. The order is asserted, not just the presence, because the order is the rule: a
+  // list with the known-answer after the journey would read the same to a keyword check.
+  const at = contributing.indexOf('## A new construct owes, in order');
+  assert.ok(at >= 0, 'CONTRIBUTING.md has no "## A new construct owes, in order" section (D1376)');
+  const section = contributing.slice(at, contributing.indexOf('\n## ', at + 1));
+  const steps = ['lang golden', 'runtime known-answer', 'examples/storefront', 'journey', '.constructs'];
+  const where = steps.map((w) => section.indexOf(w));
+  assert.ok(where.every((i) => i >= 0), `each of the five steps is named: ${steps.filter((_, i) => where[i] < 0).join(', ') || 'all'}`);
+  assert.deepEqual([...where].sort((a, b) => a - b), where, 'and in this order: golden, known-answer, storefront, journey, plant');
+});

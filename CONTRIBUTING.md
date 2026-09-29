@@ -493,6 +493,27 @@ Git rewrites the working-tree files it changes, so their mtimes become *now* eve
 you end up with is identical — and `dist/` is gitignored, so it does not move with them. The bundle
 really was built from a different tree. Rebuild; do not reach for `touch`.
 
+## A new construct owes, in order
+
+A construct — a statement, a declaration, a subject, a matcher, a directive — is not shipped when it
+parses. It owes five things, in this order (`D1376`), and the first three are this repository's:
+
+1. **A lang golden, a checker case and a printer-corpus line** — it parses, it is refused where it
+   is wrong, and it prints back to what was written.
+2. **A runtime known-answer** — it does what `SPEC.md` says against a fixture that states the answer.
+3. **One use in `examples/storefront`** — an adopter's first sight of it runs.
+4. **One journey in the sibling's `tests/`** — a real test against its stack that would fail if the
+   construct did nothing. The sibling's `verify:journeys` holds the roster, so a construct with no
+   journey is red there, not merely missing.
+5. **Only if step 4 cannot state it: a `.constructs` plant in the sibling** — a known answer no
+   journey can reach (a timing, a mutation's `stale`, a refusal the language forbids you to write).
+
+The order is the point: each step is cheaper to fix than the one after it, and a construct that
+reaches the sibling without its known-answer fails there for a reason that is this repository's to
+find. Steps 4 and 5 are written out in full in
+[`testFlow-tests/CONTRIBUTING.md`](https://github.com/deepak-tuteja/tflw-tests/blob/main/CONTRIBUTING.md),
+under the same heading.
+
 ## The cross-repo pair
 
 **A tflw milestone that assigns a `TF0xx` code is not done until its companion PR in
