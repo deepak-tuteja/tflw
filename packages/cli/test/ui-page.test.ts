@@ -8451,6 +8451,43 @@ test('`M210` `S5`: a threshold is added, edited and removed, at the end of the b
   });
 });
 
+test('`M250` `G2`: the file row draws the file\'s `element` lines and writes them — a blank name removes one', async () => {
+  await withEditFixture(BAND, async (p, base, dir) => {
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw`);
+    await p.locator('[data-file-facts]').waitFor();
+    await p.locator('[data-file-elements="0"]').waitFor();
+
+    await p.locator('[data-element-add]').click();
+    await p.locator('[data-element-name="0"]').fill('cartBadge');
+    await p.locator('[data-element-kind="0"]').selectOption('css');
+    await p.locator('[data-element-value="0"]').fill('[data-test=cart-count]');
+    // The kind list is every locator kind but `element`: an element naming another element is the
+    // parser's refusal, so the page does not offer it.
+    // one-shot: the options are a constant list drawn with the row, which the fills above waited on
+    assert.equal(await p.locator('[data-element-kind="0"] option[value="element"]').count(), 0);
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+
+    let onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^import "\.\/shared\/helpers\.tflw"\n\nelement cartBadge = css "\[data-test=cart-count\]"$/m, 'under the imports, its own table');
+    assert.deepEqual(parseSource(onDisk).diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+    await p.locator('[data-file-elements="1"]').waitFor(); // the row reads it back from the file
+    // one-shot: the row count above is read from the written file, and this field is drawn with it
+    assert.equal(await p.locator('[data-element-name="0"]').inputValue(), 'cartBadge');
+
+    // A name the parser would refuse is said on the page and never written.
+    await p.locator('[data-element-name="0"]').fill('css');
+    await p.locator('[data-compose-problem]', { hasText: /locator keyword/ }).waitFor();
+
+    await p.locator('[data-element-name="0"]').fill('');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.doesNotMatch(onDisk, /^element /m);
+    assert.match(onDisk, /^import "\.\/shared\/helpers\.tflw"$/m, 'and the import beside it stayed');
+  });
+});
+
 test('`M210` `S5`: the file row writes what the file brings in, and the file\'s own note is a note like any other', async () => {
   await withEditFixture(BAND, async (p, base, dir) => {
     await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L9`);

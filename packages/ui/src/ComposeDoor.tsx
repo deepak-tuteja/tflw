@@ -54,6 +54,7 @@ import {
   buildDataTable,
   buildLet,
   buildThreshold,
+  buildElement,
   buildWorkload,
   type CaptureSpec,
   type LocatorSpec,
@@ -97,6 +98,7 @@ import {
   type RequestEdit,
   type StatementEdit,
   type ThresholdEdit,
+  type ElementEdit,
   type Ran,
   type RanIndex,
   ELEMENT_DATALIST_ID,
@@ -896,6 +898,29 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         ? { type: 'ImportDecl' as const, path: stringLit(path), span: SYNTHETIC }
         : { type: 'UseDecl' as const, path: stringLit(path), span: SYNTHETIC };
       const out = replaceInSource(draft ?? file.text, { kind: 'file', what, index, node });
+      if (!out.ok) {
+        setEditProblem(out.reason);
+        return;
+      }
+      setEditProblem(null);
+      settle(out.text);
+    },
+    [file, draft, settle],
+  );
+
+  /** One `element` line — `M250` `G2`. Held while typed, like a threshold: a name half written is
+   *  not one `buildElement` takes, and the field must keep what the author typed. `null` removes. */
+  const [elementEdit, setElementEdit] = useState<{ key: string; values: ElementEdit } | null>(null);
+  const applyElement = useCallback(
+    (index: number, next: ElementEdit | null) => {
+      if (!file) return;
+      setElementEdit(next === null ? null : { key: `el:${index}`, values: next });
+      const built = next === null ? null : buildElement({ name: next.name, locator: { kind: next.kind, value: next.value } });
+      if (built !== null && !built.ok) {
+        setEditProblem(built.reason);
+        return;
+      }
+      const out = replaceInSource(draft ?? file.text, { kind: 'file', what: 'element', index, node: built === null ? null : built.node });
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
@@ -2517,6 +2542,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     setExpectEdit(null);
     setHeader(null);
     setThreshold(null);
+    setElementEdit(null);
     setNoting(null);
     onWritten(path);
   }, [file, draft, path, onFileWritten, onDraft, onWritten]);
@@ -2608,6 +2634,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
             setExpectEdit(null);
             setHeader(null);
             setThreshold(null);
+            setElementEdit(null);
             setNoting(null);
             onDraft(file !== null && text === file.text ? null : text);
           }}
@@ -2677,6 +2704,8 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
             workload,
             onWorkload: applyWorkload,
             onFileDecl: applyFileDecl,
+            element: elementEdit,
+            onElement: applyElement,
             /* **`pick` reaches the door whose rows carry locators** (`D1106`), which since `M219`
                `A` is decided by the vocabulary rather than by which branch of a fork we are in.
                `null` on a door with no locator in its constructs — a locator-fixer on a row with
@@ -2722,7 +2751,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           busy={busy}
           problem={problem}
           onWrite={() => void writeDraft()}
-          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setNoting(null); setEditProblem(null); }}
+          onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setElementEdit(null); setNoting(null); setEditProblem(null); }}
           door={door}
           /* `D1235` — the footer yields to a live playback region, and this is the one bit of the
              Stage the pane is told about. It is the same `stageTrace` the `Grip` below turns on,

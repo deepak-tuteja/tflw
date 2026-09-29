@@ -26,6 +26,9 @@ performance arc closed 2026-08-02 and is included below.
   it ended, and which file was saved; the page's only animation stops for a reader who asked the
   system for reduced motion. A VoiceOver runcard (`packages/cli/test/MANUAL_VOICEOVER.md`) covers
   what no automated suite can hear.
+- **`element` declarations on the page**: the file row lists the file's `element` lines, each a
+  name and a locator you can edit; `+ element` adds one under the imports, and a blank name
+  removes it. A name the parser would refuse is said in the pane and never written.
 - **The page's coverage floor is stated** (`D1364`): `packages/ui`'s unit floor is a ratchet, and
   the page is graded by the suites that drive it in a browser. No number moved.
 - **Docs**: the runbook gains *Working on the page*; *What the page will not do* no longer sends a

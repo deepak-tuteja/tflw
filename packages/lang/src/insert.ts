@@ -14,7 +14,7 @@
 // AND IT LIVES HERE BECAUSE BOTH SIDES NEED IT. `@tflw/lang` has no dependencies and no Node
 // builtins, so the page runs this in the browser and a test runs it in Node — the same function,
 // which is why `A0-4` can be gated without a browser at all.
-import type { ActionDecl, CrawlDecl, HookDecl, ImportDecl, Program, Step, TestDecl, ThresholdDecl, UseDecl, Workload } from './ast.js';
+import type { ActionDecl, CrawlDecl, ElementDecl, HookDecl, ImportDecl, Program, Step, TestDecl, ThresholdDecl, UseDecl, Workload } from './ast.js';
 import type { Span } from './token.js';
 import { format, INDENT } from './format.js';
 import { print } from './print.js';
@@ -539,10 +539,12 @@ export type Replacement =
    * vanish from the door it was removed on.
    */
   | { readonly kind: 'workload'; readonly decl: number; readonly node: Workload | null }
-  /** One `import` or `use` line of the file. `index` at the end of the list appends; `null`
-   *  removes. A file with none gets its first one above the first line of code, which is where the
-   *  grammar wants it and below the file's own header comment, which is where a reader wants it. */
-  | { readonly kind: 'file'; readonly what: 'import' | 'use'; readonly index: number; readonly node: ImportDecl | UseDecl | null }
+  /** One `import`, `use` or `element` line of the file. `index` at the end of the list appends;
+   *  `null` removes. A file with none gets its first one above the first line of code, which is
+   *  where the grammar wants it and below the file's own header comment, which is where a reader
+   *  wants it — except a first `element` in a file that imports, which goes under the last
+   *  `import`/`use` behind a blank line, the printer's own grouping (`M250`, `G2`). */
+  | { readonly kind: 'file'; readonly what: 'import' | 'use' | 'element'; readonly index: number; readonly node: ImportDecl | UseDecl | ElementDecl | null }
   /**
    * **Take these steps out of this declaration** — `M214` `A4` (`D1117`).
    *
@@ -860,8 +862,9 @@ function replaceWorkload(text: string, declarations: readonly Declaration[], rep
   return spliceLines(text, at, at, printed.lines);
 }
 
-function replaceFileDecl(text: string, program: Program, replacement: { readonly what: 'import' | 'use'; readonly index: number; readonly node: ImportDecl | UseDecl | null }): InsertResult {
-  const held: readonly (ImportDecl | UseDecl)[] = replacement.what === 'import' ? program.imports : program.uses;
+function replaceFileDecl(text: string, program: Program, replacement: { readonly what: 'import' | 'use' | 'element'; readonly index: number; readonly node: ImportDecl | UseDecl | ElementDecl | null }): InsertResult {
+  const held: readonly (ImportDecl | UseDecl | ElementDecl)[] =
+    replacement.what === 'import' ? program.imports : replacement.what === 'use' ? program.uses : (program.elements ?? []);
   const printed = ((): { ok: true; lines: string[] } | { ok: false; reason: string } => {
     if (replacement.node === null) return { ok: true, lines: [] };
     const out = print(replacement.node);
@@ -873,6 +876,12 @@ function replaceFileDecl(text: string, program: Program, replacement: { readonly
   if (replacement.node === null) return { ok: false, reason: `this file has no ${replacement.what} ${replacement.index}` };
   const last = held[held.length - 1];
   if (last) return spliceLines(text, last.span.end.line + 1, last.span.end.line + 1, printed.lines);
+  // A first `element` under the file's `import`/`use` block, a blank line between — `print`'s
+  // `sameGroup` keeps the two tables apart, so this is the place `format` leaves it.
+  if (replacement.what === 'element') {
+    const above = [...program.imports, ...program.uses].sort((a, b) => a.span.end.line - b.span.end.line).at(-1);
+    if (above) return spliceLines(text, above.span.end.line + 1, above.span.end.line + 1, ['', ...printed.lines]);
+  }
   // A file with none: above its first line of code, which is where the grammar wants it and below
   // the file's own header comment, which is where a reader wants it. `lex` is what knows which
   // lines are comments — a `#` inside a string is not one (`D159`).
