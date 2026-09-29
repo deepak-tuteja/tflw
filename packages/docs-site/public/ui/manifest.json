@@ -1,5 +1,5 @@
 {
-  "inputs": "7237d10bcae4dca3d360379ecb3d55f241697ca35ae5fd5b07655cf56beaba96",
+  "inputs": "618ad07a6df8170e458976186487099ee9152278fd09e6a6a417e79e21d7088a",
   "inputCount": 108,
   "shots": [
     {
@@ -70,7 +70,7 @@
     {
       "name": "compose-load-paper.png",
       "width": 2120,
-      "height": 1150
+      "height": 1084
     },
     {
       "name": "compose-scan-terminal.png",
@@ -136,5 +136,5 @@
     }
   },
   "deviceScaleFactor": 2,
-  "cutAt": "2026-09-29T15:53:27.857Z"
+  "cutAt": "2026-09-29T16:18:45.479Z"
 }

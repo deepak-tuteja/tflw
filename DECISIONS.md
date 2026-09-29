@@ -9931,6 +9931,22 @@ the report header.
 |---|---|---|
 | `D1394` | (owner, 2026-09-29, `G16`) | **The first Ctrl-C — and the page's Cancel, which sends it — is one graceful stop for every run**: no new test or file starts, the tests in flight finish, workloads stop issuing iterations as before, and the partial report is written and kept, marked aborted. A second Ctrl-C quits at once, as before. A purely functional run gains the notice and the kept partial report where it used to exit with nothing. |
 
+### D1395
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1395` | (`M252` `A`, 2026-09-29, `G17`) | **The CLI drains stdout and stderr before it exits.** Every verb returns its code to one `process.exit`; on macOS a pipe is asynchronous, so whatever was still queued past 64 KiB was dropped (`tflw spec --json` cut at byte 65 397). The entry waits on an empty write's callback — writes are ordered, so it fires once everything before it is flushed — for both streams, then exits. Linux writes pipes synchronously, which is why no Linux run could have seen it. |
+
+### D1396
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1396` | (`M252` `A`, 2026-09-29, `G18`) | **`TFLW_SOURCE_ROOT` is resolved through `realpath`.** The run's own directory is `process.cwd()`, which is always the real path; a root named by a symlinked spelling (`/var/folders/…` for `/private/var/folders/…` on macOS, a symlinked checkout anywhere) rebased every result to `../…`, which `sarifUri` refuses, and the SARIF shipped with no annotation at all — silently. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
