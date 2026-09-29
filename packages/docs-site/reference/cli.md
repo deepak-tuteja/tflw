@@ -58,8 +58,10 @@ a file run concurrently with each other; `--workers N` is the unrelated, workloa
 it scales *one* workload-bearing test's own generated load across `N` forked processes, never files.
 Every run with at least one workload-bearing test also self-diagnoses its own generator process's
 event-loop lag/CPU and warns if tflw itself was the bottleneck. A live ~1Hz console line tracks
-iterations/rps/error-rate for the workload-bearing tests currently in flight; Ctrl-C stops new
-iterations and flushes a **partial** report instead of losing the run. Everything — functional and
+iterations/rps/error-rate for the workload-bearing tests currently in flight. The first Ctrl-C is a
+graceful stop for any run: no new file, test or iteration starts, the tests in flight finish, and a
+**partial** report marked aborted is written and kept instead of losing the run; a second Ctrl-C
+quits at once. The page's Cancel is the same stop. Everything — functional and
 workload-bearing test results alike — renders into the one `report/report.html`/`junit.xml`/
 `results.json`, in file-declaration order; there are no separate `load-*` artifacts. Exit `0`
 = every test passed and every `threshold` was met (or none declared), `1` = a test failed or a

@@ -599,6 +599,9 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
         // `G10` (`D1384`): one record per row, filled as each row ends, judged once all have.
         const rowRecords: RowRecord[] | undefined = test.rows ? group.cases.map(() => ({})) : undefined;
         const runCase = async (j: number): Promise<void> => {
+            // `G16` (`D1394`): after an interrupt no test starts; the ones already running finish.
+            // A case that never started leaves its slot empty, and the report lists only what ran.
+            if (opts.abortSignal?.aborted) return;
             const buffered = isBatched || rowsTogether;
             const kase = group.cases[j]!;
             const globalIndex = testIndexOffset + group.startIndex + j;
@@ -635,7 +638,8 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
             }
         };
         const judge = async (): Promise<void> => {
-          if (!rowRecords) return;
+          // Judging rows that did not all run would judge a different table.
+          if (!rowRecords || opts.abortSignal?.aborted) return;
           emit({ type: 'test:start', name: `${test.name.value} — rows` });
           const result = await judgeRows(test, rowRecords, config, fileTc);
           rowsResults.set(test, result);
@@ -695,6 +699,7 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     // sits. Before the after-file hooks because those are where a suite tears its fixtures down, and a
     // crawl walking a surface whose data has just been deleted would report the teardown as findings.
     for (const crawl of crawls) {
+      if (opts.abortSignal?.aborted) break; // `D1394` — a crawl is a test too, and it had not started
       results.push(await runCrawlDecl(crawl, config, fileTc, traffic));
     }
     await runFileHooks(afterFile, 'after file', config, fileTc, registry, results, emit);
@@ -733,6 +738,12 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
     if (opts.shard) loadShardResult = buildLoadShardResult(accumulators, diagnosis);
   } else {
     selfDiag?.stop();
+  }
+  // `G16` (`D1394`): a run interrupted with no workload in this file was stopped all the same — the
+  // tests that had not started are absent, and the report must say why rather than read as whole.
+  if (opts.abortSignal?.aborted && aborted === undefined) {
+    aborted = true;
+    abortedMessage = 'interrupted — the tests running then finished, and none started after';
   }
 
   // `D1327`: a skipped test is `ok` but is not a pass — it is counted on its own, and `failed` is
