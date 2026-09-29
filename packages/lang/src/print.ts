@@ -771,7 +771,9 @@ function printRowCount(c: RowCount): string {
   }
 }
 
-function printRowsCheck(c: RowsCheck, level: number): string {
+/** One `rows` line at `level` — exported for `replaceInSource`, which rewrites one in place; `print`
+ *  refuses a `RowsCheck` alone (`CONTEXT_BOUND`), because the line is not a program on its own. */
+export function printRowsCheck(c: RowsCheck, level: number): string {
   return `${pad(level)}${c.soft ? 'check' : 'expect'} ${printRowCount(c.count)} ${printSubject(c.subject)} ${printMatcher(c.matcher)}`;
 }
 

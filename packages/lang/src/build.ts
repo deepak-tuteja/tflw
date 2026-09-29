@@ -12,7 +12,7 @@
 // reads no spans at all, and `insertIntoSource` re-parses the formatted result, so the position
 // a node is eventually diagnosed at is the one it really lands on.
 import type { Position, Span } from './token.js';
-import type { AcceptDialogStmt, ActionDecl, CrawlDecl, CrawlSeed, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, TogetherStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ElementDecl, ExpectStmt, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
+import type { AcceptDialogStmt, ActionDecl, CrawlDecl, CrawlSeed, ApiBody, ApiHeader, ApiStep, ArrayLit, CallExpr, CallStmt, CaptureStmt, ClickKind, ClickStmt, CloseTabStmt, TogetherStmt, CsrfStmt, DataTable, DismissDialogStmt, DownloadBlock, DragStmt, DropFileStmt, ElementDecl, ExpectStmt, RowCount, FillFormRow, FillFormStmt, FillStmt, FindingSeverity, GiveStmt, HeaderStmt, HoverStmt, HttpMethod, LetStmt, Locator, LocatorKind, LogDestination, LogLevel, LogStmt, Matcher, MatcherName, NumberLit, ObjectLit, OpenStmt, PathSegment, PauseStmt, ScreenshotStmt, ScrollStmt, Stage, Step, StringLit, StubStmt, Subject, SwitchToNewTabBlock, SwitchToTabStmt, TestDecl, ThresholdDecl, ThresholdMetric, ThresholdOp, SelectStmt, TickStmt, UntickStmt, PressStmt, Value, WaitUntilApiStmt, WaitUntilUiStmt, WithinBlock, Workload } from './ast.js';
 import { pollable, quantifiable } from './ast.js';
 import { parse as parseTokens, parsePathText, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
@@ -995,6 +995,16 @@ export function buildElement(spec: ElementSpec): BuildResult<ElementDecl> {
   const locator = buildLocator(spec.locator);
   if (!locator.ok) return locator;
   return { ok: true, node: { type: 'ElementDecl', name, nameSpan: SYNTHETIC, locator: locator.node, span: SYNTHETIC } };
+}
+
+/**
+ * A `rows` line's count — `M250` `G11`. `no` and `every` take no number; the other four take a whole
+ * one, which is the parser's own refusal (`expected a whole number of rows`) said in the field.
+ */
+export function buildRowCount(kind: RowCount['kind'], n: string): BuildResult<RowCount> {
+  if (kind === 'no' || kind === 'every') return { ok: true, node: { kind } };
+  if (!/^\d+$/.test(n.trim())) return bad(`a row count is a whole number — \`${n}\` is not one`);
+  return { ok: true, node: { kind, n: Number(n.trim()) } };
 }
 
 /** `open "/checkout"` — `M200` `A3-5`. The path is a plain interpolation-aware string, so unlike

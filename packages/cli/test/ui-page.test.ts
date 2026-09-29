@@ -8451,6 +8451,49 @@ test('`M210` `S5`: a threshold is added, edited and removed, at the end of the b
   });
 });
 
+test('`M250` `G11`: the band draws a test\'s `rows` block, and the count is a field', async () => {
+  const RACE = [
+    'with each concurrently',
+    '  | n |',
+    '  | 1 |',
+    '  | 2 |',
+    'test "register {n}"',
+    '  api POST /orders',
+    'rows',
+    '  expect exactly 1 row status equals 201',
+    '  check every row status is less than 500',
+    '',
+  ].join('\n');
+  await withEditFixture(RACE, async (p, base, dir) => {
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L5`);
+    await p.locator('[data-band-rows="2"]').waitFor();
+    await p.locator('[data-rows-tail="0"]', { hasText: 'status equals 201' }).waitFor();
+
+    await p.locator('[data-rows-count-kind="0"]').selectOption('atLeast');
+    await p.locator('[data-rows-count-n="0"]').fill('2');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    let onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /^rows\n {2}expect at least 2 rows status equals 201\n {2}check every row status is less than 500$/m);
+
+    // A count that is not a whole number is said on the page and never written.
+    await p.locator('[data-rows-count-n="0"]').fill('two');
+    await p.locator('[data-compose-problem]', { hasText: /whole number/ }).waitFor();
+    await p.locator('[data-rows-count-n="0"]').fill('2');
+
+    // Removing both judgements takes the `rows` line with them — an empty block is TF015.
+    await p.locator('[data-rows-remove="1"]').click();
+    await p.locator('[data-band-rows="1"]').waitFor();
+    await p.locator('[data-rows-remove="0"]').click();
+    await p.locator('[data-band-rows]').waitFor({ state: 'detached' });
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.doesNotMatch(onDisk, /^rows$/m);
+    assert.deepEqual(parseSource(onDisk).diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
 test('`M250` `G2`: the file row draws the file\'s `element` lines and writes them — a blank name removes one', async () => {
   await withEditFixture(BAND, async (p, base, dir) => {
     await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw`);

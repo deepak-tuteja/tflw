@@ -2,7 +2,7 @@
 // whose outcome lives only in the responses (one email registered five times at once).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, print, Codes } from '../src/index.js';
+import { parseSource, print, Codes, buildRowCount, replaceInSource } from '../src/index.js';
 import { checkProgram } from '../src/checker.js';
 
 const TABLE = 'with each concurrently\n  | n |\n  | 1 |\n  | 2 |\n  | 3 |\ntest "register {n}"\n  api POST /register\n  capture body.id as id\n';
@@ -47,4 +47,34 @@ test('TF096: a subject a finished row cannot answer; a response and a binding it
 
 test('a `rows` line reads what the rows bound — an unbound name is TF030', () => {
   assert.deepEqual(codes(`${TABLE}rows\n  expect every row {nope} equals 1\n  expect every row {n} equals 1\n`, Codes.UNKNOWN_VARIABLE), ['unknown variable "nope"']);
+});
+
+test('`M250` `G11`: one `rows` line\'s count is rewritten in place, and removing the last takes `rows` with it', () => {
+  const src = `${TABLE}rows\n  expect exactly 1 row status equals 201\n  check 2 rows status equals 409\n\ntest "after"\n  api GET /x\n`;
+  const check = parseSource(src).program.tests[0]!.rows!.checks[0]!;
+  const count = buildRowCount('atLeast', '2');
+  assert.equal(count.ok, true);
+  if (!count.ok) return;
+  const widened = replaceInSource(src, { kind: 'rowsCheck', decl: 0, index: 0, node: { ...check, count: count.node } });
+  assert.equal(widened.ok, true, widened.ok ? '' : widened.reason);
+  if (!widened.ok) return;
+  assert.equal(widened.text, src.replace('expect exactly 1 row status', 'expect at least 2 rows status'), 'one line changed, every other byte kept');
+
+  const one = replaceInSource(widened.text, { kind: 'rowsCheck', decl: 0, index: 1, node: null });
+  assert.equal(one.ok, true, one.ok ? '' : one.reason);
+  if (!one.ok) return;
+  assert.doesNotMatch(one.text, /409/);
+  const last = replaceInSource(one.text, { kind: 'rowsCheck', decl: 0, index: 0, node: null });
+  assert.equal(last.ok, true, last.ok ? '' : last.reason);
+  if (!last.ok) return;
+  assert.doesNotMatch(last.text, /^rows$/m, 'an empty `rows` is TF015, so the header goes with its last line');
+  const after = parseSource(last.text);
+  assert.deepEqual(after.diagnostics, []);
+  assert.deepEqual(after.program.tests.map((t) => [t.name.value, t.rows === undefined]), [['register {n}', true], ['after', true]]);
+
+  // The builder says the parser's refusal in the field; `no` and `every` take no number.
+  assert.equal(buildRowCount('exactly', 'two').ok, false);
+  assert.deepEqual(buildRowCount('every', ''), { ok: true, node: { kind: 'every' } });
+  // A test with no `rows` has none to rewrite.
+  assert.equal(replaceInSource(src, { kind: 'rowsCheck', decl: 1, index: 0, node: null }).ok, false);
 });

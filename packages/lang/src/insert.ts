@@ -14,10 +14,10 @@
 // AND IT LIVES HERE BECAUSE BOTH SIDES NEED IT. `@tflw/lang` has no dependencies and no Node
 // builtins, so the page runs this in the browser and a test runs it in Node — the same function,
 // which is why `A0-4` can be gated without a browser at all.
-import type { ActionDecl, CrawlDecl, ElementDecl, HookDecl, ImportDecl, Program, Step, TestDecl, ThresholdDecl, UseDecl, Workload } from './ast.js';
+import type { ActionDecl, CrawlDecl, ElementDecl, HookDecl, ImportDecl, Program, RowsCheck, Step, TestDecl, ThresholdDecl, UseDecl, Workload } from './ast.js';
 import type { Span } from './token.js';
 import { format, INDENT } from './format.js';
-import { print } from './print.js';
+import { print, printRowsCheck } from './print.js';
 import { lex } from './lexer.js';
 import { parse as parseTokens } from './parser.js';
 
@@ -545,6 +545,11 @@ export type Replacement =
    *  wants it — except a first `element` in a file that imports, which goes under the last
    *  `import`/`use` behind a blank line, the printer's own grouping (`M250`, `G2`). */
   | { readonly kind: 'file'; readonly what: 'import' | 'use' | 'element'; readonly index: number; readonly node: ImportDecl | UseDecl | ElementDecl | null }
+  /** One line of a test's `rows` block, by its own index — `M250` `G11`. `null` removes it, and
+   *  removing the last one takes the `rows` header with it: an empty `rows` is `TF015`, so the
+   *  block goes when its last judgement does. Adding one is text: the page
+   *  has no builder for a subject and matcher it could offer here that the editor does not. */
+  | { readonly kind: 'rowsCheck'; readonly decl: number; readonly index: number; readonly node: RowsCheck | null }
   /**
    * **Take these steps out of this declaration** — `M214` `A4` (`D1117`).
    *
@@ -617,6 +622,7 @@ export function replaceInSource(source: string, replacement: Replacement): Inser
   if (replacement.kind === 'threshold') return replaceThreshold(text, declarations, replacement);
   if (replacement.kind === 'workload') return replaceWorkload(text, declarations, replacement);
   if (replacement.kind === 'file') return replaceFileDecl(text, program, replacement);
+  if (replacement.kind === 'rowsCheck') return replaceRowsCheck(text, declarations, replacement);
   if (replacement.kind === 'note') return replaceNote(text, declarations, replacement.owner, replacement.lines);
   if (replacement.kind === 'remove') return removeSteps(text, declarations, replacement.decl, replacement.steps);
   if (replacement.kind === 'removeDecl') return removeDeclaration(text, declarations, replacement.decl);
@@ -860,6 +866,24 @@ function replaceWorkload(text: string, declarations: readonly Declaration[], rep
   // and where `printTest` emits it, so this is the one position `format` would not move it from.
   const at = decl.name.span.end.line + 1;
   return spliceLines(text, at, at, printed.lines);
+}
+
+function replaceRowsCheck(text: string, declarations: readonly Declaration[], replacement: { readonly decl: number; readonly index: number; readonly node: RowsCheck | null }): InsertResult {
+  const decl = declarations[replacement.decl];
+  if (!decl) return { ok: false, reason: `this file has no declaration ${replacement.decl}` };
+  if (decl.type !== 'TestDecl' || !decl.rows) return { ok: false, reason: 'that test has no `rows` block' };
+  const existing = decl.rows.checks[replacement.index];
+  if (!existing) return { ok: false, reason: `that \`rows\` block has no line ${replacement.index + 1}` };
+  // A span runs to the start of whatever follows it, so its last line is read off the offsets —
+  // `replaceWorkload`'s correction.
+  const end = backOverWhitespace(text, existing.span.end.offset);
+  const last = lineAt(text, Math.max(end - 1, existing.span.start.offset));
+  if (replacement.node === null) {
+    const from = decl.rows.checks.length === 1 ? decl.rows.span.start.line : existing.span.start.line;
+    return spliceLines(text, from, last + 1, []);
+  }
+  const level = Math.round((decl.span.start.column - 1) / INDENT.length) + 1;
+  return spliceLines(text, existing.span.start.line, last + 1, [printRowsCheck(replacement.node, level)]);
 }
 
 function replaceFileDecl(text: string, program: Program, replacement: { readonly what: 'import' | 'use' | 'element'; readonly index: number; readonly node: ImportDecl | UseDecl | ElementDecl | null }): InsertResult {
