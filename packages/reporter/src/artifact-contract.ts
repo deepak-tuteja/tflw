@@ -137,6 +137,16 @@ export const ARTIFACT_CONTRACT = {
       rule: 'rule',
       because: 'because',
     },
+    /** `M249` `C` (`D1369`) — the key `tflw merge` puts on the report root, naming the directories
+     *  it joined. Absent on every run's own report, so its presence is what says *this is a merge*.
+     *  The sibling's sweep reads it to check a merge's inputs; additive, so `version` stays 1. */
+    mergedFrom: 'mergedFrom',
+  },
+  /** `M249` `A` (`D1362`) — the report directory's layout another repository reads. `keptRuns` is
+   *  the member under which every run keeps a copy of itself, one `<id>/` per run, the newest
+   *  `runs keep N`; the sibling's sweep counts a phase's kept runs there. */
+  report: {
+    keptRuns: 'runs',
   },
   /**
    * `M160d` (`D834`) — how tflw rounds a duration before it reports one. The third thing another

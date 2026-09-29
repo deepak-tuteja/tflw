@@ -18,11 +18,13 @@
 import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { RUN_OWNED_CONDITIONAL_MEMBERS } from './report-dir.js';
+import { ARTIFACT_CONTRACT } from './artifact-contract.js';
 
 /** The members every run writes, beside the conditional ones. */
 export const RUN_OWNED_MEMBERS = ['report.html', 'junit.xml', 'results.json', '.last-run.json'] as const;
 
-export const RUNS_DIR = 'runs';
+/** The kept runs' directory — named in the artifact contract (`report.keptRuns`), which the sibling reads. */
+export const RUNS_DIR = ARTIFACT_CONTRACT.report.keptRuns;
 
 /** `2026-09-29T10:00:00.123Z` → `2026-09-29T10-00-00-123Z`, the page server's id since `D1317`. */
 export function runIdFor(startedAt: string): string {
