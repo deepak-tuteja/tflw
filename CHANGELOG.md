@@ -52,6 +52,13 @@ performance arc closed 2026-08-02 and is included below.
 - **A control's tooltip is its description all the time** (`D1387`): a screen reader hears a
   control's hover sentence whenever it reaches the control, not only while the tip happens to be
   on screen, and hiding the tip no longer leaves the control described by nothing.
+- **Rows move** (`D1391`): each row of a test on Compose has ↑ and ↓ (Alt+↑/Alt+↓ on a focused row);
+  a request moves with the assertions under it, and nothing leaves its own test or hook.
+- **A refused save offers a way back** (`D1393`): when the file changed on disk under a draft, the
+  refusal carries *re-read from disk*, which shows the file as it is and drops the draft.
+- **The page follows a run started from a terminal** (`D1392`): `tflw run` writes
+  `report/.running.json` and a live `report/.running.ndjson` while it runs and removes both once the
+  run is kept; `tflw ui` draws that run on the Run tab as it goes.
 - **The page's coverage floor is stated** (`D1364`): `packages/ui`'s unit floor is a ratchet, and
   the page is graded by the suites that drive it in a browser. No number moved.
 - **Docs**: the runbook gains *Working on the page*; *What the page will not do* no longer sends a

@@ -8494,6 +8494,64 @@ test('`M250` `G11`: the band draws a test\'s `rows` block, and the count is a fi
   });
 });
 
+test('`M250` `G13` (`D1391`): a row moves one place with ↑/↓ and with Alt+↑/↓, a request with its assertions', async () => {
+  const MOVES = [
+    'test "moves"',
+    '  let who = "a"',
+    '  api GET /a',
+    '  expect status equals 200',
+    '  log "between"',
+    '',
+  ].join('\n');
+  await withEditFixture(MOVES, async (p, base, dir) => {
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L1`);
+    await p.locator('[data-seq-row="request"]').waitFor();
+    // The ends offer nothing: the first row has no ↑, the last no ↓.
+    await p.locator('[data-seq-line="2"] [data-seq-move="down"]').waitFor();
+    // one-shot: the row above was waited for; its missing ↑ is drawn in the same render
+    assert.equal(await p.locator('[data-seq-line="2"] [data-seq-move="up"]').count(), 0);
+
+    // ↑ on the log: it passes the request and its assertion whole.
+    await p.locator('[data-seq-line="5"] > [data-seq-move="up"]').click();
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    let onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /let who = "a"\n {2}log "between"\n {2}api GET \/a\n {2}expect status equals 200\n/);
+
+    // Alt+↑ on the focused request row takes it back above the log — the key is the row's own ↑.
+    await p.locator('[data-seq-line="4"] > [data-seq-pick]').focus();
+    await p.keyboard.press('Alt+ArrowUp');
+    await p.locator('[data-compose-write]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    onDisk = await readFile(join(dir, 'edit.tflw'), 'utf8');
+    assert.match(onDisk, /let who = "a"\n {2}api GET \/a\n {2}expect status equals 200\n {2}log "between"\n/);
+    assert.deepEqual(parseSource(onDisk).diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), []);
+  });
+});
+
+test('`M250` `G14` (`D1393`): a write refused because the file changed on disk offers re-read, which drops the draft', async () => {
+  const BEFORE = ['test "conflicted"', '  let who = "a"', '  log "one"', ''].join('\n');
+  const THEIRS = ['test "conflicted"', '  let who = "a"', '  log "written elsewhere"', ''].join('\n');
+  await withEditFixture(BEFORE, async (p, base, dir) => {
+    await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw/L1`);
+    await p.locator('[data-seq-line="3"] > [data-seq-move="up"]').click();
+    await p.locator('[data-compose-dirty]').waitFor();
+    // Another editor writes the file after the page read it.
+    await writeFile(join(dir, 'edit.tflw'), THEIRS);
+    await p.locator('[data-compose-write]').click();
+    const problem = p.locator('[data-compose-problem]', { hasText: /changed on disk since this page read it/ });
+    await problem.waitFor();
+    // Nothing was written over it.
+    assert.equal(await readFile(join(dir, 'edit.tflw'), 'utf8'), THEIRS);
+    await problem.locator('[data-compose-reread]').click();
+    await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    await p.locator('[data-seq-row]', { hasText: 'written elsewhere' }).waitFor();
+    // one-shot: the row above is drawn from the re-read file, and the refusal went with the draft
+    assert.equal(await p.locator('[data-compose-problem]').count(), 0);
+    assert.equal(await readFile(join(dir, 'edit.tflw'), 'utf8'), THEIRS, 'reading it again wrote nothing');
+  });
+});
+
 test('`M250` `G2`: the file row draws the file\'s `element` lines and writes them — a blank name removes one', async () => {
   await withEditFixture(BAND, async (p, base, dir) => {
     await p.goto(`${base}/?token=${TOKEN}#/api/compose/edit.tflw`);

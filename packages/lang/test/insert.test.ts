@@ -1410,3 +1410,49 @@ test('`M224` `D1206`: a multi-line workload is replaced whole, not just its firs
   assert.ok(out.ok, out.ok ? '' : out.reason);
   assert.equal(out.text, 'test "holds up"\n  ramp to 9 users over 3s\n  threshold error rate is less than 1%\n  api GET /items\n');
 });
+
+test('`M250` `G13` (`D1391`): a row moves past its neighbour whole, notes and sub-blocks with it, and the spacing stays', () => {
+  const text = [
+    'test "t"',
+    '  # the first request',
+    '  api GET /a',
+    '  expect status equals 200',
+    '',
+    '  # checks the second',
+    '  api GET /b',
+    '    header "x" = "1"',
+    '  log "done"',
+    '',
+  ].join('\n');
+  // Row [1] (the second request) moves above row [0, 1] (the first request and its assertion); the
+  // blank line between the two rows stays where it was.
+  const up = replaceInSource(text, { kind: 'move', decl: 0, steps: [2], over: [0, 1] });
+  if (!up.ok) assert.fail(up.reason);
+  assert.equal(up.text, [
+    'test "t"',
+    '  # checks the second',
+    '  api GET /b',
+    '    header "x" = "1"',
+    '',
+    '  # the first request',
+    '  api GET /a',
+    '  expect status equals 200',
+    '  log "done"',
+    '',
+  ].join('\n'));
+  // Moving it back restores the file byte for byte.
+  const back = replaceInSource(up.text, { kind: 'move', decl: 0, steps: [0], over: [1, 2] });
+  if (!back.ok) assert.fail(back.reason);
+  assert.equal(back.text, format(text).formatted);
+  // Runs that are not neighbours, have a gap, or are empty are refused, never approximated.
+  const apart = replaceInSource(text, { kind: 'move', decl: 0, steps: [0], over: [3] });
+  if (apart.ok) assert.fail('moved past a row that is not next to it');
+  assert.match(apart.reason, /not next to each other/);
+  const gap = replaceInSource(text, { kind: 'move', decl: 0, steps: [0, 2], over: [3] });
+  if (gap.ok) assert.fail('moved a run with a gap in it');
+  const none = replaceInSource(text, { kind: 'move', decl: 0, steps: [], over: [0] });
+  if (none.ok) assert.fail('moved nothing');
+  // The body is the only block a move reaches: the next test's first statement is not a neighbour.
+  const across = replaceInSource(`${text}\ntest "u"\n  log "x"\n`, { kind: 'move', decl: 0, steps: [3], over: [4] });
+  if (across.ok) assert.fail('moved across into the next test');
+});

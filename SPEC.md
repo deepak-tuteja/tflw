@@ -4051,7 +4051,10 @@ regression baselines (their own before/after/diff evidence) wait for M4b.
   that was not collapsed before.
 - CI: summary to stdout, `junit.xml` (seed in properties), meaningful exit codes. `report/` also
   always gets `results.json` (the same redacted `RunReport` as JSON) and `.last-run.json` (this
-  run's failing tests) — see the CI ergonomics subsection below.
+  run's failing tests) — see the CI ergonomics subsection below. While a run started outside
+  `tflw ui` is in flight, `report/.running.json` (its pid, keep id, start and files) and
+  `report/.running.ndjson` (its events so far, redacted, one line each) say so; both are removed once
+  the run is kept, and `tflw ui` follows the run through them (`D1392`).
 
 `junit.xml`'s escaping strips XML-invalid C0 control characters (keeping tab/LF/CR, which XML 1.0
 permits) in addition to entity-escaping `& < > "` — a test name or error message that happens to
