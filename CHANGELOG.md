@@ -17,6 +17,11 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — CI on macOS (M252)
+
+- **A macOS job** (`D1377`): build, typecheck and the whole test suite on `macos-latest`, Node 22,
+  beside Linux and Windows. It is not a required check until it has been green for a week.
+
 ### Added — the page completes and explains (M250)
 
 - **Completion in the page's editor** (`D1361`): Source and Config offer the language server's own
