@@ -203,7 +203,7 @@ Anything that speaks the Chrome DevTools Protocol can then act in the window, an
 recorded exactly as a person's would be — which is how a recorded session can be checked in CI
 against a golden file:
 
-```js
+```ts
 import { chromium } from 'playwright';
 
 const browser = await chromium.connectOverCDP('http://127.0.0.1:9333');
