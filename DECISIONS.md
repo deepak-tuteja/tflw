@@ -9899,6 +9899,22 @@ the report header.
 |---|---|---|
 | `D1387` | (owner, 2026-09-29, `M250` `B`) | **A control's tooltip sentence describes it from the moment it is drawn, not while its tip is shown** (`M235-06`). Every authored `data-tip` is pointed (`aria-describedby`) at a hidden element holding the same sentence, kept in step with the page by one observer in `TooltipLayer`; the visible tip is presentation only and writes no attribute. A derived tip (`D1127`) gets no description — its text is the row's own name. Another description the control carries is kept beside ours. |
 
+### D1395
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1395` | (`M252` `A`, 2026-09-29, `G17`) | **The CLI drains stdout and stderr before it exits.** Every verb returns its code to one `process.exit`; on macOS a pipe is asynchronous, so whatever was still queued past 64 KiB was dropped (`tflw spec --json` cut at byte 65 397). The entry waits on an empty write's callback — writes are ordered, so it fires once everything before it is flushed — for both streams, then exits. Linux writes pipes synchronously, which is why no Linux run could have seen it. |
+
+### D1396
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1396` | (`M252` `A`, 2026-09-29, `G18`) | **`TFLW_SOURCE_ROOT` is resolved through `realpath`.** The run's own directory is `process.cwd()`, which is always the real path; a root named by a symlinked spelling (`/var/folders/…` for `/private/var/folders/…` on macOS, a symlinked checkout anywhere) rebased every result to `../…`, which `sarifUri` refuses, and the SARIF shipped with no annotation at all — silently. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
