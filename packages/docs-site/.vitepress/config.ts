@@ -250,6 +250,7 @@ export default defineConfig({
             { text: 'Installing tflw', link: '/runbook/install' },
             { text: 'Setting up a project', link: '/runbook/project' },
             { text: 'Running a suite', link: '/runbook/running' },
+            { text: 'Working on the page', link: '/runbook/page' },
           ],
         },
       ],
