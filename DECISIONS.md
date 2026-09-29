@@ -9843,6 +9843,14 @@ the report header.
 |---|---|---|
 | `D1376` | D9 | **What a new construct owes, in order**, written in both `CONTRIBUTING.md`s and held by `verify:contributing`: lang golden + checker case + printer corpus → runtime known-answer → one use in `examples/storefront` → one journey in the sibling's `tests/` → a `.constructs` plant only for a known-answer no journey can state. |
 
+### D1377
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+| id | row | decision |
+|---|---|---|
+| `D1377` | P4 | **A macOS CI job** in the Windows job's shape (build + typecheck + test, Node 22, Chromium), not a required check until it has been green a week. First run expected red; its rows are the deliverable. |
+
 ### D1381
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +8 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
@@ -14224,5 +14232,14 @@ listener, a browser and a token exchange in one declaration.
 **§6 `M250` — the page completes and explains**
 
 `D1361`, `D1363`, `D1364`, `D1365`. Page and CLI server. Sibling `T-4` waits on it.
+
+### M252
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+
+**§8 `M252` — platform, proofs and distribution**
+
+`D1374` (tflw's half), `D1375`, `D1377`, `D1378`. CI and `e2e`. Sibling `T-5` has no dependency
+and runs beside it.
 
 <!-- GENERATED:decisions:end -->
