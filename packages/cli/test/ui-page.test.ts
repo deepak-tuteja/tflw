@@ -1816,13 +1816,13 @@ test('the header carries env, the run flags and ▶ on every tab and both panels
     const strip = page.locator('[data-header] [data-runstrip]');
     await strip.waitFor();
     for (const control of ['[data-env-select]', '[data-workers]', '[data-run]']) {
-      assert.equal(await strip.locator(control).count(), 1, `${control} is on ${where}`);
+      assert.equal(await countSettling(page, `[data-header] [data-runstrip] ${control}`, 1), 1, `${control} is on ${where}`);
     }
     // ABOVE the tabs, read off rectangles rather than DOM order (`PLAN_M23`'s carry).
     const headBox = (await page.locator('[data-header]').boundingBox())!;
     const tabsBox = (await page.locator(`[data-tabstrip="${tab}"]`).boundingBox())!;
     assert.ok(headBox.y + headBox.height <= tabsBox.y, `the header sits above the tabs on ${where} (${headBox.y} + ${headBox.height} vs ${tabsBox.y})`);
-    assert.equal(await page.locator('.sidebar-col [data-env-select], .sidebar-col [data-workers], .sidebar-col [data-run], .sidebar-col [data-cancel]').count(), 0, `the sidebar assembles no command on ${where}`);
+    assert.equal(await countSettling(page, '.sidebar-col [data-env-select], .sidebar-col [data-workers], .sidebar-col [data-run], .sidebar-col [data-cancel]', 0), 0, `the sidebar assembles no command on ${where}`);
   }
 });
 
@@ -2532,7 +2532,7 @@ test('the fixture exercises all four kinds, so a chip that always counted zero w
   const seen = (k: string): number => expected[k] ?? 0;
   assert.ok(seen('api') > 0 && seen('browser') > 0 && seen('load') > 0 && seen('scan') > 0, `the fixture must exercise every kind: ${JSON.stringify(expected)}`);
   // And there is no landing to go back to (`D1402`): the page opens on the shell.
-  assert.equal(await page.locator('[data-landing], [data-no-project], [data-door-home]').count(), 0);
+  assert.equal(await countSettling(page, '[data-landing], [data-no-project], [data-door-home]', 0), 0);
 });
 
 test('a chip is in the URL and nowhere else — the back button walks it, a pasted link reproduces it (`D1413`)', async () => {
@@ -2611,9 +2611,11 @@ test('moving between chips keeps the file, the tab and the line — a filter is 
   assert.equal(await count.getAttribute('data-file-count-state'), 'none', 'listed under API because it is open, counting nothing');
   await page.locator('[data-kind-chip="browser"]').click();
   await page.locator(`[data-file="${browserOnly.path}"] [data-file-count][data-file-count-state="some"]`).waitFor();
+  // The router writes the hash on a later effect — wait for the chip to reach it, then judge the rest.
+  await page.waitForURL((u) => u.hash.includes('kind=browser'));
   const hash = new URL(page.url()).hash;
   assert.ok(hash.startsWith(`#/source/${browserOnly.path}?`), `the tab and the file did not move: ${hash}`);
-  assert.equal(await page.locator('[data-tabstrip="source"]').count(), 1);
+  assert.equal(await countSettling(page, '[data-tabstrip="source"]', 1), 1);
 });
 
 // ---------------------------------------------------------------------------
@@ -6697,9 +6699,9 @@ test('a file’s own steps are its to edit under every chip — no step is drawn
     assert.equal(await page.locator('[data-compose]').getAttribute('data-compose'), 'no-request', 'a file with no request says so rather than drawing an empty card');
     // Wait for *the* rows, assert *none* locked — an absence needs its population first (`M235`).
     await page.locator(`[data-stmt-line="${browserSteps[0]!.span.start.line}"]`).waitFor();
-    assert.equal(await page.locator('[data-stmt-lens="browser"]').count(), browserSteps.length, `under ${kind} every page step is drawn, in position`);
-    assert.equal(await page.locator('[data-stmt-locked="yes"]').count(), 0, `under ${kind} a page step is drawn locked`);
-    assert.equal(await page.locator('[data-stmt-door]').count(), 0, 'and nothing links away to a door');
+    assert.equal(await countSettling(page, '[data-stmt-lens="browser"]', browserSteps.length), browserSteps.length, `under ${kind} every page step is drawn, in position`);
+    assert.equal(await countSettling(page, '[data-stmt-locked="yes"]', 0), 0, `under ${kind} a page step is drawn locked`);
+    assert.equal(await countSettling(page, '[data-stmt-door]', 0), 0, 'and nothing links away to a door');
   }
 });
 test('a note is collapsed to its first line with a count, opens to the rest, and does not say the first line twice', async () => {
