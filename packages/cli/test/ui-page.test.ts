@@ -3403,6 +3403,10 @@ test('`M224` `B`: a workload can be written onto a test and taken off it again',
 
   // The other order is still refused, and the sentence names the rule and where to go.
   await declAt('tests/load.tflw', (await declLines('tests/load.tflw'))[1]!);
+  /* The threshold rows draw after the band's facts `declAt` waits on, so the count is read once one
+     is there — a one-shot `count()` read 0 on a slow runner and the loop clicked nothing, which
+     surfaced as a 30 s wait for a refusal nobody had asked for (macOS CI, tflw #271). */
+  await page.locator('[data-threshold-remove="0"]').waitFor();
   const removes = await page.locator('[data-threshold-remove]').count();
   for (let i = removes - 1; i >= 0; i -= 1) {
     await page.locator(`[data-threshold-remove="${i}"]`).click();
