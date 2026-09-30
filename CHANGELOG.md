@@ -17,6 +17,35 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — the page's shell: one header, the kinds as chips (M254)
+
+- **The four doors are gone; the four kinds are chips** at the head of the file list (`D1399`):
+  `all`, **API**, **BROWSER**, **LOAD**, **SCANS**, each with its count, and a pressed chip filters the
+  list to the files holding a test of its kind. What Compose can do with a file is read off the file's
+  own kinds, never off the chip, so switching chips never changes the pane. `+ new file` and
+  `+ new test` ask which kind to scaffold, and `+ new crawl` shows on a file with a crawl or under
+  the **SCANS** chip, so an API file can gain its first one.
+- **One header** (`D1400`): the project, the env, **▶ run**, `more…` (now holding `workers` and
+  `headed` too), then **Auth**, **Config**, the version, `?` and the theme. The door bar and the run
+  strip are gone; the tab strip under the header carries Compose · Source · Run. Chrome above the
+  pane: 193 px → 109 px at 1440 × 900.
+- **Auth and Config open as panels over the pane** from the header (`D1401`), closed by `✕` or
+  `Esc`, and keep their addresses (`#/auth`, `#/config`).
+- **No landing** (`D1402`): the page opens on the file you had open, else the file declaring the
+  most. The kind choice before `tflw init` stays, on the page shown for a directory with no project.
+  The last-file memory is one key per project; the old per-door keys are read once.
+- **▶ runs exactly what the list shows** (`D1403`), and says how many: `▶ run all · 38`,
+  `▶ run API · 19`, `▶ run checkout.tflw · 7`.
+- **The address** (`D1413`) is `#/<tab>/<file>/L<n>?kind=…`; a link from before (`#/api/compose/…`)
+  opens the same file with that kind's chip on.
+
+### Added — `tflw run --kind` (M254)
+
+- **`tflw run --kind api,browser`** runs the tests and crawls of the listed kinds, as their own
+  statements classify them — the same derivation the page's chips count with (`D1403`). OR within
+  the list, AND with `--tag`, `--only` and `--failed`; an unknown kind, an empty list, or a kind no
+  test is of exits `2`.
+
 ### Removed — the maintainer's runbooks
 
 - **`RUNBOOK.md`, in both repositories** (`D1350`, amended). It described one maintainer's machines

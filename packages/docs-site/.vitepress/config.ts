@@ -244,7 +244,7 @@ export default defineConfig({
       '/guide/': GUIDE_SIDEBAR,
       '/getting-started': GUIDE_SIDEBAR,
       // The UI's own rail, in the order a reader meets the surface: what it is, the shape every
-      // surface shares, then one page per door, then reading a run and what it will not do.
+      // surface shares, then one page per kind, then reading a run and what it will not do.
       //
       // **The four doors are four pages, not one** (`D1294`). They were one page with one
       // screenshot, and the screenshot was cut at a door its caption did not name. The doors are
@@ -271,11 +271,11 @@ export default defineConfig({
           link: '/ui/',
           items: [
             { text: 'The spine', link: '/ui/spine' },
-            { text: 'The four doors', link: '/ui/doors' },
-            { text: 'The API door', link: '/ui/api' },
-            { text: 'The BROWSER door', link: '/ui/browser' },
-            { text: 'The LOAD door', link: '/ui/load' },
-            { text: 'The SCANS door', link: '/ui/scans' },
+            { text: 'The four kinds', link: '/ui/kinds' },
+            { text: 'API tests', link: '/ui/api' },
+            { text: 'BROWSER tests', link: '/ui/browser' },
+            { text: 'LOAD tests', link: '/ui/load' },
+            { text: 'SCANS', link: '/ui/scans' },
             { text: 'Reading a run', link: '/ui/a-run' },
             { text: 'What it will not do', link: '/ui/limits' },
           ],

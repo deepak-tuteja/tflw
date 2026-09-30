@@ -182,6 +182,10 @@ let pageUrl: string;
 /** The scratch copy of the fixture project — `M214`'s overflow gate writes a file into it. */
 let projectRoot: string;
 let server: UiServer;
+/** `M254` (`D1402`): a directory with no project, for the one page the landing left behind — the
+ *  kind choice before `tflw init`. The shared fixture is a project, so it has no landing to show. */
+let bareServer: UiServer;
+let noProjectUrl: string;
 let browser: Browser;
 let page: Page;
 /** The bundle this file built, read in `after()` by `M234`'s coverage collector. */
@@ -230,6 +234,10 @@ const setup = stagedSetup(async () => {
   const port = await server.listen(0);
   baseUrl = `http://127.0.0.1:${port}`;
   pageUrl = `${baseUrl}/?token=${TOKEN}`;
+  const bare = join(scratch, 'bare');
+  await mkdir(bare, { recursive: true });
+  bareServer = new UiServer({ token: TOKEN, root: bare, cliEntry, execArgv: ['--import', tsxLoader], staticDir });
+  noProjectUrl = `http://127.0.0.1:${await bareServer.listen(0)}/?token=${TOKEN}`;
   browser = await chromium.launch();
   page = await openPage();
   // `M234`. This file's module-scope page only; the two ad-hoc pages below (`:389`, `:1360`) are
@@ -246,6 +254,7 @@ after(async () => {
   await page?.close();
   await browser?.close();
   await server?.close();
+  await bareServer?.close();
   if (scratch !== undefined) await rm(scratch, RM_RETRY);
 });
 
@@ -283,10 +292,11 @@ const openPage = async (): Promise<Page> => {
  * in the document until React commits. A gate that measures then is measuring the page before.
  */
 const at = async (door: string, tab: string): Promise<void> => {
-  await page.goto(`${pageUrl}#/${door}`);
+  // `M254` (`D1399`): a door is a chip now, so "one door's one tab" is one chip's one tab or panel.
+  await page.goto(`${pageUrl}#/?kind=${door}`);
   await page.reload();
-  await page.locator(`[data-doorbar="${door}"]`).waitFor();
-  await page.locator(`[data-tab="${tab}"]`).click();
+  await page.locator(`[data-kind-chips="${door}"]`).waitFor();
+  await page.locator(tab === 'auth' || tab === 'config' ? `[data-header-panel="${tab}"]` : `[data-tab="${tab}"]`).click();
   await page.locator(`[data-tabstrip="${tab}"]`).waitFor();
 };
 
@@ -415,9 +425,10 @@ const states: Array<[string, string]> = [['', 'landing'], ...DOORS.flatMap((d) =
 
 const visit = async (door: string, tab: string): Promise<void> => {
   if (tab === 'landing') {
-    await page.goto(`${pageUrl}#/`);
+    // What the landing became (`D1402`): the page before a project, served from a bare directory.
+    await page.goto(noProjectUrl);
     await page.reload();
-    await page.locator('.landing-head, [data-doorbar]').first().waitFor();
+    await page.locator('[data-no-project="none"]').waitFor();
     return;
   }
   await at(door, tab);
@@ -436,7 +447,7 @@ test('a page told nothing renders Terminal — the default is the bare `:root` b
   const fresh = await openPage();
   try {
     await fresh.goto(`${pageUrl}#/`);
-    await fresh.locator('.landing-head, [data-doorbar]').first().waitFor();
+    await fresh.locator('[data-header]').waitFor();
     assert.equal(await fresh.evaluate(() => document.documentElement.getAttribute('data-tflw-theme')), null, 'something stamped the attribute on a page that had no choice to restore');
     assert.equal(await fresh.evaluate(() => window.localStorage.getItem('tflw.theme')), null, 'the page wrote a choice nobody made');
     const read = await fresh.evaluate(() => {
@@ -923,7 +934,7 @@ test('`M215` `B3`: the coloured copy and the field under it are one box, in all 
   await writeFile(file, ['test "a body to paint"', '  api POST /orders body { ok: true, who: null, qty: 3 }', '  expect status equals 201', ''].join('\n'));
   try {
     for (const theme of THEMES) {
-      await showWrittenFile(`${pageUrl}#/api/compose/tests/jsonbody.tflw`, 'tests/jsonbody.tflw');
+      await showWrittenFile(`${pageUrl}#/compose/tests/jsonbody.tflw`, 'tests/jsonbody.tflw');
       /* `M234` `A` — the ROW, not the column (`D1308`). Same hazard as the thirteen-request gate
          above: `[data-seq-col]` is attached before its rows are, so the pick below could land
          mid-redraw, the selection not take, and the body tab never appear — which surfaces 100
@@ -1254,7 +1265,7 @@ test('every text on every door, in every theme, clears its contrast threshold', 
 //
 // Ink and rail are judged SEPARATELY rather than as one mark. They are different colours by
 // construction (`D1286`: ink is `currentColor`, the rail is `var(--accent)`), they come from
-// different tokens, and a theme can break one without touching the other — the doorbar's ink is
+// different tokens, and a theme can break one without touching the other — the header's ink is
 // `--muted` while its rail is the same `--accent` as the hero's, so the two sites do not even
 // share a failure mode.
 
@@ -1283,7 +1294,7 @@ const markProbe = (where: string): Promise<readonly Stroke[]> =>
         const o = parseFloat(cs.getPropertyValue('opacity'));
         if (!Number.isNaN(o)) opacity *= o;
       }
-      const site = svg.closest('.doorbar-home') !== null ? 'doorbar' : svg.closest('.landing-head') !== null ? 'hero' : 'elsewhere';
+      const site = svg.closest('.header-mark') !== null ? 'header' : svg.closest('.landing-head') !== null ? 'hero' : 'elsewhere';
       for (const path of svg.querySelectorAll('path')) {
         const cs = getComputedStyle(path);
         // `stroke` is resolved by the browser, so `currentColor` arrives as the inherited colour
@@ -1299,8 +1310,8 @@ test('the wordmark clears the non-text contrast bar, in every theme, in both pla
   const bad: string[] = [];
   let judged = 0;
   let narrowest = { what: '', ratio: Infinity };
-  // The landing carries the hero; any door carries the doorbar. Both, per theme, because the
-  // doorbar's ink is `--muted` and the hero's is `--fg` — one reading cannot stand for the other.
+  // The no-project page carries the hero; the shell carries the header's. Both, per theme, because
+  // the header's ink is `--muted` and the hero's is `--fg` — one reading cannot stand for the other.
   for (const [door, tab] of [['', 'landing'], ['api', 'compose']] as Array<[string, string]>) {
     await visit(door, tab);
     for (const theme of THEMES) {
@@ -1414,7 +1425,7 @@ test('control: an `opacity` dim is a reading, and a disabled control is exempt',
 // **file count**, not that repository. A hundred generated files reproduce it and couple the suite
 // to nothing.
 
-test('the landing holds every door in one row, at every width a reader has', async () => {
+test('the no-project page holds every kind in one row, at every width a reader has', async () => {
   // `D1258`. Three widths and not one: `auto-fit` collapses tracks by available space, so a single
   // measurement says nothing about whether the measure or the viewport decided the answer. The
   // mutation is `max-width: 880px` back on `.landing`, which reddens all three.
@@ -1422,11 +1433,11 @@ test('the landing holds every door in one row, at every width a reader has', asy
   try {
     for (const width of [1280, 1440, 1680]) {
       await wide.setViewportSize({ width, height: 900 });
-      await wide.goto(`${pageUrl}#/`);
+      await wide.goto(noProjectUrl);
       await wide.reload();
-      await wide.locator('[data-doors]').waitFor();
+      await wide.locator('[data-init-kinds]').waitFor();
       const seen = await wide.evaluate(() => {
-        const cards = [...document.querySelectorAll('[data-doors] .door')];
+        const cards = [...document.querySelectorAll('[data-init-kinds] .init-kind')];
         return {
           doors: cards.length,
           rows: [...new Set(cards.map((c) => Math.round(c.getBoundingClientRect().y)))].length,
@@ -1587,7 +1598,7 @@ test('no control on any door or tab lacks a tip', async () => {
    * at a declaration address.
    */
   const READY: Readonly<Record<string, string>> = {
-    landing: '[data-doors]',
+    landing: '[data-init-kinds]',
     compose: '[data-seq-col]',
     run: '[data-runs]',
     auth: '[data-api-auth]',
@@ -1614,7 +1625,7 @@ test('no control on any door or tab lacks a tip', async () => {
       // fifteen echoes `M216` `B1` measured and `D1127` removed. Counted rather than skipped, so
       // the carve-out cannot quietly become the page. (It named a fourth line, `like`, until
       // `M233` §7 removed that copy; the exemption is the card, not the line count.)
-      const SELF_SAID = '.door';
+      const SELF_SAID = '.init-kind';
       const out: string[] = [];
       let n = 0;
       let d = 0;
@@ -1651,7 +1662,7 @@ test('no control on any door or tab lacks a tip', async () => {
   // exemption that grew would empty the census without anyone noticing.
   assert.ok(controls > 300, `the census saw ${controls} controls across ${walk.length} page states — it is not reaching the forms`);
   assert.ok(derived > 0, 'no tip on the whole page is derived, so `D1127`\u2019s mechanism is not being exercised');
-  assert.equal(selfSaid, DOORS.length, `${selfSaid} controls were exempted as self-describing — that is meant to be the four landing doors and nothing else`);
+  assert.equal(selfSaid, DOORS.length, `${selfSaid} controls were exempted as self-describing — that is meant to be the four kinds on the no-project page and nothing else`);
   assert.ok(band >= DOORS.length, `the census never reached the test band (${band} sightings) — the two fields \`R1\` found are drawn only at a declaration address`);
   assert.deepEqual([...new Set(bare)].slice(0, 30), [], `${new Set(bare).size} distinct controls carry no tip`);
 });
@@ -1667,7 +1678,7 @@ test('control: the census names the control a mutation strips', async () => {
     page.evaluate(() => {
       const out: string[] = [];
       for (const el of document.body.querySelectorAll('button, select, input, textarea')) {
-        if (!el.checkVisibility() || el.closest('.door') !== null) continue;
+        if (!el.checkVisibility() || el.closest('.init-kind') !== null) continue;
         if (el.closest('[data-tip], [data-tip-derived]') === null) {
           const data = [...el.attributes].find((a) => a.name.startsWith('data-'));
           out.push(`${el.tagName.toLowerCase()}${data ? `[${data.name}]` : ''}`);
@@ -1804,7 +1815,7 @@ const COPY_VIEWS: ReadonlyArray<readonly [string, string, string | null]> = [
   ['', 'landing', null],
   ...DOORS.flatMap((d) => [[d, 'compose', 'tests/catalog.tflw/L2'], [d, 'auth', null], [d, 'run', null], [d, 'config', null]] as Array<[string, string, string | null]>),
 ];
-const COPY_READY: Readonly<Record<string, string>> = { landing: '[data-doors]', compose: '[data-seq-col]', run: '[data-runs]', auth: '[data-api-auth]', config: '[data-api-config="saved"], [data-api-config="unsaved"]' };
+const COPY_READY: Readonly<Record<string, string>> = { landing: '[data-init-kinds]', compose: '[data-seq-col]', run: '[data-runs]', auth: '[data-api-auth]', config: '[data-api-config="saved"], [data-api-config="unsaved"]' };
 
 test('`M240` `D` (`D1312`): words at rest stay inside each view’s budget, and every tip is one sentence of at most 90 characters', async () => {
   const over: string[] = [];
@@ -1812,7 +1823,7 @@ test('`M240` `D` (`D1312`): words at rest stay inside each view’s budget, and 
   let judged = 0;
   for (const [door, tab, where] of COPY_VIEWS) {
     if (where === null) await visit(door, tab);
-    else { await page.goto(`${pageUrl}#/${door}/${tab}/${where}`); await page.reload(); }
+    else { await page.goto(`${pageUrl}#/${tab}/${where}?kind=${door}`); await page.reload(); }
     await page.locator(COPY_READY[tab]!).first().waitFor();
     const budget = BUDGET[tab];
     if (budget !== undefined) {
@@ -1845,7 +1856,7 @@ test('`M240` `D` (`M240-05`): the budget counts the page’s words — no test n
   const shown = new Set<string>();
   for (const [door, tab, where] of COPY_VIEWS) {
     if (where === null) await visit(door, tab);
-    else { await page.goto(`${pageUrl}#/${door}/${tab}/${where}`); await page.reload(); }
+    else { await page.goto(`${pageUrl}#/${tab}/${where}?kind=${door}`); await page.reload(); }
     await page.locator(COPY_READY[tab]!).first().waitFor();
     const { text } = await wordsAtRest();
     const all = await page.evaluate(() => (document.body as unknown as { innerText: string }).innerText); // one-shot: the view's subject was waited for above
@@ -1952,7 +1963,7 @@ test('`M241` `E` (`D1325`): no control on any view is under 24 px on a side, and
   const walked: ReadonlyArray<readonly [string, string, string | null]> = [...COPY_VIEWS, ...DOORS.map((d) => [d, 'source', 'tests/catalog.tflw'] as const)];
   for (const [door, tab, where] of walked) {
     if (where === null) await visit(door, tab);
-    else { await page.goto(`${pageUrl}#/${door}/${tab}/${where}`); await page.reload(); }
+    else { await page.goto(`${pageUrl}#/${tab}/${where}?kind=${door}`); await page.reload(); }
     await page.locator(tab === 'source' ? '[data-preview]' : COPY_READY[tab]!).first().waitFor();
     views += 1;
     const { targets, texts } = await smallThings();

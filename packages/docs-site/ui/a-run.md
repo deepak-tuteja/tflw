@@ -47,7 +47,7 @@ has started drifting becomes visible before it breaches.
 
 **The control is not in the picture above, and its absence is the rule working.** The example has
 run once, so there is nothing to compare against and the page offers no chooser rather than an empty
-one — the same reasoning as a door with no tests behind it. Run the suite a second time and the
+one — the same reasoning as a project with no file in it. Run the suite a second time and the
 chooser appears beside the run's own chip.
 
 For load tests specifically, the planned and achieved rates are drawn on one plot, so a workload

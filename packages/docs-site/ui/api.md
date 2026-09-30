@@ -2,15 +2,15 @@
 pageClass: ui-shots
 ---
 
-# The API door
+# API tests
 
-> `#/api` — *call an endpoint, assert what comes back, chain one call into the next.*
+> `#/?kind=api` — *call an endpoint, assert what comes back, chain one call into the next.*
 
-The door tflw started as, and the one the Compose pane was built for. It opens on a request: a
+The kind of test tflw started as, and the one the Compose pane was built for. It opens on a request: a
 method, a path, the headers and body it carries, and the assertions that read what came back.
 
-![Compose on the API door: an API test, its requests and the assertions that read them](/ui/compose-api-paper.png){.light-only}
-![Compose on the API door: an API test, its requests and the assertions that read them](/ui/compose-api-terminal.png){.dark-only}
+![An API test in Compose: its requests and the assertions that read them](/ui/compose-api-paper.png){.light-only}
+![An API test in Compose: its requests and the assertions that read them](/ui/compose-api-terminal.png){.dark-only}
 
 ## What `+ new test` writes here
 
@@ -30,7 +30,7 @@ carry, which is why it is the one the button writes.
 ## What the pane offers
 
 Three `+` gestures at the foot of the body — **`+ request`**, **`+ let`** and **`+ wait until`** —
-and one control the other three doors do not have: **Send**.
+and one control only a file with a request has: **Send**.
 
 Send issues this request *and the ones above it that feed it*, because 734 of the sibling corpus's
 1,031 requests read a binding an earlier call captured. It shows you what came back. **Nothing is
@@ -46,4 +46,4 @@ parser from a `session` block in `tflw.config` only, and the printer has no case
 there is no file this pane edits that could hold one. Sessions are edited on the **Auth** and
 **Config** tabs, which is where they live.
 
-Next: [Assertions in depth](/guide/assertions) teaches the language this door writes.
+Next: [Assertions in depth](/guide/assertions) teaches the language this pane writes.

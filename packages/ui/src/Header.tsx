@@ -121,6 +121,30 @@ export function Header({ project, env, onEnv, workers, onWorkers, headed, onHead
   const facts = useRef<HTMLElement | null>(null);
   useRovingFocus(facts, { orientation: 'row', selector: ':scope > button, :scope > a' });
 
+  /* **`more…` closes when you leave it** — a popover, not a pane. It opens over the content under the
+     header, and a `<details>` stays open until its own summary is pressed again, so after `M254` put
+     `workers` and `headed` in it an open one sat over the run list until somebody thought to close
+     it (found by the page suite: the next test's click on a report row landed on `headed`'s label).
+     A press anywhere outside it, or `Esc`, closes it. */
+  const moreRef = useRef<HTMLDetailsElement | null>(null);
+  useEffect(() => {
+    const close = (): void => {
+      if (moreRef.current?.open) moreRef.current.open = false;
+    };
+    const onDown = (e: PointerEvent): void => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
   const name = project.root.split('/').filter(Boolean).pop() ?? project.root;
 
   return (
@@ -133,8 +157,9 @@ export function Header({ project, env, onEnv, workers, onWorkers, headed, onHead
       </a>
       {/* `M240` `E` — the project's name is the page's one `<h1>`: it is what every view is about. It
           moved here from the explorer's head with `M254` (`D1400`), which gave that place to the
-          kinds. */}
-      <h1 className="header-project" data-header-project={name} data-tip={project.root}>
+          kinds. The directory's name only: the absolute path is nobody's business (`D1310`), so the
+          tip is the derived one — the name again, when an ellipsis took part of it. */}
+      <h1 className="header-project" data-header-project={name} data-tip-derived="">
         {name}
       </h1>
       <div className="header-run" data-runstrip>
@@ -160,8 +185,8 @@ export function Header({ project, env, onEnv, workers, onWorkers, headed, onHead
             data-run
             data-run-count={rows.length}
             disabled={disabled}
-            data-tip="runs and grades exactly the rows the explorer shows, and keeps the run as a report you can reopen"
-            data-run-narrowing={disabled ? 'none' : selection.length > 0 ? 'selection' : parsed.kind === 'none' ? (kind === null ? 'none' : 'kind') : parsed.kind}
+            data-tip="runs exactly the rows the explorer shows, and keeps the run as a report"
+            data-run-narrowing={nothingTagged ? 'none' : selection.length > 0 ? 'selection' : parsed.kind === 'none' ? (kind === null ? 'none' : 'kind') : parsed.kind}
           >
             {label}
           </button>
@@ -172,7 +197,7 @@ export function Header({ project, env, onEnv, workers, onWorkers, headed, onHead
             (`D1250`). The tips keep what no condition can say: file concurrency is the config's, and
             the trace is the better answer than a visible window. */}
         {flagRows.length === 0 && !takesWorkers && !takesHeaded ? null : (
-          <details className="run-more" data-run-more={flagRows.map((r) => r.flag).join(' ')}>
+          <details className="run-more" data-run-more={flagRows.map((r) => r.flag).join(' ')} ref={moreRef}>
             <summary data-tip="the rest of what `tflw run` takes, for what this run holds">more…{shown === 0 ? '' : ` (${shown})`}</summary>
             <div className="run-more-rows">
               {takesWorkers ? (

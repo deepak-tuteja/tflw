@@ -2,26 +2,26 @@
 pageClass: ui-shots
 ---
 
-# The LOAD door
+# LOAD tests
 
 > `#/load` — *run the work you already wrote at a rate, and hold it to a threshold.*
 
 A load test is not a different kind of test. It is a test with a **workload** line saying how often
 to run it, and **thresholds** saying what counts as holding up.
 
-![Compose on the LOAD door: a load test, and the plan panel its workload line earned](/ui/compose-load-paper.png){.light-only}
-![Compose on the LOAD door: a load test, and the plan panel its workload line earned](/ui/compose-load-terminal.png){.dark-only}
+![A LOAD test in Compose, and the plan panel its workload line earned](/ui/compose-load-paper.png){.light-only}
+![A LOAD test in Compose, and the plan panel its workload line earned](/ui/compose-load-terminal.png){.dark-only}
 
 ## The panel in that picture is earned, not granted
 
-The plan panel above the body is there because **this file has a workload line** — not because you
-came through this door. Open the same file from the API door and the panel is there too; open a
-file without one from this door and it is not.
+The plan panel above the body is there because **this file has a workload line** — not because of
+which chip is on. Open the same file under the API chip and the panel is there too; open a file
+without one under the LOAD chip and it is not.
 
 That is the rule the whole UI is built on, and it is the most counter-intuitive thing about it:
 
-> a test carrying a workload line shows its workload panel in every door, because the panel is
-> earned by the construct and not granted by the door you came through.
+> a test carrying a workload line shows its workload panel under every chip, because the panel is
+> earned by the statement and never granted by the filter you are looking through.
 
 ## What `+ new test` writes here
 

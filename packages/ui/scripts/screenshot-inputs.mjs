@@ -58,9 +58,9 @@ export const THEMES = /** @type {const} */ ([
  * `App.tsx`, and it stays `spine` if the component is renamed.
  */
 export const VIEWS = /** @type {const} */ ([
-  'landing', //         ui/index.md   — the four doors, counted against a real project
-  'spine', //           ui/spine.md   — explorer, doorbar, tab strip, all at once
-  'doors', //           ui/spine.md   — the doorbar with its per-door counts
+  'shell', //           ui/index.md   — the page as it opens: header, kind chips, a test in Compose
+  'spine', //           ui/spine.md   — explorer, header, tab strip, all at once
+  'kinds', //           ui/kinds.md   — the kind chips with what each counts in this project
   'compose-api', //     ui/api.md     — an API test: request, assertions, response
   'compose-browser', // ui/browser.md — a browser test: steps a person would take
   'browser-menu', //    ui/browser.md — `+ step…`, where the 23 browser kinds are enumerated

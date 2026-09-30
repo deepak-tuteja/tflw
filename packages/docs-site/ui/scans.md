@@ -2,15 +2,15 @@
 pageClass: ui-shots
 ---
 
-# The SCANS door
+# SCANS
 
 > `#/scan` — *crawl a surface and judge every response against a severity bar.*
 
 A scan is a test whose assertion grades the response as a whole rather than one field of it, against
 a bar you set.
 
-![Compose on the SCANS door: a scan test, its targets and the severity bar it is judged against](/ui/compose-scan-paper.png){.light-only}
-![Compose on the SCANS door: a scan test, its targets and the severity bar it is judged against](/ui/compose-scan-terminal.png){.dark-only}
+![A scan test in Compose: its targets and the severity bar it is judged against](/ui/compose-scan-paper.png){.light-only}
+![A scan test in Compose: its targets and the severity bar it is judged against](/ui/compose-scan-terminal.png){.dark-only}
 
 ## The targets block
 
@@ -18,8 +18,8 @@ The block above the body is the one thing on this surface a scan cannot run with
 project has declared it is allowed to reach**. It is read from `tflw.config`'s
 `authorized target` lines, it is not editable here, and it links to the Config tab where it is.
 
-Like the LOAD door's plan panel, it is earned by a construct and not granted by the door — a file
-that declares an authorized target shows it behind the API door too.
+Like a load test's plan panel, it is earned by a statement and not granted by a chip — a file that
+declares an authorized target shows it under the API chip too.
 
 ## What `+ new test` writes here
 
@@ -41,7 +41,7 @@ why this is one answer to *what does a scan start from* rather than two.
 real host is a wall of text with nothing actionable in it. It is also the commonest answer in the
 corpus — 31 of 112 severity matchers, the largest of the five.
 
-## What this door cannot scaffold
+## What + new test cannot scaffold here
 
 A `crawl` declaration. A crawl is a different shape from a test and there is no builder for it, so
 the button writes the test form above and a crawl is written by hand or by `tflw init --scan`. That

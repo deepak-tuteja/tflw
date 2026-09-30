@@ -68,7 +68,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { menuTrigger, type MenuItem, type MenuRequest } from './ContextMenu';
 import type { Lens, ProjectFile, ProjectView } from './contract';
-import { countByDoor, countsHonestly, DOOR_BY_ID, DOORS } from './doors';
+import { countByDoor, countsHonestly, DOOR_BY_ID, DOORS, unparsedCount } from './doors';
 import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
 import { useRovingFocus } from './useRovingFocus';
 import type { FileOutline, OutlineDecl } from './outline';
@@ -277,6 +277,10 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
      row's-worth of presses away. Tab lands on the open file's row, else the first. */
   const treeRef = useRef<HTMLUListElement | null>(null);
   useRovingFocus(treeRef, { orientation: 'column', selector: 'button' });
+  /* `M254` (`D1399`, `D1311`) — the chips are one Tab stop too, ←/→ between them, the way the door
+     bar they replace was. Five stops in front of search would put the file list six presses away. */
+  const chipsRef = useRef<HTMLDivElement | null>(null);
+  useRovingFocus(chipsRef, { orientation: 'row', selector: ':scope > button' });
   /** Where a `shift` range starts. A gesture detail and not a fact about the project, so it is
    *  neither in the address nor anywhere durable — `D1066` addresses what changes a run. */
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -330,6 +334,7 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
    *  kinds is counted by both), and `all`, every test and crawl including the ones of no kind. Files
    *  that did not parse are left out of all five, for `countsHonestly`'s reason. */
   const byKind = useMemo(() => countByDoor(project), [project]);
+  const unparsed = useMemo(() => unparsedCount(project), [project]);
   const allCount = useMemo(() => project.files.filter(countsHonestly).reduce((n, f) => n + f.tests.length + f.crawls.length, 0), [project]);
 
   /** Every file in tree order — what `shift` ranges over. The WHOLE tree, not the visible part:
@@ -576,7 +581,7 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
         {/* **The kinds, as chips** — `M254` (`D1399`). The four the door bar carried, plus `all`, each
             with its count; one pressed. A test of two kinds is under both (`D1043`), and `all` is
             every test, the ones of no kind among them. The project's name is the header's now. */}
-        <div className="kind-chips" role="group" aria-label="kinds of test" data-kind-chips={kind ?? 'all'}>
+        <div className="kind-chips" role="group" aria-label="kinds of test" data-kind-chips={kind ?? 'all'} ref={chipsRef}>
           <button type="button" className={`chip${kind === null ? ' on' : ''}`} aria-pressed={kind === null} onClick={() => onKind(null)} data-kind-chip="all" data-tip="every test in the project">
             all <span className="chip-count" data-kind-count={allCount}>{allCount}</span>
           </button>
@@ -588,6 +593,15 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
         </div>
         <div className="muted" data-project-counts>
           {project.files.length} file{project.files.length === 1 ? '' : 's'}
+          {/* `M211` `S2` (`M202-01`) — what the landing used to admit: the chips leave a file that did
+              not parse out of every count, because what the parser recovered from it is not the
+              project's, and the page says so rather than presenting a short total as the whole.
+              Silent when zero, which is every healthy project. */}
+          {unparsed > 0 ? (
+            <span data-unparsed={unparsed}>
+              {' '}· {unparsed} not counted — {unparsed === 1 ? 'it does' : 'they do'} not parse
+            </span>
+          ) : null}
         </div>
       </div>
 

@@ -38,9 +38,12 @@ export const EVERYWHERE = [
   ['SPEC.md', /SPEC\.md/],
 ];
 export const PAGE_ONLY = [
-  ['`behind` (say *here* or *at a door*)', /\bbehind\b/],
+  ['`behind` (say *of this kind*)', /\bbehind\b/],
   ['`construct` (say *statement*)', /\bconstructs?\b/],
-  ['`lens` (say *door*)', /\blens\b/],
+  ['`lens` (say *kind*)', /\blens\b/],
+  // `M254` (`D1410`, reopening `D1314`): a door is a kind now — a filter and a scaffold choice — so
+  // the page stops naming a place the reader can no longer go.
+  ['`door` (say *kind*)', /\bdoors?\b/i],
 ];
 
 const walk = (dir, out = []) => {
@@ -130,7 +133,7 @@ export function selfTest() {
     const want = [
       'packages/runtime/src/a.ts: a decision id',
       'packages/runtime/src/a.ts: a docs link to a page the site does not have',
-      'packages/ui/src/b.tsx: `behind` (say *here* or *at a door*)',
+      'packages/ui/src/b.tsx: `behind` (say *of this kind*)',
       'packages/ui/src/b.tsx: a SPEC section',
     ].sort();
     if (JSON.stringify(got) !== JSON.stringify(want)) {
@@ -161,7 +164,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url) && !process.argv.includes
   if (bad.length > 0) {
     console.error(`verify:no-internal-refs: ${bad.length} string(s) a reader can see carry the builder's words:\n`);
     for (const b of bad) console.error(`  ${b}`);
-    console.error(`\nSay why, or end the string in a ${DOCS} page (D1313); on the page, *here* / *at a door* / *statement* (D1314).`);
+    console.error(`\nSay why, or end the string in a ${DOCS} page (D1313); on the page, *kind* / *of this kind* / *statement* (D1314, D1410).`);
     process.exit(1);
   }
   console.log(`verify:no-internal-refs: clean — ${docsPages.length} docs page(s) linked, every one on the site.`);

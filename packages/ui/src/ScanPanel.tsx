@@ -102,7 +102,7 @@ export function ScanPanel({ authorization, matchers, onAuth, onConfig }: {
             {f.count === 1 ? '' : ` ×${f.count}`}
           </span>
         ))}
-        {families.length === 1 ? ' — and that is what puts it at the SCANS door.' : ' — and those are what put it at the SCANS door.'}
+        {families.length === 1 ? ' — and that is what makes it a SCANS test.' : ' — and those are what make it a SCANS test.'}
       </p>
 
       {/* **The env's half, said to be the env's** — `M228` `F` (`D1247`).

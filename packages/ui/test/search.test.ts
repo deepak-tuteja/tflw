@@ -159,7 +159,10 @@ test('`runRows` is what ▶ runs — the label’s count and `request()` read th
   // And the chip ANDs with every other narrowing, the way `--kind` does with `--tag` and files.
   assert.deepEqual(names(runRows(mixed, ['tests/load.tflw', 'tests/shop.tflw'], parseQuery('', mixed), 'browser')), ['the shop greets']);
   assert.deepEqual(names(runRows(mixed, [], parseQuery('@smoke', mixed), 'load')), []);
-  assert.deepEqual(names(runRows(mixed, [], parseQuery('catalog', mixed), 'api')), ['the catalogue answers'], 'a text query lights files, the chip narrows inside them');
+  // `catalog` lights `catalog.tflw` by its path and `load.tflw` by its test's name; the chip then keeps
+  // the API rows of both — and drops `shop.tflw`, which the text never lit.
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('catalog', mixed), 'api')), ['the catalogue answers', 'the catalogue holds'], 'a text query lights files, the chip narrows inside them');
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('catalog', mixed), 'load')), ['the catalogue holds']);
   // The flags are drawn by the rows, so the chip moves them too.
   assert.deepEqual([...lensesInRun(mixed, [], parseQuery('', mixed), 'browser')], ['browser']);
 });

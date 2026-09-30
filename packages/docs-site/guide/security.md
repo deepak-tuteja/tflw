@@ -154,7 +154,7 @@ GitHub's private reporting on the repository and are acknowledged within 72 hour
 
 ## The same work, in the page
 
-`tflw ui`'s SCANS door lists every finding a run produced, grouped by rule and by severity, with
+`tflw ui`'s Run tab lists every finding a run produced, grouped by rule and by severity, with
 the baseline's verdict beside it — which is how a finding that was accepted last week and is
 gating now becomes visible. The authorized target declaration is still required and still written
 in the file: the page does not grant permission, it reads it. See [The page](/ui/).

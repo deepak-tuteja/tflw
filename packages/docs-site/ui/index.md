@@ -12,8 +12,8 @@ It is not a dashboard. Nothing is uploaded, no account is involved, and the page
 own: it reads the files on disk and writes files back to disk. Close it and the project is exactly
 what `tflw run` and `git` see.
 
-![The landing surface: four doors, each counted against the project on disk](/ui/landing-paper.png){.light-only}
-![The landing surface: four doors, each counted against the project on disk](/ui/landing-terminal.png){.dark-only}
+![The page as it opens: the header, the kinds as chips over the file list, and a test in Compose](/ui/shell-paper.png){.light-only}
+![The page as it opens: the header, the kinds as chips over the file list, and a test in Compose](/ui/shell-terminal.png){.dark-only}
 
 ## Opening it
 
@@ -44,20 +44,22 @@ repository — a shop with a catalogue, a basket, a delivery form, an order page
 clone, `npm run example` starts it and runs the suite against it; `npx tflw ui examples/storefront`
 opens the page these shots were taken of. Nothing here is a mock-up.
 
-An empty directory is not an error. The page offers to make a project, and which kind it makes
-depends on which door you came through — see [The four doors](/ui/doors).
+An empty directory is not an error. The page offers to make a project and asks one question — which
+kind of test to start with — and the answer is `tflw init`'s own flag. See [The four kinds](/ui/kinds).
 
 ## What you are looking at
 
-The landing surface offers four doors — **API**, **BROWSER**, **LOAD** and **SCANS** — and a count
-beside each. A door is a way into the same project: the count is the tests in this project that do
-that door's kind of work, so a project with no load tests shows nothing here for LOAD, and one test
-can be counted at more than one door.
+The page opens on the project itself. Across the top is one **header**: the project's name, the env a
+run reads, **▶ run** with what it will run and how many (`▶ run all · 38`), and on the right the two
+project facts — **Auth** and **Config** — then `?` and the theme. Under it, one file's three stages:
+**Compose**, **Source** and **Run**.
 
-The footer is the other half of that rule, and the project above is showing it: **one test at no
-door**. A door is earned by the statements a test carries, so a test built only out of statements no
-door is about — a call, a binding, an assertion on its result — is at none of them, and the page
-says so rather than filing it somewhere plausible:
+Down the left is the file list, and at its head the four **kinds** — **API**, **BROWSER**, **LOAD**
+and **SCANS** — as chips, with `all` in front. A chip is a count and a filter in one: press **LOAD**
+and the list shows the files holding a load test, and ▶ runs exactly those tests. A kind is earned
+by the statements a test carries, so one test can be counted under more than one chip, and a test
+built only out of statements no kind is about — a call, a binding, an assertion on its result — is
+under none of them and still under `all`:
 
 ```tflw
 action signIn(email, password)
@@ -71,20 +73,19 @@ test "signing in is one line, because the shop does it in every other test"
   expect {ok} equals true
 ```
 
-The `action` carries the `api` step, so the API door counts *it* — and the test below, which is a
-call, a binding and an assertion, is at no door. It still runs, and it is still in the file
-list. It is just not what any of the four doors are for.
+The `action` carries the `api` step, so it is API work — and the test below, which is a call, a
+binding and an assertion, is of no kind. It still runs, and `all` still counts it.
 
-Past the landing, every surface is the same three things: a file list, a door, and five tabs over
-whichever file you picked. That shape does not change, which is what [the spine](/ui/spine) means.
+That shape does not change from file to file, which is what [the spine](/ui/spine) means.
 
-**Which file a door opens on.** A door you open with no file in the address lands on the file with
-the most of that door's work in it — ties broken by path — and it lands on that file's first test,
-not on a hook above it. Once you have picked a file, the door remembers it, per project, in your
-browser; a door with nothing behind it says so and offers a new file instead.
+**Which file the page opens on.** With no file in the address, the page opens on the file you had
+open last time in this browser, for this project; the first time, on the file declaring the most
+tests — ties broken by path — at its first test, not at a hook above it. A project with no file yet
+says so and offers one.
 
-**The keyboard.** The file list, the door bar and the tab strip are one Tab stop each, and the
-arrow keys move inside them. Press `?` for the legend, which also says what each panel is for.
+**The keyboard.** The file list, the header's right-hand words and the tab strip are one Tab stop
+each, and the arrow keys move inside them. Press `?` for the legend, which also says what each panel
+is for.
 
 | keys | does |
 |---|---|
@@ -114,20 +115,19 @@ by; the page is where a person works before that.
 
 ## The rest of this section
 
-- **[The spine](/ui/spine)** — the file list, the door bar and the five tabs: the shape every
+- **[The spine](/ui/spine)** — the header, the file list and the three stages: the shape every
   surface here shares.
-- **[The four doors](/ui/doors)** — what a door decides, what it does not, and why a test can sit
-  behind more than one.
+- **[The four kinds](/ui/kinds)** — what a chip decides, what it does not, and why a test can be of
+  more than one kind.
 
-Then one page per door, each on a real test:
+Then one page per kind, each on a real test:
 
-- **[The API door](/ui/api)** — a request, the assertions that read it, and Send.
-- **[The BROWSER door](/ui/browser)** — gestures against a real page, and why its scaffold stops
-  after one line.
-- **[The LOAD door](/ui/load)** — a workload, the plan panel it earns, and the threshold the
-  checker insists on.
-- **[The SCANS door](/ui/scans)** — the targets block, the severity floor, and what it cannot
-  scaffold.
+- **[API tests](/ui/api)** — a request, the assertions that read it, and Send.
+- **[BROWSER tests](/ui/browser)** — gestures against a real page, and why the scaffold stops after
+  one line.
+- **[LOAD tests](/ui/load)** — a workload, the plan panel it earns, and the threshold the checker
+  insists on.
+- **[SCANS](/ui/scans)** — the targets block, the severity floor, and what it cannot scaffold.
 
 And then:
 

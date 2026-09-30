@@ -8,9 +8,9 @@
 
 export function EmptyDoor({ onNew }: { readonly onNew: () => void }) {
   return (
-    <section className="empty-door" data-empty-door>
+    <section className="empty-project" data-empty-door>
       <p>No test file here yet · make one to start</p>
-      <button type="button" className="empty-door-new" data-empty-door-new onClick={onNew}>
+      <button type="button" className="empty-project-new" data-empty-door-new onClick={onNew}>
         + new file
       </button>
     </section>
