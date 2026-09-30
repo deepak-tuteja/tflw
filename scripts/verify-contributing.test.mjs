@@ -52,6 +52,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
+import yaml from 'js-yaml';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -525,6 +526,27 @@ function claimedGates() {
 }
 
 // --- the assertions -------------------------------------------------------------------------------
+
+// Every check above reads the workflows a line at a time, so none of them could see that
+// `release-vsix.yml` did not parse at all: a `: ` in a plain scalar made GitHub refuse the file on
+// every push from `M251` `D` onwards (a red run with no jobs), while this file classified its steps
+// happily. So each workflow is also handed to a real YAML parser, and the steps `runSteps` finds
+// must be the steps the parser finds — the line reader is held to the document it stands in for.
+test('every workflow parses as YAML, and runSteps reads the same run: steps the parser does', () => {
+  for (const wf of workflows) {
+    let doc;
+    try {
+      doc = yaml.load(readFileSync(join(WORKFLOW_DIR, wf), 'utf8'));
+    } catch (e) {
+      assert.fail(`${wf} is not valid YAML — GitHub refuses the whole file on every push, which shows as a failed run with no jobs:\n${e.message}`);
+    }
+    const parsed = Object.entries(doc.jobs ?? {}).flatMap(([job, def]) =>
+      (def.steps ?? []).filter((s) => typeof s.run === 'string').flatMap((s) =>
+        s.run.split('\n').map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('#')).map((cmd) => `${job} · ${cmd}`)));
+    const read = steps.filter((s) => s.wf === wf).map((s) => `${s.job} · ${s.cmd}`);
+    assert.deepEqual(read, parsed, `${wf}: the line reader and the YAML parser disagree about the run: steps`);
+  }
+});
 
 test('every run: step in every workflow is classified', () => {
   const known = new Set(CLASSIFIED.map(key));

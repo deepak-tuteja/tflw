@@ -34,5 +34,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run package -w tflw-vscode -- -o "$RUNNER_TEMP/tflw-$TAG.vsix"
-      - run: gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "The VS Code extension for tflw $TAG, as a .vsix — install it with Extensions: Install from VSIX…"
+      # A block scalar, not a plain one: the notes carry `: `, which a plain scalar reads as a
+      # second mapping key, and GitHub then refuses the whole file on every push.
+      - run: |
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --verify-tag --prerelease --title "$TAG" --notes "The VS Code extension for tflw $TAG, as a .vsix — install it with Extensions: Install from VSIX…"
       - run: gh release upload "$TAG" "$RUNNER_TEMP/tflw-$TAG.vsix" --clobber
