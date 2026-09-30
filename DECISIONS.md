@@ -10166,13 +10166,13 @@ stands and gains the filter.
 **`D1414` — `--failed` replays the tests that are failing, read from the kept runs.** (`D-RC-16`,
 added at `M255`, the user's choice 2026-09-30) A test is *failing* when its newest verdict in
 `report/runs/` (`M249`'s history, the pair `file` + declared name) is a failure — pytest's `--lf`
-rule, which decision 111.2 already named as the model. `tflw run --failed`, the page's `failed`
+rule, which `P#111`'s second clause already named as the model. `tflw run --failed`, the page's `failed`
 chip, the explorer's red dots and ▶ under that chip are then **one set**, and ▶ sends `--failed`
-exactly (`D1403` holds). *Reopens* 111's *the previous run's failures* and `FU-23`'s warning (a
+exactly (`D1403` holds). *Reopens* `P#111`'s *the previous run's failures* and `FU-23`'s warning (a
 partial run no longer redefines the set, so there is nothing to confess). Nothing failing still
-falls back to the full suite with a note (111.2). A `--no-keep` run does not move the set, and a
+falls back to the full suite with a note (`P#111`). A `--no-keep` run does not move the set, and a
 test last run beyond `runs keep N` has no verdict. `.last-run.json` is still written and read by
-nothing in tflw — retiring it is §8.3 #12. *Not taken:* keeping `--failed` on the last run and
+nothing in tflw — retiring it is §8.3's twelfth item. *Not taken:* keeping `--failed` on the last run and
 drawing the chip from it (a red dot outside the `failed` chip — two answers to *what failed*);
 the chip as a view filter that runs whole files (▶ would run passing tests).
 
