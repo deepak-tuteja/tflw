@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join, resolve } from 'node:path';
-import { findProjectRoot, resolveTflwBin, parseTestDeclarationLine } from '../src/lib.js';
+import { findProjectRoot, resolveTflwBin, parseTestDeclarationLine, spawnSpec, LineReader, verdictOf, parseExplorerEvent, reportDirOf } from '../src/lib.js';
 
 test('findProjectRoot walks up until it finds a directory containing tflw.config', () => {
   // Built with the host's own path functions (`M243-16`): `findProjectRoot` joins with `node:path`,
@@ -56,4 +56,65 @@ test('parseTestDeclarationLine decodes \\" and \\\\ escapes the same way the lex
 test('parseTestDeclarationLine returns undefined for a non-test line', () => {
   assert.equal(parseTestDeclarationLine('  api GET /health'), undefined);
   assert.equal(parseTestDeclarationLine('session admin'), undefined);
+});
+
+// ---- `M251` `C`: the explorer's pure half -----------------------------------------------------
+//
+// `M252-06`: these five shipped with M251 exercised only through the explorer's happy path, and
+// the package's branch coverage fell from 97.78% to 79.47% against a 96% floor. Each branch below
+// is one the explorer takes on real input — a Windows path with a space, a chunk that ends mid-line,
+// a report entry with no failing step — so each is pinned here, where it can be reached directly.
+
+test('spawnSpec passes a POSIX bin and its args through untouched, with no shell', () => {
+  assert.deepEqual(spawnSpec('/p/node_modules/.bin/tflw', ['run', '--only', 'adds to cart'], 'linux'), {
+    command: '/p/node_modules/.bin/tflw', args: ['run', '--only', 'adds to cart'], shell: false,
+  });
+});
+
+test('spawnSpec on win32 goes through the shell, quoting only what cmd.exe would split, and doubling a quote', () => {
+  assert.deepEqual(spawnSpec('C:\\Program Files\\p\\tflw.cmd', ['run', 'shop.tflw', '--only', 'say "hi"'], 'win32'), {
+    command: '"C:\\Program Files\\p\\tflw.cmd"', args: ['run', 'shop.tflw', '--only', '"say ""hi"""'], shell: true,
+  });
+});
+
+test('LineReader holds a partial line until its newline arrives, strips CR, drops blank lines, and flushes the rest', () => {
+  const r = new LineReader();
+  assert.deepEqual(r.push('{"a":1}\r\n{"b"'), ['{"a":1}']);
+  assert.deepEqual(r.push(':2}\n\n{"c":3}'), ['{"b":2}']);
+  assert.deepEqual(r.flush(), ['{"c":3}']);
+  assert.deepEqual(r.flush(), [], 'a second flush has nothing left');
+});
+
+test('verdictOf: skipped carries its reason; passed carries only what the entry had', () => {
+  assert.deepEqual(verdictOf({ name: 't', skipped: 'payments are down', durationMs: 0, file: 'a.tflw' }), { state: 'skipped', durationMs: 0, file: 'a.tflw', message: 'payments are down' });
+  assert.deepEqual(verdictOf({ name: 't', ok: true }), { state: 'passed' });
+});
+
+test('verdictOf: a failure names its failing step, or the fatal error, or says only that it failed', () => {
+  assert.deepEqual(
+    verdictOf({ name: 't', ok: false, steps: [{ ok: true }, { ok: false, source: '  expect status equals 201', detail: 'got 500', line: 7, file: 'b.tflw' }] }),
+    { state: 'failed', message: 'expect status equals 201\ngot 500', line: 7, file: 'b.tflw' },
+  );
+  assert.deepEqual(verdictOf({ name: 't', ok: false, steps: [{ ok: false }] }), { state: 'failed', message: '' }, 'a failing step with nothing to say says nothing, rather than a stale default');
+  assert.deepEqual(verdictOf({ name: 't', ok: false, error: 'before file failed' }), { state: 'failed', message: 'before file failed' });
+  assert.deepEqual(verdictOf({ name: 't', ok: false }), { state: 'failed', message: 'failed' });
+});
+
+test('parseExplorerEvent reads a start and an end, with the file from either place the stream puts it', () => {
+  assert.deepEqual(parseExplorerEvent('{"type":"test:start","name":"t","file":"a.tflw"}'), { kind: 'start', name: 't', file: 'a.tflw' });
+  assert.deepEqual(parseExplorerEvent('{"type":"test:start","name":"t"}'), { kind: 'start', name: 't' });
+  assert.deepEqual(parseExplorerEvent('{"type":"test:end","file":"a.tflw","result":{"name":"t","ok":true}}'), { kind: 'end', name: 't', file: 'a.tflw', verdict: { state: 'passed' } });
+  assert.deepEqual(parseExplorerEvent('{"type":"test:end","result":{"name":"t","ok":true,"file":"b.tflw"}}'), { kind: 'end', name: 't', file: 'b.tflw', verdict: { state: 'passed', file: 'b.tflw' } });
+  assert.deepEqual(parseExplorerEvent('{"type":"test:end","result":{"name":"t","ok":true}}'), { kind: 'end', name: 't', verdict: { state: 'passed' } });
+});
+
+test('parseExplorerEvent ignores everything else: not JSON, a hook, a step, an end with no result', () => {
+  for (const line of ['not json', '{"type":"test:start","name":"t","hook":"before"}', '{"type":"step:end","test":"t"}', '{"type":"test:end"}', '{"type":"test:start"}']) {
+    assert.equal(parseExplorerEvent(line), null, line);
+  }
+});
+
+test('reportDirOf reads `report` from the config, and falls back to `report`', () => {
+  assert.equal(reportDirOf('defaults\n  report "./out"\n'), './out');
+  assert.equal(reportDirOf('env local default\n  api "http://x"\n'), 'report');
 });
