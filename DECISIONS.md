@@ -9384,7 +9384,7 @@ tracked set has to be skipped by name there, not resolved to zero."*
 
 ### D1309
 
-<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/doors.tflw · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
 
 **`D1309` — a door lands on the file with the most of what the door is about, and remembers
 where you were.** `landingFor(door, project, remembered)` is a pure function: first visit lands on
@@ -9460,7 +9460,7 @@ links in place of codes (plain text and SARIF still carry a bare code), and page
 
 ### D1314
 
-<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/doors.tflw · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
 
 **`D1314` — `door` stays, defined once; `behind`, `construct` and `lens` leave the product.**
 The landing defines *door* in one line under the four doors. Counts read *17 tests here*, not *17
@@ -10078,6 +10078,71 @@ that failed or the bound that held — and stays as a header if the intermittent
 | id | row | decision |
 |---|---|---|
 | `D1398` | (`M252` `A`, 2026-09-29, `G19`) | **A file argument is spelled the way `cwd` is**: its directory through `realpath`, its own name kept (`canonicalFile`). `process.cwd()` is real, so a file named through a symlinked directory made every `relative(cwd, file)` climb out and back in, and `TF083` refused every `use "./helpers/…"`. The file itself is not followed, so a symlinked test file keeps the place its `use` and `import` resolve from. |
+
+### D1399
+
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/kinds.tflw · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1399` — a kind is a filter and a scaffold choice, not a mode.** (`D-RC-1`) The four kinds (API,
+BROWSER, LOAD, SCAN) are chips at the head of the explorer — the count *and* the filter in one
+control — and the choice inside `+ new test ▾`, which is the only place the door ever decided
+anything (`D1042`'s scaffold clause, `D1189`). The door bar goes. A test belongs to every kind
+whose statements it carries (`D1043` unchanged), so a chip shows a test at more than one kind
+under each; `all` shows every test including the ones in none. *Reopens* `D1042`/`D1044` (the
+door as landing and scaffold) and `D1063` (a badge never a filter). *Not taken:* the door as a
+workspace (a filtered explorer per door; 231 of 761 dogfood tests would appear in two).
+
+### D1400
+
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/load.tflw, tflw-tests/tests/.tflw-ui/tabs.tflw · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1400` — one header.** (`D-RC-2`) `tflw · <project> · env [ ] · [▶ run …] · Auth · Config · ? · theme`.
+The run strip folds into it. The tab strip beneath carries the three stages of a file — Compose ·
+Source · Run — and nothing else; the Run tab carries a dot from the newest run. Chrome above the
+content: two rows. *Not taken:* keeping five tabs with a divider.
+
+### D1401
+
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/tabs.tflw · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1401` — Auth and Config are header panels.** (`D-RC-3`) Two words on the header's right; each opens a
+panel over the main column (Config: the editor over `tflw.config` as today; Auth: the read-only
+identity view as today), closed by `✕` or `Esc`, addressed `#/config` and `#/auth` so a link
+still names them. They are project facts and stop looking like stages of a file. *Not taken:*
+rows at the foot of the explorer (scroll with the tree on 84 files).
+
+### D1402
+
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/ui-budgets.mjs, tflw-tests/tests/.tflw-ui/a11y.tflw +1 more · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1402` — no landing.** (`D-RC-4`) A first visit opens the shell: every kind shown, the pane on the
+remembered file for this project, else the first failed test of the newest run, else the first
+file. `D1309`'s memory becomes one key per project (`tflw.ui.<hash>.lastFile`), not one per
+door. `Landing.tsx`, `landingRule.ts` and the two landing shots retire. *Not taken:* a project
+overview page (a new surface with no record; thin on 12 files), the four cards as a first-visit
+question (asks what the shell no longer needs answered).
+
+### D1403
+
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/kinds.tflw · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1403` — ▶ runs what the explorer shows.** (`D-RC-5`) The header button runs exactly the rows visible:
+the kind chip, the search or `@tag`, and any file or test clicked to narrow it. The label carries
+the subject and its count (`▶ run all · 36`, `▶ run 19 tests`, `▶ run checkout.tflw · 7`,
+`▶ run a basket prices…`); the tip reads the argv back (`D1064` unchanged); the per-test ▶ stays
+on the row. `D1250` decides `workers`/`headed` from the shown set. *Not taken:* the open file
+with a menu; an explicit checkbox selection.
+
+### D1413
+
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/kinds.tflw · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1413` — the address names the tab, the file, the line and the filter.** (`D-RC-15`)
+`#/<tab>/<file>/L<n>` with the pane tail carrying the kind chip and the query
+(`?kind=api&q=@checkout`), so a shared link opens on the same rows and the same narrowing. The
+door segment leaves the hash; `#/api/...` addresses from before this plan redirect to the same
+file with `kind=api` set, so no docs link dies. `M229 D`'s rule (an address names what is drawn)
+stands and gains the filter.
 
 ### M0
 
@@ -14481,5 +14546,25 @@ and runs beside it.
 its §9 order → the 29 decisions in §2). **Nothing is built.** The sibling's half is
 `testFlow-tests/PLAN_M247_DOGFOOD_WHOLE_PRODUCT.md`, slices `T-1`..`T-5`, each naming the tflw
 milestone it waits on. Both files are gitignored; the repositories are public.
+
+### M254
+
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/ui-budgets.mjs, tflw-tests/tests/.tflw-ui/a11y.tflw +4 more · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`M254` — the shell (`D-RC-1`, `D-RC-2`, `D-RC-3`, `D-RC-4`, `D-RC-5`, `D-RC-12`, `D-RC-15`)**
+
+- **A the header.** `DoorBar` and `RunStrip` merge into `Header.tsx`; the run button's label
+  is derived from the same narrowing `D1064` reads back; `?`, theme and the two panel words on
+  the right.
+- **B the kinds as chips.** `vocabulary.ts` unchanged; the chips read the same counts the door
+  bar did; `all` and the four; the tail of the address carries the chip.
+- **C Auth and Config as panels.** `ConfigPanel` and `AuthPanel` unchanged inside a new
+  `HeaderPanel` with `#/config` / `#/auth`; `Esc` closes; focus returns to the header word.
+- **D no landing.** `landingFor` re-keyed per project; `Landing.tsx` retires; the address
+  redirect for `#/<door>/…`.
+- **E words.** The rename in product text; the one-line resting states for the shell's own
+  surfaces; `D1313`'s word list extended; `D1312` re-pinned from the rendered DOM.
+- **F docs.** `ui/spine.md`, `ui/doors.md`, `ui/index.md` rewritten for the header and the
+  chips; the shots re-cut (the manifest reddens on every one — `D1283`'s stated price).
 
 <!-- GENERATED:decisions:end -->
