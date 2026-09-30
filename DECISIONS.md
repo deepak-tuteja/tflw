@@ -2441,7 +2441,7 @@ resolution is reported.**
 
 ### D14
 
-<sub>cited from CONTRIBUTING.md, RUNBOOK.md, SPEC.md +4 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/discover-mutation-kills.mjs, tflw-tests/scripts/lib/tflw-bin.mjs +2 more · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Extended UI capabilities — all four in scope (D14)**
 
@@ -6030,7 +6030,7 @@ merges if they keep listing commands.
 
 ### D511
 
-<sub>cited from CONTRIBUTING.md, RUNBOOK.md, tflw-tests/CONTRIBUTING.md +7 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +6 more · lifted from `PLAN_M138_CONTRIBUTING.md`</sub>
 
 **D511 — tflw merges first, and the two PRs are chained**
 
@@ -8522,7 +8522,7 @@ the count is filed with it.
 
 ### D943
 
-<sub>cited from RUNBOOK.md, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/scripts/verify-provenance.mjs · lifted from `PLAN_M183_UNHELD_RECORDS.md`</sub>
 
 **`D943` — a pending citation is declared, and the declaration expires.** The sibling's
 `verify:provenance` accepts an identifier that does not yet resolve **only** when it is declared
@@ -9019,7 +9019,7 @@ check is one nobody runs; the diff is whitespace by construction and the gate be
 
 ### D1023
 
-<sub>cited from CONTRIBUTING.md, RUNBOOK.md, tflw-tests/scripts/lib/bundle-identity.mjs +1 more · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/lib/bundle-identity.mjs, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M196_REUSE_FRAME.md`</sub>
 
 - **D1023 — the `M195` rule's gate line carries `TFLW_BIN`.** `M196-01`, found when S1's first
   measurement did not move: the sibling's `regression.mjs` resolves the *released* tflw (its
@@ -9777,11 +9777,11 @@ that failed or the bound that held — and stays as a header if the intermittent
 
 ### D1350
 
-<sub>cited from CHANGELOG.md, RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
-| `D1350` | X9 | **Two runbooks.** The adopter's is a docs-site section (`runbook/`: install · project · running · page · editor · troubleshoot · glossary), and **every slice owes its page before it is green**. The maintainer's is a `RUNBOOK.md` in each repo, written once in `M253`. |
+| `D1350` | X9 | **Two runbooks.** The adopter's is a docs-site section (`runbook/`: install · project · running · page · editor · troubleshoot · glossary), and **every slice owes its page before it is green**. The maintainer's is a `RUNBOOK.md` in each repo, written once in `M253`. **Amended 2026-09-30, on the owner's word:** the maintainer's book described one person's machines and workflow, so it left both public repositories — what a contributor needs moved into each `CONTRIBUTING.md`, and the rest is kept locally, unpublished. |
 
 ### D1351
 
@@ -9929,11 +9929,11 @@ that failed or the bound that held — and stays as a header if the intermittent
 
 ### D1375
 
-<sub>cited from CHANGELOG.md, RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
-| `D1375` | D7 | **A flake is logged at first sight** in the maintainer's `RUNBOOK.md` (date, job, test, run URL) **and filed as an S4 row at the second**. This week's two open the table. |
+| `D1375` | D7 | **A flake is logged at first sight** in the maintainer's runbook (date, job, test, run URL; a gitignored local file since 2026-09-30, `D1350`) **and filed as an S4 row at the second**. This week's two open the table. |
 
 ### D1376
 
@@ -9953,7 +9953,7 @@ that failed or the bound that held — and stays as a header if the intermittent
 
 ### D1379
 
-<sub>cited from CHANGELOG.md, RUNBOOK.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -10065,7 +10065,7 @@ that failed or the bound that held — and stays as a header if the intermittent
 
 ### D1397
 
-<sub>cited from CHANGELOG.md, RUNBOOK.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONTRIBUTING.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -13907,7 +13907,7 @@ a per-push sweep of the whole registry bought nothing the ledger could show.
 
 ### M195
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, RUNBOOK.md +8 more · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +7 more · lifted from `PLAN_M195_REGRESSION_GAP.md`</sub>
 
 **`M195` — the parts of tflw no phase drives**
 
@@ -14098,7 +14098,7 @@ Successor to `M210`, which made Compose *read* the file. This round makes it **r
 
 ### M213
 
-<sub>cited from CHANGELOG.md, RUNBOOK.md, tflw-tests/tflw-acceptance/load-door/README.md +1 more · lifted from `PLAN_M213_TFLW_UI.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tflw-acceptance/load-door/README.md, tflw-tests/scripts/verify-ui.mjs · lifted from `PLAN_M213_TFLW_UI.md`</sub>
 
 **M213 — the tflw UI: a theme, a base layer, and three doors that can compose**
 
@@ -14187,7 +14187,7 @@ Status: **SCOPED 2026-09-21; §4 settled by measurement the same day; A/B/C BUIL
 
 ### M223
 
-<sub>cited from RUNBOOK.md, tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M223_PANES_FIT.md`</sub>
+<sub>cited from tflw-tests/tflw-acceptance/load-door/README.md · lifted from `PLAN_M223_PANES_FIT.md`</sub>
 
 **`M223` — the panes fit what they hold, and a divider says so**
 
@@ -14464,7 +14464,7 @@ not in the sweep).
 
 ### M252
 
-<sub>cited from CHANGELOG.md, RUNBOOK.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§8 `M252` — platform, proofs and distribution**
 

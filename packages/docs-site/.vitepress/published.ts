@@ -1,5 +1,5 @@
 // `M253` `F` (`D1351`) — whether tflw is on npm. **`false` until the owner's word** (`D1379`); publish
-// day flips it (`RUNBOOK.md`, *Publish day*, step 5) and nothing else on the site has to change.
+// day flips it (the publish-day checklist's step 5) and nothing else on the site has to change.
 //
 // Every sentence that is true only before 1.0 — "not published to npm yet", the clone-and-build
 // install — sits inside `<Published :when="false">`, beside the text 1.0 day needs inside

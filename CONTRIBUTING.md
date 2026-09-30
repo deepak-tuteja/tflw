@@ -130,8 +130,8 @@ npm run verify:ledger                  # § never runs in CI, by decision
   the same order, the same indent structure and the same comments, formats idempotently, and —
   under `--check` — is already formatted, so the formatter's own corpus can never fail the check it
   asks of the sibling's. It walks the filesystem with dot-entries excluded, **not** the tracked
-  set (`M215-01`, `D1275`): this gate runs on the build box, where `scripts/exec.mjs` has rsynced
-  the tree without `.git/`, so a corpus declared over what git tracks would resolve to zero there.
+  set (`M215-01`, `D1275`): this gate must also run from a copy of the tree made without `.git/` (an rsync, a tarball), and a
+  corpus declared over what git tracks would resolve to zero there.
   The dot-entry rule is also what keeps the `.scratch.tflw` the served page writes on purpose out
   of the census. Every refusal is a failure — the `.checkonly/` exemption this line used to
   describe was unreachable twice over and is gone (`M232-01`). Needs the build; milliseconds.
@@ -158,8 +158,8 @@ npm run verify:ledger                  # § never runs in CI, by decision
   entry drifting from the record it was lifted from. That tier has no CI counterpart, so a local run
   before pushing is the only thing that performs it. If it fails, the fix is in the design record and
   then `npm run docs:decisions` — never an edit between the `GENERATED:decisions` markers.
-  **It is also the one gate that cannot be offloaded to the box.** `scripts/exec.mjs` syncs the
-  tree without `.git/`, and this reads the tracked set through `git ls-files`, so there it fails
+  **It is also the one gate that cannot run from a copy of the tree made without `.git/`.** It reads
+  the tracked set through `git ls-files`, so there it fails
   with a message saying exactly that rather than a green it has not earned.
   **The index answers both repositories' prose, and since `M169d3` their code as well** (`D709`,
   `D864`). `testFlow-tests` cites this notation in documents its own readers meet, and the index used
@@ -211,7 +211,7 @@ npm run verify:ledger                  # § never runs in CI, by decision
   example would have refuted itself on the next regeneration.
   Run it alone with **`npm run docs:demand`**; `verify:decisions` runs it as part of its third tier,
   so it inherits that tier's limit exactly — it needs the records **and** `git ls-files`, so it
-  cannot run in CI or on the box, and there is no CI counterpart to fall back on. It prints, every
+  cannot run in CI or from a copy of the tree without `.git/`, and there is no CI counterpart to fall back on. It prints, every
   run, both the corpus it read and the identifiers it is declared *not* to check — each cited
   precisely because it resolves to nothing, several of them this gate's own negative fixtures. That
   declaration is checked in the other direction too — if one of the six ever starts resolving, the
@@ -229,8 +229,8 @@ npm run verify:ledger                  # § never runs in CI, by decision
   record, a `tflw`/`console` fence (quoted output, not a citation), a `<script setup>` block (a
   source comment that happens to live in a `.md`), and a link target — that last one because a
   fragment like `SPEC.md#45-…-d16-d19d24ad26d70d93-d122` is an address that has to survive
-  verbatim, and eight strings inside it read as citations. It reads the tracked set through `git ls-files`, so like the gate above it cannot run on
-  the box.
+  verbatim, and eight strings inside it read as citations. It reads the tracked set through `git ls-files`, so like the gate above it cannot run from
+  a copy of the tree without `.git/`.
 - **`npm run verify:anchors`** — every `SPEC.md#<fragment>` a tracked file links to resolves to a
   real heading (`D677`). The failure it catches is invisible to a reader and to a link checker
   alike: GitHub does **not** 404 on a bad fragment, it serves `SPEC.md` and drops you at the top of
@@ -264,7 +264,7 @@ npm run verify:ledger                  # § never runs in CI, by decision
 - **`node scripts/mutate.mjs <milestone>`** — **§ CI does not run it.** From `M124` to `M192` the
   registry ran on every pull request across a matrix of two-core runners (six, then thirty-three),
   packed by a cost table and watched by a re-shard trigger, and the maintenance of that arrangement
-  took more of the project's time than the mutations did. `M194` moved the sweep to the build box
+  took more of the project's time than the mutations did. `M194` moved the sweep off the runners
   and `M195` retired it as a standing gate the same day, on the ledger's evidence: in 299 rows no
   mutation registered in an earlier milestone ever survived a later full sweep, so a sweep of the
   whole registry has never once found anything, and the end-to-end layer (the sibling's
@@ -272,7 +272,7 @@ npm run verify:ledger                  # § never runs in CI, by decision
   still does is prove a *new* gate can go red on the day it is written: a milestone that registers
   a mutation runs it as it is written — `node scripts/mutate.mjs m98d`, or one mutation by id —
   and records the kill in its plan. `--scope` is not a flag. `npm run sweep` (eight copies of the
-  tree on the box, one shard of the registry each, the manifests reassembled and read back into
+  tree on one machine, one shard of the registry each, the manifests reassembled and read back into
   `runs/`, 35–65 minutes) exists as a tool for the day a survivor is suspected, and no rule runs it.
 
   **The registry is frozen** (`M194`, D1010): a new entry only when a plan's green condition needs
@@ -286,13 +286,13 @@ npm run verify:ledger                  # § never runs in CI, by decision
   **§ the sibling's sweep against this build, before a milestone closes** (`M195`, D1011; the
   `TFLW_BIN` prefix since `M196`, D1023; `--parallel-groups` since `M197`, D1026 — the four
   phase groups at once, one stack and one tree each, which is CI's own partition on one machine
-  and takes the box from ~42 minutes to the longest group's). The regression sweep in
+  and takes the sweep from ~42 minutes to the longest group's). The regression sweep in
   [testFlow-tests](../testFlow-tests) is the end-to-end layer this repository has: every `tflw`
   verb driven as a process against a real stack, `run` in every mode, `watch`, `pick`, `migrate`,
   `ui`, `lsp`, `init`, `refactor apply`, the check diagnostics, the CLI flags, the security and
   input acceptance corpora. It runs in *that* repository's CI on every push there — against
   whatever tflw its `main` last packed, which is days behind a tflw branch. So a tflw milestone
-  runs it at close-out against its own build, on the box, and records the result in the plan.
+  runs it at close-out against its own build and records the result in the plan.
   It is the one standing sweep this project keeps: the mutation registry's left with `M195`,
   because a sweep that has never found anything is time taken from writing the functional test
   that would. **The `TFLW_BIN` prefix is what makes it this build**: the sibling's
@@ -300,10 +300,8 @@ npm run verify:ledger                  # § never runs in CI, by decision
   another entry, and its first printed line says which it graded (`regression: tflw[released] …
   <- TFLW_BIN`). `M195` wrote this rule without the prefix and its own close-out sweep graded the
   tarball (`M196-01`); a close-out run whose first line does not say `<- TFLW_BIN` graded the
-  wrong build. On the box the same line runs from the synced tree (the sibling's driver,
-  `node scripts/exec.mjs exec`, untracked like this one, `D14`, syncs and builds `../testFlow`
-  first); without the box, `npm run regression` there needs Docker and ~40 minutes serially, and
-  `--parallel-groups` needs room for four stacks.
+  wrong build. The sweep needs Docker and ~40 minutes serially, and `--parallel-groups` needs room
+  for four stacks.
   A phase red under this build is the milestone's to fix or to file before it closes. Before
   `M195` the sweep had no rule and one accidental run (`M192` U7 drove `tflw ui` by hand and
   found three defects in the run's own artefacts — the reason the rule exists).
@@ -526,37 +524,6 @@ The command that catches this in seconds, before either PR exists, lives with th
 fails: **[`testFlow-tests/CONTRIBUTING.md`](../testFlow-tests/CONTRIBUTING.md)**. It is documented
 there and deliberately not copied here — two homes for one command become one correct home and one
 stale one, which is the failure mode this whole document was written to end.
-
-## Where these actually run — and the part nothing checks
-
-> **This section is not guarded.** Everything above is held to `.github/workflows/`. The setup
-> described here has no CI counterpart to be compared against, so it can go stale and nothing will
-> say so. Treat it as orientation, not as a contract.
-
-The full set is minutes of compute, and on this project it runs on a Fedora box over SSH rather
-than on the laptop, through `scripts/exec.mjs`:
-
-```
-node scripts/exec.mjs test          # sync → lock → npm test on the box
-node scripts/exec.mjs exec -- <cmd> # any command in the repo root, same lock, same tree
-node scripts/exec.mjs status        # both machines: node, load, memory, lock holder
-```
-
-**That file is untracked, by decision (`D14`), and a fresh clone will not have it.** It encodes one
-person's two-machine setup — an SSH alias, a lock path, a remote directory layout — none of which is
-true for anyone else. Without it, run the gates locally and pay the wall-clock; nothing above needs
-the box.
-
-Two traps it is worth writing down, both of which have cost a real debugging session:
-
-- **`testFlow-tests` has its own `scripts/exec.mjs`, and your working directory decides which one
-  runs** — and therefore which copy on the box. Driving the wrong one produces `MODULE_NOT_FOUND`
-  for a script that plainly exists.
-- **A trailing `| tail` makes the pipeline's exit status `tail`'s.** The shell reports success while
-  the log says the run failed. Read the log, not the summary line.
-
-The box is shared with other work and takes a whole-machine lock; a busy box is waited on, never
-worked around.
 
 ## Writing a docs page
 

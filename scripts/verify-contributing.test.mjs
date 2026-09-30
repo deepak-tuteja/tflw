@@ -40,9 +40,9 @@
 // on the Node 22 leg — is required to carry a footnote *marker* in `CONTRIBUTING.md`; the
 // footnote's prose is not read. Checking sentences for "Node 22" is keyword-guessing, the exact
 // failure `verify-coverage-comment.test.mjs` was rewritten to avoid ("a substring ban cannot
-// distinguish a claim from a citation"). The same limit is why the box section of `CONTRIBUTING.md`
-// is labelled there as unguarded: `scripts/exec.mjs` is untracked (`D14`) and has no CI
-// counterpart to be compared against, so nothing here can hold it honest.
+// distinguish a claim from a citation"). The same limit is why `CONTRIBUTING.md` labels its
+// untestable orientation sections as unguarded: they have no CI counterpart to be compared
+// against, so nothing here can hold them honest.
 //
 // SCOPE, and it is wider than the plan measured. `PLAN_M138_CONTRIBUTING.md` classified `ci.yml`.
 // This walks **every** workflow in `.github/workflows/`, because scoping a completeness check to one
