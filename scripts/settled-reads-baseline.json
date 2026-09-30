@@ -1,21 +1,21 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 932,
-    "atRisk": 844,
-    "high": 332,
+    "reads": 936,
+    "atRisk": 848,
+    "high": 329,
     "medium": 61,
-    "low": 451,
-    "declared": 73,
-    "inPage": 110,
+    "low": 458,
+    "declared": 72,
+    "inPage": 107,
     "inRetry": 46
   },
   "tests": {
     "packages/cli/test/ui-page.test.ts": {
-      "the sidebar is the project as a tree: every file the server read, a leaf name per row, and this door as a count": {
-        "high": 9,
+      "the sidebar is the project as a tree: every file the server read, a leaf name per row, and the kind chips as counts and filter (`D1399`)": {
+        "high": 10,
         "medium": 0,
-        "low": 9
+        "low": 15
       },
       "the run list is the report directories, each row carrying its own results.json counts": {
         "high": 0,
@@ -87,7 +87,7 @@
         "medium": 0,
         "low": 0
       },
-      "the index is not door-filtered: a test behind another door is listed where it lives, and says which door that is": {
+      "the index is not chip-filtered: a test of another kind is listed where it lives, and says which kinds it is of": {
         "high": 2,
         "medium": 0,
         "low": 0
@@ -107,7 +107,7 @@
         "medium": 0,
         "low": 1
       },
-      "the tree is byte-identical behind all four doors — the door is a count and narrows nothing": {
+      "a kind chip filters the tree to the files holding a test of its kind — and `all` is the whole tree (`D1399`)": {
         "high": 0,
         "medium": 0,
         "low": 1
@@ -127,12 +127,12 @@
         "medium": 0,
         "low": 3
       },
-      "the run strip carries env, workers and the button on all five tabs of all four doors, and the sidebar carries none of them": {
-        "high": 2,
+      "the header carries env, the run flags and ▶ on every tab and both panels, above the strip, and the sidebar carries none of them": {
+        "high": 1,
         "medium": 0,
         "low": 0
       },
-      "`workers` and `headed` are drawn for the run the button describes, and the door is not what decides": {
+      "`workers` and `headed` are drawn for the run the button describes, and the chip is not what decides alone": {
         "high": 2,
         "medium": 0,
         "low": 0
@@ -207,22 +207,22 @@
         "medium": 0,
         "low": 1
       },
-      "Compose has no `file` control on any door — the explorer names the file (`M205` Q7)": {
+      "Compose has no `file` control under any chip — the explorer names the file (`M205` Q7)": {
         "high": 1,
         "medium": 0,
         "low": 1
       },
-      "the landing is four doors, each counting what is actually behind it": {
+      "the fixture exercises all four kinds, so a chip that always counted zero would be caught": {
         "high": 1,
         "medium": 0,
-        "low": 1
+        "low": 0
       },
-      "a door opens the project, and the URL is the only place the choice lives": {
+      "a chip is in the URL and nowhere else — the back button walks it, a pasted link reproduces it (`D1413`)": {
         "high": 1,
         "medium": 0,
-        "low": 2
+        "low": 0
       },
-      "the door narrows the count and never the test — a test behind two doors is listed in its file under both": {
+      "a chip narrows what is listed, never a test’s derivation — a test of two kinds is shown under both": {
         "high": 1,
         "medium": 0,
         "low": 2
@@ -232,10 +232,15 @@
         "medium": 0,
         "low": 2
       },
-      "the switcher moves between doors without leaving the project": {
-        "high": 1,
+      "moving between chips keeps the file, the tab and the line — a filter is not a move (`D1399`)": {
+        "high": 0,
         "medium": 0,
         "low": 1
+      },
+      "`D1402`: a project with no file says so and offers one, and the create dialog asks for the kind": {
+        "high": 0,
+        "medium": 0,
+        "low": 3
       },
       "`M224` `D`: the LOAD door draws the Compose sequence, and its address selects a declaration": {
         "high": 4,
@@ -247,7 +252,7 @@
         "medium": 0,
         "low": 1
       },
-      "`M224` `B`: the workload is an ordinary clause — live on API, LOAD and SCANS, absent on BROWSER": {
+      "`M224` `B`: the workload is an ordinary clause — live on a file that carries load under every chip, absent on a page-only file": {
         "high": 4,
         "medium": 0,
         "low": 0
@@ -282,12 +287,12 @@
         "medium": 0,
         "low": 2
       },
-      "the BROWSER door has the same five tabs, and its run pane is only reachable through Run": {
+      "under the BROWSER chip the strip is the same three stages and the two panels, and the run pane is only reachable through Run": {
         "high": 4,
         "medium": 0,
         "low": 3
       },
-      "the LOAD door has the same five tabs, and its run pane is only reachable through Run": {
+      "under the LOAD chip the strip is the same three stages and the two panels, and the run pane is only reachable through Run": {
         "high": 4,
         "medium": 0,
         "low": 2
@@ -352,7 +357,7 @@
         "medium": 2,
         "low": 7
       },
-      "a pick session outlives a tab switch and dies with the door — asserted on the process, not the DOM": {
+      "a pick session outlives a tab switch and a chip, and dies with the file — asserted on the process, not the DOM": {
         "high": 1,
         "medium": 0,
         "low": 0
@@ -392,7 +397,7 @@
         "medium": 0,
         "low": 5
       },
-      "the Auth block leads with the anonymous case, and each door gets only its own caveat": {
+      "the Auth block leads with the anonymous case, and each kind the file carries gets only its own caveat": {
         "high": 4,
         "medium": 0,
         "low": 1
@@ -442,10 +447,10 @@
         "medium": 0,
         "low": 5
       },
-      "a step from another door is drawn in position, locked, and dimmed in paint rather than in a class name": {
-        "high": 1,
+      "a file’s own steps are its to edit under every chip — no step is drawn locked for want of a door (`D1399`)": {
+        "high": 0,
         "medium": 0,
-        "low": 2
+        "low": 1
       },
       "a note is collapsed to its first line with a count, opens to the rest, and does not say the first line twice": {
         "high": 1,
@@ -462,10 +467,10 @@
         "medium": 0,
         "low": 4
       },
-      "`M222`: the create dialog reads the door — BROWSER scaffolds `open`, and the test it makes is one BROWSER can edit": {
+      "`M222`: the create dialog opens on the chip, else on the file’s own kind — BROWSER scaffolds `open`, and the test it makes is one the pane can edit": {
         "high": 3,
         "medium": 2,
-        "low": 4
+        "low": 5
       },
       "a new test goes into the open file through the same builders the pane’s own controls use": {
         "high": 1,
@@ -882,8 +887,8 @@
         "medium": 0,
         "low": 2
       },
-      "`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, scaffolds a scan (`D1244`), and plays without sending (`D1241`)": {
-        "high": 3,
+      "`M228` `B`: SCANS draws the standard pane (`D1237`), fills the window, scaffolds a scan (`D1244`), and a scan test’s request sends under every chip (`D1241` narrowed by `D1399`)": {
+        "high": 2,
         "medium": 1,
         "low": 1
       },
@@ -892,10 +897,10 @@
         "medium": 1,
         "low": 3
       },
-      "`M241` `E` (`D1325`): the explorer scales — virtualised past its threshold, `collapse all` keeps the open file's folder, and `this door only` changes the view and never the run": {
+      "`M241` `E` (`D1325`): the explorer scales — virtualised past its threshold, `collapse all` keeps the open file's folder, and a chip narrows the view and ▶ together": {
         "high": 0,
         "medium": 0,
-        "low": 3
+        "low": 4
       },
       "`M228` `C` / `M241` `C`: a `crawl` is drawn in the tree and in the pane, and its band and rows edit it (`D1238`, `D1323`)": {
         "high": 8,
@@ -907,7 +912,7 @@
         "medium": 0,
         "low": 1
       },
-      "`M228` `F`: SCANS offers no recorder and BROWSER still does (`D1245`), every segment says what it is (`D1246`), and the env half is labelled (`D1247`)": {
+      "`M228` `F`: the recorder is the file’s — offered in a file with a page, absent from one without (`D1245` narrowed by `D1399`), every segment says what it is (`D1246`), and the env half is labelled (`D1247`)": {
         "high": 0,
         "medium": 0,
         "low": 1
@@ -1009,7 +1014,7 @@
         "medium": 0,
         "low": 1
       },
-      "the landing holds every door in one row, at every width a reader has": {
+      "the no-project page holds every kind in one row, at every width a reader has": {
         "high": 0,
         "medium": 0,
         "low": 1
