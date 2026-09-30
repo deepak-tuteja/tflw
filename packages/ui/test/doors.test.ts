@@ -10,7 +10,7 @@
 // test costs nothing and asserts the thing itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countByDoor, lenslessCount, unparsedCount, countsHonestly, kindFromHash, legacyKind, docFromHash, fileFromHash, tabFromHash, hashFor, focusFromHash, paneTail, selectionFromHash, queryFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
+import { countByDoor, lenslessCount, unparsedCount, countsHonestly, kindFromHash, legacyKind, docFromHash, fileFromHash, tabFromHash, hashFor, focusFromHash, paneTail, failedFromHash, selectionFromHash, queryFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
 import type { ProjectView } from '../src/contract';
 
 const project = (files: ProjectView['files']): ProjectView => ({ configured: true, root: '/p', version: { version: '0.0.0-test', source: 'dev', commit: null, dirty: null, builtAt: null }, envs: [], reportDir: './report', helpers: [], runFlags: [], files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, playScratch: '.play.tflw', playIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [], sessions: [] }, webBaseUrl: null });
@@ -307,4 +307,13 @@ test('a healthy project says nothing — `unparsedCount` is zero, which is what 
 test('`countsHonestly` reads errors and nothing else', () => {
   assert.equal(countsHonestly({ errors: 0 }), true);
   assert.equal(countsHonestly({ errors: 1 }), false);
+});
+
+test('the `failed` chip is `failed=1` after the kind, and an address without it has it off (`M255`, `D1413`)', () => {
+  assert.equal(paneTail([], '', null, true), '?failed=1');
+  assert.equal(paneTail(['a.tflw'], '', 'api', true), '?kind=api&failed=1&files=a.tflw', 'the two chips first, then what `D1066` already put there');
+  assert.equal(paneTail([], '', 'api', false), '?kind=api', 'off writes nothing, so every address from before `M255` is unchanged');
+  assert.equal(failedFromHash(`#/compose/shop.tflw${paneTail([], '@smoke', 'load', true)}`), true);
+  assert.equal(kindFromHash(`#/compose/shop.tflw${paneTail([], '', 'load', true)}`), 'load', 'and the kind still reads through it');
+  for (const hash of ['#/', '#/compose/shop.tflw?kind=api', '#/?failed=0', '#/?failed']) assert.equal(failedFromHash(hash), false, hash);
 });

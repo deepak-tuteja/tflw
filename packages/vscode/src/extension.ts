@@ -254,7 +254,7 @@ function createExplorer(context: vscode.ExtensionContext): Explorer {
       await runHandler(new vscode.TestRunRequest([target]), new vscode.CancellationTokenSource().token);
     },
     async runFailed(root) {
-      // `--failed` re-runs the previous run's failures, which only tflw knows; every item is a
+      // `--failed` re-runs the failing tests (`D1414`), which only tflw knows; every item is a
       // candidate, and the ones the run reports are the ones it re-ran.
       const run = controller.createTestRun(new vscode.TestRunRequest());
       const map = new Map<string, vscode.TestItem>();

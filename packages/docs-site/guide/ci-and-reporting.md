@@ -230,13 +230,13 @@ and an exclusion beats an inclusion on the same test.
 ## Replaying failures — `--failed` and `--bail`
 
 ```sh
-npx tflw run --failed   # re-run only what failed last time
+npx tflw run --failed   # re-run only the tests that are failing
 npx tflw run --bail     # stop at the first failing test
 ```
 
-`--failed` reads `report/.last-run.json` (always written, every run) and re-runs just those
-tests — nothing failed last time, or no state file yet: falls back to the full suite with a note,
-never a silent zero-test run. `--bail` stops after the first failing test's final verdict; under
+`--failed` re-runs the tests whose newest verdict in the kept runs (`report/runs/`) is a failure — a
+test stays failing until a run passes it, whatever else ran in between. Nothing failing, or no kept
+run yet: falls back to the full suite with a note, never a silent zero-test run. `--bail` stops after the first failing test's final verdict; under
 `--parallel > 1` it stops starting new files, but files already in flight finish normally.
 
 ## Splitting a suite across CI jobs — `--shard` {#shard}

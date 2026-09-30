@@ -72,6 +72,16 @@ import { countByDoor, countsHonestly, DOOR_BY_ID, DOORS, unparsedCount } from '.
 import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
 import { useRovingFocus } from './useRovingFocus';
 import type { FileOutline, OutlineDecl } from './outline';
+import { ageOf, markKey, VERDICT_WORDS, type TestVerdict, type VerdictIndex } from './verdicts';
+
+/**
+ * **A verdict as a dot** — `M255` `B` (`D1404`). The newest kept verdict of a test, or a file's
+ * roll-up; `not-run` is hollow so an unrun project does not read as a wall of grey passes. The words
+ * are the tip and the accessible name, because a colour alone is a fact some readers do not get.
+ */
+function VerdictDot({ verdict, tip, subject }: { readonly verdict: TestVerdict; readonly tip: string; readonly subject: string }) {
+  return <span className={`vdot ${verdict}`} data-row-verdict={verdict} data-verdict-of={subject} data-tip={tip} role="img" aria-label={tip} />;
+}
 
 /**
  * **`+` on a row of the explorer** — `M217` `D` (`D1139`, `D1140`).
@@ -80,19 +90,12 @@ import type { FileOutline, OutlineDecl } from './outline';
  * `<button>`s and a button cannot hold another one. So each becomes a flex pair, which is the
  * shape `.seq-row` has used for its `✕` since `M214`.
  *
- * **Always drawn, never revealed on hover** (`D1140`). The declaration rows are the most starved
- * text on the page — `.outline-name` gets 182 px for names whose natural width is 361–596 px — and
- * this takes about 20 px of exactly that. Measured, it costs almost nothing that was not already
- * gone: **5 of 5** names in `tests/checkout.tflw` are cut at 182 px and all five are still cut at
- * 162, so the count of names going from whole to truncated is **zero**, and what is lost is about
- * two characters on names that already ended in an ellipsis. Since `M216` the reader can drag the
- * pane to 720 px and buy back far more than the 20 px ever cost.
- *
- * The alternative was a hover reveal, which fails twice here and both failures are already written
- * down in this repository: `Grip.tsx`'s own docstring says *a control that only a mouse can reach
- * is a control some readers do not have*, and the whole reason this exists is that nobody could
- * find where a test comes from — a `+` invisible until you are already pointing at the row
- * announces nothing.
+ * **Revealed on hover and on focus, and in the row's menu** — `M255` (`D1404`), reopening `D1140`'s
+ * *always drawn*. `D1140` was right that a hover-only control is one some readers do not have, so it
+ * is not hover-only: it shows while the row is pointed at **or holds focus** (the tree's arrow keys
+ * reach it), and every row's right-click menu carries the same gesture. What changed is the count:
+ * with request rows gone the tree is files and tests, and a `+` on every one of them was a column of
+ * 19 identical marks competing with the verdict dots `D1404` puts on the same rows.
  */
 function RowPlus({ onGo, label, kind }: {
   readonly onGo: () => void;
@@ -126,6 +129,13 @@ export interface SidebarProps {
   /** What the search box holds — in the address, like the selection (`D1066`). */
   readonly query: string;
   readonly onQuery: (query: string) => void;
+  /** `M255` (`D1404`) — every test's newest verdict, one index for every surface that draws one. */
+  readonly marks: VerdictIndex;
+  /** The `failed` chip — in the address beside the kind (`D1413`), and AND with it. */
+  readonly failedOnly: boolean;
+  readonly onFailedOnly: (on: boolean) => void;
+  /** A test row outside the open file: open that file at the test's line, in one address write. */
+  readonly onOpenTest: (path: string, line: number) => void;
   /** The open file, read (`D1081`). `null` while the shell is reading it, or when the address
    *  names no file — the row then draws as it always has. */
   readonly outline: FileOutline | null;
@@ -211,8 +221,7 @@ export interface SidebarProps {
 export type MenuTarget =
   | { readonly kind: 'file'; readonly path: string }
   | { readonly kind: 'dir'; readonly path: string; readonly files: readonly string[]; readonly expanded: boolean; readonly onToggle: () => void }
-  | { readonly kind: 'test'; readonly declIndex: number; readonly line: number; readonly name: string }
-  | { readonly kind: 'request'; readonly line: number; readonly method: string; readonly path: string };
+  | { readonly kind: 'test'; readonly declIndex: number; readonly line: number; readonly name: string };
 
 /** Above this many tags the cloud opens folded: `M192` U7 found the dogfood's 90 tags pushing all
  * 84 files below the first screen, and a file list nobody can see is not a project view. The
@@ -271,7 +280,7 @@ export function filesUnder(node: TreeNode): string[] {
 /** The row count past which the explorer is virtualised (`D1325`). */
 export const VIRTUAL_AT = 300;
 
-export function Sidebar({ project, kind, onKind, openFile, selection, onPick, query, onQuery, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew, menuFor, onMenu }: SidebarProps) {
+export function Sidebar({ project, kind, onKind, openFile, selection, onPick, query, onQuery, marks, failedOnly, onFailedOnly, onOpenTest, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew, menuFor, onMenu }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   /* `M240` `C` (`D1311`) — the whole list is one Tab stop and ↑/↓ walk it, so the pane is not a
      row's-worth of presses away. Tab lands on the open file's row, else the first. */
@@ -293,9 +302,13 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
    * test of the kind and ▶ runs exactly those tests (`D1403`). The open file stays listed whatever it
    * holds — hiding the row the pane is about would leave the page describing a file you cannot find.
    */
+  /** A row of the kind (or any, under `all`), and — under the `failed` chip — one whose newest verdict
+   *  failed. The two AND, as `--kind` and the failed narrowing do on the run (`D1403`). */
+  const shown = (path: string, x: { readonly name: string; readonly lenses: readonly Lens[] }): boolean =>
+    (kind === null || x.lenses.includes(kind)) && (!failedOnly || marks.failed.has(markKey(path, x.name)));
   const tree = useMemo(() => {
-    if (kind === null) return fullTree;
-    const behindHere = (f: ProjectFile): boolean => f.tests.some((x) => x.lenses.includes(kind)) || f.crawls.some((x) => x.lenses.includes(kind));
+    if (kind === null && !failedOnly) return fullTree;
+    const behindHere = (f: ProjectFile): boolean => f.tests.some((x) => shown(f.path, x)) || f.crawls.some((x) => shown(f.path, x));
     const prune = (nodes: readonly TreeNode[]): TreeNode[] =>
       nodes.flatMap((n) => {
         if (n.file) return behindHere(n.file) || n.path === openFile ? [n] : [];
@@ -303,7 +316,8 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
         return children.length === 0 ? [] : [{ ...n, children }];
       });
     return prune(fullTree);
-  }, [fullTree, kind, openFile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `shown` reads exactly these
+  }, [fullTree, kind, failedOnly, marks, openFile]);
   const dirsOf = (nodes: readonly TreeNode[]): string[] => nodes.flatMap((n) => (n.file ? [] : [n.path, ...dirsOf(n.children)]));
 
   /** The address wins over a collapse: opening a file inside a folder somebody closed opens it. */
@@ -383,8 +397,45 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
     setAnchor(paths[0] ?? null);
   };
 
+  /** A test's dot, its tip naming the verdict and, for a flaky one, that it flips (`M249`). */
+  const testDot = (path: string, name: string): ReactElement => {
+    const m = marks.test(path, name);
+    return <VerdictDot verdict={m.verdict} subject={`${path}::${name}`} tip={`${VERDICT_WORDS[m.verdict]}${m.run === null ? '' : ' in its last run'}${m.flaky ? ' — flaky across runs' : ''}`} />;
+  };
+
   /**
-   * The open file's own tree (`D1081`) — its hooks and tests, and under each the requests.
+   * **A closed file's failing tests** — `M255` `B`. Under the `failed` chip every listed file opens
+   * onto the rows that put it there, so the explorer answers *what failed* without opening Run (the
+   * milestone's green condition). Elsewhere a closed file stays one row (`§6` prediction 5: the files
+   * fold except the open one). A click opens the file at the test.
+   */
+  const renderTests = (f: ProjectFile): ReactElement | null => {
+    const rows = [...f.tests, ...f.crawls].filter((t) => shown(f.path, t));
+    if (rows.length === 0) return null;
+    return (
+      <ul className="tree outline" data-file-tests={f.path}>
+        {rows.map((t) => (
+          <li key={`${t.line}-${t.name}`} data-outline-decl="test" data-outline-line={t.line}>
+            <div className="row-pair">
+              <button type="button" className="outline-row" onClick={() => onOpenTest(f.path, t.line)} data-outline-goto={t.line} data-outline-name={t.name} data-tip-derived="">
+                <span className="ln muted">{t.line}</span>
+                <span className="seq-kind">test</span>
+                <span className="outline-name" data-tip-text>{t.name}</span>
+                {testDot(f.path, t.name)}
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  };
+
+  /**
+   * The open file's own tree (`D1081`) — its hooks, tests and crawls, each test with its verdict.
+   *
+   * **No request rows** (`M255`, `D1404`): a request belongs to the steps column and nowhere else. They
+   * were about half the explorer's rows (12 of 54 buttons on the storefront with one file open) and a
+   * second index of what Compose's own column lists.
    *
    * It is the SAME LIST `SourcePanel`'s index draws (`D1067`) and a different question: the index
    * answers *what does this file declare*, in the file's own order, for a reader of the text. This
@@ -392,9 +443,8 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
    * request. Neither is derived from the other and both are derived from the file, so there is no
    * copy here to go stale — this one is parsed in the browser from the bytes the shell read.
    *
-   * A declaration with no request still gets a row. A browser test seen from here is exactly that,
-   * and a tree that listed only the declarations with requests in them would be the door filtering
-   * the project, which `D1063` settled one round ago: the door is a count, never a filter.
+   * Every declaration gets a row, whatever it holds — a tree that listed only some would be a kind
+   * filtering the file, and the chip already narrows the tree to files, never inside the open one.
    */
   const renderOutline = (o: FileOutline): ReactElement => (
     <ul className="tree outline" data-outline={o.declarations.length}>
@@ -404,6 +454,7 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
           <button
             type="button"
             className={`outline-row${decl.body.requests.some((r) => r.line === focusLine) || decl.line === focusLine ? ' on' : ''}`}
+            data-outline-name={decl.kind === 'hook' ? undefined : decl.name}
             onClick={() => onLine(decl.line)}
             data-outline-goto={decl.line}
             data-tip-derived=""
@@ -423,6 +474,7 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
                 listed **2**, and only on the door the crawl is the whole point of. */}
             <span className="seq-kind">{decl.kind === 'hook' ? decl.label : decl.kind}</span>
             {decl.kind === 'hook' ? <em className="outline-name" /> : <span className="outline-name" data-tip-text>{decl.name}</span>}
+            {decl.kind === 'hook' || openFile === null ? null : testDot(openFile, decl.name)}
           </button>
           {/* **A hook gets none, and that is the language rather than a gap** (`D1144`). The splice
               addresses a test BY NAME and a hook has none — the sequence column already says so
@@ -432,27 +484,6 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
             <RowPlus kind="request" onGo={() => { onLine(decl.line); onAddRequest(decl.index); }} label={`a new request in “${decl.name}”`} />
           )}
           </div>
-          {decl.body.requests.length === 0 ? null : (
-            <ul className="tree">
-              {decl.body.requests.map((r) => (
-                <li key={r.line} data-outline-request={r.line}>
-                  <button
-                    type="button"
-                    className={`outline-row request${focusLine === r.line ? ' on' : ''}`}
-                    onClick={() => onLine(r.line)}
-                    data-outline-goto={r.line}
-                    data-tip-derived=""
-                    data-outline-method={r.method}
-                    aria-pressed={focusLine === r.line}
-                    {...rowMenu({ kind: 'request', line: r.line, method: r.method, path: r.path }, `${r.method} ${r.path}`)}
-                  >
-                    <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span>
-                    <code className="outline-name" data-tip-text>{r.path}</code>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
         </li>
       ))}
     </ul>
@@ -489,6 +520,11 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
             {...rowMenu({ kind: 'file', path: f.path }, f.path)}
           >
             <code>{node.name}</code>
+            {total === 0 ? null : (() => {
+              const fm = marks.file(f);
+              const parts = [fm.failed > 0 ? `${fm.failed} failed` : '', fm.passed > 0 ? `${fm.passed} passed` : '', fm.skipped > 0 ? `${fm.skipped} skipped` : '', fm.notRun > 0 ? `${fm.notRun} not run yet` : ''].filter((x) => x !== '');
+              return <VerdictDot verdict={fm.verdict} subject={f.path} tip={`${parts.join(' · ')} — each test's last run`} />;
+            })()}
             {/* `D1143` — a dot, drawn before the count so it reads as a property of the file
                 rather than of the number. It says *not written yet*, which is the one thing the
                 count cannot: the count is a fact about the copy on disk, and by design it does not
@@ -534,7 +570,7 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
           </button>
           {onNewIn === null ? null : <RowPlus kind="test" onGo={() => onNewIn(f.path)} label={`a new test in ${f.path}`} />}
           </div>
-          {openFile === f.path && outline !== null ? renderOutline(outline) : null}
+          {openFile === f.path && outline !== null ? renderOutline(outline) : failedOnly && openFile !== f.path ? renderTests(f) : null}
         </li>
       );
     }
@@ -590,9 +626,29 @@ export function Sidebar({ project, kind, onKind, openFile, selection, onPick, qu
               {d.label} <span className="chip-count" data-kind-count={byKind[d.id]}>{byKind[d.id]}</span>
             </button>
           ))}
+          {/* `M255` (`D1404`) — `failed` beside the kinds, AND with them: the tests whose newest
+              verdict failed. Off and at zero it is disabled, because a filter that can only empty
+              the tree is not a choice. */}
+          <button
+            type="button"
+            className={`chip failed-chip${failedOnly ? ' on' : ''}`}
+            aria-pressed={failedOnly}
+            disabled={!failedOnly && marks.failed.size === 0}
+            onClick={() => onFailedOnly(!failedOnly)}
+            data-failed-chip={failedOnly ? 'on' : 'off'}
+            data-tip="the tests whose last run failed"
+          >
+            failed <span className="chip-count" data-failed-count={marks.failed.size}>{marks.failed.size}</span>
+          </button>
         </div>
         <div className="muted" data-project-counts>
           {project.files.length} file{project.files.length === 1 ? '' : 's'}
+          {/* `M255` (`D1404`) — the head line: how old the dots are and how many are red. */}
+          <span data-last-run={marks.newest?.id ?? ''}>
+            {marks.newest === null
+              ? ' · no run yet'
+              : ` · last run${marks.newest.at === '' ? '' : ` ${ageOf(marks.newest.at)}`}${marks.failed.size > 0 ? ` · ${marks.failed.size} failed` : ''}`}
+          </span>
           {/* `M211` `S2` (`M202-01`) — what the landing used to admit: the chips leave a file that did
               not parse out of every count, because what the parser recovered from it is not the
               project's, and the page says so rather than presenting a short total as the whole.

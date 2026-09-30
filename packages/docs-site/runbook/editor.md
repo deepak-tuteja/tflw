@@ -28,7 +28,7 @@ grey (skipped, with its reason) as tflw reports it; a failure opens at the step 
 tflw's own message, `expected status to equal 201, but got 500`. The run's output names its
 `report.html`.
 
-**tflw: Re-run the previous run's failed tests** is `tflw run --failed`. The **▶ Run test** and
+**tflw: Re-run the failing tests** is `tflw run --failed`. The **▶ Run test** and
 **▶ Run file** lenses above each `test` line run through the same explorer, so a lens run and an
 explorer run are one result.
 

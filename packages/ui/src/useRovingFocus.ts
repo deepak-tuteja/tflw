@@ -26,8 +26,13 @@ export interface RovingOptions {
 
 const CURRENT = '[aria-pressed="true"], [data-open="yes"], .on';
 
+/* A control is one a key can land on: enabled, laid out, and not `visibility: hidden` — which keeps
+   its box, so the rect test alone let ↑ stall on `M255`'s resting `+` (`focus()` on a hidden element
+   does nothing). A row's `+` is visible while its row holds focus, so ↓ from the row still reaches it. */
 export const controlsOf = (root: HTMLElement, selector: string): HTMLElement[] =>
-  [...root.querySelectorAll<HTMLElement>(selector)].filter((el) => !el.hasAttribute('disabled') && el.getClientRects().length > 0);
+  [...root.querySelectorAll<HTMLElement>(selector)].filter(
+    (el) => !el.hasAttribute('disabled') && el.getClientRects().length > 0 && el.ownerDocument.defaultView?.getComputedStyle(el).visibility !== 'hidden',
+  );
 
 /** Which control Tab lands on: the one marked current, else the first. */
 export const currentOf = (controls: readonly HTMLElement[]): HTMLElement | null => controls.find((el) => el.matches(CURRENT)) ?? controls[0] ?? null;
@@ -51,7 +56,9 @@ export function useRovingFocus(ref: RefObject<HTMLElement | null>, { orientation
     if (root === null) return;
     const controls = controlsOf(root, selector);
     const current = currentOf(controls);
-    for (const el of controls) el.tabIndex = el === current ? 0 : -1;
+    // Every match, not only the ones a key can land on: a hidden one (`M255`'s resting `+`) that kept
+    // its default `tabIndex` would be a Tab stop of its own, and the strip is one stop (`D1311`).
+    for (const el of root.querySelectorAll<HTMLElement>(selector)) el.tabIndex = el === current ? 0 : -1;
   });
   useEffect(() => {
     const root = ref.current;
@@ -65,7 +72,7 @@ export function useRovingFocus(ref: RefObject<HTMLElement | null>, { orientation
       const to = nextIndex(e.key, orientation, at, controls.length);
       if (to === null) return;
       e.preventDefault();
-      for (const el of controls) el.tabIndex = -1;
+      for (const el of root.querySelectorAll<HTMLElement>(selector)) el.tabIndex = -1;
       const next = controls[to]!;
       next.tabIndex = 0;
       next.focus();

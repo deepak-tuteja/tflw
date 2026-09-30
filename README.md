@@ -124,8 +124,8 @@ JS/TS escape hatch, and the full CLI/matcher/generator reference, see
 `tflw check` validates every file (parse + the full checker pipeline) with no execution and no
 secrets required — a fast pre-commit/CI lint step. `tflw run` exits non-zero on any test failure
 and writes `report/junit.xml` + `report/results.json`, so it drops into any CI runner as a plain
-command — no plugin needed. `--bail` stops at the first failure; `--failed` re-runs just what
-failed last time. See [CI, reporting & safety](https://deepak-tuteja.github.io/tflw/guide/ci-and-reporting)
+command — no plugin needed. `--bail` stops at the first failure; `--failed` re-runs just the
+tests that are failing. See [CI, reporting & safety](https://deepak-tuteja.github.io/tflw/guide/ci-and-reporting)
 for a worked GitHub Actions example and the redaction/evidence-level/host-allowlist safety
 features.
 

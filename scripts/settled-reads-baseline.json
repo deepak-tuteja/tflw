@@ -1,14 +1,14 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 936,
-    "atRisk": 848,
-    "high": 329,
+    "reads": 943,
+    "atRisk": 853,
+    "high": 326,
     "medium": 61,
-    "low": 458,
+    "low": 466,
     "declared": 72,
-    "inPage": 107,
-    "inRetry": 46
+    "inPage": 106,
+    "inRetry": 50
   },
   "tests": {
     "packages/cli/test/ui-page.test.ts": {
@@ -545,10 +545,10 @@
       "`M210` `S2`: the address keeps the request across a tab trip, and Config does not inherit its line": {
         "high": 2,
         "medium": 0,
-        "low": 2
+        "low": 1
       },
       "`M210` `S2`: an edit that moves the request keeps the address on it": {
-        "high": 2,
+        "high": 1,
         "medium": 0,
         "low": 2
       },
@@ -568,7 +568,7 @@
         "low": 0
       },
       "`M210` `S3`: an assertion inside a `wait until api` block is read-only, in position, and says why": {
-        "high": 1,
+        "high": 0,
         "medium": 0,
         "low": 2
       },
@@ -588,7 +588,7 @@
         "low": 1
       },
       "`M210` `S4`: a polling request is editable, and its own block survives the edit": {
-        "high": 1,
+        "high": 0,
         "medium": 0,
         "low": 1
       },
@@ -946,6 +946,21 @@
         "high": 1,
         "medium": 0,
         "low": 0
+      },
+      "`M255` `A`/`B`: every file’s dot is its tests’ newest kept verdicts rolled up, the head line counts the red, and the Run tab carries the newest run (`D1404`)": {
+        "high": 0,
+        "medium": 0,
+        "low": 5
+      },
+      "`M255` `B`: the `failed` chip lists the failing tests under each file, is in the address, and ▶ counts exactly them (`D1404`, `D1414`)": {
+        "high": 0,
+        "medium": 0,
+        "low": 2
+      },
+      "`M255` `B`: `+ new file` stays in the window at 900 px on a 100-file project (`M229` `S3`)": {
+        "high": 0,
+        "medium": 0,
+        "low": 2
       }
     },
     "packages/cli/test/ui-appearance.test.ts": {

@@ -1,4 +1,5 @@
-// report/.last-run.json — records the previous run's failing tests, consumed by `tflw run
+// report/.last-run.json — records the previous run's failing tests. `tflw run --failed` read it until
+// `M255` (`D1414`) and reads the kept runs now; nothing in tflw reads this file. It was consumed by `tflw run
 // --failed` (PLAN decision 111, M17). A test that failed on an earlier `retry` attempt but
 // ultimately passed (flagged `flaky`) is never in this list — `TestResult.ok` is already the
 // final, post-retry verdict, the same one `--bail` trips on.

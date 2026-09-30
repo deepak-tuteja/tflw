@@ -227,6 +227,14 @@ export function kindFromHash(hash: string): Lens | null {
   return legacyKind(hash);
 }
 
+/** The `failed` chip (`M255`, `D1404`/`D1413`) — `failed=1` beside the kind; absent is off. */
+export const FAILED_KEY = 'failed';
+
+export function failedFromHash(hash: string): boolean {
+  const query = hash.split('?')[1];
+  return (query?.split('&') ?? []).some((part) => part === `${FAILED_KEY}=1`);
+}
+
 export function queryFromHash(hash: string): string {
   const query = hash.split('?')[1];
   if (query === undefined) return '';
@@ -247,9 +255,10 @@ export function queryFromHash(hash: string): string {
  * pane holds — which folders are open, which tab is marked — changes what you can *see*, and a
  * URL that moved on every disclosure click would be a URL nobody could compare to another.
  */
-export const paneTail = (selection: readonly string[], query = '', kind: Lens | null = null): string => {
+export const paneTail = (selection: readonly string[], query = '', kind: Lens | null = null, failed = false): string => {
   const parts: string[] = [];
   if (kind !== null) parts.push(`${KIND_KEY}=${kind}`);
+  if (failed) parts.push(`${FAILED_KEY}=1`);
   if (selection.length > 0) parts.push(`${SELECTION_KEY}=${selection.map(escapePath).join(',')}`);
   if (query !== '') parts.push(`${QUERY_KEY}=${encodeURIComponent(query)}`);
   return parts.length === 0 ? '' : `?${parts.join('&')}`;

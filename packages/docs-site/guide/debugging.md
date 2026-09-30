@@ -64,7 +64,7 @@ Re-running the whole suite to chase one failure is slow. Narrow to exactly what 
 npx tflw run --only "health check"        # one test, by its exact declared name
 npx tflw run --tag smoke                  # every test carrying @smoke (comma-separated OR)
 npx tflw run --only "health check" --tag smoke   # composes as AND
-npx tflw run --failed                     # only what failed last time (report/.last-run.json)
+npx tflw run --failed                     # only the tests whose last run failed
 npx tflw run --bail                       # stop at the first failure — don't wait for the rest
 ```
 

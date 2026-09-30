@@ -112,6 +112,9 @@ export interface HistoryView {
     readonly name: string;
     /** One per kept run that contained the test, newest first. */
     readonly verdicts: readonly ('pass' | 'fail' | 'skip')[];
+    /** The kept run `verdicts[0]` came from (`M255` `A`, `D1404`) — how the page tells *the last
+     *  run's verdict* from *the verdict of the last run this test was in*. */
+    readonly last: string;
     readonly failures: number;
     /** The verdict changed between two runs of the same source (`history.ts`). */
     readonly flaky: boolean;
@@ -614,6 +617,9 @@ export interface RunRequest {
    *  the chip is one of the things that decides which rows those are. */
   readonly kinds?: readonly string[];
   readonly only?: string;
+  /** `--failed` (`M255`, `D1404`) — the explorer's `failed` chip. ▶ runs the rows shown, and the
+   *  chip is one of the things that decides which. */
+  readonly failed?: boolean;
   readonly env?: string;
   readonly workers?: number;
   /** `--evidence LEVEL` (`M200` `A1-5`) — `D1047`'s Send needs `full`, because that is the level
@@ -746,6 +752,7 @@ export function runArgv(req: RunRequest): string[] {
   if (req.tags && req.tags.length > 0) argv.push('--tag', req.tags.join(','));
   if (req.kinds && req.kinds.length > 0) argv.push('--kind', req.kinds.join(','));
   if (req.only) argv.push('--only', req.only);
+  if (req.failed) argv.push('--failed');
   if (req.evidence) argv.push('--evidence', req.evidence);
   // A boolean flag, so it is pushed on `true` alone — `false` and absent are the same request,
   // which is what keeps an ordinary run's argv byte-identical to what it was before `M220`.
@@ -2373,7 +2380,7 @@ export class UiServer {
       const history = await readHistory(await this.reportDirFor(), { limit: await this.runsKept() });
       const view: HistoryView = {
         runs: [...history.runs],
-        tests: [...history.tests.values()].map((t) => ({ file: t.file, name: t.name, verdicts: t.runs.map((r) => r.verdict), failures: t.failures, flaky: t.flaky })),
+        tests: [...history.tests.values()].map((t) => ({ file: t.file, name: t.name, verdicts: t.runs.map((r) => r.verdict), last: t.runs[0]?.run ?? '', failures: t.failures, flaky: t.flaky })),
         thresholds: history.thresholds.map((t) => ({ file: t.file, test: t.test, threshold: t.threshold, values: [...t.values] })),
       };
       return json(res, 200, view);

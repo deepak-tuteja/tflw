@@ -21,6 +21,7 @@
 // `readProject` stops discarding parsed request paths. They would need server work and could only
 // ever run whole files, which is the half of `D1064` that is already the accepted cost.
 import type { Lens, ProjectFile, ProjectView } from './contract';
+import { markKey } from './verdicts';
 
 export type Query =
   | { readonly kind: 'none' }
@@ -90,19 +91,21 @@ export interface RunRow {
  * tags on the wire, so under a tag query none is counted — the CLI may still run a tagged crawl, and
  * the count is then low by exactly those, which is the limit `lensesInRun` has always had.
  */
-export function runRows(project: ProjectView, selection: readonly string[], query: Query, kind: Lens | null = null): RunRow[] {
+export function runRows(project: ProjectView, selection: readonly string[], query: Query, kind: Lens | null = null, failed: ReadonlySet<string> | null = null): RunRow[] {
   const files = selection.length > 0 ? new Set(selection) : query.kind === 'text' ? matchingFiles(project, query)! : null;
   const wanted = query.kind === 'tag' ? new Set(query.tags) : null;
   const ofKind = (lenses: readonly Lens[]): boolean => kind === null || lenses.includes(kind);
+  // `M255` (`D1404`) — the `failed` chip keeps the rows whose newest verdict failed (`markKey`).
+  const kept = (file: string, name: string): boolean => failed === null || failed.has(markKey(file, name));
   const out: RunRow[] = [];
   for (const f of project.files) {
     if (files !== null && !files.has(f.path)) continue;
     for (const t of f.tests) {
       if (wanted !== null && !t.tags.some((tag) => wanted.has(tag))) continue;
-      if (ofKind(t.lenses)) out.push({ file: f.path, name: t.name, lenses: t.lenses });
+      if (ofKind(t.lenses) && kept(f.path, t.name)) out.push({ file: f.path, name: t.name, lenses: t.lenses });
     }
     if (wanted !== null) continue;
-    for (const c of f.crawls) if (ofKind(c.lenses)) out.push({ file: f.path, name: c.name, lenses: c.lenses });
+    for (const c of f.crawls) if (ofKind(c.lenses) && kept(f.path, c.name)) out.push({ file: f.path, name: c.name, lenses: c.lenses });
   }
   return out;
 }
@@ -112,8 +115,8 @@ export function runRows(project: ProjectView, selection: readonly string[], quer
  * the lens set of the RUN, never the chip). The union over `runRows`, so a flag appears exactly when
  * a row ▶ would run can spend it.
  */
-export function lensesInRun(project: ProjectView, selection: readonly string[], query: Query, kind: Lens | null = null): ReadonlySet<Lens> {
+export function lensesInRun(project: ProjectView, selection: readonly string[], query: Query, kind: Lens | null = null, failed: ReadonlySet<string> | null = null): ReadonlySet<Lens> {
   const out = new Set<Lens>();
-  for (const r of runRows(project, selection, query, kind)) for (const l of r.lenses) out.add(l);
+  for (const r of runRows(project, selection, query, kind, failed)) for (const l of r.lenses) out.add(l);
   return out;
 }

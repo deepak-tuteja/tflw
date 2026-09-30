@@ -13,7 +13,8 @@ import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getFile, getHisto
 import type { DocumentView, FileView } from './api';
 import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, HistoryView, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding, UnconfiguredView } from './contract';
-import { docFromHash, fileFromHash, focusFromHash, hashFor, isPanelTab, kindFromHash, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
+import { ageOf, verdictIndex } from './verdicts';
+import { docFromHash, failedFromHash, fileFromHash, focusFromHash, hashFor, isPanelTab, kindFromHash, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
 import { NoProject } from './NoProject';
 import { EmptyDoor } from './EmptyDoor';
 import { Legend } from './Legend';
@@ -71,6 +72,8 @@ export function App() {
   /** The kind chip (`M254`, `D1399`) — `null` is `all`. A filter on what the explorer lists and ▶
    *  runs, and nothing else: Compose reads the open file's own kinds (`vocabularyOf`). */
   const [kind, setKindState] = useState<Lens | null>(() => kindFromHash(window.location.hash));
+  /** The `failed` chip (`M255`, `D1404`) — in the address beside the kind, and AND with it. */
+  const [failedOnly, setFailedState] = useState<boolean>(() => failedFromHash(window.location.hash));
   /** Which stage of the selected file is showing (`M205` §2). It is the hash's second segment, so
    *  a tab is linkable and the back button walks it — the same rule `D1045` makes for the door. */
   const [tab, setTabState] = useState<TabId>(() => tabFromHash(window.location.hash));
@@ -183,6 +186,7 @@ export function App() {
   useEffect(() => {
     const onHash = () => {
       setKindState(kindFromHash(window.location.hash));
+      setFailedState(failedFromHash(window.location.hash));
       setTabState(tabFromHash(window.location.hash));
       setFileState(fileFromHash(window.location.hash));
       setFocusLine(focusFromHash(window.location.hash));
@@ -197,10 +201,17 @@ export function App() {
    *  line stay where they are, because a filter is a narrowing and not a move (`D1399`). */
   const setKind = useCallback(
     (next: Lens | null) => {
-      window.location.hash = hashFor(tab, file, focusLine ?? undefined, doc) + paneTail(selection, query, next);
+      window.location.hash = hashFor(tab, file, focusLine ?? undefined, doc) + paneTail(selection, query, next, failedOnly);
       setKindState(next);
     },
-    [tab, file, focusLine, doc, selection, query],
+    [tab, file, focusLine, doc, selection, query, failedOnly],
+  );
+  const setFailedOnly = useCallback(
+    (next: boolean) => {
+      window.location.hash = hashFor(tab, file, focusLine ?? undefined, doc) + paneTail(selection, query, kind, next);
+      setFailedState(next);
+    },
+    [tab, file, focusLine, doc, selection, query, kind],
   );
   const setTab = useCallback(
     (next: TabId, focus?: number, nextDoc?: string | null) => {
@@ -226,32 +237,32 @@ export function App() {
        */
       const fileStage = next === 'compose' || next === 'source';
       const carried = focus ?? (fileStage ? (focusLine ?? undefined) : undefined);
-      window.location.hash = hashFor(next, file, carried, wanted) + paneTail(selection, query, kind);
+      window.location.hash = hashFor(next, file, carried, wanted) + paneTail(selection, query, kind, failedOnly);
       setTabState(next);
       setFocusLine(carried ?? null);
       setDocState(wanted);
     },
-    [kind, file, doc, selection, query, focusLine],
+    [kind, failedOnly, file, doc, selection, query, focusLine],
   );
   /** Choosing a different document inside Config. It drops the focus line for `setFile`'s reason:
    *  a line number is an offset into the document that named it. */
   const setDoc = useCallback(
     (next: string | null) => {
-      window.location.hash = hashFor(tab, file, undefined, next) + paneTail(selection, query, kind);
+      window.location.hash = hashFor(tab, file, undefined, next) + paneTail(selection, query, kind, failedOnly);
       setDocState(next);
       setFocusLine(null);
     },
-    [kind, tab, file, selection, query],
+    [kind, failedOnly, tab, file, selection, query],
   );
   /** Choosing a different file. It drops the focus line, because a line number is an offset into
    *  the file that named it and means nothing in the next one. */
   const setFile = useCallback(
     (next: string) => {
-      window.location.hash = hashFor(tab, next, undefined, doc) + paneTail(selection, query, kind);
+      window.location.hash = hashFor(tab, next, undefined, doc) + paneTail(selection, query, kind, failedOnly);
       setFileState(next);
       setFocusLine(null);
     },
-    [kind, tab, doc, selection, query],
+    [kind, failedOnly, tab, doc, selection, query],
   );
 
   /**
@@ -270,24 +281,24 @@ export function App() {
     (nextSelection: readonly string[], open: string | null) => {
       const nextFile = open ?? file;
       const line = open === null ? (focusLine ?? undefined) : undefined;
-      window.location.hash = hashFor(tab, nextFile, line, doc) + paneTail(nextSelection, query, kind);
+      window.location.hash = hashFor(tab, nextFile, line, doc) + paneTail(nextSelection, query, kind, failedOnly);
       setSelectionState(nextSelection);
       if (open !== null) {
         setFileState(open);
         setFocusLine(null);
       }
     },
-    [kind, tab, file, focusLine, doc, query],
+    [kind, failedOnly, tab, file, focusLine, doc, query],
   );
 
   /** Typing in the search box. It changes the address's tail and nothing else — the chip, the tab
    *  and the file it names stay where they are, because a search is a narrowing and not a move. */
   const setQuery = useCallback(
     (next: string) => {
-      window.location.hash = hashFor(tab, file, focusLine ?? undefined, doc) + paneTail(selection, next, kind);
+      window.location.hash = hashFor(tab, file, focusLine ?? undefined, doc) + paneTail(selection, next, kind, failedOnly);
       setQueryState(next);
     },
-    [kind, tab, file, focusLine, doc, selection],
+    [kind, failedOnly, tab, file, focusLine, doc, selection],
   );
 
   const refreshLists = useCallback(async () => {
@@ -810,8 +821,10 @@ export function App() {
     // which rows those are. `tflw run --kind` is the CLI's own narrowing, so the page still runs
     // nothing a terminal could not (`D1051`).
     if (kind !== null) req.kinds = [kind];
+    // `M255` (`D1404`) — and the `failed` chip is another.
+    if (failedOnly) req.failed = true;
     return req;
-  }, [runLevel, query, selection, project, kind]);
+  }, [runLevel, query, selection, project, kind, failedOnly]);
 
 
   /**
@@ -923,7 +936,7 @@ export function App() {
     // kind as a door in the path, and this is where that door becomes `?kind=`. Built by the same
     // `paneTail` every writer uses, from what the address says, so a canonical address comes back
     // byte-identical and a legacy one comes back once, rewritten.
-    const canonical = hashFor(tabFromHash(hash), drawn, focusFromHash(hash) ?? undefined, docFromHash(hash)) + paneTail(selectionFromHash(hash), queryFromHash(hash), kindFromHash(hash));
+    const canonical = hashFor(tabFromHash(hash), drawn, focusFromHash(hash) ?? undefined, docFromHash(hash)) + paneTail(selectionFromHash(hash), queryFromHash(hash), kindFromHash(hash), failedFromHash(hash));
     // A URL with no fragment at all already names the shell at rest; writing `#/` onto it would be
     // a change with nothing behind it.
     if ((hash === '' || hash === '#') && canonical === '#/') return;
@@ -949,8 +962,27 @@ export function App() {
    *  those reads `file` from its own closure and would write the hash for the file we just left.
    *  The hash is the source of truth and its listener moves the page, so one write does it. */
   const openAt = useCallback((p: string, at: TabId) => {
-    window.location.hash = hashFor(at, p, undefined, doc) + paneTail([p], query, kind);
-  }, [kind, doc, query]);
+    window.location.hash = hashFor(at, p, undefined, doc) + paneTail([p], query, kind, failedOnly);
+  }, [kind, failedOnly, doc, query]);
+
+  /** A test row in the explorer (`M255` `B`) — its file, on Compose, at its line, in one write. */
+  const openTest = useCallback((p: string, line: number) => {
+    window.location.hash = hashFor('compose', p, line) + paneTail([p], query, kind, failedOnly);
+  }, [kind, failedOnly, query]);
+
+  /**
+   * **The verdict index** — `M255` `A` (`D1404`). One value, read by the explorer, the header's ▶,
+   * and the Run tab's dot, so none of them can say something the others do not. Rebuilt when the
+   * history or the run list is re-read, which is what a finished run does.
+   */
+  const marks = useMemo(() => verdictIndex(project, history, reports), [project, history, reports]);
+  const runVerdict = useMemo(() => {
+    const n = marks.newest;
+    if (n === null) return null;
+    const age = n.at === '' ? '' : ` ${ageOf(n.at)}`;
+    const tip = n.verdict === 'fail' ? `the last run${age}: ${n.failed} of ${n.total} failed` : n.verdict === 'inconclusive' ? `the last run${age} is not ok and nothing failed — inconclusive or cut short` : `the last run${age} passed`;
+    return { verdict: n.verdict, tip };
+  }, [marks]);
 
   /**
    * **Run just this file** — explicit, and therefore not `D1149`'s rejected side effect.
@@ -1030,20 +1062,13 @@ export function App() {
             },
       ];
     }
-    if (t.kind === 'test') {
-      return [
-        { id: 'goto', label: 'Go to it', run: () => setTab('compose', t.line) },
-        { id: 'new-request', label: 'New request here', run: () => { setTab('compose', t.line); setAddIntent((prev) => ({ path, declIndex: t.declIndex, n: (prev?.n ?? 0) + 1 })); } },
-        canCopy
-          ? { id: 'copy-name', label: 'Copy its name', run: () => copy(t.name) }
-          : { id: 'copy-name', label: 'Copy its name', run: null, why: 'the clipboard is only available over https or on localhost' },
-      ];
-    }
+    // A test. There is no request row since `M255` (`D1404`): a request is the steps column's.
     return [
       { id: 'goto', label: 'Go to it', run: () => setTab('compose', t.line) },
+      { id: 'new-request', label: 'New request here', run: () => { setTab('compose', t.line); setAddIntent((prev) => ({ path, declIndex: t.declIndex, n: (prev?.n ?? 0) + 1 })); } },
       canCopy
-        ? { id: 'copy-request', label: 'Copy method and path', run: () => copy(`${t.method} ${t.path}`) }
-        : { id: 'copy-request', label: 'Copy method and path', run: null, why: 'the clipboard is only available over https or on localhost' },
+        ? { id: 'copy-name', label: 'Copy its name', run: () => copy(t.name) }
+        : { id: 'copy-name', label: 'Copy its name', run: null, why: 'the clipboard is only available over https or on localhost' },
     ];
   }, [pick, setFile, setTab, duplicateFile, openAt, runJust, copy, canCopy, path, importersOf, startCreating]);
 
@@ -1363,7 +1388,7 @@ export function App() {
           control outside every landmark is content a screen reader's landmark list never reaches;
           the column pair is laid out as a nested grid so the page's own tracks do not move. */}
       <aside className="sidebar-col" aria-label="the project">
-      {project ? <Sidebar project={project} kind={kind} onKind={setKind} openFile={path === '' ? null : path} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} unsaved={unsavedPaths}
+      {project ? <Sidebar project={project} kind={kind} onKind={setKind} openFile={path === '' ? null : path} selection={selection} onPick={pick} query={query} onQuery={setQuery} marks={marks} failedOnly={failedOnly} onFailedOnly={setFailedOnly} onOpenTest={openTest} outline={outline} unsaved={unsavedPaths}
           onNewIn={(p) => { setFile(p); startCreating('test'); }}
           onAddRequest={(declIndex) => setAddIntent((prev) => ({ path, declIndex, n: (prev?.n ?? 0) + 1 }))}
           focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={(m) => startCreating(m)}
@@ -1393,7 +1418,7 @@ export function App() {
             });
             void readProjectView();
             if (to !== null) openAt(to, tab);
-            else window.location.hash = hashFor(tab, null) + paneTail([], query, kind);
+            else window.location.hash = hashFor(tab, null) + paneTail([], query, kind, failedOnly);
           }}
         />
       )}
@@ -1472,6 +1497,7 @@ export function App() {
             headed={headed}
             onHeaded={setHeaded}
             kind={kind}
+            failed={failedOnly ? marks.failed : null}
             selection={selection}
             query={query}
             running={running}
@@ -1526,6 +1552,7 @@ export function App() {
             configMark={configMark}
             runPane={runPane}
             runMark={live && !live.end ? 'a run is going' : undefined}
+            runVerdict={runVerdict}
             /* `M220` `A` — ▶ on a declaration is a run, so it goes through the shell's own
                `onRun` (`D1168`): selected, watched, and landing where every run's end lands. */
             onRun={(r: RunRequest) => void onRun(r)}
