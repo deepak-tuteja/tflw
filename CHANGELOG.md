@@ -46,6 +46,13 @@ performance arc closed 2026-08-02 and is included below.
   the list, AND with `--tag`, `--only` and `--failed`; an unknown kind, an empty list, or a kind no
   test is of exits `2`.
 
+### Fixed — the `.vsix` release workflow parses
+
+- **`release-vsix.yml` did not parse** (`M251` `D`): a `: ` inside a plain scalar made GitHub refuse
+  the file on every push, a failed run with no jobs. The step is a block scalar now, and
+  `verify-contributing.test.mjs` hands every workflow to a YAML parser as well as reading it line by
+  line, so a workflow that does not parse fails the suite rather than the push.
+
 ### Removed — the maintainer's runbooks
 
 - **`RUNBOOK.md`, in both repositories** (`D1350`, amended). It described one maintainer's machines
