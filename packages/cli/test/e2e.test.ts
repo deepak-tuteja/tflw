@@ -30,6 +30,21 @@ const repoRoot = join(here, '..', '..', '..');
 const cliEntry = join(repoRoot, 'packages', 'cli', 'dist', 'cli.cjs');
 const execFileAsync = promisify(execFile);
 
+// `M252-07`: a short workload on a slow runner can read V8's warm-up as a saturated generator
+// (`M32` counts warm-up as real CPU, and a 150 ms run reads 88% of a core — tflw-tests' `C45`),
+// and the run then exits 3, inconclusive. For a test whose subject is not that verdict, exit 3 means
+// only that this measurement did not describe the system, so it is taken once more on a machine
+// that is now warm. Any other exit fails as it always did, and a second 3 fails too. Tests about the
+// verdict itself (`a genuinely saturated generator exits 3`) call `execFileAsync` directly.
+async function runWorkload(args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv }): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await execFileAsync('node', [cliEntry, ...args], options);
+  } catch (e) {
+    if ((e as { code?: number }).code !== 3) throw e;
+    return await execFileAsync('node', [cliEntry, ...args], options);
+  }
+}
+
 /**
  * `M173a` — one shape for "the CLI ran", instead of five partial views of it.
  *
@@ -874,7 +889,7 @@ test('FU-04: every forked load shard reaches the parent’s demo, not one of its
       `test "health under load"\n  ramp to 10 rps over 1s\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n`,
       'utf8',
     );
-    const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--workers', '2', '--no-color'], { cwd: dir });
+    const { stdout } = await runWorkload(['run', 'load.tflw', '--workers', '2', '--no-color'], { cwd: dir });
     assert.match(stdout, /PASS 1\/1 passed/, stdout);
     assert.match(stdout, /error rate < 1\.00% \(actual: 0\.00%\)/, `a shard that cannot reach the demo shows up here as a partial error rate\n${stdout}`);
   } finally {
@@ -2535,14 +2550,14 @@ test('`--teardown never` overrides `teardown always` for one run, prints the adv
         'utf8',
       );
 
-      const overridden = await execFileAsync('node', [cliEntry, 'run', '--teardown', 'never', '--no-color'], { cwd: dir });
+      const overridden = await runWorkload(['run', '--teardown', 'never', '--no-color'], { cwd: dir });
       // Advisory only — the run still passes and the exit code is untouched. Skipping teardown is a
       // setting, not a failure.
       assert.match(overridden.stdout, /teardown: disabled \(`teardown never`\) — 4 iterations left their data in place/);
 
       // The override is per-run. A second invocation with no flag reads the config's `always` and
       // says nothing, which is the half a flag that quietly persisted would break.
-      const configured = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+      const configured = await runWorkload(['run', '--no-color'], { cwd: dir });
       assert.doesNotMatch(configured.stdout, /teardown:/, 'the flag persisted into a run that did not pass it');
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -3400,7 +3415,7 @@ test('C4/B3-07: a workload-bearing test is counted by `run:start`, not announced
         'utf8',
       );
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', '--format', 'ndjson', '--no-color'], { cwd: dir });
       const events = stdout.trim().split('\n').map((l) => JSON.parse(l) as { type: string; total?: number; report?: { total: number } });
       assert.equal(events.find((e) => e.type === 'run:start')!.total, 1);
       assert.equal(events.find((e) => e.type === 'run:end')!.report!.total, 1, 'the forecast matched the result');
@@ -3424,7 +3439,7 @@ test('C4/B3-11: a workload-bearing test emits its own `test:start`/`test:end` pa
         'utf8',
       );
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--format', 'ndjson', '--no-color'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', '--format', 'ndjson', '--no-color'], { cwd: dir });
       interface Line {
         readonly type: string;
         readonly name?: string;
@@ -3846,7 +3861,7 @@ test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, wri
         'utf8',
       );
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "health burst"/);
       assert.match(stdout, /iterations: \d+/);
       assert.match(stdout, /PASS 1\/1 passed/);
@@ -3900,7 +3915,7 @@ test('`tflw load`: a scenario with an untagged step and an `as "label"`-tagged s
         'utf8',
       );
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /endpoints:/);
       assert.match(stdout, /GET \/health: iterations \d+/);
       assert.match(stdout, /checkout: iterations \d+/);
@@ -3963,14 +3978,14 @@ test('`tflw load`: an `env(NAME)` value from a `.env` file (not a real process e
       'utf8',
     );
 
-    const single = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir, env: envWithout('API_KEY') });
+    const single = await runWorkload(['run', 'load.tflw', '--no-color'], { cwd: dir, env: envWithout('API_KEY') });
     assert.match(single.stdout, /PASS 1\/1 passed/);
     const singleResults = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
     const singleScenario = workloadEntries(singleResults)[0]!;
     assert.equal(singleScenario.metrics.failures, 0);
     assert.ok(singleScenario.metrics.iterations > 0);
 
-    const workers = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color', '--workers', '2'], { cwd: dir, env: envWithout('API_KEY') });
+    const workers = await runWorkload(['run', 'load.tflw', '--no-color', '--workers', '2'], { cwd: dir, env: envWithout('API_KEY') });
     assert.match(workers.stdout, /PASS 1\/1 passed/);
     const workersResults = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
     const workersScenario = workloadEntries(workersResults)[0]!;
@@ -4013,7 +4028,7 @@ test('`tflw load`: a closed-model scenario against a degrading server prints and
     // under `ramp` it was partly demonstrating the artefact.
     await writeFile(join(dir, 'load.tflw'), 'test "degrading checkout"\n  hold 5 users for 1400ms\n  api GET /slow\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
-    const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
+    const { stdout } = await runWorkload(['run', 'load.tflw', '--no-color'], { cwd: dir });
     assert.match(stdout, /⚠ your load backed off/);
     assert.match(stdout, /results understate real latency/);
 
@@ -4155,7 +4170,7 @@ test('`tflw load` runs a `hold` workload end-to-end: passes, prints a summary, w
       // exactly as it would be for an equivalent `ramp to N users over <dur>` at this scale too.
       await writeFile(join(dir, 'load.tflw'), 'test "steady load"\n  hold 4 users for 200ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "steady load" — hold 4 users for 200ms \(closed\)/);
       // M89b (`B3-03`) — the summary line used to read `ramp to 4 users over 200ms`, contradicting
       // the pre-run line five seconds above it. Both now come from one `describeWorkload` over one
@@ -4179,7 +4194,7 @@ test('`tflw load` runs a `run N iterations across M users` workload end-to-end, 
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(join(dir, 'load.tflw'), 'test "fixed batch"\n  run 12 iterations across 3 users\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', 'load.tflw', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "fixed batch" — run 12 iterations across 3 users/);
       assert.match(stdout, /PASS 1\/1 passed/);
 
@@ -4224,7 +4239,7 @@ test('every workload kind describes itself distinctly, and the pre-run line is t
       ).join('\n');
       await writeFile(join(dir, 'kinds.tflw'), src, 'utf8');
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'kinds.tflw', '--no-color', '--no-timestamps'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', 'kinds.tflw', '--no-color', '--no-timestamps'], { cwd: dir });
 
       const preRun = new Map<string, string>();
       const summary = new Map<string, string>();
@@ -4277,7 +4292,7 @@ test('`tflw run` with no file argument auto-discovers a workload-bearing test to
       await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
       await writeFile(join(dir, 'load.tflw'), 'test "health burst"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', '--no-color'], { cwd: dir });
       assert.match(stdout, /scenario "health burst"/);
       assert.match(stdout, /PASS 1\/1 passed/);
     } finally {
@@ -4360,7 +4375,7 @@ test('`tflw load --workers 3` really forks 3 OS processes and merges their resul
         'utf8',
       );
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--workers', '3', '--no-color'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', 'load.tflw', '--workers', '3', '--no-color'], { cwd: dir });
       assert.match(stdout, /running across 3 generator processes/);
       assert.match(stdout, /scenario "health burst"/);
       assert.match(stdout, /PASS 1\/1 passed/);
@@ -4623,7 +4638,7 @@ test('`tflw run --workers 4` on a file mixing functional and workload-bearing te
         'utf8',
       );
 
-      const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'mixed.tflw', '--workers', '4', '--no-color'], { cwd: dir });
+      const { stdout } = await runWorkload(['run', 'mixed.tflw', '--workers', '4', '--no-color'], { cwd: dir });
       assert.doesNotMatch(stdout, /`--workers` has no effect/);
       assert.match(stdout, /running across 4 generator processes/);
       // M56: the workload test's result now lives inline in `report.tests` alongside the
@@ -5738,7 +5753,7 @@ async function uniqueDrawsAtWorkers(n: number): Promise<{ ids: unknown[]; tags: 
       // different thing entirely — that is a broken harness, and it rethrows with the CLI's output.
       let stdout = '';
       try {
-        ({ stdout } = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color', '--workers', String(n)], { cwd: dir }));
+        ({ stdout } = await runWorkload(['run', 'load.tflw', '--no-color', '--workers', String(n)], { cwd: dir }));
       } catch (e) {
         const err = e as { stdout?: string; stderr?: string };
         if (seen.length === 0) {
