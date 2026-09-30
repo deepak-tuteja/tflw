@@ -31,8 +31,9 @@ because there is nothing to log into: one process, one token, one person. Making
 reachable is not something the command offers; `ssh -L` forwards the port and the URL you paste
 carries the token with it.
 
-**It is for a desktop.** The page is laid out for a window 900 px wide and up — an explorer, a
-sequence and a stage side by side. Below that it stacks, and nothing is designed for a phone.
+**It is for a desktop.** The page is laid out for a window 900 px wide and up — the explorer, a
+test's steps, and what came back, side by side. Below 1100 px what came back folds under the picked
+row; below 900 the page stacks, and nothing is designed for a phone.
 
 ## Not yet
 

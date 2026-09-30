@@ -13,14 +13,15 @@
 // ever written.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, print, STEP_LENS, type Step } from '@tflw/lang';
+import { buildApiStep, parseSource, print, STEP_LENS, type Step } from '@tflw/lang';
 import { defaultEdit, stepCatalogue, withEmptiesFilled } from '../src/AddStep.tsx';
 import { buildStatement, statementLead } from '../src/statements.ts';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tflwFiles } from '../../../scripts/tflw-corpus.mjs';
-import { statementEditOf } from '../src/parts.tsx';
+import { carriedOver, editOf, specOf, statementEditOf } from '../src/parts.tsx';
+import { fileOutline, requestsOf } from '../src/outline.ts';
 import { VOCABULARY } from '../src/vocabulary.ts';
 
 /** Every browser kind the language has — asked of the language, never listed here. */
@@ -243,4 +244,72 @@ test('`M239-03`: every statement chip is the phrase the printed statement begins
     const oldRule = type === 'LetStmt' ? 'let' : type.replace(/Stmt$/, '').toLowerCase();
     if (lead.includes(' ')) assert.notEqual(lead, oldRule, `${type}'s chip is the old rule's slug`);
   }
+});
+
+/**
+ * **A row opened and closed untouched writes the bytes it read** — `M256` `A` (`D1405`).
+ *
+ * The plan's gate for the inline editors: *every statement family round-trips through its inline
+ * editor to the same bytes the card produced, over the printer's corpus, both tiers*. The card and
+ * the row share one model — `statementEditOf` in, `buildStatement` out, and `editOf` / `specOf` /
+ * `buildApiStep` for a request — so the claim worth making is the stronger one the two share: a
+ * reader who opens a row and changes nothing has changed nothing. A field the model reads and does
+ * not write back is exactly the edit that ships silently, one save after the row was merely looked
+ * at.
+ *
+ * Both tiers are the printer's own (`print.test.ts`): this repository's `.tflw` files always, the
+ * sibling's when this machine has it, and `TFLW_PRINT_EXTRAS=off` drops the second.
+ */
+test('`M256` `A`: every statement and request in the corpus survives its inline editor untouched (`D1405`)', () => {
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  const sibling = join(repoRoot, '..', 'testFlow-tests');
+  const files = [...tflwFiles(repoRoot), ...(process.env.TFLW_PRINT_EXTRAS === 'off' || !existsSync(sibling) ? [] : tflwFiles(sibling))];
+  const drift: string[] = [];
+  let statements = 0;
+  let requests = 0;
+  const printed = (node: Step): string | null => {
+    const out = print(node);
+    return out.ok ? out.text : null;
+  };
+  const walk = (steps: readonly Step[], path: string): void => {
+    for (const step of steps) {
+      const edit = statementEditOf(step);
+      if (edit !== null) {
+        statements += 1;
+        const built = buildStatement(edit, step);
+        if (!built.ok) drift.push(`${path}:${step.span.start.line} refused: ${built.reason}`);
+        else if (printed(built.node) !== printed(step)) drift.push(`${path}:${step.span.start.line} ${printed(step)} → ${printed(built.node)}`);
+      }
+      const inner = (step as { body?: readonly Step[] }).body;
+      if (Array.isArray(inner)) walk(inner, path);
+    }
+  };
+  for (const path of files) {
+    const text = readFileSync(path, 'utf8');
+    const { program, diagnostics } = parseSource(text);
+    if (diagnostics.some((d) => d.severity === 'error')) continue;
+    for (const d of [...program.tests, ...program.hooks, ...program.actions, ...(program.crawls ?? [])]) walk(d.body, path);
+    // A request's row is `editOf` → `specOf` → `buildApiStep` → `carriedOver` — `ComposeDoor.
+    // applyEdit`'s own path, so the page and this gate cannot disagree about what is carried.
+    for (const decl of fileOutline(path, text).declarations) {
+      for (const r of requestsOf(decl.body)) {
+        if (r.kind !== 'ApiStep') continue;
+        requests += 1;
+        const edit = editOf(r);
+        const built = buildApiStep(specOf(edit));
+        if (!built.ok) {
+          drift.push(`${path}:${r.line} refused: ${built.reason}`);
+          continue;
+        }
+        const node = carriedOver(built.node, r, edit) as Step;
+        if (printed(node) !== printed(r.node)) drift.push(`${path}:${r.line} ${printed(r.node)} → ${printed(node)}`);
+      }
+    }
+  }
+  // The floor is the corpus exercising the editors at all — a walker that read nothing is green.
+  // Measured 2026-09-30: 317 statements and 84 requests in this repository, 3200 and 1301 more in
+  // the sibling. The floor is the repository's alone, so `TFLW_PRINT_EXTRAS=off` and a machine with
+  // no sibling hold it too.
+  assert.ok(statements >= 250 && requests >= 60, `the corpus must reach the editors: ${statements} statements, ${requests} requests`);
+  assert.deepEqual(drift.slice(0, 20), [], `${drift.length} of ${statements + requests} change when a row is opened and closed untouched`);
 });

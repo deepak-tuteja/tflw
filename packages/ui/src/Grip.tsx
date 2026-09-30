@@ -64,7 +64,7 @@ export const SIDEBAR: GripSpec = {
  *  floor and a ceiling where the editor beside it stops being usable. */
 export const COMPOSE: GripSpec = {
   name: 'compose', axis: 'x', sizes: 'before', min: 220, max: 620, fallback: 300,
-  key: 'tflw.compose.width', label: 'sequence column width',
+  key: 'tflw.compose.width', label: 'steps column width',
 };
 
 /**

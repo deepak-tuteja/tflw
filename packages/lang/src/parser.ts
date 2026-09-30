@@ -6579,7 +6579,7 @@ export function parseStringParts(value: string): StringPart[] {
  * Whitespace is tolerated around separators (`items [0] . price`) because the previous regex
  * tolerated it and a spelling that parsed must keep parsing.
  */
-export function parsePathText(text: string, opts: { readonly quotedHead?: boolean } = {}): PathSegment[] | null {
+export function parsePathText(text: string, opts: { readonly quotedHead?: boolean; readonly indexHead?: boolean } = {}): PathSegment[] | null {
   const src = text.trim();
   const segs: PathSegment[] = [];
   let i = 0;
@@ -6621,7 +6621,13 @@ export function parsePathText(text: string, opts: { readonly quotedHead?: boolea
 
   ws();
   if (i >= src.length) return null;
-  if (src[i] === '"') {
+  if (src[i] === '[') {
+    /* `indexHead` — a body path over a response whose root is a list opens with an index
+       (`body[0].id`), which `parseBodyPath` reads from the token stream and this text reader
+       refused (`M256`). The loop below reads the index; a `{ref}` hole never passes the option,
+       because a variable name is what opens one. */
+    if (opts.indexHead !== true) return null;
+  } else if (src[i] === '"') {
     if (opts.quotedHead !== true) return null;
     const head = quoted();
     if (head === null) return null;

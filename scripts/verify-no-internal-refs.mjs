@@ -44,6 +44,10 @@ export const PAGE_ONLY = [
   // `M254` (`D1410`, reopening `D1314`): a door is a kind now — a filter and a scaffold choice — so
   // the page stops naming a place the reader can no longer go.
   ['`door` (say *kind*)', /\bdoors?\b/i],
+  // `M256` (`D1410`, plan §8.3 #7): the steps column is where a test is edited now, and its words
+  // are the reader's — *a test*, *an action*, *a hook*, *a crawl*, and *the steps*.
+  ['`declaration` (say *test* / *action* / *hook* / *crawl*)', /\bdeclarations?\b/i],
+  ['`sequence` (say *steps*)', /\bsequences?\b/i],
 ];
 
 const walk = (dir, out = []) => {
@@ -64,8 +68,14 @@ const isName = (n) => {
   if (ts.isImportDeclaration(p) || ts.isExportDeclaration(p) || ts.isExternalModuleReference(p)) return true;
   if (ts.isCallExpression(p) && p.expression.kind === ts.SyntaxKind.ImportKeyword) return true;
   if (ts.isLiteralTypeNode(p)) return true;
+  // A tag, not text: the value of a discriminant — `{ on: 'declaration' }` names which member of a
+  // union an object is (`NoteOwner`), and nobody reads it. `M256` found three of these the day
+  // `declaration` joined the page's list.
+  if (ts.isPropertyAssignment(p) && p.initializer === n && ts.isIdentifier(p.name) && TAG_KEYS.has(p.name.text)) return true;
   return false;
 };
+/** The property names whose values are discriminants in this codebase, never prose. */
+const TAG_KEYS = new Set(['on', 'kind', 'type']);
 
 /** Every piece of text a reader could see, with where it is. */
 export function textsOf(file, source) {
@@ -127,6 +137,8 @@ export function selfTest() {
     ].join('\n'));
     put('packages/ui/src/b.tsx', [
       "export const B = () => <p data-x={{ 'data-stmt-lens': 1 }}>3 behind API (SPEC §3.3)</p>;",
+      "export const owner = { on: 'declaration', decl: 0 };",
+      "export const S = () => <p>pick a row in the sequence</p>;",
       '',
     ].join('\n'));
     const got = findings({ root }).findings.map((f) => f.replace(/:.*?: /, ': ').split(' — ')[0]).sort();
@@ -135,12 +147,13 @@ export function selfTest() {
       'packages/runtime/src/a.ts: a docs link to a page the site does not have',
       'packages/ui/src/b.tsx: `behind` (say *of this kind*)',
       'packages/ui/src/b.tsx: a SPEC section',
+      'packages/ui/src/b.tsx: `sequence` (say *steps*)',
     ].sort();
     if (JSON.stringify(got) !== JSON.stringify(want)) {
       console.error(`verify:no-internal-refs --self-test: expected\n  ${want.join('\n  ')}\ngot\n  ${got.join('\n  ')}`);
       return false;
     }
-    console.log(`verify:no-internal-refs --self-test: ${want.length} defects named, the import, the attribute name, the comment and "behind a load balancer" left alone.`);
+    console.log(`verify:no-internal-refs --self-test: ${want.length} defects named, the import, the attribute name, the comment, a tag's value and "behind a load balancer" left alone.`);
     return true;
   } finally {
     rmSync(root, { recursive: true, force: true });

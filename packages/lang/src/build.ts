@@ -16,6 +16,7 @@ import type { AcceptDialogStmt, ActionDecl, CrawlDecl, CrawlSeed, ApiBody, ApiHe
 import { pollable, quantifiable } from './ast.js';
 import { parse as parseTokens, parsePathText, parseStringParts } from './parser.js';
 import { lex } from './lexer.js';
+import { ABSOLUTE_URL_START } from './absoluteUrl.js';
 
 const ORIGIN: Position = { line: 1, column: 1, offset: 0 };
 /** Every node built here carries this. It says "not from a file" rather than pretending to a
@@ -391,7 +392,11 @@ function apiPath(raw: string): string | null {
   // Telling a blank field it does not start with a slash is true, unhelpful, and reads as a
   // refusal of something the author has not done yet.
   if (raw.length === 0) return 'a request path, like `/orders` or `/orders/{orderId}` — it is joined to the service’s base URL';
-  if (!raw.startsWith('/')) return 'a request path starts with `/` — it is joined to the service’s base URL';
+  /* **An absolute URL is a target the language takes** (`M125b1`, `D265`), and the page's row
+     editor is how it met this function (`M256`): opening a request written `api GET https://x/y`
+     and changing nothing was a refusal, because this said only `/`. The lexer's own test, from
+     the lexer's own module, so the two cannot disagree about what *absolute* is. */
+  if (!raw.startsWith('/') && !ABSOLUTE_URL_START.test(raw)) return 'a request path starts with `/` — it is joined to the service’s base URL — or is an absolute URL, like `https://…`';
   if (/\s/.test(raw)) return 'a request path cannot contain a space';
   return null;
 }
@@ -631,6 +636,10 @@ const OPERANDLESS: ReadonlySet<MatcherName> = new Set<MatcherName>([
   // and the three clause matchers are refused **below** if a value is given anyway.
   'wasMade',
   'matchesSchema', 'matchesFile', 'matchesSnapshot',
+  /* `M256` — `is empty` takes nothing, and the parser has always written it so; this set did not
+     say so, so picking **is empty** in the page's matcher list was a refusal the reader could not
+     answer (the page draws no value field for it), and no `is empty` assertion could be edited. */
+  'isEmpty',
 ]);
 
 /** The five state words, as one closed family — `parser.ts`'s `STATE_WORDS` (`A3-3`). */
@@ -1339,7 +1348,7 @@ function buildSubject(spec: SubjectSpec): BuildResult<Subject> {
     case 'value': {
       const path = bodyPath(spec.ref);
       if (typeof path === 'string') return bad(path);
-      if (path.length === 0) return bad('a `{value}` subject names a variable — write the name the `let` or `capture` bound');
+      if (path.length === 0 || path[0]!.kind !== 'prop') return bad('a `{value}` subject names a variable — write the name the `let` or `capture` bound');
       return { ok: true, node: { type: 'ValueSubject', ref: path, span: SYNTHETIC } };
     }
   }
@@ -1361,7 +1370,10 @@ function buildSubject(spec: SubjectSpec): BuildResult<Subject> {
 function bodyPath(raw: string): PathSegment[] | string {
   const trimmed = raw.trim().replace(/^\./, '');
   if (trimmed === '') return [];
-  const segments = parsePathText(trimmed, { quotedHead: true });
+  /* `indexHead` (`M256`): `body[0].id` is a body path the parser reads — a response whose root is
+     a list opens with an index, not a key — and 116 of the two corpora's captures and assertions
+     are that shape. Refused here, every one of them was a row the page could draw and not edit. */
+  const segments = parsePathText(trimmed, { quotedHead: true, indexHead: true });
   if (segments === null) return `\`${trimmed}\` is not a path — write a name, then optional \`.name\`, \`."quoted key"\` or \`[0]\` steps`;
   return segments;
 }

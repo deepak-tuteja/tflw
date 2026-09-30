@@ -830,7 +830,7 @@ test('no region of the Compose pane overflows the window, on a thirteen-request 
           rows: document.querySelectorAll('[data-seq-row]').length,
           seq: box('.seq'),
           frame: box('.seq-col'),
-          editor: box('.editor'),
+          evidence: box('.evidence-col'),
           response: box('.responsebox'),
         };
       });
@@ -839,7 +839,7 @@ test('no region of the Compose pane overflows the window, on a thirteen-request 
       // 1 px of slack, and no more: a sub-pixel layout rounds, a region hanging off the bottom does
       // not round to within a pixel of the fold.
       if (seen.page > seen.window + 1) over.push(`${door}/${theme}: the document scrolls — ${seen.page}px in a ${seen.window}px window`);
-      for (const [name, r] of [['sequence', seen.frame], ['editor', seen.editor], ['response', seen.response]] as const) {
+      for (const [name, r] of [['steps', seen.frame], ['evidence', seen.evidence], ['response', seen.response]] as const) {
         if (r === null) {
           over.push(`${door}/${theme}: there is no ${name} region on the page at all`);
           continue;
@@ -945,7 +945,11 @@ test('`M215` `B3`: the coloured copy and the field under it are one box, in all 
       await page.locator('[data-seq-row="request"]').first().waitFor();
       await wear(theme);
       await page.locator('[data-seq-row="request"] [data-seq-pick]').first().click();
-      await page.locator('[data-editor-tab="body"]').click();
+      /* `M256` `A` (`D1405`) — the body is a fold under the picked request, a toggle: opened only
+         when it is shut, or the press would close what the gate is about to read. */
+      const bodyFold = page.locator('[data-request-fold="body"]');
+      await bodyFold.waitFor();
+      if ((await bodyFold.getAttribute('aria-expanded')) !== 'true') await bodyFold.click();
       /* `M234` `A2` — 60s, and say what was on the page if it still is not there (`D1308`).
          The default 30 timed out here on CI Node 22 and on a 12-way-loaded box, while an
          unloaded box renders it every time — the same shape as the fourteenth-row wait above,
@@ -955,7 +959,7 @@ test('`M215` `B3`: the coloured copy and the field under it are one box, in all 
          `TimeoutError` is what this round has already got wrong twice. */
       await page.locator('[data-body-ink]').waitFor({ timeout: 60_000 }).catch(async () => {
         const state = await page.evaluate(() => ({
-          tab: document.querySelector('[data-editor-tab="body"]')?.getAttribute('aria-selected') ?? null,
+          fold: document.querySelector('[data-request-fold="body"]')?.getAttribute('aria-expanded') ?? null,
           editor: document.querySelectorAll('[data-editor]').length,
           bodyEdit: document.querySelectorAll('[data-body-edit-text]').length,
           ink: document.querySelectorAll('[data-body-ink]').length,
@@ -1934,7 +1938,7 @@ const smallThings = (): Promise<{ readonly targets: readonly string[]; readonly 
       if (!found.checkVisibility()) continue;
       // **The resize grips are the one named exception** (`styles.css`, `D1325`): a 6 px seam the
       // length of the pane, keyboard-resizable, kept that narrow so it covers neither scrollbar.
-      if (found.matches('[data-grip], [data-compose-split]')) continue;
+      if (found.matches('[data-grip]')) continue;
       // A checkbox or radio is pressed through its label — the label is the target a pointer meets.
       const el = (found.type === 'checkbox' || found.type === 'radio') && found.closest('label') !== null ? found.closest('label')! : found;
       const r = el.getBoundingClientRect();

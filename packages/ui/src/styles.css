@@ -253,7 +253,7 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
 
 /* One glyph, three dividers, three states (`D1197`, `D1199`). `--muted` measures **4.34:1** on the
    panel against `--line`'s **1.20:1**, which is the whole difference between a control and a seam. */
-.col-grip::before, .row-grip::before, .split::before {
+.col-grip::before, .row-grip::before {
   content: ''; position: absolute; background: var(--muted); border-radius: 2px; pointer-events: none;
 }
 .col-grip::before { top: 50%; left: 50%; width: 2px; height: 26px; transform: translate(-50%, -50%); }
@@ -263,7 +263,7 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
 .col-grip:hover, .col-grip.dragging, .col-grip:focus-visible,
 .row-grip:hover, .row-grip.dragging, .row-grip:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 /* `M240` `C` (`D1311`) — a grip reached by Tab says so with a ring, not only a tint the eye can miss. */
-.row-grip:focus-visible, .split:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.row-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .col-grip:focus-visible::before { height: 100%; }
 .row-grip:focus-visible::before { width: 100%; }
 body:has(.row-grip.dragging) { cursor: row-resize; user-select: none; }
@@ -277,13 +277,9 @@ body:has(.row-grip.dragging) { cursor: row-resize; user-select: none; }
  * the normal case, and that reasoning is right up to a same-origin `<iframe>`: from there on the
  * events belong to the frame's document and the page never hears another one. The handler is not
  * wrong and no amount of capture fixes it — the pointer has to stop being over the frame at all.
- *
- * `.split` is in this list too. Its drag reads an absolute pointer position rather than a delta,
- * so it fails the same way, and only because the trace is usually far below it has nobody seen it.
  */
 body:has(.col-grip.dragging) .stage-frame,
-body:has(.row-grip.dragging) .stage-frame,
-body:has(.split.dragging) .stage-frame { pointer-events: none; }
+body:has(.row-grip.dragging) .stage-frame { pointer-events: none; }
 /* While a drag is live the pointer owns the window, so nothing under it should select or receive a
    hover — without this the file tree highlights row by row as the pane is widened. */
 body:has(.col-grip.dragging) { cursor: col-resize; user-select: none; }
@@ -1240,16 +1236,6 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .add-step-list code { font-family: var(--mono); font-size: 12px; flex: none; min-width: 9em; }
 .add-step-list .muted { font-size: 11px; }
 
-/* The session panel (`M219` `F`, `D1165`) — the response box's tenant on a door with no `send`.
-   Same region, same scroll, same tick: a line becomes a statement by being kept. */
-.session-panel { display: flex; flex-direction: column; min-height: 0; gap: calc(var(--unit) * 0.6); }
-.session-none { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); align-items: flex-start; }
-.session-lines { list-style: none; margin: 0; padding: 0; overflow: auto; min-height: 0; }
-.session-line { display: flex; align-items: center; gap: calc(var(--unit) * 0.6); padding: 1px 0; }
-.session-line .stmt-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-line .tick, .session-line .tick-none { flex: none; background: none; border: 0; color: var(--muted); font-size: 13px; line-height: 1; padding: 0 calc(var(--unit) * 0.4); }
-.session-line .tick:hover { color: var(--accent); }
-.session-line[data-session-line-kind="unreadable"] { opacity: 0.8; }
 .seq-row { display: flex; align-items: center; gap: 2px; border-radius: var(--ctl-radius); }
 .seq-row.on { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
 .seq-pick {
@@ -1369,97 +1355,60 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
   border-top: 1px solid var(--line); background: var(--panel);
 }
 
-/* ── region 3: the editor, and the response under it (`D1113`, `D1116`) ────────────────────── */
-/* **`M223` `B` (`D1195`, `D1198`) — the editor track is what the editor holds.**
-
-   It was `<n>% 6px 1fr`, set inline from a remembered fraction. A fraction hands the editor a
-   share of whatever the column has, which on the BROWSER door meant **48 px of slack above a pane
-   clipping by 27** — simultaneously, with 22 px spare — and on the API door **208 px of slack**
-   under an `expect`, wasted in silence. One rule for both, because `.editor-col` is one component
-   and a `door` conditional would be a second implementation of the same clamp (`D1198`).
-
-   `minmax(0, auto)`: `auto` is the editor's max-content, `0` is what lets the grid shrink it when
-   the column cannot afford that — and `.editor` scrolls inside itself, so shrinking it clips
-   nothing. `minmax(112px, 1fr)`: **112 px is measured**, not chosen — the height the BROWSER
-   door's empty session panel needs to draw its button and its sentence whole (`ComposePane`'s
-   `LOWER_MIN` states the same number for the drag). The lower pane is never clipped by an editor
-   that does not want the room. */
-.editor-col { display: grid; grid-template-rows: minmax(0, auto) 6px minmax(112px, 1fr); min-height: 0; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
-/* **`M225` `G` (`D1223`) — region 2's floor is what region 2 HOLDS, and a response is not a
-   session panel.** `M223`'s 112 px was measured on the BROWSER door's empty session panel and was
-   right for it. Measured again at 1440x900 with this round's strip in the box: the seg nav, the
-   strip and the response's own header fill **all 112 px and leave 0 px of the body visible** —
-   a panel that answers a question by showing none of the answer. 240 px is that chrome plus
-   `D1223`'s stated 120 px floor, rounded up, and it is claimed **only when a response is in the
-   box**: an empty region 2 keeps its 112 and the composer keeps its full content height, which is
-   `D1195`'s own rule (the track is sized by what it holds) applied to the other track. The cost is
-   stated rather than discovered: with a response showing, the composer scrolls inside `.editor`
-   at this viewport. It can — `overflow: auto` — and the response could not. */
-.editor-col[data-editor-response='yes'] { grid-template-rows: minmax(0, auto) 6px minmax(240px, 1fr); }
+/* ── the evidence column (`M256` `B`, `D1406`) ───────────────────────────────────────────────
+   What the steps column cannot show: what came back. It is a panel of its own beside the steps,
+   the same ground and edge `.seq-col` has, and its one child is `.responsebox`, which lays out and
+   never scrolls — each tenant scrolls inside itself (`D1224`, below). */
+.evidence-col { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.evidence-col > .responsebox { flex: 1 1 auto; border-top: 0; }
+/* `.editor` is the CodeMirror host's class too (`Editor.tsx`) — Source and Config pad and scroll
+   their editors by it, which is why it outlived the Compose card it was written for. */
 .editor { overflow: auto; min-height: 0; padding: calc(var(--unit) * 1.6) calc(var(--unit) * 2); }
 
-/* ── `M226` `A` (`D1225`) — region 2 at the foot of the PANE, not of the editor column ────────
-   Measured at 1440x900 on the `load-door` corpus, which is what chose the axis. The response
-   body's longest line wants **871 px** and has **699** under the editor column, so it scrolls
-   sideways as well as down; and `.editor` on a workload declaration wants **537–568** and gets
-   **471–493**, because `D1223` holds 112 px back for region 2 and the composer is the tallest
-   editor on the page.
-
-   **What this pays out is width, and only width.** A footer is still a row, so the editor's track
-   is `613 - 6 - 112 = 495` in both layouts — measured at 495 after against 493 before, which is
-   the move costing nothing rather than fixing anything. The squeeze is here because it is what
-   identifies the construct: no other door is squeezed at all, so the declaration that carries a
-   workload is a different SHAPE of thing, with the tallest editor on the page and — being a rung
-   — three rows of sequence beside it in every file. That is why the width is cheap to take HERE
-   and expensive anywhere else, and why the key is the construct and not LOAD.
-
-   **`display: contents` rather than a second tree.** `.editor-col` stops generating a box and its
-   children become items of this grid, so the divider, region 2 and the send row land on full-pane
-   rows while the DOM keeps exactly the shape every gate and selector already reads. The border
-   and ground `.editor-col` was drawing move onto the two panels that are now separate objects. */
-.compose-pane-grid[data-compose-footer='yes'] { grid-template-rows: minmax(0, auto) 6px minmax(112px, 1fr) auto; min-height: 0; }
-.compose-pane-grid[data-compose-footer='yes'] > .seq-col { grid-column: 1; grid-row: 1; }
-.compose-pane-grid[data-compose-footer='yes'] > .col-grip { grid-column: 2; grid-row: 1; }
-.compose-pane-grid[data-compose-footer='yes'] > .editor-col { display: contents; }
-.compose-pane-grid[data-compose-footer='yes'] > .editor-col > .editor {
-  grid-column: 3; grid-row: 1; min-height: 0;
-  border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel);
-}
-/* The divider spans the pane because what it moves is the pane's own split, and a handle that
-   reached only across the editor would be pointing at the wrong boundary (`D1227`). */
-.compose-pane-grid[data-compose-footer='yes'] > .editor-col > .split { grid-column: 1 / -1; grid-row: 2; border-radius: var(--radius); }
-.compose-pane-grid[data-compose-footer='yes'] > .editor-col > .responsebox {
-  grid-column: 1 / -1; grid-row: 3; min-height: 0;
-  border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel);
-}
-/* `D1228` — the floor is a property of what region 2 HOLDS, so it follows the region into the
-   footer rather than staying behind on the column it used to live in. */
-.compose-pane-grid[data-compose-footer='yes'][data-compose-footer-tall='yes'] { grid-template-rows: minmax(0, auto) 6px minmax(240px, 1fr) auto; }
-.compose-pane-grid[data-compose-footer='yes'] > .editor-col > .editor-send { grid-column: 1 / -1; grid-row: 4; border-top: 0; }
+/* ── a picked row is its own editor (`M256` `A`, `D1405`) ──────────────────────────────────────
+   The row keeps its line number — the pick control — and its trailing `↑ ↓ ✕`; what changes is
+   that the words between them are the fields they are made of. It wraps, because an assertion's
+   rare forms and a request's folds are lines under the first, and the row grows by what it holds
+   rather than opening a second picture of the statement somewhere else. */
+.seq-row.editing { align-items: flex-start; flex-wrap: wrap; row-gap: calc(var(--unit) * 0.4); padding-block: 2px; }
+.seq-row.editing > .seq-pick { flex: none; align-self: flex-start; min-width: 24px; min-height: 24px; }
+.seq-edit { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: calc(var(--unit) * 0.6); font-size: 12px; }
+.seq-edit > .row, .seq-edit .assert-fields { display: flex; align-items: center; gap: calc(var(--unit) * 0.6); flex-wrap: wrap; }
+.request-head { display: flex; align-items: center; gap: calc(var(--unit) * 0.8); flex-wrap: wrap; }
+.request-head .request-path { flex: 1 1 160px; min-width: 0; }
+.request-folds { display: flex; flex-wrap: wrap; align-items: center; font-size: 12px; }
+.request-fold { background: none; border: 0; padding: 0 calc(var(--unit) * 0.4); font: inherit; color: var(--muted); min-height: 24px; display: inline-flex; align-items: center; }
+.request-fold:hover, .request-fold.on { color: var(--fg); }
+.fold { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); padding-left: calc(var(--unit) * 1.2); border-left: var(--border) solid var(--line); }
+.fold textarea { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 12px; }
+.fold.more-form { gap: calc(var(--unit) * 0.8); }
+.seq-note { margin: 2px 0 4px calc(var(--unit) * 3); font-size: 11px; }
+/* **A declaration's header is a card under its row** (`D1405`) — its clauses are not lines, so they
+   are not drawn as one. Inset like the rows it heads, and lifted by an edge rather than a colour. */
+.seq-card { list-style: none; margin: 2px 0 calc(var(--unit) * 0.8) calc(var(--unit) * 1.4); padding: calc(var(--unit) * 1.2) calc(var(--unit) * 1.4); border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.file-card { margin: calc(var(--unit) * 0.6); }
+/* **Below 1100 the evidence folds under the picked row** (`D1412`): the same component, in the
+   steps column, capped so the rows below it stay in reach. */
+.compose-pane-grid[data-compose-narrow='yes'] { grid-template-columns: minmax(0, 1fr); }
+.seq-fold-slot { list-style: none; }
+.evidence-fold { display: flex; flex-direction: column; max-height: 60vh; margin: calc(var(--unit) * 0.4) 0 calc(var(--unit) * 0.8); border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
+.evidence-fold > .responsebox { flex: 1 1 auto; border-top: 0; }
+/* **What a recording handed back, where it will land** (`M256` `C`, `D1408`). The dashed edge is
+   *not in the file yet* — the same line `.seq-group.scoped` draws for a block's body, in the
+   selection's hue because a recording is the thing happening now. */
+.seq-group.provisional { border-left: var(--border) dashed var(--accent); margin: 2px 0 2px calc(var(--unit) * 0.7); padding-left: calc(var(--unit) * 0.7); }
+.provisional-head { gap: calc(var(--unit) * 0.8); font-size: 12px; padding: 2px calc(var(--unit) * 0.6); flex-wrap: wrap; }
+.provisional-row { gap: calc(var(--unit) * 0.6); padding: 1px calc(var(--unit) * 0.6); }
+.provisional-row .seq-x.keep:hover { color: var(--pass); background: var(--pass-bg); }
+.provisional-row.unreadable, .provisional-row.notice { opacity: 0.8; }
 .editor-body { display: flex; flex-direction: column; gap: calc(var(--unit) * 1.2); }
 .editor-head { display: flex; align-items: center; gap: calc(var(--unit) * 1); flex-wrap: wrap; }
 /* The one field the fifth complaint was about. It has the width of the sentence it holds now,
    which is what giving the editor its own region bought. */
 .band-name, .editor-head .request-path { width: 100%; min-width: 0; flex: 1 1 200px; }
 
-.editor-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); flex: none; }
-.editor-tab {
-  background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted);
-  font: inherit; font-size: 12px; padding: calc(var(--unit) * 0.8) calc(var(--unit) * 1.4);
-  display: flex; align-items: center; gap: calc(var(--unit) * 0.6);
-}
-.editor-tab.on { color: var(--fg); border-bottom-color: var(--accent); }
-.editor-tab:hover { color: var(--fg); }
-.tab-count { font-size: 11px; color: var(--muted); background: var(--panel2); border-radius: 999px; padding: 0 5px; }
-.editor-tab.on .tab-count { color: var(--accent); }
-.tabpane { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); }
-.tabpane textarea { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 12px; }
-.more-form { gap: calc(var(--unit) * 0.8); }
-
 /* One assertion: subject · matcher · value · ✕ (`D1114`). */
-.asserts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--unit) * 0.6); }
-.assert { border-bottom: 1px solid var(--line); padding-bottom: calc(var(--unit) * 0.6); }
-.assert:last-child { border-bottom: 0; }
+.assert { display: flex; flex-direction: column; gap: calc(var(--unit) * 0.4); }
 .assert-fields { display: flex; align-items: center; gap: calc(var(--unit) * 0.8); flex-wrap: wrap; }
 .assert-keyword { color: var(--syn-kw); font-weight: var(--kw-weight); font-size: 12px; }
 .assert-value { flex: 1 1 120px; min-width: 80px; }
@@ -1469,15 +1418,6 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .assert-more.on, .assert-more:hover { color: var(--accent); }
 .assert-rare { display: flex; align-items: center; gap: calc(var(--unit) * 1); flex-wrap: wrap; margin-left: calc(var(--unit) * 3); font-size: 12px; }
 
-/* The divider (`D1116`) — a real control, so it takes focus and the arrow keys move it. */
-/* `M223` `C` (`D1197`) — the horizontal divider's twin of the rule above. This one was never
-   invisible; it was painted `var(--line)`, i.e. **exactly like every other border on the page**
-   (1.20:1), which is why the user read it as one. The handle is what says *I move*. */
-.split { background: var(--line); cursor: row-resize; border: 0; position: relative; }
-.split::before { left: 50%; top: 50%; width: 26px; height: 2px; transform: translate(-50%, -50%); }
-.split:hover::before, .split:focus-visible::before { background: var(--accent); }
-.split:hover, .split:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-.split:focus-visible::before { width: 100%; }
 /* **NO SCROLLER IN REGION 2 SITS INSIDE ANOTHER ONE** — `M225` `H` (`D1224`).
    This box scrolled, and so did the two things it holds: `.preview` caps itself at `40vh` and
    `.ticks` at `30vh`, each with its own `overflow: auto`. Measured on the live page at 1440x900
@@ -1492,20 +1432,27 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
    space. The nesting is a containment relationship, so **moving the region does not touch it**;
    that was asked (*"move it to the footer"*) and is answered here instead.
    So the box lays out and does not scroll, and whichever tenant it holds fills the height and does
-   its own scrolling inside itself. The `.split` above it is what sizes that, which is the first
-   time dragging it changes how much response you can see — before this it grew a box whose
-   contents were pinned at 360 px however far you pulled.
-   The tenants are the four things `ComposePane` puts here: a response, the session panel on a door
-   with no `send` (`D1165`), the empty state with the prefix list, and the plan (`D1209`). */
+   its own scrolling inside itself.
+   The tenants are what `Evidence.tsx` puts here (`D1406`): a response, the empty state with the
+   prefix list, the plan (`D1209`), the scan panel and the screenshot. */
 .responsebox { display: flex; flex-direction: column; overflow: hidden; min-height: 0; padding: calc(var(--unit) * 1.4) calc(var(--unit) * 2); border-top: 1px solid var(--line); }
 /* The head, the segment and the strip are what the box says about itself — they keep their
    height and never scroll away, which is the second half of the fix: the status line and the
    press it came from used to leave the top of the box as soon as you read the body. */
-.responsebox > .seg, .responsebox > .sendstrip, .responsebox > .response-head-bar { flex: none; }
-.responsebox > .response, .responsebox > .session-panel, .responsebox > .response-none, .responsebox > .plan-panel, .responsebox > .scan-panel { flex: 1 1 auto; min-height: 0; }
-/* `.session-panel` already had the right shape (`.session-lines` is its own scroller); it was
-   nested inside this box's, which is the same defect on the BROWSER door and nobody reported it. */
-.responsebox > .response-none, .responsebox > .plan-panel, .responsebox > .scan-panel { overflow: auto; }
+.responsebox > .seg, .responsebox > .sendstrip, .responsebox > .response-head-bar, .responsebox > .response-headers, .responsebox > .editor-send { flex: none; }
+.responsebox > .response, .responsebox > .response-none, .responsebox > .plan-panel, .responsebox > .scan-panel, .responsebox > .shot-panel { flex: 1 1 auto; min-height: 0; }
+.responsebox > .response-none, .responsebox > .plan-panel, .responsebox > .scan-panel, .responsebox > .shot-panel { overflow: auto; }
+/* The response's headers (`D1406`): folded while there is a body to read, open when the run kept
+   nothing else (`D987`). Data, so it keeps its own size. */
+.response-headers { font-size: 11px; margin-bottom: calc(var(--unit) * 0.6); }
+/* A summary keeps `display: list-item` for its disclosure marker, so the 24 px floor is a line height. */
+.response-headers summary { cursor: pointer; color: var(--muted); line-height: 24px; }
+.response-headers table { border-collapse: collapse; margin-top: calc(var(--unit) * 0.4); }
+.response-headers th { text-align: left; font-weight: normal; padding-right: calc(var(--unit) * 1.2); vertical-align: top; }
+.response-headers code { font-size: 11px; overflow-wrap: anywhere; }
+.shot-panel { display: flex; flex-direction: column; gap: calc(var(--unit) * 0.8); }
+.shot { margin: 0; display: flex; flex-direction: column; gap: calc(var(--unit) * 0.4); }
+.shot img { max-width: 100%; height: auto; border: var(--border) solid var(--line); border-radius: var(--radius); }
 .responsebox > .response { display: flex; flex-direction: column; margin-top: 0; }
 /* Preamble is charged to the body, so it is charged honestly. At rest the box is ~400 px and the
    url line, the tick-or-explain line and two default `<p>` margins were taking **140** of it,
@@ -1554,6 +1501,11 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
    to be above it. Data keeps its own sizes: a response body, `pre.preview` and the headers table
    are what the page SHOWS you, not what it SAYS. */
 .plan-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); gap: calc(var(--unit) * 2); align-items: stretch; min-height: 0; }
+/* `M256` (`D1406`) — in the evidence column the plan is a column's width, not a footer's 1042 px,
+   so the prose goes under the plot rather than beside it: a 24rem prose column beside a plot in
+   ~480 px is a plot squeezed to a stripe. `D1231`'s split was a way to spend width it no longer
+   has. */
+.evidence .plan-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
 .plan-figure { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 /* The figure is what imposes a height on a `height="fill"` chart (`D1230`), so its one child has
    to be a flex item sized by the box rather than by its own content. */
@@ -1625,9 +1577,7 @@ p.scan-probes::before { content: ''; }
   .main-fill { overflow: auto; }
   .main-fill > .doorpane { display: block; }
   .compose-pane { display: block; }
-  .seq-col, .editor-col { height: auto; }
-  .editor-col { display: block; }
-  .split { display: none; }
+  .seq-col { height: auto; }
 }
 
 /* The response region's own line — `D956`'s two scopes, which the retired `D1109` chip carried. */

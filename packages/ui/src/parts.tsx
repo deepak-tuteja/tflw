@@ -48,7 +48,7 @@ import { DEFAULT_WORKLOAD, THRESHOLD_WHY, WORKLOAD_CELL_WHY, WORKLOAD_FIELD_WHY,
   workloadCitation, workloadEditOf, workloadSentenceOf, workloadWords } from './workloadEdit';
 import type { WorkloadEdit, WorkloadStageEdit } from './workloadEdit';
 import type { ReactNode } from 'react';
-import type { ApiBodySpec, ApiStepSpec, CaptureSpec, ExpectSpec, SubjectSpec } from '@tflw/lang';
+import type { ApiBodySpec, ApiRequestSpec, ApiStepSpec, CaptureSpec, EvidenceLevel, ExpectSpec, SubjectSpec } from '@tflw/lang';
 import { matcherSubjectRefusal } from '@tflw/lang';
 import {
   LOCATOR_KINDS,
@@ -438,7 +438,33 @@ export interface Ran {
    *
    * A browser action has no response by nature — what its assertions read is the page it left.
    */
-  readonly response: { readonly status: number; readonly url: string; readonly method: string; readonly bodyText: string } | null;
+  readonly response: {
+    readonly status: number;
+    readonly url: string;
+    readonly method: string;
+    readonly bodyText: string;
+    /** What the run recorded of the response's headers — `M256` `B` (`D1406`): the evidence column
+     *  shows status, headers and body, and below `evidence full` the headers are all there is. */
+    readonly headers: Readonly<Record<string, string>>;
+  } | null;
+  /**
+   * **The level the run kept its evidence at** — `M256` `B` (`D987`, `D1406`). Below `full` the
+   * runtime writes a placeholder where the body was, so a reader of `bodyText` alone would show
+   * *`[omitted by evidence level]`* as though the service had said it. `null` for a send, which
+   * always runs at `full`, and for a report that predates the field.
+   */
+  readonly evidence: EvidenceLevel | null;
+  /**
+   * **The step's text changed since the run** — `M256` `B` (`D1406`). Only the evidence column
+   * reads this: a response keyed on a line whose words have since been edited is still the last
+   * thing that came back for that step, and it is shown with a flag rather than dropped. A verdict
+   * is never carried this way — `indexFromReport`'s `(line, source)` rule (`D1108`) still decides
+   * every mark, because a ✓ beside words that did not run is a claim about bytes nobody has.
+   */
+  readonly changed: boolean;
+  /** The first screenshot the group recorded, base64 PNG — the evidence column's `screenshot` tab
+   *  for a browser step (`D1406`). `null` when the group took none. */
+  readonly screenshot: string | null;
 }
 
 /** What the pane knows about every request in the open file, by the line each one is on. `null`
@@ -654,6 +680,52 @@ export function specOf(edit: RequestEdit): ApiStepSpec {
     followRedirects: edit.redirects,
     retryAfter: edit.retryAfter.trim() === '' ? null : Number(edit.retryAfter.trim()),
   };
+}
+
+/**
+ * **What a rebuilt request could not spell, put back from the node it was built over** — `M256`
+ * (`D1405`), which found every one of these by opening rows and closing them untouched.
+ *
+ * `RequestEdit` holds text, and three things a request can carry do not survive a trip through text
+ * and back, so the builder's answer is not the whole answer:
+ *
+ *  - **`sign with …`** has no field at all. Rebuilt, a signed request came back unsigned — a request
+ *    that still parses, still runs, and is refused by the service it was written for. 11 in the
+ *    sibling corpus, every one a webhook or a signed-endpoint test.
+ *  - **A header or form value that is not a string** — `password=env(ADMIN_PW)`, `is {token}` — is
+ *    drawn as its printed spelling, and the builder quotes whatever a field holds. So an edit to the
+ *    PATH of a login request turned `env(ADMIN_PW)` into the literal text `"env(ADMIN_PW)"` and sent
+ *    it as the password. A value whose field still reads what it was drawn as is carried as the node
+ *    it was; one the reader typed into is built from what they typed.
+ *  - **An upload or a GraphQL body** — the builder has no spec for either (`M242` `C`, `D1328`); this
+ *    is the rule `applyEdit` carried inline until now, moved here so the page and its round-trip
+ *    gate apply one rule rather than two.
+ */
+export function carriedOver<T extends ApiRequestSpec>(built: T, original: OutlineRequest, edit: RequestEdit): T {
+  const was = editOf(original);
+  const headers = built.headers.map((h, i) => {
+    const node = original.spec.headers[i];
+    const drawn = was.headers[i];
+    const now = edit.headers[i];
+    return node !== undefined && drawn !== undefined && now !== undefined && now.name === drawn.name && now.value === drawn.value ? node : h;
+  });
+  const originalBody = original.spec.body;
+  const body =
+    edit.bodyKind === 'upload' || edit.bodyKind === 'graphql'
+      ? originalBody
+      : built.body !== null && built.body.type === 'FormBody' && originalBody !== null && originalBody.type === 'FormBody'
+        ? {
+            ...built.body,
+            fields: built.body.fields.map((f, i) => {
+              const node = originalBody.fields[i];
+              const drawn = was.formFields[i];
+              const now = edit.formFields[i];
+              return node !== undefined && drawn !== undefined && now !== undefined && now.name === drawn.name && now.value === drawn.value ? node : f;
+            }),
+          }
+        : built.body;
+  const sign = original.spec.sign;
+  return { ...built, headers, body, ...(sign === undefined ? {} : { sign }) };
 }
 
 /**
@@ -1418,7 +1490,7 @@ function PickField({ statement, pick, onPicked }: {
                 : 'open the page and click the element this step means'
         }
       >
-        {mine ? 'stop' : 'pick'}
+        {mine ? 'stop' : '⌖ pick'}
       </button>
       {!mine ? null : pick.found.length === 0 ? (
         <span className="muted" data-picked={0}>
@@ -1437,8 +1509,11 @@ function PickField({ statement, pick, onPicked }: {
   );
 }
 
-export function ScriptRow({ statement, edit, onEdit, trailing, pick, phase, onOpenAction = null }: {
+export function ScriptRow({ statement, edit, onEdit, trailing, pick, phase, onOpenAction = null, inline = false }: {
   readonly statement: OutlineStatement;
+  /** Drawn ON its own row in the steps column (`M256` `A`, `D1405`), whose line number is the row's
+   *  pick control — so the row's own `line N` would say the number twice. */
+  readonly inline?: boolean;
   /** *Open action* for a `call` row (`D1322`) — `null` where the row is not in a pane that can navigate. */
   readonly onOpenAction?: ((name: string) => void) | null;
   /** The picker, or `null` on a door whose vocabulary has no locators in it (`D1106`). */
@@ -1457,7 +1532,7 @@ export function ScriptRow({ statement, edit, onEdit, trailing, pick, phase, onOp
 }) {
   const line = (
     <>
-      <span className="ln muted">line {statement.line}</span>
+      {inline ? null : <span className="ln muted">line {statement.line}</span>}
       {trailing}
     </>
   );
@@ -2562,7 +2637,7 @@ export function TestBand({ decl, kinds, editing, lastRun }: {
         )}
         <span className="ln muted">line {decl.line}</span>
         {editing.onNote !== null && decl.note === null && !writingNote ? (
-          <button className="add-note" onClick={() => editing.onNoting?.(key)} data-note-add={decl.line} data-tip="a comment above this declaration">
+          <button className="add-note" onClick={() => editing.onNoting?.(key)} data-note-add={decl.line} data-tip={`a comment above this ${decl.kind}`}>
             + note
           </button>
         ) : null}

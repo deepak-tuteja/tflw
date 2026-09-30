@@ -379,7 +379,7 @@ function TargetRow({ target, repeated, onEdit }: {
     <li data-auth-target={target.target} data-auth-target-line={target.line}>
       <header>
         <code>{target.target}</code>
-        <span className="chip" title="where this declaration is written">{target.block}</span>
+        <span className="chip" title="the block of tflw.config this target is written in">{target.block}</span>
         {target.line > 0 ? (
           <button className="linkish" onClick={() => onEdit(target.line)} data-auth-edit={`target:${target.line}`} aria-label="edit this authorized target in tflw.config" data-tip={`open tflw.config at line ${target.line}`}>
             [edit]

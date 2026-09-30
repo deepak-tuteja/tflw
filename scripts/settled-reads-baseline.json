@@ -1,14 +1,14 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 943,
-    "atRisk": 853,
-    "high": 326,
-    "medium": 61,
-    "low": 466,
-    "declared": 72,
-    "inPage": 106,
-    "inRetry": 50
+    "reads": 938,
+    "atRisk": 849,
+    "high": 319,
+    "medium": 56,
+    "low": 474,
+    "declared": 69,
+    "inPage": 104,
+    "inRetry": 49
   },
   "tests": {
     "packages/cli/test/ui-page.test.ts": {
@@ -192,6 +192,21 @@
         "medium": 0,
         "low": 0
       },
+      "`M256` `B`: with nothing sent, the response is the last run’s recorded body for the picked step, dated": {
+        "high": 0,
+        "medium": 0,
+        "low": 1
+      },
+      "`M256` `B`: editing the picked request’s words keeps the last run’s response and flags it": {
+        "high": 0,
+        "medium": 1,
+        "low": 3
+      },
+      "`M256` `B`: a run kept at `evidence headers-only` shows the status and the headers, and says the body was not kept": {
+        "high": 0,
+        "medium": 0,
+        "low": 4
+      },
       "`M213` `S2`: one tick writes a path assertion, under the request it is about (`D1100`)": {
         "high": 1,
         "medium": 0,
@@ -241,6 +256,11 @@
         "high": 0,
         "medium": 0,
         "low": 3
+      },
+      "`M256` `B`/`D`: the evidence is ≥ 40% of the pane at 1440, and at 1000 it is the same box folded under the picked row": {
+        "high": 0,
+        "medium": 0,
+        "low": 1
       },
       "`M224` `D`: the LOAD door draws the Compose sequence, and its address selects a declaration": {
         "high": 4,
@@ -365,7 +385,7 @@
       "`M213` `S5`: a recording writes statements into the test it was started on, as they happen": {
         "high": 3,
         "medium": 1,
-        "low": 1
+        "low": 2
       },
       "`M213` `S4`: `pick` fixes the locator on the row it is pressed on, from a live session": {
         "high": 1,
@@ -488,9 +508,9 @@
         "low": 3
       },
       "every request in the declaration is on the pane, in the file’s own order, with one open": {
-        "high": 4,
+        "high": 3,
         "medium": 0,
-        "low": 1
+        "low": 0
       },
       "clicking a collapsed request opens it, and the one that was open collapses": {
         "high": 3,
@@ -562,15 +582,20 @@
         "medium": 0,
         "low": 1
       },
-      "`M210` `S3`: two identical assertions, and the edit lands on the one that was asked": {
-        "high": 1,
+      "`M210` `S3`: `not` is a control, and an edit that does not touch it cannot drop it": {
+        "high": 0,
         "medium": 0,
-        "low": 0
+        "low": 1
+      },
+      "`M210` `S3`: two identical assertions, and the edit lands on the one that was asked": {
+        "high": 0,
+        "medium": 0,
+        "low": 2
       },
       "`M210` `S3`: an assertion inside a `wait until api` block is read-only, in position, and says why": {
         "high": 0,
         "medium": 0,
-        "low": 2
+        "low": 3
       },
       "`M210` `S4`: every statement kind in the body is a row of controls holding what the file says": {
         "high": 2,
@@ -627,15 +652,10 @@
         "medium": 0,
         "low": 1
       },
-      "`M214` `A5` + `M223` `B`: the response is a region under the editor, behind a divider the reader can still move (`D1116`, `D1196`)": {
+      "`M256` `A`: a picked row is its own editor — every statement drawn once, nothing of it in the evidence, and the grip visible at rest (`D1405`, `D1197`)": {
         "high": 0,
-        "medium": 5,
-        "low": 1
-      },
-      "`M223` `B`+`C`: the editor asks for what it holds, the pane under it is never clipped, and both dividers are visible at rest (`D1195`, `D1197`, `D1198`)": {
-        "high": 2,
         "medium": 0,
-        "low": 4
+        "low": 2
       },
       "`M223` `E`: with a trace up, the playback height is the reader’s — and the drag survives the frame (`D1199`)": {
         "high": 1,
@@ -863,21 +883,16 @@
         "low": 9
       },
       "`M225` `H`: region 2 never nests one scroller inside another, in any of its four states": {
-        "high": 1,
-        "medium": 2,
+        "high": 0,
+        "medium": 1,
         "low": 1
       },
-      "`M226` `A`: a workload declaration puts region 2 at the foot of the pane, and the construct is what decides": {
-        "high": 1,
-        "medium": 1,
-        "low": 2
-      },
-      "`M227`: a plan-bearing footer gets the height it needs, draws from zero, and says it once": {
-        "high": 1,
+      "`M227`: the plan gets the height it needs, draws from zero, and says it once — in the evidence column since `M256`": {
+        "high": 0,
         "medium": 0,
         "low": 3
       },
-      "`M227` `D`+`E`: a trace takes the page's floor back from the footer (`D1235`), and the scratch notice closes the region rather than leading it (`D1236`)": {
+      "`M227` `E`: the scratch notice closes the playback region rather than leading it (`D1236`) — `D`'s footer is retired with it (`M256`)": {
         "high": 0,
         "medium": 0,
         "low": 1
@@ -1001,7 +1016,7 @@
       },
       "`M215` `B3`: the coloured copy and the field under it are one box, in all four themes": {
         "high": 0,
-        "medium": 0,
+        "medium": 1,
         "low": 3
       },
       "control: the instrument sees a colour the theme never declared": {

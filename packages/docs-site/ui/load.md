@@ -9,14 +9,15 @@ pageClass: ui-shots
 A load test is not a different kind of test. It is a test with a **workload** line saying how often
 to run it, and **thresholds** saying what counts as holding up.
 
-![A LOAD test in Compose, and the plan panel its workload line earned](/ui/compose-load-paper.png){.light-only}
-![A LOAD test in Compose, and the plan panel its workload line earned](/ui/compose-load-terminal.png){.dark-only}
+![A LOAD test in Compose, and the plan its workload line earned](/ui/compose-load-paper.png){.light-only}
+![A LOAD test in Compose, and the plan its workload line earned](/ui/compose-load-terminal.png){.dark-only}
 
-## The panel in that picture is earned, not granted
+## The plan in that picture is earned, not granted
 
-The plan panel above the body is there because **this file has a workload line** — not because of
-which chip is on. Open the same file under the API chip and the panel is there too; open a file
-without one under the LOAD chip and it is not.
+The **plan** tab in the right-hand column is there because **this test has a workload line** — not
+because of which chip is on. Open the same file under the API chip and the tab is there too; open a
+test without one under the LOAD chip and it is not. Pick the test's own row and the column opens on
+the plan; the workload itself is edited in the card under that row, beside the test's other clauses.
 
 That is the rule the whole UI is built on, and it is the most counter-intuitive thing about it:
 

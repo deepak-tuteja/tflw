@@ -3685,9 +3685,11 @@ const REGISTRY = [
     /* Re-quoted at `M219` `B`, where the row's eleven lines became `statementRow` because the
        sequence draws statements in four places now (a body's preamble, a request's attachments, a
        session's preamble, and a request's attachments inside a session). Same subject, same
-       branch, one call site instead of two. */
-    find: "            {decl === null ? null : statements.map((s) => statementRow(s, 'pre'))}",
-    replace: "            {decl === null ? null : [].map((s) => statementRow(s, 'pre'))}",
+       branch, one call site instead of two. Re-quoted again at `M256` (`D1405`): `statementRow`
+       takes the request a statement belongs to, so its row is keyed by the index pair, and a
+       preamble statement belongs to none. */
+    find: "            {decl === null ? null : statements.map((s) => statementRow(s, 'pre', null))}",
+    replace: "            {decl === null ? null : [].map((s) => statementRow(s, 'pre', null))}",
   },
   {
     id: 'every-clause-is-a-field-again',
@@ -3700,13 +3702,15 @@ const REGISTRY = [
        editor that survives is the one `M214` built. The subject, the branch and the undoing are
        unchanged — what moved is which file holds them. The anchor is the line AFTER `shows`
        because two components read a `shows` of the same shape (this one and the test band), and a
-       one-line quote would match both. */
+       one-line quote would match both. Re-quoted at `M256` (`D1405`): the editor's tabs became
+       the in-place row's folds, so the counts are keyed by `RequestFold`; `shows` still decides
+       which clauses the `more` fold draws and counts. */
     find:
       '  const shows = (clause: string): boolean => states(clause) || added.includes(clause);\n' +
-      '  const counts: Record<EditorTab, number> = {',
+      '  const counts: Record<RequestFold, number> = {',
     replace:
       '  const shows = (_clause: string): boolean => true;\n' +
-      '  const counts: Record<EditorTab, number> = {',
+      '  const counts: Record<RequestFold, number> = {',
   },
   /**
    * **`the-add-menu-hides-what-it-cannot-add` is gone, and what it was defending is now impossible
