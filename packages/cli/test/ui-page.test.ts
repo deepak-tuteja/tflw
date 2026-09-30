@@ -73,7 +73,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { chromium, type Browser, type Locator, type Page } from 'playwright';
-import { UiServer, SCRATCH_PATH } from '../src/ui-server.js';
+import { UiServer, SCRATCH_PATH, type HistoryView, type ReportEntry } from '../src/ui-server.js';
 import { coverageBuildArgs, startUiCoverage, stopUiCoverage } from './ui-coverage.js';
 import { settle, untilEqual, untilMeasurable } from './settle.js';
 import { checkProgram, parseSource, print, STEP_LENS } from '@tflw/lang';
@@ -482,7 +482,8 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
     project.envs.map((e) => `${e.name}${e.isDefault ? ' (default)' : ''}`),
   );
   // The counts line under the chips: the chips carry the tests, so this carries the files.
-  assert.equal(await page.locator('[data-project-counts]').textContent(), `${project.files.length} files`);
+  // `M255` (`D1404`): the line also says how old the dots are — asserted by `M255` `A`'s own gate.
+  assert.match((await page.locator('[data-project-counts]').textContent()) ?? '', new RegExp(`^${project.files.length} files · `));
   // `M209` `S5` folded the tag cloud into the search box (`M205` Q12) — U7's fold existed because
   // the sibling's 84 chips pushed every file below the first screen, and a control that has to be
   // folded to be usable is the wrong control. The tags are the box's completions now, and the
@@ -6535,18 +6536,22 @@ test('Compose draws every request the file holds, at its own line, under the dec
     // shape: **an attribute that every render carries cannot tell you WHICH render you are on.**
     await page.reload();
     await page.locator('[data-compose-summary]').waitFor();
-    /* `M235` `C2` — `[data-compose-summary]` being present does not mean the outline under it has
-       painted its rows, and `evaluateAll` waits for nothing: CI read `[]` against `[4,6,16,29]` in
-       38 ms. `untilEqual` on the sorted list, because the rows converge on a total this test
-       already knows, and the bound is what keeps a file that genuinely draws the wrong rows
-       failing rather than spinning. */
-    const want = wanted.map((r) => r.line).sort((a, b) => a - b);
-    const outline = await settle(
-      async () => (await page.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))))).sort((a, b) => a - b),
-      untilEqual(want),
-      { attempts: 40, delayMs: 50, page },
-    );
-    assert.deepEqual(outline.value, want, `${f.path}: every request in the file is a row in the explorer's outline (${outline.attempts} look(s))`);
+    /* `M255` (`D1404`): a request is a step, and the steps column is the only place it is a row — the
+       explorer's outline lists declarations and nothing under them. So the request half of this gate
+       reads each declaration's steps column, and the explorer is held to having none. The read is
+       settled on the declaration's own lines, which no other declaration's frame can equal, so a
+       stale render cannot satisfy it (`M235` `C2`). */
+    assert.equal(await countSettling(page, '[data-outline-request]', 0), 0, `${f.path}: no request is a row in the explorer (\`D1404\`)`);
+    for (const decl of [...new Set(wanted.map((r) => r.decl))]) {
+      const want = wanted.filter((r) => r.decl === decl).map((r) => r.line).sort((a, b) => a - b);
+      await page.goto(`${pageUrl}#/compose/${f.path}/L${decl}`);
+      const steps = await settle(
+        async () => (await page.locator('[data-seq-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-seq-request'))))).sort((a, b) => a - b),
+        untilEqual(want),
+        { attempts: 60, delayMs: 50, page },
+      );
+      assert.deepEqual(steps.value, want, `${f.path}:${decl}: every request in the declaration is a step in its column (${steps.attempts} look(s))`);
+    }
     // And the declarations, which is the other half of `D1081`'s two levels.
     const { program } = parseSource(source);
     const decls = [...program.hooks, ...program.tests, ...program.actions, ...(program.crawls ?? [])].map((d) => d.span.start.line).sort((a, b) => a - b);
@@ -7636,24 +7641,22 @@ test("the explorer's outline opens under the open file's row and under no other"
     // holding the row and its `+`, because a `<button>` cannot contain another one. Naming the
     // class asks about the row itself rather than about where it sits in the tree.
     const declBtn = outlines[0]?.querySelector('[data-outline-decl] .outline-row');
-    const reqBtn = outlines[0]?.querySelector('[data-outline-request] button');
     return {
       count: outlines.length,
       owner,
       fileLeft: Math.round(fileLeft),
       declLeft: declBtn ? Math.round(declBtn.getBoundingClientRect().left) : null,
-      reqLeft: reqBtn ? Math.round(reqBtn.getBoundingClientRect().left) : null,
       sidebarRight: Math.round(root.getBoundingClientRect().right),
-      reqRight: reqBtn ? Math.round(reqBtn.getBoundingClientRect().right) : null,
+      declRight: declBtn ? Math.round(declBtn.getBoundingClientRect().right) : null,
     };
   }, f.path);
   assert.equal(shape.count, 1, 'exactly one file expands — an outline under all 84 rows is the 26-screen sidebar this pane spent three rounds escaping');
   assert.equal(shape.owner, f.path, 'and it is the file the tabs are facing');
-  // `D1081`'s nesting, in pixels: each level is indented past the one above it, and the deepest
-  // row still ends inside the pane. The indent is measured, not read off the stylesheet.
+  // `D1081`'s nesting, in pixels: a declaration is indented past its file, and — the deepest level
+  // since `M255` took the request rows out (`D1404`) — still ends inside the pane. The indent is
+  // measured, not read off the stylesheet.
   assert.ok(shape.declLeft! > shape.fileLeft, `a declaration is indented past its file (${shape.fileLeft} → ${shape.declLeft})`);
-  assert.ok(shape.reqLeft! > shape.declLeft!, `a request past its declaration (${shape.declLeft} → ${shape.reqLeft})`);
-  assert.ok(shape.reqRight! <= shape.sidebarRight, `and the deepest row stays inside the pane (${shape.reqRight} ≤ ${shape.sidebarRight})`);
+  assert.ok(shape.declRight! <= shape.sidebarRight, `and the deepest row stays inside the pane (${shape.declRight} ≤ ${shape.sidebarRight})`);
 });
 
 // ---------------------------------------------------------------------------
@@ -7842,7 +7845,8 @@ test('`M210` `S2`: the address keeps the request across a tab trip, and Config d
   // line number is an offset into the document that named it.
   await withEditFixture(EDITABLE, async (p, base) => {
     await openFirstRequest(p, base);
-    const second = Number(await p.locator('[data-outline-request]').last().getAttribute('data-outline-request'));
+    // The fixture's own last request, read off its bytes — the explorer lists no requests since `M255`.
+    const second = requestsInSource(EDITABLE).at(-1)!.line;
     await p.goto(`${base}/?token=${TOKEN}#/compose/edit.tflw/L${second}`);
     await p.locator(`[data-request-line="${second}"]`).waitFor();
     await p.locator('[data-tab="source"]').click();
@@ -7860,8 +7864,7 @@ test('`M210` `S2`: an edit that moves the request keeps the address on it', asyn
   // to the hash. Without it, editing the first of two requests moves the selection to the second.
   await withEditFixture(EDITABLE, async (p, base) => {
     await openFirstRequest(p, base);
-    const rows = () => p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
-    const secondBefore = (await rows())[1]!;
+    const secondBefore = requestsInSource(EDITABLE)[1]!.line;
     await p.goto(`${base}/?token=${TOKEN}#/compose/edit.tflw/L${secondBefore}`);
     await p.locator(`[data-request-line="${secondBefore}"]`).waitFor();
     // `M212` `S3`: this request writes no header, so the group is in the menu rather than on the
@@ -8125,7 +8128,7 @@ test('`M210` `S3`: an assertion inside a `wait until api` block is read-only, in
   // here is true and therefore allowed.
   await withEditFixture(ASSERTIONS, async (p, base) => {
     await openFirstRequest(p, base);
-    const lines = await p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
+    const lines = requestsInSource(ASSERTIONS).map((r) => r.line);
     await p.goto(`${base}/?token=${TOKEN}#/compose/edit.tflw/L${lines[lines.length - 1]}`);
     // **Scoped to the open request since `M212` `S2`.** The pane now draws the whole body in file
     // order, so the first `ExpectStmt` in the document belongs to an earlier request and is
@@ -8337,7 +8340,7 @@ test('`M210` `S4`: a polling request is editable, and its own block survives the
   // nested expects and `waitMs`, which is the poll budget and **not** `timeoutMs` — are carried.
   await withEditFixture(SCRIPTS, async (p, base, dir) => {
     await openFirstRequest(p, base);
-    const lines = await p.locator('[data-outline-request]').evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-outline-request'))));
+    const lines = requestsInSource(SCRIPTS).map((r) => r.line);
     await p.goto(`${base}/?token=${TOKEN}#/compose/edit.tflw/L${lines[lines.length - 1]}`);
     await p.locator('[data-request-kind="WaitUntilApiStmt"]').waitFor();
     assert.equal(await p.locator('[data-request-editable]').getAttribute('data-request-editable'), 'yes');
@@ -11179,6 +11182,8 @@ test('`M217` `D1`: a `+` on a file row opens THAT file’s dialog (`D1139`)', as
   // file's name using another file's bytes, or into an empty string.
   await withProjectFixture({ 'a.tflw': CHAINED, 'b.tflw': ['test "elsewhere"', '  api GET /b', '  expect status equals 200', ''].join('\n') }, async (p, base) => {
     await p.goto(`${base}/?token=${TOKEN}#/compose/a.tflw`);
+    // Pointed at first: the `+` shows on its row's hover since `M255` (`D1404`).
+    await p.locator('[data-file-row="b.tflw"]').hover();
     await p.locator('li[data-file="b.tflw"] [data-row-plus="test"]').click();
     await p.locator('[data-new-thing="test"]').waitFor();
     assert.match((await p.locator('[data-new-thing] h2').textContent())!, /b\.tflw$/, 'the dialog names the file the `+` was on');
@@ -11213,6 +11218,7 @@ test('`M217` `D2`: a `+` on a test row adds a request to that test, and opens it
     const label = await p.locator('[data-outline-decl="test"] [data-row-plus="request"]').first().getAttribute('aria-label');
     assert.match(label ?? '', /a chain of three/, `the \`+\` names its own subject (${label})`);
 
+    await p.locator('[data-outline-decl="test"] .outline-row').first().hover();
     await p.locator('[data-outline-decl="test"] [data-row-plus="request"]').first().click();
     await p.locator('[data-compose-dirty]').waitFor();
     assert.equal(await p.locator('[data-editor]').getAttribute('data-editor'), 'request', 'the pane opened what it made');
@@ -13959,3 +13965,150 @@ test('an address ahead of a project read is not an address that contradicts it',
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// `M255` — the explorer and the verdict index (`D1404`, `D1414`).
+//
+// **THE ORACLE IS THE KEPT RUNS.** `verdicts.ts` reads `/api/history` (each test's newest kept
+// verdict, §8.3 #11); the gates below hold the page to that, and hold history to the fixture's own
+// `results.json` for every test the newest fixture run contains — so the dots are tied to the bytes
+// a run wrote, not only to the route that reads them. History orders kept runs by id, so between the
+// fixture's two runs `headers` is the newest (§8.3 #11's *Ordering*); earlier gates in this file may
+// have kept runs of their own, which is why the expectation is derived per test and never assumed.
+
+type Verdict = 'pass' | 'fail' | 'skip' | 'not-run';
+const verdictsOnDisk = async (): Promise<{ history: HistoryView; reports: ReportEntry[]; of: (file: string, name: string) => Verdict }> => {
+  // Both routes read in one place, before the page is asked anything: nothing runs between here and
+  // the reads below, so the two are one moment of the kept runs.
+  const history = (await (await api(`${baseUrl}/api/history`)).json()) as HistoryView;
+  const reports = (await (await api(`${baseUrl}/api/reports`)).json()) as ReportEntry[];
+  const byKey = new Map(history.tests.map((t) => [`${t.file.replace(/^\.\//, '')}\u0000${t.name}`, t.verdicts[0] ?? 'not-run'] as const));
+  return { history, reports, of: (file, name) => (byKey.get(`${file}\u0000${name}`) ?? 'not-run') as Verdict };
+};
+
+test('`M255` `A`/`B`: every file’s dot is its tests’ newest kept verdicts rolled up, the head line counts the red, and the Run tab carries the newest run (`D1404`)', async () => {
+  const view = await fullProject();
+  const { history, reports, of } = await verdictsOnDisk();
+  // History against the bytes: every test in the fixture's newest run reads what `results.json` says.
+  assert.ok(history.runs.includes('headers'), 'the fixture run is kept, so this is not comparing nothing');
+  for (const t of oracle.headers!.tests) {
+    if (t.kind === 'workload' || t.file === undefined) continue;
+    const want = t.kind === 'functional' && t.skipped !== undefined ? 'skip' : t.ok ? 'pass' : 'fail';
+    const past = history.tests.find((h) => h.file === t.file && h.name === t.name)!;
+    if (past.last !== 'headers') continue; // a gate above ran it since
+    assert.equal(past.verdicts[0], want, `${t.file} :: ${t.name} reads what results.json wrote`);
+  }
+
+  await page.goto(`${pageUrl}#/`);
+  await page.reload();
+  await page.locator('[data-kind-chips]').waitFor();
+  // The dots paint when the history arrives, which is after the chips: wait for the render that
+  // carries the newest run's id, and every read below is of that render.
+  await page.locator(`[data-last-run="${history.runs[0]}"]`).waitFor();
+  const roll = (f: (typeof view.files)[number]): Verdict => {
+    const vs = [...f.tests, ...f.crawls].map((t) => of(f.path, t.name));
+    return vs.includes('fail') ? 'fail' : vs.includes('pass') ? 'pass' : vs.includes('skip') ? 'skip' : 'not-run';
+  };
+  const withTests = view.files.filter((f) => f.tests.length + f.crawls.length > 0);
+  assert.ok(withTests.some((f) => roll(f) === 'fail') && withTests.some((f) => roll(f) === 'pass'), 'the fixture has a red file and a green one, so a dot that is always one colour is caught');
+  for (const f of withTests) {
+    await page.locator(`[data-verdict-of="${f.path}"][data-row-verdict="${roll(f)}"]`).waitFor({ timeout: 4000 }).catch(() => undefined);
+    assert.equal(await page.locator(`[data-verdict-of="${f.path}"]`).getAttribute('data-row-verdict'), roll(f), `${f.path} rolls its tests up`);
+  }
+  // A fragment has no dot: it declares nothing a verdict could be about.
+  for (const f of view.files.filter((x) => x.tests.length + x.crawls.length === 0)) assert.equal(await countSettling(page, `[data-verdict-of="${f.path}"]`, 0), 0, `${f.path} declares nothing`);
+
+  const failing = view.files.flatMap((f) => [...f.tests, ...f.crawls].filter((t) => of(f.path, t.name) === 'fail'));
+  assert.equal(await page.locator('[data-last-run]').getAttribute('data-last-run'), history.runs[0]);
+  assert.match((await page.locator('[data-project-counts]').textContent()) ?? '', new RegExp(`· last run .* · ${failing.length} failed$`));
+  assert.equal(await page.locator('[data-failed-count]').getAttribute('data-failed-count'), String(failing.length), 'the chip counts the same set');
+
+  // The Run tab: the newest run's own summary, from the run list (`M114`'s `ok` for inconclusive).
+  const s = reports.find((r) => r.id === history.runs[0])!.summary!;
+  const tab = s.failed > 0 ? 'fail' : s.ok ? 'pass' : 'inconclusive';
+  assert.equal(await page.locator('[data-tab-verdict]').getAttribute('data-tab-verdict'), tab);
+  // And no request is a row anywhere in the tree, open file or not.
+  assert.equal(await countSettling(page, '.sidebar [data-outline-request], .sidebar .outline-row.request', 0), 0);
+});
+
+test('`M255` `B`: the `failed` chip lists the failing tests under each file, is in the address, and ▶ counts exactly them (`D1404`, `D1414`)', async () => {
+  const view = await fullProject();
+  const { of } = await verdictsOnDisk();
+  const failingIn = (f: (typeof view.files)[number]): string[] => [...f.tests, ...f.crawls].filter((t) => of(f.path, t.name) === 'fail').map((t) => t.name);
+  const red = view.files.filter((f) => failingIn(f).length > 0);
+  assert.ok(red.length >= 2, `the fixture fails in more than one file (${red.length}), so a list of one proves nothing`);
+  const open = view.files.find((f) => failingIn(f).length === 0 && f.tests.length > 0)!;
+  await page.goto(`${pageUrl}#/compose/${open.path}`);
+  await page.reload();
+  await page.locator('[data-failed-chip="off"]').click();
+  await page.waitForURL((u) => u.hash.includes('failed=1'));
+  await page.locator('[data-failed-chip="on"]').waitFor();
+  // The tree: every red file, and the open one whatever it holds (`D1399`'s rule, unchanged).
+  const want = [...red.map((f) => f.path), open.path].sort();
+  const listed = await settle(async () => (await page.locator('[data-file-row]').evaluateAll((els) => els.map((e) => e.getAttribute('data-file-row')!))).sort(), untilEqual(want), { attempts: 60, delayMs: 50, page });
+  assert.deepEqual(listed.value, want);
+  // Each red file opens onto the tests that put it there, and only those.
+  for (const f of red) {
+    const names = await settle(
+      async () => (await page.locator(`[data-file-tests="${f.path}"] [data-outline-name]`).evaluateAll((els) => els.map((e) => e.getAttribute('data-outline-name')!))).sort(),
+      untilEqual(failingIn(f).sort()),
+      { attempts: 60, delayMs: 50, page },
+    );
+    assert.deepEqual(names.value, failingIn(f).sort(), `${f.path} lists its failing tests`);
+  }
+  const total = red.reduce((n, f) => n + failingIn(f).length, 0);
+  assert.equal(await page.locator('[data-run]').getAttribute('data-run-count'), String(total), '▶ runs exactly the rows the chip shows');
+  assert.match((await page.locator('[data-run]').textContent()) ?? '', new RegExp(`▶ run failed · ${total}$`));
+  // A test row opens its file at its line.
+  const first = red[0]!;
+  await page.locator(`[data-file-tests="${first.path}"] [data-outline-goto]`).first().click();
+  await page.waitForURL((u) => u.hash.startsWith(`#/compose/${first.path}/L`));
+  assert.match(new URL(page.url()).hash, /failed=1/, 'and the chip stays on — opening a row is not a move off the filter');
+  // Off again: the address forgets it.
+  await page.locator('[data-failed-chip="on"]').click();
+  await page.waitForURL((u) => !u.hash.includes('failed=1'));
+});
+
+test('`M255` `B`: `+` on a row shows on hover or focus and is invisible at rest — never only on hover (`D1404` reopening `D1140`)', async () => {
+  await withProjectFixture({ 'a.tflw': CHAINED, 'b.tflw': ['test "elsewhere"', '  api GET /b', '  expect status equals 200', ''].join('\n') }, async (p, base) => {
+    await p.goto(`${base}/?token=${TOKEN}#/compose/a.tflw`);
+    const plus = p.locator('li[data-file="b.tflw"] [data-row-plus="test"]');
+    await plus.waitFor({ state: 'attached' });
+    const shown = (): Promise<string> => plus.evaluate((e) => e.ownerDocument.defaultView!.getComputedStyle(e).visibility);
+    await p.mouse.move(0, 0);
+    assert.equal(await settle(shown, untilEqual('hidden'), { attempts: 40, delayMs: 50, page: p }).then((r) => r.value), 'hidden', 'at rest the row shows its name and its dot, not a column of `+`');
+    await p.locator('[data-file-row="b.tflw"]').hover();
+    assert.equal(await settle(shown, untilEqual('visible'), { attempts: 40, delayMs: 50, page: p }).then((r) => r.value), 'visible', 'pointing at the row shows it');
+    await p.mouse.move(0, 0);
+    // The keyboard's way in: focus the row, then ↓ — the row's `+` is the next stop, and it shows.
+    await p.locator('[data-file-row="b.tflw"]').focus();
+    await p.keyboard.press('ArrowDown');
+    assert.equal(await settle(() => plus.evaluate((e) => e === e.ownerDocument.activeElement), untilEqual(true), { attempts: 40, delayMs: 50, page: p }).then((r) => r.value), true, '↓ from the row lands on its `+`');
+    assert.equal(await settle(shown, untilEqual('visible'), { attempts: 40, delayMs: 50, page: p }).then((r) => r.value), 'visible', 'and focus shows it — a keyboard reaches it');
+    // And ↑ from the next row does not stall on a hidden `+` (`controlsOf` skips it).
+    await p.keyboard.press('ArrowUp');
+    assert.equal(await settle(() => p.locator('[data-file-row="b.tflw"]').evaluate((e) => e === e.ownerDocument.activeElement), untilEqual(true), { attempts: 40, delayMs: 50, page: p }).then((r) => r.value), true);
+  });
+});
+
+test('`M255` `B`: `+ new file` stays in the window at 900 px on a 100-file project (`M229` `S3`)', async () => {
+  const files: Record<string, string> = {};
+  for (let i = 0; i < 100; i++) files[`tests/f${String(i).padStart(3, '0')}.tflw`] = [`test "file ${i}"`, '  api GET /x', '  expect status equals 200', ''].join('\n');
+  await withProjectFixture(files, async (p, base) => {
+    await p.setViewportSize({ width: 1440, height: 900 });
+    await p.goto(`${base}/?token=${TOKEN}#/`);
+    await p.locator('[data-file-row="tests/f099.tflw"]').waitFor({ state: 'attached' });
+    const at = async (): Promise<{ bottom: number; tree: number }> =>
+      p.locator('[data-compose-new-file]').evaluate((e) => ({
+        bottom: Math.round(e.getBoundingClientRect().bottom),
+        tree: Math.round(e.ownerDocument.querySelector('.files')!.getBoundingClientRect().height),
+      }));
+    const rest = await at();
+    assert.ok(rest.tree > 900, `the tree is taller than the window (${rest.tree}px), or this measures nothing`);
+    assert.ok(rest.bottom <= 900, `the button's bottom is inside the window (${rest.bottom}px ≤ 900)`);
+    await p.locator('.sidebar').evaluate((e) => { e.scrollTop = e.scrollHeight / 2; });
+    const mid = await at();
+    assert.ok(mid.bottom <= 900, `and stays there scrolled halfway (${mid.bottom}px)`);
+  });
+});
+

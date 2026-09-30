@@ -54,7 +54,7 @@ export function testsInText(text: string): { name: string; line: number }[] {
 }
 
 /** `tflw run`'s arguments for one explorer run: a file (or the whole suite), one test by name, or
- * the previous run's failures. `--format ndjson` streams the event log the explorer reads. */
+ * the failing tests (`D1414`). `--format ndjson` streams the event log the explorer reads. */
 export function runArgs(target: { file?: string; only?: string; failed?: boolean }): string[] {
   const args = ['run'];
   if (target.file !== undefined) args.push(target.file);

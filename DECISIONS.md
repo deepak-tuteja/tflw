@@ -10133,6 +10133,21 @@ the subject and its count (`▶ run all · 36`, `▶ run 19 tests`, `▶ run che
 on the row. `D1250` decides `workers`/`headed` from the shown set. *Not taken:* the open file
 with a menu; an explicit checkbox selection.
 
+### D1404
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1404` — explorer rows are files and tests, and each carries a verdict.** (`D-RC-6`) A request belongs
+to the steps column and nowhere else, so the request rows go (about half the rows). Every test
+row carries the newest run's verdict as a dot (pass / fail / inconclusive / not run); a file
+rolls its tests up; `failed` is a chip beside the kinds; the head line reads
+`<project> · last run 7d ago · 1 failed`. `+` appears on hover and in the right-click menu;
+`+ new file` is pinned to the panel's foot (`M229 S3`). The verdict index is one module read by
+the explorer, the tab dot, the steps column and the Run tree, so no two surfaces can disagree.
+This is the same shape as the VS Code Test Explorer `M251 C` builds; the two are designed to
+agree. *Not taken:* a second, flat list of every test (two indexes of one thing, mac-dashboard
+`D274`'s finding) — revisited only if the tree proves too deep on the sibling.
+
 ### D1413
 
 <sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/kinds.tflw · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
@@ -10143,6 +10158,23 @@ with a menu; an explicit checkbox selection.
 door segment leaves the hash; `#/api/...` addresses from before this plan redirect to the same
 file with `kind=api` set, so no docs link dies. `M229 D`'s rule (an address names what is drawn)
 stands and gains the filter.
+
+### D1414
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1414` — `--failed` replays the tests that are failing, read from the kept runs.** (`D-RC-16`,
+added at `M255`, the user's choice 2026-09-30) A test is *failing* when its newest verdict in
+`report/runs/` (`M249`'s history, the pair `file` + declared name) is a failure — pytest's `--lf`
+rule, which decision 111.2 already named as the model. `tflw run --failed`, the page's `failed`
+chip, the explorer's red dots and ▶ under that chip are then **one set**, and ▶ sends `--failed`
+exactly (`D1403` holds). *Reopens* 111's *the previous run's failures* and `FU-23`'s warning (a
+partial run no longer redefines the set, so there is nothing to confess). Nothing failing still
+falls back to the full suite with a note (111.2). A `--no-keep` run does not move the set, and a
+test last run beyond `runs keep N` has no verdict. `.last-run.json` is still written and read by
+nothing in tflw — retiring it is §8.3 #12. *Not taken:* keeping `--failed` on the last run and
+drawing the chip from it (a red dot outside the `failed` chip — two answers to *what failed*);
+the chip as a view filter that runs whole files (▶ would run passing tests).
 
 ### M0
 
@@ -14566,5 +14598,19 @@ milestone it waits on. Both files are gitignored; the repositories are public.
   surfaces; `D1313`'s word list extended; `D1312` re-pinned from the rendered DOM.
 - **F docs.** `ui/spine.md`, `ui/doors.md`, `ui/index.md` rewritten for the header and the
   chips; the shots re-cut (the manifest reddens on every one — `D1283`'s stated price).
+
+### M255
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`M255` — the explorer and the verdict index (`D-RC-6`)**
+
+- **A the verdict index.** `ran.ts`'s `indexFromReport` generalised to a project-wide index
+  from the newest run directory (`results.json`): per test, per file, per step; one module,
+  memoised on the report stamp (`D1180`).
+- **B the rows.** Request rows go; test rows and file rows carry the dot; `failed` chip; head
+  line; `+` on hover and in the menu; `+ new file` pinned (`position: sticky; bottom: 0`).
+- **C the tab dot.** Run's tab carries the newest run's worst verdict.
+- **D docs.** `ui/spine.md`'s file-list section.
 
 <!-- GENERATED:decisions:end -->

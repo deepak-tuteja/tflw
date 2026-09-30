@@ -367,6 +367,21 @@ button.cancel { background: var(--warn); }
 .row-pair > .file-row, .row-pair > .outline-row { min-width: 0; }
 .row-plus { background: none; border: 0; color: var(--muted); padding: 0 5px; font-size: 14px; line-height: 1; border-radius: var(--ctl-radius); flex: none; }
 .row-plus:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+/* `M255` (`D1404`) — `+` shows while its row is pointed at or holds focus, never only on hover:
+   the tree's arrow keys land on it, and the row's menu carries the same gesture. `visibility`, not
+   `display`, so the row's width does not move as the pointer crosses it — and not `opacity`, which
+   paints the glyph at 0 and is text the contrast gate reads (an `opacity` dim is a reading, `M229`). */
+.row-pair > .row-plus { visibility: hidden; }
+.row-pair:hover > .row-plus, .row-pair:focus-within > .row-plus { visibility: visible; }
+/* A verdict as a dot (`D1404`): pass / fail / skip / not run yet. Hollow for the two that are not a
+   verdict on the test, so an unrun project does not read as a column of grey passes. */
+.vdot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; margin-left: 2px; box-sizing: border-box; }
+.outline-row > .vdot { margin-left: auto; }
+.vdot.pass { background: var(--pass); }
+.vdot.fail { background: var(--fail); }
+.vdot.skip, .vdot.not-run { border: 1px solid var(--muted); }
+.chip.failed-chip.on { border-color: var(--fail); background: color-mix(in srgb, var(--fail) 12%, transparent); }
+button.chip:disabled { opacity: 0.5; cursor: default; }
 .file-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; width: 100%; background: none; border: 0; border-radius: var(--ctl-radius); color: inherit; font: inherit; text-align: left; }
 /* Selected and open are two different facts and are drawn as two: what will RUN is the tint, what
    the tabs are FACING is the rule down the left. A reader extending a selection with cmd-click has

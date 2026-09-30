@@ -17,6 +17,23 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — `tflw run --failed` replays what is failing, and the file list carries verdicts (M255)
+
+- **`tflw run --failed` replays the tests whose newest verdict in the kept runs is a failure**
+  (`D1414`) — pytest's `--lf` rule — instead of the previous run's failures from `.last-run.json`.
+  A narrower run in between (`--tag smoke`, one file, the page's Send) no longer redefines the set,
+  so the *which was filtered by* warning is gone; a `--no-keep` run does not move it. Nothing
+  failing still falls back to the full suite with a note. `.last-run.json` is still written. The
+  VS Code command is now *tflw: Re-run the failing tests*.
+- **Every test in the page's file list carries a dot** (`D1404`) — passed, failed, or hollow for
+  skipped and not run yet — read from each test's newest kept run; a file's dot rolls its tests up,
+  and the line under the chips says how old the dots are and how many are red. The Run tab carries
+  the newest run's verdict.
+- **A `failed` chip** beside the kinds narrows the list to the failing tests, opens each file onto
+  them, and makes ▶ `tflw run --failed` — in the address as `failed=1`.
+- **Requests are no longer rows in the file list** — a request is a step, and Compose lists the
+  steps. `+` on a row shows on hover or focus, and the row's menu carries the same gesture.
+
 ### Changed — the page's shell: one header, the kinds as chips (M254)
 
 - **The four doors are gone; the four kinds are chips** at the head of the file list (`D1399`):

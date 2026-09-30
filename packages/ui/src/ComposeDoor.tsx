@@ -236,6 +236,8 @@ export interface ComposeDoorProps {
   /** Why Run has something to say while you are composing — the shell knows about live runs and
    *  this form does not. */
   readonly runMark?: string;
+  /** The Run tab's dot — the newest run's verdict (`M255` `C`). */
+  readonly runVerdict?: { readonly verdict: 'pass' | 'fail' | 'inconclusive'; readonly tip: string } | null;
   /**
    * **Start a run the shell's way** — `M220` `A` (`D1168`).
    *
@@ -315,7 +317,7 @@ function reblock(
   return buildDownload({ name: owner.name, body });
 }
 
-export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, onRun, running, reportsStamp, empty, authPanel, configPanel, configMark }: ComposeDoorProps) {
+export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, runVerdict = null, onRun, running, reportsStamp, empty, authPanel, configPanel, configMark }: ComposeDoorProps) {
   /** **Which actions open a page** (`M219` `B`, `D1161`) — the index's own answer, flattened by
    *  the one function `App` flattens it with. Every `fileOutline` in this component re-reads the
    *  file after an edit to find where a statement moved to, and a re-read that folded sessions
@@ -2730,7 +2732,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
       <datalist id={ELEMENT_DATALIST_ID} data-element-names={elementNames.join(',')}>
         {elementNames.map((n) => <option key={n} value={n} />)}
       </datalist>
-      <TabStrip tab={tab} onTab={onTab} marked={marks} />
+      <TabStrip tab={tab} onTab={onTab} marked={marks} runVerdict={runVerdict} />
 
       {tab === 'source' ? (
         <SourcePanel

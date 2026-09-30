@@ -131,7 +131,6 @@ import {
   writeResultsJson,
   writeSarif,
   writeLastRun,
-  readLastRun,
   describeRunFilter,
   writeEventsNdjson,
   clearRunOwnedMembers,
@@ -1047,9 +1046,9 @@ interface RunArgs {
   /** Raw `--teardown` text, validated in `runCommand` against `TEARDOWN_LEVELS` (`D783`) —
    * overrides `tflw.config`'s `teardown` key for this run only, and does not persist. */
   readonly teardownRaw?: string | undefined;
-  /** `tflw run --failed` (PLAN decision 111, M17) — replay only the previous run's failing tests,
-   * read from `report/.last-run.json`. Composes with `--tag`/`--only` as AND, same as they
-   * already compose with each other. */
+  /** `tflw run --failed` (PLAN decision 111, M17; `M255`, `D1414`) — replay the tests whose newest
+   * verdict in the kept runs is a failure. Composes with `--tag`/`--only`/`--kind` as AND, same as
+   * they already compose with each other. */
   readonly failed: boolean;
   /** `--shard i/n` as typed (`M242` `E`, `D1330`); parsed where it is applied. */
   readonly shardRaw?: string;
@@ -1823,27 +1822,26 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // nothing else is drawing from the odd lanes.
   const uniqueSeq = makeUniqueSeq(workersArg !== undefined && workersArg > 1 ? { index: 0, count: workersArg } : undefined);
 
-  // `tflw run --failed` (decision 111/M17): replay only the previous run's failing tests. Read
-  // the prior state *before* this run's own write overwrites it. No state file, or a prior run
-  // with zero failures: fall back to a full run with a note, matching pytest's `--lf` default
-  // rather than erroring or silently running nothing (decision 111.2). Suppressed under
-  // `--format ndjson` so stdout stays pure JSON lines (decision 111.4).
+  // `tflw run --failed` (decision 111/M17): replay the tests that are failing. **What "failing" means
+  // is `D1414`** (`M255`): a test whose newest verdict in the kept runs (`report/runs/`, `M249`) is a
+  // failure — pytest's `--lf` rule, which 111.2 already named as the model, and the same index the
+  // page's `failed` chip and its dots read, so ▶ under that chip and this flag are one set. It used to
+  // be *the previous run's* failures from `.last-run.json`, and that was a second answer to the same
+  // question: a partial run (`--tag smoke`, one file, the page's Send) redefined it, which is what
+  // `FU-23`'s printed warning existed to confess. Nothing failing: the full suite, with a note
+  // (111.2, unchanged). Suppressed under `--format ndjson` (111.4).
   let failedSet: Set<string> | undefined;
   if (args.failed) {
-    const lastRun = await readLastRun(join(cwd, resolved.reportDir));
-    if (lastRun && lastRun.failed.length > 0) {
-      failedSet = new Set(lastRun.failed.map((f) => `${f.file}::${f.test}`));
-      // `FU-23`/D250 — say what is being replayed, and say when "the last run" was not the whole
-      // suite. Without the second clause, `tflw run --tag smoke` followed by `tflw run --failed`
-      // quietly redefines `--failed` to mean "failed among the smoke tests", which is how a
-      // failure watched minutes earlier can vanish from a replay with nothing printed about it.
+    const history = await readHistory(join(cwd, resolved.reportDir), { limit: resolved.runsKeep });
+    const failing = [...history.tests.values()].filter((t) => t.runs[0]?.verdict === 'fail');
+    if (failing.length > 0) {
+      failedSet = new Set(failing.map((t) => `${t.file}::${t.name}`));
       if (!ndjsonActive) {
-        const n = lastRun.failed.length;
-        const scope = lastRun.filter ? ` — which was filtered by \`${lastRun.filter}\`, not the whole suite` : '';
-        out.write(withTimestamps(`re-running ${n} test${n === 1 ? '' : 's'} that failed in the last run${scope}`, !args.noTimestamps) + '\n');
+        const n = failing.length;
+        out.write(withTimestamps(`re-running ${n} test${n === 1 ? '' : 's'} whose last run failed`, !args.noTimestamps) + '\n');
       }
     } else if (!ndjsonActive) {
-      out.write(withTimestamps('no failed tests from the last run — running the full suite', !args.noTimestamps) + '\n');
+      out.write(withTimestamps('no test is failing in the kept runs — running the full suite', !args.noTimestamps) + '\n');
     }
   }
 
@@ -1872,7 +1870,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
       // M137c — the same three filters over `crawls`, and they have to be the same three. A crawl is a
       // named top-level declaration that sends traffic, so `--only "one test"` leaving every crawl in
       // the file running would be a filter that quietly widens what a run does; `--failed` finds one
-      // by name in `last-run.json` exactly as it finds a test; and SPEC §9.15 already promises `--tag`
+      // by name in the kept runs exactly as it finds a test; and SPEC §9.15 already promises `--tag`
       // reaches a crawl, because its tags sit above the header the way a test's do. `--skip-workload`
       // is the one that does not apply: a crawl has no workload clause to skip.
       const keep = <T extends { readonly tags: readonly string[]; readonly name: { readonly value: string } }>(d: T, lenses: () => readonly Lens[]): boolean =>
@@ -4474,7 +4472,7 @@ const VERB_HELP: readonly VerbHelp[] = [
         '                                                      --tag a,b runs a test carrying any of the listed tags (OR); --tag !x leaves out every test tagged x',
         '                                                      --kind api,browser runs the tests of any listed kind (api, browser, load, scan), as their statements classify them',
         '                                                      --shard i/n runs every nth file of the sorted suite from the ith, so n jobs run it all once',
-        '                                                      --failed re-runs only the previous run\'s failing tests',
+        '                                                      --failed re-runs only the tests whose last kept run failed',
         '                                                      --bail stops after the first failing test',
         '                                                      --format ndjson streams the event log as JSON lines',
         '                                                      --log-file <path> duplicates console output to a file (plain text)',

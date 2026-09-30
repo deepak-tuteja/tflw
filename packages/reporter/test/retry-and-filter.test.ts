@@ -117,8 +117,9 @@ test('describeRunFilter renders each filter as the user typed it', () => {
 });
 
 test('an unfiltered run has no filter at all — not an empty string', () => {
-  // The distinction matters downstream: `--failed` appends its "which was filtered by" clause on
-  // presence, so an empty string would make every full run claim to have been narrowed by nothing.
+  // The distinction matters to a reader of `.last-run.json`: the `filter` key is written on presence,
+  // so an empty string would make every full run claim to have been narrowed by nothing. (`--failed`
+  // appended a *which was filtered by* clause on it until `D1414`.)
   assert.equal(describeRunFilter({}), undefined);
   assert.equal(describeRunFilter({ tags: [] }), undefined);
 });

@@ -252,8 +252,8 @@ for a walkthrough.
 `tflw check` validates every file (parse + the full checker pipeline) with no execution and no
 secrets required — a fast pre-commit/CI lint step. `tflw run` exits non-zero on any test failure
 and writes `report/junit.xml` + `report/results.json`, so it drops into any CI runner as a plain
-command — no plugin needed. `--bail` stops at the first failure; `--failed` re-runs just what
-failed last time.
+command — no plugin needed. `--bail` stops at the first failure; `--failed` re-runs just the
+tests that are failing.
 
 ```yaml
 - uses: actions/setup-node@v4

@@ -4221,21 +4221,20 @@ certify that anything is safe to share.
   badge (`PASS`/`FAIL`/`ABORTED`/`INCONCLUSIVE`), `report.html`'s header and `junit.xml`'s
   `<skipped/>` thresholds show, from one shared derivation. The same `RunReport` is what the
   `run:end` ndjson event carries, so `--format ndjson` consumers get the identical answer.
-- `tflw run --failed` — re-runs only the previous run's failing tests. State lives in
-  `report/.last-run.json` (always overwritten, every run, including `--failed` runs themselves —
-  a test that failed on an earlier `retry` attempt but ultimately passed, i.e. `flaky`, is never
-  in this list, since `TestResult.ok` is already the final post-retry verdict). No state file, or
-  a prior run with zero failures: falls back to the full suite with a printed note, matching
-  pytest's `--lf` default. Composes with `--tag`/`--only` as AND.
+- `tflw run --failed` — re-runs the tests that are **failing**: those whose newest verdict in the
+  kept runs (`report/runs/`, §`runs keep`) is a failure (`D1414`, pytest's `--lf` rule). A test is
+  its file and its declared name, so a renamed test has no verdict until it runs again; a run under
+  `--no-keep` does not move the set, and a test last run beyond `runs keep N` runs ago has no
+  verdict. A test that failed on an earlier `retry` attempt but ultimately passed (`flaky`) is not
+  failing, since `TestResult.ok` is already the final post-retry verdict. Nothing failing: falls
+  back to the full suite with a printed note, matching pytest's `--lf` default. Composes with
+  `--tag`/`--only`/`--kind` as AND. A replay says what it is replaying — `re-running 3 tests whose
+  last run failed`.
 
-  A replay says what it is replaying — `re-running 3 tests that failed in the last run` — and,
-  when the run it is replaying was itself narrowed, says so: `— which was filtered by
-  \`--tag smoke\`, not the whole suite` (`FU-23`, M125d). The record carries a `filter` field
-  recording the filters as typed, present only on a filtered run; an unfiltered record is
-  byte-identical to what earlier versions wrote. The overwrite behaviour is deliberately unchanged:
-  a filtered run still records what it found, because *not* writing would replace one silence with
-  another — run `--tag smoke`, then `--failed`, and replay something unrelated to what you just
-  watched fail.
+  It read `report/.last-run.json` — *the previous run's* failures — until `M255`, and that was a
+  second answer to the same question: a partial run (`--tag smoke`, one file, the page's Send)
+  redefined the set, which a printed warning had to confess (`FU-23`). `.last-run.json` is still
+  written by every run, with its `filter` field; nothing in tflw reads it.
 - `--bail` — stops after the first failing test's final (post-retry) verdict. Under
   `--parallel > 1`, the pool stops pulling new files once a failure is seen; files already claimed
   finish normally (no hard-abort/cancellation-token plumbing into the interpreter). `--parallel`,

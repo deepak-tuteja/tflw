@@ -37,7 +37,7 @@ test "a customer can check out"
   of a rename that silently leaves the file unparseable. tflw's keywords are contextual, so
   `status`, `let` and `expect` are all legal variable names and are not refused.
 - **Your tests in the Test Explorer.** Every `.tflw` file in the workspace and the tests in it. Run
-  a file, one test, or *tflw: Re-run the previous run's failed tests*; each verdict shows beside the
+  a file, one test, or *tflw: Re-run the failing tests*; each verdict shows beside the
   test, a failure at the step that failed with tflw's own message, and the run's `report.html` is
   linked from its output. The ▶ *Run test* / *Run file* lenses above every `test` run through the
   same explorer, with your project's own `tflw` binary.

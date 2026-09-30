@@ -41,6 +41,8 @@ export interface HeaderProps {
   readonly onHeaded: (headed: boolean) => void;
   /** The narrowing, for the label only — each lives with the control that edits it. */
   readonly kind: Lens | null;
+  /** The `failed` chip's rows (`M255`, `D1404`) — `null` when the chip is off. */
+  readonly failed: ReadonlySet<string> | null;
   readonly selection: readonly string[];
   readonly query: string;
   readonly running: boolean;
@@ -59,9 +61,9 @@ export interface HeaderProps {
 /** `checkout.tflw` for `tests/api/checkout.tflw` — the label names the file the way the tree does. */
 const base = (p: string): string => p.slice(p.lastIndexOf('/') + 1);
 
-export function Header({ project, env, onEnv, workers, onWorkers, headed, onHeaded, kind, selection, query, running, onRun, onCancel, request, tab, onPanel, configMark, themePick, onLegend }: HeaderProps) {
+export function Header({ project, env, onEnv, workers, onWorkers, headed, onHeaded, kind, failed, selection, query, running, onRun, onCancel, request, tab, onPanel, configMark, themePick, onLegend }: HeaderProps) {
   const parsed = parseQuery(query, project);
-  const rows = runRows(project, selection, parsed, kind);
+  const rows = runRows(project, selection, parsed, kind, failed);
   const lenses = new Set(rows.flatMap((r) => r.lenses));
   const takesWorkers = lenses.has('load');
   const takesHeaded = lenses.has('browser');
@@ -112,7 +114,7 @@ export function Header({ project, env, onEnv, workers, onWorkers, headed, onHead
           : parsed.kind === 'text'
             ? `“${parsed.typed}”`
             : null;
-  const narrowing = [subject, kind === null ? null : DOOR_BY_ID[kind].label].filter((x) => x !== null).join(' ');
+  const narrowing = [subject, kind === null ? null : DOOR_BY_ID[kind].label, failed === null ? null : 'failed'].filter((x) => x !== null).join(' ');
   const label = nothingTagged ? `nothing matches ${parsed.typed}` : rows.length === 0 ? 'nothing to run' : `▶ run ${narrowing === '' ? 'all' : narrowing} · ${rows.length}`;
   const disabled = nothingTagged || rows.length === 0;
 

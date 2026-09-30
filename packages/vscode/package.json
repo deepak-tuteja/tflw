@@ -106,7 +106,7 @@
       },
       {
         "command": "tflw.runFailed",
-        "title": "tflw: Re-run the previous run's failed tests"
+        "title": "tflw: Re-run the failing tests"
       }
     ],
     "configuration": {

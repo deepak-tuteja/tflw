@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { lensesInRun, matchingFiles, parseQuery, projectTags, runRows, taggedTestCount } from '../src/search';
 import type { ProjectView } from '../src/contract';
+import { markKey } from '../src/verdicts';
 
 const file = (path: string, tests: Array<{ name: string; tags: string[] }>): ProjectView['files'][number] => ({
   path,
@@ -165,4 +166,16 @@ test('`runRows` is what ▶ runs — the label’s count and `request()` read th
   assert.deepEqual(names(runRows(mixed, [], parseQuery('catalog', mixed), 'load')), ['the catalogue holds']);
   // The flags are drawn by the rows, so the chip moves them too.
   assert.deepEqual([...lensesInRun(mixed, [], parseQuery('', mixed), 'browser')], ['browser']);
+});
+
+test('under the `failed` chip ▶ runs the failing rows and nothing else — AND with the kind, the files and the tag (`M255`, `D1414`)', () => {
+  const names = (rows: readonly { name: string }[]): string[] => rows.map((r) => r.name);
+  const failing = new Set([markKey('tests/shop.tflw', 'the shop greets'), markKey('tests/load.tflw', 'the catalogue holds')]);
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('', mixed), null, failing)), ['the shop greets', 'the catalogue holds']);
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('', mixed), 'api', failing)), ['the catalogue holds'], 'the kind narrows inside the failing set');
+  assert.deepEqual(names(runRows(mixed, ['tests/catalog.tflw'], parseQuery('', mixed), null, failing)), [], 'a selection holding nothing failing runs nothing');
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('@ui', mixed), null, failing)), ['the shop greets']);
+  // Off is `null`, never an empty set: an empty set would be a chip that runs nothing.
+  assert.equal(runRows(mixed, [], parseQuery('', mixed), null, null).length, 3);
+  assert.deepEqual([...lensesInRun(mixed, [], parseQuery('', mixed), null, failing)].sort(), ['api', 'browser', 'load']);
 });

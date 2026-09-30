@@ -135,6 +135,10 @@ test('runArgv maps a request onto tflw run flags and nothing else', () => {
   assert.deepEqual(runArgv({ tags: ['a'], kinds: ['api', 'browser'] }), [
     'run', '--format', 'ndjson', '--no-color', '--tag', 'a', '--kind', 'api,browser',
   ]);
+  // `M255` (`D1414`) — the `failed` chip is the CLI's own `--failed`, which reads the same kept runs
+  // the page's dots do; `false` and absent are the same request.
+  assert.deepEqual(runArgv({ kinds: ['api'], failed: true }), ['run', '--format', 'ndjson', '--no-color', '--kind', 'api', '--failed']);
+  assert.deepEqual(runArgv({ failed: false }), runArgv({}));
   // `A1-5`: `--evidence` is what makes `D1047`'s Send a response pane rather than a verdict —
   // below `full` a step record carries no `request`/`response` at all (`D987`). It is raw text
   // here and validated by `runCommand` against `EVIDENCE_LEVELS`, exactly as a terminal's own
@@ -300,6 +304,9 @@ test('a run from the API is a real tflw run: the stream arrives over SSE, the re
       const history = (await (await api(`${base}/api/history`)).json()) as HistoryView;
       assert.deepEqual(history.runs, [record.id], 'the run the CLI kept under the server\'s id, and the refused run kept nothing');
       assert.deepEqual(history.tests.map((t) => [t.file, t.verdicts, t.flaky]), [['health.tflw', ['pass'], false]]);
+      // `M255` `A` — and which run the newest verdict came from, which is how the page tells *the last
+      // run's verdict* from *the last run this test was in* (a Send's run holds none of the project's).
+      assert.deepEqual(history.tests.map((t) => t.last), [record.id]);
 
       // **THE OTHER DIRECTION, WHICH IS THE ONE THAT COULD LOSE A RUN.** `tflw run` in a terminal
       // writes `report/` and keeps nothing, so `current` is then a run with no `runs/<id>` of its

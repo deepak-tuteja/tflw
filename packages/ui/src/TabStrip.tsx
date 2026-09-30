@@ -21,9 +21,16 @@ export interface TabStripProps {
   readonly onTab: (tab: TabId) => void;
   /** Tabs with something to say that you are not currently looking at. */
   readonly marked?: Readonly<Partial<Record<TabId, string>>>;
+  /**
+   * **The newest run's verdict, as a dot on Run** — `M255` `C` (`D1400`, `D1404`). A fact about the
+   * project's last run, not this file's — the one exception to the rule above, and `D1400` names it:
+   * the tab is where the run is read, so it is where *the last one failed* belongs. It reads the
+   * verdict index, so it cannot disagree with the explorer's dots.
+   */
+  readonly runVerdict?: { readonly verdict: 'pass' | 'fail' | 'inconclusive'; readonly tip: string } | null;
 }
 
-export function TabStrip({ tab, onTab, marked = {} }: TabStripProps) {
+export function TabStrip({ tab, onTab, marked = {}, runVerdict = null }: TabStripProps) {
   /* `M240` `C` (`D1311`) — the three stages are one Tab stop, ←/→ between them (`M254`, `D1400`:
      Auth and Config are the header's). */
   const strip = useRef<HTMLElement | null>(null);
@@ -40,6 +47,9 @@ export function TabStrip({ tab, onTab, marked = {} }: TabStripProps) {
           data-tip={t.blurb}
         >
           {t.label}
+          {t.id === 'run' && runVerdict !== null ? (
+            <span className={`vdot ${runVerdict.verdict}`} data-tab-verdict={runVerdict.verdict} data-tip={runVerdict.tip} role="img" aria-label={runVerdict.tip} />
+          ) : null}
           {marked[t.id] ? (
             <span className="tabstrip-mark" data-tab-mark={t.id} data-tip={marked[t.id]}>
               •
