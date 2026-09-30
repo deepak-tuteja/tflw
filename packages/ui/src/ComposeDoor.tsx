@@ -2845,7 +2845,9 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onAdd={add}
           adds={vocab.adds}
           onNewDecl={addDeclaration}
-          crawls={kinds.has('scan')}
+          /* `M254` (§8.3 #10): the file's kinds, or the SCANS chip — creation is where a chip counts
+             (the dialog opens on it too), so a file's first crawl has somewhere to come from. */
+          crawls={kinds.has('scan') || kind === 'scan'}
           recording={recording}
           onAddAfter={addRequestAfter} onDuplicate={duplicateRequest} menuFor={seqMenuFor} onMenu={onMenu}
           made={made}

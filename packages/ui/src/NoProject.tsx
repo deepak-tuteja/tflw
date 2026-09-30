@@ -63,12 +63,12 @@ export function NoProject({ unconfigured = null, error, noProject, onCreated }: 
           {failure}
         </pre>
       ) : null}
-      <div className="doors" data-init-kinds>
+      <div className="init-kinds" data-init-kinds>
         {DOORS.map((d) => (
-          <button key={d.id} className="door" onClick={() => void create(d.id)} disabled={creating !== null || noProject !== true} data-init-kind={d.id}>
-            <span className="door-label">{d.label}</span>
-            <span className="door-blurb">{d.blurb}</span>
-            <span className="door-count muted">
+          <button key={d.id} className="init-kind" onClick={() => void create(d.id)} disabled={creating !== null || noProject !== true} data-init-kind={d.id}>
+            <span className="init-kind-label">{d.label}</span>
+            <span className="init-kind-blurb">{d.blurb}</span>
+            <span className="init-kind-note muted">
               {creating === d.id
                 ? 'making it…'
                 : noProject !== true

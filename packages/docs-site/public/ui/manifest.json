@@ -1,16 +1,16 @@
 {
-  "inputs": "a179a7cb804ffae8f0c3f14330ba70fe81beaa232f0b00e298f936f3e9ee95e0",
+  "inputs": "3892063f72fdab9bfeaadbd20ee6c8b14024f926cc891f3ac2719603f42e0f2e",
   "inputCount": 108,
   "shots": [
     {
-      "name": "landing-terminal.png",
-      "width": 2152,
-      "height": 710
+      "name": "shell-terminal.png",
+      "width": 2880,
+      "height": 1800
     },
     {
-      "name": "landing-paper.png",
-      "width": 2152,
-      "height": 676
+      "name": "shell-paper.png",
+      "width": 2880,
+      "height": 1800
     },
     {
       "name": "spine-terminal.png",
@@ -23,34 +23,34 @@
       "height": 1800
     },
     {
-      "name": "doors-terminal.png",
-      "width": 2144,
-      "height": 70
+      "name": "kinds-terminal.png",
+      "width": 582,
+      "height": 156
     },
     {
-      "name": "doors-paper.png",
-      "width": 2120,
-      "height": 70
+      "name": "kinds-paper.png",
+      "width": 566,
+      "height": 156
     },
     {
       "name": "compose-api-terminal.png",
       "width": 2144,
-      "height": 730
+      "height": 826
     },
     {
       "name": "compose-api-paper.png",
       "width": 2120,
-      "height": 700
+      "height": 796
     },
     {
       "name": "compose-browser-terminal.png",
       "width": 2144,
-      "height": 730
+      "height": 826
     },
     {
       "name": "compose-browser-paper.png",
       "width": 2120,
-      "height": 700
+      "height": 796
     },
     {
       "name": "browser-menu-terminal.png",
@@ -65,32 +65,32 @@
     {
       "name": "compose-load-terminal.png",
       "width": 2144,
-      "height": 1048
+      "height": 1506
     },
     {
       "name": "compose-load-paper.png",
       "width": 2120,
-      "height": 1150
+      "height": 1476
     },
     {
       "name": "compose-scan-terminal.png",
       "width": 2144,
-      "height": 1410
+      "height": 1506
     },
     {
       "name": "compose-scan-paper.png",
       "width": 2120,
-      "height": 1380
+      "height": 1476
     },
     {
       "name": "run-terminal.png",
       "width": 2144,
-      "height": 1500
+      "height": 1596
     },
     {
       "name": "run-paper.png",
       "width": 2120,
-      "height": 1486
+      "height": 1582
     }
   ],
   "viewport": {
@@ -98,7 +98,7 @@
     "height": 900
   },
   "viewports": {
-    "landing": {
+    "shell": {
       "width": 1440,
       "height": 900
     },
@@ -106,7 +106,7 @@
       "width": 1440,
       "height": 900
     },
-    "doors": {
+    "kinds": {
       "width": 1440,
       "height": 900
     },
@@ -136,5 +136,5 @@
     }
   },
   "deviceScaleFactor": 2,
-  "cutAt": "2026-09-30T10:15:52.572Z"
+  "cutAt": "2026-09-30T14:26:48.025Z"
 }

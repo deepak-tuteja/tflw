@@ -14,10 +14,10 @@ served. It has no view across repositories, no history beyond the run directorie
 notion of a team. A project's history lives in `git` and its runs live in its run directory; the
 page reads those and adds nothing of its own.
 
-**It keeps nothing on the server.** No database, no sidecar file, no hidden directory. Which door
-and which file you are on live in the address bar, so a link is shareable and a reload changes
+**It keeps nothing on the server.** No database, no sidecar file, no hidden directory. Which file,
+which tab and which chip you are on live in the address bar, so a link is shareable and a reload changes
 nothing. Two conveniences live in your browser and nowhere else: your theme, and the last file you
-had open behind each door, per project — so a bare door opens where you left it. Everything else is the project on disk, which means the page can be closed at
+had open, per project — so a bare address opens where you left it. Everything else is the project on disk, which means the page can be closed at
 any moment without losing anything that was not already a file.
 
 **It does not lint your taste.** The page will happily show you a passing test that asserts nothing.

@@ -56,7 +56,7 @@ In any project with an API you want to test:
 ```sh
 npx tflw init   # scaffolds tflw.config + example.tflw + .env.example + .gitignore
 npx tflw run    # runs it — green in seconds
-npx tflw ui     # and reads it back as a page, with a form per door
+npx tflw ui     # and reads it back as a page, with a form per statement
 ```
 
 Run them in that order the first time. The last one prints a URL with a token in it and opens it;

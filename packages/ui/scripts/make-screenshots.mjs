@@ -130,8 +130,8 @@ try {
    *  rather than to a crash — and the chosen one is printed, because a picture of a different file
    *  is a picture of a different thing. */
   /* `M234` `D-1`. `catalogue.tflw` leads because the spine shot is of the shell — explorer,
-     doorbar and tab strip at once — and a file carrying **two** lenses (`api,browser`) is the one
-     that makes the doorbar's per-door counts mean something in the same picture. */
+     header and tab strip at once — and a file carrying **two** kinds (`api,browser`) is the one
+     that makes the chips' per-kind counts mean something in the same picture. */
   const PREFERRED = ['tests/catalogue.tflw', 'tests/receipt.tflw', 'tests/shelf.tflw'];
 
   /**
@@ -200,7 +200,7 @@ try {
       return bottom;
     }, [target, box.y]);
     // 16px of air under the last glyph, so the crop reads as a framed picture rather than as a
-    // cut. Never taller than the element itself, and never shorter than the doorbar's own 35px.
+    // cut. Never taller than the element itself, and never shorter than 35px, one row of chrome.
     if (ink !== null && ink > box.y) box.height = Math.min(box.height, Math.max(ink - box.y + 16, 35));
     // **Bounded by the window, and that is the second half of the rule.** A locator screenshot
     // captures the element's FULL height including whatever it scrolls, and the run pane scrolls:
@@ -238,10 +238,11 @@ try {
     // fragment, so the browser fires `hashchange` rather than navigating and the *previous*
     // state's DOM is still in the document until React commits. A shot taken then is a shot of
     // the page before.
+    // `M254` (`D1399`): a door is a kind chip now, and the chip is in the address's tail.
     const at = async (door, tab) => {
-      await page.goto(`${base}/?token=${TOKEN}#/${door}`);
+      await page.goto(`${base}/?token=${TOKEN}#/?kind=${door}`);
       await page.reload();
-      await page.locator(`[data-doorbar="${door}"]`).waitFor();
+      await page.locator(`[data-kind-chips="${door}"]`).waitFor();
       await page.locator(`[data-tab="${tab}"]`).click();
       await page.locator(`[data-tabstrip="${tab}"]`).waitFor();
     };
@@ -256,20 +257,16 @@ try {
       throw new Error(`none of ${PREFERRED.join(', ')} is in the fixture project — the shell shots have no file to open`);
     };
 
-    // 1. The landing: four doors, each counted against a real project.
-    //
-    // Cropped to `[data-landing]` rather than shot whole, and the first cut is why: the landing's
-    // content ends 430px down a 900px viewport, so the full-viewport shot was **two thirds empty
-    // black** — a picture that spends most of its area saying nothing, and worse on a docs page
-    // that scales it into a narrow column. The other four views fill their frame and are shot
-    // whole. This was found by looking at the output, which no assertion in the gate could have
-    // told us: a mostly-empty PNG is a valid PNG of the right size with the right hash.
+    // 1. The shell as it opens (`M254`, `D1402` — there is no landing): the header, the kind
+    //    chips at the head of the explorer, and a test open in Compose. `.app`, because the shell is
+    //    what the caption names; every kind shown, because that is how a first visit opens.
     await page.goto(`${base}/?token=${TOKEN}#/`);
     await page.reload();
-    await page.locator('[data-doors]').waitFor();
-    await cut(page, `landing-${theme}.png`, '[data-landing]');
+    await page.locator('[data-kind-chips="all"]').waitFor();
+    await page.locator('[data-compose-pane]').waitFor();
+    await cut(page, `shell-${theme}.png`, '.app');
 
-    // 2. The spine: explorer, doorbar and tab strip at once, with a file open on Source — the
+    // 2. The spine: explorer, header and tab strip at once, with a file open on Source — the
     //    file itself, which is what makes the other four tabs legible as stages of one thing.
     //
     // `.app` and not the viewport, and the difference is not cosmetic: the shell IS what this
@@ -280,14 +277,15 @@ try {
     await page.locator('[data-tabstrip="source"]').waitFor();
     await cut(page, `spine-${theme}.png`, '.app');
 
-    // 3. The doorbar alone: the four doors and what each counts in this project.
-    await cut(page, `doors-${theme}.png`, '[data-doorbar]');
+    // 3. The kind chips, with the explorer's own line under them — what each kind counts in this
+    //    project, under the API chip the spine above was shot with.
+    await cut(page, `kinds-${theme}.png`, '[data-project]');
 
     // 4. A run, read in place — still with the API door's file open, because a run is read beside
     //    the source that produced it and that is the whole of the claim.
     await page.locator('[data-tab="run"]').click();
     await page.locator('[data-tabstrip="run"]').waitFor();
-    await cut(page, `run-${theme}.png`, '[data-door-run-tab]');
+    await cut(page, `run-${theme}.png`, '[data-run-tab]');
 
     // 5-8. Compose, once per door, each on a file that belongs behind it (`D1294` as amended).
     //

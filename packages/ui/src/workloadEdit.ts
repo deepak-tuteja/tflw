@@ -338,7 +338,7 @@ export function workloadCitation(run: {
   readonly p95Ms: number;
   readonly inconclusive: boolean;
 } | null): string {
-  if (run === null) return 'not run here yet — ▶ next door runs it and this line fills in.';
+  if (run === null) return 'not run here yet — the ▶ beside it runs it and this line fills in.';
   const n = run.iterations.toLocaleString('en-US');
   const p95 = `${Math.round(run.p95Ms * 100) / 100}ms`;
   if (run.inconclusive) {

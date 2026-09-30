@@ -152,7 +152,7 @@
  *
  * THE BUTTONS THAT ARE NOT BOXES STILL ARE NOT. A dozen `<button>`s here are deliberately flat —
  * a tree row, a tab, a link (`.file-row`, `.header-panel-word`, `.tabstrip-tab`, `.linkish`, `.docpick`,
- * `.index-row`, `.seq-goto`, `.add-note`, `.dir-row`, `.door`). Each already resets background,
+ * `.index-row`, `.seq-goto`, `.add-note`, `.dir-row`, `.init-kind`). Each already resets background,
  * border and padding for its own reasons, and each of those rules out-specifies this one, so the
  * base layer reaches them and changes nothing. That is the test of a base layer: it must be the
  * thing every control falls back to and the thing no styled control has to fight.
@@ -597,18 +597,17 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
    the kind of line that outlives its subject and then gets copied. */
 .landing-head h1 { display: flex; margin: 0 0 2px; }
 .landing-head p { margin: 0 0 24px; max-width: 68ch; }
-.doors { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--door-min), 1fr)); gap: var(--door-gap); }
-.door {
+.init-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--door-min), 1fr)); gap: var(--door-gap); }
+.init-kind {
   display: grid; gap: 4px; text-align: left; cursor: pointer;
   background: var(--panel); color: var(--fg); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 14px 16px; font: inherit;
 }
-.door:hover { border-color: var(--accent); }
-.door-label { font-weight: var(--kw-weight); letter-spacing: var(--label-spacing); text-transform: var(--label-transform); font-size: 13px; color: var(--accent); }
-.door-blurb { font-size: 13px; }
-.door-count { font-size: 12px; margin-top: 4px; }
+.init-kind:hover { border-color: var(--accent); }
+.init-kind-label { font-weight: var(--kw-weight); letter-spacing: var(--label-spacing); text-transform: var(--label-transform); font-size: 13px; color: var(--accent); }
+.init-kind-blurb { font-size: 13px; }
+.init-kind-note { font-size: 12px; margin-top: 4px; }
 .landing-foot { margin-top: 24px; font-size: 12px; }
-.landing-door-def { margin: 12px 0 0; font-size: 12px; }
 
 /* The header (`M254`, `D1400`) — one row where the door bar and the run strip were two. The mark,
    the project, the run, then the project facts pushed right. **One `margin-left: auto` in this row**
@@ -625,6 +624,12 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
   display: flex; align-items: center; color: var(--muted); text-decoration: none;
 }
 .header-mark:hover { color: var(--fg); }
+/* `D1325`'s 24 px floor holds for a link that is a picture as it does for a button. */
+.header-mark { min-height: 24px; min-width: 24px; }
+/* The version link on the page before a project (`D1402`) — a link painted by the theme, not by the
+   browser's default blue, which no token names. */
+.landing-foot a { color: var(--muted); }
+.landing-foot a:hover { color: var(--fg); }
 .header-project { margin: 0; font-size: var(--title-size); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 24ch; }
 .header-facts { margin-left: auto; display: flex; align-items: center; gap: 2px; }
 .header-panel-word {
@@ -633,15 +638,18 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 }
 .header-panel-word:hover { color: var(--fg); }
 .header-panel-word.on { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-/* A project fact over the pane (`M254`, `D1401`): framed, because it is not a stage of the file and
-   should not read as one; closed by its `✕` or `Esc`. */
-.header-panel { border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 8px 12px 12px; }
-.header-panel-bar { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; font-size: 13px; }
-.header-panel-close { background: none; border: none; color: var(--muted); font: inherit; cursor: pointer; padding: 2px 6px; min-width: 24px; }
+/* A project fact over the pane (`M254`, `D1401`): a titled bar with its close over the panel's own
+   card — no second frame, because the panels already draw one and LOAD's Config is held to one
+   screen (a frame here cost it 3 px over, measured). Closed by its `✕` or `Esc`. */
+.header-panel { display: flex; flex-direction: column; }
+.header-panel-bar { display: flex; align-items: center; justify-content: space-between; margin: 0 0 4px; font-size: 13px; line-height: 24px; }
+.header-panel-close { background: none; border: none; color: var(--muted); font: inherit; cursor: pointer; padding: 0 6px; min-width: 24px; min-height: 24px; }
 .header-panel-close:hover { color: var(--fg); }
 /* The kinds as chips (`M254`, `D1399`) — the count and the filter in one control, at the head of the
    explorer. `.chip` is the shared pill; a chip that is a button needs the button's defaults undone. */
-.kind-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+/* `flex-start`: a chip is its own height, never its row-mate's — the appearance gate's control
+   inflates one control of a group, and a stretching row made three chips 200 px tall with it. */
+.kind-chips { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px; margin: 0 0 6px; }
 button.chip { font: inherit; font-size: 12px; letter-spacing: var(--label-spacing); cursor: pointer; }
 button.chip:hover { color: var(--fg); }
 .chip-count { margin-left: 4px; font-size: 11px; color: var(--muted); }
@@ -1336,8 +1344,8 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 
 /* `M240` `A` (`D1309`) — a door with nothing behind it: one sentence and the gesture that changes
    the answer. Sized like `.empty`, so it sits where a pane would and does not read as a page. */
-.empty-door { padding: 24px 0; max-width: 60ch; }
-.empty-door p { margin: 0 0 calc(var(--unit) * 1.5); }
+.empty-project { padding: 24px 0; max-width: 60ch; }
+.empty-project p { margin: 0 0 calc(var(--unit) * 1.5); }
 
 .explorer-new {
   position: sticky; bottom: 0;

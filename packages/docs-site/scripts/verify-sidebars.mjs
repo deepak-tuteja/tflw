@@ -46,12 +46,12 @@ const EXPECTED = [
   // it beat the `/` fallback rather than stacking beside it — which is the failure the `hides`
   // half exists for, and the one a fifth rail makes easier to reach than a fourth did.
   //
-  // **Three rows, and the third is a door page.** The section grew from five pages to nine, and
-  // the four door pages are the ones a reader is most likely to arrive at from a search result
+  // **Three rows, and the third is a kind page.** The section grew from five pages to nine, and
+  // the four kind pages are the ones a reader is most likely to arrive at from a search result
   // rather than from the index — so one of them is checked, not only the two that were here when
   // the rail had a single level.
   { page: 'ui/index.html', shows: 'The UI', hides: 'More' },
-  { page: 'ui/doors.html', shows: 'The UI', hides: 'More' },
+  { page: 'ui/kinds.html', shows: 'The UI', hides: 'More' },
   { page: 'ui/load.html', shows: 'The UI', hides: 'More' },
   // The adopter's runbook (`M253` `A`, `D1350`): its index and a page added with it.
   { page: 'runbook/index.html', shows: 'Runbook', hides: 'More' },

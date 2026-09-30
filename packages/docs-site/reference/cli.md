@@ -412,13 +412,13 @@ directory a terminal run writes) and relays the stream as it arrives, and it ope
 directory the project holds — the current one, and each run started from the page, which is kept
 aside as `report/runs/<id>/` when it ends.
 
-**The page can also author a test**, through one write route with one call site: a form per door
+**The page can also author a test**, through one write route with one call site: a form per statement
 previews the exact bytes it is about to write and `tflw check` judges them before the write, the
 file on disk is the only truth, and `tflw.config` is not reachable through that route. The forms
-and what each door scaffolds are not documented here yet.
+and what each kind scaffolds are documented under [the UI](/ui/kinds).
 
-**The project's configuration is edited in its own tab, through its own route.** Every door's
-*Config* tab is a plain editor over `tflw.config` — the bytes you type are the bytes written, and
+**The project's configuration is edited in its own tab, through its own route.** The header's
+*Config* panel is a plain editor over `tflw.config` — the bytes you type are the bytes written, and
 nothing reformats them — refusing only text that does not parse, and writing under the version the
 page read so a file changed by a terminal in the meantime is reported rather than overwritten. It
 is a separate capability from the one above and not a widening of it: the test-writing route still
