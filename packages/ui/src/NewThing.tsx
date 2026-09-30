@@ -28,6 +28,7 @@ import { buildApiStep, buildExpect, buildOpen, buildTest, buildThreshold, buildW
 import { putFile } from './api';
 import { SourceText } from './Source';
 import { VOCABULARY, type Scaffold } from './vocabulary';
+import { DOORS } from './doors';
 
 export type NewMode = 'test' | 'file';
 
@@ -188,17 +189,18 @@ export function newPathProblem(path: string, existing: readonly string[]): strin
   return null;
 }
 
-export function NewThing({ mode, door, openPath, openText, existing, onStage, onDone, onCancel, inDir }: {
+export function NewThing({ mode, kind, openPath, openText, existing, onStage, onDone, onCancel, inDir }: {
   readonly mode: NewMode;
   /**
-   * **The door that asked** — `M222` (`D1189`), and the half of `D1042` that was never built.
+   * **The kind the dialog opens on** — `M222` (`D1189`), and since `M254` (`D1399`) a choice made
+   * here rather than a door already walked through.
    *
-   * It decides `VOCABULARY[door].scaffold`, and through it both what gets written and which
-   * fields the dialog draws. It is the *door*, not a selection inside the dialog: `#/browser` has
-   * already answered which kind of test this is, and asking again would put a control in front of
-   * every create on every door to serve a choice nobody makes twice.
+   * It decides `VOCABULARY[kind].scaffold`, and through it both what gets written and which fields
+   * the dialog draws. `M222` refused a control here because the door had already answered; the door
+   * is gone, so this is the one place left where the question is asked, and it opens on the answer
+   * the shell can guess — the chip, else the open file's first kind, else API.
    */
-  readonly door: Lens;
+  readonly kind: Lens;
   /** The directory a `file` create was opened from, or `null` for the foot's own `+ new file`
    *  (`M218` `B`, `D1159`). It seeds the path field and nothing else — this is still the one
    *  dialog and still the only place a new file is built (`D1087`). */
@@ -229,6 +231,7 @@ export function NewThing({ mode, door, openPath, openText, existing, onStage, on
   readonly onDone: (written: { path: string; text: string; etag: string }) => void;
   readonly onCancel: () => void;
 }) {
+  const [chosen, setChosen] = useState<Lens>(kind);
   const [name, setName] = useState('');
   const [method, setMethod] = useState<string>('GET');
   const [path, setPath] = useState('/');
@@ -247,7 +250,7 @@ export function NewThing({ mode, door, openPath, openText, existing, onStage, on
     first.current?.focus();
   }, []);
 
-  const scaffold = VOCABULARY[door].scaffold;
+  const scaffold = VOCABULARY[chosen].scaffold;
   const pathProblem = mode === 'file' ? newPathProblem(file, existing) : null;
   const built = newSource({ scaffold, name, method, path, into: mode === 'file' ? '' : openText });
   const problem = pathProblem ?? (built.ok ? null : built.reason);
@@ -301,6 +304,15 @@ export function NewThing({ mode, door, openPath, openText, existing, onStage, on
             <input value={file} onChange={(e) => setFile(e.target.value)} data-new-file aria-label="file path" />
           </label>
         ) : null}
+        {/* **The kind is chosen here** (`M254`, `D1399`) — the only thing a door ever decided. Four
+            chips, one pressed: the fields and the preview below follow it at once. */}
+        <div className="row new-kinds" role="group" aria-label="kind of test" data-new-kind={chosen}>
+          {DOORS.map((d) => (
+            <button key={d.id} type="button" className={`chip${d.id === chosen ? ' on' : ''}`} aria-pressed={d.id === chosen} onClick={() => setChosen(d.id)} data-new-kind-pick={d.id} data-tip={d.blurb}>
+              {d.label}
+            </button>
+          ))}
+        </div>
         <label className="field">
           name
           <input

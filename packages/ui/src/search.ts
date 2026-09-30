@@ -73,64 +73,47 @@ export function taggedTestCount(project: ProjectView, query: Query): number {
   return n;
 }
 
+/** One row ▶ would run: a test or a crawl, the file it is in, and the kinds it is of. */
+export interface RunRow {
+  readonly file: string;
+  readonly name: string;
+  readonly lenses: readonly Lens[];
+}
+
 /**
- * **Every lens the run this page is about to start would actually reach** — `M229` `B` (`D1250`).
+ * **What ▶ runs, row by row** — `M254` (`D1403`), the one derivation behind the label's count, the
+ * run's lens set (`D1250`) and, from `M255`, the explorer's rows.
  *
- * `workers` and `headed` are run-level flags for one kind of test each: `--workers` forks load
- * generators and is a documented no-op on a test with no `workload`, and `--headed` opens a window
- * for a test that drives a browser. Both were drawn on every door, on every project, always —
- * filed as `M216-01` for `workers` alone, with `headed` the same defect on a different door and
- * unfiled.
- *
- * **AND THE DOOR IS NOT THE KEY, WHICH IS WHERE `PLAN_M229_UI_REVIEW.md`'s `D1250` WAS WRONG.**
- * The plan's repair was two capabilities on `VOCABULARY` — `takesWorkers`, `takesHeaded` — read off
- * the door. That would have removed a working control: this strip faces **the run** (`RunStrip`'s
- * own header says so), and a run is not narrowed by the door. `run all` pressed on the API door
- * has no `files` field and no `--tag`, so it runs the LOAD tests too — and `--workers` is exactly
- * the flag that decides how. A door-keyed rule would have hidden the control that governs them.
- *
- * So the subject of `workers` is *a workload in this run*, which is `D1082` read correctly, and it
- * is construct-keyed rather than door-keyed — `M223` `F`'s own lesson, which the plan reached for
- * and then keyed on the wrong thing.
- *
- * **The narrowing is the same three-way fork the button's label uses**, in the same order, because
- * a strip whose controls and whose label disagreed about what is about to run would be two answers
- * to one question — the thing this strip exists to prevent.
- *
- * **A file that did not parse is INCLUDED here, and `countByDoor` excludes it.** The two are asking
- * different questions and the honest answers differ: *how many tests are behind this door* has no
- * answer for a file whose recovery dropped an unknown number, while *could this run contain a
- * workload* has a safe direction — `D1076`, over-offering beats silent omission. A control drawn
- * for a workload that turns out not to exist is visible and harmless; one hidden from a workload
- * that does is `M216-01` with the sign flipped.
+ * It is `App`'s `request()` read the other way round, so the two cannot disagree: the files are the
+ * selection, else the ones a text query lit, else all; a tag query then keeps the tests carrying one
+ * of its tags (`--tag` is OR); the chip keeps the rows of its kind (`--kind`). A crawl carries no
+ * tags on the wire, so under a tag query none is counted — the CLI may still run a tagged crawl, and
+ * the count is then low by exactly those, which is the limit `lensesInRun` has always had.
  */
-export function lensesInRun(project: ProjectView, selection: readonly string[], query: Query): ReadonlySet<Lens> {
-  const out = new Set<Lens>();
-  const take = (f: ProjectFile): void => {
-    for (const t of f.tests) for (const lens of t.lenses) out.add(lens);
-    for (const c of f.crawls) for (const lens of c.lenses) out.add(lens);
-  };
-  if (selection.length > 0) {
-    const chosen = new Set(selection);
-    for (const f of project.files) if (chosen.has(f.path)) take(f);
-    return out;
-  }
-  if (query.kind === 'tag') {
-    // `--tag` narrows to TESTS, not to files — `D1064`'s gap, and the reason this branch cannot
-    // just call `matchingFiles` and take whole files the way the text branch does.
-    const wanted = new Set(query.tags);
-    for (const f of project.files) {
-      // Tests only: a `crawl` carries no tags at all (`ProjectCrawl` has no `tags` field, because
-      // the language does not let one be written), so `--tag` can never select one.
-      for (const t of f.tests) if (t.tags.some((tag) => wanted.has(tag))) for (const lens of t.lenses) out.add(lens);
+export function runRows(project: ProjectView, selection: readonly string[], query: Query, kind: Lens | null = null): RunRow[] {
+  const files = selection.length > 0 ? new Set(selection) : query.kind === 'text' ? matchingFiles(project, query)! : null;
+  const wanted = query.kind === 'tag' ? new Set(query.tags) : null;
+  const ofKind = (lenses: readonly Lens[]): boolean => kind === null || lenses.includes(kind);
+  const out: RunRow[] = [];
+  for (const f of project.files) {
+    if (files !== null && !files.has(f.path)) continue;
+    for (const t of f.tests) {
+      if (wanted !== null && !t.tags.some((tag) => wanted.has(tag))) continue;
+      if (ofKind(t.lenses)) out.push({ file: f.path, name: t.name, lenses: t.lenses });
     }
-    return out;
+    if (wanted !== null) continue;
+    for (const c of f.crawls) if (ofKind(c.lenses)) out.push({ file: f.path, name: c.name, lenses: c.lenses });
   }
-  if (query.kind === 'text') {
-    const lit = matchingFiles(project, query)!;
-    for (const f of project.files) if (lit.has(f.path)) take(f);
-    return out;
-  }
-  for (const f of project.files) take(f);
+  return out;
+}
+
+/**
+ * **Which lenses a run touches** — what the header's `workers` and `headed` are drawn by (`D1250`:
+ * the lens set of the RUN, never the chip). The union over `runRows`, so a flag appears exactly when
+ * a row ▶ would run can spend it.
+ */
+export function lensesInRun(project: ProjectView, selection: readonly string[], query: Query, kind: Lens | null = null): ReadonlySet<Lens> {
+  const out = new Set<Lens>();
+  for (const r of runRows(project, selection, query, kind)) for (const l of r.lenses) out.add(l);
   return out;
 }

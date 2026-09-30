@@ -37,7 +37,8 @@ export interface AuthPanelProps {
    * would be four accounts of one config; a panel with no door would have to state all three
    * caveats to every reader, which is how the shipped version came to state BROWSER's to everyone.
    */
-  readonly door: Lens;
+  /** The kinds the open file carries (`M254`, `D1399`) — each caveat below shows for its own. */
+  readonly kinds: ReadonlySet<Lens>;
 }
 
 /** The four `probe` opt-ins as **what they grant**, which is Q6's answer: a checkbox cannot
@@ -50,7 +51,7 @@ const PROBES: readonly [keyof Target, string][] = [
   ['probeCiphers', 'the TLS probe may open one handshake per candidate cipher suite here'],
 ];
 
-export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
+export function AuthPanel({ project, path, onEdit, kinds }: AuthPanelProps) {
   const { envName, sessions, targets } = project.authorization;
   const file = project.files.find((f) => f.path === path) ?? null;
 
@@ -108,7 +109,7 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
           than the caveat being the frame. Editing a one-day-old mutation-checked block was the
           cheaper of the two options on the table: propagating a mis-framing to two more doors costs
           more than correcting it once. */}
-      <section className="auth-block" data-auth-reach={`${apiSteps}/${pageSteps}`} data-auth-door={door}>
+      <section className="auth-block" data-auth-reach={`${apiSteps}/${pageSteps}`} data-auth-kinds={[...kinds].join(' ')}>
         <h3>identity in force here</h3>
 
         {used.size === 0 ? (
@@ -141,11 +142,11 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
           </li>
         </ul>
 
-        {/* THE DOOR'S OWN CAVEAT. One per door, each a recorded property of the runtime, and each
-            the thing an author of THAT kind of work assumes wrongly. None of them is shown to a
-            reader who did not come through the door it belongs to — which is the whole correction
-            `Q2` makes, since the BROWSER one was being shown to all four. */}
-        {door === 'browser' && pageSteps > 0 ? (
+        {/* EACH KIND'S OWN CAVEAT. One per kind, each a recorded property of the runtime, and each
+            the thing an author of THAT kind of work assumes wrongly. None is shown for a file that
+            does not carry its kind — which is the correction `Q2` made when it was a door, since
+            the BROWSER one was being shown to all four; `M254` (`D1399`) keys it on the file. */}
+        {kinds.has('browser') && pageSteps > 0 ? (
           <p className="muted" data-auth-bridge>
             {/* `M247` `A` (`D1352`, amending `D10`): the jar → browser direction is bridged. */}
             {/* The limits — a header credential, a login made on the page — are the legend's (`?`); at rest
@@ -171,7 +172,7 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
             run's numbers — *"their latencies are missing from the run's numbers and their endpoints
             have no bucket"* — which matters because `threshold p95 duration` is computed over
             exactly the set that excludes them. */}
-        {door === 'load' && used.size > 0 ? (
+        {kinds.has('load') && used.size > 0 ? (
           <p className="muted" data-auth-load-caveat>
             <strong>Many users, one identity.</strong> A named session is established once, before the VUs are scheduled, so{' '}
             <code>across 50 users as admin</code> is fifty virtual users sharing a single login. Each iteration re-reads it fresh
@@ -188,7 +189,7 @@ export function AuthPanel({ project, path, onEdit, door }: AuthPanelProps) {
             And `privileged` sessions are excluded from that set by design (`D307`/`D310`) — so a
             green result says nothing about what a privileged principal could reach, which is
             literally what this block is for. Both sets are named. */}
-        {door === 'scan' ? (
+        {kinds.has('scan') ? (
           <p className="muted" data-auth-scan-caveat data-auth-probe-set={probeSet.length} data-auth-probe-excluded={excluded.length}>
             <strong>Every request is replayed as each of:</strong>{' '}
             {probeSet.map((n) => <code key={n}>{n}</code>).reduce<ReactNode[]>((acc, el, i) => (i === 0 ? [el] : [...acc, ', ', el]), [])}.

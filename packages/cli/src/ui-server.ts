@@ -610,6 +610,9 @@ export const CONFIG_PATH = 'tflw.config';
 export interface RunRequest {
   readonly files?: readonly string[];
   readonly tags?: readonly string[];
+  /** `--kind` (`M254`, `D1403`) — the explorer's kind chip. ▶ runs exactly the rows shown, and
+   *  the chip is one of the things that decides which rows those are. */
+  readonly kinds?: readonly string[];
   readonly only?: string;
   readonly env?: string;
   readonly workers?: number;
@@ -741,6 +744,7 @@ export function runArgv(req: RunRequest): string[] {
   if (req.workers !== undefined) argv.push('--workers', String(req.workers));
   // One `--tag a,b`, the CLI's own spelling (comma-joined, AND across the list).
   if (req.tags && req.tags.length > 0) argv.push('--tag', req.tags.join(','));
+  if (req.kinds && req.kinds.length > 0) argv.push('--kind', req.kinds.join(','));
   if (req.only) argv.push('--only', req.only);
   if (req.evidence) argv.push('--evidence', req.evidence);
   // A boolean flag, so it is pushed on `true` alone — `false` and absent are the same request,

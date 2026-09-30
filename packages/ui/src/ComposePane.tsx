@@ -94,7 +94,7 @@ import { SessionPanel, type Session, type SessionLine } from './SessionPanel';
 import { holds, moveOf, moveUnits, requestRemoval, statementRemoval } from './depends';
 import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type BodiedDecl, type OutlineCrawl, type OutlineDecl, type OutlineHook, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
 import type { Prefix, SendForm } from './outline';
-import { VOCABULARY, type AddGesture } from './vocabulary';
+import { vocabularyOf, type AddGesture, type DoorVocabulary } from './vocabulary';
 import { groupFor } from './ran';
 import { bodyProblem, laidOut } from './jsonview';
 import { BodyText } from './Source';
@@ -193,7 +193,7 @@ export type SeqTarget =
   | { readonly kind: 'request'; readonly decl: OutlineTest; readonly request: OutlineRequest; readonly line: number }
   | { readonly kind: 'step'; readonly statement: OutlineStatement; readonly line: number };
 
-function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, indent, statement, door, band, refusal, menu, scope, head }: {
+function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, indent, statement, kinds, band, refusal, menu, scope, head }: {
   readonly line: number;
   readonly selected: boolean;
   readonly onLine: (line: number) => void;
@@ -210,7 +210,7 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
    *  from another door is drawn in position and locked, never dropped and never bucketed at the
    *  end, which is what `outline.ts` computes from the language's own `lenses.ts`. */
   readonly statement?: OutlineStatement;
-  readonly door?: Lens;
+  readonly kinds?: ReadonlySet<Lens>;
   /** The declaration's own line, on the one row that IS a declaration. `.test-band` used to be a
    *  block above the card; `D1112` makes it the first row of the sequence, which is the same claim
    *  — *this is the declaration that holds everything below it* — costing one line instead of a
@@ -239,7 +239,7 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
    *  `<li>` is a list item with no list, which is what axe found on every Compose. */
   readonly head?: boolean;
 }) {
-  const foreign = statement !== undefined && door !== undefined && isForeign(statement.lens, door);
+  const foreign = statement !== undefined && kinds !== undefined && isForeign(statement.lens, kinds);
   const Row = head === true ? 'div' : 'li';
   return (
     <Row
@@ -274,9 +274,9 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
           door decides what may be EDITED and never what may be seen, so the row says what the step
           is and where it can be worked on — which is the one thing a reader needs from it here. */}
       {foreign && statement?.lens ? (
-        <a className="badge also" href={`#/${statement.lens}`} data-stmt-door={statement.lens} data-tip={`this is ${DOOR_BY_ID[statement.lens].label}'s to edit — open that door`}>
+        <span className="badge also" data-stmt-door={statement.lens} data-tip={`a ${DOOR_BY_ID[statement.lens].label} step, in a file this page reads as none of that kind — edit it in Source`}>
           {DOOR_BY_ID[statement.lens].label}
-        </a>
+        </span>
       ) : null}
       {plus}
       {trailing}
@@ -740,7 +740,9 @@ export interface ComposePaneProps {
   readonly onReread: (() => void) | null;
   readonly onWrite: () => void;
   readonly onDiscard: () => void;
-  readonly door: Lens;
+  /** The open file's kinds and the vocabulary row they make (`M254`, `D1399`) — see `ComposeDoor`. */
+  readonly kinds: ReadonlySet<Lens>;
+  readonly vocab: DoorVocabulary;
   /**
    * **Is the playback region carrying a trace** — `M227` `D` (`D1235`).
    *
@@ -899,7 +901,7 @@ const fitEditor = (px: number, column: number, lower: number = LOWER_MIN): numbe
   Math.max(EDITOR_MIN, Math.min(Math.round(px), Math.max(EDITOR_MIN, column - 6 - lower)));
 
 export function ComposePane(props: ComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, onNewDecl, crawls, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onMoveSteps, onReread, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, door, stage, authorization, onProjectTab, tab, onEditorTab: setTab } = props;
+  const { path, outline, at, focusLine, onLine, onNew, onNewDecl, crawls, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onMoveSteps, onReread, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, kinds, vocab, stage, authorization, onProjectTab, tab, onEditorTab: setTab } = props;
   /** The foot's gestures for the declaration in hand — see the foot's own comment. */
   const footAdds: readonly AddGesture[] =
     at === null || at.decl.kind === 'hook' ? [] : at.decl.kind === 'test' ? adds : at.decl.kind === 'action' ? adds.filter((a) => a.key !== 'record') : CRAWL_ADDS;
@@ -1408,7 +1410,7 @@ export function ComposePane(props: ComposePaneProps) {
             text={afterLead(seqLead(s.node), s.text)}
             statement={s}
             menu={seqMenu({ kind: 'step', statement: s, line: s.line }, s.text)}
-            door={door}
+            kinds={kinds}
             refusal={refusalFor(s.line)}
             trailing={
               onRemoveSteps === null || s.stepPath === null ? null : (
@@ -1439,7 +1441,7 @@ export function ComposePane(props: ComposePaneProps) {
         scope={one === null ? null : s.text}
         statement={s}
         menu={seqMenu({ kind: 'step', statement: s, line: s.line }, shown.text.split('\n')[0] ?? s.kind)}
-        door={door}
+        kinds={kinds}
         refusal={refusalFor(s.line)}
         trailing={
           s.inner !== null ? (
@@ -1452,7 +1454,7 @@ export function ComposePane(props: ComposePaneProps) {
                 <button type="button" className="seq-x" onClick={() => onUnscope(s)} data-seq-unscope={s.line} data-tip={`take \`${s.text}\` off and keep the gesture inside it`}>
                   ⤺
                 </button>
-              ) : s.body === null && onScope !== null && VOCABULARY[door].constructs.has('WithinBlock') ? (
+              ) : s.body === null && onScope !== null && vocab.constructs.has('WithinBlock') ? (
                 <button type="button" className="seq-x" onClick={() => onScope(s)} data-seq-scope-add={s.line} data-tip="scope this gesture to one part of the page — a `within`">
                   ⤹
                 </button>
@@ -1560,7 +1562,7 @@ export function ComposePane(props: ComposePaneProps) {
           text={afterLead(seqLead(s.node), s.text.split('\n')[0] ?? '')}
           statement={s}
           menu={seqMenu({ kind: 'step', statement: s, line: s.line }, s.text.split('\n')[0] ?? s.kind)}
-          door={door}
+          kinds={kinds}
           refusal={refusalFor(s.line)}
           trailing={
             onRemoveSteps === null || s.stepPath === null ? null : (
@@ -1589,7 +1591,7 @@ export function ComposePane(props: ComposePaneProps) {
    * change with no measurement behind it in the door the user has just declared finished.
    */
   const phaseFor = (line: number): 'api' | 'browser' | undefined =>
-    door !== 'browser' || decl === null ? undefined : phaseOf(decl.body, line) === 'session' ? 'browser' : 'api';
+    !kinds.has('browser') || decl === null ? undefined : phaseOf(decl.body, line) === 'session' ? 'browser' : 'api';
 
   /** Every row the column draws, for the count the gates read off it. */
   const rowCount = decl === null ? 0 : statementsOf(decl.body).length + requestsOf(decl.body).length;
@@ -1866,14 +1868,14 @@ export function ComposePane(props: ComposePaneProps) {
                 </p>
               </div>
             ) : selected.kind === 'test' ? (
-              <TestBand decl={selected.decl} door={door} editing={editing} lastRun={lastRun} />
+              <TestBand decl={selected.decl} kinds={kinds} editing={editing} lastRun={lastRun} />
             ) : selected.kind === 'statement' ? (
-              <StatementEditor statement={selected.statement} door={door} editing={editing} ran={rowRan} onLine={onLine} onRemove={removable === null ? null : () => remove(selected.decl, selected.statement.line, statementRemoval(selected.statement))} refusal={refusalFor(selected.statement.line)} onClearRefusal={clearRefusal} phase={phaseFor(selected.statement.line)} />
+              <StatementEditor statement={selected.statement} kinds={kinds} editing={editing} ran={rowRan} onLine={onLine} onRemove={removable === null ? null : () => remove(selected.decl, selected.statement.line, statementRemoval(selected.statement))} refusal={refusalFor(selected.statement.line)} onClearRefusal={clearRefusal} phase={phaseFor(selected.statement.line)} />
             ) : (
               <RequestEditor
                 phase={phaseFor(selected.request.line)}
                 request={selected.request}
-                door={door}
+                kinds={kinds}
                 tab={tab}
                 onTab={setTab}
                 edit={edit}
@@ -2064,12 +2066,12 @@ export function ComposePane(props: ComposePaneProps) {
                 onCapture={onCapture === null ? null : (specs) => onCapture(shownRequest, specs)}
               />
               </>
-            ) : VOCABULARY[door].records ? (
+            ) : vocab.records ? (
               /* **The session panel** — `M219` `F` (`D1165`), re-keyed by `M228` `F` (`D1245`).
                  A door that RECORDS puts a live session here: the page is its evidence, and
                  `D1102`'s rule is the same one.
 
-                 **It read `!VOCABULARY[door].sends` until `M228` `F`, and that was a stand-in for
+                 **It read `!vocab.sends` until `M228` `F`, and that was a stand-in for
                  `door === 'browser'`** — true while BROWSER was the only door with no `send`.
                  `D1241` made SCANS the second one, and SCANS inherited the recorder: measured on
                  the served corpus, every scan test offered `record a session` under copy promising
@@ -2295,9 +2297,9 @@ function BodyEdit({ text, onText }: { readonly text: string; readonly onText: (t
  * the block's body before the splice. So this needs no new machinery at all — what it needs is to
  * exist, because before this round the 430 statements inside a block were not rows anywhere.
  */
-function InnerRow({ statement, door, editing, onLine, onClearRefusal, phase }: {
+function InnerRow({ statement, kinds, editing, onLine, onClearRefusal, phase }: {
   readonly statement: OutlineStatement;
-  readonly door: Lens;
+  readonly kinds: ReadonlySet<Lens>;
   readonly editing: RowEditing;
   readonly onLine: (line: number) => void;
   readonly onClearRefusal: () => void;
@@ -2305,13 +2307,13 @@ function InnerRow({ statement, door, editing, onLine, onClearRefusal, phase }: {
 }) {
   const { row, onRow: onEdit } = editing;
   const key = rowKey(statement);
-  const own = onEdit === null || isForeign(statement.lens, door) ? null : statementEditOf(statement.node);
+  const own = onEdit === null || isForeign(statement.lens, kinds) ? null : statementEditOf(statement.node);
   const values = row !== null && row.key === key ? row.values : own;
   if (values === null || onEdit === null) {
     return (
       <div className="stmt-line" data-inner-line={statement.line}>
         <code className="stmt-text">{statement.text}</code>
-        <p className="muted">this statement belongs to another door — open that door to edit it</p>
+        <p className="muted">a statement of a kind this file does not carry — edit it in Source</p>
       </div>
     );
   }
@@ -2330,7 +2332,7 @@ function InnerRow({ statement, door, editing, onLine, onClearRefusal, phase }: {
             refusal={null}
             onClearRefusal={onClearRefusal}
             onLine={onLine}
-            drops={VOCABULARY[door].dropsSubjects}
+            drops={vocabularyOf(kinds).dropsSubjects}
             phase={phase}
           />
         </ul>
@@ -2341,9 +2343,9 @@ function InnerRow({ statement, door, editing, onLine, onClearRefusal, phase }: {
   );
 }
 
-function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refusal, onClearRefusal, phase }: {
+function StatementEditor({ statement, kinds, editing, ran, onLine, onRemove, refusal, onClearRefusal, phase }: {
   readonly statement: OutlineStatement;
-  readonly door: Lens;
+  readonly kinds: ReadonlySet<Lens>;
   readonly editing: RowEditing;
   readonly ran: Ran | null;
   readonly onLine: (line: number) => void;
@@ -2354,7 +2356,7 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
   readonly phase?: 'api' | 'browser';
 }) {
   const { row, onRow: onEdit, onNote, noting, onNoting } = editing;
-  const foreign = isForeign(statement.lens, door);
+  const foreign = isForeign(statement.lens, kinds);
   const key = rowKey(statement);
   const own = statement.stepPath === null || onEdit === null || foreign ? null : statementEditOf(statement.node);
   const values = row !== null && row.key === key ? row.values : own;
@@ -2407,7 +2409,7 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
               refusal={refusal}
               onClearRefusal={onClearRefusal}
               onLine={onLine}
-              drops={VOCABULARY[door].dropsSubjects}
+              drops={vocabularyOf(kinds).dropsSubjects}
               phase={phase}
             />
           </ul>
@@ -2415,7 +2417,7 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
           <>
             <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit(statement, next)} trailing={null} pick={editing.pick} phase={phase} onOpenAction={editing.onOpenAction} />
             {statement.body === null || statement.body.length !== 1 ? null : (
-              <InnerRow statement={statement.body[0]!} door={door} editing={editing} onLine={onLine} onClearRefusal={onClearRefusal} phase={phase} />
+              <InnerRow statement={statement.body[0]!} kinds={kinds} editing={editing} onLine={onLine} onClearRefusal={onClearRefusal} phase={phase} />
             )}
           </>
         )
@@ -2423,7 +2425,7 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
         <div className="stmt-line">
           <code className="stmt-text">{statement.text}</code>
           <p className="muted">
-            {foreign ? 'this statement belongs to another door — open that door to edit it' : unaddressableWhy(statement.nested)}
+            {foreign ? 'a statement of a kind this file does not carry — edit it in Source' : unaddressableWhy(statement.nested)}
           </p>
         </div>
       )}
@@ -2445,9 +2447,9 @@ function StatementEditor({ statement, door, editing, ran, onLine, onRemove, refu
  * while `timeout`, `without redirects` and `retry after` together are used five times in a
  * thousand requests.
  */
-function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ran, onLine, onRemoveStatement, refusalFor, onClearRefusal, phase }: {
+function RequestEditor({ request: r, kinds, tab, onTab, edit, onEdit, editing, ran, onLine, onRemoveStatement, refusalFor, onClearRefusal, phase }: {
   readonly request: OutlineRequest;
-  readonly door: Lens;
+  readonly kinds: ReadonlySet<Lens>;
   readonly tab: EditorTab;
   readonly onTab: (tab: EditorTab) => void;
   readonly edit: RequestEdit | null;
@@ -2643,7 +2645,7 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
             <ul className="asserts stmts">
               {r.attached.map((s) => {
                 const key = rowKey(s);
-                const own = s.stepPath === null || editing.onRow === null || isForeign(s.lens, door) ? null : statementEditOf(s.node);
+                const own = s.stepPath === null || editing.onRow === null || isForeign(s.lens, kinds) ? null : statementEditOf(s.node);
                 const values = editing.row !== null && editing.row.key === key ? editing.row.values : own;
                 const verdict = <VerdictMark verdict={ran?.steps.get(s.line) ?? null} />;
                 const removeThis = onRemoveStatement === null || s.stepPath === null ? null : () => onRemoveStatement(s);
@@ -2660,7 +2662,7 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
                       refusal={refusalFor(s.line)}
                       onClearRefusal={onClearRefusal}
                       onLine={onLine}
-                      drops={VOCABULARY[door].dropsSubjects}
+                      drops={vocabularyOf(kinds).dropsSubjects}
                       phase={phase}
                     />
                   );
@@ -2669,7 +2671,7 @@ function RequestEditor({ request: r, door, tab, onTab, edit, onEdit, editing, ra
                 return (
                   <li
                     key={s.line}
-                    className={`assert other stmt${isForeign(s.lens, door) ? ' locked' : ''}`}
+                    className={`assert other stmt${isForeign(s.lens, kinds) ? ' locked' : ''}`}
                     data-assert-line={s.line}
                     data-stmt={s.kind}
                     data-stmt-line={s.line}

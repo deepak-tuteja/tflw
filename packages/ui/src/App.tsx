@@ -1,31 +1,33 @@
-// The shell (`M192` U2, widened by `M200` `A0-3`): four doors, then the project on the left, the
-// runs across the top, the selected run below. State is what the server said and nothing else —
-// the page holds no truth of its own.
+// The shell (`M192` U2, re-cut by `M254`): one header — the project, the env, ▶ and the two
+// project facts — the explorer on the left with the kinds as chips at its head, and one file's
+// three stages in the pane. State is what the server said and nothing else — the page holds no
+// truth of its own.
 //
-// The door lives in the URL hash and nowhere else (`D1045`). It is a view of a project rather
-// than a fact about one, so there is no `.tflw-ui/` anything to remember it in, and a link to
-// `#/load` is a link to the LOAD door of whatever project this server is serving.
+// Where you are and what is shown live in the URL hash and nowhere else (`D1045`, `D1413`): the
+// path is the tab, the file and the line, the query is the kind chip, the selection and the search.
+// A kind is a filter (`D1399`), not a place, so there is no `.tflw-ui/` anything to remember it in
+// and a link to `#/?kind=load` is the LOAD chip of whatever project this server is serving.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelRun, getBaseline, getBaselineForEnv, getConfig, getFile, getHistory, getProject, getReports, getResults, getRuns, getStderr, putBaseline, putConfig, putFile, reportFileUrl, startRun, subscribe } from './api';
 import type { DocumentView, FileView } from './api';
 import { EMPTY_BASELINE, stageFingerprint } from './baseline';
 import type { EndEvent, HistoryView, Lens, ProjectView, ReportDir, RunRecord, RunReport, RunRequest, ScanFinding, UnconfiguredView } from './contract';
-import { DEFAULT_TAB, docFromHash, doorFromHash, fileFromHash, focusFromHash, hashForDoor, hashForTab, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
-import { Landing } from './Landing';
+import { docFromHash, fileFromHash, focusFromHash, hashFor, isPanelTab, kindFromHash, paneTail, queryFromHash, selectionFromHash, tabFromHash, type TabId } from './doors';
+import { NoProject } from './NoProject';
 import { EmptyDoor } from './EmptyDoor';
 import { Legend } from './Legend';
 import { LEGEND_PANELS } from './legendPanels';
 import { shortcutFor } from './shortcuts';
 import { landingFor, projectHash, rememberLanding, rememberedLanding } from './landingRule';
+import { Header } from './Header';
 import { Grip, SIDEBAR, storedSize } from './Grip';
 import { TooltipLayer } from './Tooltip';
 import { ContextMenuLayer, type MenuItem, type MenuRequest } from './ContextMenu';
 import { FileAction, type FileActionKind } from './FileAction';
 import { ThemePick } from './ThemePick';
-import { DoorBar } from './DoorBar';
 import { ComposeDoor } from './ComposeDoor';
-import { VOCABULARY } from './vocabulary';
+import { kindsOfFile, vocabularyOf } from './vocabulary';
 import { AuthPanel } from './AuthPanel';
 import { ConfigPanel, documentsOf } from './ConfigPanel';
 import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
@@ -33,12 +35,11 @@ import { exitExplained, reportIdOf } from './format';
 import { LiveBody, ReportBody, ReportHeader } from './ReportView';
 import { Findings } from './Findings';
 import { RunList, type Selection } from './RunList';
-import { RunStrip } from './RunStrip';
 import { matchingFiles, parseQuery } from './search';
 import { Sidebar } from './Sidebar';
 import type { MenuTarget } from './Sidebar';
 import { NewThing, type NewMode } from './NewThing';
-import { fileOutline, pageOpeners } from './outline';
+import { fileOutline, pageOpeners, statementsOf } from './outline';
 
 interface LiveRun {
   readonly id: string;
@@ -67,7 +68,9 @@ interface DocState {
 const EMPTY_DOC: DocState = { text: null, disk: null, etag: null, absentPath: null };
 
 export function App() {
-  const [door, setDoorState] = useState<Lens | null>(() => doorFromHash(window.location.hash));
+  /** The kind chip (`M254`, `D1399`) — `null` is `all`. A filter on what the explorer lists and ▶
+   *  runs, and nothing else: Compose reads the open file's own kinds (`vocabularyOf`). */
+  const [kind, setKindState] = useState<Lens | null>(() => kindFromHash(window.location.hash));
   /** Which stage of the selected file is showing (`M205` §2). It is the hash's second segment, so
    *  a tab is linkable and the back button walks it — the same rule `D1045` makes for the door. */
   const [tab, setTabState] = useState<TabId>(() => tabFromHash(window.location.hash));
@@ -179,7 +182,7 @@ export function App() {
   // opens where it says. `setDoor` writes the hash; the listener is what actually moves the page.
   useEffect(() => {
     const onHash = () => {
-      setDoorState(doorFromHash(window.location.hash));
+      setKindState(kindFromHash(window.location.hash));
       setTabState(tabFromHash(window.location.hash));
       setFileState(fileFromHash(window.location.hash));
       setFocusLine(focusFromHash(window.location.hash));
@@ -190,26 +193,14 @@ export function App() {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  const setDoor = useCallback(
+  /** Choosing a chip. It changes the address's tail and nothing else — the tab, the file and the
+   *  line stay where they are, because a filter is a narrowing and not a move (`D1399`). */
+  const setKind = useCallback(
     (next: Lens | null) => {
-      // A door change **keeps the file and resets the tab** (`M206` `Q4`).
-      //
-      // The reset is unchanged; its reason is not. This used to read "the door decides which file
-      // you land on", which stopped being true the moment the file moved into the address — the
-      // address decides, and the door is a view of it. What survives is the narrower claim: a tab
-      // is a stage of *this* file's life, and the stage you were at in one kind of work says
-      // nothing about the stage you are at in another. Landing on BROWSER's Source because you
-      // were reading API's is a guess; landing on Compose is the door's own promise (`D1042`).
-      // The **document** is dropped with the tab, and for the tab's own reason: it is a choice made
-      // inside Config, and a door change lands on Compose where there is no document to be showing.
-      const next_hash = next === null ? hashForDoor(null) : hashForTab(next, DEFAULT_TAB, file) + paneTail(selection, query);
-      window.location.hash = next_hash;
-      setDoorState(next);
-      setTabState(DEFAULT_TAB);
-      setFocusLine(null);
-      setDocState(null);
+      window.location.hash = hashFor(tab, file, focusLine ?? undefined, doc) + paneTail(selection, query, next);
+      setKindState(next);
     },
-    [file, selection, query],
+    [tab, file, focusLine, doc, selection, query],
   );
   const setTab = useCallback(
     (next: TabId, focus?: number, nextDoc?: string | null) => {
@@ -235,32 +226,32 @@ export function App() {
        */
       const fileStage = next === 'compose' || next === 'source';
       const carried = focus ?? (fileStage ? (focusLine ?? undefined) : undefined);
-      if (door !== null) window.location.hash = hashForTab(door, next, file, carried, wanted) + paneTail(selection, query);
+      window.location.hash = hashFor(next, file, carried, wanted) + paneTail(selection, query, kind);
       setTabState(next);
       setFocusLine(carried ?? null);
       setDocState(wanted);
     },
-    [door, file, doc, selection, query, focusLine],
+    [kind, file, doc, selection, query, focusLine],
   );
   /** Choosing a different document inside Config. It drops the focus line for `setFile`'s reason:
    *  a line number is an offset into the document that named it. */
   const setDoc = useCallback(
     (next: string | null) => {
-      if (door !== null) window.location.hash = hashForTab(door, tab, file, undefined, next) + paneTail(selection, query);
+      window.location.hash = hashFor(tab, file, undefined, next) + paneTail(selection, query, kind);
       setDocState(next);
       setFocusLine(null);
     },
-    [door, tab, file, selection, query],
+    [kind, tab, file, selection, query],
   );
   /** Choosing a different file. It drops the focus line, because a line number is an offset into
    *  the file that named it and means nothing in the next one. */
   const setFile = useCallback(
     (next: string) => {
-      if (door !== null) window.location.hash = hashForTab(door, tab, next, undefined, doc) + paneTail(selection, query);
+      window.location.hash = hashFor(tab, next, undefined, doc) + paneTail(selection, query, kind);
       setFileState(next);
       setFocusLine(null);
     },
-    [door, tab, doc, selection, query],
+    [kind, tab, doc, selection, query],
   );
 
   /**
@@ -279,24 +270,24 @@ export function App() {
     (nextSelection: readonly string[], open: string | null) => {
       const nextFile = open ?? file;
       const line = open === null ? (focusLine ?? undefined) : undefined;
-      if (door !== null) window.location.hash = hashForTab(door, tab, nextFile, line, doc) + paneTail(nextSelection, query);
+      window.location.hash = hashFor(tab, nextFile, line, doc) + paneTail(nextSelection, query, kind);
       setSelectionState(nextSelection);
       if (open !== null) {
         setFileState(open);
         setFocusLine(null);
       }
     },
-    [door, tab, file, focusLine, doc, query],
+    [kind, tab, file, focusLine, doc, query],
   );
 
-  /** Typing in the search box. It changes the address's tail and nothing else — the door, the tab
+  /** Typing in the search box. It changes the address's tail and nothing else — the chip, the tab
    *  and the file it names stay where they are, because a search is a narrowing and not a move. */
   const setQuery = useCallback(
     (next: string) => {
-      if (door !== null) window.location.hash = hashForTab(door, tab, file, focusLine ?? undefined, doc) + paneTail(selection, next);
+      window.location.hash = hashFor(tab, file, focusLine ?? undefined, doc) + paneTail(selection, next, kind);
       setQueryState(next);
     },
-    [door, tab, file, focusLine, doc, selection],
+    [kind, tab, file, focusLine, doc, selection],
   );
 
   const refreshLists = useCallback(async () => {
@@ -609,7 +600,7 @@ export function App() {
    */
   const acceptFinding = useCallback(
     async (finding: ScanFinding) => {
-      if (door === null || report === null || finding.fingerprint === undefined) return;
+      if (report === null || finding.fingerprint === undefined) return;
       setConfigProblem(null);
       setConfigSaved(null);
       let view: DocumentView;
@@ -641,7 +632,7 @@ export function App() {
       });
       setTab('config', staged.line, key);
     },
-    [door, report, docs, patchDoc, setTab],
+    [report, docs, patchDoc, setTab],
   );
 
 
@@ -815,8 +806,12 @@ export function App() {
     if (parsed.kind === 'tag' && parsed.tags.length > 0) req.tags = [...parsed.tags];
     const chosen = selection.length > 0 ? new Set(selection) : parsed.kind === 'text' && project ? matchingFiles(project, parsed)! : null;
     if (chosen !== null && chosen.size > 0 && project) req.files = project.files.map((f) => f.path).filter((p) => chosen.has(p));
+    // `D1403` — ▶ runs the rows the explorer shows, and the chip is one of the things that decides
+    // which rows those are. `tflw run --kind` is the CLI's own narrowing, so the page still runs
+    // nothing a terminal could not (`D1051`).
+    if (kind !== null) req.kinds = [kind];
     return req;
-  }, [runLevel, query, selection, project]);
+  }, [runLevel, query, selection, project, kind]);
 
 
   /**
@@ -846,20 +841,20 @@ export function App() {
    * the pane draws; `landing.ts` says why the key carries a hash of the root.
    */
   const landing = useMemo(
-    () => (door === null || project === null ? null : landingFor(door, project, rememberedLanding(door, projectHash(project.root)))),
+    () => (project === null ? null : landingFor(project, rememberedLanding(projectHash(project.root)))),
     // `file` is a dependency although the rule never reads it: the memory is written by the effect
     // below on every file the pane draws, so a door change with the same door and project — the
     // address dropping its file — has to re-read what that effect wrote since the last landing.
     // Without it the memo handed back the previous landing, the effect wrote THAT over the memory,
     // and a reload lost the file the reader had opened (found by the page suite's own case).
-    [door, project, file],
+    [project, file],
   );
   const landingPath = landing?.path ?? null;
   const path = file !== null && filePaths.includes(file) ? file : (landingPath ?? '');
   useEffect(() => {
-    if (door === null || project === null || path === '') return;
-    rememberLanding(door, projectHash(project.root), path);
-  }, [door, project, path]);
+    if (project === null || path === '') return;
+    rememberLanding(projectHash(project.root), path);
+  }, [project, path]);
 
   /**
    * **The address names what is drawn** — `M229` `D` (`D1252`).
@@ -916,7 +911,6 @@ export function App() {
   useEffect(() => {
     if (project === null) return;
     const hash = window.location.hash;
-    const at = doorFromHash(hash);
     const addressed = fileFromHash(hash);
     const known = project.files.map((f) => f.path);
     // `reading.current > 0` is *a project read is on its way*, and while one is the address is left
@@ -925,21 +919,20 @@ export function App() {
     // `M240` `A` — the file on screen for a named-but-missing file is the door's landing, not
     // `known[0]`; `landingPath` is what `path` above fell back to, so the address says what is drawn.
     const drawn = addressed === null || known.includes(addressed) || reading.current > 0 ? addressed : landingPath;
-    const q = hash.indexOf('?');
-    const canonical = at === null ? '#' : hashForTab(at, tabFromHash(hash), drawn, focusFromHash(hash) ?? undefined, docFromHash(hash)) + (q < 0 ? '' : hash.slice(q));
-    // A URL with no fragment at all already names the landing; writing `#` onto it would be a
-    // change with nothing behind it.
-    if (hash === '' && canonical === '#') return;
+    // `M254` (`D1413`) — the tail is rebuilt, not carried: an address from before `M254` names its
+    // kind as a door in the path, and this is where that door becomes `?kind=`. Built by the same
+    // `paneTail` every writer uses, from what the address says, so a canonical address comes back
+    // byte-identical and a legacy one comes back once, rewritten.
+    const canonical = hashFor(tabFromHash(hash), drawn, focusFromHash(hash) ?? undefined, docFromHash(hash)) + paneTail(selectionFromHash(hash), queryFromHash(hash), kindFromHash(hash));
+    // A URL with no fragment at all already names the shell at rest; writing `#/` onto it would be
+    // a change with nothing behind it.
+    if ((hash === '' || hash === '#') && canonical === '#/') return;
     if (hash === canonical) return;
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${canonical}`);
     // The state below is already the hash's — `onHash` set it — so nothing is re-read here. A
     // `replaceState` fires no `hashchange`, which is the other half of why this cannot loop.
-  }, [project, door, tab, file, focusLine, doc, selection, query, landingPath]);
+  }, [project, kind, tab, file, focusLine, doc, selection, query, landingPath]);
 
-  /** **Does this door draw a Compose sequence** — `M224` `D` (`D1210`), read once and spent twice:
-   *  the dispatch below and `main-fill`. `vocabulary.ts`'s `adds.length > 0` is the table's own way
-   *  of saying so (`D1189`), so neither call site names a door. */
-  const composes = door !== null && VOCABULARY[door].adds.length > 0;
 
   // ── `M218` `B` — what a right-clicked row can do ───────────────────────────────────────────────
   //
@@ -956,9 +949,8 @@ export function App() {
    *  those reads `file` from its own closure and would write the hash for the file we just left.
    *  The hash is the source of truth and its listener moves the page, so one write does it. */
   const openAt = useCallback((p: string, at: TabId) => {
-    if (door === null) return;
-    window.location.hash = hashForTab(door, at, p, undefined, doc) + paneTail([p], query);
-  }, [door, doc, query]);
+    window.location.hash = hashFor(at, p, undefined, doc) + paneTail([p], query, kind);
+  }, [kind, doc, query]);
 
   /**
    * **Run just this file** — explicit, and therefore not `D1149`'s rejected side effect.
@@ -1191,10 +1183,30 @@ export function App() {
     [openFileView, fileText, opensPage],
   );
 
-  if (door === null || noProject === true) {
-    // A door onto nothing is not a door: until there is a `tflw.config`, every path leads back
-    // to the landing, which is where a project can be made (`A0-5`).
-    return <Landing project={project} unconfigured={unconfigured} error={error} noProject={noProject} onOpen={setDoor} onCreated={() => void readProjectView()} />;
+  /** **The open file's kinds, and what its Compose can do** — `M254` (`D1399`). Read at the file,
+   *  never at the chip: a filter that changed what the pane could edit would be a mode. A file of no
+   *  kind reads the chip's, else `api`, the scaffold a project starts from. */
+  const fileKinds = useMemo<ReadonlySet<Lens>>(() => {
+    const out = new Set(kindsOfFile(project?.files.find((f) => f.path === path)));
+    /* The tests' kinds are not the whole file: a `before` hook can open a page in an API file, and an
+       action-only helper has no test at all. A statement drawn locked for want of a door was `D1078`'s
+       badge; with no doors there is nowhere to send it, so every lens the file's own statements carry
+       joins the set, and an empty set takes the chip's kind, else `api`. */
+    for (const d of outline?.declarations ?? []) for (const st of statementsOf(d.body)) if (st.lens !== null) out.add(st.lens);
+    if (out.size === 0) out.add(kind ?? 'api');
+    return out;
+  }, [project, path, outline, kind]);
+  const vocab = useMemo(() => vocabularyOf(fileKinds, kind ?? 'api'), [fileKinds, kind]);
+  /** **Does this file draw a Compose sequence** — `M224` `D` (`D1210`), read once and spent twice:
+   *  the dispatch below and `main-fill`. `vocabulary.ts`'s `adds.length > 0` is the table's own way
+   *  of saying so (`D1189`), so neither call site names a kind. */
+  const composes = vocab.adds.length > 0;
+
+  if (noProject !== false) {
+    // `M254` (`D1402`) — there is no landing for a project: a first visit opens the shell. Until
+    // there is a `tflw.config` there is no shell to open, so this is where a project is made
+    // (`A0-5`), and the kind chosen here is `D1399`'s scaffold choice — `tflw init`'s flag.
+    return <NoProject unconfigured={unconfigured} error={error} noProject={noProject} onCreated={(made) => { void readProjectView(); if (made !== 'api') setKind(made); }} />;
   }
 
   /**
@@ -1286,7 +1298,7 @@ export function App() {
                 </a>
               ))}
           </p>
-          <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} onAccept={door === null ? null : (f) => void acceptFinding(f)} />
+          <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} onAccept={(f) => void acceptFinding(f)} />
           <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null, history, onOpenTrace: (p) => setTraceOpen({ id: report.id, path: p }) }} />
         </article>
       ) : null}
@@ -1304,7 +1316,7 @@ export function App() {
    * Config, and a project fact has no business being built four times. `Run` was already here for
    * the same reason.
    */
-  const authPanel = project ? <AuthPanel project={project} path={path} onEdit={(line) => setTab('config', line)} door={door} /> : null;
+  const authPanel = project ? <AuthPanel project={project} path={path} onEdit={(line) => setTab('config', line)} kinds={fileKinds} /> : null;
   const configPanel = (
     <ConfigPanel
       documents={documents}
@@ -1351,7 +1363,7 @@ export function App() {
           control outside every landmark is content a screen reader's landmark list never reaches;
           the column pair is laid out as a nested grid so the page's own tracks do not move. */}
       <aside className="sidebar-col" aria-label="the project">
-      {project ? <Sidebar project={project} door={door} openFile={path === '' ? null : path} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} unsaved={unsavedPaths}
+      {project ? <Sidebar project={project} kind={kind} onKind={setKind} openFile={path === '' ? null : path} selection={selection} onPick={pick} query={query} onQuery={setQuery} outline={outline} unsaved={unsavedPaths}
           onNewIn={(p) => { setFile(p); startCreating('test'); }}
           onAddRequest={(declIndex) => setAddIntent((prev) => ({ path, declIndex, n: (prev?.n ?? 0) + 1 }))}
           focusLine={focusLine} onLine={(line) => setTab('compose', line)} onNew={(m) => startCreating(m)}
@@ -1381,7 +1393,7 @@ export function App() {
             });
             void readProjectView();
             if (to !== null) openAt(to, tab);
-            else if (door !== null) window.location.hash = hashForTab(door, tab, null) + paneTail([], query);
+            else window.location.hash = hashFor(tab, null) + paneTail([], query, kind);
           }}
         />
       )}
@@ -1390,10 +1402,10 @@ export function App() {
       {creating === null || project === null || (creating === 'test' && !fileReady) ? null : (
         <NewThing
           mode={creating}
-          /* **The door decides what it scaffolds** (`M222`, `D1189`) — `D1042`'s own second
-             clause, live for the first time. `door` is non-null here: the landing returns above
-             whenever it is not. */
-          door={door}
+          /* **The kind decides what it scaffolds** (`M222`, `D1189`; `M254`, `D1399`) — the one thing
+             a door ever decided, and now a choice in the dialog. It starts on the chip, else on the
+             open file's first kind, else `api`. */
+          kind={kind ?? [...fileKinds][0] ?? 'api'}
           inDir={creatingIn}
           openPath={path}
           /* **The file as the author has it** (`M217` `C`, `D1141`). This read `openFileView.text`
@@ -1445,17 +1457,13 @@ export function App() {
         <div className="sr-only" role="status" aria-live="polite" data-announcer>{announced}</div>
         <Notices notices={notices} onDismiss={dismiss} />
         <ContextMenuLayer menu={menu} onClose={() => setMenu(null)} />
-        {/* The theme is a fact about the reader and not about the project, so it is reachable from
-            every door, from the landing, and from the pane that says the project could not be read
-            (`M213` `S0`). It rides IN the doorbar rather than above it, because a row of its own
-            cost every page ~20 px — see `DoorBar`'s own note. The second call site is the one case
-            there is no doorbar to ride in. */}
-        {project ? <DoorBar project={project} door={door} onDoor={setDoor} themePick={<ThemePick />} onLegend={() => setLegendOpen(true)} /> : <ThemePick />}
-        {/* Above the tabs and below the doorbar (`M205` Q12): one strip per page, so every control
-            it carries is reachable from all five tabs and all four doors rather than from whichever
-            pane happened to own it. */}
+        {/* **One header** — `M254` (`D1400`): the project, the env, ▶ and the run's flags, then the two
+            project facts, `?` and the theme. The door bar and the run strip were two rows above the
+            tab strip and the top one decided almost nothing (`§0`: 193 px of chrome before the
+            first line of Compose). The theme is a fact about the reader, so it is reachable even
+            when the project could not be read. */}
         {project ? (
-          <RunStrip
+          <Header
             project={project}
             env={env}
             onEnv={setEnvPick}
@@ -1463,14 +1471,20 @@ export function App() {
             onWorkers={setWorkers}
             headed={headed}
             onHeaded={setHeaded}
+            kind={kind}
             selection={selection}
             query={query}
             running={running}
             onRun={onRun}
             onCancel={onCancel}
             request={request}
+            tab={tab}
+            onPanel={(which) => setTab(which)}
+            configMark={configMark}
+            themePick={<ThemePick />}
+            onLegend={() => setLegendOpen(true)}
           />
-        ) : null}
+        ) : <ThemePick />}
         {/* **All four doors are one pane** (`M213` `S4`, `D1094`; `D1210`; `M228` `B`, `D1237`).
             `vocabulary.ts` is the whole of the difference between them, and `ScanForm` has gone
             the way `BrowserForm` and `LoadForm` did: all three were the `<select>` that asked
@@ -1487,8 +1501,10 @@ export function App() {
                `+ new file` where the file's stage would be, not a pane about whichever file sorted
                first. `path` is `''` exactly when `landingFor` answered empty and the address names
                no file the project has; the strip and the project-fact tabs stay. */
-            empty={path === '' ? <EmptyDoor door={door} onNew={() => startCreating('file')} /> : undefined}
-            door={door}
+            empty={path === '' ? <EmptyDoor onNew={() => startCreating('file')} /> : undefined}
+            kinds={fileKinds}
+            vocab={vocab}
+            kind={kind}
             project={project}
             onWritten={(written) => { announce(`saved ${written}`); void readProjectView(); }}
             tab={tab}

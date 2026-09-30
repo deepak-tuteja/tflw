@@ -41,6 +41,9 @@ import {
   collectMigrations,
   applyMigrations,
   CLI_FLAGS,
+  LENSES,
+  lensesOfTest,
+  lensesOfCrawl,
   SPEC_MANIFEST_VERSION,
   specConstructs,
   type Program,
@@ -50,6 +53,7 @@ import {
   type FindingSeverity,
   type LogDestination,
   type LogLevel,
+  type Lens,
   type SuiteEntry,
   type TestDecl,
   type Workload,
@@ -992,6 +996,11 @@ interface RunArgs {
    * than being mutually exclusive, since that's the least surprising behavior if a future caller
    * ever passes both — no extra validation needed for a combination that's simply more selective. */
   readonly only?: string | undefined;
+  /** `--kind api,browser` (`M254`, `D1403`) — a test or crawl runs if it is of *any* listed kind, as
+   * `lensesOfTest`/`lensesOfCrawl` classify it: the same derivation the page counts its kind chips
+   * with, so the chip and the run cannot disagree about which tests a kind holds. AND with `--tag`,
+   * `--only` and `--failed`, exactly as they combine with each other. */
+  readonly kinds?: Lens[] | undefined;
   /** Raw `--parallel` text, validated in `runCommand` (P#47) — how many *files* run concurrently
    * in this one process (`runWithConcurrency`). Renamed from `--workers` (Phase 2b, user
    * direction during the D111/D113 grill-me): `--workers` now exclusively means load-generation
@@ -1165,8 +1174,25 @@ function parseRunArgs(argv: string[]): RunArgs {
     );
   }
   const tags = tagList && tagList.length > 0 ? tagList : undefined;
+  const kindRaw = str('kindRaw');
+  const kindList = kindRaw
+    ?.split(',')
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+  if (kindList && kindList.length === 0) {
+    throw new Error(
+      `--kind was given \`${kindRaw}\`, which names no kinds.\n` +
+        `  write the kinds as a comma-separated list (\`--kind api,browser\`), or drop the flag to run everything.`,
+    );
+  }
+  const unknownKind = kindList?.find((k) => !(LENSES as readonly string[]).includes(k));
+  if (unknownKind !== undefined) {
+    throw new Error(`--kind \`${unknownKind}\` is not a kind — the kinds are ${LENSES.map((l) => `\`${l}\``).join(', ')}.`);
+  }
+  const kinds = kindList && kindList.length > 0 ? (kindList as Lens[]) : undefined;
   return {
     files,
+    kinds,
     env: str('env'),
     seedRaw: str('seedRaw'),
     nowRaw: str('nowRaw'),
@@ -1849,15 +1875,16 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
       // by name in `last-run.json` exactly as it finds a test; and SPEC §9.15 already promises `--tag`
       // reaches a crawl, because its tags sit above the header the way a test's do. `--skip-workload`
       // is the one that does not apply: a crawl has no workload clause to skip.
-      const keep = <T extends { readonly tags: readonly string[]; readonly name: { readonly value: string } }>(d: T): boolean =>
+      const keep = <T extends { readonly tags: readonly string[]; readonly name: { readonly value: string } }>(d: T, lenses: () => readonly Lens[]): boolean =>
         tagsKeep(args.tags, d.tags) &&
+        (!args.kinds || lenses().some((l) => args.kinds!.includes(l))) &&
         (!args.only || d.name.value === args.only) &&
         (!failedSet || failedSet.has(`${relFile}::${d.name.value}`));
       // Destructured out of the spread rather than overwritten in it: `crawls` is absent-when-empty
       // (`ast.ts`), so a program whose every crawl was filtered away has to be shaped like one that
       // never had any — and `...fileProgram` would otherwise put the unfiltered list back.
       const { crawls: declaredCrawls, ...programRest } = fileProgram;
-      const crawls = (declaredCrawls ?? []).filter(keep);
+      const crawls = (declaredCrawls ?? []).filter((c) => keep(c, () => lensesOfCrawl(c)));
       return {
         file,
         source,
@@ -1865,7 +1892,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
           ...programRest,
           ...(crawls.length > 0 ? { crawls } : {}),
           tests: fileProgram.tests
-            .filter(keep)
+            .filter((t) => keep(t, () => lensesOfTest(t)))
             // D110 (`--skip-workload`, renamed from the originally-proposed `--skip-load`): drops
             // every workload-bearing test regardless of which `parallel`/`sequential` batch it's
             // declared in — a file mixing functional and workload tests still runs its functional
@@ -1874,10 +1901,14 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
         },
       };
     })
-    .filter((f) => (!args.tags && !args.only && !failedSet) || f.program.tests.length > 0 || (f.program.crawls ?? []).length > 0);
+    .filter((f) => (!args.tags && !args.kinds && !args.only && !failedSet) || f.program.tests.length > 0 || (f.program.crawls ?? []).length > 0);
   if (args.tags && runnable.length === 0) {
     const tagList = args.tags.map((t) => `\`${t}\``).join(', ');
     err(`no test anywhere carries ${args.tags.length > 1 ? 'any of the tags' : 'the tag'} ${tagList}.`);
+    return EXIT_USAGE;
+  }
+  if (args.kinds && runnable.length === 0) {
+    err(`no test anywhere is of ${args.kinds.length > 1 ? 'any of the kinds' : 'the kind'} ${args.kinds.map((k) => `\`${k}\``).join(', ')}.`);
     return EXIT_USAGE;
   }
   if (args.only && runnable.length === 0) {
@@ -2289,7 +2320,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   const narrowedBy = [
     ...(args.files.length > 0 ? ['files named on the command line'] : []),
     // Wrapped, not spread: `describeRunFilter` returns a string, and spreading one yields its characters.
-    ...[describeRunFilter({ tags: args.tags, only: args.only, failed: args.failed, shard: args.shardRaw })].filter((d) => d !== undefined),
+    ...[describeRunFilter({ tags: args.tags, kinds: args.kinds, only: args.only, failed: args.failed, shard: args.shardRaw })].filter((d) => d !== undefined),
     ...(args.skipWorkload ? ['--skip-workload'] : []),
   ].join(', ');
   const merged: RunReport = {
@@ -2365,7 +2396,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // it is replaying. Still unconditional and still always overwritten: not writing on a filtered
   // run was rejected for introducing a second silence (run `--tag smoke`, then `--failed`, and
   // replay something unrelated to what you just watched fail).
-  await writeLastRun(merged, reportDir, describeRunFilter({ tags: args.tags, only: args.only, failed: args.failed, shard: args.shardRaw }));
+  await writeLastRun(merged, reportDir, describeRunFilter({ tags: args.tags, kinds: args.kinds, only: args.only, failed: args.failed, shard: args.shardRaw }));
   // M63 (V2-02): the persisted event log gets the same final redaction pass as every other
   // artifact. It is written after the whole run, so — unlike the live stdout stream, which is gone
   // by the time a late `env()` reveals a secret — the redactor here is fully populated. Skipping
@@ -4426,7 +4457,7 @@ const VERB_HELP: readonly VerbHelp[] = [
     verb: 'run',
     summary: 'run .tflw tests — functional, browser, load and scans — and write report/',
     lines: [
-        '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
+        '  tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<name>...]] [--kind <kind>[,<kind>...]] [--only <name>] [--parallel <n>] [--no-color] [--verbose]',
         '            [--failed] [--shard i/n] [--bail] [--format ndjson] [--no-timestamps] [--log-file <path>] [--browser chromium|firefox|webkit] [--headed] [--trace] [--update-snapshots] [--no-helpers] [--no-keep]',
         '            [--workers <n>] [--skip-workload] [--forbid-insecure] [--allow-public-target <origin>] [--evidence full|headers-only|none]',
         '            [--teardown always|on-success|never]',
@@ -4441,6 +4472,7 @@ const VERB_HELP: readonly VerbHelp[] = [
         '                                                      --verbose prints one line per step, not just per test',
         '                                                      --only runs a single test by its exact declared name',
         '                                                      --tag a,b runs a test carrying any of the listed tags (OR); --tag !x leaves out every test tagged x',
+        '                                                      --kind api,browser runs the tests of any listed kind (api, browser, load, scan), as their statements classify them',
         '                                                      --shard i/n runs every nth file of the sorted suite from the ith, so n jobs run it all once',
         '                                                      --failed re-runs only the previous run\'s failing tests',
         '                                                      --bail stops after the first failing test',

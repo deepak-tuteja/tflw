@@ -49,7 +49,9 @@ export function ThemePick() {
   };
   return (
     <div className="theme-pick" data-theme-pick={theme} data-tip="colour, type and density as one set — remembered in this browser only">
-      <label htmlFor="tflw-theme">theme</label>
+      {/* `M254` (`D1400`): the header is one row, and the select says what it is by what it shows. The
+          label stays for a screen reader. */}
+      <label htmlFor="tflw-theme" className="sr-only">theme</label>
       <select id="tflw-theme" value={theme} onChange={(e) => pick(e.target.value as ThemeName)} data-theme-select>
         {THEMES.map(([id, label]) => (
           <option key={id} value={id}>

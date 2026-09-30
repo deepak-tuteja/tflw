@@ -33,6 +33,9 @@ export const RUN_FLAGS: readonly RunFlag[] = [
   { flag: '--now', key: 'nowRaw', shape: 'value', subject: 'always', label: 'now', hint: 'the instant `now` and `today` read, as an ISO date-time' },
   { flag: '--tag', key: 'tagRaw', shape: 'value', subject: 'cli' },
   { flag: '--only', key: 'only', shape: 'value', subject: 'cli' },
+  // `M254` (`D1403`): the page's kind chip narrows a run to exactly the rows it shows, so the CLI
+  // carries the same narrowing — the page runs nothing a terminal cannot (`D1051`).
+  { flag: '--kind', key: 'kindRaw', shape: 'value', subject: 'cli' },
   { flag: '--parallel', key: 'parallelRaw', shape: 'value', subject: 'always', label: 'parallel', hint: 'how many files run at once' },
   { flag: '--workers', key: 'workersRaw', shape: 'value', subject: 'cli' },
   { flag: '--skip-workload', key: 'skipWorkload', shape: 'bool', subject: 'workload', label: 'skip workload', hint: 'run each load test once, as a functional test, without its workload' },

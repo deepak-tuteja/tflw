@@ -31,7 +31,7 @@ import type { FileView } from './api';
 import type { Lens, ProjectView } from './contract';
 import { DOOR_BY_ID } from './doors';
 
-export function SourcePanel({ file, pending, diagnostics, project, door, onText, problem = null, onReread = null }: {
+export function SourcePanel({ file, pending, diagnostics, project, kind, onText, problem = null, onReread = null }: {
   readonly file: FileView | null;
   /** Why the last write was refused — said here too, because ⌘S from Source was otherwise a
    *  refusal only the Compose pane could show. */
@@ -45,7 +45,9 @@ export function SourcePanel({ file, pending, diagnostics, project, door, onText,
   /** The project as the server derived it — where the three derived facts come from. */
   readonly project: ProjectView;
   /** The door the reader came through, for the `also` badges. It marks rows; it hides none. */
-  readonly door: Lens;
+  /** The explorer's chip (`M254`, `D1399`) — `null` is `all`. A test of the chip's kind is *shown*;
+   *  with every kind shown, every test is. */
+  readonly kind: Lens | null;
 }) {
   // The sessions the active env declares, for completion after `as` (`M250` `A`) — the same list
   // the Auth tab reads, so the editor cannot offer a name that tab would call undeclared.
@@ -108,11 +110,11 @@ export function SourcePanel({ file, pending, diagnostics, project, door, onText,
               {index.map((d) => (
                 <li
                   key={`${d.kind}-${d.line}-${d.name}`}
-                  className={d.lenses.includes(door) ? undefined : 'muted'}
+                  className={kind === null || d.lenses.includes(kind) ? undefined : 'muted'}
                   data-source-test={d.name}
                   data-line={d.line}
                   data-test-lenses={d.lenses.join(' ')}
-                  data-test-here={d.lenses.includes(door) ? 'yes' : 'no'}
+                  data-test-here={kind === null || d.lenses.includes(kind) ? 'yes' : 'no'}
                 >
                   <button className="index-row" onClick={() => goToLine(d.line)} data-source-goto={d.line} data-tip={`scroll to line ${d.line}`}>
                     {/* The same chip the sidebar outline and the Compose sequence draw (`M216`) —
@@ -123,11 +125,11 @@ export function SourcePanel({ file, pending, diagnostics, project, door, onText,
                   </button>
                   {d.kind === 'crawl' ? <span className="badge">crawl</span> : null}
                   {d.workload ? <span className="badge">workload</span> : null}
-                  {/* Every OTHER door this declaration is behind — `D1043`'s membership-by-constructs,
-                      which exists nowhere else on the page and would have been deleted rather than
-                      moved if this tab had not taken it. */}
+                  {/* Every kind this declaration is of — `D1043`'s membership-by-constructs. Until
+                      `M254` this listed the OTHER doors; with a chip on, the chip's own kind is
+                      already said by the row being shown, so it is left out the same way. */}
                   {d.lenses
-                    .filter((l) => l !== door)
+                    .filter((l) => l !== kind)
                     .map((l) => (
                       <span key={l} className="badge also" data-also={l}>
                         {DOOR_BY_ID[l].label}

@@ -76,31 +76,57 @@ export const TABS = [
 
 export type TabId = (typeof TABS)[number]['id'];
 
+/**
+ * **Three stages in the strip, two project facts in the header** — `M254` (`D1400`, `D1401`).
+ *
+ * The rule above still holds and still sorts the five: Compose, Source and Run are *a stage of one
+ * file's life*, Auth and Config are *a project fact that file resolves against*. `M254` draws that
+ * split instead of describing it — the strip under the header carries the three stages and nothing
+ * else, and the two facts are words on the header's right that open a panel over the pane. They
+ * keep their ids and their place in the address (`#/config/shop.tflw/L11`), so a link to one is a
+ * link to the panel.
+ */
+export const STRIP_TABS = TABS.filter((t) => t.id === 'compose' || t.id === 'source' || t.id === 'run');
+export const PANEL_TABS = TABS.filter((t) => t.id === 'auth' || t.id === 'config');
+export const isPanelTab = (tab: TabId): boolean => tab === 'auth' || tab === 'config';
+
 /** Where the strip opens. Compose, because arriving at a door is arriving to write something —
  *  the door's whole promise (`D1042`) is the surface its "new test" button lands you on. */
 export const DEFAULT_TAB: TabId = 'compose';
 
 /**
- * The door named by a location hash, or null for the landing page. Anything unrecognised is the
- * landing page too — a hand-typed hash is not an error worth a message.
+ * **The kinds as chips, and the address without a door** — `M254` (`D1399`, `D1413`).
  *
- * `#/api` and `#/api/source` are the same door: the tab is a second segment, so adding the strip
- * did not change what any existing link means. That is checked rather than asserted — `M205` S5's
- * gate re-reads every pre-strip hash.
+ * Until `M254` the first segment of every address was a door: `#/api/compose/shop.tflw/L11`. A kind
+ * is a filter now, not a place, so it moves into the query with the other narrowings — the path is
+ * *where you are* (tab, file, document, line) and the query is *what the explorer shows and ▶ runs*
+ * (kind, selection, search): `#/compose/shop.tflw/L11?kind=api`.
+ *
+ * **An address from before this is read, not refused.** No tab id is a lens id, so a first segment
+ * that is one can only be a door, and the readers below drop it and read the kind off it instead.
+ * `App`'s canonicalising effect then rewrites the address in place (`replaceState`), so every link
+ * in the docs and in anybody's history keeps opening the file it named, with that kind's chip on.
  */
-export function doorFromHash(hash: string): Lens | null {
-  const id = withoutQuery(hash).replace(/^#\/?/, '').split('/')[0] ?? '';
-  return DOORS.some((d) => d.id === id) ? (id as Lens) : null;
+const isLens = (s: string | undefined): s is Lens => DOORS.some((d) => d.id === s);
+
+/** The path segments after `#/`, without a legacy door in front of them. */
+const segmentsOf = (hash: string): string[] => {
+  const raw = withoutQuery(hash).replace(/^#\/?/, '').split('/');
+  return isLens(raw[0]) ? raw.slice(1) : raw;
+};
+
+/** The door an address from before `M254` opens with, or `null` for every address written since. */
+export function legacyKind(hash: string): Lens | null {
+  const first = withoutQuery(hash).replace(/^#\/?/, '').split('/')[0];
+  return isLens(first) ? first : null;
 }
 
-/** The tab named by a location hash. `#/api` is `compose`, and so is a tab nobody has heard of —
- *  the same tolerance `doorFromHash` has, for the same reason. */
+/** The tab named by a location hash. An address naming none is `compose`, and so is a tab nobody
+ *  has heard of — a hand-typed hash is not an error worth a message. */
 export function tabFromHash(hash: string): TabId {
-  const id = withoutQuery(hash).replace(/^#\/?/, '').split('/')[1] ?? '';
+  const id = segmentsOf(hash)[0] ?? '';
   return TABS.some((t) => t.id === id) ? (id as TabId) : DEFAULT_TAB;
 }
-
-export const hashForDoor = (id: Lens | null): string => (id === null ? '#' : `#/${id}`);
 
 /**
  * The address after the tab: the **file**, then optionally the line — `#/api/config/shop.tflw/L11`.
@@ -185,6 +211,22 @@ export function selectionFromHash(hash: string): readonly string[] {
  *  that names none, which is every address written before that slice. */
 export const QUERY_KEY = 'q';
 
+/** The kind chip (`M254`, `D1399`/`D1413`). Absent is `all`. */
+export const KIND_KEY = 'kind';
+
+/** The chip an address has on — `null` for `all`. Read off the query, else off a legacy door, so
+ *  `#/browser/compose/login.tflw` opens with BROWSER's chip on. */
+export function kindFromHash(hash: string): Lens | null {
+  const query = hash.split('?')[1];
+  for (const part of query?.split('&') ?? []) {
+    const eq = part.indexOf('=');
+    if (eq < 0 || part.slice(0, eq) !== KIND_KEY) continue;
+    const v = part.slice(eq + 1);
+    return isLens(v) ? v : null;
+  }
+  return legacyKind(hash);
+}
+
 export function queryFromHash(hash: string): string {
   const query = hash.split('?')[1];
   if (query === undefined) return '';
@@ -205,8 +247,9 @@ export function queryFromHash(hash: string): string {
  * pane holds — which folders are open, which tab is marked — changes what you can *see*, and a
  * URL that moved on every disclosure click would be a URL nobody could compare to another.
  */
-export const paneTail = (selection: readonly string[], query = ''): string => {
+export const paneTail = (selection: readonly string[], query = '', kind: Lens | null = null): string => {
   const parts: string[] = [];
+  if (kind !== null) parts.push(`${KIND_KEY}=${kind}`);
   if (selection.length > 0) parts.push(`${SELECTION_KEY}=${selection.map(escapePath).join(',')}`);
   if (query !== '') parts.push(`${QUERY_KEY}=${encodeURIComponent(query)}`);
   return parts.length === 0 ? '' : `?${parts.join('&')}`;
@@ -214,7 +257,7 @@ export const paneTail = (selection: readonly string[], query = ''): string => {
 
 
 const afterTab = (hash: string): { file: string | null; doc: string | null; line: number | null } => {
-  const rest = withoutQuery(hash).replace(/^#\/?/, '').split('/').slice(2).filter((s) => s !== '');
+  const rest = segmentsOf(hash).slice(1).filter((s) => s !== '');
   const last = rest[rest.length - 1] ?? '';
   const m = /^L(\d+)$/.exec(last);
   const withoutLine = m ? rest.slice(0, -1) : rest;
@@ -228,19 +271,29 @@ const afterTab = (hash: string): { file: string | null; doc: string | null; line
 };
 
 /**
- * A door, a tab, a file, a document and a line as one address (`D1045`; `M206` `Q4` added the file,
- * `M208` `S2` the document). The default tab writes the bare door hash **only when nothing follows
- * it** — with anything present the tab has to be spelled, or the next segment would be read as the
- * tab.
+ * A tab, a file, a document and a line as one address (`D1045`; `M206` `Q4` added the file, `M208`
+ * `S2` the document, `M254` took the door out). The default tab is written as bare `#/` **only when
+ * nothing follows it** — with anything present the tab has to be spelled, or a file whose first
+ * segment is `run/` would be read as the tab.
  *
  * The document sits between the file and the line because that is the order the address is read in:
  * *this file, in this project document, at this line*. A line is an offset into the document, not
  * into the file, the moment a document is named — which is why `[accept]` can send you to
- * `#/scan/config/shop.tflw/@local/L7` and mean line 7 of the baseline.
+ * `#/config/shop.tflw/@local/L7` and mean line 7 of the baseline.
+ *
+ * The narrowing is `paneTail`'s and is appended by the caller: this writes where you are, not what
+ * is shown.
  */
-export const hashForTab = (door: Lens, tab: TabId, file?: string | null, focusLine?: number, doc?: string | null): string => {
+export const hashFor = (tab: TabId, file?: string | null, focusLine?: number, doc?: string | null): string => {
   const tail = `${file ? `/${file}` : ''}${doc ? `/@${doc}` : ''}${focusLine === undefined ? '' : `/L${focusLine}`}`;
-  return tail === '' && tab === DEFAULT_TAB ? `#/${door}` : `#/${door}/${tab}${tail}`;
+  return tail === '' && tab === DEFAULT_TAB ? '#/' : `#/${tab}${tail}`;
+};
+
+/** The `?…` narrowing an address carries, verbatim — `''` for none. For a writer that moves the
+ *  path and must not touch the kind, the selection or the search. */
+export const tailOf = (hash: string): string => {
+  const q = hash.indexOf('?');
+  return q < 0 ? '' : hash.slice(q);
 };
 
 /**
