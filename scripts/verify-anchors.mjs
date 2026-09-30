@@ -52,8 +52,8 @@ export function trackedMarkdown(root = ROOT) {
     return paths;
   } catch {
     throw new Error(
-      'verify-anchors needs `git ls-files` and this tree has no .git — it is an rsync of the\n' +
-        'working tree, which is how scripts/exec.mjs offloads to the box. Run this gate on the Mac.',
+      'verify-anchors needs `git ls-files` and this tree has no .git — it is a copy of the working\n' +
+        'tree (an rsync, a tarball). Run this gate from a git checkout.',
     );
   }
 }

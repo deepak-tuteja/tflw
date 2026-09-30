@@ -4,7 +4,7 @@ name: Attach the .vsix to a release
 # only when started by hand, on the owner's word. It packages the extension from the tag it is
 # given, creates that tag's release as a pre-release if there is none, and uploads the `.vsix`.
 # It holds no registry token: the Marketplace and Open VSX are published from a workstation on
-# 1.0 day (`RUNBOOK.md`'s publish-day checklist), not from here.
+# 1.0 day, not from here.
 on:
   workflow_dispatch:
     inputs:

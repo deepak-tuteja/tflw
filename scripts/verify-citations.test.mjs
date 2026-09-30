@@ -261,8 +261,8 @@ test('the declared reach splits its corpus into this gate\'s own machinery and e
   // not "a rule plus an exemption set", it is ~598 rewrites. The corpus stays prose and the
   // narrowing is declared (`D896`) with the number that makes it a judgement rather than an oversight.
   //
-  // Pure on purpose: `trackedNonMarkdown` needs `git ls-files` and `scripts/exec.mjs` syncs the box
-  // without `.git`, so an enumeration inside this test would be green here and red on the box.
+  // Pure on purpose: `trackedNonMarkdown` needs `git ls-files`, and a copy of the tree without `.git`
+  // cannot answer it, so an enumeration inside this test would be green in a checkout and red there.
   const r = declaredReach({
     files: [
       { path: 'scripts/citation-rules.mjs', text: 'the pattern matches `decision 57` and decision 12' },

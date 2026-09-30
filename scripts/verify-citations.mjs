@@ -96,8 +96,8 @@ function trackedMarkdown(root) {
     throw new Error(
       `cannot list the tracked files: ${why}\n` +
       `  This gate reads tracked prose, so it needs the index to know which files are tracked.\n` +
-      `  \`scripts/exec.mjs\` syncs the box copy without \`.git\`, so run this one here rather than\n` +
-      `  through the offload driver.`,
+      `  A copy of the tree made without \`.git\` (an rsync, a tarball) cannot answer that, so run it\n` +
+      `  from a git checkout.`,
     );
   }
   const files = corpus.paths.map((p) => ({ path: p, text: readFileSync(join(root, p), 'utf8') }));
@@ -144,8 +144,8 @@ const OWN_MACHINERY = new Set([
  *
  * Split from `declaredReach` for the reason `trackedMarkdown`/`findBare` are split: this half needs
  * `git ls-files` and so runs on a machine with an index, while the arithmetic must be testable
- * anywhere. `scripts/exec.mjs` syncs the box copy without `.git`, so a test that called git would be
- * red on the box and green here — which is the failure mode this repository keeps filing.
+ * anywhere. a copy of the tree without `.git` cannot answer git, so a test that called git would be
+ * red there and green in a checkout — which is the failure mode this repository keeps filing.
  */
 export function trackedNonMarkdown(root) {
   const corpus = committableFiles(root);

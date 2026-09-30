@@ -17,6 +17,14 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Removed — the maintainer's runbooks
+
+- **`RUNBOOK.md`, in both repositories** (`D1350`, amended). It described one maintainer's machines
+  and routine rather than the project, so it is no longer published. What a contributor needs from
+  it — the sibling's envs, its sweep flags, regenerating the files tflw pins, and merging the
+  sibling's PRs with a merge commit (`D1397`) — is in each repository's `CONTRIBUTING.md`, which no
+  longer describes one person's offload setup either.
+
 ### Added — the runbooks, and a site ready for 1.0 (M253)
 
 - **The adopter's runbook, assembled** (`D1350`). The site's Runbook section opens on an index of
@@ -25,9 +33,8 @@ performance arc closed 2026-08-02 and is included below.
   a [Glossary](https://deepak-tuteja.github.io/tflw/runbook/glossary) of the page's and report's own
   words, and an upgrade section with `tflw migrate`. The sidebar gate asks about every page in
   `runbook/`. The sixteen annotated `*-explained.tflw` examples are linked from the first guide page.
-- **The maintainer's runbooks.** `RUNBOOK.md` — the box, closing out a milestone, merging a pair
-  (sibling PRs merge with a merge commit, `D1397`), the gates by name, coverage, the flake table and
-  the publish-day checklist — and the sibling's own `RUNBOOK.md`.
+- **The maintainer's runbooks.** `RUNBOOK.md` in both repositories (removed again before release;
+  see *Removed*, above).
 - **SPEC's badges tell the truth** (X7). Seven of the eight open section badges no longer described
   their section; the parking lot listed the recorder, the docs site and `tflw fmt` as out of v1. A
   gate now holds every 🔮/🔧 heading to an owner that resolves in `DECISIONS.md`.
@@ -66,8 +73,7 @@ performance arc closed 2026-08-02 and is included below.
   the browsers, runs, uploads the report, annotates each failing test's file, and exits with
   tflw's code. CI dry-runs it on every pull request against the example storefront, with the CLI
   packed from the commit under test. It is published as its own repository on 1.0 day, not before.
-- **The flake table** in `RUNBOOK.md` (`D1375`): a flake is logged at first sight and filed at the
-  second. Three rows open it.
+- **A flake policy** (`D1375`): a flake is logged at first sight and filed at the second.
 - **The runbook's *In CI* section** names the three platforms and the Action.
 
 ### Added — CI on macOS (M252)

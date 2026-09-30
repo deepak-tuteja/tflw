@@ -1453,8 +1453,8 @@ function readTracked(root) {
     throw new Error(
       `cannot list the tracked files: ${why}\n` +
       `  This gate compares tracked prose against ${OUTPUT}, so it needs the index to know which\n` +
-      `  files are tracked. A tree with no \`.git\` cannot answer that — \`scripts/exec.mjs\` syncs\n` +
-      `  the box copy without it, so run this one here rather than through the offload driver.`,
+      `  files are tracked. A tree with no \`.git\` (an rsync, a tarball) cannot answer that, so\n` +
+      `  run this one from a git checkout.`,
     );
   }
   return corpus.paths.map((p) => ({ path: p, text: readFileSync(join(root, p), 'utf8') }));
