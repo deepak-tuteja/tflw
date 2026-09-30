@@ -2287,26 +2287,30 @@ test('`M213` `S2`: a file that has run shows its last response on every request,
   assert.equal(await chip.getAttribute('data-compose-response-scope'), 'run', 'and it says it came from the last run, not from a send');
   assert.equal(await chip.locator('[data-compose-response-status]').textContent(), '200');
   assert.match((await chip.locator('[data-compose-response-when]').textContent())!, /from the last run/);
-  // **`M214` `A5` (`D1116`) REPLACED `D1109`'s DISCLOSURE, AND THIS IS THE ASSERTION THAT FLIPPED.**
-  // The chip was closed at rest because a response drawn open on every request is what put the old
-  // pane over its height bar — a bar `M214` retired, because the thing it was holding (*every
-  // request drawn* AND *1.50 screens*) could not both be true on the file `D1086` measures. The
-  // response now has a **region**, under the editor behind a draggable divider, and it is open:
-  // ticking a value writes into the Assert tab directly above it, which is the whole reason the two
-  // are in one column. What `D1109` was right about is kept above — the scope is still said.
+  // **`M256` `B` (`D1406`) — the response is the evidence column, beside the steps.** `M214` put it
+  // under an editor card behind a divider; the card is gone (`D1405`, the row is its own editor),
+  // so there is nothing for a divider to divide and the column the response lives in is the whole
+  // right-hand side. It is open at rest, dated, and there is one of it.
   assert.equal(
     await page.locator('[data-seq-open="3"] [data-compose-response-panel]').evaluate((el) => el.checkVisibility()),
     true,
-    'the response is drawn, in its own region, with nothing to press first',
+    'the response is drawn, in its own column, with nothing to press first',
   );
-  // …and it is under the editor rather than inside it, which is what the divider divides.
-  const order = await page.locator('[data-seq-open="3"]').evaluate((col) => {
-    const editor = col.querySelector('.editor')!.getBoundingClientRect();
-    const response = col.querySelector('.responsebox')!.getBoundingClientRect();
-    return { editorBottom: Math.round(editor.bottom), responseTop: Math.round(response.top), split: col.querySelectorAll('[data-compose-split]').length };
+  const layout = await page.locator('[data-seq-open="3"]').evaluate((grid) => {
+    const steps = grid.querySelector('.seq-col')!.getBoundingClientRect();
+    const evidence = grid.querySelector('.responsebox')!.getBoundingClientRect();
+    return {
+      stepsRight: Math.round(steps.right),
+      evidenceLeft: Math.round(evidence.left),
+      boxes: grid.querySelectorAll('.responsebox').length,
+      split: grid.querySelectorAll('[data-compose-split]').length,
+      editor: grid.querySelectorAll('.editor').length,
+    };
   });
-  assert.equal(order.split, 1, 'there is exactly one divider between them');
-  assert.ok(order.responseTop >= order.editorBottom - 1, `the response is below the editor — editor ends ${order.editorBottom}, response starts ${order.responseTop}`);
+  assert.equal(layout.boxes, 1, 'one box holds what came back — never a second picture of it (§6 prediction 6)');
+  assert.equal(layout.split, 0, 'no divider: the card it divided the response from is gone');
+  assert.equal(layout.editor, 0, 'and no editor card beside the steps (`D1405`)');
+  assert.ok(layout.evidenceLeft >= layout.stepsRight, `the evidence is beside the steps — steps end ${layout.stepsRight}, evidence starts ${layout.evidenceLeft}`);
 
   // And the OTHER request in the same test — the one nothing is pointed at — carries its status
   // too. That is the half a send could never give you.
@@ -2315,7 +2319,10 @@ test('`M213` `S2`: a file that has run shows its last response on every request,
 
 test('`M213` `S2`: every verdict the report holds is beside the statement it is about, with its own duration (`D1093`)', async () => {
   await composeRan('tests/catalog.tflw', 3);
-  const marks = page.locator('[data-seq-open="3"] [data-verdict]');
+  /* **`M256` `A` (`D1405`) — the marks are on the steps' own rows.** They were in the card's Assert
+     tab, beside a second drawing of the same statements; the rows under the request are the
+     statements, so the request's marks are the ones in its group. */
+  const marks = page.locator('[data-seq-request="3"] [data-verdict]');
   /* `M235` `C2` — the wait is for *a* verdict and the claim is for *two*, which is `M141`'s split:
      no verdicts at all is a pane that has not painted its grades, and that is unreadable rather
      than a small number. A page that settles on one verdict returns on the first look and fails
@@ -2340,9 +2347,11 @@ test('`M213` `S2`: every verdict the report holds is beside the statement it is 
      with `'1' !== '0'` under a message quoting a row whose text had just matched, which is only
      possible if the two reads saw two elements. The oracle is the committed `results.json` both
      the page and this file read, so the two can never legitimately disagree. */
-  const mark = await marks.first().evaluate((el) => ({
-    text: el.textContent ?? '',
-    ms: el.querySelector('[data-verdict-ms]')?.getAttribute('data-verdict-ms') ?? null,
+  /* The row's mark is one glyph and the run's own sentence is its tip (`D1405`): a row is one line,
+     and the sentence is what the reader asks the mark for. */
+  const mark = await page.locator('[data-stmt-line="4"] [data-verdict]').first().evaluate((el) => ({
+    text: el.getAttribute('data-tip') ?? '',
+    ms: el.getAttribute('data-verdict-ms'),
   }));
   assert.ok(mark.text.includes(step.detail!), `the row says what the run said — ${JSON.stringify(step.detail)} in ${JSON.stringify(mark.text)}`);
   // Read off the attribute rather than out of the sentence: a substring match on a number is a
@@ -2356,18 +2365,108 @@ test('`M213` `S2`: every verdict the report holds is beside the statement it is 
 
 test('`M213` `S2`: typing into an assertion drops ITS verdict and leaves every other one standing (`D1108`)', async () => {
   await composeRan('tests/catalog.tflw', 3);
-  const before = await page.locator('[data-seq-open="3"] [data-verdict]').count();
+  const grid = page.locator('.compose-pane-grid');
+  const before = await grid.locator('[data-verdict]').count();
   assert.ok(before >= 2);
 
-  // Edit the FIRST assertion's operand. Its own mark must go; the one under it must not.
-  const operand = page.locator('[data-seq-open="3"] [data-expect-operand]').first();
+  /* Edit the FIRST assertion's operand. Its own mark must go; the one under it must not. The row
+     opens where it stands (`D1405`) — picked, it IS the assertion's editor. */
+  await page.locator('[data-seq-pick="4"]').click();
+  const operand = page.locator('[data-editor-line="4"] [data-expect-operand]');
   await operand.fill('204');
   await page.locator('[data-compose-dirty]').waitFor();
-  const after = await page.locator('[data-seq-open="3"] [data-verdict]').count();
+  const after = await grid.locator('[data-verdict]').count();
   assert.equal(after, before - 1, 'exactly one mark went — the row that was typed into');
 
-  // And the request itself is untouched, so the response it fetched is still evidence about it.
-  assert.equal(await page.locator('[data-seq-open="3"] [data-compose-response]').count(), 1);
+  // And the request itself is untouched, so the response it fetched is still evidence about it —
+  // the statement's evidence is its request's.
+  assert.equal(await grid.locator('[data-compose-response]').count(), 1);
+});
+
+/**
+ * **`M256` `B` (`D1406`) — the evidence opens on the last run: the body is the run's own, and the
+ * line above it dates it.** The oracle is the report the pane is reading (`reportShowing`), never a
+ * number written here.
+ */
+test('`M256` `B`: with nothing sent, the response is the last run’s recorded body for the picked step, dated', async () => {
+  await composeRan('tests/catalog.tflw', 3);
+  const report = await reportShowing('tests/catalog.tflw');
+  const recorded = report.tests
+    .filter((t): t is Extract<typeof t, { kind: 'functional' }> => t.kind === 'functional')
+    .find((t) => t.file === 'tests/catalog.tflw')!
+    .steps.find((x) => x.line === 3 && x.kind === 'api')!;
+  await page.locator('[data-seq-open="3"] [data-compose-response-body]').waitFor();
+  const shown = (await page.locator('[data-seq-open="3"] [data-compose-response-body]').textContent()) ?? '';
+  // Laid out for reading (`D1121`), so the comparison is the value and not the whitespace.
+  assert.deepEqual(JSON.parse(shown), JSON.parse(recorded.response!.bodyText), 'the body in the column is the one the run recorded for this step');
+  assert.match(
+    (await page.locator('[data-seq-open="3"] [data-compose-response-when]').textContent()) ?? '',
+    /^from the last run, \d+[smhd] ago$/,
+    'and it says which run and how long ago — a response from last Tuesday is evidence about last Tuesday',
+  );
+  assert.equal(await countSettling(page, '[data-evidence-changed]', 0), 0, 'nothing has been typed, so nothing is flagged — the control for the gate below');
+});
+
+/**
+ * **`M256` `B` (`D1406`) — a step edited since the run keeps its evidence, flagged.** The flag is
+ * keyed on the step's words, not its line: retyping the path is the edit that changes what the
+ * response is evidence about. **Mutation: drop the by-line fallback in `evidenceFor` → the response
+ * vanishes on the first keystroke and `not sent yet` takes its place.** **Mutation: never set
+ * `changed` → the response stays and nothing says it is about other words.**
+ */
+test('`M256` `B`: editing the picked request’s words keeps the last run’s response and flags it', async () => {
+  await composeRan('tests/catalog.tflw', 3);
+  const path = page.locator('[data-editor="request"] [data-request-path]');
+  const was = await path.inputValue();
+  try {
+    await path.fill(`${was}/edited`);
+    await page.locator('[data-compose-dirty]').waitFor();
+    await page.locator('[data-evidence-changed]').waitFor();
+    assert.match((await page.locator('[data-evidence-changed]').first().textContent()) ?? '', /this step changed since · send to refresh/);
+    assert.equal(await page.locator('[data-seq-open="3"] [data-compose-response]').getAttribute('data-compose-response-scope'), 'run', 'the response is still the last run’s — flagged, not dropped');
+    assert.equal(await page.locator('[data-seq-open="3"] [data-compose-response-status]').textContent(), '200');
+  } finally {
+    await page.locator('[data-compose-discard]').click();
+    await page.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+  }
+  assert.equal(await countSettling(page, '[data-evidence-changed]', 0), 0, 'discarded, the words are what ran again and the flag goes');
+});
+
+/**
+ * **`M256` `B` (`D987`, `D1406`) — below `evidence full` the run kept no body, and the column says
+ * so rather than printing the runtime's placeholder as though the service had sent it.**
+ *
+ * `§6` prediction 3 named the instrument: the shared fixture's newest run is `full`, so the
+ * negative case exists only in `fixtures/reports/headers/`. A project of its own, holding that run
+ * alone, makes it the last run by construction rather than by a timestamp. **Mutation: read
+ * `bodyText` whatever the level → the body box shows `[omitted by evidence level]`.**
+ */
+test('`M256` `B`: a run kept at `evidence headers-only` shows the status and the headers, and says the body was not kept', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-m256-headers-'));
+  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await cp(join(fixtures, 'project'), dir, { recursive: true });
+    await mkdir(join(dir, 'report', 'runs'), { recursive: true });
+    await cp(join(fixtures, 'reports', 'headers'), join(dir, 'report', 'runs', 'headers'), { recursive: true });
+    const recorded = oracle.headers!.tests
+      .filter((t): t is Extract<typeof t, { kind: 'functional' }> => t.kind === 'functional')
+      .find((t) => t.file === 'tests/catalog.tflw')!
+      .steps.find((x) => x.line === 3 && x.kind === 'api')!;
+    const port = await ui.listen(0);
+    await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/compose/tests/catalog.tflw/L3`);
+    await fresh.locator('[data-compose-response]').waitFor();
+    assert.equal(await fresh.locator('[data-compose-response-status]').textContent(), String(recorded.response!.status));
+    assert.equal(await fresh.locator('[data-evidence-level]').getAttribute('data-evidence-level'), 'headers-only', 'the column names the level the run kept');
+    assert.equal(await countSettling(fresh, '[data-compose-response-body]', 0), 0, 'and draws no body, because there was none to draw');
+    const headers = fresh.locator('[data-compose-response-headers]');
+    assert.equal(await headers.getAttribute('data-compose-response-headers'), String(Object.keys(recorded.response!.headers).length), 'every header the run kept');
+    assert.equal(await headers.evaluate((d) => (d as unknown as { open: boolean }).open), true, 'open, because they are all the evidence there is');
+  } finally {
+    await fresh.close();
+    await ui.close();
+    await rm(dir, RM_RETRY);
+  }
 });
 
 test('`M213` `S2`: one tick writes a path assertion, under the request it is about (`D1100`)', async () => {
@@ -3039,32 +3138,53 @@ test('`M240` `F` (`M239-01`): `send all` on a hook counts and lists the hook’s
   assert.deepEqual(await page.locator('[data-prefix-request]').allTextContents().then((xs) => xs.map((x) => x.replace(/\s+/g, ' ').trim().replace(/\s*before each$/, ''))), ['GET /items', 'GET /items/1']); // one-shot: population established by `[data-prefix="2"]` above
 });
 
-test('`M240` `F` (`M239-11`): with no remembered width, the sequence column is as wide as the file needs; a remembered 220 still clips', { skip: LINUX_METRICS }, async () => {
-  // A file with one row longer than the 300 px the column used to open at, written into the
-  // served project for this test and removed after it.
-  const long = 'tests/zz-long-row.tflw';
-  // Longer than 300 px of 12 px mono and shorter than the 60 %-of-pane cap the fit stops at.
-  await writeFile(join(root, long), 'test "a long path"\n  api GET /a/path/past/three/hundred/px/of/column\n  expect status equals 200\n');
-  const clipped = (): Promise<number> => page.locator('.seq-col .seq-text').evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth).length); // one-shot: read only through `settle` below, at both widths
+/**
+ * **`M256` `B`/`D` (`D1406`, `D1412`) — the evidence is a column of its own at 1440, and folds under
+ * the picked row below 1100.**
+ *
+ * `M240` `F` fitted the steps column to its rows' text, which was right while a row was only text.
+ * A picked row is its own editor now (`D1405`), so the column is a share of the pane and the
+ * evidence gets the rest: the green condition is *the evidence column ≥ 40% of the pane at 1440*.
+ * Below 1100 the right column was measured at 259 px — no evidence view survives that — so the
+ * evidence moves under the picked row, and it is **the same element**, one `.responsebox` in the
+ * pane, never a summary of it (`§6` prediction 6).
+ *
+ * **Mutation: `STEPS_SHARE = 0.7` → the evidence is 29% of the pane at 1440.** **Mutation: render
+ * the fold as a second copy beside the column → two `.responsebox`es at 1000.**
+ */
+test('`M256` `B`/`D`: the evidence is ≥ 40% of the pane at 1440, and at 1000 it is the same box folded under the picked row', async () => {
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
-    await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.removeItem('tflw.compose.width')); // one-shot: a write, not a read
-    await page.goto(`${pageUrl}#/compose/${long}`);
-    await page.reload();
-    await page.locator('.seq-col .seq-text').first().waitFor();
-    const width = await settle(() => page.locator('[data-compose-footer]').evaluate((el) => (el as unknown as { style: { getPropertyValue: (n: string) => string } }).style.getPropertyValue('--seq-w')), untilMeasurable('the column has a fitted width', (v) => v !== '' && v !== '300px'), { attempts: 40, delayMs: 50, page });
-    assert.notEqual(width.value, '300px', 'the column opened at the builder’s 300 px');
-    const fitted = await settle(clipped, untilMeasurable('the rows have laid out', (n) => n === 0), { attempts: 40, delayMs: 50, page });
-    assert.equal(fitted.value, 0, `${fitted.value} row(s) still ellipsised at the fitted default (${width.value})`);
-    // The negative control: the same file under a remembered 220 clips, so the measurement above
-    // is of the width and not of a row that fits anything.
-    await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.setItem('tflw.compose.width', '220')); // one-shot: a write
-    await page.reload();
-    await page.locator('.seq-col .seq-text').first().waitFor();
-    const narrow = await settle(clipped, untilMeasurable('the rows have laid out at 220', (n) => n > 0), { attempts: 40, delayMs: 50, page });
-    assert.ok(narrow.value > 0, 'a 220 px column did not clip the long row, so the instrument sees nothing');
+    await fresh.goto(`${pageUrl}#/compose/tests/catalog.tflw/L3`);
+    await fresh.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.removeItem('tflw.compose.width')); // one-shot: a write
+    await fresh.reload();
+    await fresh.locator('[data-seq-open="3"] [data-compose-response]').waitFor();
+    const read = () =>
+      fresh.locator('.compose-pane-grid').evaluate((grid) => {
+        const box = grid.querySelector('.responsebox');
+        const picked = grid.querySelector('[data-seq-line="3"]');
+        return {
+          pane: Math.round(grid.getBoundingClientRect().width),
+          evidence: box === null ? 0 : Math.round(box.getBoundingClientRect().width),
+          boxes: grid.querySelectorAll('.responsebox').length,
+          folded: box !== null && box.closest('.seq-col') !== null,
+          underPicked: box !== null && picked !== null && (picked.compareDocumentPosition(box) & 4) !== 0,
+          narrow: grid.getAttribute('data-compose-narrow'),
+        };
+      });
+    const wide = await settle(read, untilMeasurable('the steps column has taken its share', (m) => m.evidence > 0 && m.evidence < m.pane * 0.9), { attempts: 40, delayMs: 50, page: fresh });
+    assert.equal(wide.value.narrow, 'no');
+    assert.equal(wide.value.boxes, 1);
+    assert.equal(wide.value.folded, false, 'at 1440 the evidence is a column beside the steps, not a fold in them');
+    assert.ok(wide.value.evidence >= wide.value.pane * 0.4, `the evidence is ${wide.value.evidence} of a ${wide.value.pane} px pane — under 40%`);
+
+    await fresh.setViewportSize({ width: 1000, height: 900 });
+    const folded = await settle(read, untilMeasurable('the pane has folded', (m) => m.narrow === 'yes' && m.boxes > 0), { attempts: 40, delayMs: 50, page: fresh });
+    assert.equal(folded.value.boxes, 1, 'one box of evidence, not a column and a fold');
+    assert.equal(folded.value.folded, true, 'below 1100 the evidence is in the steps column');
+    assert.equal(folded.value.underPicked, true, 'and it follows the picked row');
   } finally {
-    await page.locator('html').evaluate((el) => el.ownerDocument.defaultView!.localStorage.removeItem('tflw.compose.width')); // one-shot: a write
-    await rm(join(root, long), { force: true });
+    await fresh.close();
   }
 });
 
@@ -3270,9 +3390,9 @@ test('`M224` `D`: the LOAD door draws the Compose sequence, and its address sele
 
   await declAt('tests/load.tflw', lines[0]!);
   assert.equal(await page.locator('[data-load-form]').count(), 0, '`LoadForm` is still in the dispatch');
-  assert.equal(await page.locator('.seq-col').count(), 1, 'no sequence column');
-  assert.ok((await page.locator('.seq-row').count()) > 0, 'no sequence rows');
-  assert.equal(await page.locator('.split').count(), 1, 'no divider between the editor and the response');
+  assert.equal(await page.locator('.seq-col').count(), 1, 'no steps column');
+  assert.ok((await page.locator('.seq-row').count()) > 0, 'no step rows');
+  assert.equal(await page.locator('.responsebox').count(), 1, 'no evidence beside the steps');
 
   // **The line segment selects the declaration**, which is the half the old form ignored outright.
   const first = await page.locator('[data-band-line]').first().getAttribute('data-band-line');
@@ -3426,14 +3546,14 @@ test('`M224` `B`: a workload can be written onto a test and taken off it again',
 test('`M224` `C`: a workload-bearing test earns a plan panel — on the API door', async () => {
   const loadLines = await declLines('tests/load.tflw');
   await declAt('tests/load.tflw', loadLines[0]!);
-  assert.equal(await page.locator('[data-compose-region2-tab]').count(), 2, 'the plan/response segment is not on API');
-  assert.equal(await page.locator('[data-compose-region2]').getAttribute('data-compose-region2'), 'plan');
+  assert.equal(await page.locator('[data-evidence-tab]').count(), 2, 'the plan/response tabs are not on API');
+  assert.equal(await page.locator('[data-evidence-tabs]').getAttribute('data-evidence-tabs'), 'plan');
 
-  // …and it is absent on a functional test, on the same door. A segment that is always there is
-  // not following anything.
+  // …and it is absent on a functional test, on the same door. A tab that is always there is not
+  // following anything.
   const catalog = await declLines('tests/catalog.tflw');
   await declAt('tests/catalog.tflw', catalog[0]!);
-  assert.equal(await page.locator('[data-compose-region2-tab]').count(), 0, 'a functional test earned a plan panel');
+  assert.equal(await page.locator('[data-evidence-tab]').count(), 0, 'a functional test earned a plan panel');
 });
 
 // GATE 9 — **the achieved curve is drawn only when the two series mean the same thing.**
@@ -3486,8 +3606,8 @@ test('`M224` `E`: ▶ on a workload names its duration, or says it has no clock'
 
   // `send` is on this door too and carries no price — one gesture is priced and one is not, which
   // is the difference a reader can see before pressing rather than after.
-  await page.locator('[data-compose-region2-tab="response"]').click();
-  await page.locator('[data-seq-request]').first().click();
+  await page.locator('[data-evidence-tab="response"]').click();
+  await page.locator('[data-seq-request] [data-seq-pick]').first().click();
   /* **`M225` `A` split the press in two** (`D1215`), so the claim names the form rather than
      counting buttons: `send this` is the one this round's ▶ is being contrasted with, and the
      `send all` beside it on a multi-request test is priced exactly the same way — not at all. */
@@ -4174,9 +4294,9 @@ test('`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the ro
      between the two reads zero and reports this door as having no sequence column at all. Node 24
      failed exactly that in CI on a commit the box ran 203/203. */
   await page.locator('[data-seq-row]').first().waitFor()
-    .catch(() => assert.fail('the sequence column is this door’s too'));
-  await page.locator('[data-editor]').first().waitFor()
-    .catch(() => assert.fail('and so is the editor beside it'));
+    .catch(() => assert.fail('the steps column is this door’s too'));
+  await page.locator('[data-evidence-col]').first().waitFor()
+    .catch(() => assert.fail('and so is the evidence beside it'));
   /* The absence claim keeps its `count()`, and the two waits above are what make it mean anything:
      a non-retrying count of zero read before the pane has drawn is a FALSE PASS — the same race in
      the direction that says nothing rather than the direction that fails. */
@@ -4350,7 +4470,9 @@ test('`M221` `A`+`B`: the stage is under the columns with room for the viewer, a
        this gate read a stage 227 px above its own predecessor and pass when run alone. */
     const read = () =>
       page.locator('body').evaluate((root) => {
-        const [stage, foot, editor] = ['[data-stage]', '[data-seq-foot]', '[data-editor]'].map((sel) => {
+        /* `M256` (`D1406`) — the right-hand column is the evidence now; it is what the stage was
+           refused beside, so it is what the stage's width is compared to. */
+        const [stage, foot, editor] = ['[data-stage]', '[data-seq-foot]', '[data-evidence-col]'].map((sel) => {
           const el = root.querySelector(sel);
           if (el === null) return null;
           const b = el.getBoundingClientRect();
@@ -4378,7 +4500,7 @@ test('`M221` `A`+`B`: the stage is under the columns with room for the viewer, a
     // …and it is BELOW both columns, not beside them, which is what buys that width.
     assert.ok(stageBox.y >= footBox.y, `the stage is not under the sequence column — ${JSON.stringify(geom)}`);
     // The claim `D1181` is actually made of: wider than the editor column it was refused from.
-    assert.ok(editorBox !== null && stageBox.w > editorBox.w, `the stage (${Math.round(stageBox.w)}) is no wider than the editor column (${Math.round(editorBox?.w ?? 0)}), so it buys nothing`);
+    assert.ok(editorBox !== null && stageBox.w > editorBox.w, `the stage (${Math.round(stageBox.w)}) is no wider than the evidence column (${Math.round(editorBox?.w ?? 0)}), so it buys nothing`);
 
     /**
      * **▶ RUNS THE BUFFER** — `M221` `B` (`D1183`), overturning `D1177`.
@@ -4533,7 +4655,10 @@ test('`M219` `B`: an `open` starts a session, and so does a `call` the project i
        * second fixture for one CSS value is the shape this file keeps removing. `contrast` and
        * `chroma` are this module's own, defined together further down.
        */
-      await fresh.locator('[data-seq-pick="7"]').click();
+      /* The `expect` on line 8, not the `click` on 7: a picked row is its own editor (`M256`,
+         `D1405`) and draws no keyword chip, and the `click` row's chip at rest is what `plain`
+         below reads. Line 8 is inside the same session, which is all the selection mark needs. */
+      await fresh.locator('[data-seq-pick="8"]').click();
       await fresh.locator('.seq-row.on').waitFor();
       const paint = await fresh.locator('body').evaluate((root) => {
         const view = root.ownerDocument.defaultView!;
@@ -4968,9 +5093,13 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
         // And the word `record` writes when the builders refuse a gesture — stderr, beside the
         // banners, because it is the command talking about itself and never a step.
         'process.stderr.write(`skipped one click: could not read the locator "css \\"#x\\""\n`);',
+        /* **It stays up until it is stopped** (`M256` `C`, `D1408`): closing the browser is stopping,
+           and stopping drops what was not kept — so a recorder that exited on its own would take
+           the rows this gate reads with it. `stop` is what ends it, and a minute is the backstop. */
         'const alive = setInterval(() => {}, 250);',
-        'setTimeout(() => { clearInterval(alive); process.exit(0); }, 4000);',
+        'setTimeout(() => { clearInterval(alive); process.exit(0); }, 60000);',
         'process.on("SIGINT", () => process.exit(0));',
+        'process.on("SIGTERM", () => process.exit(0));',
       ].join('\n'),
       'utf8',
     );
@@ -4983,6 +5112,11 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
       await fresh.locator('[data-file-row="web.tflw"]').click();
       await fresh.locator('[data-compose-summary]').waitFor();
 
+      /* **Under the picked step** (`M256` `C`, `D1408`) — the `open` on line 2 is picked, so what the
+         recording hands back is drawn under it and a kept row lands there: between the `open` and
+         the `expect`, not at the foot of the test. */
+      await fresh.locator('[data-seq-pick="2"]').click();
+      await fresh.locator('[data-seq-open], [data-editor-line="2"]').first().waitFor();
       await fresh.locator('[data-seq-add="record"]').first().click();
       // The button says it is running, and so does the strip — the strip is the half that is still
       // true once Compose is not the tab you are on, and a recording runs while you look away.
@@ -4990,21 +5124,16 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
       await fresh.locator('[data-tab-mark="compose"]').waitFor();
 
       /**
-       * **THE LINES LAND IN THE SESSION PANEL, NOT IN THE BUFFER** — `M219` `F` (`D1165`), which
-       * **amends `D1095`**.
-       *
-       * `D1095`'s argument for appending live was that the buffer is reversible. It is; what it is
-       * not is *reviewable*. A two-minute session writes thirty statements into the file the
-       * author is looking at, and the only way to drop the four that were mis-clicks is to find
-       * them among the twenty-six that were not. So the statements are evidence until they are
-       * ticked — `D1102`'s rule, one door over, with a live page as the evidence.
+       * **THE LINES LAND AS PROVISIONAL ROWS, NOT IN THE BUFFER** — `M219` `F` (`D1165`), drawn in
+       * the steps since `M256` `C` (`D1408`) rather than in a panel of their own.
        *
        * Everything this gate asserted about *classification* is unchanged and is asserted here:
-       * three lines parse, the two banners and the unreadable line are not statements.
+       * four chunks parse, the banners and the unreadable line are not statements.
        */
-      await fresh.locator('[data-session-line]').first().waitFor();
-      const shown = await fresh.locator('[data-session-line]').evaluateAll((els) =>
-        els.map((e) => ({ kind: e.getAttribute('data-session-line-kind'), text: (e.querySelector('.stmt-text')?.textContent ?? '').trim() })),
+      await fresh.locator('[data-provisional-line]').first().waitFor();
+      await fresh.locator('[data-provisional="8"]').waitFor().catch(() => undefined);
+      const shown = await fresh.locator('[data-provisional-line]').evaluateAll((els) =>
+        els.map((e) => ({ kind: e.getAttribute('data-provisional-kind'), text: (e.querySelector('[data-provisional-text]')?.textContent ?? '').trim() })),
       );
       assert.deepEqual(
         shown.filter((l) => l.kind === 'step').map((l) => l.text),
@@ -5012,26 +5141,25 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
           'click button "Sign in"',
           'fill field "Email" with "alice@example.com"',
           /* **One row, two lines** — the block arrived whole because the page accumulates stdout
-             and offers the parser a chunk, not a line (`D1268`). Parsed where they landed, the
-             head would have been unreadable and the body a `click` that scopes nothing. */
+             and offers the parser a chunk, not a line (`D1268`). */
           'switch to new tab\n  click text "View receipt"',
           'tick field "Remember me"',
         ],
         'the recorder’s statements arrive as rows, in order, and a block is one of them',
       );
+      /* The rows are UNDER the picked `open`: inside its group, before the `expect` that follows it
+         in the file. */
+      const placed = await fresh.locator('[data-seq-session="2"]').evaluate((group) => {
+        const block = group.querySelector('[data-provisional]');
+        const expect = group.querySelector('[data-seq-line="3"]');
+        return block !== null && expect !== null && (block.compareDocumentPosition(expect) & 4) !== 0;
+      });
+      assert.equal(placed, true, 'the pending rows are drawn under the picked step, above the row that follows it');
 
       /**
-       * **`M219-01` IS CLOSED HERE, AND THE COUNT IS HOW YOU CAN TELL** — `M231` (`D1265`).
-       *
-       * `M219` `F` built exactly this row, measured every session opening with **two junk rows**
-       * above the first real one, and withdrew it — because `tflw record`'s stream had no framing:
-       * the banners failed to parse for precisely the reason a refused gesture does, and nothing
-       * in the line said which it was. The assertion that replaced it said so in advance —
-       * *the day a line is attributable, the count changes* — and this is that day.
-       *
-       * Attribution is now the channel. A line on stdout is meant to be a step, so one that does
-       * not read is a **recorder defect** and is shown as one; everything the command says about
-       * itself is on stderr and is shown as a notice, which is not a statement and never was.
+       * **`M219-01` IS CLOSED HERE, AND THE COUNT IS HOW YOU CAN TELL** — `M231` (`D1265`). A line
+       * on stdout is meant to be a step, so one that does not read is a **recorder defect** and is
+       * shown as one; everything the command says about itself is on stderr and is a notice.
        */
       assert.deepEqual(
         shown.filter((l) => l.kind === 'unreadable').map((l) => l.text),
@@ -5044,75 +5172,51 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
       assert.ok(notices.some((n) => n.startsWith('skipped one click:')), 'and so is the word the command writes when the builders refuse a gesture');
       assert.equal(shown.length, 8, `four statements, one unreadable line and three notices:\n${JSON.stringify(shown, null, 1)}`);
 
-      /**
-       * **AND THE BUTTON COUNTS STATEMENTS, NOT ROWS.**
-       *
-       * `SessionPanel` read `kind !== 'locator'` for *the statements*, which was right for as long
-       * as a step and a locator were the only rows that could exist — `unreadable` was declared
-       * beside them in `M219` `F` and never constructed. Making it reachable and adding `notice`
-       * turns that proxy into a lie: *keep all 8* over four statements, on a panel whose own
-       * `keepAll` splices four. This arc's fourth rule keyed on a proxy that broke when the proxy
-       * gained a member.
-       */
-      assert.equal(await fresh.locator('[data-session-lines="8"]').count(), 1, 'the panel holds eight rows');
-      assert.match(
-        (await fresh.locator('[data-session-keep-all]').textContent()) ?? '',
-        /keep all 4\b/,
-        'and offers to keep the four that are statements',
-      );
+      /** **AND THE BUTTON COUNTS STATEMENTS, NOT ROWS** — a proxy that counted rows would offer to
+       *  keep eight over four statements. */
+      assert.equal(await fresh.locator('[data-provisional="8"]').count(), 1, 'eight rows are pending');
+      assert.match((await fresh.locator('[data-provisional-keep-all]').textContent()) ?? '', /keep all 4\b/, 'and it offers to keep the four that are statements');
 
-      /* **And the file has not changed**, which is the whole of what `D1165` adds. The mutation
-         this pins is *the recorder appends straight to the buffer*: with it, the three statements
-         are in the pending source before anything was ticked. */
+      /* **And the file has not changed**, which is the whole of what `D1165` adds. */
       await fresh.locator('[data-tab="source"]').click();
       await fresh.locator('[data-tabstrip="source"]').waitFor();
       const before = (await editorText(fresh.locator('[data-preview]')));
       assert.equal(before.includes('click button "Sign in"'), false, `nothing is written until it is kept:\n${before}`);
       assert.equal(await fresh.locator('[data-compose-dirty]').count(), 0, 'and the pane is not dirty, because nothing has been written');
 
-      /* **THE CONTROL, because a gate that only asserts a refusal is half a gate** (`M218` §8.8,
-         and §5's own rule this round). Keeping is the path that must WORK: tick one line and
-         exactly that one statement is spliced. */
+      /* **THE CONTROL** — keeping is the path that must WORK: keep one row and exactly that one
+         statement is spliced, under the picked step. */
       await fresh.locator('[data-tab="compose"]').click();
       await fresh.locator('[data-tabstrip="compose"]').waitFor();
-      const keep = fresh.locator('[data-session-line][data-session-line-kind="step"]').nth(1);
-      await keep.locator('[data-session-keep]').click();
+      const keep = fresh.locator('[data-provisional-line][data-provisional-kind="step"]').nth(1);
+      await keep.locator('[data-provisional-keep]').click();
       await fresh.locator('[data-compose-dirty]').waitFor();
       await fresh.locator('[data-tab="source"]').click();
       await fresh.locator('[data-tabstrip="source"]').waitFor();
       const after = (await editorText(fresh.locator('[data-preview]')));
       assert.ok(after.includes('fill field "Email" with "alice@example.com"'), `the kept line is in the buffer:\n${after}`);
-      assert.equal(after.includes('click button "Sign in"'), false, 'and only the kept line — the other three are still evidence');
+      assert.equal(after.includes('click button "Sign in"'), false, 'and only the kept line — the other three are still pending');
       assert.equal(after.includes('tick field "Remember me"'), false);
       assert.equal(after.includes('switch to new tab'), false);
+      const order = after.split('\n').map((l) => l.trim());
+      assert.ok(
+        order.indexOf('open "/checkout"') < order.indexOf('fill field "Email" with "alice@example.com"') &&
+          order.indexOf('fill field "Email" with "alice@example.com"') < order.indexOf('expect text "Hi" is visible'),
+        `the kept row landed under the picked step, not at the foot of the test:\n${after}`,
+      );
 
       /**
-       * **`M221` `C` — ▶ on the panel runs the test WITH the pending lines, and keeps none of
-       * them** (`D1185`, `D1186`).
-       *
-       * The two claims are separable and both are here, because each passes alone against a
-       * different wrong build: *the lines are in what runs* is green for a ▶ that simply called
-       * `keepAll` first, and *the file did not change* is green for a ▶ that ran the saved test
-       * and ignored the session entirely. Together they are the gesture.
-       *
-       * The run itself goes to the stub, which is not a `tflw` and writes no report — deliberately.
-       * What this gate is about is **what gets written before the run**, and that is a file on
-       * disk this test can read. Whether a report comes back and lands in the stage is `A`'s claim
-       * and is held where a real run happens.
+       * **▶ runs the test WITH the pending rows, and keeps none of them** (`M221` `C`, `D1185`,
+       * `D1186`). Both claims, because each passes alone against a different wrong build.
        */
       await fresh.locator('[data-tab="compose"]').click();
       await fresh.locator('[data-tabstrip="compose"]').waitFor();
-      const tryIt = fresh.locator('[data-session-play]');
+      const tryIt = fresh.locator('[data-provisional-play]');
       await tryIt.waitFor();
-      /* Three statements are still pending — the keep above took one of four — so the control
-         counts what is left rather than what the session started with, and counts STATEMENTS:
-         the unreadable row and the three notices are beside them and are not lines to run. */
-      assert.match((await tryIt.textContent())!, /▶ try 3/, 'the control does not count the lines still pending, nor the rows that are not statements');
+      assert.match((await tryIt.textContent())!, /▶ try 3/, 'the control counts the statements still pending, not the rows that are not statements');
       const onDisk = await readFile(join(dir, 'web.tflw'), 'utf8');
       await tryIt.click();
 
-      /* The scratch is beside the file, and `web.tflw` is at this fixture's root — so `D1184`'s
-         join produces the root basename here, which is the one case where it agrees with `send`. */
       const scratch = join(dir, '.play.tflw');
       let played = '';
       for (let i = 0; i < 60 && played === ''; i += 1) {
@@ -5120,18 +5224,27 @@ test('`M213` `S5`: a recording writes statements into the test it was started on
         if (played === '') await new Promise((r) => setTimeout(r, 100));
       }
       assert.notEqual(played, '', 'no scratch was written beside the file — ▶ ran the disk');
-      /* `D1185` — the whole test, with the pending lines spliced into it: the one `keep` already
-          wrote is in the buffer, and the three still pending are added on top. */
       assert.ok(played.includes('open "/checkout"'), `the test's own steps are in what ran:\n${played}`);
-      assert.ok(played.includes('click button "Sign in"'), `a pending line is in what ran:\n${played}`);
+      assert.ok(played.includes('click button "Sign in"'), `a pending row is in what ran:\n${played}`);
       assert.ok(played.includes('tick field "Remember me"'), `and the others:\n${played}`);
       assert.ok(played.includes('switch to new tab'), `including the block, whose body goes with it:\n${played}`);
-      assert.ok(played.includes('fill field "Email"'), 'the kept line is there too — the scratch is the BUFFER, not the disk');
-
-      /* `D1186` — and nothing was kept. The file has not moved and the session still holds every
-         line it held, so the tick is still the only thing that writes (`D1165`). */
+      assert.ok(played.includes('fill field "Email"'), 'the kept row is there too — the scratch is the BUFFER, not the disk');
       assert.equal(await readFile(join(dir, 'web.tflw'), 'utf8'), onDisk, 'a play wrote to the file — playing is not keeping');
-      assert.equal(await fresh.locator('[data-session-line][data-session-line-kind="step"]').count(), 3, 'the play consumed the lines it ran');
+      assert.equal(await fresh.locator('[data-provisional-line][data-provisional-kind="step"]').count(), 3, 'the play consumed the rows it ran');
+
+      /**
+       * **STOPPING KEEPS WHAT WAS KEPT AND DROPS THE REST** — `M256` `C` (`D1408`), amending
+       * `D1165`'s *the lines stay when the browser closes*. **Mutation: leave the session up with
+       * `live: false` on stop → the three pending rows are still drawn.**
+       */
+      await fresh.locator('[data-provisional-stop]').click();
+      await fresh.locator('[data-seq-add-live="yes"]').waitFor({ state: 'detached' });
+      assert.equal(await fresh.locator('[data-provisional]').count(), 0, 'the rows nobody kept went with the browser');
+      await fresh.locator('[data-tab="source"]').click();
+      await fresh.locator('[data-tabstrip="source"]').waitFor();
+      const stopped = (await editorText(fresh.locator('[data-preview]')));
+      assert.ok(stopped.includes('fill field "Email" with "alice@example.com"'), 'and the one that was kept stayed');
+      assert.equal(stopped.includes('click button "Sign in"'), false, 'while nothing that was dropped reached the buffer');
 
       assert.deepEqual(pageErrors, [], 'classifying a line must not throw — a dropped line and a crashed handler are otherwise indistinguishable');
     } finally {
@@ -6653,7 +6766,7 @@ test('what the reader has not lit yet is disabled — and it is the control that
       // `S3`). An `expect` is neutral vocabulary, so a browser test seen from this door is one long
       // preamble of them — inside `.test-band`, live, and correctly so. What `D1082` still claims is
       // the band's OWN facts: the tags, the table, the workload, the thresholds.
-      const reader = [...doc.querySelectorAll('[data-band-workload] input, [data-band-workload] select, .request-card [data-field-value="timeout"], .request-card [data-field-value="redirects"], .request-card [data-field-value="retry after"]')];
+      const reader = [...doc.querySelectorAll('[data-band-workload] input, [data-band-workload] select, .request-edit [data-field-value="timeout"], .request-edit [data-field-value="redirects"], .request-edit [data-field-value="retry after"]')];
       // **No named helper inside this callback.** `tsx` transforms this file with esbuild's
       // `keepNames`, which wraps every function declaration in a `__name(...)` call — a helper that
       // exists in the test process and not in the page, so a `const off = (e) => …` here dies as
@@ -6681,9 +6794,9 @@ test('what the reader has not lit yet is disabled — and it is the control that
     }
     // …and so is every assertion the language can address (`M210` `S3`). Same argument as the line
     // above: a gate that only asserts what is disabled stays green on a pane where nothing works.
-    const rows = await page.locator('li.stmt[data-stmt-editable="yes"]').count();
+    const rows = await page.locator('[data-editor="statement"][data-stmt-editable="yes"]').count();
     if (rows > 0) {
-      assert.equal(await page.locator('li.stmt[data-stmt-editable="yes"] [aria-label="matcher"]').first().isEditable(), true, `${f.path}: its assertions take a keystroke`);
+      assert.equal(await page.locator('[data-editor="statement"][data-stmt-editable="yes"] [aria-label="matcher"]').first().isEditable(), true, `${f.path}: its assertions take a keystroke`);
     }
   }
 });
@@ -7098,7 +7211,8 @@ test('a new test goes into the open file through the same builders the pane’s 
     // grammar did not change — what a line means is now one rule for four kinds of thing.
     await fresh.locator(`[data-seq-row="request"] [data-seq-pick]`).first().click();
     assert.equal(await fresh.locator('[data-seq-open] [data-request-path]').inputValue(), '/b/{id}');
-    assert.equal(await fresh.locator('[data-seq-open] [data-request-attached]').getAttribute('data-request-attached'), '1');
+    const opened = Number(await fresh.locator('[data-seq-open]').getAttribute('data-seq-open'));
+    assert.equal(await countSettling(fresh, `[data-seq-request="${opened}"] [data-stmt]`, 1), 1, 'and its one assertion is the row under it');
   } finally {
     await fresh.close();
     await ui.close();
@@ -7128,25 +7242,25 @@ test('a clause the file does not write is not a field — it is in a menu that n
     await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/compose/bare.tflw/L2`);
     await fresh.locator('[data-request-drawn]').waitFor();
 
-    // **`M214` `A2` (`D1115`) — the clauses are in four TABS now, and `More` costs one word at
-    // rest.** `D1084`'s rule is unchanged: a clause the file does not write is not a field. What
-    // changed is where the unwritten ones wait, and the tab strip is what makes *nothing is stated*
-    // readable at a glance — a count beside a tab, or no count at all.
+    // **`M256` `A` (`D1405`) — the clauses are in three FOLDS under the request's own row, and each
+    // costs one word at rest.** `D1084`'s rule is unchanged: a clause the file does not write is not
+    // a field. The fold's count is what makes *nothing is stated* readable at a glance; the
+    // assertion that was the card's fourth tab is the row under the request, drawn once.
     assert.equal(await fresh.locator('[data-request-drawn]').getAttribute('data-request-drawn'), '0');
     assert.deepEqual(
-      await fresh.locator('[data-editor-tab]').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-editor-tab')}:${e.getAttribute('data-editor-tab-count')}`)),
-      ['headers:0', 'body:0', 'assert:1', 'more:0'],
-      'the strip says what this request writes — one assertion, and nothing else',
+      await fresh.locator('[data-request-fold]').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-request-fold')}:${e.getAttribute('data-request-fold-count')}`)),
+      ['headers:0', 'body:0', 'more:0'],
+      'the folds say what this request writes — nothing but the request itself',
     );
-    await fresh.locator('[data-editor-tab="more"]').click();
+    assert.equal(await countSettling(fresh, '[data-seq-request="2"] [data-stmt]', 1), 1, 'and its one assertion is a row under it');
+    await requestFold(fresh, 'more');
     assert.equal(
       (await fresh.locator('[data-request-fields]').getAttribute('data-request-fields')),
       '',
       'no `service`, no `label`, no `timeout`, no `redirects` reading `followed`, no `retry after`',
     );
-    await fresh.locator('[data-editor-tab="body"]').click();
+    await requestFold(fresh, 'body');
     assert.equal(await fresh.locator('[data-body-edit-text]').count(), 0, 'a body nobody wrote has no textarea');
-    await fresh.locator('[data-editor-tab="more"]').click();
 
     // And the vocabulary is one click away, complete. `redirects` is the clause that argued in
     // writing against being hidden — *a field only drawn when it is unusual is invisible exactly
@@ -7171,10 +7285,10 @@ test('a clause the file does not write is not a field — it is in a menu that n
       'redirects:addable',
       'retryAfter:addable',
     ]);
-    // Headers and body are tabs rather than menu entries, which is the other half of `D1115`: a
+    // Headers and body are folds rather than menu entries, which is the other half of `D1115`: a
     // clause with its own editor does not need to be *added* before it can be looked at.
-    assert.equal(await fresh.locator('[data-editor-tab="headers"]').count(), 1);
-    assert.equal(await fresh.locator('[data-editor-tab="body"]').count(), 1);
+    assert.equal(await fresh.locator('[data-request-fold="headers"]').count(), 1);
+    assert.equal(await fresh.locator('[data-request-fold="body"]').count(), 1);
 
     // The test's own clauses are a different scope and are reached by selecting the test — which is
     // the column's first row (`D1112`, `D1113`).
@@ -7186,7 +7300,7 @@ test('a clause the file does not write is not a field — it is in a menu that n
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-add-option')));
     assert.deepEqual(bandOptions, ['tags', 'sessions', 'retry', 'skip', 'table', 'workload', 'thresholds']);
     await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/compose/bare.tflw/L2`);
-    await fresh.locator('[data-editor-tab="more"]').click();
+    await requestFold(fresh, 'more');
 
     // Closed, the menu is not in the tab order — `S1`'s lesson, applied to the control `S3` adds,
     // and read with `S1`'s corrected instrument rather than either of the two that lie.
@@ -7198,7 +7312,7 @@ test('a clause the file does not write is not a field — it is in a menu that n
     );
 
     // Adding one draws it, and only it.
-    await editorTab(fresh, 'more');
+    await requestFold(fresh, 'more');
     await fresh.locator('[data-add-clause="request"] > summary').click();
     await fresh.locator('[data-add-go="timeout"]').click();
     await fresh.locator('[data-field="timeout"]').waitFor();
@@ -7244,17 +7358,18 @@ test('a clause the file DOES write is drawn without being asked for', async () =
     const port = await ui.listen(0);
     await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/compose/stated.tflw/L3`);
     await fresh.locator('[data-request-drawn]').waitFor();
-    // The tab strip is the count, and the count is read off the file (`M214` `A2`).
+    // The folds are the count, and the count is read off the file (`M214` `A2`, `M256` `A`).
     assert.deepEqual(
-      await fresh.locator('[data-editor-tab]').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-editor-tab')}:${e.getAttribute('data-editor-tab-count')}`)),
-      ['headers:1', 'body:1', 'assert:1', 'more:1'],
-      'one header, a body, an assertion and a label — each written, each counted',
+      await fresh.locator('[data-request-fold]').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-request-fold')}:${e.getAttribute('data-request-fold-count')}`)),
+      ['headers:1', 'body:1', 'more:1'],
+      'one header, a body and a label — each written, each counted',
     );
-    await fresh.locator('[data-editor-tab="headers"]').click();
+    assert.equal(await countSettling(fresh, '[data-seq-request="3"] [data-stmt]', 1), 1, 'and the assertion is the row under the request');
+    await requestFold(fresh, 'headers');
     assert.equal(await fresh.locator('[data-request-headers]').getAttribute('data-request-headers'), '1');
-    await fresh.locator('[data-editor-tab="body"]').click();
+    await requestFold(fresh, 'body');
     assert.equal(await fresh.locator('[data-request-body]').getAttribute('data-request-body'), 'json');
-    await fresh.locator('[data-editor-tab="more"]').click();
+    await requestFold(fresh, 'more');
     assert.equal(await fresh.locator('[data-request-fields]').getAttribute('data-request-fields'), 'label');
     // The test's clauses are the test's scope — its own row in the column (`D1113`).
     await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/compose/stated.tflw/L2`);
@@ -7326,9 +7441,11 @@ test('every request in the declaration is on the pane, in the file’s own order
     assert.deepEqual(lines.slice(1), [2, 3, 4, 5, 6, 7, 8, 9, 10], 'the body is one list in the file’s order — preamble, requests, and what reads them');
     assert.equal(lines[0], 1, 'and the first row is the declaration that holds all of it');
 
-    // The editor keeps the whole request, attachments included: selecting is not a highlight.
-    assert.equal(await fresh.locator('[data-seq-open] .request-card').count(), 1);
-    assert.equal(await fresh.locator('[data-seq-open] [data-request-attached]').getAttribute('data-request-attached'), '2');
+    // The picked request is its own editor, in its row (`D1405`), and what is attached to it stays
+    // the rows under it: selecting is not a highlight, and it does not draw the statements twice.
+    assert.equal(await countSettling(fresh, '[data-seq-open] .request-edit', 1), 1);
+    assert.equal(await countSettling(fresh, '[data-seq-request="3"] [data-stmt]', 2), 2);
+    assert.equal(await countSettling(fresh, '[data-stmt-line="4"]', 1), 1, 'the assertion is drawn once, not once in a row and once in an editor');
   } finally {
     await fresh.close();
     await ui.close();
@@ -7479,7 +7596,7 @@ test('no scope but the selected one is in the tab order, and the selected one is
 
     // The test is selected, so the file's own fields are not on the page — not hidden, absent.
     assert.equal(await fresh.locator('[data-file-facts]').count(), 0, 'the unselected scope contributes nothing to the tab order');
-    assert.ok((await reachable('.editor')) > 0, 'and the selected scope is editable, not merely drawn');
+    assert.ok((await reachable('[data-editor="test"]')) > 0, 'and the selected scope is editable, not merely drawn');
 
     // Pick the file, and it is the one that is editable. The same control set, one selection over.
     await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}#/compose/tabbed.tflw`);
@@ -7513,19 +7630,19 @@ test('the head names the declaration the body is drawing, not the file the body 
     // something the body is not showing, which is the defect this slice is about.
     await fresh.goto(`${pageUrl}#/compose/${many.path}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
-    assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'declaration');
+    assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'test');
     assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test "${many.tests[0]!.name}"`);
 
     const second = many.tests[1]!;
     await fresh.goto(`${pageUrl}#/compose/${many.path}/L${second.line}`);
     await fresh.locator('[data-compose-subject-what]').waitFor();
-    assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'declaration');
+    assert.equal(await fresh.locator('[data-compose-summary]').getAttribute('data-compose-subject'), 'test');
     assert.equal((await fresh.locator('[data-compose-subject-what]').textContent())!, `test "${second.name}"`);
     const head = (await fresh.locator('[data-compose-summary]').textContent())!;
     assert.match(head, new RegExp(`line ${second.line}\\b`), 'the head says which declaration, by line');
     // And the file's own count survives — demoted to context, not deleted. A head that named only
     // the declaration would leave a reader unable to tell a one-test file from a forty-test one.
-    assert.match(head, /of \d+ declarations in this file/);
+    assert.match(head, /one of \d+ in this file/);
   } finally {
     await fresh.close();
   }
@@ -7609,7 +7726,7 @@ test("the reader's fields stand as tall as its siblings — the hazard the style
     // they are asked for. Two of them are asked for here; the hazard is a property of the container
     // and one field in it is enough to see it, which is why this is a smaller census and not a
     // weaker one.
-    await editorTab(sized, 'more');
+    await requestFold(sized, 'more');
     await sized.locator('[data-add-clause="request"] > summary').click();
     await sized.locator('[data-add-go="service"]').click();
     await sized.locator('[data-add-go="label"]').click();
@@ -7691,17 +7808,19 @@ const openFirstRequest = async (p: Page, base: string, file = 'edit.tflw'): Prom
 };
 
 /**
- * **Open one of the request editor's four tabs** — `M214` `A2` (`D1115`).
+ * **Open one of a picked request's folds** — `M256` `A` (`D1405`), which were `M214`'s tabs.
  *
- * Headers · Body · Assert · More. `Assert` is the one that opens, which is a measurement rather
- * than a preference: 63% of the corpus's 1736 assertions are about `status` and every request worth
- * anything carries some, while `timeout`, `without redirects` and `retry after` together are used
- * five times in a thousand requests. So a gate that wants a header, a body or one of the rare three
- * says which tab it is in — and that it HAS to say so is the point of the tabs.
+ * Headers · Body · More, closed at rest: `timeout`, `without redirects` and `retry after` together
+ * are used five times in a thousand requests, so a gate that wants one says which fold it is in.
+ * **Assert is not a fold** — a request's assertions are the rows under it, drawn once. A fold is a
+ * toggle, so this opens it only when it is closed; a second press would shut what the gate is
+ * about to read.
  */
-const editorTab = async (p: Page, tab: 'headers' | 'body' | 'assert' | 'more'): Promise<void> => {
-  await p.locator(`[data-editor-tab="${tab}"]`).click();
-  await p.locator(`[data-editor-tabs="${tab}"]`).waitFor();
+const requestFold = async (p: Page, fold: 'headers' | 'body' | 'more'): Promise<void> => {
+  const button = p.locator(`[data-request-fold="${fold}"]`);
+  await button.waitFor();
+  if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click();
+  await p.locator(`[data-request-folds*="${fold}"]`).waitFor();
 };
 
 /** Select one statement by its line, and wait for the editor to be about it (`D1113`). */
@@ -7776,10 +7895,9 @@ test('`M210` `S2`: the three clauses `ApiStepSpec` used to have no room for surv
   // edit that does touch them lands in the bytes.
   await withEditFixture(EDITABLE, async (p, base) => {
     await openFirstRequest(p, base);
-    await editorTab(p, 'more');
+    await requestFold(p, 'more');
     assert.equal(await p.locator('[data-field-value="timeout"]').inputValue(), '9s', 'the language\'s own spelling, not the node\'s milliseconds');
     assert.equal(await p.locator('[data-field-value="redirects"]').isChecked(), false, '`without redirects` is drawn as the thing it is');
-    await editorTab(p, 'assert');
     await p.locator('[data-request-path]').fill('/orders/bulk');
     await p.locator('[data-compose-dirty]').waitFor();
     await p.locator('[data-tab="source"]').click();
@@ -7825,7 +7943,7 @@ test('`M210` `S2`: an edit that is not yet a request says so and leaves the buff
     await p.locator('[data-request-path]').fill('/orders/bulk');
     await p.locator('[data-compose-dirty]').waitFor();
     // A header with no value is a legal thing to be halfway through typing and not a legal request.
-    await editorTab(p, 'headers');
+    await requestFold(p, 'headers');
     await p.locator('[data-header-edit-add]').click();
     await p.locator('[data-compose-problem]').waitFor();
     assert.ok((await p.locator('[data-compose-problem]').textContent())!.length > 0, 'the pane says why');
@@ -7875,8 +7993,8 @@ test('`M210` `S2`: an edit that moves the request keeps the address on it', asyn
     // card. One click to ask for it — `D1084`'s stated cost, paid here in the open.
     // `M214` `A2` — headers have their own tab, so there is no clause to ask for first: a clause
     // with its own editor does not need to be *added* before it can be looked at (`D1115`).
-    await editorTab(p, 'headers');
-    await editorTab(p, 'headers');
+    await requestFold(p, 'headers');
+    await requestFold(p, 'headers');
     await p.locator('[data-header-edit-add]').click();
     await p.locator('[data-header-edit-name="0"]').fill('X-Trace');
     await p.locator('[data-header-edit-value="0"]').fill('abc');
@@ -7903,9 +8021,8 @@ test('`M210` `S2`: an upload body survives an edit to the request around it', as
   ].join('\n');
   await withEditFixture(file, async (p, base, dir) => {
     await openFirstRequest(p, base);
-    await editorTab(p, 'body');
-    assert.equal(await p.locator('[data-body-edit-kind]').inputValue(), 'upload', 'the card says what this request sends');
-    await editorTab(p, 'assert');
+    await requestFold(p, 'body');
+    assert.equal(await p.locator('[data-body-edit-kind]').inputValue(), 'upload', 'the row says what this request sends');
     await p.locator('[data-request-path]').fill('/files/bulk');
     await p.locator('[data-compose-write]').click();
     await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
@@ -7949,47 +8066,61 @@ const ASSERTIONS = [
   '',
 ].join('\n');
 
-/** The rows of the card, read as a reader would: one object per assertion, from the controls. */
 /**
- * Every assertion row, read as a reader would — with the `⋯` open on all of them.
+ * Every assertion under the open request, read as a reader would — each row picked in turn, with
+ * the `⋯` open on it.
  *
- * **`M214` `D1114` put three of the seven controls behind a per-row disclosure**, because measured
- * over the corpus's 1736 assertions `check` is used 7 times (0.4%), the quantifier 78 (4.5%) and
- * `not` 34 (2.0%) — and those three owned the first, second and fourth positions on every row. The
- * vocabulary **moved**; it did not shrink, which is `D1076` kept rather than dropped. So this
- * helper opens what is shut and reads all seven, which keeps the claim it has always made: every
- * assertion in the file is a row of controls holding what the file says.
+ * **`M256` `A` (`D1405`) — one row is an editor at a time**, the one that is picked, so this reads
+ * the rows one pick at a time; it used to read the card's Assert tab, where every assertion of the
+ * request was a live row at once beside a second drawing of the same statements. The claim is the
+ * one it has always made: every assertion in the file is a row of controls holding what the file
+ * says. The address is put back on the request afterwards, so a caller reads the page it handed in.
  *
- * That a row *already spelling* one of the three draws it open with no gesture is a separate
- * claim, asserted where it belongs and defended by its own mutation.
+ * **`M214` `D1114` put three of the seven controls behind the `⋯`** — `check` is 0.4% of the
+ * corpus's 1736 assertions, the quantifier 4.5%, `not` 2.0% — so this opens what is shut and reads
+ * all seven: the vocabulary moved, it did not shrink (`D1076`).
  */
 const assertionRows = async (p: Page): Promise<Array<Record<string, string | boolean | null>>> => {
-  const shut = p.locator('[data-compose] .stmts [data-assert-more="shut"]');
-  for (let i = await shut.count(); i > 0; i = await shut.count()) await shut.first().click();
-  return p.locator('[data-compose] .stmts').first().evaluate((list) =>
-    // **No named helper inside this callback**, not even a `const value = (s) => …`. `tsx`
-    // transforms this file with esbuild's `keepNames`, which wraps a named function — arrow
-    // assignments included — in a `__name(...)` call that exists in the test process and not in the
-    // page, so the callback dies as `ReferenceError: __name is not defined` the moment Playwright
-    // serialises it. `S1` wrote this down and `S3`'s first draft did it anyway; the rule is that a
-    // browser-side callback is one expression per read, however repetitive it looks.
-    [...list.querySelectorAll('li.stmt')].map((li) => ({
-      line: li.getAttribute('data-stmt-line'),
-      editable: li.getAttribute('data-stmt-editable'),
-      kind: (li.querySelector('[data-expect-kind]') as unknown as { value?: string } | null)?.value ?? null,
-      quantifier: (li.querySelector('[data-expect-quantifier]') as unknown as { value?: string } | null)?.value ?? null,
-      subject: (li.querySelector('[aria-label="subject"]') as unknown as { value?: string } | null)?.value ?? null,
-      argument: (li.querySelector('[data-expect-argument]') as unknown as { value?: string } | null)?.value ?? null,
-      negated: li.querySelector('[data-expect-negated]') === null ? null : (li.querySelector('[data-expect-negated]') as unknown as { checked: boolean }).checked,
-      matcher: (li.querySelector('[aria-label="matcher"]') as unknown as { value?: string } | null)?.value ?? null,
-      operand: (li.querySelector('[data-expect-operand]') as unknown as { value?: string } | null)?.value ?? null,
-      severity: (li.querySelector('[data-expect-severity]') as unknown as { value?: string } | null)?.value ?? null,
-      schema: (li.querySelector('[data-expect-schema-name]') as unknown as { value?: string } | null)?.value ?? null,
-      service: (li.querySelector('[data-expect-schema-service]') as unknown as { value?: string } | null)?.value ?? null,
-      source: (li.querySelector('[data-expect-schema-source]') as unknown as { value?: string } | null)?.value ?? null,
-      carried: li.querySelector('[aria-label="subject"] option[value="carried"]')?.textContent ?? null,
-    })),
-  );
+  const request = Number(await p.locator('[data-seq-open]').getAttribute('data-seq-open'));
+  const lines = await p.locator(`[data-seq-request="${request}"] [data-stmt]`).evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-stmt-line'))));
+  const out: Array<Record<string, string | boolean | null>> = [];
+  for (const line of lines) {
+    await p.locator(`[data-seq-pick="${line}"]`).click();
+    const row = p.locator(`[data-editor-line="${line}"]`);
+    await row.waitFor();
+    const shut = row.locator('[data-assert-more="shut"]');
+    if ((await shut.count()) > 0) await shut.click();
+    // **No named helper inside this callback** — `tsx`'s `keepNames` wraps one in a `__name(...)`
+    // the page does not have. One expression per read, however repetitive it looks.
+    out.push(
+      await row.evaluate((el) => ({
+        line: el.getAttribute('data-editor-line'),
+        editable: el.getAttribute('data-stmt-editable'),
+        kind: (el.querySelector('[data-expect-kind]') as unknown as { value?: string } | null)?.value ?? null,
+        quantifier: (el.querySelector('[data-expect-quantifier]') as unknown as { value?: string } | null)?.value ?? null,
+        subject: (el.querySelector('[aria-label="subject"]') as unknown as { value?: string } | null)?.value ?? null,
+        argument: (el.querySelector('[data-expect-argument]') as unknown as { value?: string } | null)?.value ?? null,
+        negated: el.querySelector('[data-expect-negated]') === null ? null : (el.querySelector('[data-expect-negated]') as unknown as { checked: boolean }).checked,
+        matcher: (el.querySelector('[aria-label="matcher"]') as unknown as { value?: string } | null)?.value ?? null,
+        operand: (el.querySelector('[data-expect-operand]') as unknown as { value?: string } | null)?.value ?? null,
+        severity: (el.querySelector('[data-expect-severity]') as unknown as { value?: string } | null)?.value ?? null,
+        schema: (el.querySelector('[data-expect-schema-name]') as unknown as { value?: string } | null)?.value ?? null,
+        service: (el.querySelector('[data-expect-schema-service]') as unknown as { value?: string } | null)?.value ?? null,
+        source: (el.querySelector('[data-expect-schema-source]') as unknown as { value?: string } | null)?.value ?? null,
+        carried: el.querySelector('[aria-label="subject"] option[value="carried"]')?.textContent ?? null,
+      })),
+    );
+  }
+  await p.locator(`[data-seq-pick="${request}"]`).click();
+  await p.locator(`[data-seq-open="${request}"]`).waitFor();
+  return out;
+};
+
+/** The line `text` sits on in `source`, 1-based — how the `S3` gates name a row without guessing. */
+const lineIn = (source: string, text: string): number => {
+  const at = source.split('\n').findIndex((l) => l.trim() === text) + 1;
+  assert.ok(at > 0, `the fixture holds \`${text}\``);
+  return at;
 };
 
 test('`M210` `S3`: every assertion in the file is a row of controls holding what the file says', async () => {
@@ -8023,6 +8154,7 @@ test('`M210` `S3`: every assertion in the file is a row of controls holding what
     assert.equal(rows[4]!.severity, '', 'a scan with no floor says every severity, and says it in the control');
     assert.equal(rows[5]!.severity, 'serious', 'and one with a floor says the floor');
     // And the subset is rows, not a text field.
+    await pickStatement(p, lineIn(ASSERTIONS, 'expect body matches subset { id: 1, name: "Widget" }'));
     assert.equal(await p.locator('[data-expect-subset]').getAttribute('data-expect-subset'), '2');
     assert.deepEqual(await p.locator('[data-subset-key]').evaluateAll((els) => els.map((e) => (e as unknown as { value: string }).value)), ['id', 'name']);
     assert.deepEqual(await p.locator('[data-subset-value]').evaluateAll((els) => els.map((e) => (e as unknown as { value: string }).value)), ['1', '"Widget"']);
@@ -8042,14 +8174,19 @@ test('`M210` `S3`: `not` is a control, and an edit that does not touch it cannot
     // select carries all 23 options, so the words "security", "snapshot" and "subset" are in the
     // text of every row on the pane. The gate found it by inverting the assertion it was written to
     // defend — it un-negated the row it meant to leave alone.
-    const negated = p.locator('li.stmt:has([data-expect-negated])').first();
+    const at = lineIn(ASSERTIONS, 'expect status not equals 500');
+    await pickStatement(p, at);
+    const negated = p.locator(`[data-editor-line="${at}"]`);
+    assert.equal(await negated.locator('[data-expect-negated]').isChecked(), true, 'the row spells `not`, so it draws it with no gesture');
     await negated.locator('[data-expect-operand]').fill('503');
     await p.locator('[data-compose-dirty]').waitFor();
     await p.locator('[data-tab="source"]').click();
     assert.match((await editorText(p.locator('[data-preview]'))), /^ {2}expect status not equals 503$/m, 'the operand moved and the negation did not');
 
     await p.locator('[data-tab="compose"]').click();
-    const plain = p.locator('li.stmt:has([data-expect-matcher="hasNoSecurityViolations"])').first();
+    const scan = lineIn(ASSERTIONS, 'expect response has no security violations');
+    await pickStatement(p, scan);
+    const plain = p.locator(`[data-editor-line="${scan}"]`);
     // **`M214` `D1114` — a row that does NOT already spell one of the rare three opens it with the
     // `⋯`**, which is the whole shape of that decision: the vocabulary moves, it never shrinks.
     // The row above needed no gesture, because it is already negated and therefore draws `not`
@@ -8069,7 +8206,10 @@ test('`M210` `S3`: a subject the spec cannot spell is kept whole across an edit 
   // control that would change it offers the option only where it already applies.
   await withEditFixture(ASSERTIONS, async (p, base, dir) => {
     await openFirstRequest(p, base);
-    const csv = p.locator('li.stmt').filter({ has: p.locator('option[value="carried"]') }).first();
+    const at = lineIn(ASSERTIONS, 'expect any body csv.qty equals "2"');
+    await pickStatement(p, at);
+    const csv = p.locator(`[data-editor-line="${at}"]`);
+    assert.equal(await countSettling(p, `[data-editor-line="${at}"] option[value="carried"]`, 1), 1, 'the subject the spec cannot spell is offered as itself');
     await csv.locator('[aria-label="matcher"]').selectOption('contains');
     await p.locator('[data-compose-write]').click();
     await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
@@ -8083,6 +8223,7 @@ test('`M210` `S3`: a subject the spec cannot spell is kept whole across an edit 
 test('`M210` `S3`: the subset editor is the operand, and a clause matcher keeps its clause', async () => {
   await withEditFixture(ASSERTIONS, async (p, base) => {
     await openFirstRequest(p, base);
+    await pickStatement(p, lineIn(ASSERTIONS, 'expect body matches subset { id: 1, name: "Widget" }'));
     await p.locator('[data-subset-value="1"]').fill('"Gadget"');
     await p.locator('[data-compose-dirty]').waitFor();
     await p.locator('[data-tab="source"]').click();
@@ -8098,6 +8239,7 @@ test('`M210` `S3`: the subset editor is the operand, and a clause matcher keeps 
 
     // …and the schema clause, which is the operand this matcher spells after itself.
     await p.locator('[data-tab="compose"]').click();
+    await pickStatement(p, lineIn(ASSERTIONS, 'expect body matches schema "Order" from root "/openapi.json"'));
     await p.locator('[data-expect-schema-name]').fill('OrderV2');
     await p.locator('[data-tab="source"]').click();
     assert.match((await editorText(p.locator('[data-preview]'))), /^ {2}expect body matches schema "OrderV2" from root "\/openapi\.json"$/m, 'the service the clause names survives an edit to the name beside it');
@@ -8111,9 +8253,15 @@ test('`M210` `S3`: two identical assertions, and the edit lands on the one that 
   // right.
   await withEditFixture(ASSERTIONS, async (p, base, dir) => {
     await openFirstRequest(p, base);
-    const twins = p.locator('li.stmt:has([data-expect-subject="status"]):not(:has([data-expect-negated]:checked))');
-    assert.equal(await twins.count(), 2, 'the two identical assertions, and only those');
-    await twins.last().locator('[data-expect-operand]').fill('204');
+    const [first, second] = ASSERTIONS.split('\n').flatMap((l, i) => (l.trim() === 'expect status equals 200' ? [i + 1] : []));
+    assert.ok(first !== undefined && second !== undefined, 'the fixture holds the twins');
+    assert.equal(
+      await p.locator(`[data-stmt-line="${first}"] .seq-text`).textContent(),
+      await p.locator(`[data-stmt-line="${second}"] .seq-text`).textContent(),
+      'the two rows read identically — nothing on them says which is which',
+    );
+    await pickStatement(p, second);
+    await p.locator(`[data-editor-line="${second}"] [data-expect-operand]`).fill('204');
     await p.locator('[data-compose-write]').click();
     await p.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
     const lines = (await readFile(join(dir, 'edit.tflw'), 'utf8')).split('\n');
@@ -8138,8 +8286,11 @@ test('`M210` `S3`: an assertion inside a `wait until api` block is read-only, in
     // order, so the first `ExpectStmt` in the document belongs to an earlier request and is
     // perfectly editable — an unscoped `.first()` was reading a different statement and asserting
     // about this one.
-    const row = p.locator('[data-seq-open] li.stmt[data-stmt="ExpectStmt"]').first();
-    await row.waitFor();
+    /* Picked, the row opens where it stands (`D1405`) — and what it opens is the statement's own
+       words and the reason there is no control behind them. */
+    const nested = lineIn(ASSERTIONS, 'expect body.status equals "done"');
+    await pickStatement(p, nested);
+    const row = p.locator(`[data-editor-line="${nested}"]`);
     assert.equal(await row.getAttribute('data-stmt-editable'), 'no');
     assert.equal(await row.locator('.stmt-text').textContent(), 'expect body.status equals "done"', 'and it is still drawn, in the language\'s own spelling');
     assert.ok((await row.locator('[data-stmt-unaddressable]').textContent())!.length > 0, 'with the reason on the row');
@@ -8916,11 +9067,11 @@ test('`M210` `S6`: send runs the file up to the selected request, and says so be
      * same file with one line changed, and it has to come back with a 200.
      */
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/send.tflw/L9`);
-    await pickStatement(fresh, 9);
-    await editorTab(fresh, 'assert');
-    // Line 10 — `expect status equals 200` on the request ABOVE the selected one. 418 is a status
-    // this fixture never answers with, so the assertion is false and it is false first.
-    await fresh.locator('[data-seq-open] [data-expect-operand]').first().fill('418');
+    // Line 10 — `expect status equals 200` on the request ABOVE the one sent below. 418 is a status
+    // this fixture never answers with, so the assertion is false and it is false first. The row
+    // opens where it stands (`D1405`).
+    await pickStatement(fresh, 10);
+    await fresh.locator('[data-editor-line="10"] [data-expect-operand]').fill('418');
     await fresh.locator('[data-compose-write]').click();
     await fresh.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
     assert.match(await readFile(join(dir, 'send.tflw'), 'utf8'), /expect status equals 418/, 'the false assertion is in the file');
@@ -9115,260 +9266,66 @@ test('`M214` `A4`: `✕` on the test removes the declaration, and the file is wh
   });
 });
 
-test('`M214` `A5` + `M223` `B`: the response is a region under the editor, behind a divider the reader can still move (`D1116`, `D1196`)', async () => {
-  // `D1109`'s chip is retired: a response drawn open on every request is what put the old pane over
-  // its height bar, and `M214` retired the bar because the thing it held — *every request drawn*
-  // AND *1.50 screens* — could not both be true on the file `D1086` measures. The response has its
-  // own region now, and how much of the column it gets is the reader's.
-  //
-  // **THE MECHANISM UNDER IT FLIPPED IN `M223` AND THIS GATE FLIPPED WITH IT.** `D1116` made the
-  // divider a FRACTION and this test asserted `tflw.compose.split` held it — *a fraction and not a
-  // pixel count, because the window is not the same height on the next visit*. `D1195` measured
-  // what that bought: a 62% editor takes 48 px it cannot use while the pane under it clips by 27,
-  // with 22 px spare in the same column. So the track is content-sized at rest and the reader's
-  // override is an absolute height (`D1196`) — which answers `D1116`'s objection rather than
-  // ignoring it, because the stored number is clamped against the live column and the track is
-  // `minmax(0, Npx)`. What survives unchanged is the claim this test was written for: the response
-  // is under the editor, and the boundary between them is the reader's.
-  const body = ['test "one"', '  api GET /a', '  expect status equals 200', ''].join('\n');
-  await withRemovalFixture(body, async (p, base) => {
-    await p.goto(`${base}/?token=${TOKEN}#/compose/x.tflw/L2`);
-    await p.locator('[data-compose-split]').waitFor();
-    assert.equal(
-      await p.locator('[data-compose-split]').getAttribute('data-compose-split'),
-      'auto',
-      'at rest the height is `D1195`\u2019s and nobody has overridden it',
-    );
-
-    // The keyboard, because the divider is a `separator` and not a `<div>` with a pointer handler:
-    // a control a pointer alone can reach is a control some readers cannot.
-    await p.locator('[data-compose-split]').focus();
-    await p.keyboard.press('ArrowDown');
-    const after = Number(await p.locator('[data-compose-split]').getAttribute('data-compose-split'));
-    assert.ok(Number.isFinite(after) && after > 0, `the divider did not take a height — read ${JSON.stringify(after)}`);
-    assert.equal(
-      // Through the element's own window: this file is typechecked under `types: ["node"]` with no
-      // DOM lib, so the `window` global does not exist for `tsc` even though it exists in the
-      // browser the callback is serialised into — the same move the appearance gate makes.
-      await p.locator('[data-compose-split]').evaluate((el) => el.ownerDocument.defaultView!.localStorage.getItem('tflw.compose.editor')),
-      String(after),
-      'and it is remembered where a per-viewer convenience belongs',
-    );
-    // **`D1116`'s key is not migrated, it is removed** — a remembered `0.62` is an answer to a
-    // question this round stops asking, and a reader who has one must not be left on it.
-    assert.equal(
-      await p.locator('[data-compose-split]').evaluate((el) => el.ownerDocument.defaultView!.localStorage.getItem('tflw.compose.split')),
-      null,
-      'the retired ratio key is still in the reader\u2019s storage',
-    );
-
-    // …and it comes back. A remembered height that a reload forgets is not remembered.
-    await p.reload();
-    await p.locator('[data-compose-split]').waitFor();
-    assert.equal(Number(await p.locator('[data-compose-split]').getAttribute('data-compose-split')), after);
-
-    // `Home` gives the track back to what the editor holds — the same gesture the column grip has
-    // (`D1135`), and the only way back, since there is no builder's number to return to.
-    await p.locator('[data-compose-split]').focus();
-    await p.keyboard.press('Home');
-    assert.equal(await p.locator('[data-compose-split]').getAttribute('data-compose-split'), 'auto');
-    assert.equal(
-      await p.locator('[data-compose-split]').evaluate((el) => el.ownerDocument.defaultView!.localStorage.getItem('tflw.compose.editor')),
-      null,
-      '`Home` left the override in storage, so the next visit is still overridden',
-    );
-
-    // The geometry, which is the claim the attribute is only evidence for.
-    const box = await p.locator('[data-seq-open]').evaluate((col) => ({
-      editor: Math.round(col.querySelector('.editor')!.getBoundingClientRect().bottom),
-      response: Math.round(col.querySelector('.responsebox')!.getBoundingClientRect().top),
-    }));
-    assert.ok(box.response >= box.editor - 1, `the response is under the editor — editor ends ${box.editor}, response starts ${box.response}`);
-  });
-});
-
 /**
- * **`M223` `B`+`C` — the panes fit what they hold, and a divider says so.**
+ * **`M256` `A` (`D1405`) — a picked row is its own editor, and every statement is drawn ONCE.**
  *
- * Three asks, from four screenshots of the BROWSER door: the line-edit pane is almost hidden by
- * the record-session pane; make the middle separation resizable too; and all that empty space in
- * the line-edit pane. **Two of them are the same defect seen from opposite ends** — measured on
- * the live page at 1440x900, a 62% editor over an `open` statement takes **147 px for 99 px of
- * content** while the session panel under it gets 85 for the **112** it needs, so 48 px is wasted
- * and 27 px clipped in the same column, with 22 px still spare. **The third is for a control that
- * shipped five days earlier and could not be seen**: `.col-grip` computed to `rgba(0, 0, 0, 0)` at
- * rest by a written decision, and `.split` was painted `var(--line)`, which is 1.20:1 on the panel
- * and therefore indistinguishable from every other border on the page.
+ * This retires two gates, `M214` `A5`'s divider and `M223` `B`+`C`'s editor track, because their
+ * subject is gone: the editor card they sized sat beside a second drawing of the same statements,
+ * and `D1405` removed the card rather than the rows. What they defended is re-asked of the shape
+ * that replaced them.
  *
- * Every reading here is a RELATIONSHIP — slack is zero, nothing clips, a handle is not transparent
- * — and not an arrangement or a pixel count, because a gate that pins one layout freezes the page
- * it was written against.
+ * **The plan's own gate: statement renderings per line = 1.** A rendering is an element that draws
+ * a statement and is not inside another drawing of the same line — so a row and the editor INSIDE
+ * it are one rendering, and a row plus a card's Assert-tab copy of it are two. **Mutation: draw the
+ * picked request's attachments again under its head (the card's Assert tab) → line 4 counts 2.**
  *
- * **The bounded poll is not optional** (`M222-02`): opening a file writes the hash twice, so the
- * pane draws, blanks back to its placeholder, and draws again. A `waitFor` on any element in it is
- * a proxy that goes false after it has been true. The callbacks going into the page stay anonymous
- * and bind no arrow to a name (`M222-01`, tsx's keep-names transform), and they reach the document
- * through `el.ownerDocument` because this file is typechecked with `types: ["node"]` and no DOM
- * lib.
+ * And `M223` `C`'s gate 7, for the one divider left: the grip's handle is `--muted` at rest with
+ * the pointer off it, read off the handle's own computed colour (`D1197`).
  */
-test('`M223` `B`+`C`: the editor asks for what it holds, the pane under it is never clipped, and both dividers are visible at rest (`D1195`, `D1197`, `D1198`)', async () => {
+test('`M256` `A`: a picked row is its own editor — every statement drawn once, nothing of it in the evidence, and the grip visible at rest (`D1405`, `D1197`)', async () => {
   const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
-    /** One synchronous pass over the column: the editor's box, what is actually inside it, its own
-     *  padding (which is NOT slack — the first write-up of this round counted it as slack and
-     *  reported 71 px where there were 48), and where the pane below it ends. */
-    const slack = () =>
-      fresh.locator('body').evaluate((root) => {
-        const col = root.querySelector('.editor-col');
-        const editor = root.querySelector('.editor');
-        const body = root.querySelector('.editor-body, .band, .statement-editor, .request-editor');
-        if (col === null || editor === null) return null;
-        const pad = root.ownerDocument.defaultView!.getComputedStyle(editor);
-        const inner = body === null ? editor.scrollHeight : body.getBoundingClientRect().height + parseFloat(pad.paddingTop) + parseFloat(pad.paddingBottom);
-        const lower = root.querySelector('.responsebox');
+    for (const line of [3, 4]) {
+      await fresh.goto(`${pageUrl}#/compose/tests/catalog.tflw/L${line}`);
+      await fresh.reload();
+      await fresh.locator(`[data-seq-line="${line}"][data-seq-editing="yes"]`).waitFor();
+      const seen = await fresh.locator('.compose-pane-grid').evaluate((grid, picked) => {
+        const attrs = ['data-stmt-line', 'data-assert-line', 'data-editor-line', 'data-expect-line', 'data-request-line'];
+        const counts: Record<string, number> = {};
+        for (const el of [...grid.querySelectorAll(attrs.map((a) => `[${a}]`).join(','))]) {
+          const at = attrs.map((a) => el.getAttribute(a)).find((v) => v !== null) ?? '';
+          const outer = el.parentElement === null ? null : el.parentElement.closest(attrs.map((a) => `[${a}="${at}"]`).join(','));
+          if (outer === null) counts[at] = (counts[at] ?? 0) + 1;
+        }
+        const editor = grid.querySelector('[data-seq-editing="yes"] > [data-editor]');
         return {
-          editor: editor.getBoundingClientRect().height,
-          needs: inner,
-          colBottom: col.getBoundingClientRect().bottom,
-          /* **The REGION, not the panel inside it.** The first draft read `.session-none` — and
-             `.responsebox` has `overflow: auto`, so the panel's own rectangle runs past the column
-             whenever its paragraph is taller than the box it scrolls in. That is a true number
-             about something the reader can still reach, and it reddened this gate on unmutated
-             code at 1000x480. What `D1195` actually promises is that the region is never handed
-             less than its empty state needs. */
-          lower: lower === null ? null : lower.getBoundingClientRect().height,
-          lowerBottom: lower === null ? null : lower.getBoundingClientRect().bottom,
-          rows: root.querySelectorAll('[data-seq-row]').length,
+          counts,
+          editorInRow: editor !== null && editor.closest(`[data-seq-line="${picked}"]`) !== null,
+          inEvidence: grid.querySelectorAll('.evidence-col [data-stmt-line], .evidence-col [data-editor]').length,
+          cards: grid.querySelectorAll('.editor, [data-editor-tab]').length,
         };
-      });
-
-    /* **Gates 3 and 4 — the BROWSER door, on the shape the user photographed**: an `open`
-       statement selected, whose editor is the smallest thing this pane can hold. The mutation for
-       both is reinstating the 62% track: 48 px of slack appears above, and 27 px of the record
-       pane goes below the column's own bottom edge. */
-    await fresh.goto(`${pageUrl}#/compose/tests/shop.tflw/L3`);
-    let m = await slack();
-    for (let i = 0; i < 50 && (m === null || m.rows === 0); i++) {
-      await fresh.waitForTimeout(100);
-      m = await slack();
+      }, line);
+      const twice = Object.entries(seen.counts).filter(([, n]) => n !== 1);
+      assert.deepEqual(twice, [], `L${line} picked: a statement is drawn more than once — ${JSON.stringify(seen.counts)}`);
+      assert.ok(Object.keys(seen.counts).length >= 4, `the reading saw the test's statements at all — ${JSON.stringify(seen.counts)}`);
+      assert.equal(seen.editorInRow, true, `L${line}: the editor is the picked row's own, not a card beside the steps`);
+      assert.equal(seen.inEvidence, 0, 'the evidence column draws what came back, never the statements again');
+      assert.equal(seen.cards, 0, 'and no editor card or tab strip is left anywhere in the pane');
     }
-    assert.ok(m !== null && m.rows > 0, `the BROWSER pane never settled — ${JSON.stringify(m)}`);
-    assert.ok(
-      Math.abs(m.editor - m.needs) <= 1,
-      `the editor is ${Math.round(m.editor)}px for ${Math.round(m.needs)}px of content — ${Math.round(m.editor - m.needs)}px it cannot use`,
-    );
-    assert.ok(m.lower !== null && m.lowerBottom !== null, 'there is no region under the editor on the BROWSER door, so gate 4 reads nothing');
-    assert.ok(m.lowerBottom <= m.colBottom + 1, `the record pane ends ${Math.round(m.lowerBottom - m.colBottom)}px below its own column`);
-    assert.ok(m.lower >= 112, `the record pane is ${Math.round(m.lower)}px — under the 112px its own button and sentence need`);
 
-    /**
-     * **Gate 7 — a handle at rest, on both dividers, with the pointer off the page** (`D1197`).
-     *
-     * `fedora-box-dashboard`'s `M23` found two of three instruments for exactly this claim
-     * vacuous: an `h2` fills its panel whatever the grip does, and `opacity: 0` does not take a
-     * `::before` out of flow. So this reads **the computed colour of the handle itself**, not a
-     * width and not a hover delta — and it asserts the negative control in the same pass, that
-     * neither element is `:hover`, because a page whose pointer happens to be resting on a
-     * divider would report `--accent` and pass for the wrong reason.
-     */
-    const handles = await fresh.locator('body').evaluate((root) => {
+    const handle = await fresh.locator('body').evaluate((root) => {
       const view = root.ownerDocument.defaultView!;
+      const grip = root.querySelector('.col-grip');
       return {
         muted: view.getComputedStyle(root.ownerDocument.documentElement).getPropertyValue('--muted').trim(),
-        seen: ['.col-grip', '.split'].map((sel) => {
-          const el = root.querySelector(sel);
-          if (el === null) return { sel, colour: null, hovered: false };
-          return { sel, colour: view.getComputedStyle(el, '::before').backgroundColor, hovered: el.matches(':hover') };
-        }),
+        colour: grip === null ? null : view.getComputedStyle(grip, '::before').backgroundColor,
+        hovered: grip !== null && grip.matches(':hover'),
       };
     });
-    const hex = handles.muted.replace('#', '');
+    const hex = handle.muted.replace('#', '');
     const asRgb = `rgb(${parseInt(hex.slice(0, 2), 16)}, ${parseInt(hex.slice(2, 4), 16)}, ${parseInt(hex.slice(4, 6), 16)})`;
-    for (const h of handles.seen) {
-      assert.equal(h.hovered, false, `${h.sel} is under the pointer, so its colour is the LIT one and this reading proves nothing`);
-      assert.equal(h.colour, asRgb, `${h.sel}'s handle is ${h.colour} at rest — it is meant to be --muted (${asRgb}), which measures 4.34:1 on the panel`);
-    }
-
-    /**
-     * **Gate 5 — the API door gets the same rule** (`D1198`).
-     *
-     * This is the half nobody reported. `.editor-col` is one component shared by both doors since
-     * `M214`, and the same ratio that pinched the BROWSER pane by 27 px wasted **208 px** under an
-     * API `expect` and clipped nothing — because the response pane happened to be tall enough.
-     * The mutation is a `door === 'browser'` conditional on the track: this number returns to 208.
-     */
-    await fresh.goto(`${pageUrl}#/compose/tests/catalog.tflw/L4`);
-    let api = await slack();
-    for (let i = 0; i < 50 && (api === null || api.rows === 0); i++) {
-      await fresh.waitForTimeout(100);
-      api = await slack();
-    }
-    assert.ok(api !== null && api.rows > 0, `the API pane never settled — ${JSON.stringify(api)}`);
-    assert.ok(
-      Math.abs(api.editor - api.needs) <= 1,
-      `the API door's editor is ${Math.round(api.editor)}px for ${Math.round(api.needs)}px of content — ${Math.round(api.editor - api.needs)}px wasted on the door that had it worst`,
-    );
-
-    /**
-     * **Gate 4's own shape: a tall editor in a short column, where the floor is the only thing
-     * holding the region open.**
-     *
-     * At 1440x900 gate 4 is *implied* by gate 3 — an editor that asks for 99 px leaves 588 for the
-     * pane below it whatever the floor says — and a gate that only ever passes for another gate's
-     * reason is one this project has filed as vacuous four times. So the floor gets the shape it
-     * was written for: an API **request** (237 px of editor, the tallest thing this pane holds) in
-     * a column the window has squeezed to ~286. `minmax(112px, 1fr)` gives the editor 168 and the
-     * response its 112; the mutation `minmax(0, 1fr)` gives the editor all 237 and the response
-     * **43**, and this is the only reading in the round that can tell those two apart.
-     */
-    await fresh.setViewportSize({ width: 1000, height: 480 });
-    await fresh.goto(`${pageUrl}#/compose/tests/catalog.tflw/L3`);
-    let tight = await slack();
-    for (let i = 0; i < 50 && (tight === null || tight.rows === 0 || tight.needs < 160); i++) {
-      await fresh.waitForTimeout(100);
-      tight = await slack();
-    }
-    assert.ok(tight !== null && tight.lower !== null, `the short-window reading found no region — ${JSON.stringify(tight)}`);
-    // The denominator: the editor above it really is asking for more than the column can give,
-    // which is the only condition under which the floor is doing any work at all.
-    assert.ok(tight.needs >= 160, `the request editor wants only ${Math.round(tight.needs)}px here, so the floor is not what is holding the region open and this reading proves nothing`);
-    assert.ok(tight.lower >= 112, `at 1000x480 the response region is ${Math.round(tight.lower)}px — the editor above it has taken the floor`);
-    await fresh.setViewportSize({ width: 1440, height: 900 });
-
-    /**
-     * **Gate 6 — a drag still wins, and keeps winning** (`D1196`).
-     *
-     * `D1195` makes the track content-sized, which is a DEFAULT and not a rule: a reader who wants
-     * a tall editor over a short statement still gets one. What this asserts is the part a
-     * content-sized track could quietly take back — that the override survives selecting a
-     * different row, whose content would otherwise resize the track under it. The mutation is
-     * dropping the override: the editor snaps back to what it holds on the next click.
-     */
-    await fresh.goto(`${pageUrl}#/compose/tests/shop.tflw/L3`);
-    let split = await fresh.locator('[data-compose-split]').boundingBox();
-    for (let i = 0; i < 50 && split === null; i++) {
-      await fresh.waitForTimeout(100);
-      split = await fresh.locator('[data-compose-split]').boundingBox();
-    }
-    assert.ok(split !== null, 'the divider is not on the page');
-    await fresh.mouse.move(split.x + split.width / 2, split.y + split.height / 2);
-    await fresh.mouse.down();
-    await fresh.mouse.move(split.x + split.width / 2, split.y + split.height / 2 + 60, { steps: 6 });
-    await fresh.mouse.up();
-    const dragged = Number(await fresh.locator('[data-compose-split]').getAttribute('data-compose-split'));
-    assert.ok(Number.isFinite(dragged), `the drag left the divider at ${JSON.stringify(dragged)} rather than a height`);
-    const before = await slack();
-    assert.ok(before !== null && before.editor > before.needs + 20, `the drag bought no room — editor ${Math.round(before?.editor ?? 0)} against ${Math.round(before?.needs ?? 0)} of content`);
-
-    // …and now a different row, whose content is a different height.
-    await fresh.locator('[data-seq-line="4"] [data-seq-pick]').first().click();
-    await fresh.waitForTimeout(150);
-    const after = await slack();
-    assert.equal(Number(await fresh.locator('[data-compose-split]').getAttribute('data-compose-split')), dragged, 'the row change dropped the reader’s own height');
-    assert.ok(
-      after !== null && Math.abs(after.editor - before.editor) <= 1,
-      `the editor re-sized itself to the new row — ${Math.round(before.editor)} → ${Math.round(after?.editor ?? 0)} — so the drag does not win`,
-    );
+    assert.equal(handle.hovered, false, 'the grip is under the pointer, so its colour is the LIT one and this reading proves nothing');
+    assert.equal(handle.colour, asRgb, `the grip's handle is ${handle.colour} at rest — it is meant to be --muted (${asRgb})`);
   } finally {
     await fresh.close();
   }
@@ -9537,7 +9494,9 @@ test('`M223` `G`: a step is content and its keyword is a label — one ink on th
       fresh.locator('body').evaluate((root) => {
         const view = root.ownerDocument.defaultView!;
         const col = root.querySelector('.seq-col');
-        const step = root.querySelector('.seq-col .seq-row.under');
+        /* A step AT REST: the picked one is its own editor (`M256`, `D1405`) and its words are
+           fields, not the `.seq-text` these gates read. */
+        const step = root.querySelector('.seq-col .seq-row.under:not(.on)');
         const head = root.querySelector('.seq-col .seq-row:not(.under) .seq-text');
         const declKw = root.querySelector('.seq-col .seq-row:not(.under) .seq-kind');
         const attached = root.querySelector('.seq-group > ol.seq.attached');
@@ -9625,13 +9584,11 @@ test('`M223` `G`: a step is content and its keyword is a label — one ink on th
        regardless of the row, so the lift measured 1.46 at rest and **1.17** here. This assertion
        is deliberately AFTER the floor above and BEFORE nothing — `F`'s finding was a control that
        could never run because a ratio above it failed first, and these two are independent. */
-    assert.ok(b.onChipBg !== null && b.onRowBg !== null, 'no step row is selected, so the selected-row reading is vacuous');
-    const onGround = over(b.onRowBg, b.ground);
-    const liftOn = contrast(over(b.onChipBg, onGround), onGround);
-    assert.ok(
-      Math.abs(liftOn - liftRest) / liftRest <= 0.1,
-      `the chip lifts ${liftRest.toFixed(2)}:1 at rest and ${liftOn.toFixed(2)}:1 on the selected row — an opaque ground paints \`--panel\` whatever the row is doing`,
-    );
+    /* **Retired by `M256` (`D1405`)**: a selected step is its own editor, and an editor draws the
+       statement's keyword as a field's label rather than as the row's chip — so there is no chip on
+       a selected ground left to measure. What stands in its place is that fact itself: a picked
+       row draws the keyword once, in its editor, and not also as the chip it had at rest. */
+    assert.equal(b.onChipBg, null, 'a picked step drew its chip beside its editor — the keyword twice (`D1405`)');
 
     /* **Gate 17 — the chip has a ground to be, and gate 18 — it costs the text almost nothing.**
        Two mutations: `padding: 1px 0` leaves the background hugging the glyph, and
@@ -9726,7 +9683,7 @@ test('`M215` `B3`: the JSON body is painted, and the language underlines what it
   const body = ['test "one request"', '  api POST /orders body { itemId: 2, qty: 3 }', '  expect status equals 201', ''].join('\n');
   await withEditFixture(body, async (p, base) => {
     await openFirstRequest(p, base);
-    await editorTab(p, 'body');
+    await requestFold(p, 'body');
 
     // **The coloured copy and the editable text are the same bytes.** That is the whole safety
     // property of drawing one over the other: a reader looking at the ink and a writer typing into
@@ -9769,7 +9726,7 @@ test('`M215` `B1`: a pasted, pretty-printed JSON body is accepted and written ba
   const body = ['test "one request"', '  api POST /orders body { itemId: 2, qty: 3 }', '  expect status equals 201', ''].join('\n');
   await withEditFixture(body, async (p, base, dir) => {
     await openFirstRequest(p, base);
-    await editorTab(p, 'body');
+    await requestFold(p, 'body');
     await p.locator('[data-body-edit-text]').fill('{\n  "itemId": 7,\n  "qty": 1,\n  "note": "gift",\n  "big": 12345678901234567890\n}');
     assert.equal(await p.locator('[data-body-problem]').getAttribute('data-body-problem'), 'none', 'the language reads it');
     await p.locator('[data-compose-write]').click();
@@ -10534,7 +10491,7 @@ test('`M216` `D4`: the request scope removes the same way, and an added-but-unwr
   await withRemovalFixture(FULL, async (p, base) => {
     await p.goto(`${base}/?token=${TOKEN}#/compose/x.tflw/L2`);
     await openFirstRequest(p, base, 'x.tflw');
-    await editorTab(p, 'more');
+    await requestFold(p, 'more');
     await p.locator('[data-add-clause="request"] summary').click();
 
     // **Written, so removing it is an edit to the bytes.** `timeout 9s` is on the request above.
@@ -10548,7 +10505,7 @@ test('`M216` `D4`: the request scope removes the same way, and an added-but-unwr
     // **Drawn but never written, so removing it is forgetting a row.** The reader cannot tell the
     // two cases apart, and the point of the gate is that they do not have to.
     await p.locator('[data-tab="compose"]').click();
-    await editorTab(p, 'more');
+    await requestFold(p, 'more');
     await p.locator('[data-add-clause="request"] summary').click();
     await p.locator('[data-add-clause="request"] [data-add-go="service"]').click();
     await p.locator('[data-add-clause="request"] [data-add-option="service"][data-add-state="present"]').waitFor();
@@ -10957,10 +10914,10 @@ test('`M217` `A1`: a create gesture opens what it made, and puts the cursor in i
       //
       // Asked through a locator rather than `document.activeElement`, because `tsconfig.test.json`
       // pins `types: ["node"]` with no DOM lib and `document` is not a name here — this file's own
-      // `S1` finding, met for the fourth time. `.editor :focus` asks both halves at once: it
-      // matches only if something is focused AND it is inside the editor.
-      assert.equal(await p.locator('.editor :focus').count(), 1, `${gesture}: focus is inside the editor`);
-      const tag = await p.locator('.editor :focus').evaluate((el) => el.tagName);
+      // `S1` finding, met for the fourth time. `[data-editor] :focus` asks both halves at once: it
+      // matches only if something is focused AND it is inside the row's own editor (`D1405`).
+      assert.equal(await p.locator('.seq-col [data-editor] :focus').count(), 1, `${gesture}: focus is inside the editor`);
+      const tag = await p.locator('.seq-col [data-editor] :focus').evaluate((el) => el.tagName);
       assert.ok(['INPUT', 'TEXTAREA'].includes(tag), `${gesture}: and it is a field (${tag})`);
 
       // **And it happens ONLY on a create.** This clause exists because the first implementation
@@ -10971,7 +10928,7 @@ test('`M217` `A1`: a create gesture opens what it made, and puts the cursor in i
       // page, not by the clauses above, every one of which was green.
       const other = await p.locator('.seq-row[data-seq-selected="no"] .seq-pick').first();
       await other.click();
-      assert.equal(await p.locator('.editor :focus').count(), 0, `${gesture}: selecting another row does not pull focus into the editor`);
+      assert.equal(await p.locator('.seq-col [data-editor] :focus').count(), 0, `${gesture}: selecting another row does not pull focus into the editor`);
     }
   });
 });
@@ -11895,7 +11852,7 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
     assert.match((await p.locator('[data-workload-did]').textContent()) ?? '', /not run here yet/);
 
     // ── The press ─────────────────────────────────────────────────────────────────────────────
-    await p.locator('[data-compose-region2-tab="response"]').click();
+    await p.locator('[data-evidence-tab="response"]').click();
     await p.locator('[data-prefix]').waitFor();
 
     // **GATE 4's on-page half, and the whole of §1.1** — on a declaration there is no *this*, so
@@ -12010,7 +11967,9 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
        * makes newly checkable: **the strip and the response's provenance line are inside the box
        * without a scroll.** At the old 112 px floor they were not, which is the defect.
        */
-      const geo = await p.locator('.editor-col').evaluate((col) => {
+      /* `M256` (`D1406`) — region 2 is the evidence column now, beside the steps rather than
+         under an editor, so its box is the column's and the composer is a card in the steps. */
+      const geo = await p.locator('.evidence-col').evaluate((col) => {
         const box = col.querySelector('.responsebox')!.getBoundingClientRect();
         const strip = col.querySelector('.sendstrip')?.getBoundingClientRect() ?? null;
         const head = col.querySelector('.response-head-bar')?.getBoundingClientRect() ?? null;
@@ -12020,8 +11979,6 @@ test('`M225` `A`/`B`: send all issues every request, indexes every one, and the 
           strip: strip === null ? -1 : Math.round(strip.height),
           /** How far the provenance line's bottom is above the box's — negative means clipped. */
           headRoom: head === null ? -1 : Math.round(box.bottom - head.bottom),
-          composer: Math.round(col.querySelector('.workload-edit')?.getBoundingClientRect().height ?? -1),
-          editorScrolls: col.querySelector('.editor')!.scrollHeight > col.querySelector('.editor')!.clientHeight,
         };
       });
       assert.ok(geo.strip > 0, `${shape}: the strip is not on screen, so this is not the state D1223 is about`);
@@ -12116,7 +12073,10 @@ test('`M225` `H`: region 2 never nests one scroller inside another, in any of it
   const target = await fixtureServer.startFixtureServer(fixturePort);
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m225h-'));
   const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const p = await newPage({ viewport: { width: 1440, height: 900 } });
+  /* 700 tall and not 900 (`M256`): the evidence column is the pane's full height now, so at 900 the
+     fixture's 350 px body overflows its window by only 85 px — under the control's 120, a body that
+     all but fits. The window is shortened rather than the margin, because the margin is the claim. */
+  const p = await newPage({ viewport: { width: 1440, height: 700 } });
   try {
     await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
     await writeFile(
@@ -12180,14 +12140,14 @@ test('`M225` `H`: region 2 never nests one scroller inside another, in any of it
     assert.deepEqual(seen.clipped, [], 'and reaches everything it draws');
 
     // ── state 2: the plan segment ────────────────────────────────────────────────────────────
-    await p.locator('[data-compose-region2-tab="plan"]').click();
+    await p.locator('[data-evidence-tab="plan"]').click();
     await p.locator('[data-compose-plan]').waitFor();
     seen = await scan();
     assert.deepEqual(seen.nested, [], 'the plan nests nothing');
     assert.deepEqual(seen.clipped, [], 'and the plot is not clipped by a box that cannot scroll');
 
     // ── state 3: a real response, which is the state the user reported ───────────────────────
-    await p.locator('[data-compose-region2-tab="response"]').click();
+    await p.locator('[data-evidence-tab="response"]').click();
     await p.locator('[data-compose-send="this"]').click();
     await p.locator('[data-compose-response-body]').waitFor();
     seen = await scan();
@@ -12209,20 +12169,9 @@ test('`M225` `H`: region 2 never nests one scroller inside another, in any of it
     const body = await p.locator('[data-compose-response-body]').evaluate((pre) => ({ client: pre.clientHeight, scroll: pre.scrollHeight }));
     assert.ok(body.scroll > body.client + 120, `the body is ${body.scroll} over ${body.client} — a gate on a body that fits proves nothing`);
 
-    /* **And the divider now changes how much of it you see.** Before `D1224` it did not: dragging
-       gave the box more height while `.preview` stayed pinned at `40vh`, so the drag grew a frame
-       around a porthole. This asserts the fix's *point*, not just the absence of the defect. */
-    const before = body.client;
-    const split = p.locator('.split');
-    const at = (await split.boundingBox())!;
-    await p.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
-    await p.mouse.down();
-    await p.mouse.move(at.x + at.width / 2, at.y - 120, { steps: 10 });
-    await p.mouse.up();
-    await p.locator('[data-compose-response-body]').waitFor();
-    const after = await p.locator('[data-compose-response-body]').evaluate((pre) => pre.clientHeight);
-    assert.ok(after > before + 40, `dragging the divider up gave the body ${after} px, from ${before} — the drag must move the body, not a frame around it`);
-    assert.deepEqual((await scan()).nested, [], 'and it is still one scroller after the drag');
+    /* The divider that used to size this box is gone with the editor card above it (`M256`,
+       `D1405`): the evidence is a column of its own, as tall as the pane, and the body gets what the
+       column's own head, strip and headers leave. */
   } finally {
     await p.close();
     await ui.close();
@@ -12231,147 +12180,15 @@ test('`M225` `H`: region 2 never nests one scroller inside another, in any of it
   }
 });
 
-// ── `M226` `A` — region 2 goes to the foot when the declaration carries a workload (`D1225`) ──
+// ── `M226` `A` (`D1225`) is retired by `M256` (`D1406`) ─────────────────────────────────────────
 //
-// The other half of the user's original suggestion. `M225` `H` settled how many scrollbars are in
-// region 2 and said, correctly, that moving the region would not have fixed that. This is the part
-// moving it DOES fix, and it is a width: the response body's longest line wants **871 px** and had
-// **699** under the editor column, so it scrolled sideways as well as down.
-//
-// **The axis is the construct and not the door** (`D1044`, and `D1209`'s axis one round earlier),
-// because the measurement is what chose it: `.editor` on a workload declaration wants 537–568 px
-// and gets 471–493, and **no other door is squeezed at all** — so a declaration carrying a workload
-// is a different shape of thing, with the tallest editor on the page and, being a rung, three rows
-// of sequence beside it in every corpus file.
-//
-// So gate 2 is taken **on the API door**, on one file, comparing a workload declaration with a
-// functional one four lines away. On LOAD the door and the construct agree and every mutation that
-// made this door-granted would pass; here they disagree, which is the only place the claim is
-// falsifiable. That is `M223` `F`'s vacuity lesson, and `D1209` is where this round learned it.
-test('`M226` `A`: a workload declaration puts region 2 at the foot of the pane, and the construct is what decides', async () => {
-  const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
-  const target = await fixtureServer.startFixtureServer(fixturePort);
-  const dir = await mkdtemp(join(tmpdir(), 'tflw-m226-'));
-  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const p = await newPage({ viewport: { width: 1440, height: 900 } });
-  try {
-    await writeFile(join(dir, 'tflw.config'), ['env local default', `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
-    /* **Both declarations in ONE file, on the API door.** Two files would let a mutation keyed on
-       the file pass, and two doors would let one keyed on the door pass. */
-    await writeFile(
-      join(dir, 'm226.tflw'),
-      [
-        'test "carries a workload"',
-        '  run 2 iterations across 1 users',
-        '  api GET /items',
-        '  expect status equals 200',
-        '  threshold p95 duration is less than 5000ms',
-        '',
-        'test "carries none"',
-        '  api GET /items',
-        '  expect status equals 200',
-        '',
-      ].join('\n'),
-    );
-    const port = await ui.listen(0);
-    const base = `http://127.0.0.1:${port}`;
-
-    const layout = async (): Promise<{ footer: string | null; region2W: number; editorW: number; editorH: number; editorWants: number; nested: number }> =>
-      p.locator('.compose-pane-grid').evaluate((grid) => {
-        const win = grid.ownerDocument.defaultView!;
-        const box = grid.querySelector('.responsebox')!;
-        const ed = grid.querySelector('.editor')!;
-        const inner = [...box.querySelectorAll('*')].filter((el) => {
-          const cs = win.getComputedStyle(el);
-          if (!((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1)) return false;
-          for (let up = el.parentElement; up !== null && up !== box.parentElement; up = up.parentElement) {
-            const pc = win.getComputedStyle(up);
-            if ((pc.overflowY === 'auto' || pc.overflowY === 'scroll') && up.scrollHeight > up.clientHeight + 1) return true;
-          }
-          return false;
-        });
-        return {
-          footer: grid.getAttribute('data-compose-footer'),
-          region2W: Math.round(box.getBoundingClientRect().width),
-          editorW: Math.round(ed.getBoundingClientRect().width),
-          editorH: Math.round(ed.getBoundingClientRect().height),
-          editorWants: ed.scrollHeight,
-          nested: inner.length,
-        };
-      });
-
-    // ── GATES 1 + 2 — the workload declaration, on the API door ──────────────────────────────
-    await p.goto(`${base}/?token=${TOKEN}#/compose/m226.tflw/L1`);
-    await p.locator('[data-compose-footer]').waitFor();
-    const withLoad = await layout();
-    assert.equal(withLoad.footer, 'yes', 'a declaration carrying a workload draws region 2 at the foot');
-    assert.ok(
-      withLoad.region2W > withLoad.editorW + 100,
-      `region 2 is ${withLoad.region2W} px against an editor of ${withLoad.editorW} — the point of the move is that it is WIDER than the column it left`,
-    );
-
-    // ── GATE 3 — the functional declaration, SAME FILE, SAME DOOR ────────────────────────────
-    /* This is the assertion the round exists to make falsifiable. A branch reading `door === 'load'`
-       satisfies every other line in this test and fails here, because here the door says LOAD-ish
-       nothing and only the declaration differs. */
-    await p.goto(`${base}/?token=${TOKEN}#/compose/m226.tflw/L7`);
-    await p.reload();
-    await p.locator('[data-compose-footer]').waitFor();
-    const without = await layout();
-    assert.equal(without.footer, 'no', 'a declaration with no workload keeps region 2 in the editor column — four lines away, same file, same door');
-    assert.equal(without.region2W, without.editorW, 'and there it is exactly as wide as the editor above it');
-
-    // ── GATE 4 — the move costs the editor no height ─────────────────────────────────────────
-    /* The plan claimed the footer would give the editor its full content height. **It does not** —
-       a footer is still a row, so the top track is the same arithmetic either way — and the gate
-       says what is true instead: moving region 2 takes nothing from the editor. Asserted as a
-       comparison between the two layouts in one run rather than against a constant, which is the
-       only form that survives a theme, a font or a viewport changing. */
-    assert.ok(
-      Math.abs(withLoad.editorH - without.editorH) <= 4 || withLoad.editorH >= without.editorH,
-      `the editor is ${withLoad.editorH} px in the footer layout against ${without.editorH} in the column layout — the move must not cost it height`,
-    );
-
-    // ── GATES 5 + 6 — a real send, in the footer layout ──────────────────────────────────────
-    await p.goto(`${base}/?token=${TOKEN}#/compose/m226.tflw/L3`);
-    await p.reload();
-    await p.locator('[data-compose-send]').first().click();
-    await p.locator('[data-compose-response-body]').waitFor();
-    const sent = await layout();
-    assert.equal(sent.footer, 'yes', 'the request inside a workload test is still the workload test');
-    assert.equal(sent.nested, 0, '`D1224` holds in the footer: nothing in region 2 has a scrolling ancestor');
-    const body = await p.locator('[data-compose-response-body]').evaluate((pre) => ({
-      w: Math.round(pre.getBoundingClientRect().width),
-      scrollW: pre.scrollWidth,
-      col: Math.round(pre.closest('.responsebox')!.getBoundingClientRect().width),
-    }));
-    assert.ok(body.w > 900, `the body is ${body.w} px wide — the footer's whole payout is width, and under the column it was 699`);
-
-    // ── GATE 7 — the divider drags here, and remembers under its OWN key ─────────────────────
-    /* Two keys because they hold different quantities: above the divider in this layout is the
-       sequence column as well. One key would mis-restore on the first click between the two
-       declarations above, which is a gesture this very test performs. */
-    const split = p.locator('.split');
-    const at = (await split.boundingBox())!;
-    assert.ok(at.width > withLoad.editorW + 100, `the divider spans the pane (${Math.round(at.width)} px), because what it moves is the pane's split`);
-    await p.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
-    await p.mouse.down();
-    await p.mouse.move(at.x + at.width / 2, at.y - 110, { steps: 10 });
-    await p.mouse.up();
-    await p.locator('[data-compose-response-body]').waitFor();
-    const keys = await p.locator('body').evaluate((el) => {
-      const win = el.ownerDocument.defaultView!;
-      return { footer: win.localStorage.getItem('tflw.compose.footer'), editor: win.localStorage.getItem('tflw.compose.editor') };
-    });
-    assert.ok(keys.footer !== null, 'the drag wrote the footer layout\'s own height');
-    assert.equal(keys.editor, null, 'and left the column layout\'s key alone — they are different quantities');
-  } finally {
-    await p.close();
-    await ui.close();
-    await new Promise<void>((resolve) => target.close(() => resolve()));
-    await rm(dir, RM_RETRY);
-  }
-});
+// The footer moved region 2 under a workload declaration for the width a response body wanted (871
+// px against 699 under the editor column). The editor card it made room around is gone (`D1405`):
+// the plan and the response are tenants of the evidence column beside the steps, which is the
+// green condition's *≥ 40% of the pane at 1440*. The width a long body had in the footer is given
+// up, and the grip is how a reader who wants it takes it back — recorded in the plan's build
+// findings rather than gated here, because a gate for a layout that no longer exists is a gate on
+// nothing.
 
 // ── `M227` — the footer earns its height, and speaks with one voice ──────────────────────────
 //
@@ -12401,7 +12218,7 @@ test('`M226` `A`: a workload declaration puts region 2 at the foot of the pane, 
 // Every callback inside `page.evaluate` is passed INLINE. `tsx --keepNames` wraps a `const`-bound
 // arrow in `__name(...)`, which the browser has no definition for — `M222-01`, and this is its
 // fifth recurrence in this file's history.
-test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, and says it once', async () => {
+test('`M227`: the plan gets the height it needs, draws from zero, and says it once — in the evidence column since `M256`', async () => {
   const fixtureServer = (await import(pathToFileURL(join(root, 'server.mjs')).href)) as { startFixtureServer: (port: number) => Promise<Server> };
   const target = await fixtureServer.startFixtureServer(fixturePort);
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m227-'));
@@ -12453,7 +12270,7 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
        no DOM lib, so every annotation here would be `TS2304`. Inference through the chains does
        the work instead. */
     const geom = async (): Promise<{
-      footer: string | null; tall: string | null; boxH: number; belowN: number; below: string[];
+      boxH: number; boxW: number; belowN: number; below: string[];
       cols: number; proseSizes: string[]; canvasH: number; canvasW: number; axes: number;
       shares: number[]; figW: number; wordsW: number;
     }> =>
@@ -12474,9 +12291,8 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
         let cols = 0;
         if (panel !== null) cols = win.getComputedStyle(panel).gridTemplateColumns.trim().split(/\s+/).length;
         return {
-          footer: grid.getAttribute('data-compose-footer'),
-          tall: grid.getAttribute('data-compose-footer-tall'),
           boxH: Math.round(r.height),
+          boxW: Math.round(r.width),
           belowN: below.length,
           below: below.slice(0, 6),
           cols,
@@ -12517,38 +12333,33 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
 
     const open = async (line: number, plan: string): Promise<void> => {
       await p.goto(`${base}/?token=${TOKEN}#/compose/m227.tflw/L${line}`);
-      await p.locator('[data-compose-footer]').waitFor();
+      await p.locator('.compose-pane-grid').waitFor();
       if (plan !== '') await p.locator(`[data-compose-plan="${plan}"]`).waitFor();
       await p.waitForTimeout(250);
     };
 
-    // ── GATE 1 — a plan-bearing footer opens at the tall floor, not the empty one ────────────
+    // ── GATE 1 — a plan opens at the height it needs ─────────────────────────────────────────
+    /* `M256` (`D1406`): the plan is the evidence column's `plan` tab, as tall as the pane, so the
+       floors `D1223`/`D1229` kept for a region under an editor have nothing left to hold open. */
     await open(1, 'users');
     const ramp = await geom();
-    assert.equal(ramp.footer, 'yes', 'a workload declaration is in the footer layout (`D1225`)');
-    assert.equal(ramp.tall, 'yes', 'and the plan earns the tall floor (`D1229`)');
-    assert.ok(ramp.boxH >= 240, `the footer opens at the plan's floor, not the empty one — ${ramp.boxH} px, was 112`);
+    assert.ok(ramp.boxH >= 240, `the plan's box is ${ramp.boxH} px — it had 62 once, under a footer`);
 
-    // ── GATE 2 — nothing in the plan panel is below the footer's own bottom edge ─────────────
-    /* This is the user's defect stated as an assertion. It measured **18** before the round: the
+    // ── GATE 2 — nothing in the plan panel is below the box's own bottom edge ────────────────
+    /* This is the user's defect stated as an assertion. It measured **18** before `M227`: the
        whole x-axis, the legend and both sentences, 250 px down a 62 px scroller. */
-    assert.equal(ramp.belowN, 0, `nothing hangs below the footer's edge — found ${ramp.belowN}: ${ramp.below.join(', ')}`);
+    assert.equal(ramp.belowN, 0, `nothing hangs below the box's edge — found ${ramp.belowN}: ${ramp.below.join(', ')}`);
 
-    // ── GATE 9a — the width is split, and the prose is the narrower half ─────────────────────
-    assert.equal(ramp.cols, 2, `the plan panel is two columns at 1440 (\`D1231\`) — got ${ramp.cols}`);
-    assert.ok(ramp.wordsW > 0 && ramp.wordsW < ramp.figW, `the prose column is the narrower one (${ramp.wordsW} against ${ramp.figW})`);
-    assert.ok(ramp.canvasW > 400 && ramp.canvasW < 900, `and the plot stops spanning the pane — ${ramp.canvasW} px, was 1042`);
+    // ── GATE 9a — in a column, the plot comes first and the prose under it ───────────────────
+    /* `D1231` split the footer's 1042 px two ways. The evidence column is a share of the pane
+       (`STEPS_SHARE`), so the panel is one column there — the plot the column's width and the
+       sentences under it — rather than a 24rem prose column squeezing the plot to a stripe. */
+    assert.equal(ramp.cols, 1, `the plan panel is one column in the evidence column — got ${ramp.cols}`);
+    assert.ok(ramp.canvasW >= ramp.boxW * 0.8, `and the plot takes the column's width — ${ramp.canvasW} of ${ramp.boxW} px`);
 
     // ── GATE 7 — every explanatory line in region 2 computes to 12 px ────────────────────────
     assert.ok(ramp.proseSizes.length >= 2, `there are sentences to measure (${ramp.proseSizes.length})`);
     assert.deepEqual([...new Set(ramp.proseSizes)], ['12px'], `one voice (\`D1232\`) — got ${[...new Set(ramp.proseSizes)].join(', ')}`);
-
-    // ── GATE 9b — and it collapses at the page's own breakpoint, not a second one ────────────
-    await p.setViewportSize({ width: 800, height: 900 });
-    await p.waitForTimeout(250);
-    assert.equal((await geom()).cols, 1, 'below 900 px the panel is one column, the same breakpoint `.app` and `.trace` already use');
-    await p.setViewportSize({ width: 1440, height: 900 });
-    await p.waitForTimeout(250);
 
     // ── GATE 6 — a constant workload is drawn from zero ──────────────────────────────────────
     /* `hold 4 users for 2s` measured **8 ink rows of 180 at y 71-78** before the round — a
@@ -12574,53 +12385,31 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
     assert.deepEqual(shared.shares, [11, 10, 10, 10], `41 shared across 4 shows the remainder, not four equal bars (\`D1234\`) — got ${shared.shares.join('/')}`);
     assert.equal(shared.canvasH, 0, 'it draws no canvas — there is no series and no axis to hang one on');
     assert.equal(shared.axes, 0, 'and no time axis, which is the fact `plannedCurve` returns `null` for');
-    assert.equal(shared.cols, 2, 'and it enters the same two-column frame as every other shape');
-    assert.equal(shared.belowN, 0, 'with nothing below the footer\'s edge');
+    assert.equal(shared.cols, 1, 'and it enters the same frame as every other shape');
+    assert.equal(shared.belowN, 0, 'with nothing below the box\'s edge');
 
     await open(19, 'no-clock');
     assert.deepEqual((await geom()).shares, [10, 10, 10, 10], '`10 per user across 4` is four equal shares — the other half of the pair');
 
     // ── GATE 2, THE UNMUTATED CONTROL — a functional declaration, clipping nothing ───────────
-    /* A scan that returns zero for the wrong reason is `M224`'s coin. Here region 2 has no plan
+    /* A scan that returns zero for the wrong reason is `M224`'s coin. Here the column has no plan
        at all and must report zero for a different reason, which is what makes gate 2's zero mean
        something. */
     await open(25, '');
     const plain = await geom();
-    assert.equal(plain.footer, 'no', 'a declaration with no workload is not in the footer layout at all (`D1225`)');
+    assert.equal(await countSettling(p, '[data-evidence-tab="plan"]', 0), 0, 'a test with no workload earns no plan tab (`D1209`)');
     assert.equal(plain.belowN, 0, 'and clips nothing either — the control beside gate 2');
 
-    // ── GATE 3 — the EMPTY floor did not just go up ──────────────────────────────────────────
-    /* The floor follows the tenant, so a workload declaration showing its RESPONSE segment with
-       nothing sent is still the empty case. A mutation that made the floor unconditionally 240
-       passes every gate above and dies here. */
+    // ── GATE 4 — the plot is the region's height (`D1230`) ───────────────────────────────────
+    /* The divider this was asked through is gone (`D1405`); the column is the pane's height, so the
+       window is the instrument. **Mutation: a constant plot height → the canvas does not move.** */
+    await p.setViewportSize({ width: 1440, height: 700 });
     await open(1, 'users');
-    await p.locator('[data-compose-region2-tab="response"]').click();
-    await p.waitForTimeout(250);
-    const empty = await geom();
-    assert.equal(empty.tall, 'no', 'the response segment with nothing sent is the empty tenant (`D1229`)');
-    /* **240 is the constant, and 200 was a margin** (`M227` `E`). The claim is *the floor did not
-       become unconditionally `RESPONSE_MIN`*, and `RESPONSE_MIN` is 240; the region's actual height
-       above that floor is whatever `1fr` hands down, which is not this gate's subject and moved
-       when `D1236` gave the empty stage's 56 px back to the columns (219 px here, was under 200).
-       A number chosen for headroom rather than from the rule is a number that goes red for a
-       reason the rule does not care about. **The `tall` line above is what the mutation dies on**
-       — measured, `'yes' !== 'no'` — and this one reads the rendered consequence beside it. */
-    assert.ok(empty.boxH < 240, `so the footer is back on the short floor — ${empty.boxH} px against RESPONSE_MIN's 240`);
-
-    // ── GATE 4 — the plot is the region's height, and the drag is what says so ───────────────
-    await p.locator('[data-compose-region2-tab="plan"]').click();
-    await p.locator('[data-compose-plan="users"]').waitFor();
-    await p.waitForTimeout(250);
-    const before = (await geom()).canvasH;
-    const split = p.locator('.split');
-    const at = (await split.boundingBox())!;
-    await p.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
-    await p.mouse.down();
-    await p.mouse.move(at.x + at.width / 2, at.y - 180, { steps: 10 });
-    await p.mouse.up();
-    await p.waitForTimeout(300);
-    const after = (await geom()).canvasH;
-    assert.ok(after > before + 100, `the plot grew into the height the reader dragged for (\`D1230\`) — ${before} to ${after}, a constant would have stayed put`);
+    const short = (await geom()).canvasH;
+    await p.setViewportSize({ width: 1440, height: 1100 });
+    await p.waitForTimeout(400);
+    const tall = (await geom()).canvasH;
+    assert.ok(tall > short + 100, `the plot grew with the column (\`D1230\`) — ${short} to ${tall}, a constant would have stayed put`);
   } finally {
     await p.close();
     await ui.close();
@@ -12646,7 +12435,7 @@ test('`M227`: a plan-bearing footer gets the height it needs, draws from zero, a
 // you press ▶ on a browser test and false on BROWSER until you do — so this gate PLAYS one, with
 // the same declaration selected before and after. A door-keyed rule would be green under every
 // mutation that made it state-keyed, and the other way round.
-test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D1235`), and the scratch notice closes the region rather than leading it (`D1236`)', async () => {
+test('`M227` `E`: the scratch notice closes the playback region rather than leading it (`D1236`) — `D`\'s footer is retired with it (`M256`)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m227d-'));
   const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
   const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
@@ -12684,18 +12473,16 @@ test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D12
        is false and the sentence is live for the whole run — which is what makes its ABSENCE before
        the play a reading rather than a vacancy, and its presence after is that control's proof. */
     const read = async (): Promise<{
-      footer: string | null; boxW: number; stageW: number; stage: string | null;
+      boxW: number; stageW: number; stage: string | null;
       notices: number; noticeTop: number | null; frameBottom: number | null; barBottom: number | null;
     }> =>
       fresh.locator('.doorpane').evaluate((pane) => {
-        const grid = pane.querySelector('.compose-pane-grid');
         const box = pane.querySelector('.responsebox');
         const st = pane.querySelector('[data-stage]');
         const note = pane.querySelector('[data-stage-unignored]');
         const frame = pane.querySelector('[data-stage-frame]');
         const bar = pane.querySelector('.stage-bar');
         return {
-          footer: grid === null ? null : grid.getAttribute('data-compose-footer'),
           boxW: box === null ? 0 : Math.round(box.getBoundingClientRect().width),
           stageW: st === null ? 0 : Math.round(st.getBoundingClientRect().width),
           stage: st === null ? null : st.getAttribute('data-stage'),
@@ -12708,12 +12495,10 @@ test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D12
 
     // ── BEFORE — nothing has been played, and the workload declaration takes the page's width ──
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L5`);
-    await fresh.locator('[data-compose-footer]').waitFor();
+    await fresh.locator('.compose-pane-grid').waitFor();
     await fresh.waitForTimeout(400);
     const before = await read();
     assert.equal(before.stage, 'empty', 'nothing has been played yet, which is what makes this the control');
-    assert.equal(before.footer, 'yes', 'with an empty playback region the workload declaration still earns the footer (`D1225`)');
-    assert.ok(before.boxW > before.stageW - 20, `and it really is the page's width — region 2 ${before.boxW}, stage ${before.stageW}`);
     /* `E`, first half — the OCCASION. Nothing has been played, so nothing has written the scratch,
        and the sentence about it is not drawn. It led the region in all four stage states before
        this slice, including this one, where the hint directly above it reads *press ▶ on a test to
@@ -12733,15 +12518,13 @@ test('`M227` `D`+`E`: a trace takes the page\'s floor back from the footer (`D12
 
     // ── AFTER — the same declaration, and the page has one full-width band again ───────────────
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L5`);
-    await fresh.locator('[data-compose-footer]').waitFor();
+    await fresh.locator('.compose-pane-grid').waitFor();
     await fresh.waitForTimeout(400);
     const after = await read();
     assert.equal(after.stage, 'trace', 'the trace survived the trip back, so the two readings differ in one fact');
-    assert.equal(after.footer, 'no', 'with playback up the footer yields and region 2 goes back to the editor column (`D1235`)');
-    assert.ok(
-      after.boxW < after.stageW - 200,
-      `region 2 is the column's width again, not the page's — ${after.boxW} against the stage's ${after.stageW} (was ${before.boxW})`,
-    );
+    // `D1235`'s band is the evidence column now, never the page's width — so the stage under the
+    // columns is the page's one full-width band whether or not a trace is up.
+    assert.ok(after.boxW < after.stageW - 200, `the evidence is a column, not a band — ${after.boxW} against the stage's ${after.stageW}`);
 
     /* `E`, second half — the POSITION, and it is taken on the FAR edge for `M227` `A`'s reason: a
        rule reading `noticeTop > barBottom` is true of the shipped defect too, since the notice led
@@ -12819,8 +12602,8 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
       fresh.locator('.doorpane').evaluate((pane) => {
         const p = pane.querySelector('[data-compose-scan]');
         return {
-          tabs: [...pane.querySelectorAll('[data-compose-region2-tab]')].map((x) => x.getAttribute('data-compose-region2-tab') ?? ''),
-          showing: pane.querySelector('[data-compose-region2]')?.getAttribute('data-compose-region2') ?? null,
+          tabs: [...pane.querySelectorAll('[data-evidence-tab]')].map((x) => x.getAttribute('data-evidence-tab') ?? ''),
+          showing: pane.querySelector('[data-evidence-tabs]')?.getAttribute('data-evidence-tabs') ?? null,
           panel: p === null ? null : p.getAttribute('data-compose-scan'),
           targets: p === null ? null : p.getAttribute('data-compose-scan-targets'),
           families: [...pane.querySelectorAll('[data-compose-scan-family]')].map((x) => x.getAttribute('data-compose-scan-family') ?? ''),
@@ -12834,7 +12617,9 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
     await fresh.locator('.compose-pane-grid').waitFor();
     await fresh.waitForTimeout(400);
     const scanning = await read();
-    assert.deepEqual(scanning.tabs, ['scan', 'response'], `the declaration earns a second tenant on the API door — got ${JSON.stringify(scanning.tabs)}`);
+    /* `M256` (`D1406`): the tabs are drawn in the evidence column's own order — response, plan,
+       scan, screenshot — whatever is open by default. */
+    assert.deepEqual(scanning.tabs, ['response', 'scan'], `the declaration earns a second tenant on the API door — got ${JSON.stringify(scanning.tabs)}`);
     assert.equal(scanning.showing, 'scan', 'and a declaration opens the richest thing it has earned (`D1209`)');
     assert.equal(scanning.panel, 'authorized', 'this env declares a target, so the panel is in its healthy state');
     assert.equal(scanning.targets, '1', `one target in force — got ${scanning.targets}`);
@@ -12893,7 +12678,7 @@ test('`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L1`);
     await fresh.waitForTimeout(400);
     const unauthorized = await read();
-    assert.deepEqual(unauthorized.tabs, ['scan', 'response'], 'the segment is earned by the construct, so losing the target does not remove it');
+    assert.deepEqual(unauthorized.tabs, ['response', 'scan'], 'the tab is earned by the construct, so losing the target does not remove it');
     assert.equal(unauthorized.panel, 'none', 'with no target declared the panel carries `D291`’s warning instead of the healthy sentence');
   } finally {
     await fresh.close();
@@ -13457,11 +13242,11 @@ test('`M228` `F`: the recorder is the file’s — offered in a file with a page
     const base = `http://127.0.0.1:${port}`;
 
     const read = async (): Promise<{
-      tabs: string[]; untipped: string[]; session: string | null; startBtn: number;
+      tabs: string[]; untipped: string[]; recorder: number;
       envLabel: string | null; order: string | null;
     }> =>
       fresh.locator('.doorpane').evaluate((pane) => {
-        const tabs = [...pane.querySelectorAll('[data-compose-region2-tab]')];
+        const tabs = [...pane.querySelectorAll('[data-evidence-tab]')];
         const claims = pane.querySelector('[data-compose-scan-families]');
         const env = pane.querySelector('[data-compose-scan-env]');
         const why = pane.querySelector('[data-compose-scan-why]');
@@ -13479,50 +13264,42 @@ test('`M228` `F`: the recorder is the file’s — offered in a file with a page
               ? 'claims < env < why'
               : 'out of order';
         return {
-          tabs: tabs.map((x) => x.getAttribute('data-compose-region2-tab') ?? ''),
-          untipped: tabs.filter((x) => (x.getAttribute('data-tip') ?? '') === '').map((x) => x.getAttribute('data-compose-region2-tab') ?? ''),
-          session: pane.querySelector('[data-session]')?.getAttribute('data-session') ?? null,
-          startBtn: pane.querySelectorAll('[data-session-start]').length,
+          tabs: tabs.map((x) => x.getAttribute('data-evidence-tab') ?? ''),
+          untipped: tabs.filter((x) => (x.getAttribute('data-tip') ?? '') === '').map((x) => x.getAttribute('data-evidence-tab') ?? ''),
+          /* `M256` `C` (`D1408`): the recorder is `+ record` at the foot of the steps — the panel
+             that offered `record a session` in region 2 is gone, and its rows land in the steps. */
+          recorder: pane.querySelectorAll('[data-seq-add="record"]').length,
           envLabel: env === null ? null : env.getAttribute('data-compose-scan-env'),
           order: between,
         };
       });
-
-    const toResponse = async (): Promise<void> => {
-      await fresh.locator('[data-compose-region2-tab="response"]').click();
-      await fresh.waitForTimeout(250);
-    };
 
     // ── Gate 1 — the scan declaration on SCANS: no recorder anywhere in the region ────────────
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L1`);
     await fresh.locator('.compose-pane-grid').waitFor();
     await fresh.waitForTimeout(400);
     const scanArrival = await read();
-    assert.deepEqual(scanArrival.tabs, ['scan', 'response'], `the scan declaration earns both tenants — got ${JSON.stringify(scanArrival.tabs)}`);
+    assert.deepEqual(scanArrival.tabs, ['response', 'scan'], `the scan declaration earns both tenants — got ${JSON.stringify(scanArrival.tabs)}`);
 
     /* **Every tab, not a sample** (`M223` `G`). A gate that read one tab's tip is green on a build
        that tipped that one and forgot the others, which is exactly how this shipped: the nav has
        always had two or three tenants and carried a tip on none of them. */
-    assert.deepEqual(scanArrival.untipped, [], `a region-2 segment carries no tip — got ${JSON.stringify(scanArrival.untipped)}`);
+    assert.deepEqual(scanArrival.untipped, [], `an evidence tab carries no tip — got ${JSON.stringify(scanArrival.untipped)}`);
 
     // `D1247` — the heading, and its position, which is the actual claim.
     assert.equal(scanArrival.envLabel, 'local', `the env half names the env it is about — got ${scanArrival.envLabel}`);
     assert.equal(scanArrival.order, 'claims < env < why', 'the heading sits between the declaration’s own line and the env’s block, which is the whole of `D1247`');
 
-    await toResponse();
-    const scanResponse = await read();
-    // The file has a page (L6), so the recorder is the file's to offer — on this declaration too.
-    assert.equal(scanResponse.session, 'none', 'a file with a page offers the recorder on every declaration (`D1399`)');
+    // The file has a page (L6), so the recorder is the file's to offer — on this test too.
+    assert.equal(scanArrival.recorder, 1, 'a file with a page offers the recorder on every test (`D1399`)');
 
     // **The control: the same scan test in a file with no page.** Absent, not disabled (`D1082`):
     // the recorder's subject — a page — does not exist in this file.
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/s.tflw/L1`);
     await fresh.locator('.compose-pane-grid').waitFor();
     await fresh.waitForTimeout(400);
-    await toResponse();
     const alone = await read();
-    assert.equal(alone.session, null, 'a file with no page draws a session region (`D1245`)');
-    assert.equal(alone.startBtn, 0, '`record a session` is offered in a file with no page to record');
+    assert.equal(alone.recorder, 0, '`+ record` is offered in a file with no page to record (`D1245`)');
 
     // ── Gate 2 — the control: same file, same `sends: false`, BROWSER ────────────────────────
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L6`);
@@ -13532,19 +13309,19 @@ test('`M228` `F`: the recorder is the file’s — offered in a file with a page
        rather than left implicit, because `untipped` would come back `[]` from a page with no tabs
        at all and a reading that celebrated it would be vacuous. The tips are gated below, where
        three tenants are actually drawn. */
-    assert.deepEqual(browserPane.tabs, [], 'a browser test with no workload and no scan matcher earns one tenant, so the nav is not drawn (`D1209`)');
-    assert.equal(browserPane.session, 'none', 'BROWSER lost the recorder — a live session is this door’s evidence (`D1165`)');
-    assert.equal(browserPane.startBtn, 1, 'and the press that starts one is offered');
+    assert.deepEqual(browserPane.tabs, [], 'a browser test with no workload and no scan matcher earns one tenant — its screenshot — so no tabs are drawn (`D1209`)');
+    assert.equal(await countSettling(fresh, '[data-evidence="screenshot"]', 1), 1, 'and that tenant is the page the last run saw (`D1406`)');
+    assert.equal(browserPane.recorder, 1, 'the press that starts a recording is offered');
 
     // ── Gate 3 — all three tenants at once, which is where `D1246` is observable ─────────────
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L10`);
     await fresh.waitForTimeout(400);
     const three = await read();
-    assert.deepEqual(three.tabs, ['plan', 'scan', 'response'], `a workload-bearing test with a severity matcher earns all three — got ${JSON.stringify(three.tabs)}`);
-    assert.deepEqual(three.untipped, [], `a region-2 segment carries no tip — got ${JSON.stringify(three.untipped)}`);
-    /* The recorder is the FILE's (`D1399`), so this declaration in a file with a page is offered it
-       too — the door that once withheld it (LOAD sends, BROWSER records, SCANS neither) is gone. */
-    assert.equal(three.session, 'none', 'a declaration in a file with a page lost the recorder');
+    assert.deepEqual(three.tabs, ['response', 'plan', 'scan'], `a workload-bearing test with a severity matcher earns all three — got ${JSON.stringify(three.tabs)}`);
+    assert.deepEqual(three.untipped, [], `an evidence tab carries no tip — got ${JSON.stringify(three.untipped)}`);
+    /* The recorder is the FILE's (`D1399`), so this test in a file with a page is offered it too —
+       the door that once withheld it (LOAD sends, BROWSER records, SCANS neither) is gone. */
+    assert.equal(three.recorder, 1, 'a test in a file with a page lost the recorder');
   } finally {
     await fresh.close();
     await ui.close();

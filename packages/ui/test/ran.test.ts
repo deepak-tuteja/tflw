@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { groupFor, indexFromReport, indexFromSend } from '../src/ran.ts';
+import { evidenceFor, groupFor, indexFromReport, indexFromSend } from '../src/ran.ts';
 import type { RunReport, StepResult } from '../src/contract.ts';
 
 const step = (over: Partial<StepResult> & Pick<StepResult, 'kind' | 'source' | 'line'>): StepResult => ({
@@ -354,4 +354,76 @@ test('`M232` `C`: a statement with no request above it finds the action’s grou
   assert.equal(groupFor(index, 4, 7)!.line, 4, 'a declaration starting AT a group keeps it — the bound is inclusive');
   assert.equal(groupFor(index, 5, 7), null, 'a declaration starting below every group gets nothing, not the group above it');
   assert.equal(groupFor(index, 1, 1), null, 'and nothing is found above the first action');
+});
+
+// ---------------------------------------------------------------------------
+// `M256` `B` (`D1406`) — the evidence column opens on the last run, even for a step whose words
+// changed since. `evidenceFor` is the lenient join, and it looks in three places in the order they
+// can be trusted: the step's own line still reading what ran, its words on another line, and its
+// own line reading something else — the last one flagged. Verdicts never come through it.
+// ---------------------------------------------------------------------------
+
+const ran = (over: Partial<StepResult> = {}): RunReport =>
+  report([
+    step({ kind: 'api', source: 'api GET /health', line: 2, response: { status: 200, bodyText: '{"up":true}', headers: { 'content-type': 'application/json' } } as never, ...over }),
+    step({ kind: 'expect', source: 'expect status equals 200', line: 3, detail: 'status = 200' }),
+    step({ kind: 'api', source: 'api POST /orders', line: 4, response: { status: 201, bodyText: '{}', headers: {} } as never }),
+    step({ kind: 'expect', source: 'expect status equals 201', line: 5, detail: 'status = 201' }),
+  ]);
+
+test('`evidenceFor`: the step as it ran is the step on screen — the plain case, not flagged', () => {
+  const got = evidenceFor(ran(), 'tests/checkout.tflw', BUFFER, 2);
+  assert.ok(got !== null);
+  assert.equal(got.changed, false);
+  assert.equal(got.response?.status, 200);
+  assert.deepEqual(got.response?.headers, { 'content-type': 'application/json' }, 'the headers come through — below `evidence full` they are all there is');
+  assert.equal(got.steps.size, 0, 'and no verdict does: those come from the strict join alone (`D1108`)');
+});
+
+test('`evidenceFor`: a step that MOVED is found by its words and is not flagged — it is the same step', () => {
+  // A `let` above everything: every line below moves down by one, and none of the words change.
+  const moved = BUFFER.replace('test "checkout"\n', 'test "checkout"\n  let x = 1\n');
+  const got = evidenceFor(ran(), 'tests/checkout.tflw', moved, 5);
+  assert.ok(got !== null, 'the request on line 5 is the one that ran on line 4');
+  assert.equal(got.response?.status, 201);
+  assert.equal(got.changed, false, 'a line that moved is not a step that changed');
+  assert.equal(got.line, 5, 'and it answers for the line the step is on NOW');
+});
+
+test('`evidenceFor`: a step whose words changed on its own line comes back FLAGGED', () => {
+  const edited = BUFFER.replace('api POST /orders', 'api POST /orders/bulk');
+  const got = evidenceFor(ran(), 'tests/checkout.tflw', edited, 4);
+  assert.ok(got !== null, 'the last thing that came back for this step is still evidence about it');
+  assert.equal(got.changed, true, '…and the column must say the words are not what ran (`⚠ this step changed since`)');
+  assert.equal(got.response?.status, 201);
+});
+
+test('`evidenceFor`: moved AND changed is a new step as far as any evidence can tell — nothing', () => {
+  const both = BUFFER.replace('test "checkout"\n', 'test "checkout"\n  let x = 1\n').replace('api POST /orders', 'api POST /orders/bulk');
+  // Line 5 now reads a request nobody ran, and the recorded step on line 5 was an `expect`.
+  assert.equal(evidenceFor(ran(), 'tests/checkout.tflw', both, 5), null);
+});
+
+test('`evidenceFor`: two identical steps on other lines are two steps — the words alone decide nothing', () => {
+  const twice = report([
+    step({ kind: 'api', source: 'api GET /health', line: 2, response: { status: 200, bodyText: '"a"', headers: {} } as never }),
+    step({ kind: 'api', source: 'api GET /health', line: 3, response: { status: 503, bodyText: '"b"', headers: {} } as never }),
+  ]);
+  const buffer = ['test "twice"', '  let x = 1', '  api GET /health', '  api GET /health', ''].join('\n');
+  // Line 4 reads `api GET /health`, which ran on lines 2 AND 3 — and line 4 ran nothing at all.
+  assert.equal(evidenceFor(twice, 'tests/checkout.tflw', buffer, 4), null, 'an ambiguous match is not borrowed');
+  // Line 3 is exact on (line, words): the second recorded step, with no guessing involved.
+  assert.equal(evidenceFor(twice, 'tests/checkout.tflw', buffer, 3)?.response?.status, 503);
+});
+
+test('`evidenceFor`: the run\'s evidence level and the group\'s screenshot travel with it (`D987`, `D1406`)', () => {
+  const headersOnly = { ...ran(), evidenceLevel: 'headers-only' } as RunReport;
+  assert.equal(evidenceFor(headersOnly, 'tests/checkout.tflw', BUFFER, 2)?.evidence, 'headers-only', 'so the column can say the body was not kept rather than print the placeholder');
+  const shot = report([
+    step({ kind: 'open', source: 'open "/cart"', line: 2 }),
+    step({ kind: 'expect', source: 'expect text "Cart" is visible', line: 3 }),
+    step({ kind: 'screenshot', source: 'screenshot "cart"', line: 4, screenshot: { base64: 'iVBOR' } }),
+  ]);
+  const buffer = ['test "cart"', '  open "/cart"', '  expect text "Cart" is visible', '  screenshot "cart"', ''].join('\n');
+  assert.equal(evidenceFor(shot, 'tests/checkout.tflw', buffer, 2)?.screenshot, 'iVBOR', 'the screenshot a `screenshot` statement took is the group\'s, read to the next action');
 });

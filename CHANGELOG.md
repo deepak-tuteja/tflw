@@ -17,6 +17,27 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — Compose edits a test where it is, and the right column shows what came back (M256)
+
+- **A picked step edits in place** (`D1405`). Clicking a row, or pressing Enter on it, turns that
+  row into its own editor — a request into its method and path with **headers · body · more**
+  folded under it, an assertion into subject · matcher · value with its verdict at the end, every
+  other statement into its own fields — and Esc closes it. The editor card beside the steps, its
+  four tabs and its second drawing of the request's assertions are gone: each statement is drawn
+  once. A test's clauses (tags, retries, a `with each` table, the workload) open as a card under its
+  row.
+- **The right column is evidence, and it opens on the last run** (`D1406`): the picked request's
+  status, headers and body as the newest run recorded them, under a line that dates them, with
+  **⚠ this step changed since · send to refresh** when the request's words have been edited. Below
+  `evidence full` it says the body was not kept. Tabs — `response · plan · scan · screenshot` — are
+  drawn only for what the picked step earns; a browser step shows the page the last run saw.
+  Ticking a value writes the assertion or the `capture` under its request and opens it.
+- **`+ record` lands rows under the picked step** (`D1408`), each with **keep · drop**; **▶ try**
+  runs the test with them in it, and **stop** keeps what was kept and drops the rest. The session
+  panel is gone. A locator field's picker is **⌖ pick**.
+- **Below 1100 px the evidence folds under the picked row** (`D1412`); the divider that sized the
+  response under the editor is gone with the editor.
+
 ### Changed — `tflw run --failed` replays what is failing, and the file list carries verdicts (M255)
 
 - **`tflw run --failed` replays the tests whose newest verdict in the kept runs is a failure**

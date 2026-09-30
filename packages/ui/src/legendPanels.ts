@@ -10,7 +10,7 @@ const DOCS = 'https://deepak-tuteja.github.io/tflw/';
 export const LEGEND_PANELS: readonly LegendEntry[] = [
   {
     title: 'Compose',
-    text: 'The file as a sequence of statements. Pick a row to edit it; send shows what came back and grades nothing — Run grades.',
+    text: 'The file’s tests as steps. Pick a row to edit it in place; the column beside it shows what came back — send grades nothing, Run grades.',
     href: `${DOCS}ui/api`,
   },
   { title: 'Source', text: 'The file’s bytes, and what the checker says about them. Edits here and in Compose are one buffer.', href: `${DOCS}ui/spine` },

@@ -94,7 +94,7 @@ export function ScanPanel({ authorization, matchers, onAuth, onConfig }: {
           them. Counted rather than listed, since a test repeating one family five times is five
           rows of the same six words. */}
       <p className="scan-claims" data-compose-scan-families={families.length}>
-        this declaration asserts{' '}
+        this test asserts{' '}
         {families.map((f, i) => (
           <span key={f.matcher}>
             {i === 0 ? '' : ', '}

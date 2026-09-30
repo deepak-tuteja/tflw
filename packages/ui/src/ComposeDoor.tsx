@@ -83,12 +83,13 @@ import { pickLocators, recordActions, putFile, getFile, dropScratch, startRun, s
 import { diagnose } from './diagnose';
 import { lineOfStep } from './depends';
 import { matches, SHORTCUTS } from './shortcuts';
-import { indexFromReport, indexFromSend, belongsTo, playScratchOf } from './ran';
+import { evidenceFor, indexFromReport, indexFromSend, belongsTo, playScratchOf } from './ran';
 import type { DoorVocabulary } from './vocabulary';
 import { TabStrip } from './TabStrip';
 import { Stage, traceOf } from './Stage';
 import { Grip, STAGE, storedSize } from './Grip';
 import {
+  carriedOver,
   declKey,
   editOf,
   stepKey,
@@ -109,11 +110,11 @@ import {
   ELEMENT_DATALIST_ID,
 } from './parts';
 import { workloadSpecOf, type WorkloadEdit } from './workloadEdit';
-import { ComposePane, selectedAt, type EditorTab, type SeqTarget } from './ComposePane';
+import { ComposePane, selectedAt, type RequestFold, type SeqTarget } from './ComposePane';
 import { useLastWorkloadRun } from './PlanPanel';
 import { buildStatement } from './statements';
 import { AddStep, stepCatalogue } from './AddStep';
-import type { Session, SessionLine } from './SessionPanel';
+import type { Session, SessionLine } from './session';
 import type { MenuItem, MenuRequest } from './ContextMenu';
 import type { NewMode } from './NewThing';
 import { addressed, anchorAfter, fileOutline, pageOpeners, requestsOf, statementsOf,
@@ -656,16 +657,10 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
         return;
       }
       const original: OutlineRequest = at.request;
-      const request = {
-        ...built.node,
-        // An `upload` body is still carried whole, and it is now the ONLY thing that is:
-        // `ApiBodySpec` cannot express one, so the builder returns `body: null` for it, and taking
-        // that answer would delete a `multipart/form-data` payload from a request whose path
-        // somebody edited. Widening the body spec is its own slice; widening the request spec was
-        // `A2`.
-        // `M242` `C` (`D1328`): a GraphQL body is kept the same way — shown, carried, edited in Source.
-        body: next.bodyKind === 'upload' || next.bodyKind === 'graphql' ? original.spec.body : built.node.body,
-      };
+      /* What the edit model cannot spell is carried from the node it was built over — an upload or
+         a GraphQL body, a `sign with` clause, and every header or form value the reader has not
+         typed into (`carriedOver`, `M256`). */
+      const request = carriedOver(built.node, original, next);
       /**
        * **A polling request is the same request in a different node** (`M210` `S4`).
        *
@@ -1296,6 +1291,25 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
   );
 
   /**
+   * **A tick lands on the row it wrote** — `M256` `B` (`D1406`: *verify and capture are live on
+   * it*). The card switched to its Assert tab so the new assertion was on screen; the rows are the
+   * assertions now, so the address moves to the one just written and it opens in place. The
+   * request is found again by its index pair — a splice after it leaves it where it was — and what
+   * was written is the last thing attached to it. No `made` bump: the reader is ticking values in
+   * the response, and a focus jump into the row would take the next tick away from them.
+   */
+  const landOnWritten = useCallback(
+    (text: string, request: OutlineRequest) => {
+      const after = fileOutline(path, text, opensPage);
+      const decl = after.declarations.find((d) => spaceOfDecl(d) === request.stepPath.space && d.index === request.stepPath.decl);
+      const moved = decl?.body === undefined ? undefined : requestsOf(decl.body).find((r) => r.stepPath.step === request.stepPath.step);
+      const last = moved?.attached.filter((a) => a.stepPath !== null).at(-1);
+      if (last !== undefined) onTab('compose', last.line);
+    },
+    [path, opensPage, onTab],
+  );
+
+  /**
    * **Tick-to-verify** (`M213` `S2`, `D1100`) — a ticked response becomes one assertion, under the
    * request it is about.
    *
@@ -1325,8 +1339,9 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
       }
       setEditProblem(null);
       settle(out.text);
+      landOnWritten(out.text, request);
     },
-    [file, draft, settle],
+    [file, draft, settle, landOnWritten],
   );
 
   /**
@@ -1357,8 +1372,9 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
       }
       setEditProblem(null);
       settle(out.text);
+      landOnWritten(out.text, request);
     },
-    [file, draft, settle],
+    [file, draft, settle, landOnWritten],
   );
 
   /**
@@ -1618,7 +1634,6 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
     pickStop.current?.();
     pickStop.current = null;
     setPicking(null);
-    setSession((current) => (current === null || current.kind !== 'pick' ? current : { ...current, live: false }));
   }, []);
 
   const startPick = useCallback(
@@ -1626,17 +1641,14 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
       pickStop.current?.();
       setPicked([]);
       setPicking(key);
-      /* **A pick streams into the same panel a recording does** (`D1165`). One live browser, one
-         list of what it handed back — the row's own suggestions stay, because the field is where
-         a locator is *used* and the panel is where it arrives. */
-      setSession({ kind: 'pick', live: true, into: null, lines: [] });
+      /* **The suggestions land on the field that asked** (`M256` `C`, `D1408`): `⌖ pick` is a
+         button on a locator field, and the field is where its answer goes. The panel that used to
+         repeat the list beside it was the same answer drawn twice. */
       const unsubscribe = pickLocators(pickPath, {
         line: (text) => {
           const locator = locatorFromPickLine(text);
           if (!locator) return;
           setPicked((current) => [locator, ...current]);
-          const id = (lineId.current += 1);
-          setSession((current) => (current === null ? current : { ...current, lines: [{ id, kind: 'locator', locator }, ...current.lines] }));
         },
         /* A `pick` that cannot start says so on the row rather than in a console nobody is
            reading — the session is a real browser and the commonest reason it fails is that one
@@ -1644,7 +1656,6 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
         problem: (text) => setEditProblem(text),
         end: () => {
           setPicking(null);
-          setSession((current) => (current === null || current.kind !== 'pick' ? current : { ...current, live: false }));
         },
       });
       pickStop.current = unsubscribe;
@@ -1721,6 +1732,18 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
   const [session, setSession] = useState<Session | null>(null);
   const lineId = useRef(0);
   useEffect(() => setSession(null), [path]);
+  /**
+   * **Where kept rows go** — `M256` `C` (`D1408`): *under the picked step*. The step picked when
+   * the recording started, as an index into the test's body; each keep lands after it and moves it
+   * on by what it inserted, so a run of keeps is a sequence in the order they were kept. `null` is
+   * the foot of the test, which is where a recording started with nothing picked writes — and what
+   * `D1095` did for every recording before this.
+   *
+   * An index rather than a line, for `landOn`'s reason: every splice formats, so a line held across
+   * one names something else afterwards, and an index into the body does not move under an
+   * insertion after it.
+   */
+  const anchor = useRef<{ readonly decl: number; step: number } | null>(null);
 
   /**
    * **The recorder's stdout, accumulated** — `D1265` and `D1268` together.
@@ -1823,43 +1846,47 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
    * the moment a splice succeeds, which is the only ordering that makes a run of keeps a sequence
    * rather than a race.
    */
+  /** The splice a keep, a keep-all and a ▶ all share — at the anchor, or at the foot by name. */
+  const spliceRecorded = useCallback(
+    (text: string, into: string, nodes: readonly Step[]) =>
+      anchor.current === null
+        ? insertIntoSource(text, { kind: 'steps', testName: into, nodes })
+        : insertIntoSource(text, { kind: 'stepsAfter', path: { decl: anchor.current.decl, step: anchor.current.step }, nodes }),
+    [],
+  );
+
   const keepLine = useCallback(
     (line: SessionLine) => {
-      if (!file) return;
-      if (line.kind === 'locator') {
-        /* A picked locator is not a statement; it is an answer to *what do I write in this field*,
-           and the field is the row the pick was started on. Same write `PickField` made. */
-        setPicked([line.locator]);
-        return;
-      }
-      if (line.kind !== 'step') return;
+      if (!file || line.kind !== 'step') return;
       const name = session?.into ?? null;
       if (name === null) return;
-      const out = insertIntoSource(textRef.current, { kind: 'steps', testName: name, nodes: [line.node] });
+      const out = spliceRecorded(textRef.current, name, [line.node]);
       if (!out.ok) {
         setEditProblem(out.reason);
         return;
       }
+      if (anchor.current !== null) anchor.current.step += 1;
       textRef.current = out.text;
       settle(out.text);
       setSession((current) => (current === null ? current : { ...current, lines: current.lines.filter((l) => l.id !== line.id) }));
     },
-    [file, settle, session],
+    [file, settle, session, spliceRecorded],
   );
 
   const keepAll = useCallback(() => {
     if (!file || session === null || session.into === null) return;
     const nodes = session.lines.flatMap((l) => (l.kind === 'step' ? [l.node] : []));
     if (nodes.length === 0) return;
-    const out = insertIntoSource(textRef.current, { kind: 'steps', testName: session.into, nodes });
+    const out = spliceRecorded(textRef.current, session.into, nodes);
     if (!out.ok) {
       setEditProblem(out.reason);
       return;
     }
+    if (anchor.current !== null) anchor.current.step += nodes.length;
     textRef.current = out.text;
     settle(out.text);
     setSession((current) => (current === null ? current : { ...current, lines: current.lines.filter((l) => l.kind !== 'step') }));
-  }, [file, settle, session]);
+  }, [file, settle, session, spliceRecorded]);
 
   /**
    * Write the play scratch, recovering **once** from a hash nobody here could have known.
@@ -1914,7 +1941,7 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
     if (!file || session === null || session.into === null) return;
     const nodes = session.lines.flatMap((l) => (l.kind === 'step' ? [l.node] : []));
     if (nodes.length === 0) return;
-    const out = insertIntoSource(textRef.current, { kind: 'steps', testName: session.into, nodes });
+    const out = spliceRecorded(textRef.current, session.into, nodes);
     if (!out.ok) {
       setEditProblem(out.reason);
       return;
@@ -1929,24 +1956,40 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
     }
     playEtag.current = put.etag;
     onRun({ files: [target], only: session.into, evidence: 'full', trace: true });
-  }, [file, session, path, project.playScratch, writeScratch, onRun]);
+  }, [file, session, path, project.playScratch, writeScratch, onRun, spliceRecorded]);
 
   const dropLine = useCallback((id: number) => {
     setSession((current) => (current === null ? current : { ...current, lines: current.lines.filter((l) => l.id !== id) }));
   }, []);
 
+  /**
+   * **Stopping keeps what was kept and drops the rest** — `M256` `C` (`D1408`). What was kept is in
+   * the buffer already; what was not was never in the file, so there is nothing to undo. It amends
+   * `D1165`'s *the lines stay when the browser closes*: a list that outlived its browser was a
+   * second place a test's steps lived, with no way to tell it apart from the file.
+   */
   const stopRecording = useCallback(() => {
     recordStop.current?.();
     recordStop.current = null;
     recordInto.current = null;
+    anchor.current = null;
     setRecording(null);
-    setSession((current) => (current === null ? current : { ...current, live: false }));
+    setSession(null);
   }, []);
 
   const startRecording = useCallback(
     (decl: OutlineTest) => {
       recordStop.current?.();
       recordInto.current = decl.name;
+      /* Under the picked step, when the pick is in this test (`D1408`); a request anchors after its
+         last attachment, `D1138`'s rule, so nothing kept changes which response those read. */
+      const picked = selectedAt(at, focusLine);
+      const inTest = picked.kind !== 'file' && picked.kind !== 'test' && picked.decl.kind === 'test' && picked.decl.index === decl.index;
+      const path = !inTest ? null
+        : picked.kind === 'request' ? anchorAfter(picked.request)
+        : picked.kind === 'statement' && picked.statement.inner === null ? picked.statement.stepPath
+        : null;
+      anchor.current = path === null ? null : { decl: path.decl, step: path.step };
       setRecording(decl.line);
       /* A new recording starts a new list. Lines from the last one that were never kept were
          never in the file, so nothing is lost by clearing them — and carrying them would put two
@@ -1972,18 +2015,16 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
         end: () => {
           recordStop.current = null;
           recordInto.current = null;
+          anchor.current = null;
           setRecording(null);
-          /* Nothing further can join the held chunk, so it is read one last time — which is how
-             the last line of a session becomes a row rather than waiting for a gesture that will
-             never come (`D1265`). */
-          readChunk(true);
-          /* **The lines stay when the browser closes**, which is the point of the panel: closing
-             the browser is how you stop adding to the list, not how you throw it away. */
-          setSession((current) => (current === null ? current : { ...current, live: false }));
+          /* Closing the browser is stopping (`D1408`) — the recorder's own banner says *close the
+             window or press Ctrl+C to stop* — so it ends the way the `stop` button does. */
+          chunk.current = [];
+          setSession(null);
         },
       });
     },
-    [pickPath, appendRecorded, noticeRecorded, readChunk],
+    [pickPath, appendRecorded, noticeRecorded, at, focusLine],
   );
 
   /** The file changing closes the browser, for `pick`'s reason and with its gate. */
@@ -2043,9 +2084,17 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
    *  pane for `M205` `S5a`'s reason, which this round has now met four times: the strip unmounts
    *  panels, so a gesture held below one does not survive a glance at Source. */
   const [noting, setNoting] = useState<string | null>(null);
-  /** Which of the request editor's four tabs is open (`M214` `A2`). Held HERE, because the strip
-   *  unmounts panels — `M205` `S5a`, the sixth time this pane has met that rule. */
-  const [editorTab, setEditorTab] = useState<EditorTab>('assert');
+  /** Which of a request's folds are open (`M256` `A`, `D1405`). Held HERE, because the strip
+   *  unmounts panels — `M205` `S5a`. Closed at rest: a picked request is one line until asked. */
+  const [folds, setFolds] = useState<ReadonlySet<RequestFold>>(() => new Set());
+  const toggleFold = useCallback((fold: RequestFold) => {
+    setFolds((current) => {
+      const next = new Set(current);
+      if (next.has(fold)) next.delete(fold);
+      else next.add(fold);
+      return next;
+    });
+  }, []);
   const [editProblem, setEditProblem] = useState<string | null>(null);
 
   /**
@@ -2284,7 +2333,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     if (fatal) return { ok: false, reason: `this file does not parse: ${fatal.code} at line ${fatal.span.start.line}` };
     const declarations = [...program.hooks, ...program.tests].sort((a, b) => a.span.start.line - b.span.start.line);
     const decl = declarations[prefix.decl];
-    if (!decl) return { ok: false, reason: 'that declaration is no longer in the file' };
+    if (!decl) return { ok: false, reason: 'that test is no longer in the file' };
     const body = withoutAssertions(decl.body.slice(0, prefix.upTo + 1));
     /* **The workload and the thresholds are dropped, and on the LOAD door that is the point rather
        than a caveat** (`M224` `D1211`). `send` means *issue this request once and show me what came
@@ -2403,6 +2452,21 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     }
     return base;
   }, [reportRan, sentRan, draft, file, path, project.playScratch]);
+
+  /**
+   * **The last run's evidence for one step, even when its words changed since** — `M256` `B`
+   * (`D1406`). A function rather than a map: the column asks about the one row that is picked, and
+   * `evidenceFor` walks the report for it. Memoised on what it reads, so the pane's own memo over
+   * it holds between keystrokes that do not touch the report.
+   */
+  const evidenceOf = useCallback(
+    (line: number): Ran | null => {
+      const text = draft ?? file?.text ?? '';
+      if (reportRan === null || text === '') return null;
+      return evidenceFor(reportRan.report, path, text, line, project.playScratch);
+    },
+    [reportRan, draft, file, path, project.playScratch],
+  );
 
   /**
    * **What the stage is showing** (`M221` `A`).
@@ -2801,6 +2865,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           at={at}
           focusLine={focusLine}
           onLine={(line) => onTab('compose', line)}
+          onFile={() => onTab('compose')}
           onNew={onNew}
           scratchUnignored={project.scratchIgnored ? null : project.scratchPath}
           edit={values}
@@ -2842,6 +2907,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           sent={sentRan === null ? null : { lines: [...sentRan.lines.values()], form: sentRan.form, at: sentRan.startedAt }}
           sending={sending}
           ran={ranIndex}
+          evidenceOf={evidenceOf}
           onVerify={verify}
           onCapture={captureFrom}
           onAdd={add}
@@ -2863,15 +2929,33 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onRemoveScoped={removeScoped}
           onUnscope={unscope}
           onScope={scope}
-          session={vocab.sends ? null : session}
+          provisional={
+            session === null
+              ? null
+              : {
+                  ...session,
+                  /* The row the pending rows are drawn under — the anchor's step read back as a
+                     line from the buffer as it is now, so a keep that moved it moves them too. */
+                  after: ((): number | null => {
+                    if (anchor.current === null || ownOutline === null) return null;
+                    const d = ownOutline.declarations.find((x) => x.kind === 'test' && x.index === anchor.current!.decl);
+                    if (d === undefined) return null;
+                    const step = anchor.current.step;
+                    const s = statementsOf(d.body).find((x) => x.inner === null && x.stepPath?.step === step);
+                    if (s !== undefined) return s.line;
+                    return requestsOf(d.body).find((x) => x.stepPath.step === step)?.line ?? null;
+                  })(),
+                  intoLine: ownOutline?.declarations.find((x) => x.kind === 'test' && x.name === session.into)?.line ?? null,
+                }
+          }
           onKeepLine={keepLine}
           onKeepAll={keepAll}
           /* `D1185` — offered on the door that plays, and the panel itself refuses a `pick`. */
           onPlaySession={vocab.plays ? () => void playSession() : null}
           onDropLine={dropLine}
           onStopSession={() => (recording !== null ? stopRecording() : endPick())}
-          tab={editorTab}
-          onEditorTab={setEditorTab}
+          folds={folds}
+          onFold={toggleFold}
           dirty={draft !== null}
           busy={busy}
           problem={problem}
@@ -2879,11 +2963,6 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setElementEdit(null); setRowsCount(null); setNoting(null); setEditProblem(null); }}
           kinds={kinds}
           vocab={vocab}
-          /* `D1235` — the footer yields to a live playback region, and this is the one bit of the
-             Stage the pane is told about. It is the same `stageTrace` the `Grip` below turns on,
-             so the band that gets the page's width and the control that resizes it cannot
-             disagree about whether there is anything down there. */
-          stage={stageTrace !== null}
         />
         {/* **The third region** (`D1181`) — below both columns, full width of `main`, which is
             1114 px at 1440 against the viewer's 606 px floor. `Stage` is always rendered and says

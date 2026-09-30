@@ -189,30 +189,15 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
   for (const entry of report.tests) {
     if (entry.kind !== 'functional' && entry.kind !== 'crawl') continue;
     if (!belongsTo(entry.file, path, playScratch)) continue;
-    let open: { step: StepResult; verdicts: Map<number, Verdict> } | null = null;
+    let open: { step: StepResult; verdicts: Map<number, Verdict>; screenshot: string | null } | null = null;
     const close = (): void => {
       if (open === null) return;
-      const { step, verdicts } = open;
+      const { step, verdicts, screenshot } = open;
       open = null;
       // **The request's own line is what the whole group hangs on.** If it has moved or been
       // retyped, the response is not about what is written there and neither is anything under it.
       if (!stillReads(lines, step.line, step.source)) return;
-      out.set(step.line, {
-        line: step.line,
-        source: step.source,
-        scope: 'run',
-        at: report.startedAt,
-        steps: verdicts,
-        response:
-          step.response === undefined
-            ? null
-            : {
-                status: step.response.status,
-                url: step.request?.url ?? '',
-                method: step.request?.method ?? '',
-                bodyText: step.response.bodyText,
-              },
-      });
+      out.set(step.line, ranOf(report, step, verdicts, screenshot, false));
     };
     for (const step of entry.steps) {
       // `M240-03` — a step of an action imported from another file is a line of *that* file. Before
@@ -222,10 +207,11 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
       if (step.file !== undefined) continue;
       if (OPENS_GROUP.has(step.kind)) {
         close();
-        open = { step, verdicts: new Map() };
+        open = { step, verdicts: new Map(), screenshot: step.screenshot?.base64 ?? null };
         continue;
       }
       if (open === null) continue;
+      if (open.screenshot === null && step.screenshot !== undefined) open.screenshot = step.screenshot.base64;
       // Each statement is checked on its own, because each can move on its own: adding an
       // assertion to a request pushes the ones under it down by a line and leaves the request
       // where it was, which is exactly the shape tick-to-verify produces.
@@ -234,6 +220,85 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
     close();
   }
   return out;
+}
+
+/** One group, as the pane carries it — the two joins below build the same shape from the same
+ *  step, so they cannot disagree about what a recorded response is. */
+function ranOf(report: RunReport, step: StepResult, verdicts: ReadonlyMap<number, Verdict>, screenshot: string | null, changed: boolean): Ran {
+  return {
+    line: step.line,
+    source: step.source,
+    scope: 'run',
+    at: report.startedAt,
+    steps: verdicts,
+    response:
+      step.response === undefined
+        ? null
+        : {
+            status: step.response.status,
+            url: step.request?.url ?? '',
+            method: step.request?.method ?? '',
+            bodyText: step.response.bodyText,
+            headers: step.response.headers,
+          },
+    evidence: report.evidenceLevel ?? null,
+    changed,
+    screenshot,
+  };
+}
+
+/**
+ * **What the last run recorded for one step, even when its text has changed since** — `M256` `B`
+ * (`D1406`).
+ *
+ * The evidence column opens on the last run, so a picked request shows what came back for it
+ * without a send. `indexFromReport` is the wrong instrument for that and deliberately so: it drops
+ * a group whose opening line no longer reads what ran, because every verdict under it would be a
+ * claim about words nobody ran. A response is a different kind of claim — *this is what came back
+ * the last time this step ran* — and an author who has just retyped a path is exactly the reader
+ * who wants to see the old answer beside the new question. So this looks in three places, in the
+ * order they are trustworthy, and says which one it found:
+ *
+ *  1. **the step's own line, still reading what ran** — the same answer `indexFromReport` gives;
+ *  2. **the step's text, on another line** — a request that moved because something above it was
+ *     added is the same step, keyed on its words and not its line (`D1406`'s own wording), and is
+ *     not flagged; it answers only when exactly one recorded step reads those words, because two
+ *     identical requests in one file are two steps and a join cannot tell which is which;
+ *  3. **the step's own line, reading something else** — the step has been edited since, and the
+ *     response comes back with `changed` set so the column can say so (`⚠ this step changed
+ *     since · send to refresh`).
+ *
+ * `null` when none of the three holds: the step has not run, or has moved *and* changed, which is
+ * a new step as far as any evidence can tell.
+ */
+export function evidenceFor(report: RunReport, path: string, bufferText: string, line: number, playScratch?: string): Ran | null {
+  const lines = linesOf(bufferText);
+  const text = lines[line - 1] ?? '';
+  let byLine: Ran | null = null;
+  const byText: Ran[] = [];
+  for (const entry of report.tests) {
+    if (entry.kind !== 'functional' && entry.kind !== 'crawl') continue;
+    if (!belongsTo(entry.file, path, playScratch)) continue;
+    const steps = entry.steps.filter((s) => s.file === undefined);
+    for (const [i, step] of steps.entries()) {
+      if (!OPENS_GROUP.has(step.kind)) continue;
+      const atLine = step.line === line;
+      const sameText = text !== '' && step.source.trim() === text;
+      if (!atLine && !sameText) continue;
+      /* The group's screenshot, read to the next opener — the same extent `indexFromReport` gives
+         it. Verdicts are not carried: see `Ran.changed`. */
+      let screenshot = step.screenshot?.base64 ?? null;
+      for (const later of steps.slice(i + 1)) {
+        if (OPENS_GROUP.has(later.kind)) break;
+        if (screenshot === null && later.screenshot !== undefined) screenshot = later.screenshot.base64;
+      }
+      if (atLine && sameText) return { ...ranOf(report, step, new Map(), screenshot, false), line };
+      if (sameText) byText.push({ ...ranOf(report, step, new Map(), screenshot, false), line });
+      else if (byLine === null) byLine = ranOf(report, step, new Map(), screenshot, true);
+    }
+  }
+  if (byText.length === 1) return byText[0]!;
+  return byLine;
 }
 
 /**
@@ -299,7 +364,13 @@ export function indexFromSend(args: {
               url: step.request?.url ?? '',
               method: step.request?.method ?? '',
               bodyText: step.response.bodyText,
+              headers: step.response.headers,
             },
+      // A send is `--evidence full` by construction (`sendPrefix`), and is about the buffer as it
+      // was pressed — so its level is the full one and nothing about it has changed yet.
+      evidence: 'full',
+      changed: false,
+      screenshot: null,
     });
   }
   return out;

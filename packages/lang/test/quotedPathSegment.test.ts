@@ -14,7 +14,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSource, print, parsePathText, buildExpect } from '../src/index.js';
+import { parseSource, print, parsePathText, buildApiStep, buildCapture, buildExpect } from '../src/index.js';
 
 const src = (body: string): string => `test "t"\n  ${body}\n`;
 
@@ -178,4 +178,42 @@ test('`M230` `B`: `build.ts` reads paths with the parser`s own scanner, not a co
   assert.deepEqual(parsePathText('"content-type"', { quotedHead: true }), [{ kind: 'prop', name: 'content-type' }]);
   assert.equal(parsePathText('"content-type"'), null);
   assert.equal(parsePathText('a."b.c".d', { quotedHead: true })!.length, 3, 'a dot inside a quoted key is part of the key, not a separator');
+});
+
+// ---- `M256`: the text reader takes what the token reader takes -------------------------------
+//
+// Found by the page's round-trip gate, which opens every row in both corpora and closes it
+// untouched: 116 captures and assertions over a response whose root is a list (`body[0].id`) came
+// back **refused**, because `parsePathText` demanded a key first while `parseBodyPath` — the token
+// route the parser itself uses — has always read an index there. The same gate found `is empty`
+// unbuildable and an absolute-URL request uneditable; all three are the builder refusing a file
+// the parser accepts.
+
+test('`M256`: a body path may open with an index, as the parser reads it — and a `{ref}` still may not', () => {
+  const read = parseSource(src('capture body[0].id as firstId'));
+  assert.deepEqual(read.diagnostics.filter((d) => d.severity === 'error'), [], 'the language reads it');
+  assert.deepEqual(parsePathText('[0].id', { quotedHead: true, indexHead: true }), [{ kind: 'index', index: 0 }, { kind: 'prop', name: 'id' }]);
+  const built = buildCapture({ subject: { kind: 'body', path: '[0].id' }, name: 'firstId' });
+  assert.ok(built.ok, built.ok ? '' : built.reason);
+  assert.equal(print(built.node).ok && (print(built.node) as { text: string }).text, 'capture body[0].id as firstId');
+  // The control: a `{ref}` hole opens with the variable it names, so the option is not the default.
+  assert.equal(parsePathText('[0].id'), null, 'an interpolation head is still a name');
+  const value = buildExpect({ soft: false, quantifier: null, subject: { kind: 'value', ref: '[0]' }, matcher: 'equals', operand: '1' });
+  assert.equal(value.ok, false, 'and a `{value}` subject names a variable, never an index');
+});
+
+test('`M256`: `is empty` takes nothing, as the parser writes it — and `equals` still needs its value', () => {
+  const built = buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: 'comment' }, matcher: 'isEmpty', operand: null });
+  assert.ok(built.ok, built.ok ? '' : built.reason);
+  assert.equal(print(built.node).ok && (print(built.node) as { text: string }).text, 'expect body.comment is empty');
+  const bare = buildExpect({ soft: false, quantifier: null, subject: { kind: 'body', path: 'comment' }, matcher: 'equals', operand: null });
+  assert.equal(bare.ok, false, 'the control: a matcher that compares still refuses no value');
+});
+
+test('`M256`: an absolute URL is a request target the builder takes, as the lexer does — and a bare word is not', () => {
+  const spec = { service: null, method: 'GET' as const, headers: [], body: null, label: null };
+  const absolute = buildApiStep({ ...spec, path: 'https://example.test/health' });
+  assert.ok(absolute.ok, absolute.ok ? '' : absolute.reason);
+  assert.equal(print(absolute.node).ok && (print(absolute.node) as { text: string }).text, 'api GET https://example.test/health');
+  assert.equal(buildApiStep({ ...spec, path: 'orders' }).ok, false, 'the control: a relative word is still not a target');
 });

@@ -1,61 +1,39 @@
-// **The API door's Compose pane, rebuilt** — `M214` `A1`–`A6`.
+// **Compose — the steps, edited in place, and the evidence beside them** — `M256` (`D1405`,
+// `D1406`, `D1408`, `D1412`).
 //
-// `M213` closed with all four doors moving at once and the verdict on the result was *"still a lot
-// of mess on compose page — I can't figure out a single thing"*. This is the round that goes one
-// door at a time, and this file is the API door's.
+// `M214` built this pane as three regions — the explorer, the test's steps, and an editor card with
+// the response under it — and it said why: `D1086`'s two halves (*every request is drawn* and *the
+// pane fits 1.50 screens*) were jointly unsatisfiable, so each region scrolls inside itself. That
+// argument stands; what `M256` removes is the card.
 //
-// ── WHY THE OLD PANE COULD NOT BE FIXED IN PLACE ───────────────────────────────────────────────
+// ── WHY THE CARD WENT ─────────────────────────────────────────────────────────────────────────────
 //
-// `D1086` had two halves and they are jointly unsatisfiable. *Every request in the test is drawn*
-// was defended by the mutation `the-other-requests-are-not-drawn`; *API Compose fits 1.50 screens*
-// was defended by `ui-appearance`'s `BAR` table. On the thirteen-request file `D1086` itself
-// measures, the two together demand **thirteen requests in 1350 px — 104 px each, assertions
-// included.** No design satisfies that, so the only move left was compression, and four rounds of
-// compression is the pane that was rejected. **A ceiling and a completeness rule written about the
-// same artefact are one decision taken twice**, and this one was taken twice in opposite
-// directions. Both mutations are gone and the height bar is replaced by a property this pane can
-// actually hold: *no region overflows the window* — which is true by construction below, because
-// each of the three scrolls inside itself.
+// **The card drew the test a second time.** Picking a request put its assertions in the card's
+// Assert tab while the steps column went on drawing the same assertions as rows — two pictures of
+// six assertions, and the reader's eye had to find the one it had picked in the other. A picked
+// row now **turns into its own editor where it stands** (`D1405`): a request becomes `[method]
+// [path]` with `headers · body · more` folded under it, an `expect` becomes subject · matcher ·
+// value on its own line, and six assertions stay six lines. The two things that are not lines in
+// the file — a test's header clauses (its workload is 18 controls) and a crawl's body — open as a
+// card under their row, and do not pretend to be lines.
 //
-// Nothing else was restricting anything. There is no `max-width` on the app shell and **no gate
-// mentions width at all**; the sidebar's 320 px is a CSS literal.
+// **The right column is evidence** (`D1406`) — `Evidence.tsx`: the response for a request, the plan
+// for a workload, the scan panel, the screenshot for a browser step. It opens on the last run.
 //
-// ── THE THREE REGIONS (`D1110`) ────────────────────────────────────────────────────────────────
+// **Below 1100 px the column folds under the picked row** (`D1412`) — measured, the right column was
+// 259 px at 1100, which no evidence view survives. It is the same component in a different place,
+// never a summary of it (`§6` prediction 6).
 //
-// **Explorer · this test's sequence · the editor with its response under it.** The explorer is the
-// shell's own `Sidebar`, which has drawn the open file's declarations and their requests since
-// `M210` `S1` (`D1081`) — so `D1111` is a row it already had, and what this round adds there is a
-// create (`A6`). The other two are this file.
-//
-// From `M203` until the copy was removed (`M233` §7) the door's landing surface named another tool
-// to say what this pane would feel like. The pane never was that: it was one scrolling document with a file strip, a test band,
-// a body sequence, a card, a prefix list and a write bar stacked down it, and a reader looking for
-// one request read all six. The copy is gone — a door says what work it is for, and a comparison to
-// a tool the reader may not have used is not that — but the gap it described is what this pane was
-// built to close, so the paragraph stays.
-//
-// ── WHAT IS SELECTED IS WHAT THE EDITOR DRAWS (`D1113`) ────────────────────────────────────────
-//
-// One rule and one region, for four kinds of thing: a request, a statement, the test, or the file.
-// **This is what retires the 176 px name box without a special case.** `.band-name` had no CSS
-// rule at all — it was a bare `<input>` at the user agent's default width holding a 40-character
-// sentence, so `the catalogue lists what is in stock` read `the catalogue lists wh`. Given the
-// editor's whole width it is a field the length of the sentence it holds.
-//
-// The address stays exactly what it was (`D1045`, `D1080`): `L<line>`, and nothing else. A line
-// with no `L` is the **file** — which is what clicking a file in the explorer already produces,
-// because `setFile` drops the focus line by design. No new grammar, no second answer to *where am
-// I*.
+// The address is unchanged (`D1045`, `D1080`): `L<line>` names the row that is open, and a line with
+// no `L` is the file.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, useLayoutEffect } from 'react';
-import { PlanPanel } from './PlanPanel';
-import { workloadEditOf, workloadSeconds } from './workloadEdit';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { workloadSeconds, workloadEditOf } from './workloadEdit';
 import { menuTrigger, type MenuItem, type MenuRequest, type MenuTrigger } from './ContextMenu';
-import type { CaptureSpec, ExpectSpec, Lens, MatcherName, Workload } from '@tflw/lang';
-import { requestRefusal, requestWithout } from './clauses';
-import { COMPOSE, Grip, storedSize } from './Grip';
-import type { ExpectStmt } from '@tflw/lang';
+import type { CaptureSpec, ExpectSpec, ExpectStmt, Lens, MatcherName, Workload } from '@tflw/lang';
 import { MATCHER_LENS, lensesOfTest, matcherSubjectRefusal } from '@tflw/lang';
+import { requestRefusal, requestWithout } from './clauses';
+import { COMPOSE, Grip } from './Grip';
 import {
   AddClause,
   CLAUSE_MATCHER,
@@ -65,7 +43,6 @@ import {
   METHODS,
   NoteBlock,
   NoteOpen,
-  ResponsePanel,
   SCAN_MATCHERS,
   SUBJECT_NODE,
   SEVERITIES,
@@ -73,11 +50,9 @@ import {
   SubjectFields,
   TestBand,
   VALUE_MATCHERS,
-  VerdictMark,
   bodyText,
   editOf,
   statementEditOf,
-  ago,
   statusTone,
   rowKey,
   stepKey,
@@ -87,30 +62,22 @@ import {
   type RanIndex,
   type RequestEdit,
   type RowEditing,
+  type Verdict,
 } from './parts';
 import { statementLead } from './statements';
 import { DOOR_BY_ID } from './doors';
-import { SessionPanel, type Session, type SessionLine } from './SessionPanel';
 import { holds, moveOf, moveUnits, requestRemoval, statementRemoval } from './depends';
-import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type BodiedDecl, type OutlineCrawl, type OutlineDecl, type OutlineHook, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
+import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type BodiedDecl, type OutlineDecl, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
 import type { Prefix, SendForm } from './outline';
 import { vocabularyOf, type AddGesture, type DoorVocabulary } from './vocabulary';
 import { groupFor } from './ran';
 import { bodyProblem, laidOut } from './jsonview';
-import { BodyText } from './Source';
-import { ScanPanel, type Authorization } from './ScanPanel';
+import { BodyText, SourceText } from './Source';
+import type { Authorization } from './ScanPanel';
+import { Evidence, type EvidenceTab, type SentEntry } from './Evidence';
+import type { Session, SessionLine } from './session';
 
-/**
- * **What the address is pointing at** (`D1113`).
- *
- * Four answers from one line, resolved in the order a line can mean them: the file when there is
- * no line at all, then the declaration whose own line it is, then a request, then a statement. A
- * line that names none of those — the middle of a multi-line body, say — falls back to whatever
- * `addressed()` resolved, which is the behaviour every link written before this round relied on.
- */
-/** The declaration an address can land on — `M228` `C` (`D1238`) added the third. `'test'` is
- *  still the name of the *position* (the declaration's own run of lines, header and all) rather
- *  than of the kind under it, which is what it has always meant here. */
+/** The declaration an address can land on — a test, a hook, an action or a crawl. */
 export type SelectedDecl = OutlineDecl;
 
 export type Selected =
@@ -119,19 +86,17 @@ export type Selected =
   | { readonly kind: 'request'; readonly decl: SelectedDecl; readonly request: OutlineRequest }
   | { readonly kind: 'statement'; readonly decl: SelectedDecl; readonly statement: OutlineStatement };
 
+/**
+ * **What the address is pointing at** (`D1113`) — the file when there is no line, then the
+ * declaration whose own run of lines it is, then a request, then a statement.
+ *
+ * The declaration is a RUN of lines, not one line: `@slow` above `test "checkout" retry 2` is two
+ * lines of one header, and a `with each` table is as many lines as it has rows. So the test is
+ * selected by any line from its first down to its first step.
+ */
 export function selectedAt(at: Addressed | null, line: number | null): Selected {
   if (at === null || line === null) return { kind: 'file' };
   const decl = at.decl;
-  /**
-   * **The declaration is a RUN of lines, not one line**, and that is what `replaceHeader` has
-   * always known: `@slow` above `test "checkout" retry 2` is two lines of one header, and a `with
-   * each` table is as many lines as it has rows. So the test is selected by any line from the
-   * declaration's first down to its first statement — which is also what makes an `[edit]` link
-   * written against a tag line land on the test rather than on the request below it.
-   */
-  /* **Every row the column draws, not just the setup phase's** (`M219` `B`). A statement inside a
-     session is addressed exactly as one outside it — the fold changed where it is drawn and not
-     what it is — so this asks the outline for the flat lists rather than walking the shape again. */
   const rows = statementsOf(decl.body);
   const requests = requestsOf(decl.body);
   const firstStep = Math.min(...[...rows, ...requests].map((x) => x.line), Number.POSITIVE_INFINITY);
@@ -141,59 +106,33 @@ export function selectedAt(at: Addressed | null, line: number | null): Selected 
   return at.request === null ? { kind: 'test', decl } : { kind: 'request', decl, request: at.request };
 }
 
-// ── The sequence column (`D1112`) ──────────────────────────────────────────────────────────────
-
-/**
- * **The test's whole sequence, in file order** — requests *and* `let` *and* `wait until`, numbered,
- * each of them one row and each of them selectable.
- *
- * **The interleaving is the measurement that forced this.** 101 `let`/`wait until` statements sit
- * *between* two requests across the corpus, and 617 of 760 bindings — 81% — are read later in the
- * same test. That chaining is what tflw has and Bruno and Postman do not, so a pane that drew a
- * flat list of independent requests would be throwing away the one thing worth drawing. A
- * `capture` is indented under the request it reads, because that is what it is a property of
- * (`D1073`).
- *
- * Every row is **one line high** and the column scrolls inside itself, which is how thirteen
- * requests and their thirty assertions stop being a height problem: the column is a list, and the
- * thing being worked on is in the region next door at whatever size it needs.
- */
-/** The word a statement's chip carries — `statementLead`, the language's own spelling (`M239-03`).
- *  One spelling, because `afterLead` strips exactly what the chip shows — two copies of this
- *  expression is how a chip and its strip drift apart. */
+/** The word a statement's chip carries — the language's own spelling (`M239-03`). */
 const seqLead = statementLead;
 
 /**
- * The text a row shows, given the keyword its own chip already carries (`M216`).
- *
- * **The chip IS the keyword and the text is what follows it.** Every statement row drew a `seq-kind`
- * chip derived from the node (`ExpectStmt` -> `expect`) beside the statement's own source line,
- * which *begins* with that same word — so the pane read `expect expect status equals 201`, and on
- * the example's first test **6 of 7 rows repeated themselves**. It reads correctly on a `test` row
- * only because a test's text is its name and a name carries no keyword, which is why the shape
- * looked right where it was designed and stuttered everywhere it was reused.
- *
- * The strip is conditional on the text actually starting with the chip's word, so a kind whose chip
- * is not the first word of its line (`WaitUntilApiStmt` against `wait until api …`) is left exactly
- * as it was rather than mangled. `title` keeps the whole line either way.
+ * The text a row shows, given the keyword its chip already carries (`M216`): the chip IS the
+ * keyword and the text is what follows it, so a row never reads `expect expect status …`. The strip
+ * is conditional on the text starting with the chip's word, so `wait until api …` is left whole.
  */
 function afterLead(lead: string, text: string): string {
   return text.startsWith(`${lead} `) ? text.slice(lead.length + 1) : text;
 }
 
-/**
- * A right-clicked row of the sequence — `M218` `F`.
- *
- * Three kinds because the column draws three: the declaration band, a request, and a statement
- * attached to one. The menu's items differ by kind for the language's own reason — *duplicate this
- * request* names a unit `D1138` recognises and *duplicate this `expect`* does not.
- */
+/** A right-clicked row of the steps column — `M218` `F`: the declaration's row, a request, or a
+ *  statement, and the menu's items differ by which. */
 export type SeqTarget =
   | { readonly kind: 'test'; readonly decl: OutlineTest; readonly line: number }
   | { readonly kind: 'request'; readonly decl: OutlineTest; readonly request: OutlineRequest; readonly line: number }
   | { readonly kind: 'step'; readonly statement: OutlineStatement; readonly line: number };
 
-function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, indent, statement, kinds, band, refusal, menu, scope, head }: {
+/** A request's three folds (`D1405`) — what the card's Headers, Body and More tabs held. The fourth
+ *  tab, Assert, is gone: a request's assertions are the rows under it, drawn once. */
+export const REQUEST_FOLDS = ['headers', 'body', 'more'] as const;
+export type RequestFold = (typeof REQUEST_FOLDS)[number];
+
+type Held = { readonly name: string; readonly line: number; readonly text: string };
+
+function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, indent, statement, kinds, band, refusal, menu, scope, head, editor, verdict }: {
   readonly line: number;
   readonly selected: boolean;
   readonly onLine: (line: number) => void;
@@ -201,83 +140,72 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
   readonly lead: ReactNode;
   readonly text: string;
   readonly trailing: ReactNode;
-  /** **`+` — a new request after this one** (`D1137`). Its own slot rather than part of `trailing`
-   *  because only one kind of row has it: `D1138`'s unit is a request and its attachments, and
-   *  *a new request after this `expect`* names nothing the language can honour. */
+  /** `+` — a new request after this one (`D1137`); only a request row has one. */
   readonly plus?: ReactNode;
   readonly indent?: boolean;
-  /** The statement this row is, when it is one — the row carries **whose** it is (`D1078`). A step
-   *  from another door is drawn in position and locked, never dropped and never bucketed at the
-   *  end, which is what `outline.ts` computes from the language's own `lenses.ts`. */
+  /** The statement this row is, when it is one — the row carries whose it is (`D1078`). */
   readonly statement?: OutlineStatement;
   readonly kinds?: ReadonlySet<Lens>;
-  /** The declaration's own line, on the one row that IS a declaration. `.test-band` used to be a
-   *  block above the card; `D1112` makes it the first row of the sequence, which is the same claim
-   *  — *this is the declaration that holds everything below it* — costing one line instead of a
-   *  panel. */
+  /** The declaration's own line, on the one row that IS a declaration (`D1112`). */
   readonly band?: number;
-  /** The right-click trigger for this row, spread onto the `li` (`M218` `F`). A row without one
-   *  behaves exactly as it did before this round. */
   readonly menu?: MenuTrigger;
-  /**
-   * **The refusal this row's `✕` produced, drawn UNDER the row** (`D1117`).
-   *
-   * It lives here rather than beside each call site because *every* row has a `✕` and therefore
-   * every row can be refused — the first draft drew the reason only under a request, so pressing
-   * `✕` on a `capture` that something downstream reads did nothing visible at all: the refusal was
-   * correct, silent, and indistinguishable from a broken button. Found by `A4`'s own gate, which
-   * is the one thing the round had no gate for when the mutation sweep ran.
-   */
-  readonly refusal?: { readonly name: string; readonly line: number; readonly text: string } | null;
-  /** **The scope this row happens in**, when the row is a single-statement block (`M219` `D`).
-   *  Drawn as a chip before the gesture, because *where* a gesture happens is as much a part of
-   *  what the row says as the gesture is — `review-submission.tflw:29` is the file that proves it
-   *  by carrying a comment about the assertion that read the field it had just typed into. */
+  /** The refusal this row's `✕` produced, drawn UNDER the row (`D1117`). */
+  readonly refusal?: Held | null;
+  /** The scope this row happens in, when it is a single-statement block (`M219` `D`). */
   readonly scope?: string | null;
-  /** **The head of a group** (`M240` `E`): the row that opens a `.seq-group` `<li>` is that item's
-   *  first line, not an item of its own, so it draws as a `<div>` — an `<li>` directly inside an
-   *  `<li>` is a list item with no list, which is what axe found on every Compose. */
+  /** The head of a group opens a `.seq-group` `<li>`, so it draws as a `<div>` (`M240` `E`). */
   readonly head?: boolean;
+  /**
+   * **The row's own editor, when the row is the one picked** — `M256` `A` (`D1405`).
+   *
+   * It REPLACES the row's text rather than opening beside it: the line number stays (it is the
+   * pick control, and still answers `aria-pressed`), and the words become the fields they are made
+   * of. One picture of the statement, in the place a reader was already looking.
+   */
+  readonly editor?: ReactNode;
+  /** The row's verdict from the last run (`D1108`), at the end of the line. */
+  readonly verdict?: ReactNode;
 }) {
   const foreign = statement !== undefined && kinds !== undefined && isForeign(statement.lens, kinds);
   const Row = head === true ? 'div' : 'li';
+  const editing = editor !== undefined && editor !== null;
   return (
     <Row
-      className={`seq-row${selected ? ' on' : ''}${indent ? ' under' : ''}${foreign ? ' locked' : ''}`}
+      className={`seq-row${selected ? ' on' : ''}${indent ? ' under' : ''}${foreign ? ' locked' : ''}${editing ? ' editing' : ''}`}
       data-seq-row={kind}
       data-seq-line={line}
       data-seq-selected={selected ? 'yes' : 'no'}
+      data-seq-editing={editing ? 'yes' : undefined}
       {...(menu ?? {})}
       {...(band === undefined ? {} : { 'data-band-line': band })}
       {...(statement === undefined
         ? {}
         : { 'data-stmt': statement.kind, 'data-stmt-line': statement.line, 'data-stmt-lens': statement.lens ?? 'none', 'data-stmt-locked': foreign ? 'yes' : 'no' })}
     >
-      {/* **The hover here is DERIVED and never authored** (`D1127`). Every one of these rows used
-          to carry a `title` that was its own visible text said again — the declaration's name, the
-          request's `METHOD path`, the statement's own line — which is a tooltip that tells a reader
-          what they are already looking at. What is worth showing is the part the ellipsis took, and
-          only when it took one, which is a question the row can answer about itself at any width.
-          `A2` has just made the width a variable, so an authored answer would have been wrong at
-          every width but one. */}
+      {/* **The hover is DERIVED and never authored** (`D1127`): what is worth a tip is the part the
+          ellipsis took, and only when it took one. */}
       <button type="button" className="seq-pick" onClick={() => onLine(line)} aria-pressed={selected} data-seq-pick={line} data-seq-goto={line} data-tip-derived="">
         <span className="ln muted">{line}</span>
-        {lead}
-        {scope === undefined || scope === null ? null : (
-          <span className="seq-scope" data-seq-scope-of={scope} data-tip={`this gesture happens inside \`${scope}\``}>
-            {scope}
-          </span>
+        {editing ? null : (
+          <>
+            {lead}
+            {scope === undefined || scope === null ? null : (
+              <span className="seq-scope" data-seq-scope-of={scope} data-tip={`this gesture happens inside \`${scope}\``}>
+                {scope}
+              </span>
+            )}
+            <span className="seq-text stmt-text" data-tip-text>{text}</span>
+          </>
         )}
-        <span className="seq-text stmt-text" data-tip-text>{text}</span>
       </button>
-      {/* **A step another door owns is drawn in position and links to that door** (`D1078`). The
-          door decides what may be EDITED and never what may be seen, so the row says what the step
-          is and where it can be worked on — which is the one thing a reader needs from it here. */}
+      {editing ? editor : null}
+      {/* A step another kind owns is drawn in position and says where it can be worked on (`D1078`). */}
       {foreign && statement?.lens ? (
         <span className="badge also" data-stmt-door={statement.lens} data-tip={`a ${DOOR_BY_ID[statement.lens].label} step, in a file this page reads as none of that kind — edit it in Source`}>
           {DOOR_BY_ID[statement.lens].label}
         </span>
       ) : null}
+      {editing ? null : verdict}
       {plus}
       {trailing}
       {refusal === undefined || refusal === null ? null : <Refusal held={refusal} onLine={onLine} />}
@@ -285,16 +213,25 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
   );
 }
 
-/** The `✕` (`D1117`) — and its refusal, **inline and not on hover**.
+/**
+ * **A row's verdict, as the row's last word** — `M256` `A` (`D1405`, `D1108`).
  *
- *  A disabled control that does not say why is the pattern this round exists to remove, so this one
- *  is never disabled: it is pressed, it answers, and the answer is a sentence on the row naming the
- *  line that is holding the thing. 81% of bindings are read downstream, so the refusal is the
- *  common case rather than the corner, and hiding the reason in a `title` would make the commonest
- *  outcome the invisible one. */
+ * The card drew `✓ status = 200 · 4 ms` in its Assert tab; a row is one line and has room for the
+ * mark. The sentence the run wrote is the mark's tip, and `data-verdict` is the same attribute the
+ * report's headline carries — a step mark and a verdict, not an explorer dot (`M255`'s
+ * `data-row-verdict`).
+ */
+function RowVerdict({ verdict }: { readonly verdict: Verdict | null }) {
+  if (verdict === null) return null;
+  return (
+    <span className={`step-verdict ${verdict.ok ? 'pass' : 'fail'}`} data-verdict={verdict.ok ? 'pass' : 'fail'} data-verdict-ms={verdict.durationMs} data-tip={`${verdict.detail} · ${verdict.durationMs} ms`}>
+      {verdict.ok ? '✓' : '✗'}
+    </span>
+  );
+}
+
 /** **↑ and ↓ — move this row one place** (`M250` `G13`, `D1391`). Only the directions that exist
- *  are drawn: the first row has no ↑ and the last no ↓, so a control never answers *nothing
- *  happened*. Alt+↑/↓ on a focused row is the same move, handled on the sequence list. */
+ *  are drawn. Alt+↑/↓ on a focused row is the same move. */
 function Move({ what, up, down }: { readonly what: string; readonly up: (() => void) | null; readonly down: (() => void) | null }) {
   return (
     <>
@@ -312,10 +249,12 @@ function Move({ what, up, down }: { readonly what: string; readonly up: (() => v
   );
 }
 
+/** The `✕` (`D1117`) — never disabled: it is pressed, it answers, and the answer is a sentence on
+ *  the row naming the line that is holding the thing. */
 function Remove({ what, onGo, refusal, onClear }: {
   readonly what: string;
   readonly onGo: () => void;
-  readonly refusal: { readonly name: string; readonly line: number; readonly text: string } | null;
+  readonly refusal: Held | null;
   readonly onClear: () => void;
 }) {
   return (
@@ -326,48 +265,14 @@ function Remove({ what, onGo, refusal, onClear }: {
 }
 
 /**
- * **▶ — run this declaration** (`M220` `A`, `D1168`, `D1176`).
- *
- * It sits beside the `✕` for the reason the `+` two functions down sits there: a gesture that
- * belongs to one row and acts on the thing the row **is**. The plan's `A` said *"the foot and the
- * sequence head"*, and two places for one gesture is the two-implementations shape this pane keeps
- * removing — so it is here and not there. The foot is where **creation** lives (`D1118`), and a
- * play creates nothing; the head is the declaration itself.
- *
- * **It is refused while the buffer is unsaved, and it says why** (`D1177`). A play is
- * `tflw run --only "<name>" <file>` — it reads the *file*, so with a pending edit the thing that
- * runs is not the thing on screen. `send` has no such problem because it writes its own scratch
- * first; `--only` names a test inside its own file and there is nowhere for a scratch to stand. So
- * the refusal is stated on the control rather than discovered in a report, and — `Remove`'s own
- * rule, one function up — a disabled control that does not say why is the pattern this pane
- * exists to remove, which is why the reason is the tip rather than nothing.
- */
-/**
- * **▶ — run this declaration and nothing else.**
- *
- * **`dirty` is gone from the held set** — `M221` `B` (`D1183`, overturning `D1177`). It used to
- * refuse an unsaved buffer and say *write this file first — a play runs what is on disk*, which
- * was true of the mechanism and wrong as a rule: a pane is dirty from the first step you add,
- * which is most of the time anyone wants to press this. ▶ now runs the buffer through a scratch
- * beside the file, so there is nothing left for the refusal to protect.
- *
- * `running` stays, and it is also `D1188`: one play at a time is what keeps two presses from
- * racing for one directory's scratch.
+ * **▶ — run this test and nothing else** (`M220` `A`, `D1168`). It runs the buffer through a scratch
+ * beside the file (`D1183`), so an unsaved edit is what runs; `running` holds it, one play at a
+ * time (`D1188`). A workload states its price (`D1212`).
  */
 function Play({ what, running, onGo, price }: {
   readonly what: string;
   readonly running: boolean;
   readonly onGo: () => void;
-  /**
-   * **What pressing this costs, when it costs something measurable** — `M224` `E` (`D1212`).
-   *
-   * `D1168` gave ▶ to BROWSER and warned in the same docblock that *"offering both on one door
-   * would be two gestures that look alike and mean different things"*. On LOAD `send` and ▶ sit on
-   * the same pane and mean things that are very different: one issues the request once, the other
-   * commits to a workload. So the one that costs says so, and `send` — which carries no price and
-   * needs none — is the one that does not. **One gesture is priced and one is not**, which is a
-   * difference a reader can see before pressing rather than after.
-   */
   readonly price?: string;
 }) {
   const why = running
@@ -390,43 +295,17 @@ function Play({ what, running, onGo, price }: {
   );
 }
 
-/**
- * **A workload's own duration, in the control's words** — `M224` `E` (`D1212`).
- *
- * `undefined` on a test with no workload: there is nothing to price, and ▶ there means what it has
- * meant since `M220`. `no clock` on the two iteration shapes — **29 of the corpus's 85 workload
- * lines** — because they say *run N iterations across M users*, so the run ends when the work is
- * done and how long that takes is the property being measured. That is the existing form's own
- * wording, kept.
- *
- * It sums the stages rather than asking the reporter: `describeWorkload` says what a workload
- * **is**, not how long it takes, and a second reader of the same node computing a different
- * quantity would be `D1094`'s two-implementations shape for the sake of one string.
- */
+/** A workload's own duration, in the control's words (`D1212`) — `no clock` on the iteration
+ *  shapes, whose run ends when the work is done. */
 function playPrice(workload: Workload | null): string | undefined {
   if (workload === null) return undefined;
   const total = workloadSeconds(workloadEditOf(workload));
   return total === null ? 'no clock' : `~${Math.round(total * 10) / 10}s`;
 }
 
-/**
- * **`+` — a new request after this one** (`M217` `B`, `D1137`, `D1138`).
- *
- * It sits beside the `✕` because it is the same kind of thing: a gesture that belongs to one row
- * and acts on the sequence. `M216` gave that slot its chrome; this adds the other half of it, so a
- * request row can now say *one more like this, here* as well as *not this one*.
- *
- * **It is always drawn, never revealed on hover** (`D1140`). A control only a pointer can reach is
- * a control some readers do not have — `Grip.tsx` says so in its own docstring — and the reason
- * this exists at all is that nobody could find where a request comes from.
- *
- * The label says **after**, because that is the whole decision: a request goes in after this one
- * *and the statements attached to it*, so nothing below changes which response it reads.
- */
-function Plus({ onGo, after }: {
-  readonly onGo: () => void;
-  readonly after: string;
-}) {
+/** **`+` — a new request after this one** (`M217` `B`, `D1137`, `D1138`): after the request AND the
+ *  statements attached to it, so nothing below changes which response it reads. */
+function Plus({ onGo, after }: { readonly onGo: () => void; readonly after: string }) {
   return (
     <button
       type="button"
@@ -441,10 +320,7 @@ function Plus({ onGo, after }: {
   );
 }
 
-function Refusal({ held, onLine }: {
-  readonly held: { readonly name: string; readonly line: number; readonly text: string };
-  readonly onLine: (line: number) => void;
-}) {
+function Refusal({ held, onLine }: { readonly held: Held; readonly onLine: (line: number) => void }) {
   return (
     <p className="warn seq-refusal" data-seq-refusal={held.name}>
       <code>{held.name}</code> is still read on{' '}
@@ -456,43 +332,19 @@ function Refusal({ held, onLine }: {
   );
 }
 
-// ── The editor's four tabs (`D1115`) ───────────────────────────────────────────────────────────
-
-const TABS = ['headers', 'body', 'assert', 'more'] as const;
-export type EditorTab = (typeof TABS)[number];
-
-const TAB_LABEL: Record<EditorTab, string> = {
-  headers: 'Headers',
-  body: 'Body',
-  assert: 'Assert',
-  more: 'More',
-};
-
 /**
- * **One assertion is subject · matcher · value · ✕** (`D1114`).
+ * **One assertion is subject · matcher · value** (`D1114`), and since `M256` it is drawn ON its row
+ * (`D1405`) — the row's line number and `✕` are the row's, so this draws the words between them.
  *
- * It was seven controls: `expect`/`check`, a quantifier whose default renders as a bare em-dash, an
- * eleven-option subject, an unlabelled `not` checkbox, a twelve-option matcher, a value, and
- * `+ note`. Measured over all 1736 assertions in the corpus, the three that own the leading
- * positions are used **7 times (0.4%)**, **78 times (4.5%)** and **34 times (2.0%)** respectively —
- * and every sampled `not` is a BROWSER subject. Three controls cover 88% of rows.
- *
- * **THE VOCABULARY MOVES, IT NEVER SHRINKS**, which is `D1076` kept rather than dropped: the rare
- * three are behind a per-row `⋯`, and **a row that already uses one shows it inline**, open, with
- * no gesture required. So `check all body.items not contains "x"` draws every one of its words and
- * `expect status equals 200` draws three controls. What is never true is that a form the language
- * admits has no control anywhere on the page.
+ * The rare three forms (`check`, `any`/`all`, `not` — 7, 78 and 34 of 1736) are behind `⋯`, and a
+ * row that already uses one shows it inline, open (`D1076`: the vocabulary moves, it never shrinks).
  */
-function AssertRow({ statement, edit, onEdit, verdict, trailing, onRemove, refusal, onClearRefusal, onLine, drops, phase }: {
+function AssertRow({ statement, edit, onEdit, verdict, trailing, drops, phase }: {
   readonly statement: OutlineStatement;
   readonly edit: ExpectEdit;
   readonly onEdit: (next: ExpectEdit) => void;
   readonly verdict: ReactNode;
   readonly trailing: ReactNode;
-  readonly onRemove: (() => void) | null;
-  readonly refusal: { readonly name: string; readonly line: number; readonly text: string } | null;
-  readonly onClearRefusal: () => void;
-  readonly onLine: (line: number) => void;
   /** `an element` and `page` are BROWSER's — `vocabulary.ts` carries the list. */
   readonly drops: ReadonlySet<string>;
   /** See `SubjectFields.phase` — `M219` `G` (`D1166`). */
@@ -503,38 +355,24 @@ function AssertRow({ statement, edit, onEdit, verdict, trailing, onRemove, refus
   const change = (patch: Partial<ExpectEdit>): void => onEdit({ ...v, ...patch });
   const clause = CLAUSE_MATCHER[v.matcher];
   const takesValue = VALUE_MATCHERS.has(v.matcher) && v.matcher !== 'matchesSubset';
-  /** Already spent — so it is drawn, open, whatever the disclosure says. */
   const spent = v.soft || v.quantifier !== '' || v.negated;
   const [open, setOpen] = useState(false);
   const rare = spent || open;
   return (
-    <li className="assert stmt" data-assert-line={statement.line} data-stmt={statement.kind} data-stmt-line={statement.line} data-stmt-editable="yes" data-assert-rare={rare ? 'yes' : 'no'}>
+    <div className="assert" data-assert-line={statement.line} data-assert-rare={rare ? 'yes' : 'no'}>
       <div className="row assert-fields" data-expect-line={statement.line}>
-        <span className="ln muted">{statement.line}</span>
         <span className="assert-keyword" data-expect-kind-shown={v.soft ? 'check' : 'expect'}>
           {v.soft ? 'check' : 'expect'}
         </span>
         <SubjectFields subject={v.subject} argument={v.argument} locatorKind={v.locatorKind} carried={subjectSpelling(node.subject)} onChange={change} drops={drops} phase={phase} />
-        {/* **Every matcher is drawn, and the ones `TF042` would refuse are disabled** — `M228`
-            `D` (`D1243`).
-
-            **Disabling rather than filtering is `D1076` held rather than traded**: *over-offering
-            beats silent omission — a word that should not be here is visible and wrong, and a word
-            that is missing is invisible and wrong.* An author hunting for `has no security
-            violations` on a `status` row finds it, greyed, carrying `TF042`'s own sentence, and
-            learns that it wants a `response`. Filtered away, they learn nothing and conclude the
-            language cannot do it.
-
-            The rule is `matcherSubjectRefusal`, which is the two lines `checkOneMatcherSubject`
-            builds the diagnostic from — so this is not a second list that can disagree with the
-            checker, and `ValueSubject` abstains here because the check does (`TF041` owns that
-            pairing and would otherwise report one mistake twice). */}
+        {/* **Every matcher is drawn, and the ones `TF042` would refuse are disabled** (`D1243`) —
+            over-offering beats silent omission (`D1076`). The rule is the checker's own. */}
         <select value={v.matcher} onChange={(e) => change({ matcher: e.target.value as MatcherName })} data-expect-matcher={v.matcher} aria-label="matcher">
           {MATCHERS.map(([id, text]) => {
-            const node = SUBJECT_NODE[v.subject];
-            const refusal = node === undefined ? null : matcherSubjectRefusal(id, node);
+            const subjectNode = SUBJECT_NODE[v.subject];
+            const refused = subjectNode === undefined ? null : matcherSubjectRefusal(id, subjectNode);
             return (
-              <option key={id} value={id} disabled={refusal !== null} title={refusal ?? undefined} data-matcher-refused={refusal === null ? undefined : 'yes'}>
+              <option key={id} value={id} disabled={refused !== null} title={refused ?? undefined} data-matcher-refused={refused === null ? undefined : 'yes'}>
                 {text}
               </option>
             );
@@ -556,7 +394,6 @@ function AssertRow({ statement, edit, onEdit, verdict, trailing, onRemove, refus
         </button>
         {verdict}
         {trailing}
-        {onRemove === null ? null : <Remove what="assertion" onGo={onRemove} refusal={refusal} onClear={onClearRefusal} />}
       </div>
       {rare ? (
         <div className="row assert-rare" data-assert-rare-row>
@@ -625,8 +462,7 @@ function AssertRow({ statement, edit, onEdit, verdict, trailing, onRemove, refus
           </button>
         </div>
       ) : null}
-      {refusal === null ? null : <Refusal held={refusal} onLine={onLine} />}
-    </li>
+    </div>
   );
 }
 
@@ -639,100 +475,73 @@ export interface ComposePaneProps {
   /** The address's line, straight through — `selectedAt` is the only reader of it. */
   readonly focusLine: number | null;
   readonly onLine: (line: number) => void;
-  /** `+ new test` at the foot of the sequence column (`D1118`). `+ new file` is the explorer's. */
+  /** The file itself — the address with no line (`D1113`). */
+  readonly onFile: () => void;
+  /** `+ new test` at the foot of the steps (`D1118`). `+ new file` is the explorer's. */
   readonly onNew: ((mode: 'test' | 'file') => void) | null;
-  /** `+ new action` everywhere, `+ new crawl` on a door whose vocabulary has one — `M241` `B`/`C`. */
+  /** `+ new action` everywhere, `+ new crawl` where the file or the chip is SCANS — `M241`. */
   readonly onNewDecl: ((kind: 'action' | 'crawl') => void) | null;
   readonly crawls: boolean;
   readonly scratchUnignored: string | null;
   readonly edit: RequestEdit | null;
   readonly onEdit: ((next: RequestEdit) => void) | null;
   readonly editing: RowEditing;
-  /** `send this` — the prefix up to the selected request. `null` on a declaration address, where
-   *  there is no *this* (`D1215`). */
+  /** `send this` — the prefix up to the picked request; `null` on a declaration address (`D1215`). */
   readonly prefix: Prefix | null;
   /** `send all` — every request in the declaration, one iteration (`D1215`). */
   readonly prefixAll: Prefix | null;
   readonly onSend: ((form: SendForm) => void) | null;
   readonly sending: boolean;
-  /**
-   * **The last send, and every request it issued** (`M225` `B`, `D1217`).
-   *
-   * `lines` are this file's own lines, so the pane can ask *which of this declaration's requests
-   * did that press touch* without knowing anything about the scratch it ran. `null` before any
-   * send, which is also what `path` changing restores.
-   */
+  /** The last send, and every request it issued (`M225` `B`, `D1217`). */
   readonly sent: { readonly lines: readonly number[]; readonly form: SendForm; readonly at: string } | null;
-  /** `D1221` — the selected declaration's last run, for the composer's citation line. */
+  /** `D1221` — the picked declaration's last run, for the composer's citation line. */
   readonly lastRun?: { readonly iterations: number; readonly p95Ms: number; readonly inconclusive: boolean } | null;
   readonly ran: RanIndex;
+  /**
+   * **What the last run recorded for a step, even when its words changed since** — `M256` `B`
+   * (`D1406`, `ran.ts`'s `evidenceFor`). Read for the picked row only; every verdict still comes
+   * from `ran`, whose join is strict.
+   */
+  readonly evidenceOf: (line: number) => Ran | null;
   readonly onVerify: ((request: OutlineRequest, spec: ExpectSpec) => void) | null;
   readonly onCapture: ((request: OutlineRequest, specs: readonly CaptureSpec[]) => void) | null;
   readonly onAdd: ((decl: BodiedDecl, key: string) => void) | null;
   readonly adds: readonly AddGesture[];
-  /** The declaration a recording is writing into, by its line — `null` when none is running
-   *  (`M213` `S5`, `D1095`). The foot reads it; nothing else does. */
+  /** The declaration a recording is writing into, by its line — `null` when none is running. */
   readonly recording: number | null;
-  /**
-   * **`+` on a request row** — `M217` `B` (`D1137`, `D1138`): a new request *after this one and
-   * the statements attached to it*. The foot's `+ request` still means *at the end*, and on the
-   * last request of a body the two are the same edit.
-   */
   readonly onAddAfter: ((decl: BodiedDecl, request: OutlineRequest) => void) | null;
-  /** **Duplicate a request with its attachments** — `M218` `F` (`D1156`). */
   readonly onDuplicate: ((decl: OutlineTest, request: OutlineRequest) => void) | null;
-  /** What a right-clicked sequence row can do, and where to put the menu (`M218` `F`). Built by
-   *  the door for the same reason the explorer's is built by the shell: this pane draws rows. */
   readonly menuFor: ((t: SeqTarget) => readonly MenuItem[]) | null;
   readonly onMenu: ((r: MenuRequest) => void) | null;
-  /** Bumped by every create gesture that lands (`D1136`). The pane focuses the first field of
-   *  whatever opened; a counter rather than a line, because the same line can be landed on twice. */
+  /** Bumped by every create gesture that lands (`D1136`); the pane focuses what opened. */
   readonly made: number;
-  /** `D1117` — take these steps out of this declaration. The pane runs the dependency scan and
-   *  never calls this while anything is holding one of them. */
   readonly onRemoveSteps: ((decl: OutlineDecl, steps: readonly number[]) => void) | null;
   readonly onRemoveDecl: ((decl: OutlineDecl) => void) | null;
-  /** **↑/↓ — move a row one place** — `M250` `G13` (`D1391`). `steps` is the row, `over` the row
-   *  next to it; both are runs of the body's own indices, as `moveUnits` draws them. */
   readonly onMoveSteps: ((decl: OutlineDecl, steps: readonly number[], over: readonly number[], by: -1 | 1) => void) | null;
-  /** **▶ on the declaration head** — `M220` `A` (`D1168`). `null` on a door whose `vocabulary.ts`
-   *  row says it does not play, and on a hook, which `--only` cannot name. */
+  /** ▶ on the declaration row — `null` where the file does not play, and on a hook. */
   readonly onPlay: ((decl: OutlineTest) => void) | null;
-  /** Whether a run is in flight anywhere — ▶ holds while one is (`D1177`). */
   readonly playing: boolean;
-  /** **`✕` on a statement inside a scoping block** — `M219` `D` (`D1163`). A second removal rather
-   *  than a case of the first: `onRemoveSteps` takes indices into a body, and a statement inside a
-   *  `within` is not one of them. */
   readonly onRemoveScoped: ((statement: OutlineStatement) => void) | null;
-  /** **Take the scope off and keep the statement.** Offered only on a block holding exactly one —
-   *  397 of the corpus's 405 `within`s — for the reason `ComposeDoor` records on it. */
   readonly onUnscope: ((statement: OutlineStatement) => void) | null;
-  /** **Put a scope on this statement** — the other half of `D1163`, and what keeps `WithinBlock`
-   *  constructible while `D1164` keeps it out of the `+` list. */
   readonly onScope: ((statement: OutlineStatement) => void) | null;
-  /** **What the live browser has handed back, and what has been kept of it** — `M219` `F`
-   *  (`D1165`). `null` on a door that has no session, which is every door but BROWSER. */
-  readonly session: Session | null;
+  /**
+   * **What a recording has handed back and nobody has kept yet** — `M256` `C` (`D1408`).
+   *
+   * `after` is the line of the row the pending rows are drawn under — the picked step when the
+   * recording started, moved down by each keep — or `null` for the foot of the test.
+   */
+  readonly provisional: (Session & { readonly after: number | null; readonly intoLine: number | null }) | null;
   readonly onKeepLine: (line: SessionLine) => void;
   readonly onKeepAll: () => void;
-  /** `M221` `C` (`D1185`) — run the test with the pending lines in it, keeping none of them.
-   *  `null` on a door that does not play. */
+  /** Run the test with the pending rows in it, keeping none of them (`D1185`); `null` where the
+   *  file does not play. */
   readonly onPlaySession: (() => void) | null;
   readonly onDropLine: (id: number) => void;
   readonly onStopSession: () => void;
-  /**
-   * **Which of the editor's four tabs is open, held ABOVE this component** — `M205` `S5a`'s rule,
-   * met for the sixth time in this pane's life.
-   *
-   * The strip does not hide a panel, it **unmounts** it, so anything remembered below one is gone
-   * on a glance at Source and back. Field values survive because they are `useState` in
-   * `ComposeDoor`; a tab selection kept here would not, and the author who opened `Headers`, typed
-   * half a header, looked at the bytes and came back would find the pane on `Assert` with their
-   * half-typed header nowhere in sight — present in the buffer, absent from the screen. Found by
-   * `M210` `S2`'s own gate, which does exactly that.
-   */
-  readonly tab: EditorTab;
-  readonly onEditorTab: (tab: EditorTab) => void;
+  /** Which of a request's folds are open — held ABOVE this component, because the strip unmounts
+   *  panels (`M205` `S5a`) and an open fold is a reader's choice. */
+  readonly folds: ReadonlySet<RequestFold>;
+  readonly onFold: (fold: RequestFold) => void;
   readonly dirty: boolean;
   readonly busy: boolean;
   readonly problem: string | null;
@@ -740,248 +549,103 @@ export interface ComposePaneProps {
   readonly onReread: (() => void) | null;
   readonly onWrite: () => void;
   readonly onDiscard: () => void;
-  /** The open file's kinds and the vocabulary row they make (`M254`, `D1399`) — see `ComposeDoor`. */
+  /** The open file's kinds and the vocabulary row they make (`M254`, `D1399`). */
   readonly kinds: ReadonlySet<Lens>;
   readonly vocab: DoorVocabulary;
-  /**
-   * **Is the playback region carrying a trace** — `M227` `D` (`D1235`).
-   *
-   * Not *which* trace and not the Stage itself: the one bit this pane needs is whether the page
-   * already has a full-width band below it with something in it. See `D1235` on the `footer`
-   * derivation below.
-   */
-  readonly stage: boolean;
-  /**
-   * **The env's authorization facts, straight off `ProjectView`** — `M228` `A` (`D1239`).
-   *
-   * The same object `ComposeDoor` hands `diagnose` (`D1240`), so the segment below and the
-   * diagnostics list above it cannot disagree about what is in force. Not narrowed on the way in:
-   * a second shape here is where a second account of `tflw.config` would start, which is the
-   * thing `ui-server.ts` says out loud about this block.
-   */
+  /** The env's authorization facts, straight off `ProjectView` (`D1239`). */
   readonly authorization: Authorization;
-  /** The two project-fact tabs the `scan` segment links to (`M207` `Q1`). Region 2 does not own
-   *  the tab strip, so it asks — the same shape `ComposeDoor` already uses for `onEditorTab`. */
   readonly onProjectTab: (tab: 'auth' | 'config') => void;
 }
 
-/**
- * **The editor track is sized by what it holds, and the reader can still override it** — `M223`
- * `B` (`D1195`, `D1196`).
- *
- * This was `SPLIT_KEY = 'tflw.compose.split'`, a FRACTION of the column (`D1116`), and the
- * fraction is the defect this round was scoped from. Measured on the live page at 1440x900 with an
- * `open` selected on the BROWSER door: the column is 239 px, and `62%` hands the editor **147 px
- * for 99 px of content** while the session panel under it gets 85 px for the **112 px** its own
- * button-and-paragraph needs. 48 px wasted and 27 px clipped **at the same instant**, with 22 px
- * still spare in the column — the two halves of the same defect, which is why the user reported
- * them as two complaints.
- *
- * **The API door has it worse and nobody reported it**: the same ratio wastes **208 px** under an
- * `expect` selection there and clips nothing, because the response pane happens to be tall enough.
- * `.editor-col` is one component shared by both doors since `M214`, so this is not a BROWSER
- * defect and does not get a BROWSER fix (`D1198`).
- *
- * So the default is not a number at all — `grid-template-rows: minmax(0, auto) 6px minmax(112px,
- * 1fr)` in the stylesheet, where `auto` is *what the editor holds*. **The accepted cost is that
- * the boundary moves as the reader clicks different rows** — 99 px under an `open`, 237 under an
- * API request. That was put to the user as the option's own cost and chosen with it.
- *
- * **The override is an absolute height and not a ratio**, because a ratio of a content-sized row
- * is not a thing. `D1116`'s objection to pixels — *a remembered 620 px on a 700 px window is a
- * response with no editor above it* — is answered rather than ignored, twice: `fitEditor` clamps
- * against the column's LIVE height every time the value is written, and the track itself is
- * `minmax(0, Npx)`, so a stored height larger than the window can spare shrinks instead of
- * evicting the pane below it.
- *
- * **`tflw.compose.split` is dropped rather than migrated, and deleted on read.** A remembered
- * `0.62` is a reader's answer to a question this round stops asking, and honouring it would hand
- * exactly the readers who have used this pane the behaviour the round exists to remove.
- */
-const EDITOR_KEY = 'tflw.compose.editor';
-/**
- * **The footer layout's own key** — `M226` `A` (`D1227`).
- *
- * One divider, two containers, and **not the same number**: in the column layout the stored value
- * is how tall the editor is, in the footer layout it is how tall the whole grid above the divider
- * is — the sequence column included. A single key holding both would mis-restore the instant a
- * reader moved between a workload test and a functional one in the same file, which in the
- * `load-door` corpus is one click.
- */
-const FOOTER_KEY = 'tflw.compose.footer';
-/** `D1116`'s key, named here only so it can be removed from the readers who have one. */
-const RATIO_KEY = 'tflw.compose.split';
-/** The editor's own floor: its head and one field. */
-const EDITOR_MIN = 88;
-/** What the pane under the editor needs to draw its empty state whole — the BROWSER door's session
- *  panel, measured at 112 px. The stylesheet states the same number as the track's own minimum;
- *  this one is what keeps a DRAG from writing a height that violates it. */
-/**
- * **Region 2's tenants** — `D1209` named two and `M228` `A` (`D1239`) adds the third.
- *
- * `response` is the one that is always there; the other two are earned by the construct, never
- * granted by the door (`D1044`).
- */
-type Region2 = 'plan' | 'response' | 'scan';
-
-/**
- * **What each region-2 segment is** — `M228` `F` (`D1246`).
- *
- * One sentence per tenant, in the reader's terms rather than the implementation's. `scan` names
- * itself a view out loud, because that is the confusion that produced this decision: it is the
- * default segment on a declaration, so it is pressed by someone who is already looking at it.
- * `response` names BOTH of its sources, because `D956` is the distinction it exists to keep —
- * *from the last run* and *from this send* are different evidence.
- */
-const REGION2_TIP: Readonly<Record<Region2, string>> = {
-  plan: 'the workload this test declares, drawn to scale — what will run, for how long, and at what rate',
-  response: 'what came back — from the last run, or from the last `send` on this pane',
-  scan: 'where a scan in this env can reach, and what authorizes it — a view, and nothing here runs',
-};
-
-/** The selected declaration's workload, or `null` — `D1209`'s own predicate, as a function
- *  because the tenant list is derived above where `decl` is unpacked. One expression, two
- *  readers, so the segment and the footer placement cannot disagree about what a workload test
- *  is (`D1225`). */
-const planWorkloadOf = (at: Addressed | null): Workload | null =>
-  at?.decl != null && at.decl.kind === 'test' ? at.decl.workload : null;
-
-/**
- * **A crawl's one gesture** — `M241` `C` (`D1323`). A crawl's body is assertions over responses it
- * did not write (`TF070` refuses an `api` step there), so no door's `adds` fits it: SCANS offers
- * requests, which a crawl cannot hold. One gesture of its own, writing the scan assertion a crawl
- * exists for, which the row then edits like any other.
- */
+/** A crawl's one gesture — `M241` `C` (`D1323`): the scan assertion a crawl exists for. */
 const CRAWL_ADDS: readonly AddGesture[] = [
   { key: 'assert', label: '+ assertion', title: '`expect response has no … violations` — graded on every response the crawl reaches' },
 ];
 
-/**
- * **Why a row cannot be edited, when its address is missing** — `M228` `C` (`D1238`).
- *
- * `M228` had two populations with no `stepPath`: an `expect` inside a `wait until api` block, which
- * is not a step of the body's own list, and a crawl's statements. `M241` `C` (`D1323`) gave a crawl
- * an address, so a nested row is the one population left; the other sentence is kept for any row
- * that reaches here some new way, because a true-shaped sentence about the wrong thing is worse.
- */
+/** Why a row cannot be edited, when its address is missing — `M228` `C` (`D1238`). */
 const unaddressableWhy = (nested: boolean): string =>
   nested
     ? 'inside the block above — an index pair names a step of a body, and this is not one'
     : 'this statement has no address this pane can edit — change it in Source';
 
-const LOWER_MIN = 112;
 /**
- * **And what it needs once there is a response in it** — `M225` `G` (`D1223`).
+ * **Below 1100 px the evidence folds under the picked row** — `M256` `D` (`D1412`).
  *
- * Measured at 1440x900 with the strip on screen: the seg nav, the strip and the response's own
- * header consume **all 112 px**, leaving **0 px** of the body visible. This is that chrome plus
- * `D1223`'s stated 120 px of body, rounded up — the stylesheet carries the same number for the
- * default track and this one stops a drag writing under it.
+ * A hook rather than a media query because the fold is a different PLACE in the tree, not a
+ * different style of the same place: CSS could hide one of two copies, and two copies is the
+ * second picture `§6` prediction 6 warned about.
  */
-const RESPONSE_MIN = 240;
-
-function readEditorPx(key: string): number | null {
-  try {
-    window.localStorage.removeItem(RATIO_KEY);
-    const raw = window.localStorage.getItem(key);
-    if (raw === null) return null;
-    const n = Number(raw);
-    return Number.isFinite(n) && n >= EDITOR_MIN ? n : null;
-  } catch {
-    // A private window, or site data blocked. The accessor itself throws in some browsers, which
-    // is why this is a try and not a null check.
-    return null;
-  }
+const NARROW = '(max-width: 1099px)';
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia(NARROW).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW);
+    const on = (): void => setNarrow(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return narrow;
 }
 
-/** The override, clamped to a column this tall: never under the editor's floor, never over what
- *  leaves the pane below it `LOWER_MIN`. A column too short for both gives the editor its floor
- *  and lets the grid shrink it from there. */
-const fitEditor = (px: number, column: number, lower: number = LOWER_MIN): number =>
-  Math.max(EDITOR_MIN, Math.min(Math.round(px), Math.max(EDITOR_MIN, column - 6 - lower)));
+/**
+ * **The steps column's share of the pane, while the reader has chosen none** — `M256` `B`
+ * (`D1406`).
+ *
+ * `M240` `F` fitted this column to its rows' text, which was right while a row was only text. A
+ * picked row is now its own editor — subject, matcher and value on one line — so the column is
+ * sized as a share: 56% of the pane, which leaves the evidence 40%+ at 1440 (the green condition),
+ * clamped to the grip's range. A width the reader dragged is theirs and is never re-fitted.
+ */
+const STEPS_SHARE = 0.56;
 
 export function ComposePane(props: ComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onNew, onNewDecl, crawls, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onMoveSteps, onReread, onPlay, playing, onRemoveScoped, onUnscope, onScope, session, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, dirty, busy, problem, onWrite, onDiscard, kinds, vocab, stage, authorization, onProjectTab, tab, onEditorTab: setTab } = props;
-  /** The foot's gestures for the declaration in hand — see the foot's own comment. */
+  const { path, outline, at, focusLine, onLine, onFile, onNew, onNewDecl, crawls, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, evidenceOf, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onMoveSteps, onReread, onPlay, playing, onRemoveScoped, onUnscope, onScope, provisional, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, folds, onFold, dirty, busy, problem, onWrite, onDiscard, kinds, vocab, authorization, onProjectTab } = props;
   const footAdds: readonly AddGesture[] =
     at === null || at.decl.kind === 'hook' ? [] : at.decl.kind === 'test' ? adds : at.decl.kind === 'action' ? adds.filter((a) => a.key !== 'record') : CRAWL_ADDS;
 
-  /** One call per sequence row kind — `M218` `F`. `{}` when the door wired no menu, so the rows
-   *  behave exactly as they did before this round. */
   const seqMenu = (t: SeqTarget, subject: string): MenuTrigger | undefined =>
     menuFor === null || onMenu === null
       ? undefined
       : menuTrigger(onMenu, () => ({ kind: t.kind, subject, items: menuFor(t) }));
 
+  const narrow = useNarrow();
   const selected = useMemo(() => selectedAt(at, focusLine), [at, focusLine]);
-  /** Which request's verdicts and response are in hand. A statement's are its request's. */
+  /** The request whose response is in hand — a statement's is its request's. */
   const forRequest: OutlineRequest | null =
     selected.kind === 'request' ? selected.request
     : selected.kind === 'statement' ? (at === null ? null : requestsOf(at.decl.body).find((r) => r.attached.some((s) => s.line === selected.statement.line)) ?? null)
     : null;
-  /**
-   * A statement's verdicts are its request's — **or, where there is no request, its action's**
-   * (`M220-02`, `D1270`). `groupFor` is the same rule `indexFromReport` groups by, read from the
-   * other end, and it is bounded to this declaration so a mark never attaches across one.
-   */
-  const rowRan: Ran | null =
-    forRequest !== null
-      ? (ran.get(forRequest.line) ?? null)
-      : selected.kind === 'statement' && at !== null
-        ? groupFor(ran, at.decl.line, selected.statement.line)
-        : null;
 
-  /** The prefix whose request list is drawn — what the press the reader is most likely to take
-   *  will fire. On a declaration address that is `send all`, because there is no *this*. */
+  /**
+   * **The response for the picked request: the strict join first, then the last run's evidence**
+   * (`D1406`). `ran` carries a response only where the request's line still reads what ran; a
+   * request whose words changed since, or that moved, still has *the last thing that came back*,
+   * and `evidenceOf` finds it and says which.
+   */
+  const rowRan: Ran | null = useMemo(() => {
+    if (forRequest === null) return null;
+    const strict = ran.get(forRequest.line) ?? null;
+    if (strict !== null && strict.response !== null) return strict;
+    return evidenceOf(forRequest.line) ?? strict;
+  }, [forRequest, ran, evidenceOf]);
+
   const sendPrefix: Prefix | null = prefix ?? prefixAll;
 
-  /**
-   * **What the last send left in this declaration** — `M225` `B` (`D1217`).
-   *
-   * One entry per request the press issued *in the declaration on screen*, in file order. A hook's
-   * request is not here for the same reason it is not a row: nothing in this file is drawn on it.
-   * The `scope` check is what keeps a run's verdict out — `ran` holds both, and a send wins over a
-   * report only for the lines it is about (`D1099`).
-   */
-  const sentHere = useMemo(() => {
+  /** What the last send left in this declaration (`M225` `B`, `D1217`), in file order. */
+  const sentHere = useMemo((): readonly SentEntry[] => {
     if (sent === null || at === null) return [];
     return requestsOf(at.decl.body)
       .filter((r) => sent.lines.includes(r.line))
       .map((r) => ({ request: r, ran: ran.get(r.line) ?? null }))
-      .filter((e): e is { request: OutlineRequest; ran: Ran } => e.ran !== null && e.ran.scope === 'send' && e.ran.response !== null);
+      .filter((e): e is SentEntry => e.ran !== null && e.ran.scope === 'send' && e.ran.response !== null);
   }, [sent, at, ran]);
 
-  /**
-   * **Which entry's body is in the box.** `null` means *the default*, which is the first entry —
-   * §2.3, decided against the last: a rung's final POST is the request the test exists to measure
-   * and is also the one whose meaning depends on everything above it, so an iteration is read in
-   * the order it ran.
-   *
-   * Cleared by a new send and by moving the selection, because both of those change what the box
-   * is about. Not cleared by a keystroke: `ran` is re-derived from the buffer on every one of
-   * them (`D1093`), and a pick that survives is the same request it was.
-   */
+  /** Which send entry's body is in the box — `null` is the first (`§2.3`). */
   const [pick, setPick] = useState<number | null>(null);
   useEffect(() => setPick(null), [path, sent?.at, forRequest?.line]);
 
-  /**
-   * **The response the box is showing, and the request it came from — ONE reading, not two.**
-   *
-   * `M225` §1.2 is this value's whole reason: a send from a declaration address recorded its
-   * verdict against a request line while the selected row was the `test` line, so `rowRan` stayed
-   * `null` and region 2 went on saying *nothing has run this request* — the exact sentence the
-   * press had just falsified. The row still wins when it has a response, so every gesture that
-   * worked before this round works unchanged; what is new is the fallback to the send's own first
-   * entry when the row has nothing.
-   *
-   * **The pair is derived together because the build caught them disagreeing** (`D1094`, the
-   * failure this project keeps recording). The first draft computed the `Ran` and the
-   * `OutlineRequest` in two expressions with the same three branches written twice, and a write
-   * that moved the file's lines left a `pick` whose line still resolved in `ran` and no longer
-   * resolved in `sentHere` — so the box had a response and no request, which renders the empty
-   * state *and* the send row at the same instant. Two `send all` buttons on one screen, found by
-   * Playwright's strict-mode resolving two elements for one selector.
-   */
+  /** The response in the box and the request it came from — ONE reading, not two (`M225` §1.2). */
   const shownEntry = useMemo(() => {
     const picked = pick === null ? null : sentHere.find((e) => e.request.line === pick) ?? null;
     if (picked !== null) return { ran: picked.ran, request: picked.request };
@@ -990,22 +654,18 @@ export function ComposePane(props: ComposePaneProps) {
     return first === undefined ? null : { ran: first.ran, request: first.request };
   }, [pick, sentHere, rowRan, forRequest]);
   const shown: Ran | null = shownEntry?.ran ?? null;
-  /** The request whose response is in the box — what `D1218`'s solid badge marks, and what a tick
-   *  writes an assertion against. */
   const shownRequest: OutlineRequest | null = shownEntry?.request ?? null;
 
   /** The refusal a `✕` produced, keyed by the line it was pressed on (`D1117`). */
-  const [refused, setRefused] = useState<{ line: number; held: { name: string; line: number; text: string } } | null>(null);
+  const [refused, setRefused] = useState<{ line: number; held: Held } | null>(null);
   useEffect(() => setRefused(null), [path]);
 
   const remove = useCallback(
-    (decl: SelectedDecl, at_line: number, target: { lines: number[]; steps: number[] } | null): void => {
-      /* A crawl's steps were unremovable here from `M228` `C` (`D1238`) until `M241` `C` (`D1323`)
-         gave a crawl an address; every declaration's statements are removable now. */
+    (decl: SelectedDecl, atLine: number, target: { lines: number[]; steps: number[] } | null): void => {
       if (target === null || onRemoveSteps === null) return;
       const held = holds(decl.body, target.lines);
       if (held !== null) {
-        setRefused({ line: at_line, held });
+        setRefused({ line: atLine, held });
         return;
       }
       setRefused(null);
@@ -1013,220 +673,56 @@ export function ComposePane(props: ComposePaneProps) {
     },
     [onRemoveSteps],
   );
-  /** Whether this declaration's steps can be removed — every declaration's can since `M241` `C`
-   *  (`D1323`); `M228` `C` (`D1238`) had refused a crawl's, which carried no address. */
-  const removable = onRemoveSteps;
-  const refusalFor = (line: number): { name: string; line: number; text: string } | null => (refused !== null && refused.line === line ? refused.held : null);
+  const refusalFor = (line: number): Held | null => (refused !== null && refused.line === line ? refused.held : null);
   const clearRefusal = useCallback(() => setRefused(null), []);
 
-  /**
-   * **Region 2 goes to the foot when the declaration carries a workload** — `M226` `A` (`D1225`).
-   *
-   * Measured at 1440x900 on the `load-door` corpus: the response body's longest line wants **871
-   * px** and has **699** under the editor column, so it scrolls sideways; and `.editor` on a
-   * workload declaration wants **537–568 px** and gets **471–493**, so the composer is squeezed on
-   * every LOAD file while **no other door is squeezed at all**.
-   *
-   * **The move answers the first and not the second, and the second is what chose the axis.** A
-   * footer is still a row, so the editor's track is `613 − 6 − 112 = 495` either way — measured at
-   * 495 after against 493 before. What the squeeze establishes is that the composer is the tallest
-   * editor on the page and only this construct has one; what the footer pays out is width.
-   *
-   * **The construct, not the door** (`D1044`, and `D1209`'s axis one round earlier), because the
-   * construct is what predicts the need: a workload-bearing declaration has the tallest editor on
-   * the page and, being a rung, the shortest sequence beside it. It reads the same expression
-   * `D1209` branches on, so the segment and the placement cannot disagree about what a workload
-   * test is — and the gate is taken on **API**, where the door and the construct do not agree.
-   *
-   * It is computed here rather than beside `planWorkload` below only because the state under it
-   * has to read the right key on its FIRST render; a footer that adopts the column's stored height
-   * for one frame and then corrects itself is a visible jump.
-   */
-  /**
-   * ── `M227` `D` (`D1235`) — **and it yields to a live playback region** ──────────────────────
-   *
-   * `D1181` puts the Stage below both columns on every door, three rounds before `M226`, and
-   * `M226` did not reorder anything. What it did was make region 2 **the same width as the
-   * Stage** — measured on the BROWSER door, `.responsebox` 753 -> 1072 with `.stage` already at
-   * 1072 — so two identical full-width bands stack and the upper one reads as the page's floor
-   * while the lower one is. The user found it by eye on a populated playback and was right about
-   * the picture while the ordering was untouched.
-   *
-   * The floor is not a matter of taste here. With a trace up the Stage is **620 px**
-   * (`STAGE.fallback`), and on BROWSER the plan took **371** rather than its 240 floor because
-   * that door's editor wants only 237 and `1fr` hands the slack downward — so a third of the pane
-   * was a chart sitting between the author and the thing that door exists for.
-   *
-   * **`M226`'s own measurement is the argument.** The footer was earned by a squeeze: the
-   * workload editor wants 537-568 px and gets 471-493, and *API and BROWSER are not squeezed at
-   * all — gets == wants*. Where nothing is squeezed the footer buys nothing, and beside a live
-   * Stage it costs the page its only floor.
-   *
-   * **Keyed on the state, not the door** (`D1044`, and `D1225`'s whole point): *this pane has
-   * playback up* is true on LOAD the moment you press ▶ on a browser test, and false on BROWSER
-   * until you do. A door-keyed version of this rule would be green under every mutation that made
-   * it state-keyed and vice versa, which is why the gate plays a real test rather than asserting
-   * a door.
-   */
-  const footer = at?.decl != null && at.decl.kind === 'test' && at.decl.workload !== null && !stage;
-
-  /** `null` — the editor is as tall as what it holds (`D1195`). A number is the reader's own
-   *  override in pixels (`D1196`); `Home` on the divider returns it to `null`. */
-  const [editorPx, setEditorPx] = useState<number | null>(() => readEditorPx(footer ? FOOTER_KEY : EDITOR_KEY));
-  /** The divider's own key follows the layout (`D1227`), and so does what it measures. */
-  const splitKey = footer ? FOOTER_KEY : EDITOR_KEY;
-  /** **The layout changing re-reads the height**, because the two keys hold different quantities.
-   *  Guarded on the value rather than run on every `footer` render, so a reader dragging inside one
-   *  layout is not overwritten by the value they started from. */
-  const wasFooter = useRef(footer);
-  useEffect(() => {
-    if (wasFooter.current === footer) return;
-    wasFooter.current = footer;
-    setEditorPx(readEditorPx(footer ? FOOTER_KEY : EDITOR_KEY));
-  }, [footer]);
-  /** The sequence column's width (`D1135`) — a fixed number of pixels the reader chose, where the
-   *  grid used to hold a builder's `minmax(220px, 300px)`. Separate from `split` above, which is
-   *  the horizontal divider inside the editor column and a FRACTION rather than a width, for the
-   *  reason recorded there: a remembered 620 px on a 700 px window is a response with no editor. */
-  const [seqWidth, setSeqWidth] = useState<number>(() => storedSize(COMPOSE));
-  const column = useRef<HTMLDivElement | null>(null);
-  /* `M240` `E` — a focusable `separator` is a control with a value, and axe holds it to one: the
-     editor's height in px, the same number the arrows move. While the track is content-sized
-     (`D1195`) no state holds it, so it is read off the editor's box after every render. */
-  const splitEl = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(() => {
-    const el = splitEl.current;
-    const editor = el?.previousElementSibling ?? null;
-    if (el === null || editor === null) return;
-    el.setAttribute('aria-valuenow', String(Math.round(editor.getBoundingClientRect().height)));
-    el.setAttribute('aria-valuemin', String(EDITOR_MIN));
-  });
-  /**
-   * **With no remembered width, the column is as wide as the file needs** — `M240` `F`
-   * (`M239-11`). `COMPOSE.fallback` is 300 px, and on the dogfood 25–35 rows per view were
-   * ellipsised at it (review P5): a builder's number for a column whose content is the reader's.
-   * Measured once per file open, from the rows as drawn — a row's need is its own width plus
-   * whatever its text overflows by — then `min(need + 24, 0.6 × pane)`, clamped to the grip's
-   * range. Never after the reader has dragged: a stored width is a choice, and this runs only
-   * while there is none. Retried on the next outline until rows exist to measure.
-   */
-  const fitted = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    if (fitted.current === path) return;
-    let stored: string | null = null;
-    try { stored = window.localStorage.getItem(COMPOSE.key); } catch { /* a browser that will not remember still gets a fitted default */ }
-    if (stored !== null) { fitted.current = path; return; }
-    // `column` is the editor's ref; the sequence column is the grid's first region.
-    const col = stack.current?.querySelector<HTMLElement>('.seq-col') ?? null;
-    if (col === null) return;
-    let need = 0;
-    for (const row of col.querySelectorAll<HTMLElement>('.seq-row')) {
-      const text = row.querySelector<HTMLElement>('.seq-text');
-      need = Math.max(need, text === null ? row.scrollWidth : row.clientWidth - text.clientWidth + text.scrollWidth);
-    }
-    if (need === 0) return;
-    fitted.current = path;
-    const pane = stack.current?.clientWidth ?? 0;
-    const cap = pane > 0 ? Math.round(pane * 0.6) : COMPOSE.max;
-    setSeqWidth(Math.min(COMPOSE.max, Math.max(COMPOSE.min, Math.min(need + 24, cap))));
-  }, [path, outline]);
-  /** The footer layout's container: the pane grid, which owns the rows when `.editor-col` has been
-   *  flattened into it. `fitEditor` clamps against whichever of the two is live (`D1227`). */
+  /** The steps column's width — the reader's, through the grip (`D1135`); `STEPS_SHARE` of the pane
+   *  until they drag it. */
+  const [seqWidth, setSeqWidth] = useState<number>(COMPOSE.fallback);
   const stack = useRef<HTMLDivElement | null>(null);
+  const fitted = useRef(false);
+  useLayoutEffect(() => {
+    if (fitted.current) return;
+    let stored: string | null = null;
+    try { stored = window.localStorage.getItem(COMPOSE.key); } catch { /* a browser that will not remember still gets a share */ }
+    if (stored !== null) {
+      const n = Number(stored);
+      if (Number.isFinite(n)) setSeqWidth(Math.min(COMPOSE.max, Math.max(COMPOSE.min, n)));
+      fitted.current = true;
+      return;
+    }
+    const pane = stack.current?.clientWidth ?? 0;
+    if (pane === 0) return;
+    fitted.current = true;
+    setSeqWidth(Math.min(COMPOSE.max, Math.max(COMPOSE.min, Math.round(pane * STEPS_SHARE))));
+  });
 
   /**
    * **The cursor lands in the first field of whatever a create gesture opened** — `M217` `A`
-   * (`D1136`).
-   *
-   * `ComposeDoor` has already moved the address, so by the time this runs the editor beside the
-   * sequence is showing the new statement. What is left is the half a reader notices: a request
-   * whose `path` is `/` and a `let` whose value is the literal string `"change me"` are both
-   * placeholders, and a placeholder you have to go and click is a placeholder that gets left.
-   *
-   * **The first field, not a named one.** A rule that named `.request-path` would be right for one
-   * of the three gestures and silently wrong for the others, and would have to be revisited every
-   * time the editor's first control changes — which `M214` and `M215` both did. The editor's own
-   * DOM order is the answer to *what does a reader type into first*.
-   *
-   * `made` is a counter, so adding the same statement twice in a row fires this twice; a key of
-   * the line would not. `select()` rather than a bare focus, because every one of these values is
-   * a placeholder meant to be replaced rather than appended to.
-   */
-  /**
-   * **`focusLine` is read here and is deliberately NOT a dependency**, and the first draft got this
-   * wrong in a way worth recording: with `[made, focusLine]` the effect re-ran on every selection
-   * change once anything had ever been created, so from then on **clicking any row in the sequence
-   * yanked focus into the editor and selected its text**. The trigger is *a create landed*, which
-   * `made` alone says; the line is only how the effect finds what landed.
+   * (`D1136`). The first field in DOM order of the open editor, so it follows the editor's shape
+   * rather than naming a control. `focusLine` is read and deliberately NOT a dependency: the
+   * trigger is *a create landed*, which `made` alone says.
    */
   const landedAt = useRef<number | null>(focusLine);
   landedAt.current = focusLine;
-
   useEffect(() => {
     if (made === 0) return;
-    /* The row first, because the column scrolls inside itself (`D1110`) and a test of thirteen
-       requests puts a new one below the fold — the selection highlight is on a row nobody can
-       see. `block: 'nearest'` so a row already in view does not jump. */
-    if (landedAt.current !== null) {
-      column.current?.ownerDocument
-        .querySelector(`.seq-col [data-seq-line="${landedAt.current}"]`)
-        ?.scrollIntoView({ block: 'nearest' });
-    }
-    const field = column.current?.querySelector<HTMLElement>(
-      '.editor input:not([type="checkbox"]):not([disabled]), .editor textarea:not([disabled])',
+    const root = stack.current;
+    if (root === null) return;
+    if (landedAt.current !== null) root.querySelector(`.seq-col [data-seq-line="${landedAt.current}"]`)?.scrollIntoView({ block: 'nearest' });
+    const field = root.querySelector<HTMLElement>(
+      '.seq-col [data-editor] input:not([type="checkbox"]):not([disabled]), .seq-col [data-editor] textarea:not([disabled])',
     );
-    if (field === null || field === undefined) return;
+    if (field === null) return;
     field.focus();
     if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.select();
   }, [made]);
 
-  /**
-   * **Which of region 2's two tenants is showing** (`D1209`) — and it is declared **here**,
-   * above the early return below, because that is the hook rule rather than a preference: a
-   * `useState` written under a conditional `return` changes the hook count between two renders.
-   * The first draft of this had it beside `decl`, thirty lines down, and the whole page went
-   * white with React #310 the moment the outline arrived — the same trap `App.tsx` records on
-   * `configPanel`'s `useMemo`, which timed out every door test at once.
-   *
-   * **`null` is *the reader has not chosen*, and the default follows the selection.** A plain
-   * `'plan'` default was written first and it took the region away from the gesture it was built
-   * for: `D1116` put the response under the editor so ticking a value writes into the Assert tab
-   * directly above it, and on a workload-bearing test every request row lost its `send` prefix to
-   * a chart. A plain `'response'` default is the same mistake mirrored — a declaration selected on
-   * the LOAD door would open on *pick a request to see what came back*, which is the one thing
-   * that door is not about.
-   *
-   * So: a **request** selected opens the response, and a declaration opens the plan. Once the
-   * reader picks, the pick stands — a segment that re-decided on every navigation would be
-   * undoing them.
-   *
-   * **`at.request` is the wrong instrument for that and the run said so.** `addressed()` falls
-   * back to a declaration's *first* request whenever the line is above all of them (`D1080`), so
-   * `at.request` is non-null for an address that names the `test` line — it answers *which request
-   * is in scope*, never *what did the reader point at*. `selectedAt` answers the second question
-   * and is already computed above; `'test'` is the declaration's own run of lines, header and all.
-   */
-  const [region2Pick, setRegion2Pick] = useState<Region2 | null>(null);
+  /** Which evidence tab the reader chose; `null` follows the pick (`D1209`'s rule). */
+  const [evidencePick, setEvidencePick] = useState<EvidenceTab | null>(null);
 
-  /**
-   * ── `M228` `A` (`D1239`) — **the third tenant, and what earns it** ──────────────────────────
-   *
-   * Every scan matcher this declaration carries, in source order. `statementsOf` is the outline's
-   * own flattener, so a `has no security violations` inside a `within` is counted here and
-   * **nothing walks the body a second time** — a second traversal beside the one the outline
-   * already does is the drift class `lenses.ts` states its own rule against.
-   *
-   * **The predicate is the language's, read off `MATCHER_LENS`.** `parts.tsx`'s `SCAN_MATCHERS`
-   * is the wrong table for it and would have been the easy mistake: it holds four, because it
-   * answers *does this matcher take a severity floor*, and `has no a11y violations` takes one
-   * while being a **browser** assertion — it stands against `page`, a crawl body cannot hold it,
-   * and a11y is not a fifth door. `MATCHER_LENS` is the table `lensesOfTest` decides the door
-   * with, so a family that earns this segment without putting the test behind SCANS is impossible
-   * by construction rather than by a test.
-   *
-   * A hook is excluded because `lensesOfTest` takes a `TestDecl`; a hook that grades a response
-   * is a shape the corpus does not hold and the language's own door rule has no opinion about.
-   */
+  /** Every scan matcher the picked test carries — `MATCHER_LENS` is the language's own table, so a
+   *  family that earns the tab without putting the test behind SCANS is impossible (`D1239`). */
   const scanMatchers = useMemo<readonly MatcherName[]>(() => {
     const decl = at?.decl ?? null;
     if (decl === null || decl.kind !== 'test') return [];
@@ -1235,114 +731,84 @@ export function ComposePane(props: ComposePaneProps) {
       .map((st) => (st.node as ExpectStmt).matcher.name)
       .filter((name) => MATCHER_LENS[name] === 'scan');
   }, [at]);
-  /** The same fact the door rule states, asserted the same way — a cross-check that costs one
-   *  call and would catch the day `MATCHER_LENS` and `lensesOfTest` stop agreeing. */
   const scanning = scanMatchers.length > 0 && at?.decl != null && at.decl.kind === 'test' && lensesOfTest(at.decl.node).includes('scan');
 
+  const planWorkload: Workload | null = at?.decl != null && at.decl.kind === 'test' ? at.decl.workload : null;
+  const recordingHere = provisional !== null && provisional.live && at !== null && at.decl.kind === 'test' && at.decl.name === provisional.into;
+  /** A browser step picked — the screenshot tenant's subject. */
+  const browserStep = selected.kind === 'statement' && selected.statement.lens === 'browser' ? selected.statement : null;
+  const browserDecl = at !== null && statementsOf(at.decl.body).some((s) => s.lens === 'browser');
+
   /**
-   * **Which tenants region 2 has, and which one is showing.**
+   * **Which tenants the column has, and which is showing** (`D1406`, `D1209`).
    *
-   * `D1209` wrote this as two, and two was the whole vocabulary then. The list is derived rather
-   * than spelled because that is what keeps the nav and the body from disagreeing: the segment
-   * draws `region2Tenants` and each panel below renders on `region2 === <its own name>`, so a
-   * tenant that is offered and draws nothing is not expressible.
-   *
-   * **The default follows the selection and then the construct**, which is `D1209`'s rule with
-   * one more case rather than a new one: a **request** or a statement opens the response, because
-   * `D1116` put it under the editor for the tick-to-assert gesture; a declaration opens the
-   * richest thing it has earned. A workload outranks a scan when a declaration has both — the
-   * plan is a picture of the whole rung and the scan panel is about assertions the sequence is
-   * already showing.
-   *
-   * The nav appears only when there is a choice to make. On a plain API test that is one tenant
-   * and no strip, which is what every door but LOAD looked like before this round.
+   * Earned, never granted by a kind: `response` by a request in the test,
+   * `plan` by a workload, `scan` by a scan matcher, `screenshot` by a browser step. The default
+   * follows the pick — a request or an API statement opens the response, a browser step its
+   * screenshot, a declaration the richest thing it earned — and a live recording follows the page.
    */
-  const region2Tenants = useMemo<readonly Region2[]>(
-    () => [...(planWorkloadOf(at) !== null ? (['plan'] as const) : []), ...(scanning ? (['scan'] as const) : []), 'response'],
-    [at, scanning],
+  const tenants = useMemo<readonly EvidenceTab[]>(() => {
+    const has = new Set<EvidenceTab>();
+    if (at !== null && requestsOf(at.decl.body).length > 0) has.add('response');
+    if (planWorkload !== null) has.add('plan');
+    if (scanning) has.add('scan');
+    if (browserDecl || recordingHere) has.add('screenshot');
+    if (has.size === 0) has.add('response');
+    return (['response', 'plan', 'scan', 'screenshot'] as const).filter((t) => has.has(t));
+  }, [at, planWorkload, scanning, browserDecl, recordingHere]);
+  const evidenceDefault: EvidenceTab =
+    recordingHere && tenants.includes('screenshot') ? 'screenshot'
+    : browserStep !== null && tenants.includes('screenshot') ? 'screenshot'
+    : selected.kind === 'request' || selected.kind === 'statement' ? (tenants.includes('response') ? 'response' : tenants[0]!)
+    : (['plan', 'scan', 'screenshot', 'response'] as const).find((t) => tenants.includes(t)) ?? 'response';
+  const evidenceTab: EvidenceTab = evidencePick !== null && tenants.includes(evidencePick) ? evidencePick : evidenceDefault;
+  /** A reader's pick is about the row they made it on; a new pick follows the new row. */
+  useEffect(() => setEvidencePick(null), [path, focusLine]);
+
+  /** The picked browser step's group from the last run — the screenshot tenant's frame. */
+  const shot = useMemo(() => {
+    if (at === null) return null;
+    const line = browserStep?.line ?? null;
+    if (line === null) return null;
+    const strict = groupFor(ran, at.decl.line, line);
+    const own = strict !== null && strict.screenshot !== null ? strict : evidenceOf(line);
+    return { ran: own ?? strict, what: `line ${line}` };
+  }, [at, browserStep, ran, evidenceOf]);
+
+  const decl = at?.decl ?? null;
+
+  const evidence = outline === null ? null : (
+    <Evidence
+      path={path}
+      tenants={tenants}
+      tab={evidenceTab}
+      onTab={setEvidencePick}
+      plan={planWorkload === null ? null : { workload: planWorkload, name: decl !== null && decl.kind === 'test' ? decl.name : null }}
+      authorization={authorization}
+      scanMatchers={scanMatchers}
+      onProjectTab={onProjectTab}
+      shown={shown}
+      shownRequest={shownRequest}
+      picked={forRequest}
+      sentHere={sentHere}
+      sent={sent === null ? null : { form: sent.form, at: sent.at }}
+      onPickSent={setPick}
+      prefix={prefix}
+      prefixAll={prefixAll}
+      onSend={onSend}
+      sending={sending}
+      busy={busy}
+      scratchUnignored={scratchUnignored}
+      onVerify={onVerify}
+      onCapture={onCapture}
+      shot={shot}
+      recording={recordingHere && provisional !== null ? { into: provisional.into ?? '', pending: provisional.lines.filter((l) => l.kind === 'step').length } : null}
+    />
   );
-  const region2Default: Region2 =
-    selected.kind === 'request' || selected.kind === 'statement' ? 'response' : (region2Tenants[0] ?? 'response');
-  /** A pick that the current declaration does not offer is **not** a pick — the reader chose
-   *  `plan` on a workload test and then opened a functional one, and an unfiltered `region2Pick`
-   *  would leave the region showing nothing at all with the strip gone. */
-  const region2: Region2 = region2Pick !== null && region2Tenants.includes(region2Pick) ? region2Pick : region2Default;
-
-  /**
-   * **The floor under region 2 follows the TENANT** — `M227` `A` (`D1229`).
-   *
-   * `D1228` said `D1223`'s floor follows the region rather than the column, which was right and
-   * one step short: the region holds three different things and the floor was keyed on only one
-   * of them (`shown?.response`). Measured on the served page, `rate-shapes.tflw` `L13`: the plan
-   * panel is **312 px of content in a 62 px window**, with the whole x-axis, the legend and both
-   * sentences below the footer's own bottom edge — because a plan is not a response and so fell
-   * through to the empty floor.
-   *
-   * A plan gets the response's **240** rather than a third number, because 240 is exactly what it
-   * needs once the plot fills the region (`D1230`) and the prose moves beside it (`D1231`). One
-   * number doing two jobs, not a coincidence written up as a rule.
-   *
-   * `footer` and `planWorkload !== null` are the same predicate (`:888` against the derivation
-   * below), so `footer && region2 === 'plan'` is exactly *the plan panel is what is in there* —
-   * and in the column layout it is constantly false, which is why the column sites can read this
-   * same value without a branch of their own.
-   */
-  const region2Min = (footer && region2 === 'plan') || region2 === 'scan' || shown?.response ? RESPONSE_MIN : LOWER_MIN;
-
-  const dragging = useRef(false);
-  /** The floor under the divider, as a ref so the window `pointermove` above reads the CURRENT
-   *  one rather than the one that was true when the listener was installed (`D1223`). */
-  const lowerMin = useRef(LOWER_MIN);
-  lowerMin.current = region2Min;
-  /** The same fact as `dragging`, in the DOM, because the stylesheet needs it: while this divider
-   *  is being dragged the trace frame must stop taking pointer events, or the drag dies at its top
-   *  edge (`styles.css`, `M223` `E`). A ref cannot be seen by `:has()`. */
-  const [splitting, setSplitting] = useState(false);
-
-  /** The divider. `pointermove` on the window rather than on the handle, because a pointer that
-   *  leaves a 6 px strip mid-drag has not stopped dragging — the same finding `jamForge` filed
-   *  about a marquee and the reason the handle captures nothing. */
-  useEffect(() => {
-    const move = (e: PointerEvent): void => {
-      /* `D1227` — the container is the one that owns the tracks, which in the footer layout is the
-         pane grid and not `.editor-col` (flattened by `display: contents`, so its own rect is
-         zero-sized and would make every drag a no-op). */
-      const host = footer ? stack.current : column.current;
-      if (!dragging.current || host === null) return;
-      const box = host.getBoundingClientRect();
-      if (box.height <= 0) return;
-      // Where the pointer is, not how far it has moved: the divider goes under the pointer, and
-      // the clamp is against the column as it is right now rather than as it was on the press.
-      setEditorPx(fitEditor(e.clientY - box.top, box.height, lowerMin.current));
-    };
-    const up = (): void => {
-      if (!dragging.current) return;
-      dragging.current = false;
-      setSplitting(false);
-      try {
-        if (editorPx === null) window.localStorage.removeItem(splitKey);
-        else window.localStorage.setItem(splitKey, String(editorPx));
-      } catch {
-        // Nothing to do and nothing to say: a remembered height is a convenience, and a browser
-        // that refuses to store one still draws the page.
-      }
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    return () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-    };
-  }, [editorPx, footer, splitKey]);
 
   if (outline === null) {
-    // `M236` `C` (`M235-09`, `D-M236-3`): **the placeholder does not answer to `[data-compose-pane]`.**
-    // It used to, as `data-compose-pane="reading"`, which made `locator('[data-compose-pane]').waitFor()`
-    // satisfiable by a pane that had drawn nothing — six gates waited that way and a `count()` under
-    // one of them answered `0` about a file that was still being read. The rule is fixed here, at
-    // the marker, rather than at the six call sites: a rule enforced at every consumer is a rule the
-    // next consumer will not know about. `[data-compose-pane]` now means *a pane with a file in it*,
-    // and the placeholder says so in its own name.
+    // `M236` `C` (`D-M236-3`): the placeholder does not answer to `[data-compose-pane]`, so a wait
+    // on the pane cannot be satisfied by one that has drawn nothing.
     return (
       <div className="compose-pane reading" data-compose-placeholder="reading">
         <p className="muted" data-compose-state>
@@ -1352,11 +818,7 @@ export function ComposePane(props: ComposePaneProps) {
     );
   }
 
-  const decl = at?.decl ?? null;
-  /** The selected declaration's workload, or `null` — the one fact `D1209`'s segment turns on. */
-  const planWorkload = planWorkloadOf(at);
   const statements = decl === null ? [] : decl.body.preamble;
-  /** The rows a move trades between, and the control for the one starting at `first` (`D1391`). */
   const units = decl === null ? [] : moveUnits(decl.body);
   const mover = (first: number | undefined, what: string, among: readonly (readonly number[])[] = units): ReactNode => {
     if (decl === null || onMoveSteps === null || first === undefined) return null;
@@ -1368,42 +830,175 @@ export function ComposePane(props: ComposePaneProps) {
     const down = go(1);
     return up === null && down === null ? null : <Move what={what} up={up} down={down} />;
   };
-  /** The statements under one request, each its own row to move among (`D1391`). */
   const siblingsOf = (r: OutlineRequest): readonly (readonly number[])[] =>
     r.attached.filter((a) => a.stepPath !== null && a.inner === null).map((a) => [a.stepPath!.step]);
 
-  /**
-   * **One statement's row, wherever the fold put it** — `M219` `B`.
-   *
-   * The sequence draws statements in four places now (a body's preamble, a request's attachments,
-   * a session's preamble, and a request's attachments *inside* a session), and before this round
-   * two of those were two copies of the same eleven lines. A third and fourth copy is how a row in
-   * one place quietly stops carrying the menu, or the refusal, or the `✕` that the others have.
-   */
-  /** `among` is the rows this one moves between — the body's, or, for a statement under a request,
-   *  its siblings under that request (`D1391`): it moves among them and never out of the group. */
-  const statementRow = (s: OutlineStatement, keyPrefix: string, among: readonly (readonly number[])[] = units): ReactNode => {
+  /** The phase a line sits in, as the subject offer's word for it — `M219` `G` (`D1166`). */
+  const phaseFor = (line: number): 'api' | 'browser' | undefined =>
+    !kinds.has('browser') || decl === null ? undefined : phaseOf(decl.body, line) === 'session' ? 'browser' : 'api';
+
+  /** A statement's verdict: its request's group, or the nearest action's (`D1270`). */
+  const verdictOf = (s: OutlineStatement, r: OutlineRequest | null): Verdict | null => {
     if (decl === null) return null;
-    /**
-     * **A scope is a qualifier on the row it scopes** — `M219` `D` (`D1163`).
-     *
-     * `within` is the third-commonest browser construct (433) and **397 of its 405 blocks wrap
-     * exactly one statement**; `switch to new tab` and `download` wrap one in every occurrence. So
-     * the common form is one row carrying both — the gesture, and the scope it happens in — and
-     * the block form is kept for the eight that earn it.
-     *
-     * The picture therefore depends on what the block holds, which is the cost of this decision
-     * and is the thing the gate covers in both arms.
-     */
+    const group = r !== null ? ran.get(r.line) ?? null : groupFor(ran, decl.line, s.line);
+    return group?.steps.get(s.line) ?? null;
+  };
+
+  /** The evidence, folded under the picked row below 1100 px (`D1412`) — one element, one place. */
+  const fold = (as: 'li' | 'div'): ReactNode => {
+    if (!narrow) return null;
+    const El = as;
+    return <El className="evidence-fold" data-evidence-fold="">{evidence}</El>;
+  };
+
+  /**
+   * **What a recording has handed back, drawn where it will land** — `M256` `C` (`D1408`).
+   *
+   * Each gesture is a provisional row under the step that was picked when the recording started,
+   * with `keep · drop` on it. Keeping splices it into the buffer there (`D1165`: nothing is written
+   * until kept, and nothing reaches the disk until `write`); stopping keeps what was kept and drops
+   * the rest. The record panel and its 48 words are gone.
+   */
+  const provisionalBlock = (as: 'li' | 'div'): ReactNode => {
+    if (provisional === null || provisional.kind !== 'record' || decl === null || decl.kind !== 'test' || decl.name !== provisional.into) return null;
+    const El = as;
+    const steps = provisional.lines.filter((l) => l.kind === 'step');
+    return (
+      <El key="provisional" className="seq-group provisional" data-provisional={provisional.lines.length} data-provisional-live={provisional.live ? 'yes' : 'no'}>
+        <div className="seq-row provisional-head">
+          <span className={provisional.live ? 'status-code pass' : 'status-code warn'} data-provisional-state={provisional.live ? 'live' : 'closed'}>
+            {provisional.live ? 'recording' : 'closed'}
+          </span>
+          <span className="muted" data-provisional-head>
+            {provisional.lines.length === 0 ? 'use the page — each gesture lands here' : `${steps.length} to keep or drop`}
+          </span>
+          {steps.length > 0 && onPlaySession !== null ? (
+            /* ▶ before `keep all`: the safe one first — it changes nothing and says whether keeping
+               would be a good idea (`D1185`, `D1186`). */
+            <button type="button" onClick={playing ? undefined : onPlaySession} disabled={playing} data-provisional-play data-tip={playing ? 'a run is already going' : `run this test with these ${steps.length} in it — nothing is kept`}>
+              ▶ try {steps.length}
+            </button>
+          ) : null}
+          {steps.length > 0 ? (
+            <button type="button" onClick={onKeepAll} data-provisional-keep-all data-tip="keep every row below, in order">
+              keep all {steps.length}
+            </button>
+          ) : null}
+          {provisional.live ? (
+            <button type="button" onClick={onStopSession} data-provisional-stop data-tip="close the browser — the rows you kept stay, the rest are dropped">
+              stop
+            </button>
+          ) : null}
+        </div>
+        {provisional.lines.length === 0 ? null : (
+          <ol className="seq attached">
+            {provisional.lines.map((l) => (
+              <li key={l.id} className={`seq-row under provisional-row ${l.kind}`} data-provisional-line={l.id} data-provisional-kind={l.kind}>
+                {l.kind === 'step' ? (
+                  <>
+                    <span className="seq-kind">{seqLead(l.node)}</span>
+                    <code className="seq-text stmt-text" data-provisional-text>
+                      <SourceText text={l.text} />
+                    </code>
+                    <button type="button" className="seq-x keep" onClick={() => onKeepLine(l)} data-provisional-keep={l.id} data-tip="keep this step — it goes into the test here">
+                      keep
+                    </button>
+                  </>
+                ) : l.kind === 'unreadable' ? (
+                  <>
+                    <span className="warn" data-provisional-unreadable={l.id}>⚠</span>
+                    <code className="seq-text stmt-text" data-provisional-text>{l.text}</code>
+                    <span className="muted">the recorder sent this and the language could not read it</span>
+                  </>
+                ) : (
+                  <span className="muted seq-text" data-provisional-text data-provisional-notice={l.id}>{l.text}</span>
+                )}
+                <button type="button" className="seq-x" onClick={() => onDropLine(l.id)} data-provisional-drop={l.id} data-tip="drop this row — it was never in the file">
+                  drop
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
+      </El>
+    );
+  };
+  const provisionalAfter = (line: number, as: 'li' | 'div'): ReactNode => (provisional !== null && provisional.after === line ? provisionalBlock(as) : null);
+
+  /** A statement's inline editor, or the reason it has none — `M256` `A` (`D1405`). */
+  const statementEditor = (s: OutlineStatement, r: OutlineRequest | null): ReactNode => {
+    if (decl === null) return null;
+    const foreign = isForeign(s.lens, kinds);
+    const key = rowKey(s);
+    const own = s.stepPath === null || editing.onRow === null || foreign ? null : statementEditOf(s.node);
+    const values = editing.row !== null && editing.row.key === key ? editing.row.values : own;
+    const live = values !== null && editing.onRow !== null && s.stepPath !== null;
+    const writingNote = editing.noting !== null && editing.noting === key;
+    const verdict = <RowVerdict verdict={verdictOf(s, r)} />;
+    const note =
+      editing.onNote !== null && s.stepPath !== null && !foreign && !writingNote && s.note === null ? (
+        <button type="button" className="add-note" onClick={() => editing.onNoting?.(key)} data-note-add={s.line} data-tip="a comment above this line, explaining why it is here">
+          + note
+        </button>
+      ) : null;
+    return (
+      <div
+        className="seq-edit"
+        data-editor="statement"
+        data-editor-statement={s.kind}
+        data-editor-line={s.line}
+        /* The row says whether it is live — the word the attached list says it with (`M219` `C`). */
+        data-stmt-editable={live ? 'yes' : 'no'}
+        data-stmt-lens={s.lens ?? 'none'}
+      >
+        {writingNote ? (
+          <NoteOpen note={s.note} what={`line ${s.line}`} onChange={(lines) => editing.onNote?.({ on: 'step', path: s.stepPath! }, lines)} />
+        ) : s.note ? (
+          <NoteBlock note={s.note} what={`line ${s.line}`} onNote={editing.onRow !== null && editing.onNote !== null && s.stepPath !== null ? (lines) => editing.onNote!({ on: 'step', path: s.stepPath! }, lines) : undefined} />
+        ) : null}
+        {live ? (
+          values.kind === 'expect' ? (
+            <AssertRow statement={s} edit={values.expect} onEdit={(next) => editing.onRow!(s, { kind: 'expect', expect: next })} verdict={verdict} trailing={note} drops={vocabularyOf(kinds).dropsSubjects} phase={phaseFor(s.line)} />
+          ) : (
+            <>
+              <ScriptRow statement={s} edit={values} onEdit={(next) => editing.onRow!(s, next)} trailing={<>{verdict}{note}</>} pick={editing.pick} phase={phaseFor(s.line)} onOpenAction={editing.onOpenAction} inline />
+              {s.body === null || s.body.length !== 1 ? null : <InnerRow statement={s.body[0]!} kinds={kinds} editing={editing} phase={phaseFor(s.line)} />}
+            </>
+          )
+        ) : (
+          <div className="stmt-line">
+            <code className="stmt-text">{s.text.split('\n')[0]}</code>
+            {verdict}
+            <span className="muted" data-stmt-unaddressable={foreign ? 'foreign' : s.nested ? 'nested' : 'crawl'}>
+              {foreign ? 'a statement of a kind this file does not carry — edit it in Source' : unaddressableWhy(s.nested)}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** One statement's row, wherever the fold put it — `M219` `B`. `among` is the rows it moves
+   *  between (`D1391`). `r` is the request it is attached to, when it is. */
+  const statementRow = (s: OutlineStatement, keyPrefix: string, r: OutlineRequest | null, among: readonly (readonly number[])[] = units): ReactNode => {
+    if (decl === null) return null;
+    const on = selected.kind === 'statement' && selected.statement.line === s.line;
+    /* **Keyed by the index pair, not the line** (`M256` `A`). A row is now the editor being typed
+       into, and a note that grows by a line moves every row under it — keyed by line, the row
+       would remount under the cursor and drop the focus mid-word. The index pair is the identity
+       an edit does not move (`D1080`). */
+    const id = rowKey(s) ?? `L${s.line}`;
+    /* **A scope is a qualifier on the row it scopes** (`M219` `D`, `D1163`): 397 of 405 `within`s
+       wrap one statement, so the common form is one row carrying the gesture and its scope. */
     const one = s.body !== null && s.body.length === 1 ? s.body[0]! : null;
     if (s.body !== null && one === null) {
       return (
-        <li key={`${keyPrefix}-blk-${s.line}`} className="seq-group scoped" data-seq-scope={s.line} data-seq-scope-kind={s.kind} data-seq-scope-holds={s.body.length}>
+        <li key={`${keyPrefix}-blk-${id}`} className="seq-group scoped" data-seq-scope={s.line} data-seq-scope-kind={s.kind} data-seq-scope-holds={s.body.length}>
           <SeqRow
-          head
+            head
             line={s.line}
             kind={s.kind}
-            selected={selected.kind === 'statement' && selected.statement.line === s.line}
+            selected={on}
             onLine={onLine}
             indent
             lead={<span className="seq-kind">{seqLead(s.node)}</span>}
@@ -1412,6 +1007,7 @@ export function ComposePane(props: ComposePaneProps) {
             menu={seqMenu({ kind: 'step', statement: s, line: s.line }, s.text)}
             kinds={kinds}
             refusal={refusalFor(s.line)}
+            editor={on ? statementEditor(s, r) : undefined}
             trailing={
               onRemoveSteps === null || s.stepPath === null ? null : (
                 <>
@@ -1421,33 +1017,33 @@ export function ComposePane(props: ComposePaneProps) {
               )
             }
           />
-          <ol className="seq attached">{s.body.map((x) => statementRow(x, `${keyPrefix}-in-${s.line}`))}</ol>
+          {on ? fold('div') : null}
+          <ol className="seq attached">{s.body.map((x) => statementRow(x, `${keyPrefix}-in-${id}`, r))}</ol>
+          {provisionalAfter(s.line, 'div')}
         </li>
       );
     }
-    /* The qualifier arm: the row IS the block — so it keeps the block's address, its kind and its
-       `✕` — and what it SHOWS is the gesture inside it, with the scope beside it. */
-    const shown = one ?? s;
-    return (
+    const shownStatement = one ?? s;
+    return [
       <SeqRow
-        key={`${keyPrefix}-${s.line}`}
+        key={`${keyPrefix}-${id}`}
         line={s.line}
         kind={s.kind}
-        selected={selected.kind === 'statement' && selected.statement.line === s.line}
+        selected={on}
         onLine={onLine}
         indent
-        lead={<span className="seq-kind">{seqLead(shown.node)}</span>}
-        text={afterLead(seqLead(shown.node), shown.text.split('\n')[0] ?? '')}
+        lead={<span className="seq-kind">{seqLead(shownStatement.node)}</span>}
+        text={afterLead(seqLead(shownStatement.node), shownStatement.text.split('\n')[0] ?? '')}
         scope={one === null ? null : s.text}
         statement={s}
-        menu={seqMenu({ kind: 'step', statement: s, line: s.line }, shown.text.split('\n')[0] ?? s.kind)}
+        menu={seqMenu({ kind: 'step', statement: s, line: s.line }, shownStatement.text.split('\n')[0] ?? s.kind)}
         kinds={kinds}
         refusal={refusalFor(s.line)}
+        editor={on ? statementEditor(s, r) : undefined}
+        verdict={<RowVerdict verdict={verdictOf(s, r)} />}
         trailing={
           s.inner !== null ? (
-            onRemoveScoped === null ? null : (
-              <Remove what="statement" onGo={() => onRemoveScoped(s)} refusal={refusalFor(s.line)} onClear={clearRefusal} />
-            )
+            onRemoveScoped === null ? null : <Remove what="statement" onGo={() => onRemoveScoped(s)} refusal={refusalFor(s.line)} onClear={clearRefusal} />
           ) : onRemoveSteps === null || s.stepPath === null ? null : (
             <>
               {one !== null && onUnscope !== null ? (
@@ -1464,56 +1060,54 @@ export function ComposePane(props: ComposePaneProps) {
             </>
           )
         }
-      />
-    );
+      />,
+      on && narrow ? <li key={`${keyPrefix}-${id}-fold`} className="seq-fold-slot">{fold('div')}</li> : null,
+      provisionalAfter(s.line, 'li'),
+    ];
   };
 
-  /** One request and everything attached to it — `D1073`'s unit, drawn the same inside a session
-   *  as outside one, because 18 of the corpora's `api` requests stand inside a session and the
-   *  `expect status` under them reads that response either way. */
+  /** One request and everything attached to it — `D1073`'s unit. The head, when picked, is the
+   *  request's own editor (`D1405`); the statements under it stay rows. */
   const requestGroup = (r: OutlineRequest): ReactNode => {
     if (decl === null) return null;
     const rr = ran.get(r.line) ?? null;
+    const on = selected.kind === 'request' && selected.request.line === r.line;
+    const status = rr === null || rr.response === null ? null : (
+      /* **The row whose response is in the column wears a SOLID badge** — `M225` `B` (`D1218`). */
+      <span
+        className={`status-code ${statusTone(rr.response.status)}`}
+        data-seq-status={rr.response.status}
+        data-seq-showing={shownRequest !== null && shownRequest.line === r.line ? 'yes' : 'no'}
+        data-tip={`${rr.scope === 'send' ? 'from a send' : 'from the last run'} — ${rr.at}${shownRequest !== null && shownRequest.line === r.line ? ' — this is the response beside' : ''}`}
+      >
+        {rr.response.status}
+      </span>
+    );
     return (
-      <li key={`req-${r.line}`} className="seq-group" data-seq-request={r.line} data-seq-method={r.method}>
+      <li key={`req-${stepKey(r.stepPath) ?? r.line}`} className="seq-group" data-seq-request={r.line} data-seq-method={r.method}>
         <SeqRow
           head
           line={r.line}
           kind={r.kind === 'WaitUntilApiStmt' ? 'wait' : 'request'}
           {...(decl.kind === 'test' ? { menu: seqMenu({ kind: 'request', decl, request: r, line: r.line }, `${r.method} ${r.path}`) } : {})}
-          selected={selected.kind === 'request' && selected.request.line === r.line}
+          selected={on}
           onLine={onLine}
           lead={
             <>
               <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span>
-              {rr === null || rr.response === null ? null : (
-                /* **The row whose response is in region 2 wears a SOLID badge** — `M225` `B`
-                   (`D1218`). A third state, and it must not look like the second: on a
-                   declaration address the selection is deliberately still the `test` row so the
-                   composer stays in region 1, and a shared tone would make clicking a strip entry
-                   look like a move that did not happen. It is not in the gutter either — `D1200`
-                   closed a measured collision of two accent marks 4.9 px apart in an 18 px gutter
-                   with *in this gutter the accent is the selection's alone*. */
-                <span
-                  className={`status-code ${statusTone(rr.response.status)}`}
-                  data-seq-status={rr.response.status}
-                  data-seq-showing={shownRequest !== null && shownRequest.line === r.line ? 'yes' : 'no'}
-                  data-tip={`${rr.scope === 'send' ? 'from a send' : 'from the last run'} — ${rr.at}${shownRequest !== null && shownRequest.line === r.line ? ' — this is the response below' : ''}`}
-                >
-                  {rr.response.status}
-                </span>
-              )}
+              {status}
             </>
           }
           text={r.path}
           refusal={refusalFor(r.line)}
-          plus={
-            onAddAfter === null || decl.kind === 'hook' ? null : (
-              <Plus onGo={() => onAddAfter(decl, r)} after={`${r.method} ${r.path}`} />
-            )
+          editor={
+            on ? (
+              <RequestInline request={r} status={status} folds={folds} onFold={onFold} edit={edit} onEdit={onEdit} editing={editing} />
+            ) : undefined
           }
+          plus={onAddAfter === null || decl.kind === 'hook' ? null : <Plus onGo={() => onAddAfter(decl, r)} after={`${r.method} ${r.path}`} />}
           trailing={
-            removable === null ? null : (
+            onRemoveSteps === null ? null : (
               <>
                 {mover(r.stepPath.step, 'request')}
                 <Remove what="request" onGo={() => remove(decl, r.line, requestRemoval(r))} refusal={refusalFor(r.line)} onClear={clearRefusal} />
@@ -1521,49 +1115,44 @@ export function ComposePane(props: ComposePaneProps) {
             )
           }
         />
-        {r.attached.length === 0 ? null : (
-          <ol className="seq attached">{r.attached.map((s) => statementRow(s, 'att', siblingsOf(r)))}</ol>
+        {on ? fold('div') : null}
+        {on && r.attached.length === 0 ? (
+          /* The card's empty Assert tab, as one line under the request it is about. */
+          <p className="warn seq-note" data-request-attached-empty>
+            nothing reads this response — an <code>api</code> step with no assertion can never fail; tick a value in the response to write one
+          </p>
+        ) : null}
+        {r.attached.length === 0 && provisional?.after !== r.line ? null : (
+          <ol className="seq attached">
+            {r.attached.map((s) => statementRow(s, 'att', r, siblingsOf(r)))}
+            {provisionalAfter(r.line, 'li')}
+          </ol>
         )}
       </li>
     );
   };
 
-  /**
-   * **A session: the page, and everything done to it** — `M219` `B` (`D1160`).
-   *
-   * Drawn as a group for the same reason a request is: the statements under it are *about* it. Its
-   * head is an ordinary statement row — an `open`, or a `call` the project index says opens a page
-   * (`D1161`) — so it stays selectable and editable exactly as it was, and what the group adds is
-   * only that the reader can see which page the gestures under it are against.
-   *
-   * `review-submission.tflw:29` is the file that makes this load-bearing rather than cosmetic: it
-   * carries a comment explaining that unscoped, an assertion read a string the test had just typed
-   * into the very field it was checking had cleared. **A phase that is invisible in the sequence is
-   * a correctness hazard.**
-   */
+  /** A session: the page, and everything done to it — `M219` `B` (`D1160`). */
   const sessionGroup = (session: OutlineSession): ReactNode => {
     if (decl === null) return null;
     const s = session.head;
+    const on = selected.kind === 'statement' && selected.statement.line === s.line;
     return (
-      <li key={`ses-${s.line}`} className="seq-group session" data-seq-session={s.line} data-seq-session-kind={s.kind}>
+      <li key={`ses-${rowKey(s) ?? s.line}`} className="seq-group session" data-seq-session={s.line} data-seq-session-kind={s.kind}>
         <SeqRow
           head
           line={s.line}
           kind="session"
-          selected={selected.kind === 'statement' && selected.statement.line === s.line}
+          selected={on}
           onLine={onLine}
-          /* **The keyword says what the group is** — `M223` `F` (`D1201`). The rail beside it and
-             the accent on this word make the head legible as *different* and not as *what*, which
-             is the question a reader asks the first time they meet one. It rides `.seq-kind` and
-             not `.seq-pick` on purpose: `D1127` makes a row's hover DERIVED — the part the
-             ellipsis took, at whatever width the grip is at — so an authored tip there would
-             reopen that decision, while every chip and control beside it already carries one. */
           lead={<span className="seq-kind" data-tip="everything below happens on this page — a new `open` starts the next one">{seqLead(s.node)}</span>}
           text={afterLead(seqLead(s.node), s.text.split('\n')[0] ?? '')}
           statement={s}
           menu={seqMenu({ kind: 'step', statement: s, line: s.line }, s.text.split('\n')[0] ?? s.kind)}
           kinds={kinds}
           refusal={refusalFor(s.line)}
+          editor={on ? statementEditor(s, null) : undefined}
+          verdict={<RowVerdict verdict={verdictOf(s, null)} />}
           trailing={
             onRemoveSteps === null || s.stepPath === null ? null : (
               <>
@@ -1573,9 +1162,11 @@ export function ComposePane(props: ComposePaneProps) {
             )
           }
         />
-        {session.body.preamble.length === 0 && session.body.requests.length === 0 ? null : (
+        {on ? fold('div') : null}
+        {session.body.preamble.length === 0 && session.body.requests.length === 0 && provisional?.after !== s.line ? null : (
           <ol className="seq attached">
-            {session.body.preamble.map((x) => statementRow(x, `ses-${s.line}-pre`))}
+            {provisionalAfter(s.line, 'li')}
+            {session.body.preamble.map((x) => statementRow(x, `ses-${rowKey(s) ?? s.line}-pre`, null))}
             {session.body.requests.map((r) => requestGroup(r))}
           </ol>
         )}
@@ -1583,40 +1174,41 @@ export function ComposePane(props: ComposePaneProps) {
     );
   };
 
-  /**
-   * **The phase a line sits in, as the subject offer's word for it** — `M219` `G` (`D1166`).
-   *
-   * `undefined` on every door but BROWSER, which is `D1167` and not an oversight: the equivalent
-   * measurement for API-only tests is one phase at 96.3% api subjects, so a split there would be a
-   * change with no measurement behind it in the door the user has just declared finished.
-   */
-  const phaseFor = (line: number): 'api' | 'browser' | undefined =>
-    !kinds.has('browser') || decl === null ? undefined : phaseOf(decl.body, line) === 'session' ? 'browser' : 'api';
-
   /** Every row the column draws, for the count the gates read off it. */
   const rowCount = decl === null ? 0 : statementsOf(decl.body).length + requestsOf(decl.body).length;
+  const declOn = selected.kind === 'test';
+
+  /**
+   * **Esc closes the open row, one level up** — `M256` `A` (`D1405`: *`Enter`/click opens, `Esc`
+   * closes*). A statement under a request goes to its request, anything else to its test, a test to
+   * the file. Focus follows to the row that is now picked, so a keyboard reader carries on from
+   * where they were rather than from the top of the page.
+   */
+  const up = (): void => {
+    if (decl === null) return;
+    let target: number | null = null;
+    if (selected.kind === 'statement') target = forRequest?.line ?? decl.line;
+    else if (selected.kind === 'request') target = decl.line;
+    else if (selected.kind === 'test') {
+      onFile();
+      return;
+    }
+    if (target === null) return;
+    onLine(target);
+    const line = target;
+    requestAnimationFrame(() => {
+      const pickBtn = stack.current?.querySelector<HTMLElement>(`[data-seq-line="${line}"] > [data-seq-pick]`);
+      pickBtn?.focus();
+    });
+  };
 
   return (
     <div className="compose-pane" data-compose-pane={selected.kind} data-compose={at?.request ? 'request' : 'no-request'}>
-      {/* The pane's own one line: which file, and what is unsaved about it. It is a ROW and not a
-          header block, because the two regions below it are what the reader came for and a header
-          that explains the pane is height spent on the builder's vocabulary. */}
       <div className="compose-pane-bar" data-compose-bar>
         <code className="compose-pane-path" data-compose-file={path}>{path}</code>
-        {/* **The head names what the body is showing** — `D1085`, kept, shrunk from a paragraph to
-            a clause. It used to be four lines explaining the pane to its own builder; what a reader
-            needs from it is which declaration this column is the sequence of, and how many
-            declarations the file holds around it. */}
-        <span className="muted" data-compose-summary data-compose-subject={at ? 'declaration' : 'file'} data-compose-decl-kind={at?.decl.kind} data-compose-decl-line={at?.decl.line}>
+        <span className="muted" data-compose-summary data-compose-subject={at ? 'test' : 'file'} data-compose-decl-kind={at?.decl.kind} data-compose-decl-line={at?.decl.line}>
           {at ? (
             <>
-              {/* **The band says the same words, painted** (`M216`). It was one flat grey sentence, so
-                  the one fact a reader wants off it — *which declaration am I composing* — had the
-                  same weight as the counts around it. The roles are the language's own: the keyword
-                  is a keyword and the name is the string it is written as in the file, which is why
-                  the quotes are here and not in the sidebar's row — this line is prose ABOUT a
-                  declaration, so it quotes it the way the file does. Nothing is rearranged: the
-                  sentence, its order and its counts are untouched. */}
               <code data-compose-subject-what>
                 {at.decl.kind === 'test' ? (
                   <>
@@ -1627,10 +1219,10 @@ export function ComposePane(props: ComposePaneProps) {
                 )}
               </code> · line {at.decl.line} ·{' '}
               {at.decl.body.requests.length} request{at.decl.body.requests.length === 1 ? '' : 's'} —{' '}
-              {outline.declarations.length === 1 ? 'the only declaration in this file' : `one of ${outline.declarations.length} declarations in this file`}
+              {outline.declarations.length === 1 ? 'the only one in this file' : `one of ${outline.declarations.length} in this file`}
             </>
           ) : (
-            <>{outline.declarations.length} declaration{outline.declarations.length === 1 ? '' : 's'} — this file declares nothing to compose yet</>
+            <>this file has no tests yet</>
           )}
         </span>
         {problem !== null ? (
@@ -1659,45 +1251,34 @@ export function ComposePane(props: ComposePaneProps) {
         ) : null}
       </div>
 
-      {/* **The split is the reader's** (`M216` `E`, `D1135`). The first column was
-          `minmax(220px, 300px)` — one number chosen by the builder for every file — and a file of
-          long assertions and a file of `GET /a` want different ones. The mechanism is `A2`'s grip
-          used a second time and not a second implementation of it, which is why the clamp, the
-          keyboard handling and the per-project persistence come for free. */}
-      {/* **`D1225` — the same grid, with `.editor-col` flattened into it when the declaration
-          carries a workload.** The DOM does not change shape: `display: contents` promotes the
-          editor column's children to items of THIS grid, so the divider, region 2 and the send row
-          become full-pane rows under a top row that still holds the sequence, its grip and the
-          editor. Nothing is re-parented, so every gate and every selector that reads
-          `[data-seq-open] …` keeps reading what it read — `display: contents` removes a box, not
-          a node. */}
-      <div
-        className="compose-pane-grid"
-        ref={stack}
-        data-compose-footer={footer ? 'yes' : 'no'}
-        /* `D1228` — `D1223`'s 240 px floor is about what region 2 holds, so it travels with the
-           region; this is the same fact `.editor-col[data-editor-response]` carries in the column
-           layout, read by the grid that owns the tracks here. **`D1229` renamed it**: it said
-           `-response` while the plan needs the same floor and was getting 112, so the attribute
-           now says what it controls rather than which tenant used to earn it. */
-        data-compose-footer-tall={region2Min === RESPONSE_MIN ? 'yes' : 'no'}
-        style={{
-          ['--seq-w' as string]: `${seqWidth}px`,
-          ...(footer && editorPx !== null
-            ? { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${region2Min}px, 1fr) auto` }
-            : {}),
-        }}
-      >
-        {/* ── region 2: the sequence (`D1112`) ─────────────────────────────────────────── */}
+      {/* **`data-seq-open` is the open request's line** — on the grid now, because the row that is
+          its editor and the column that is its evidence are two children of it (`D1405`, `D1406`). */}
+      <div className="compose-pane-grid" ref={stack} data-compose-narrow={narrow ? 'yes' : 'no'} data-seq-open={selected.kind === 'request' ? selected.request.line : undefined} style={{ ['--seq-w' as string]: `${seqWidth}px` }}>
+        {/* ── the steps (`D1112`, `D1405`) ─────────────────────────────────────────────────── */}
         <div className="seq-col" data-seq-col={decl === null ? 0 : requestsOf(decl.body).length}>
+          {selected.kind === 'file' ? (
+            /* **The file's own fields, at the top of the steps it holds** (`D1113`): an explorer
+               click on a file drops the line, and this is what a line-less address opens. */
+            <div className="seq-card file-card" data-editor="file" data-editor-file={path}>
+              <FileRow outline={outline} editing={editing} />
+              <p className="muted" data-compose-file-next>
+                {outline.declarations.length === 0 ? '`+ new test` below starts one' : 'pick a step to edit it — a request, a binding, or the test itself'}
+              </p>
+              {fold('div')}
+            </div>
+          ) : null}
           <ol
             className="seq"
             data-body-sequence={decl === null ? 0 : requestsOf(decl.body).length}
             data-seq-rows={rowCount}
             data-seq-sessions={decl === null ? 0 : decl.body.sessions.length}
             onKeyDown={(e) => {
-              // Alt+↑/↓ on a row is its ↑/↓ button (`D1391`): the row's own control is found and
-              // pressed, so the key can never make a move the row does not offer.
+              if (e.key === 'Escape' && !e.defaultPrevented) {
+                e.preventDefault();
+                up();
+                return;
+              }
+              // Alt+↑/↓ on a row is its ↑/↓ button (`D1391`).
               if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
               const row = e.target instanceof Element ? e.target.closest('[data-seq-row]') : null;
               const own = row?.querySelector(`:scope > [data-seq-move="${e.key === 'ArrowUp' ? 'up' : 'down'}"]`);
@@ -1712,22 +1293,14 @@ export function ComposePane(props: ComposePaneProps) {
                 kind="test"
                 band={decl.line}
                 {...(decl.kind === 'test' ? { menu: seqMenu({ kind: 'test', decl, line: decl.line }, decl.name) } : {})}
-                selected={selected.kind === 'test'}
+                selected={declOn}
                 onLine={onLine}
                 lead={<span className="seq-kind">{decl.kind === 'hook' ? decl.label : decl.kind}</span>}
                 text={decl.kind === 'hook' ? '' : decl.name}
                 refusal={refusalFor(decl.line)}
                 trailing={
                   <>
-                    {/* **▶ before ✕** (`M220` `A`) — the two gestures the declaration row owns, in
-                        the order a reader reaches for them: run it, then, much less often, remove
-                        it. A hook is skipped rather than drawn held, because `--only` names a test
-                        by name and a hook has none — the same fact the foot says in words. */}
-                    {onPlay === null || decl.kind !== 'test' ? null : (
-                      <Play what="test" running={playing} onGo={() => onPlay(decl)} price={playPrice(decl.workload)} />
-                    )}
-                    {/* Every declaration has a `✕` since `M241` `C` (`D1323`) gave a crawl an
-                        address; `M228` `C` (`D1238`) had to skip one, whose index was `-1`. */}
+                    {onPlay === null || decl.kind !== 'test' ? null : <Play what="test" running={playing} onGo={() => onPlay(decl)} price={playPrice(decl.workload)} />}
                     {onRemoveDecl === null ? null : (
                       <Remove
                         what={decl.kind === 'hook' ? 'hook' : decl.kind}
@@ -1743,48 +1316,44 @@ export function ComposePane(props: ComposePaneProps) {
                 }
               />
             )}
-            {/* **The setup phase**, folded by request exactly as it always was (`M219` `B`). */}
-            {decl === null ? null : statements.map((s) => statementRow(s, 'pre'))}
+            {/* **A declaration's header is not a line, so it opens as a card under its row**
+                (`D1405`): its tags, its `with each` table and its workload — 18 controls — are
+                clauses, and drawing them as one line would be pretending. */}
+            {decl !== null && declOn ? (
+              <li className="seq-card" data-editor="test" data-editor-decl={decl.kind}>
+                <TestBand decl={decl} kinds={kinds} editing={editing} lastRun={lastRun} />
+              </li>
+            ) : null}
+            {decl !== null && declOn && narrow ? <li className="seq-fold-slot">{fold('div')}</li> : null}
+            {decl === null ? null : statements.map((s) => statementRow(s, 'pre', null))}
             {decl === null ? null : decl.body.requests.map((r) => requestGroup(r))}
-            {/* **The session phase.** */}
             {decl === null ? null : decl.body.sessions.map((s) => sessionGroup(s))}
-            {rowCount === 0 ? (
+            {provisional !== null && provisional.after === null ? provisionalBlock('li') : null}
+            {rowCount === 0 && (provisional === null || provisional.after !== null) ? (
               <li className="muted seq-empty" data-seq-empty>
-                {decl === null ? 'this file declares nothing yet' : 'nothing runs in this test yet — add a request below'}
+                {decl === null ? 'this file has no tests yet' : 'nothing runs in this test yet — add a step below'}
               </li>
             ) : null}
           </ol>
 
-          {/* `D1118` — creation where the thing is created. `+ request` / `+ let` / `+ wait until`
-              belong to the sequence, so they are at the foot of it; `+ new test` makes another of
-              the thing the column's first row is, so it is here too. `+ new file` is in the
-              explorer, where files are. The Compose head stops being a toolbar. */}
-          {/* `data-seq-adds` lists the keys in the order they are drawn — restored from the pane
-              `M219` `A` replaced, because a gate that reads the `+` vocabulary needs **one**
-              attribute it can wait on. Reading the buttons themselves is a snapshot of a list that
-              is redrawn whenever the address moves, which is a race a gate loses about one run in
-              three. */}
-          {/* **What the foot offers is what the declaration can hold** — `M241` `B`/`C`. A test takes
-              every gesture; an action takes every one but `+ record`, which writes into a test by
-              name (`D1095`); a crawl's body is assertions over responses it did not write, so it
-              takes `+ step…` alone. A hook still takes none (`D1144`). */}
           <div className="seq-foot" data-seq-foot data-seq-adds={footAdds.map((a) => a.key).join(',')}>
-            {/* A hook has no name for the splice to address, which is a fact about the language
-                rather than a limit of this door — so the column says so where the buttons would be,
-                rather than drawing nothing and leaving a reader to guess. */}
             {onAdd !== null && decl !== null && decl.kind === 'hook' ? (
               <span className="muted" data-seq-add-hook>
                 a request cannot be added to a hook from here — the splice names a test by name, and a hook has none
               </span>
             ) : null}
+            {/* A recording into another test than the one open: the rows are with that test, and
+                this says where. */}
+            {provisional !== null && provisional.live && (decl === null || decl.kind !== 'test' || decl.name !== provisional.into) && provisional.intoLine !== null ? (
+              <button type="button" className="seq-add recording" onClick={() => onLine(provisional.intoLine!)} data-provisional-elsewhere={provisional.into ?? ''}>
+                recording into “{provisional.into}” — open it
+              </button>
+            ) : null}
             {onAdd === null || decl === null || decl.kind === 'hook'
               ? null
               : footAdds.map((a) => {
-                  /* **`+ record` is the one gesture that is also a state** (`D1095`): it opens a
-                     real browser that writes into this declaration until it is stopped, so the
-                     button that started it says `stop recording` and every other `+` on the foot
-                     is disabled while it runs. Carried over from the pane this one replaced, which
-                     is where the BROWSER door's recorder lived. */
+                  /* **`+ record` is the one gesture that is also a state** (`D1095`): it says `stop
+                     recording` while it runs, and every other `+` is held. */
                   const live = a.key === 'record' && recording === decl.line;
                   return (
                     <button
@@ -1798,9 +1367,9 @@ export function ComposePane(props: ComposePaneProps) {
                       data-seq-add-live={live ? 'yes' : undefined}
                       data-tip={
                         recording !== null && !live
-                          ? 'a recording is running — every action in that browser is a step in this file'
+                          ? 'a recording is running — its gestures arrive as rows to keep or drop'
                           : live
-                            ? 'close the browser and stop writing steps'
+                            ? 'close the browser — the rows you kept stay, the rest are dropped'
                             : a.title
                       }
                     >
@@ -1826,416 +1395,26 @@ export function ComposePane(props: ComposePaneProps) {
           </div>
         </div>
 
-        {/* ── region 3: the editor, and the response under it (`D1113`, `D1116`) ───────── */}
-        <Grip spec={COMPOSE} size={seqWidth} onSize={setSeqWidth} />
-
-        {/* **`data-seq-open` is still the open request's line**, and that it survived the rebuild is
-            the point rather than a convenience: *which request is open* is a real fact about the
-            pane, and `M214` moved where the card is drawn without changing what is open. It is on
-            the whole column because the response belongs to the same request as the editor above
-            it (`D1116`) — which is the arrangement the divider exists for. */}
-        <div
-          className="editor-col"
-          ref={column}
-          data-editor-col={selected.kind}
-          data-seq-open={selected.kind === 'request' ? selected.request.line : undefined}
-          /* No inline rows at rest — the stylesheet's `minmax(0, auto) 6px minmax(112px, 1fr)` is
-             the default, and an inline copy of it would be the same rule written twice. An
-             override is `minmax(0, Npx)` rather than `Npx` so that a height stored on a taller
-             window shrinks here instead of evicting the pane below it (`D1196`). */
-          /* `D1223` — the floor under the divider is what region 2 holds, so the attribute the
-             stylesheet reads and the number a drag is clamped against are the same fact. */
-          data-editor-response={shown?.response ? 'yes' : 'no'}
-          /* `D1225` — in the footer layout this element generates no box at all, so an override
-             written here would style nothing; the grid above carries it instead. */
-          style={footer || editorPx === null ? undefined : { gridTemplateRows: `minmax(0, ${editorPx}px) 6px minmax(${region2Min}px, 1fr)` }}
-        >
-          <div className="editor" data-editor={selected.kind}>
-            {selected.kind === 'file' ? (
-              <div className="editor-body" data-editor-file={path}>
-                <header className="editor-head">
-                  <code data-compose-file-head={path}>{path}</code>
-                </header>
-                <FileRow outline={outline} editing={editing} />
-                {/* **This is the state an explorer click lands in** (`D1113`): clicking a file
-                    drops the focus line, and a line is what names anything smaller than a file. So
-                    the editor is the file's own fields, and the way on is the column beside it —
-                    said once, here, rather than left as a region a reader has to guess about. */}
-                <p className="muted" data-compose-file-next>
-                  {outline.declarations.length === 0
-                    ? 'this file declares nothing yet — `+ new test` below the sequence starts one'
-                    : 'pick a row in the sequence to work on it — a request, a binding, or the test itself'}
-                </p>
-              </div>
-            ) : selected.kind === 'test' ? (
-              <TestBand decl={selected.decl} kinds={kinds} editing={editing} lastRun={lastRun} />
-            ) : selected.kind === 'statement' ? (
-              <StatementEditor statement={selected.statement} kinds={kinds} editing={editing} ran={rowRan} onLine={onLine} onRemove={removable === null ? null : () => remove(selected.decl, selected.statement.line, statementRemoval(selected.statement))} refusal={refusalFor(selected.statement.line)} onClearRefusal={clearRefusal} phase={phaseFor(selected.statement.line)} />
-            ) : (
-              <RequestEditor
-                phase={phaseFor(selected.request.line)}
-                request={selected.request}
-                kinds={kinds}
-                tab={tab}
-                onTab={setTab}
-                edit={edit}
-                onEdit={onEdit}
-                editing={editing}
-                ran={rowRan}
-                onLine={onLine}
-                onRemoveStatement={removable === null ? null : (s) => remove(selected.decl, s.line, statementRemoval(s))}
-                refusalFor={refusalFor}
-                onClearRefusal={clearRefusal}
-              />
-            )}
-          </div>
-
-          {/* The divider (`D1116`). A `separator` with an `aria-orientation`, because it is a real
-              control: the keyboard moves it too, which a `<div>` with a pointer handler cannot. */}
-          <div
-            className={`split${splitting ? ' dragging' : ''}`}
-            ref={splitEl}
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="how tall the editor above this line is"
-            tabIndex={0}
-            /* `auto` is not a missing value — it is the state `D1195` makes the default, and a
-               reader (or a gate) asking this attribute is asking *who decided this height*. */
-            data-compose-split={editorPx === null ? 'auto' : String(editorPx)}
-            data-tip="drag to resize · arrow keys to nudge · Home to fit the editor to what it holds"
-            onPointerDown={() => {
-              dragging.current = true;
-              setSplitting(true);
-            }}
-            onKeyDown={(e) => {
-              /* `Home` is the same gesture the column grip already has (`D1135`), and here it
-                 returns the track to `D1195`'s content sizing rather than to a builder's number —
-                 there is no longer a number to return to. */
-              if (e.key === 'Home') {
-                e.preventDefault();
-                setEditorPx(null);
-                try {
-                  window.localStorage.removeItem(splitKey);
-                } catch {
-                  /* see the drag handler */
-                }
-                return;
-              }
-              if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-              e.preventDefault();
-              const col = footer ? stack.current : column.current;
-              const editor = col === null ? null : col.querySelector('.editor');
-              if (col === null || editor === null) return;
-              // The nudge starts from where the divider IS, which while the track is content-sized
-              // is a fact about the editor's box and not about any state this component holds.
-              const from = editorPx ?? editor.getBoundingClientRect().height;
-              const next = fitEditor(from + (e.key === 'ArrowDown' ? 16 : -16), col.getBoundingClientRect().height, region2Min);
-              setEditorPx(next);
-              try {
-                window.localStorage.setItem(splitKey, String(next));
-              } catch {
-                /* see the drag handler */
-              }
-            }}
-          />
-
-          <div className="responsebox" data-compose-responsebox={shown?.response ? 'yes' : 'no'}>
-            {/* ── `D1209` — region 2's two tenants, on a workload-bearing declaration ────────
-                A workload-bearing test earns a **plan** panel here: the planned curve with the
-                achieved run overlaid when one is comparable, which is `D1103`'s *planned with
-                achieved overlaid in one frame is the picture a load tool exists to show*.
-
-                **The segment follows the construct, not the door** (`D1044`). It is here on the
-                API door when a workload test is open, and it is never here on a functional test —
-                which is also how its gate is taken, on API, so that it cannot pass for a door's
-                reason. A segment asserted only on LOAD would be green under every mutation that
-                made it door-granted (`M223` `F`'s vacuity lesson).
-
-                `send` is unaffected and stays on for LOAD: it strips the workload and the
-                thresholds by design, which on that door is the point rather than a caveat —
-                *issue this request once, without load, before committing to run it at a rate.* */}
-            {/* **Every tenant says what it is** — `M228` `F` (`D1246`).
-                The nav shipped untipped while 61 other controls on the page carry one, and the
-                cost is not evenly spread: `scan` and `plan` are the DEFAULT segment on a
-                declaration address, so a reader arrives with one already selected, presses it, and
-                nothing happens — inches from `run selection`, which produces a whole run panel.
-                Nothing distinguished *a view you are already looking at* from *a dead button*.
-                Reported in exactly those words by the user driving `M228`'s own corpus.
-
-                They say what the segment IS, not what pressing it does, because two of the three
-                are views and the sentence has to be true of the one already open. */}
-            {region2Tenants.length > 1 ? (
-              <nav className="seg" data-compose-region2={region2}>
-                {region2Tenants.map((which) => (
-                  <button
-                    key={which}
-                    type="button"
-                    className={region2 === which ? 'seg-on' : ''}
-                    aria-pressed={region2 === which}
-                    onClick={() => setRegion2Pick(which)}
-                    data-compose-region2-tab={which}
-                    data-tip={REGION2_TIP[which]}
-                  >
-                    {which}
-                  </button>
-                ))}
-              </nav>
-            ) : null}
-            {planWorkload !== null && region2 === 'plan' ? <PlanPanel path={path} name={decl !== null && decl.kind === 'test' ? decl.name : null} workload={planWorkload} /> : null}
-            {/* **What this declaration's scan assertions are gated by** — `M228` `A` (`D1239`).
-                Earned by the construct, so it is here on the API door the moment a test carries a
-                severity matcher, which is where its gate is taken. See `ScanPanel.tsx`. */}
-            {region2 === 'scan' ? (
-              <ScanPanel
-                authorization={authorization}
-                matchers={scanMatchers}
-                onAuth={() => onProjectTab('auth')}
-                onConfig={() => onProjectTab('config')}
-              />
-            ) : null}
-            {/* **Ticking a value writes into the Assert tab directly above it** (`D1116`), which is
-                the whole reason the response is in this column rather than beside it: `M213` `S2`'s
-                tick-to-assert put the value and the assertion it produces on two different screens. */}
-            {region2 !== 'response' ? null : shown !== null && shown.response !== null && shownRequest !== null ? (
-              <>
-                {/* ── The strip — `M225` `B` (`D1217`) ────────────────────────────────────────
-                    **Only when a press issued more than one request.** With one it is one entry
-                    and the panel is exactly what it was, which is the whole LOAD corpus but one
-                    test and every functional test in the sibling: the ordinary path must not grow
-                    a control.
-
-                    The header names the press and its age, so the box states its own provenance
-                    instead of leaving a reader to work it out from a status code. */}
-                {sentHere.length > 1 ? (
-                  <div className="sendstrip" data-compose-sendstrip={sentHere.length}>
-                    <header className="muted" data-compose-sendstrip-head>
-                      send {sent!.form} · {sentHere.length} requests · {ago(sent!.at, Date.now())}
-                    </header>
-                    <ol>
-                      {sentHere.map((e, i) => (
-                        <li key={e.request.line}>
-                          <button
-                            type="button"
-                            className={e.request.line === shownRequest.line ? 'on' : ''}
-                            aria-pressed={e.request.line === shownRequest.line}
-                            data-compose-sendstrip-entry={i}
-                            data-compose-sendstrip-line={e.request.line}
-                            onClick={() => setPick(e.request.line)}
-                            data-tip={`what came back from ${e.request.method} ${e.request.path}`}
-                          >
-                            <span className={`method m-${e.request.method.toLowerCase()}`}>{e.request.method}</span>{' '}
-                            <code>{e.request.path}</code>{' '}
-                            <span className={`status-code ${statusTone(e.ran.response!.status)}`}>{e.ran.response!.status}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                ) : null}
-                {/* **`D1109`'s chip is retired and its sentence is not.** The chip existed because a
-                    response drawn open on every request put the old pane over its height bar — a
-                    problem the three regions do not have, since the response has a region of its
-                    own that scrolls inside itself. What the chip carried and this keeps is `D956`:
-                    *from the last run* and *from this send* are different evidence and are told
-                    apart, rather than both being rendered as "the response". */}
-                <header
-                  className="response-head-bar"
-                  data-compose-response={shown.response.status}
-                  data-compose-response-scope={shown.scope}
-                  data-compose-response-line={shownRequest.line}
-                  data-tip={`${shown.response.method} ${shown.response.url} — ${shown.at}`}
-                >
-                  <span className={`status-code ${statusTone(shown.response.status)}`} data-compose-response-status={shown.response.status}>
-                    {shown.response.status}
-                  </span>{' '}
-                  <span className="muted" data-compose-response-when>
-                    {shown.scope === 'send' ? 'from this send' : 'from the last run'}, {ago(shown.at, Date.now())}
-                  </span>
-                </header>
-              <ResponsePanel
-                ran={shown}
-                open
-                onVerify={
-                  onVerify === null
-                    ? null
-                    : (spec) => {
-                        setTab('assert');
-                        onVerify(shownRequest, spec);
-                      }
-                }
-                onCapture={onCapture === null ? null : (specs) => onCapture(shownRequest, specs)}
-              />
-              </>
-            ) : vocab.records ? (
-              /* **The session panel** — `M219` `F` (`D1165`), re-keyed by `M228` `F` (`D1245`).
-                 A door that RECORDS puts a live session here: the page is its evidence, and
-                 `D1102`'s rule is the same one.
-
-                 **It read `!vocab.sends` until `M228` `F`, and that was a stand-in for
-                 `door === 'browser'`** — true while BROWSER was the only door with no `send`.
-                 `D1241` made SCANS the second one, and SCANS inherited the recorder: measured on
-                 the served corpus, every scan test offered `record a session` under copy promising
-                 to splice the gestures into the declaration, while `VOCABULARY.scan.constructs`
-                 holds none of the steps a recording produces. A rule keyed on a proxy for one
-                 tenant breaks the day the proxy gains a second, which is the third recurrence of
-                 that shape in this arc (`M227` `A`). */
-              <SessionPanel
-                session={session}
-                onKeep={onKeepLine}
-                onKeepAll={onKeepAll}
-                onPlay={onPlaySession}
-                playing={playing}
-                onDrop={onDropLine}
-                onStop={onStopSession}
-                onStart={decl !== null && decl.kind === 'test' && onAdd !== null ? () => onAdd(decl, 'record') : null}
-                canStart={decl !== null && decl.kind === 'test'}
-                why={
-                  decl === null
-                    ? 'point at a test first — a recording writes into a declaration, and the splice names it by name'
-                    : 'a recording writes into a test by name, and a hook has none'
-                }
-              />
-            ) : (
-              <div className="response-none">
-                {sendPrefix !== null && onSend !== null ? (
-                  <div className="prefix" data-prefix={sendPrefix.requests.length}>
-                    <div className="prefix-buttons">
-                      <SendButtons prefix={prefix} prefixAll={prefixAll} onSend={onSend} sending={sending} busy={busy} compact={false} />
-                    </div>
-                    <p className="muted">
-                      nothing has run this request. Send fires these for real, in this order, against the env the strip names — the last one
-                      is the request above. <strong>It does not check the assertions</strong>: it shows you what came back. Run the test from
-                      the Run tab to grade it.
-                    </p>
-                    <ol className="prefix-list">
-                      {sendPrefix.requests.map((r, i) => (
-                        <li key={i} data-prefix-request={i}>
-                          <span className={`method m-${r.method.toLowerCase()}`}>{r.method}</span> <code>{r.path}</code> <span className="muted" data-user-data>{r.where}</span>
-                        </li>
-                      ))}
-                    </ol>
-                    {scratchUnignored === null ? null : (
-                      <p className="muted" data-api-scratch-unignored={scratchUnignored}>
-                        send writes <code>{scratchUnignored}</code>, and this project&rsquo;s <code>.gitignore</code> does not list it — add that line,
-                        or expect it in <code>git status</code>.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="muted">pick a request to see what came back</p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Send, once a response is already showing — the button has to stay reachable, and the
-              prefix list above is what it costs, so it is a line rather than a block.
-
-              **It is drawn on every tab, which was asked about and refused** (`D1123`). This lives
-              in the response region, not in the tab strip: `D1116` put the response under the
-              editor so ticking a value writes into the Assert tab directly above it, which makes
-              Assert the tab whose workflow needs a send most — and a control that appears and
-              vanishes as the tab changes is the flicker the three regions were built to remove. */}
-          {shown?.response && sendPrefix !== null && onSend !== null ? (
-            <div className="editor-send" data-compose-send-row>
-              <SendButtons prefix={prefix} prefixAll={prefixAll} onSend={onSend} sending={sending} busy={busy} compact />
-              <span className="muted">{sendPrefix.requests.map((r) => `${r.method} ${r.path}`).join(' → ')} — no assertions checked</span>
+        {/* ── the evidence (`D1406`) — beside the steps at 1100 and up, folded under the picked
+            row below it (`D1412`) ────────────────────────────────────────────────────────── */}
+        {narrow ? null : (
+          <>
+            <Grip spec={COMPOSE} size={seqWidth} onSize={setSeqWidth} />
+            <div className="evidence-col" data-evidence-col>
+              {evidence}
             </div>
-          ) : null}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
 /**
- * **The send controls** — `M225` `A` (`D1215`).
- *
- * Two presses, and the address chooses which are offered. `send this` is `D1075`'s send verbatim:
- * the prefix up to the request the reader is pointing at, because four requests in five read a
- * binding made earlier and cannot run alone. `send all` issues the declaration's every request,
- * in order, hooks first — one iteration, the unit a workload multiplies.
- *
- * **Neither is a run**, and the tips say so rather than leaving it to be inferred: both drop the
- * workload and the thresholds (`D1211`) and strip the assertions (`D1119`). ▶ is the run and it
- * states its price (`D1212`).
- *
- * **`send all` is suppressed when it would fire exactly what `send this` fires**, which is every
- * one-request test and the last request of every other — the ordinary path must not grow a
- * control for a press that is already on screen. (`D1217` says the same thing about the strip;
- * this is that rule applied one region up. Recorded as an amendment to `D1215`, whose text offers
- * both forms at a request address unconditionally.)
- */
-function SendButtons(props: {
-  readonly prefix: Prefix | null;
-  readonly prefixAll: Prefix | null;
-  readonly onSend: (form: SendForm) => void;
-  readonly sending: boolean;
-  readonly busy: boolean;
-  readonly compact: boolean;
-}) {
-  const { prefix, prefixAll, onSend, sending, busy, compact } = props;
-  /**
-   * **The comparison is the REQUESTS the two presses issue, not where they cut.**
-   *
-   * `upTo` was the first draft's test and the run caught it: `send all` runs to the end of the
-   * body while `send this` stops at the request, so on a one-request test whose last line is an
-   * `expect` the two cuts differ by one step and issue exactly the same request. Two buttons, one
-   * press. The ordinary path must not grow a control (`D1217`'s rule, one region up).
-   */
-  const both = prefix !== null && prefixAll !== null && prefixAll.lines.length > prefix.lines.length;
-  const offered: { form: SendForm; p: Prefix }[] = [];
-  if (prefix !== null) offered.push({ form: 'this', p: prefix });
-  if (prefixAll !== null && (both || prefix === null)) offered.push({ form: 'all', p: prefixAll });
-  if (offered.length === 0) return null;
-  return (
-    <>
-      {offered.map(({ form, p }) => {
-        const n = p.requests.length;
-        const name = offered.length === 1 && form === 'this' ? 'send' : `send ${form}`;
-        return (
-          <button
-            key={form}
-            className="run"
-            onClick={() => onSend(form)}
-            disabled={sending || busy}
-            data-compose-send={form}
-            data-tip={
-              form === 'this'
-                ? 'sends this request and those that feed it, and shows the response — nothing is graded'
-                : 'sends every request once, in order, as one virtual user would — nothing is graded'
-            }
-          >
-            {sending ? 'sending…' : compact ? `${name} · ${n}` : `${name} — ${n} request${n === 1 ? '' : 's'}`}
-          </button>
-        );
-      })}
-    </>
-  );
-}
-
-/**
- * The JSON body, written into a coloured field (`M215` `B2`/`B3`, `D1121`, `D1122`).
- *
- * **A `<textarea>` cannot be coloured, so the colour is a `<pre>` under it and the text on top is
- * transparent.** That arrangement has one classic failure — the two boxes disagreeing about where a
- * character sits — and it is removed here rather than tuned: the `<pre>` is the element **in flow**
- * and the textarea is absolutely positioned over it, so the height is the coloured copy's by
- * construction, neither box ever scrolls, and one CSS rule sets the font, padding, border and
- * wrapping for both. What is left to get wrong is a font difference, which `.codearea > *` makes
- * unstateable.
- *
- * **The check is the language's, on every keystroke, and it is the same one the write does.** Until
- * now a body that could not be read was refused at write time by `buildApiStep`, as a sentence with
- * no position, after the author had typed three more fields. `bodyProblem` asks the same grammar
- * the same question as you type and keeps the span, so the answer arrives where the mistake is.
- *
- * **`format` lays the body out; the file still gets one line, and that is not a bug to hide.** A
- * body is a value, `print` writes a value on one line, and every edit in this pane goes back
- * through `buildApiStep` + `print` — so the layout is a reading aid for as long as the request is
- * open, and the bytes on disk stay canonical. The button says so. What the same round *did* change
- * is the other direction: a pasted, pretty-printed body is now accepted rather than refused
- * (`D1120`), which is the gesture this button exists to make survivable.
+ * The JSON body, written into a coloured field (`M215` `B2`/`B3`, `D1121`, `D1122`). A `<textarea>`
+ * cannot be coloured, so the colour is a `<pre>` in flow under a transparent textarea — one CSS
+ * rule sets both boxes, and the check is the language's, on every keystroke. `format` lays the
+ * body out for reading; the file still gets one line, because a value is one line to the printer.
  */
 function BodyEdit({ text, onText }: { readonly text: string; readonly onText: (text: string) => void }) {
   const problem = useMemo(() => bodyProblem(text), [text]);
@@ -2243,8 +1422,6 @@ function BodyEdit({ text, onText }: { readonly text: string; readonly onText: (t
   return (
     <div className="bodyedit" data-body-problem={problem === null ? 'none' : problem.code}>
       <div className="codearea">
-        {/* The coloured copy is in flow and sets the box; `aria-hidden` because the textarea over it
-            is the thing a screen reader should read, and the two carry identical text. */}
         <pre className="codearea-ink" aria-hidden="true" data-body-ink>
           <BodyText text={text} problem={problem} />
           {'\n'}
@@ -2285,24 +1462,15 @@ function BodyEdit({ text, onText }: { readonly text: string; readonly onText: (t
   );
 }
 
-/** One statement, drawn in the editor because the address names it (`D1113`). The row itself is
- *  `ScriptRow`'s — the controls for a `let`, a `capture`, a `log`, a `call`, a `give`, a `pause` —
- *  reused rather than re-derived, because what changed this round is *where* an editor is, never
- *  what a `let` is made of. */
 /**
- * **The gesture inside a single-statement block, as controls** — `M219` `D` (`D1163`).
- *
- * It is the same two rows `StatementEditor` draws for any statement, on a row whose address is the
- * block's: `rowKey` tells the two apart by `inner`, and `rescope` puts the built node back into
- * the block's body before the splice. So this needs no new machinery at all — what it needs is to
- * exist, because before this round the 430 statements inside a block were not rows anywhere.
+ * **The gesture inside a single-statement block, as controls** — `M219` `D` (`D1163`). The block's
+ * row draws the scope's fields and this draws the gesture's, and the edit goes back through the
+ * block (`rescope`), so it needs no second address.
  */
-function InnerRow({ statement, kinds, editing, onLine, onClearRefusal, phase }: {
+function InnerRow({ statement, kinds, editing, phase }: {
   readonly statement: OutlineStatement;
   readonly kinds: ReadonlySet<Lens>;
   readonly editing: RowEditing;
-  readonly onLine: (line: number) => void;
-  readonly onClearRefusal: () => void;
   readonly phase?: 'api' | 'browser';
 }) {
   const { row, onRow: onEdit } = editing;
@@ -2321,159 +1489,39 @@ function InnerRow({ statement, kinds, editing, onLine, onClearRefusal, phase }: 
     <div className="inner-row" data-inner-line={statement.line} data-inner-kind={statement.kind}>
       <span className="seq-kind">inside it</span>
       {values.kind === 'expect' ? (
-        <ul className="asserts stmts">
-          <AssertRow
-            statement={statement}
-            edit={values.expect}
-            onEdit={(next) => onEdit(statement, { kind: 'expect', expect: next })}
-            verdict={null}
-            trailing={null}
-            onRemove={null}
-            refusal={null}
-            onClearRefusal={onClearRefusal}
-            onLine={onLine}
-            drops={vocabularyOf(kinds).dropsSubjects}
-            phase={phase}
-          />
-        </ul>
+        <AssertRow statement={statement} edit={values.expect} onEdit={(next) => onEdit(statement, { kind: 'expect', expect: next })} verdict={null} trailing={null} drops={vocabularyOf(kinds).dropsSubjects} phase={phase} />
       ) : (
-        <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit(statement, next)} trailing={null} pick={editing.pick} phase={phase} onOpenAction={editing.onOpenAction} />
-      )}
-    </div>
-  );
-}
-
-function StatementEditor({ statement, kinds, editing, ran, onLine, onRemove, refusal, onClearRefusal, phase }: {
-  readonly statement: OutlineStatement;
-  readonly kinds: ReadonlySet<Lens>;
-  readonly editing: RowEditing;
-  readonly ran: Ran | null;
-  readonly onLine: (line: number) => void;
-  readonly onRemove: (() => void) | null;
-  readonly refusal: { readonly name: string; readonly line: number; readonly text: string } | null;
-  readonly onClearRefusal: () => void;
-  /** See `SubjectFields.phase` — `M219` `G` (`D1166`). */
-  readonly phase?: 'api' | 'browser';
-}) {
-  const { row, onRow: onEdit, onNote, noting, onNoting } = editing;
-  const foreign = isForeign(statement.lens, kinds);
-  const key = rowKey(statement);
-  const own = statement.stepPath === null || onEdit === null || foreign ? null : statementEditOf(statement.node);
-  const values = row !== null && row.key === key ? row.values : own;
-  const writingNote = noting !== null && noting === key;
-  const verdict = ran?.steps.get(statement.line) ?? null;
-
-  return (
-    <div
-      className="editor-body"
-      data-editor-statement={statement.kind}
-      data-editor-line={statement.line}
-      /* **The editor says whether this row is live**, the same word the attached list says it with
-         (`M219` `C`). It was absent here, which is how *nineteen of twenty-two browser kinds draw
-         dead* survived a gate named *"the BROWSER door composes"*: nothing on the selected
-         statement asserted anything about whether it could be edited. */
-      data-stmt-editable={values !== null && onEdit !== null && statement.stepPath !== null ? 'yes' : 'no'}
-      data-stmt-lens={statement.lens ?? 'none'}
-    >
-      <header className="editor-head">
-        <span className="seq-kind">{seqLead(statement.node)}</span>
-        <span className="ln muted">line {statement.line}</span>
-        <VerdictMark verdict={verdict} />
-        {onRemove === null ? null : <Remove what="statement" onGo={onRemove} refusal={refusal} onClear={onClearRefusal} />}
-      </header>
-      {refusal === null ? null : <Refusal held={refusal} onLine={onLine} />}
-      {writingNote ? (
-        <NoteOpen note={statement.note} what={`line ${statement.line}`} onChange={(lines) => onNote?.({ on: 'step', path: statement.stepPath! }, lines)} />
-      ) : statement.note ? (
-        <NoteBlock note={statement.note} what={`line ${statement.line}`} onNote={onEdit !== null && onNote !== null && statement.stepPath !== null ? (lines) => onNote({ on: 'step', path: statement.stepPath! }, lines) : undefined} />
-      ) : onNote !== null && statement.stepPath !== null && !foreign ? (
-        <button className="add-note" onClick={() => onNoting?.(key)} data-note-add={statement.line} data-tip="a comment above this line, explaining why it is here">
-          + note
-        </button>
-      ) : null}
-      {/* **A single-statement block draws BOTH halves here** — `M219` `D` (`D1163`). The sequence
-          shows one row because the corpus writes one gesture; the editor shows the scope's own
-          fields *and* the gesture's, because they are two statements and both are editable. The
-          inner one's edit goes back through the block (`rescope`), which is why it needs no second
-          address. */}
-      {values !== null && onEdit !== null && statement.stepPath !== null ? (
-        values.kind === 'expect' ? (
-          <ul className="asserts stmts">
-            <AssertRow
-              statement={statement}
-              edit={values.expect}
-              onEdit={(next) => onEdit(statement, { kind: 'expect', expect: next })}
-              verdict={<VerdictMark verdict={verdict} />}
-              trailing={null}
-              onRemove={onRemove}
-              refusal={refusal}
-              onClearRefusal={onClearRefusal}
-              onLine={onLine}
-              drops={vocabularyOf(kinds).dropsSubjects}
-              phase={phase}
-            />
-          </ul>
-        ) : (
-          <>
-            <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit(statement, next)} trailing={null} pick={editing.pick} phase={phase} onOpenAction={editing.onOpenAction} />
-            {statement.body === null || statement.body.length !== 1 ? null : (
-              <InnerRow statement={statement.body[0]!} kinds={kinds} editing={editing} onLine={onLine} onClearRefusal={onClearRefusal} phase={phase} />
-            )}
-          </>
-        )
-      ) : (
-        <div className="stmt-line">
-          <code className="stmt-text">{statement.text}</code>
-          <p className="muted">
-            {foreign ? 'a statement of a kind this file does not carry — edit it in Source' : unaddressableWhy(statement.nested)}
-          </p>
-        </div>
+        <ScriptRow statement={statement} edit={values} onEdit={(next) => onEdit(statement, next)} trailing={null} pick={editing.pick} phase={phase} onOpenAction={editing.onOpenAction} inline />
       )}
     </div>
   );
 }
 
 /**
- * **The request, in four tabs** (`D1115`) — Headers · Body · Assert · More.
+ * **A picked request, in place** — `M256` `A` (`D1405`): `[method ▾] [path]` on the row, and
+ * `headers n ▸ · body n ▸ · more ▸` folded under it.
  *
- * The method and the path are outside the tabs and always drawn, because they are the request: a
- * pane where you have to pick a tab to see what is being fetched is a pane that hides its subject.
- * Everything else is one of four, and **More costs one word at rest** — which is what the old
- * card's *"+ add to this request"* disclosure was trying to buy with three disabled rows and 240
- * characters of apology repeated on 1058 requests.
- *
- * `Assert` is the default tab and that is a measurement, not a preference: every request in the
- * corpus that is worth anything carries assertions and 63% of all 1736 of them are about `status`,
- * while `timeout`, `without redirects` and `retry after` together are used five times in a
- * thousand requests.
+ * The card's four tabs were Headers · Body · Assert · More; the three that hold the request's own
+ * clauses are folds now, and Assert is the rows under this one — the assertions drawn once. The
+ * folds are closed at rest, so a picked request costs one line until a reader asks for more, which
+ * is the measurement `D1115` chose Assert as the default tab on: `timeout`, `without redirects` and
+ * `retry after` together are used five times in a thousand requests.
  */
-function RequestEditor({ request: r, kinds, tab, onTab, edit, onEdit, editing, ran, onLine, onRemoveStatement, refusalFor, onClearRefusal, phase }: {
+function RequestInline({ request: r, status, folds, onFold, edit, onEdit, editing }: {
   readonly request: OutlineRequest;
-  readonly kinds: ReadonlySet<Lens>;
-  readonly tab: EditorTab;
-  readonly onTab: (tab: EditorTab) => void;
+  readonly status: ReactNode;
+  readonly folds: ReadonlySet<RequestFold>;
+  readonly onFold: (fold: RequestFold) => void;
   readonly edit: RequestEdit | null;
   readonly onEdit: ((next: RequestEdit) => void) | null;
   readonly editing: RowEditing;
-  readonly ran: Ran | null;
-  readonly onLine: (line: number) => void;
-  readonly onRemoveStatement: ((statement: OutlineStatement) => void) | null;
-  readonly refusalFor: (line: number) => { name: string; line: number; text: string } | null;
-  readonly onClearRefusal: () => void;
-  /** See `SubjectFields.phase` — `M219` `G` (`D1166`). A request's own attachments take the
-   *  request's phase, which is the phase of everything between it and the next one. */
-  readonly phase?: 'api' | 'browser';
 }) {
   const v = edit ?? editOf(r);
   const change = onEdit === null ? null : (patch: Partial<RequestEdit>) => onEdit({ ...v, ...patch });
   const writingNote = editing.noting !== null && editing.noting === stepKey(r.stepPath);
-  /** Which clauses the More tab draws. A clause the file states is always there; one it does not is
-   *  added from the menu — `D1084` unchanged, and now with nothing locked in it. */
+  /** Which `more` clauses are drawn: one the file states is always there; one it does not is added
+   *  from the menu (`D1084`). */
   const [added, setAdded] = useState<readonly string[]>([]);
-  /** **What the file writes**, as against what the menu is only showing (`M216` `D`). The two were
-   *  one predicate until removal existed, because nothing downstream cared which of them was true;
-   *  removing a clause is an edit to the bytes in one case and forgetting a drawn row in the other,
-   *  and the reader cannot tell them apart and should not have to. */
   const states = (clause: string): boolean => {
     switch (clause) {
       case 'service': return v.service !== '';
@@ -2485,22 +1533,27 @@ function RequestEditor({ request: r, kinds, tab, onTab, edit, onEdit, editing, r
     }
   };
   const shows = (clause: string): boolean => states(clause) || added.includes(clause);
-  const counts: Record<EditorTab, number> = {
+  const counts: Record<RequestFold, number> = {
     headers: v.headers.length,
     body: v.bodyKind === 'none' ? 0 : 1,
-    assert: r.attached.length,
     more: ['service', 'label', 'timeout', 'redirects', 'retryAfter'].filter(shows).length,
   };
 
   return (
-    <div className="editor-body request-card" data-request-line={r.line} data-request-kind={r.kind} data-request-editable={onEdit === null ? 'no' : 'yes'} data-request-drawn={(counts.headers > 0 ? 1 : 0) + counts.body + counts.more}>
+    <div
+      className="seq-edit request-edit"
+      data-editor="request"
+      data-request-line={r.line}
+      data-request-kind={r.kind}
+      data-request-editable={change === null ? 'no' : 'yes'}
+      data-request-drawn={(counts.headers > 0 ? 1 : 0) + counts.body + counts.more}
+    >
       {writingNote ? (
         <NoteOpen note={r.note} what={`request ${r.line}`} onChange={(lines) => editing.onNote?.({ on: 'step', path: r.stepPath }, lines)} />
       ) : r.note ? (
         <NoteBlock note={r.note} what={`request ${r.line}`} onNote={editing.onNote === null ? undefined : (lines) => editing.onNote!({ on: 'step', path: r.stepPath }, lines)} />
       ) : null}
-
-      <header className="editor-head request-head">
+      <div className="request-head">
         {change === null ? (
           <span className={`method m-${v.method.toLowerCase()}`} data-request-method={v.method}>{v.method}</span>
         ) : (
@@ -2515,39 +1568,31 @@ function RequestEditor({ request: r, kinds, tab, onTab, edit, onEdit, editing, r
         ) : (
           <input className="request-path" value={v.path} onChange={(e) => change({ path: e.target.value })} data-request-path={v.path} aria-label="path" placeholder="/orders/{orderId}" />
         )}
-        <span className="ln muted">line {r.line}</span>
+        {status}
         {r.kind === 'WaitUntilApiStmt' ? (
           <span className="badge" data-request-polling="yes" data-tip="this request is re-issued until the assertions below it pass">
             polls
           </span>
         ) : null}
         {editing.onNote !== null && r.note === null && !writingNote ? (
-          <button className="add-note" onClick={() => editing.onNoting?.(stepKey(r.stepPath))} data-note-add={r.line} data-tip="a comment above this request, explaining why it is here">
+          <button type="button" className="add-note" onClick={() => editing.onNoting?.(stepKey(r.stepPath))} data-note-add={r.line} data-tip="a comment above this request, explaining why it is here">
             + note
           </button>
         ) : null}
-      </header>
-
-      <div className="editor-tabs" role="tablist" data-editor-tabs={tab}>
-        {TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            aria-selected={tab === t}
-            className={`editor-tab${tab === t ? ' on' : ''}`}
-            onClick={() => onTab(t)}
-            data-editor-tab={t}
-            data-editor-tab-count={counts[t]}
-          >
-            {TAB_LABEL[t]}
-            {counts[t] > 0 ? <span className="tab-count">{counts[t]}</span> : null}
-          </button>
+      </div>
+      <div className="request-folds" data-request-folds={REQUEST_FOLDS.filter((f) => folds.has(f)).join(',')}>
+        {REQUEST_FOLDS.map((f, i) => (
+          <span key={f} className="request-fold-slot">
+            {i === 0 ? null : <span className="muted" aria-hidden="true"> · </span>}
+            <button type="button" className={`request-fold${folds.has(f) ? ' on' : ''}`} aria-expanded={folds.has(f)} onClick={() => onFold(f)} data-request-fold={f} data-request-fold-count={counts[f]}>
+              {f}{counts[f] > 0 ? ` ${counts[f]}` : ''} {folds.has(f) ? '▾' : '▸'}
+            </button>
+          </span>
         ))}
       </div>
 
-      {tab === 'headers' ? (
-        <div className="tabpane headers-form" data-request-headers={v.headers.length}>
+      {folds.has('headers') ? (
+        <div className="fold headers-form" data-request-headers={v.headers.length}>
           {v.headers.length === 0 ? (
             <p className="muted" data-request-headers-empty>
               none on this request alone — the env&rsquo;s <code>api</code> defaults and a session&rsquo;s token are still added at run time
@@ -2582,8 +1627,8 @@ function RequestEditor({ request: r, kinds, tab, onTab, edit, onEdit, editing, r
         </div>
       ) : null}
 
-      {tab === 'body' ? (
-        <div className="tabpane body-form" data-request-body={v.bodyKind}>
+      {folds.has('body') ? (
+        <div className="fold body-form" data-request-body={v.bodyKind}>
           {change === null ? (
             r.body === null ? <p className="muted">no body</p> : <pre className="preview body-preview" data-request-body-text><BodyText text={laidOut(bodyText(r.body)) ?? bodyText(r.body)} problem={null} /></pre>
           ) : (
@@ -2594,14 +1639,13 @@ function RequestEditor({ request: r, kinds, tab, onTab, edit, onEdit, editing, r
                 <option value="text">raw text</option>
                 <option value="file">from a file</option>
                 <option value="form">form fields</option>
-                {/* Offered only when it is already what this request sends, and never as something
-                    to switch *to*: `ApiBodySpec` cannot construct a multipart upload, so the card
-                    shows it, keeps it, and says so. Twelve requests in the sibling carry one. */}
+                {/* Offered only when it is already what this request sends: `ApiBodySpec` cannot
+                    construct a multipart upload or a GraphQL body, so the row keeps it and says so. */}
                 {v.bodyKind === 'upload' ? <option value="upload">upload (multipart) — kept as written</option> : null}
                 {v.bodyKind === 'graphql' ? <option value="graphql">GraphQL — kept as written, edited in Source</option> : null}
               </select>
               {(v.bodyKind === 'upload' || v.bodyKind === 'graphql') && r.body !== null ? <pre className="preview body-preview" data-request-body-text><BodyText text={bodyText(r.body)} problem={null} /></pre> : null}
-              {v.bodyKind === 'json' ? <BodyEdit text={v.bodyText} onText={(bodyText) => change({ bodyText })} /> : null}
+              {v.bodyKind === 'json' ? <BodyEdit text={v.bodyText} onText={(text) => change({ bodyText: text })} /> : null}
               {v.bodyKind === 'text' || v.bodyKind === 'file' ? (
                 <textarea value={v.bodyText} onChange={(e) => change({ bodyText: e.target.value })} data-body-edit-text rows={8} aria-label="body" />
               ) : null}
@@ -2613,9 +1657,7 @@ function RequestEditor({ request: r, kinds, tab, onTab, edit, onEdit, editing, r
                       <input value={f.value} onChange={(e) => change({ formFields: v.formFields.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} data-body-edit-value={i} aria-label="field value" />
                       <button
                         className="seq-x"
-                        onClick={() => change(v.formFields.length === 1
-                          ? { formFields: [], bodyKind: 'none', bodyText: '' }
-                          : { formFields: v.formFields.filter((_, j) => j !== i) })}
+                        onClick={() => change(v.formFields.length === 1 ? { formFields: [], bodyKind: 'none', bodyText: '' } : { formFields: v.formFields.filter((_, j) => j !== i) })}
                         data-body-edit-remove={i}
                         aria-label="remove this field"
                         data-tip={v.formFields.length === 1 ? 'the last field — removing it takes the body with it' : 'this field'}
@@ -2634,86 +1676,8 @@ function RequestEditor({ request: r, kinds, tab, onTab, edit, onEdit, editing, r
         </div>
       ) : null}
 
-      {tab === 'assert' ? (
-        <div className="tabpane assert-pane" data-request-attached={r.attached.length}>
-          {r.attached.length === 0 ? (
-            <p className="warn" data-request-attached-empty>
-              nothing reads this response. An <code>api</code> step with no assertion can never fail — tick a value in the response below to
-              write one.
-            </p>
-          ) : (
-            <ul className="asserts stmts">
-              {r.attached.map((s) => {
-                const key = rowKey(s);
-                const own = s.stepPath === null || editing.onRow === null || isForeign(s.lens, kinds) ? null : statementEditOf(s.node);
-                const values = editing.row !== null && editing.row.key === key ? editing.row.values : own;
-                const verdict = <VerdictMark verdict={ran?.steps.get(s.line) ?? null} />;
-                const removeThis = onRemoveStatement === null || s.stepPath === null ? null : () => onRemoveStatement(s);
-                if (values !== null && values.kind === 'expect' && editing.onRow !== null) {
-                  return (
-                    <AssertRow
-                      key={s.line}
-                      statement={s}
-                      edit={values.expect}
-                      onEdit={(next) => editing.onRow!(s, { kind: 'expect', expect: next })}
-                      verdict={verdict}
-                      trailing={null}
-                      onRemove={removeThis}
-                      refusal={refusalFor(s.line)}
-                      onClearRefusal={onClearRefusal}
-                      onLine={onLine}
-                      drops={vocabularyOf(kinds).dropsSubjects}
-                      phase={phase}
-                    />
-                  );
-                }
-                const editable = values !== null && editing.onRow !== null && s.stepPath !== null;
-                return (
-                  <li
-                    key={s.line}
-                    className={`assert other stmt${isForeign(s.lens, kinds) ? ' locked' : ''}`}
-                    data-assert-line={s.line}
-                    data-stmt={s.kind}
-                    data-stmt-line={s.line}
-                    data-stmt-lens={s.lens ?? 'none'}
-                    data-stmt-editable={editable ? 'yes' : 'no'}
-                  >
-                    <div className="row">
-                      <span className="ln muted">{s.line}</span>
-                      {editable && values.kind !== 'expect' ? (
-                        <ScriptRow statement={s} edit={values} onEdit={(next) => editing.onRow!(s, next)} trailing={verdict} pick={editing.pick} phase={phase} onOpenAction={editing.onOpenAction} />
-                      ) : (
-                        <>
-                          <code className="stmt-text">{s.text.split('\n')[0]}</code>
-                          {verdict}
-                          {/* **The one population no index pair can name** — the expects nested
-                              inside a `wait until api` block, which are not in the body's own step
-                              list. They are drawn in position and say why, which is `D1078`'s rule
-                              one level down: a reader may always see what a reader may not edit. */}
-                          {s.stepPath === null && editing.onRow !== null ? (
-                            <span className="muted" data-stmt-unaddressable={s.nested ? 'nested' : 'crawl'}>
-                              {unaddressableWhy(s.nested)}
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                      {removeThis === null ? null : <Remove what="statement" onGo={removeThis} refusal={refusalFor(s.line)} onClear={onClearRefusal} />}
-                    </div>
-                    {refusalFor(s.line) === null ? null : <Refusal held={refusalFor(s.line)!} onLine={onLine} />}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      ) : null}
-
-      {tab === 'more' ? (
-        <div className="tabpane more-form" data-request-more={counts.more} data-request-fields={['service', 'label', 'timeout', 'redirects', 'retryAfter'].filter(shows).join(',')}>
-          {/* **Every one of these is a live field now** (`D1115`, `A2`). Three of them used to be
-              drawn disabled with *"the request spec has no room for it yet"* under each — a
-              sentence about `ApiStepSpec` that read as a sentence about the language, repeated on
-              all 1058 requests. `ApiRequestSpec` has carried the fields since the enterprise arc. */}
+      {folds.has('more') ? (
+        <div className="fold more-form" data-request-more={counts.more} data-request-fields={['service', 'label', 'timeout', 'redirects', 'retryAfter'].filter(shows).join(',')}>
           {shows('service') ? (
             <Field label="service" value={v.service} onChange={change === null ? undefined : (service) => change({ service })} placeholder="(the default api)" title="the name in tflw.config of a second api service — blank is the default one" />
           ) : null}

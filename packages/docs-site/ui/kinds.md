@@ -70,9 +70,9 @@ Neither grades anything. Send shows you what came back; the assertions are check
 runs, from the Run tab. Send also writes a scratch file beside your project, which the page tells
 you about if your `.gitignore` does not already list it.
 
-**What is selected is what the editor draws.** One region, four kinds of thing — a request, a
-statement, the test, or the file. Picking a row changes what the editor beside it is editing. The
-steps are in file order, statements included, because the interleaving is the point: a `let`
+**A picked row edits where it stands.** A request, a statement, the test or the file: picking it
+turns that row into its own editor, and the column beside the steps shows what came back for it.
+The steps are in file order, statements included, because the interleaving is the point: a `let`
 between two requests is usually what makes the second one work.
 
 ## What **+ new test** scaffolds

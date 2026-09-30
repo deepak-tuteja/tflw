@@ -10148,6 +10148,58 @@ This is the same shape as the VS Code Test Explorer `M251 C` builds; the two are
 agree. *Not taken:* a second, flat list of every test (two indexes of one thing, mac-dashboard
 `D274`'s finding) — revisited only if the tree proves too deep on the sibling.
 
+### D1405
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1405` — a picked statement edits in place as one line.** (`D-RC-7`) The steps column is the only
+picture of a test. Picking a row turns that row into its own editor without leaving the column:
+a request becomes `[method ▾] [path]` with `headers n ▸ · body n ▸ · more ▸` folds beneath;
+an `expect`/`check` becomes `[subject ▾] [matcher ▾] [value]` on its line with a verdict dot at
+the end; `capture`, `let`, `wait until` and every browser step likewise. Six assertions stay six
+lines. `Enter`/click opens, `Esc` closes, the buffer is one draft as today (`D1142`). The LOAD
+workload editor (18 controls) and the crawl body are cards that open under their row — they are
+not lines in the file and are not pretended to be. The editor card, its four tabs and the
+right-hand column's rendering of the same statements retire. *Not taken:* today's card opened
+inside the row (still two pictures, ~600 px per pick); keeping two columns and moving only the
+response (three narrow columns at 1100).
+
+### D1406
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1406` — the right column is evidence, and it opens on the last run.** (`D-RC-8`) Tabs `response ·
+plan · scan`, plus `screenshot` for a browser step, drawn only for what the picked declaration
+earns (`D1209`). With a request picked and nothing sent, the column shows what the newest run
+recorded for that step — status, headers, body — under a dated line (`from the last run, 7d
+ago`) and a flag when the step's text has changed since (`⚠ this step changed since · send to
+refresh`, keyed on the statement's text, not its line). Verify and capture are live on it
+(`D1116` unchanged — the reader is still ticking evidence). Below `evidence full` the body is
+absent and the line says the level (`D987`). `send` replaces it with a fresh response; no
+recorded step: `not sent yet` and the button. *Not taken:* empty until sent; read-only until
+sent.
+
+### D1408
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1408` — record lands provisional rows; pick is a button on the field.** (`D-RC-10`) `+ record` in the
+steps foot starts the session; each gesture arrives as a provisional row under the picked step
+with `keep · drop` on the row, and the evidence column follows the page's screenshot in the same
+follow mode as a run. Stopping keeps the kept rows and drops the rest; nothing is written until
+save (`D1165`'s rule, unchanged). A locator field in an editing row carries a `⌖ pick` button
+that spawns `tflw pick` (`D1055`) and fills that field. The record panel and its 48 words
+retire. *Not taken:* a `record` tab in the evidence column; the panel as a card under the test.
+
+### D1412
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1412` — 900 px stays the floor, and below 1100 the evidence column folds under the
+steps.** (`D-RC-14`) Measured: at 1100 the current right column is 259 px, which no evidence view survives.
+Between 900 and 1100 the steps take the width and the evidence column becomes a fold beneath
+them, opened by the picked row. The docs' *laid out for 900 px and up* stands.
+
 ### D1413
 
 <sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/kinds.tflw · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
@@ -14612,5 +14664,26 @@ milestone it waits on. Both files are gitignored; the repositories are public.
   line; `+` on hover and in the menu; `+ new file` pinned (`position: sticky; bottom: 0`).
 - **C the tab dot.** Run's tab carries the newest run's worst verdict.
 - **D docs.** `ui/spine.md`'s file-list section.
+
+### M256
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`M256` — Compose in place (`D-RC-7`, `D-RC-8`, `D-RC-10`, `D-RC-14`)**
+
+- **A the inline editors.** One `StatementEditor` per statement family — request, assertion
+  (`expect`/`check`), binding (`let`/`capture`), `wait until`, browser step, `log` — each the
+  line's own fields; the request's folds (headers, body, more) reuse today's tab panes as
+  folds. The printer and `format` path unchanged (`D1049`).
+- **B the evidence column.** `response · plan · scan · screenshot` earned per `D1209`; the
+  last-run response with its date and the changed-since flag; verify/capture wired to the
+  inline assertion rows; `send` unchanged in what it runs.
+- **C record and pick.** Provisional rows from `+ record`; `⌖ pick` on locator fields; the
+  follow mode's screenshot feed reused from `M257 A` if it lands first (else stubbed to the
+  static screenshot until it does).
+- **D the fold below 1100.** `D-RC-14`'s layout.
+- **E retirements.** The editor card, `ComposePane`'s right-column rendering of statements,
+  the region-2 segment nav (its three tenants are now the evidence tabs), the record panel.
+- **F docs.** `ui/api.md`, `ui/browser.md`, `ui/load.md`, `ui/scans.md` re-cut; shots.
 
 <!-- GENERATED:decisions:end -->
