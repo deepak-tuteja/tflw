@@ -10150,7 +10150,7 @@ agree. *Not taken:* a second, flat list of every test (two indexes of one thing,
 
 ### D1405
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.tflw-ui/compose-edit.tflw · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
 
 **`D1405` — a picked statement edits in place as one line.** (`D-RC-7`) The steps column is the only
 picture of a test. Picking a row turns that row into its own editor without leaving the column:
