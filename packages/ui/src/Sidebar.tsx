@@ -68,7 +68,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { menuTrigger, type MenuItem, type MenuRequest } from './ContextMenu';
 import type { Lens, ProjectFile, ProjectView } from './contract';
-import { DOOR_BY_ID } from './doors';
+import { countByDoor, countsHonestly, DOOR_BY_ID, DOORS } from './doors';
 import { matchingFiles, parseQuery, projectTags, taggedTestCount } from './search';
 import { useRovingFocus } from './useRovingFocus';
 import type { FileOutline, OutlineDecl } from './outline';
@@ -108,8 +108,10 @@ function RowPlus({ onGo, label, kind }: {
 
 export interface SidebarProps {
   readonly project: ProjectView;
-  /** The door the reader came through — which counts this pane shows. It narrows nothing. */
-  readonly door: Lens;
+  /** The kind chip (`M254`, `D1399`) — `null` is `all`. It is the count *and* the filter: the tree
+   *  lists the files holding a test of the kind, and ▶ runs the rows of the kind (`D1403`). */
+  readonly kind: Lens | null;
+  readonly onKind: (kind: Lens | null) => void;
   /** The file the tabs are facing, from the address. Its folders are open whatever else is not. */
   readonly openFile: string | null;
   /** What will run, in the order the address names it (`D1066`). */
@@ -269,15 +271,8 @@ export function filesUnder(node: TreeNode): string[] {
 /** The row count past which the explorer is virtualised (`D1325`). */
 export const VIRTUAL_AT = 300;
 
-export function Sidebar({ project, door, openFile, selection, onPick, query, onQuery, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew, menuFor, onMenu }: SidebarProps) {
+export function Sidebar({ project, kind, onKind, openFile, selection, onPick, query, onQuery, outline, unsaved, onNewIn, onAddRequest, focusLine, onLine, onNew, menuFor, onMenu }: SidebarProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  /**
-   * **This door only** — `M241` `E` (`D1325`). A VIEW of the tree, never a run filter: it hides the
-   * files with nothing behind this door, and the strip's run is exactly what it was — `D1063`'s
-   * *the door is a count, never a filter* is about the run, and this toggle says on its face that it
-   * only changes what you see.
-   */
-  const [doorOnly, setDoorOnly] = useState(false);
   /* `M240` `C` (`D1311`) — the whole list is one Tab stop and ↑/↓ walk it, so the pane is not a
      row's-worth of presses away. Tab lands on the open file's row, else the first. */
   const treeRef = useRef<HTMLUListElement | null>(null);
@@ -287,9 +282,16 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
   const [anchor, setAnchor] = useState<string | null>(null);
 
   const fullTree = useMemo(() => buildTree(project.files), [project.files]);
+  /**
+   * **The chip is the filter** — `M254` (`D1399`), which retires `M241` `E`'s *this door only*
+   * toggle (`D1325`) and reopens `D1063`'s *a badge, never a filter*. That toggle existed because the
+   * door was a count that could not narrow; a chip is both, so the tree lists the files that hold a
+   * test of the kind and ▶ runs exactly those tests (`D1403`). The open file stays listed whatever it
+   * holds — hiding the row the pane is about would leave the page describing a file you cannot find.
+   */
   const tree = useMemo(() => {
-    if (!doorOnly) return fullTree;
-    const behindHere = (f: ProjectFile): boolean => f.tests.some((x) => x.lenses.includes(door)) || f.crawls.some((x) => x.lenses.includes(door));
+    if (kind === null) return fullTree;
+    const behindHere = (f: ProjectFile): boolean => f.tests.some((x) => x.lenses.includes(kind)) || f.crawls.some((x) => x.lenses.includes(kind));
     const prune = (nodes: readonly TreeNode[]): TreeNode[] =>
       nodes.flatMap((n) => {
         if (n.file) return behindHere(n.file) || n.path === openFile ? [n] : [];
@@ -297,7 +299,7 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
         return children.length === 0 ? [] : [{ ...n, children }];
       });
     return prune(fullTree);
-  }, [fullTree, doorOnly, door, openFile]);
+  }, [fullTree, kind, openFile]);
   const dirsOf = (nodes: readonly TreeNode[]): string[] => nodes.flatMap((n) => (n.file ? [] : [n.path, ...dirsOf(n.children)]));
 
   /** The address wins over a collapse: opening a file inside a folder somebody closed opens it. */
@@ -324,8 +326,11 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
     return next;
   };
 
-  const testCount = project.files.reduce((n, f) => n + f.tests.filter((t) => t.lenses.includes(door)).length + f.crawls.filter((c) => c.lenses.includes(door)).length, 0);
-  const otherCount = project.files.reduce((n, f) => n + f.tests.length, 0) - project.files.reduce((n, f) => n + f.tests.filter((t) => t.lenses.includes(door)).length, 0);
+  /** The chips' numbers — `countByDoor`, the count the door bar carried (`D1043`: a test of two
+   *  kinds is counted by both), and `all`, every test and crawl including the ones of no kind. Files
+   *  that did not parse are left out of all five, for `countsHonestly`'s reason. */
+  const byKind = useMemo(() => countByDoor(project), [project]);
+  const allCount = useMemo(() => project.files.filter(countsHonestly).reduce((n, f) => n + f.tests.length + f.crawls.length, 0), [project]);
 
   /** Every file in tree order — what `shift` ranges over. The WHOLE tree, not the visible part:
    *  a range that skipped a collapsed folder would select a different set depending on what
@@ -452,9 +457,9 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
     if (node.file) {
       const f = node.file;
       const total = f.tests.length + f.crawls.length;
-      const behind = f.tests.filter((t) => t.lenses.includes(door)).length + f.crawls.filter((c) => c.lenses.includes(door)).length;
+      const behind = kind === null ? total : f.tests.filter((t) => t.lenses.includes(kind)).length + f.crawls.filter((c) => c.lenses.includes(kind)).length;
       // `D1068`'s three states. `—` is not a zero: it says *declares nothing by nature*, which is
-      // a different fact from *has tests, none of them behind this door* and must not be dimmed.
+      // a different fact from *has tests, none of them of this kind* and must not be dimmed.
       const state = total === 0 ? 'fragment' : behind === 0 ? 'none' : 'some';
       // Dimmed rather than hidden, for `D1063`'s reason a second time: a file that vanishes as you
       // type is a file you cannot be sure is still there.
@@ -490,9 +495,9 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
             ) : null}
             <span
               className={`count${state === 'none' ? ' muted' : ''}`}
-              data-door-count={behind}
-              data-door-count-state={state}
-              data-tip={state === 'fragment' ? 'declares no test — a fragment other files resolve against' : `${behind} test${behind === 1 ? '' : 's'} at the ${DOOR_BY_ID[door].label} door`}
+              data-file-count={behind}
+              data-file-count-state={state}
+              data-tip={state === 'fragment' ? 'declares no test — a fragment other files resolve against' : `${behind}${kind === null ? '' : ` ${DOOR_BY_ID[kind].label}`} test${behind === 1 ? '' : 's'}`}
             >
               {state === 'fragment' ? '—' : behind}
             </span>
@@ -568,13 +573,21 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
   return (
     <div className="sidebar">
       <div className="project" data-project>
-        {/* `M240` `E` — the project's name is the page's one `<h1>`: it is what every view is about. */}
-        <h1 className="root" data-tip-derived="">
-          {project.root.split('/').filter(Boolean).pop() ?? project.root}
-        </h1>
+        {/* **The kinds, as chips** — `M254` (`D1399`). The four the door bar carried, plus `all`, each
+            with its count; one pressed. A test of two kinds is under both (`D1043`), and `all` is
+            every test, the ones of no kind among them. The project's name is the header's now. */}
+        <div className="kind-chips" role="group" aria-label="kinds of test" data-kind-chips={kind ?? 'all'}>
+          <button type="button" className={`chip${kind === null ? ' on' : ''}`} aria-pressed={kind === null} onClick={() => onKind(null)} data-kind-chip="all" data-tip="every test in the project">
+            all <span className="chip-count" data-kind-count={allCount}>{allCount}</span>
+          </button>
+          {DOORS.map((d) => (
+            <button key={d.id} type="button" className={`chip${kind === d.id ? ' on' : ''}`} aria-pressed={kind === d.id} onClick={() => onKind(kind === d.id ? null : d.id)} data-kind-chip={d.id} data-tip={d.blurb}>
+              {d.label} <span className="chip-count" data-kind-count={byKind[d.id]}>{byKind[d.id]}</span>
+            </button>
+          ))}
+        </div>
         <div className="muted" data-project-counts>
-          {project.files.length} file{project.files.length === 1 ? '' : 's'} · {testCount} test{testCount === 1 ? '' : 's'} here
-          {otherCount > 0 ? <span data-project-elsewhere={otherCount}> · {otherCount} at another door</span> : null}
+          {project.files.length} file{project.files.length === 1 ? '' : 's'}
         </div>
       </div>
 
@@ -653,10 +666,6 @@ export function Sidebar({ project, door, openFile, selection, onPick, query, onQ
           data-collapse-all data-tip="fold every folder — the open file's own folders stay open">
           collapse all
         </button>
-        <label className="check" data-tip={`show only the files with tests at the ${DOOR_BY_ID[door].label} door — what runs is unchanged`}>
-          <input type="checkbox" checked={doorOnly} onChange={(e) => setDoorOnly(e.target.checked)} data-door-only />
-          this door only
-        </label>
       </div>
 
       {/* At the FOOT of the list and not above it (`D1118`). The list is what the pane is for and a

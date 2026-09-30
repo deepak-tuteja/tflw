@@ -2989,6 +2989,42 @@ test('`tflw run --only` matching no test anywhere is a usage error, not a silent
   });
 });
 
+// `M254` (`D1403`) — `--kind` narrows a run to the tests of a kind, as `lensesOfTest` classifies
+// them, which is the derivation the page's kind chips count with. The `log`-only test is of no kind
+// at all, so it is the control: it runs without the flag and not with it.
+test('`tflw run --kind api` runs the api tests and leaves out a test of no kind', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-kind-'));
+    try {
+      await writeFile(join(dir, 'tflw.config'), `env local default\n  api "${baseUrl}"\n`, 'utf8');
+      await writeFile(
+        join(dir, 'mixed.tflw'),
+        ['test "calls the api"', '  api GET /health', '  expect status equals 200', '', 'test "only logs"', '  log "nothing sent"', ''].join('\n'),
+        'utf8',
+      );
+      const all = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir });
+      assert.match(all.stdout, /only logs/);
+      assert.match(all.stdout, /2\/2 passed/);
+
+      const { stdout } = await execFileAsync('node', [cliEntry, 'run', '--kind', 'api', '--no-color'], { cwd: dir });
+      assert.match(stdout, /calls the api/);
+      assert.doesNotMatch(stdout, /only logs/);
+      assert.match(stdout, /1\/1 passed/);
+
+      // A kind nobody here is of, an empty list, and a word that is not a kind: each a usage error.
+      for (const value of ['browser', '', 'rest']) {
+        await assert.rejects(
+          execFileAsync('node', [cliEntry, 'run', `--kind=${value}`, '--no-color'], { cwd: dir }),
+          (e: unknown) => (e as { code?: number }).code === 2,
+          `--kind=${value} should be a usage error`,
+        );
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // decision 98: uuid/password generators + base64/hex/url transforms — dogfoods the exact
 // motivating use case from gap #9 (a declarative Basic-auth header) against a real HTTP Basic
 // auth check, not just a round-trip in isolation.

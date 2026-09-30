@@ -10,7 +10,7 @@
 // test costs nothing and asserts the thing itself.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countByDoor, lenslessCount, unparsedCount, countsHonestly, doorFromHash, docFromHash, fileFromHash, hashForDoor, tabFromHash, hashForTab, focusFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
+import { countByDoor, lenslessCount, unparsedCount, countsHonestly, kindFromHash, legacyKind, docFromHash, fileFromHash, tabFromHash, hashFor, focusFromHash, paneTail, selectionFromHash, queryFromHash, DOORS, TABS, DEFAULT_TAB } from '../src/doors';
 import type { ProjectView } from '../src/contract';
 
 const project = (files: ProjectView['files']): ProjectView => ({ configured: true, root: '/p', version: { version: '0.0.0-test', source: 'dev', commit: null, dirty: null, builtAt: null }, envs: [], reportDir: './report', helpers: [], runFlags: [], files, traceViewer: false, scratchPath: '.scratch.tflw', scratchIgnored: true, playScratch: '.play.tflw', playIgnored: true, scratchEtag: null, authorization: { envName: 'local', targets: [], apiBaseUrl: null, services: [], sessions: [] }, webBaseUrl: null });
@@ -71,44 +71,72 @@ test('a test behind no door is counted as such, so the landing can admit it exis
   assert.equal(lenslessCount(project([file('x.tflw', [[], ['api'], []])])), 2);
 });
 
-test('the hash names the door, the second segment names a tab, and anything else is the landing', () => {
-  for (const door of DOORS) {
-    assert.equal(doorFromHash(hashForDoor(door.id)), door.id);
-    assert.equal(doorFromHash(`#${door.id}`), door.id, 'the slash is optional');
+test('the kind rides in the query, and an address from before `M254` reads its door as the kind (`D1413`)', () => {
+  // `M254` (`D1399`): a kind is a filter, so it sits with the other narrowings after the `?` and the
+  // path is only where you are. `all` is the absence of the key.
+  for (const d of DOORS) {
+    assert.equal(kindFromHash(`#/${paneTail([], '', d.id)}`), d.id);
+    assert.equal(kindFromHash(`#/compose/shop.tflw${paneTail([], '', d.id)}`), d.id);
   }
-  assert.equal(hashForDoor(null), '#');
-  for (const hash of ['', '#', '#/', '#/nope', '#/API']) {
-    assert.equal(doorFromHash(hash), null, `\`${hash}\` is the landing`);
+  assert.equal(paneTail([], '', null), '', 'the `all` chip writes nothing, so an address that narrows nothing is byte-identical to one written before `M254`');
+  assert.equal(paneTail(['a.tflw'], '@smoke', 'api'), '?kind=api&files=a.tflw&q=%40smoke', 'the kind first, then what `D1066` already put there');
+  for (const hash of ['', '#', '#/', '#/compose', '#/?kind=nope', '#/?kind=API', '#/nope']) {
+    assert.equal(kindFromHash(hash), null, `\`${hash}\` has every kind shown`);
   }
 
-  // **`#/scan/extra` USED TO BE THE LANDING AND IS NOW THE SCANS DOOR**, and this line is the
-  // change `M205` S5 made rather than an oversight it left. A second segment is a tab
-  // (`M205` §2), so the door is the first segment and a trailing word it does not recognise is
-  // tolerated the same way `#/nope` is — by falling back, not by refusing.
-  //
-  // The cost of getting this wrong is why it is pinned from both sides below: `#/api` meant
-  // something before the strip existed and every link anyone has pasted is of that shape, so the
-  // bare door hash must keep resolving, and a tab must not be able to steal the door.
-  assert.equal(doorFromHash('#/scan/extra'), 'scan', 'a second segment is a tab, not a wrong door');
-  assert.equal(doorFromHash('#/api/source'), 'api');
-  assert.equal(doorFromHash('#/nope/source'), null, 'a tab cannot rescue a door that is not one');
+  // **EVERY LINK ANYBODY HAS STILL OPENS.** No tab id is a lens id, so a first segment that is one
+  // can only be a door, and it is read as the kind while the rest of the path is read as it always
+  // was. `App`'s canonicalising effect then rewrites it — `legacyRewrite` below is that effect's
+  // arithmetic, pinned here where no browser is needed.
+  for (const d of DOORS) {
+    assert.equal(kindFromHash(`#/${d.id}`), d.id);
+    assert.equal(kindFromHash(`#${d.id}`), d.id, 'the slash was optional, and still is');
+    assert.equal(legacyKind(`#/${d.id}/source/shop.tflw`), d.id);
+  }
+  assert.equal(legacyKind('#/compose/shop.tflw'), null, 'a tab is never read as a door');
+  assert.equal(legacyKind('#/source/api/x.tflw'), null, 'nor is a file segment that happens to be called `api`');
+  assert.equal(kindFromHash('#/scan/extra'), 'scan', 'a door with a word after it is still that door');
+  assert.equal(kindFromHash('#/nope/source'), null, 'a tab cannot rescue a door that is not one');
+  // The query wins over a legacy door, so an address half-rewritten by hand says what its query says.
+  assert.equal(kindFromHash('#/api/compose?kind=load'), 'load');
+});
+
+test('a legacy address canonicalises to the same tab, file, document and line with its door as the kind', () => {
+  const canonical = (hash: string): string =>
+    hashFor(tabFromHash(hash), fileFromHash(hash), focusFromHash(hash) ?? undefined, docFromHash(hash)) + paneTail(selectionFromHash(hash), queryFromHash(hash), kindFromHash(hash));
+  const cases: [string, string][] = [
+    ['#/api', '#/?kind=api'],
+    ['#/browser/compose/shop.tflw', '#/compose/shop.tflw?kind=browser'],
+    ['#/scan/config/tests/ui/login.tflw/@local/L7', '#/config/tests/ui/login.tflw/@local/L7?kind=scan'],
+    ['#/load/run/load.tflw?files=load.tflw&q=%40smoke', '#/run/load.tflw?kind=load&files=load.tflw&q=%40smoke'],
+    ['#/api/source/L11.tflw', '#/source/L11.tflw?kind=api'],
+  ];
+  for (const [legacy, now] of cases) {
+    assert.equal(canonical(legacy), now, `${legacy} rewrites to ${now}`);
+    assert.equal(canonical(now), now, `${now} is already canonical — the rewrite is a fixed point, so it cannot loop`);
+  }
+  // A new-grammar address is its own canonical form, the ordinary case and the reason the effect is
+  // a no-op on every navigation the page makes itself.
+  for (const hash of ['#/', '#/compose/shop.tflw', '#/source/tests/a.tflw/L3', '#/run/a.tflw?kind=browser', '#/auth/a.tflw']) {
+    assert.equal(canonical(hash), hash);
+  }
 });
 
 test('the tab is the hash’s second segment, and the default tab writes the bare door hash', () => {
   // `D1045` extended to the strip: the choice lives in the URL and nowhere else, so these two
   // functions are the whole of what the page remembers about which tab you are on.
   for (const tab of TABS) {
-    assert.equal(tabFromHash(hashForTab('api', tab.id)), tab.id, `${tab.id} did not survive a round trip`);
+    assert.equal(tabFromHash(hashFor(tab.id)), tab.id, `${tab.id} did not survive a round trip`);
   }
 
   // The bare door hash is Compose, which is what lets `#/api` keep meaning what it meant before
-  // the strip — and `hashForTab` writes that short form rather than `#/api/compose`, so the
+  // the strip — and `hashFor` writes that short form rather than `#/compose`, so the
   // commonest address stays the one that was already in circulation.
-  assert.equal(hashForTab('api', DEFAULT_TAB), '#/api');
+  assert.equal(hashFor(DEFAULT_TAB), '#/');
   assert.equal(tabFromHash('#/api'), DEFAULT_TAB);
   assert.equal(tabFromHash('#'), DEFAULT_TAB);
 
-  // An unrecognised tab is Compose rather than an error, the same tolerance `doorFromHash` has —
+  // An unrecognised tab is Compose rather than an error, the same tolerance `kindFromHash` has —
   // and the case that matters is a tab the rule REFUSES, because `M205` §2 names *History*,
   // *Docs* and *Coverage* as the things a strip facing one file may not grow.
   assert.equal(tabFromHash('#/api/coverage'), DEFAULT_TAB);
@@ -119,7 +147,7 @@ test('the file rides in the address, and a path with slashes still parses', () =
   // `M206` `Q4`. Until this the file lived in each form's own `useState(files[0] ?? '')`, so a door
   // change silently reset it — worst on the 145 tests the census found behind more than one door,
   // which are exactly the ones you walk between doors to look at.
-  assert.equal(hashForTab('browser', 'compose', 'shop.tflw'), '#/browser/compose/shop.tflw');
+  assert.equal(hashFor('compose', 'shop.tflw'), '#/compose/shop.tflw');
   assert.equal(fileFromHash('#/browser/compose/shop.tflw'), 'shop.tflw');
 
   // **A FILE PATH HAS SLASHES, SO "THE FILE IS SEGMENT THREE" IS NOT A RULE THIS GRAMMAR CAN HOLD.**
@@ -127,20 +155,20 @@ test('the file rides in the address, and a path with slashes still parses', () =
   // the file is everything between the tab and it, which is the only reading that survives a real
   // corpus path — more than half the sibling's files are nested at least two deep.
   const nested = 'tests/ui/storefront/login.tflw';
-  assert.equal(hashForTab('browser', 'source', nested), `#/browser/source/${nested}`);
+  assert.equal(hashFor('source', nested), `#/source/${nested}`);
   assert.equal(fileFromHash(`#/browser/source/${nested}`), nested);
   assert.equal(focusFromHash(`#/browser/source/${nested}`), null, 'a nested path names no line');
 
   // A file and a line together, which is what an `[edit]` link writes once Auth is file-scoped.
-  assert.equal(hashForTab('api', 'config', nested, 11), `#/api/config/${nested}/L11`);
+  assert.equal(hashFor('config', nested, 11), `#/config/${nested}/L11`);
   assert.equal(fileFromHash(`#/api/config/${nested}/L11`), nested);
   assert.equal(focusFromHash(`#/api/config/${nested}/L11`), 11);
 
   // With a file present the tab must be spelled even when it is the default — otherwise the file
   // would be read as the tab. The bare form still wins when nothing follows it.
-  assert.equal(hashForTab('api', DEFAULT_TAB, 'shop.tflw'), `#/api/${DEFAULT_TAB}/shop.tflw`);
+  assert.equal(hashFor(DEFAULT_TAB, 'shop.tflw'), `#/${DEFAULT_TAB}/shop.tflw`);
   assert.equal(tabFromHash(`#/api/${DEFAULT_TAB}/shop.tflw`), DEFAULT_TAB);
-  assert.equal(hashForTab('api', DEFAULT_TAB), '#/api');
+  assert.equal(hashFor(DEFAULT_TAB), '#/');
 
   // EVERY ADDRESS THAT EXISTED BEFORE THIS SLICE STILL MEANS WHAT IT MEANT. That is `S5a`'s own
   // gate run wider, and it is the whole cost `Q4` accepted: `#/api/config/L11` names a line and NO
@@ -150,7 +178,7 @@ test('the file rides in the address, and a path with slashes still parses', () =
   for (const hash of ['#', '#/api', '#/api/source', '#/browser', '#/scan/compose']) {
     assert.equal(fileFromHash(hash), null, `\`${hash}\` names no file`);
   }
-  assert.equal(doorFromHash(`#/browser/source/${nested}`), 'browser', 'a file cannot unseat the door');
+  assert.equal(kindFromHash(`#/browser/source/${nested}`), 'browser', 'a file cannot unseat the door');
   assert.equal(tabFromHash(`#/browser/source/${nested}`), 'source', 'a file cannot unseat the tab');
 
   // No `.tflw` path can collide with the line pattern, because every one of them ends in `.tflw`.
@@ -165,14 +193,14 @@ test('the hash’s third segment is a line for Config to land on, and only that'
   // change one; *"lands in Config focused on that block"* is the promise, and putting the target
   // in the address rather than in a callback is `D1045` a third time — the jump is linkable, the
   // back button walks back out of it, and nothing new remembers where you were going.
-  assert.equal(hashForTab('api', 'config', null, 11), '#/api/config/L11');
+  assert.equal(hashFor('config', null, 11), '#/config/L11');
   assert.equal(focusFromHash('#/api/config/L11'), 11);
 
   // A focus forces the long form even for the default tab, because the third segment has nowhere
   // else to sit — and the bare form still wins when nobody asked for a line, which is what keeps
   // `#/api` the commonest address.
-  assert.equal(hashForTab('api', DEFAULT_TAB, null, 3), `#/api/${DEFAULT_TAB}/L3`);
-  assert.equal(hashForTab('api', DEFAULT_TAB), '#/api');
+  assert.equal(hashFor(DEFAULT_TAB, null, 3), `#/${DEFAULT_TAB}/L3`);
+  assert.equal(hashFor(DEFAULT_TAB), '#/');
 
   // `L`-prefixed so a third segment cannot be read as a fourth tab, and so an address that names
   // no line reads as one — every hash anybody had before `S5b` is of that shape.
@@ -184,7 +212,7 @@ test('the hash’s third segment is a line for Config to land on, and only that'
   // door. Pinned here because the three functions read the same string and a change to one
   // regexp is a change to all three.
   assert.equal(tabFromHash('#/api/config/L11'), 'config');
-  assert.equal(doorFromHash('#/api/config/L11'), 'api');
+  assert.equal(kindFromHash('#/api/config/L11'), 'api');
 });
 
 test('a `@name` segment names which project document Config shows, and only that', () => {
@@ -195,7 +223,7 @@ test('a `@name` segment names which project document Config shows, and only that
   // not, and a filename may itself contain slashes, which is the problem the file slot already
   // solved and must not solve twice.
   const nested = 'tests/ui/storefront/login.tflw';
-  assert.equal(hashForTab('scan', 'config', nested, 7, 'local'), `#/scan/config/${nested}/@local/L7`);
+  assert.equal(hashFor('config', nested, 7, 'local'), `#/config/${nested}/@local/L7`);
   assert.equal(fileFromHash(`#/scan/config/${nested}/@local/L7`), nested, 'the document must not eat the file');
   assert.equal(docFromHash(`#/scan/config/${nested}/@local/L7`), 'local');
   assert.equal(focusFromHash(`#/scan/config/${nested}/@local/L7`), 7, 'the document must not eat the line');
@@ -212,8 +240,8 @@ test('a `@name` segment names which project document Config shows, and only that
   for (const hash of ['#', '#/api', '#/api/config', '#/api/config/L11', `#/api/config/${nested}`, `#/api/config/${nested}/L11`]) {
     assert.equal(docFromHash(hash), null, `\`${hash}\` names no document`);
   }
-  assert.equal(hashForTab('api', 'config', nested, 11), `#/api/config/${nested}/L11`, 'an omitted document writes no segment');
-  assert.equal(hashForTab('api', DEFAULT_TAB), '#/api', 'and the bare form still wins when nothing follows it');
+  assert.equal(hashFor('config', nested, 11), `#/config/${nested}/L11`, 'an omitted document writes no segment');
+  assert.equal(hashFor(DEFAULT_TAB), '#/', 'and the bare form still wins when nothing follows it');
 
   // A `.tflw` PATH CONTAINING AN `@` IS STILL A PATH. The document pattern forbids a dot and every
   // test file's last segment ends in `.tflw`, so the two can never be confused — and the near-miss
@@ -225,13 +253,13 @@ test('a `@name` segment names which project document Config shows, and only that
   assert.equal(docFromHash('#/api/source/@local.tflw'), null);
 
   // And the four rules do not interfere. Pinned together because all four read the same string.
-  assert.equal(doorFromHash(`#/scan/config/${nested}/@local/L7`), 'scan');
+  assert.equal(kindFromHash(`#/scan/config/${nested}/@local/L7`), 'scan');
   assert.equal(tabFromHash(`#/scan/config/${nested}/@local/L7`), 'config');
 
   // Round trip over every tab, so a document is not a thing only Config can carry in the address.
   // It is only *meaningful* there, which is a different claim and is the panel's to make.
   for (const tab of TABS) {
-    const hash = hashForTab('scan', tab.id, 'a.tflw', undefined, 'prod');
+    const hash = hashFor(tab.id, 'a.tflw', undefined, 'prod');
     assert.equal(docFromHash(hash), 'prod', `${tab.id} lost the document`);
     assert.equal(tabFromHash(hash), tab.id, `${tab.id} did not survive a round trip with a document`);
     assert.equal(fileFromHash(hash), 'a.tflw', `${tab.id} lost the file`);

@@ -13,7 +13,7 @@
 // rather than being a name this comment used to delegate to.
 
 import { useRef } from 'react';
-import { TABS, type TabId } from './doors';
+import { STRIP_TABS, type TabId } from './doors';
 import { useRovingFocus } from './useRovingFocus';
 
 export interface TabStripProps {
@@ -24,12 +24,13 @@ export interface TabStripProps {
 }
 
 export function TabStrip({ tab, onTab, marked = {} }: TabStripProps) {
-  /* `M240` `C` (`D1311`) — the five tabs are one Tab stop, ←/→ between them. */
+  /* `M240` `C` (`D1311`) — the three stages are one Tab stop, ←/→ between them (`M254`, `D1400`:
+     Auth and Config are the header's). */
   const strip = useRef<HTMLElement | null>(null);
   useRovingFocus(strip, { orientation: 'row', selector: ':scope > button' });
   return (
     <nav className="tabstrip" data-tabstrip={tab} aria-label="this file" ref={strip}>
-      {TABS.map((t) => (
+      {STRIP_TABS.map((t) => (
         <button
           key={t.id}
           className={`tabstrip-tab${t.id === tab ? ' on' : ''}`}

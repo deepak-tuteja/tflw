@@ -7,7 +7,7 @@
 // gap is the whole of `D1064` and a fixture without it cannot falsify anything.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lensesInRun, matchingFiles, parseQuery, projectTags, taggedTestCount } from '../src/search';
+import { lensesInRun, matchingFiles, parseQuery, projectTags, runRows, taggedTestCount } from '../src/search';
 import type { ProjectView } from '../src/contract';
 
 const file = (path: string, tests: Array<{ name: string; tags: string[] }>): ProjectView['files'][number] => ({
@@ -119,7 +119,7 @@ test('with nothing narrowing it, the run reaches every lens the project holds', 
   assert.deepEqual([...lensesInRun(mixed, [], parseQuery('', mixed))].sort(), ['api', 'browser', 'load']);
 });
 
-test('a selection is what narrows the run, and it is not the door', () => {
+test('a selection is what narrows the run, and it is not the chip', () => {
   // **The case no door-keyed rule survives, and the reason `PLAN_M229_UI_REVIEW.md`'s `D1250` was
   // amended.** A reader standing behind the API door who selects the load file is about to run a
   // workload, so `--workers` is theirs — and the plan's `VOCABULARY.api.takesWorkers` would have
@@ -140,8 +140,26 @@ test('a tag query narrows by TEST, a text query by FILE — the same fork `D1064
   assert.equal(lensesInRun(mixed, [], parseQuery('@nope', mixed)).size, 0);
 });
 
-test('a selection outranks a query, because that is the order the button’s own label resolves in', () => {
-  // Two answers to *what is about to run* is the failure `RunStrip`'s header names; this asserts
-  // the controls resolve it the same way the label does rather than in their own order.
-  assert.deepEqual([...lensesInRun(mixed, ['tests/shop.tflw'], parseQuery('@perf', mixed))], ['browser']);
+test('a selection and a tag query narrow together, because that is what the run request sends (`M254`, `D1403`)', () => {
+  // Until `M254` this said *a selection outranks a query* and answered `['browser']` here — the whole
+  // of `shop.tflw`'s lenses. But `request()` sends the selection as `files` AND the tag as `--tag`,
+  // and `tflw run` ANDs them: `shop.tflw` holds no test tagged `@perf`, so the run holds nothing,
+  // and the header now says `nothing to run` instead of drawing flags for a run that would refuse.
+  assert.equal(lensesInRun(mixed, ['tests/shop.tflw'], parseQuery('@perf', mixed)).size, 0);
+  assert.deepEqual([...lensesInRun(mixed, ['tests/load.tflw'], parseQuery('@perf', mixed))].sort(), ['api', 'load']);
+});
+
+test('`runRows` is what ▶ runs — the label’s count and `request()` read the same narrowing (`D1403`)', () => {
+  const names = (rows: readonly { name: string }[]): string[] => rows.map((r) => r.name);
+  assert.equal(runRows(mixed, [], parseQuery('', mixed)).length, 3, '`run all · 3`');
+  // The chip keeps the rows of its kind; a test of two kinds is under both (`D1043`).
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('', mixed), 'api')), ['the catalogue answers', 'the catalogue holds']);
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('', mixed), 'load')), ['the catalogue holds']);
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('', mixed), 'scan')), [], 'a kind nothing is of runs nothing');
+  // And the chip ANDs with every other narrowing, the way `--kind` does with `--tag` and files.
+  assert.deepEqual(names(runRows(mixed, ['tests/load.tflw', 'tests/shop.tflw'], parseQuery('', mixed), 'browser')), ['the shop greets']);
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('@smoke', mixed), 'load')), []);
+  assert.deepEqual(names(runRows(mixed, [], parseQuery('catalog', mixed), 'api')), ['the catalogue answers'], 'a text query lights files, the chip narrows inside them');
+  // The flags are drawn by the rows, so the chip moves them too.
+  assert.deepEqual([...lensesInRun(mixed, [], parseQuery('', mixed), 'browser')], ['browser']);
 });

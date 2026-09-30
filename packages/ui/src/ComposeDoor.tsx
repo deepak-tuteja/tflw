@@ -17,7 +17,7 @@
 // Node builtins — so there is no second implementation here for the CLI's to drift from.
 //
 // **AND SINCE `M224` `D` IT SERVES THREE DOORS** (`D1210`). `LoadForm` is deleted; the dispatch
-// that used to name API and BROWSER now reads `VOCABULARY[door].adds.length > 0`, so no call site
+// that used to name API and BROWSER now reads `vocab.adds.length > 0`, so no call site
 // names a door at all. What this pane added to that form was the `steps` insertion — *a LOAD form
 // can only ever write a policy, a workload line or a threshold, because `api` steps are the API
 // door's vocabulary*, the gap `A0-5`'s green-condition test had to work around and said so where
@@ -84,7 +84,7 @@ import { diagnose } from './diagnose';
 import { lineOfStep } from './depends';
 import { matches, SHORTCUTS } from './shortcuts';
 import { indexFromReport, indexFromSend, belongsTo, playScratchOf } from './ran';
-import { VOCABULARY } from './vocabulary';
+import type { DoorVocabulary } from './vocabulary';
 import { TabStrip } from './TabStrip';
 import { Stage, traceOf } from './Stage';
 import { Grip, STAGE, storedSize } from './Grip';
@@ -120,7 +120,8 @@ import { addressed, anchorAfter, fileOutline, pageOpeners, requestsOf, statement
   prefixOf, spaceOfDecl, appendInto, resolveImport, type BodiedDecl, type OutlineAction, type OutlineCrawl, type OutlineDecl, type OutlineHook, type OutlineRequest, type OutlineStatement, type OutlineTest,
   type Prefix, type SendForm } from './outline';
 import { SourcePanel } from './SourcePanel';
-import { hashForTab, type TabId } from './doors';
+import { hashFor, tailOf, type TabId } from './doors';
+import { HeaderPanel } from './HeaderPanel';
 import type { EndEvent, ProjectView, RunReport, RunRequest, StepResult } from './contract';
 import type { FileOutline } from './outline';
 
@@ -148,14 +149,18 @@ export function locatorFromPickLine(line: string): LocatorSpec | null {
 
 export interface ComposeDoorProps {
   /**
-   * Which door this is — `M213` `S4` (`D1094`).
+   * The kinds the open file carries, and the row of `vocabulary.ts` they make — `M213` `S4`
+   * (`D1094`), read at the file since `M254` (`D1399`).
    *
-   * It selects a row of `vocabulary.ts` and nothing else. Everything conditional below reads that
-   * row rather than this value, so *"what does BROWSER do differently"* is answered in one file a
-   * reader can hold in their head, and adding LOAD or SCAN to this pane is a table entry rather
-   * than a search through a component.
+   * Everything conditional below reads `vocab` rather than a kind's name, so *"what does a page do
+   * differently"* is answered in one file a reader can hold in their head. Until `M254` this was
+   * `vocab`; a kind is a filter now, and a pane whose abilities moved with a filter would
+   * be a mode, so the row is the union over what the file itself carries (`vocabularyOf`).
    */
-  readonly door: Lens;
+  readonly kinds: ReadonlySet<Lens>;
+  readonly vocab: DoorVocabulary;
+  /** The explorer's chip — which of this file's tests the Source list marks as *shown* (`D1399`). */
+  readonly kind: Lens | null;
   readonly project: ProjectView;
   readonly onWritten: (path: string) => void;
   /**
@@ -310,7 +315,7 @@ function reblock(
   return buildDownload({ name: owner.name, body });
 }
 
-export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, onRun, running, reportsStamp, empty, authPanel, configPanel, configMark }: ComposeDoorProps) {
+export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, onRun, running, reportsStamp, empty, authPanel, configPanel, configMark }: ComposeDoorProps) {
   /** **Which actions open a page** (`M219` `B`, `D1161`) — the index's own answer, flattened by
    *  the one function `App` flattens it with. Every `fileOutline` in this component re-reads the
    *  file after an edit to find where a statement moved to, and a re-read that folded sessions
@@ -589,13 +594,13 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
         }
         const there = parseSource(source).program.actions.find((a) => a.name === words);
         if (there) {
-          window.location.hash = hashForTab(door, 'compose', target, there.span.start.line);
+          window.location.hash = hashFor('compose', target, there.span.start.line) + tailOf(window.location.hash);
           return;
         }
       }
       setEditProblem(`no action named “${words}” in this file or in any file it imports`);
     },
-    [draft, file, path, door, onTab],
+    [draft, file, path, onTab],
   );
 
   /** The declaration this gesture was fired on, re-read out of the edited text by the index that
@@ -1650,16 +1655,17 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
    * not on the DOM, because an orphaned browser is invisible to every assertion a page can make
    * about itself.
    *
-   * The dependency is `door` and `path`: leaving the door is the event the promise is about, and a
-   * session opened against one file's page has nothing to say about another's. Unmount is covered
-   * by the same cleanup, which is what it used to rely on alone.
+   * The dependency is `path`: leaving the file is the event the promise is about, and a session
+   * opened against one file's page has nothing to say about another's. A chip is not a move
+   * (`M254`, `D1399`) — until then the dependency was `door` too, and moving the filter must not close
+   * a browser that is waiting for a click. Unmount is covered by the same cleanup.
    */
   useEffect(
     () => () => {
       pickStop.current?.();
       pickStop.current = null;
     },
-    [door, path],
+    [path],
   );
 
   /**
@@ -1978,14 +1984,14 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
     [pickPath, appendRecorded, noticeRecorded, readChunk],
   );
 
-  /** The door or the file changing closes the browser, for `pick`'s reason and with its gate. */
+  /** The file changing closes the browser, for `pick`'s reason and with its gate. */
   useEffect(
     () => () => {
       recordStop.current?.();
       recordStop.current = null;
       recordInto.current = null;
     },
-    [door, path],
+    [path],
   );
 
   /**
@@ -2025,7 +2031,7 @@ export function ComposeDoor({ door, project, onWritten, tab, onTab, path, file, 
           if (!out.ok) return setEditProblem(out.reason);
           return landOn(out.text, (after) => declAfter(after, decl)?.body.preamble.at(-1)?.line ?? null);
         }
-        default: return setEditProblem(`this door offers no \`${key}\` gesture — \`vocabulary.ts\` and this switch disagree`);
+        default: return setEditProblem(`this file offers no \`${key}\` gesture — \`vocabulary.ts\` and this switch disagree`);
       }
     },
     [addRequest, addLetTo, addWaitTo, addOpen, addGesture, recording, startRecording, stopRecording, file, draft, landOn, declAfter],
@@ -2713,7 +2719,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
        door is the attribute's value, so a gate can still say which one it is looking at. */
     <section
       className="doorpane"
-      data-door-form={door}
+      data-kinds={[...kinds].join(' ')}
       /* `M223` `E` (`D1199`) — the reader's own playback height, on the element that owns both
          regions. It is a custom property rather than an inline height on the frame because the
          rules it feeds are in the stylesheet beside the ones they override, and `auto` is a state
@@ -2734,7 +2740,7 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           pending={sourcePending}
           diagnostics={diagnostics}
           project={project}
-          door={door}
+          kind={kind}
           // `D1321` — the editor writes the one buffer; text equal to the file is no draft at all,
           // so undoing back to the disk bytes clears the tab's mark as well. And the rows Compose
           // was holding open are dropped: each is addressed by a `StepPath` into the text as it
@@ -2752,15 +2758,15 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
         />
       ) : null}
       {tab === 'run' ? (
-        <div className="runpane" data-door-run-tab={door}>
+        <div className="runpane" data-run-tab>
           {runPane}
         </div>
       ) : null}
       {/* The rule's second clause (`M205` §2): a project fact the file resolves against. Auth
           reads it scoped to this file and sends every edit to Config, which is the file's one
           editor — `onTab('config', line)` writes the hash, so the jump is a link. */}
-      {tab === 'auth' ? authPanel : null}
-      {tab === 'config' ? configPanel : null}
+      {tab === 'auth' ? <HeaderPanel which="auth" onClose={() => onTab('compose')}>{authPanel}</HeaderPanel> : null}
+      {tab === 'config' ? <HeaderPanel which="config" onClose={() => onTab('compose')}>{configPanel}</HeaderPanel> : null}
 
       {/* **What you typed survives a trip to another tab**, and it is not this line that provides
           it: every field is `useState` in THIS component, and the strip swaps a panel rather than
@@ -2823,13 +2829,13 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
                `A` is decided by the vocabulary rather than by which branch of a fork we are in.
                `null` on a door with no locator in its constructs — a locator-fixer on a row with
                no locator has nothing to fix. */
-            pick: VOCABULARY[door].constructs.has('ClickStmt')
+            pick: vocab.constructs.has('ClickStmt')
               ? { row: picking, found: picked, onStart: startPick, onStop: endPick }
               : null,
           }}
-          prefix={VOCABULARY[door].sends ? prefixThis : null}
-          prefixAll={VOCABULARY[door].sends ? prefixAll : null}
-          onSend={VOCABULARY[door].sends ? (form) => void sendPrefix(form) : null}
+          prefix={vocab.sends ? prefixThis : null}
+          prefixAll={vocab.sends ? prefixAll : null}
+          onSend={vocab.sends ? (form) => void sendPrefix(form) : null}
           lastRun={bandLastRun}
           sent={sentRan === null ? null : { lines: [...sentRan.lines.values()], form: sentRan.form, at: sentRan.startedAt }}
           sending={sending}
@@ -2837,9 +2843,9 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onVerify={verify}
           onCapture={captureFrom}
           onAdd={add}
-          adds={VOCABULARY[door].adds}
+          adds={vocab.adds}
           onNewDecl={addDeclaration}
-          crawls={door === 'scan'}
+          crawls={kinds.has('scan')}
           recording={recording}
           onAddAfter={addRequestAfter} onDuplicate={duplicateRequest} menuFor={seqMenuFor} onMenu={onMenu}
           made={made}
@@ -2848,16 +2854,16 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onReread={conflicted ? () => void reread() : null}
           onRemoveDecl={removeDecl}
           /* `D1176` — ▶ is a vocabulary row, so the door asks the table rather than its own name. */
-          onPlay={VOCABULARY[door].plays ? (d) => void play(d) : null}
+          onPlay={vocab.plays ? (d) => void play(d) : null}
           playing={running}
           onRemoveScoped={removeScoped}
           onUnscope={unscope}
           onScope={scope}
-          session={VOCABULARY[door].sends ? null : session}
+          session={vocab.sends ? null : session}
           onKeepLine={keepLine}
           onKeepAll={keepAll}
           /* `D1185` — offered on the door that plays, and the panel itself refuses a `pick`. */
-          onPlaySession={VOCABULARY[door].plays ? () => void playSession() : null}
+          onPlaySession={vocab.plays ? () => void playSession() : null}
           onDropLine={dropLine}
           onStopSession={() => (recording !== null ? stopRecording() : endPick())}
           tab={editorTab}
@@ -2867,7 +2873,8 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           problem={problem}
           onWrite={() => void writeDraft()}
           onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setElementEdit(null); setRowsCount(null); setNoting(null); setEditProblem(null); }}
-          door={door}
+          kinds={kinds}
+          vocab={vocab}
           /* `D1235` — the footer yields to a live playback region, and this is the one bit of the
              Stage the pane is told about. It is the same `stageTrace` the `Grip` below turns on,
              so the band that gets the page's width and the control that resizes it cannot
@@ -2902,8 +2909,8 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           /* **The buffer, never the disk** (`D1141`, and `M217`'s own defect report). */
           into={draft ?? file.text}
           anchor={null}
-          offers={stepCatalogue(VOCABULARY[door].constructs, ['open', 'click', 'fill'])}
-          pick={VOCABULARY[door].constructs.has('ClickStmt') ? { row: picking, found: picked, onStart: startPick, onStop: endPick } : null}
+          offers={stepCatalogue(vocab.constructs, ['open', 'click', 'fill'])}
+          pick={vocab.constructs.has('ClickStmt') ? { row: picking, found: picked, onStart: startPick, onStop: endPick } : null}
           onStage={(text) => {
             setAddingStep(null);
             landOn(text, (after) => {

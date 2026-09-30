@@ -1,20 +1,15 @@
-// A door with nothing behind it — `M240` `A` (`D1309`).
+// A project with no file in it — `M240` `A` (`D1309`), narrowed by `M254` (`D1402`).
 //
-// `landingFor` answers `{ empty: true }` when no file in the project holds a test or crawl this
-// door is about, and this is what the pane shows in place of a file nobody asked for. It used to
-// draw `project.files[0]` — whatever sorted first — which on the dogfood's BROWSER door was a file
-// with nothing behind BROWSER, so the first thing a reader saw was a Compose pane about the wrong
-// kind of work. One sentence and the one gesture that changes the answer: `+ new file`, which opens
-// the same create dialog the explorer's own footer does, and that dialog scaffolds for the door
-// (`D1189`). The explorer is still beside it, so every file the project does have is one click away.
+// Until `M254` this drew per door: a door with no test behind it said *no test in this project does
+// this yet*. There are no doors now, and `landingFor` answers `{ empty: true }` only when the project
+// has no file at all — every other project opens on a file. So this is one sentence and the one
+// gesture that changes the answer: `+ new file`, the same create dialog the explorer's footer opens,
+// where the kind of test to scaffold is chosen (`D1399`).
 
-import { DOOR_BY_ID } from './doors';
-import type { Lens } from './contract';
-
-export function EmptyDoor({ door, onNew }: { readonly door: Lens; readonly onNew: () => void }) {
+export function EmptyDoor({ onNew }: { readonly onNew: () => void }) {
   return (
-    <section className="empty-door" data-empty-door={door}>
-      <p>No test in this project does this yet — {DOOR_BY_ID[door].blurb}.</p>
+    <section className="empty-door" data-empty-door>
+      <p>No test file here yet · make one to start</p>
       <button type="button" className="empty-door-new" data-empty-door-new onClick={onNew}>
         + new file
       </button>

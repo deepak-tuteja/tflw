@@ -344,3 +344,48 @@ export const VOCABULARY: Readonly<Record<Lens, DoorVocabulary>> = {
     scaffold: 'scan',
   },
 };
+
+/**
+ * **What a file's Compose can do, from the kinds the file carries** — `M254` (`D1399`).
+ *
+ * Until `M254` this table was read at the door you came through, `VOCABULARY[door]`. A kind is a
+ * filter now and not a mode, so it cannot be read at the chip either: the chip changes what the
+ * explorer lists, and a pane that changed what it could edit when a filter moved would be a mode
+ * wearing a filter's clothes. It is read at the **file**: the union over the lenses its own tests
+ * and crawls carry, which is `D1044`/`D1209` (a panel is earned by the construct) applied to the
+ * table rather than to one panel.
+ *
+ * - `sends`, `plays`, `records` are OR — a file that carries a page can be played.
+ * - `constructs` and `adds` are unions, `adds` in table order with a key kept once.
+ * - `dropsSubjects` is the **intersection**: a subject leaves the offer only when every kind the
+ *   file carries drops it, so a file with a page still offers `locator`.
+ * - `scaffold` is the first kind's, and `NewThing` asks for a kind of its own anyway.
+ *
+ * A file carrying no kind at all — an action-only helper — reads `fallback`: the chip's kind, or
+ * `api`, the scaffold every project starts from. With one kind this returns that kind's own row
+ * unchanged, so a single-kind file behaves exactly as its door did.
+ */
+export function vocabularyOf(kinds: ReadonlySet<Lens>, fallback: Lens = 'api'): DoorVocabulary {
+  const order = (['api', 'browser', 'load', 'scan'] as const).filter((k) => kinds.has(k));
+  const rows = (order.length === 0 ? [fallback] : order).map((k) => VOCABULARY[k]);
+  if (rows.length === 1) return rows[0]!;
+  const adds: AddGesture[] = [];
+  for (const r of rows) for (const a of r.adds) if (!adds.some((x) => x.key === a.key)) adds.push(a);
+  return {
+    constructs: new Set(rows.flatMap((r) => [...r.constructs])),
+    adds,
+    sends: rows.some((r) => r.sends),
+    plays: rows.some((r) => r.plays),
+    records: rows.some((r) => r.records),
+    dropsSubjects: new Set([...rows[0]!.dropsSubjects].filter((s) => rows.every((r) => r.dropsSubjects.has(s)))),
+    scaffold: rows[0]!.scaffold,
+  };
+}
+
+/** The kinds a file carries — every lens any of its tests or crawls is behind (`D1043`). */
+export function kindsOfFile(file: { readonly tests: readonly { readonly lenses: readonly Lens[] }[]; readonly crawls: readonly { readonly lenses: readonly Lens[] }[] } | undefined): ReadonlySet<Lens> {
+  const out = new Set<Lens>();
+  for (const t of file?.tests ?? []) for (const l of t.lenses) out.add(l);
+  for (const c of file?.crawls ?? []) for (const l of c.lenses) out.add(l);
+  return out;
+}

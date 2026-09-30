@@ -131,6 +131,10 @@ test('runArgv maps a request onto tflw run flags and nothing else', () => {
   assert.deepEqual(runArgv({ env: 'other', workers: 2, tags: ['a', 'b'], only: 'x', files: ['f.tflw', 'g/h.tflw'] }), [
     'run', '--format', 'ndjson', '--no-color', '--env', 'other', '--workers', '2', '--tag', 'a,b', '--only', 'x', 'f.tflw', 'g/h.tflw',
   ]);
+  // `M254` (`D1403`) — the kind chip reaches the run as the CLI's own `--kind`, after `--tag`.
+  assert.deepEqual(runArgv({ tags: ['a'], kinds: ['api', 'browser'] }), [
+    'run', '--format', 'ndjson', '--no-color', '--tag', 'a', '--kind', 'api,browser',
+  ]);
   // `A1-5`: `--evidence` is what makes `D1047`'s Send a response pane rather than a verdict —
   // below `full` a step record carries no `request`/`response` at all (`D987`). It is raw text
   // here and validated by `runCommand` against `EVIDENCE_LEVELS`, exactly as a terminal's own

@@ -22,7 +22,7 @@ import {
   buildWaitUntilUi, buildWithin, print, stringLit, STEP_LENS, SYNTHETIC, type Step,
 } from '@tflw/lang';
 
-import { VOCABULARY } from '../src/vocabulary.ts';
+import { VOCABULARY, vocabularyOf, kindsOfFile } from '../src/vocabulary.ts';
 import { statementEditOf } from '../src/parts.tsx';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -274,4 +274,34 @@ test('`records` is not `!sends`, and SCANS is the door that proves it', () => {
   assert.deepEqual(silent, ['browser', 'scan'], 'the set of doors with no `send` changed, which is what made `!sends` unsafe to key on');
   assert.equal(VOCABULARY.scan.records, false, 'SCANS offers the recorder again — `!sends` is not `records` (`D1245`)');
   assert.equal(VOCABULARY.browser.records, true, 'BROWSER lost the recorder, which is the one door whose evidence is a live session');
+});
+
+// `M254` (`D1399`) — Compose reads the table at the FILE, as the union over the kinds it carries.
+test('`vocabularyOf` is a kind’s own row for a single-kind file, so a file of one kind behaves exactly as its door did', () => {
+  for (const k of ['api', 'browser', 'load', 'scan'] as const) {
+    assert.equal(vocabularyOf(new Set([k])), VOCABULARY[k], `${k}: the row itself, not a copy that could drift`);
+  }
+  assert.equal(vocabularyOf(new Set(), 'browser'), VOCABULARY.browser, 'a file of no kind reads the fallback');
+  assert.equal(vocabularyOf(new Set()), VOCABULARY.api, '…which is `api` when nothing else is said');
+});
+
+test('`vocabularyOf` over a mixed file: abilities OR, constructs and gestures union, dropped subjects intersect', () => {
+  const v = vocabularyOf(new Set(['api', 'browser']));
+  assert.equal(v.sends, true, 'the file has requests, so `send` is offered');
+  assert.equal(v.plays, true, 'and a page, so ▶ is');
+  assert.equal(v.records, true);
+  for (const c of [...VOCABULARY.api.constructs, ...VOCABULARY.browser.constructs]) assert.ok(v.constructs.has(c), `${c} lost in the union`);
+  const keys = v.adds.map((a) => a.key);
+  assert.equal(new Set(keys).size, keys.length, 'a gesture both rows offer (`+ let`) is drawn once');
+  assert.deepEqual(keys.slice(0, VOCABULARY.api.adds.length), VOCABULARY.api.adds.map((a) => a.key), 'in table order, the first kind first');
+  // API drops `locator` (a request has no element); BROWSER drops nothing — so a file with a page
+  // keeps `locator` on offer.
+  assert.ok(VOCABULARY.api.dropsSubjects.has('locator'));
+  assert.equal(v.dropsSubjects.has('locator'), false);
+});
+
+test('`kindsOfFile` is every lens a file’s tests and crawls carry', () => {
+  const f = { tests: [{ lenses: ['api'] as const }, { lenses: ['api', 'load'] as const }], crawls: [{ lenses: ['scan'] as const }] };
+  assert.deepEqual([...kindsOfFile(f)].sort(), ['api', 'load', 'scan']);
+  assert.equal(kindsOfFile(undefined).size, 0);
 });

@@ -181,7 +181,8 @@ test('a browser test is a SESSION, not a preamble — `M219` `B` (`D1160`)', () 
   const rows = statementsOf(t.body);
   assert.deepEqual(rows.map((s) => s.kind), ['OpenStmt', 'ClickStmt']);
   assert.deepEqual(rows.map((s) => s.lens), ['browser', 'browser']);
-  assert.ok(rows.every((s) => isForeign(s.lens, 'api')), 'a browser step is foreign to the API door');
+  assert.ok(rows.every((s) => isForeign(s.lens, new Set(['api']))), 'a browser step is foreign to a file read as API alone');
+  assert.ok(rows.every((s) => !isForeign(s.lens, new Set(['api', 'browser']))), 'and to nothing in a file that carries a page (`M254`, `D1399`)');
   assert.ok(rows.every((s) => s.text.length > 0), 'a locked row still renders what the step is');
 });
 
@@ -263,11 +264,12 @@ test('a `within` is a scope on the row it holds, and its statement is a row — 
   assert.deepEqual(two.body.preamble[0]!.body?.map((s) => s.inner), [0, 1]);
 });
 
-test('a neutral statement is nobody s foreign — it is every door s vocabulary', () => {
+test('a neutral statement is nobody s foreign — it is every kind s vocabulary', () => {
   for (const kind of ['ExpectStmt', 'LetStmt', 'CaptureStmt', 'LogStmt', 'GiveStmt', 'CallStmt', 'PauseStmt'] as const) {
     assert.equal(STEP_LENS[kind], null, `${kind} is meant to be neutral`);
-    assert.equal(isForeign(STEP_LENS[kind], 'api'), false);
-    assert.equal(isForeign(STEP_LENS[kind], 'browser'), false);
+    assert.equal(isForeign(STEP_LENS[kind], new Set(['api'])), false);
+    assert.equal(isForeign(STEP_LENS[kind], new Set(['browser'])), false);
+    assert.equal(isForeign(STEP_LENS[kind], new Set()), false);
   }
 });
 

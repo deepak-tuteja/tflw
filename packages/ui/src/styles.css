@@ -151,7 +151,7 @@
  * `flex: 0 0 auto` — never colour, border, radius or padding, and a new one must not either.
  *
  * THE BUTTONS THAT ARE NOT BOXES STILL ARE NOT. A dozen `<button>`s here are deliberately flat —
- * a tree row, a tab, a link (`.file-row`, `.doorbar-tab`, `.tabstrip-tab`, `.linkish`, `.docpick`,
+ * a tree row, a tab, a link (`.file-row`, `.header-panel-word`, `.tabstrip-tab`, `.linkish`, `.docpick`,
  * `.index-row`, `.seq-goto`, `.add-note`, `.dir-row`, `.door`). Each already resets background,
  * border and padding for its own reasons, and each of those rules out-specifies this one, so the
  * base layer reaches them and changes nothing. That is the test of a base layer: it must be the
@@ -207,20 +207,15 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
 .t-op { color: var(--syn-op); }
 .t-com { color: var(--syn-com); font-style: var(--syn-com-style); }
 
-/* The theme switcher (`D1096`). It sits at the right-hand end of the DOORBAR — chrome for the whole
+/* The theme switcher (`D1096`). It sits at the right-hand end of the HEADER — chrome for the whole
    page, drawn where a reader stops looking for content, in a row that already exists. Given a row
-   of its own it cost every page ~20 px of height, and the page gate said so on the first run:
-   LOAD's Compose is the one form measured at exactly one screen and it went to 920 while BROWSER's
-   stayed at 900. `margin-left: auto` is what seats it, and `M212`'s header defect is the warning
-   attached — two `margin-left: auto` children of one flex row split the free space between them,
-   so this must stay the only one in `.doorbar`. */
+   of its own it cost every page ~20 px of height. */
 .theme-pick { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
-/* `M239-10` — the corner: the version takes the `margin-left: auto` the picker used to, so the two
-   sit together at the right; the picker follows it with the bar's own gap. */
-.doorbar-version { margin-left: auto; font-size: 11px; text-decoration: none; padding: 0 6px; }
-.doorbar-version:hover { color: var(--fg); text-decoration: underline; }
+/* `M239-10` — the corner: which tflw this is, beside the theme. */
+.header-version { font-size: 11px; text-decoration: none; padding: 0 6px; }
+.header-version:hover { color: var(--fg); text-decoration: underline; }
 /* `M240` `C` (`D1311`) — the legend's door: `?` opens the same list the `?` key does. */
-.doorbar-legend { font-size: 11px; padding: 0 6px; min-width: 24px; } /* `D1325` — was `min-width: 0`, the one class that undercut the floor */
+.header-legend { font-size: 11px; padding: 0 6px; min-width: 24px; } /* `D1325` — the one class that undercut the floor, once */
 .legend h2 { margin: 0; font-size: var(--title-size); font-weight: var(--title-weight); }
 .legend dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
 .legend dl > div { display: contents; }
@@ -306,13 +301,15 @@ body:has(.col-grip.dragging) { cursor: col-resize; user-select: none; }
 .warn { color: var(--warn); }
 .empty { padding: 24px 0; }
 
-.project .root { font-weight: 600; font-size: 15px; margin: 0; }
 /* `M240` `E` — present to a screen reader, absent to the eye. */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-/* The run strip (`M205` Q12, built by `M209` `S1`). It sits between the doorbar and the tabs, and
-   it is a ROW because it is one sentence: run this env, this wide, over this much. In the sidebar
-   these were a stacked grid 160 px wide, which is what a column does to a command. */
-.runstrip { display: flex; align-items: center; gap: 16px; margin: 0 0 12px; }
+/* The run half of the header (`M205` Q12, `M209` `S1`; folded into the header by `M254`, `D1400`).
+   A ROW because it is one sentence: run this env, this wide, over this much. */
+.header-run { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.header-run > label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+/* Nothing in the header wraps inside itself: a two-line ▶ is a button that reads its label in halves. */
+.header > *, .header-run > *, .header-facts > * { flex-shrink: 0; white-space: nowrap; }
+.run-more-rows input[type="number"] { width: 88px; }
 /* `M241` `D` (`D1324`) — `more…`: the rest of `tflw run`'s flags this run can spend, opened as a
    panel under its summary so the strip keeps its one line at rest. */
 .run-more { position: relative; }
@@ -419,8 +416,8 @@ button.cancel { background: var(--warn); }
 
 .runs { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .run-row { display: flex; align-items: center; gap: 8px; white-space: nowrap; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; }
-/* `M229` `E` (`D1253`) — the open report, told the way the door bar tells its open door. The
-   border alone was the whole signal since `M192`; `.doorbar-tab.on` had already settled what a
+/* `M229` `E` (`D1253`) — the open report, told the way a chip tells its pressed kind. The border
+   alone was the whole signal since `M192`; `.chip.on` had already settled what a
    chosen thing in a row of peers looks like here, so this is that rule rather than a second one. */
 .run-row.selected { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
@@ -613,36 +610,53 @@ pre.stderr { background: var(--bg); border: 1px solid var(--line); padding: 8px;
 .landing-foot { margin-top: 24px; font-size: 12px; }
 .landing-door-def { margin: 12px 0 0; font-size: 12px; }
 
-.doorbar { display: flex; align-items: center; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
-.doorbar-home {
-  /* `M233` `H` — the mark, at 18px, in place of the word (`D1288`). `color` is doing real work
-     here: `Wordmark`'s ink is `currentColor`, so these two rules are what paint it, and the hover
-     that used to lift the text now lifts the mark with no rule knowing it changed. `--accent` on
-     the rail comes from the theme and is not mentioned in either.
-     `display: flex` for the same reason the heading has it — an inline SVG would sit on a baseline
-     this button no longer has any text on, and pad the row by the descender it reserves. */
-  display: flex; align-items: center;
-  background: none; border: none; color: var(--muted); font: inherit; font-weight: 600;
-  cursor: pointer; padding: 4px 10px 4px 0; margin-right: 4px;
+/* The header (`M254`, `D1400`) — one row where the door bar and the run strip were two. The mark,
+   the project, the run, then the project facts pushed right. **One `margin-left: auto` in this row**
+   (`.header-facts`): two children of one flex row with it split the free space between them, which
+   is `M212`'s header defect and the reason the theme picker's old rule carried a warning. */
+.header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 6px; min-width: 0; }
+/* Below 1200 the version is the word the row can best spare — it is on the docs site and in `tflw
+   --version`, and the row wraps before it overflows near the 900 px floor rather than clipping the
+   theme off the edge (measured at 1100: 752 px of header in a 720 px column). */
+@media (max-width: 1199px) { .header .header-facts .header-version { display: none; } }
+.header-mark {
+  /* `M233` `H` — the mark at 18px (`D1288`). `Wordmark`'s ink is `currentColor`, so `color` paints
+     it; `display: flex` keeps an inline SVG off a baseline this link has no text on. */
+  display: flex; align-items: center; color: var(--muted); text-decoration: none;
 }
-.doorbar-home:hover { color: var(--fg); }
-.doorbar-tab {
+.header-mark:hover { color: var(--fg); }
+.header-project { margin: 0; font-size: var(--title-size); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 24ch; }
+.header-facts { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.header-panel-word {
   background: none; border: 1px solid transparent; border-radius: 999px; color: var(--muted);
   font: inherit; font-size: 12px; letter-spacing: var(--label-spacing); cursor: pointer; padding: 3px 10px;
 }
-.doorbar-tab:hover { color: var(--fg); }
-.doorbar-tab.on { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.doorbar-count { margin-left: 6px; font-size: 11px; }
+.header-panel-word:hover { color: var(--fg); }
+.header-panel-word.on { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+/* A project fact over the pane (`M254`, `D1401`): framed, because it is not a stage of the file and
+   should not read as one; closed by its `✕` or `Esc`. */
+.header-panel { border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 8px 12px 12px; }
+.header-panel-bar { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; font-size: 13px; }
+.header-panel-close { background: none; border: none; color: var(--muted); font: inherit; cursor: pointer; padding: 2px 6px; min-width: 24px; }
+.header-panel-close:hover { color: var(--fg); }
+/* The kinds as chips (`M254`, `D1399`) — the count and the filter in one control, at the head of the
+   explorer. `.chip` is the shared pill; a chip that is a button needs the button's defaults undone. */
+.kind-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+button.chip { font: inherit; font-size: 12px; letter-spacing: var(--label-spacing); cursor: pointer; }
+button.chip:hover { color: var(--fg); }
+.chip-count { margin-left: 4px; font-size: 11px; color: var(--muted); }
+.chip.on .chip-count { color: var(--fg); }
+.new-kinds { gap: 4px; margin: 0 0 8px; }
 .badge.also { background: none; border: 1px solid var(--line); color: var(--muted); font-size: 11px; letter-spacing: 0.04em; }
 .elsewhere { font-size: 12px; font-style: italic; }
 
-/* The strip over one file (`M205` §2). It sits UNDER the doorbar and is deliberately quieter than
-   it: the doorbar answers *what am I here to do* and this answers *what am I doing with this file*,
-   so a reader who glances at the page should see the louder question first. The mark is a dot and
+/* The strip over one file (`M205` §2). It sits UNDER the header and is deliberately quieter than
+   it: the header answers *what runs, against what* and this answers *which stage of this file*, so a
+   reader who glances at the page should see the louder question first. The mark is a dot and
    not a count — a tab has one thing to say about this file's state, and a number would invite the
    explorer's job (`3 other files failed`) into a strip that faces one file. The explorer is
    `Sidebar.tsx` since `M209` `S4`; until then this rule's reason named nothing. */
-.tabstrip { display: flex; align-items: center; gap: 2px; margin: 0 0 12px; border-bottom: 1px solid var(--line); }
+.tabstrip { display: flex; align-items: center; gap: 2px; margin: 0 0 8px; border-bottom: 1px solid var(--line); }
 .tabstrip-tab {
   background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted);
   padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; margin-bottom: -1px;

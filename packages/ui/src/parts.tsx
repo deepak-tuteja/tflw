@@ -2446,9 +2446,9 @@ function CrawlBand({ decl, editing }: { readonly decl: OutlineCrawl; readonly ed
   );
 }
 
-export function TestBand({ decl, door, editing, lastRun }: {
+export function TestBand({ decl, kinds, editing, lastRun }: {
   readonly decl: OutlineDecl;
-  readonly door: Lens;
+  readonly kinds: ReadonlySet<Lens>;
   readonly editing: RowEditing;
   /** `D1221`'s citation, looked up by the door. `undefined` while nobody has answered yet, `null`
    *  when the answer is *never run here*. */
@@ -2503,7 +2503,11 @@ export function TestBand({ decl, door, editing, lastRun }: {
   };
   const shows = (clause: string): boolean => states(clause) || added.includes(clause);
   /** `D1205`'s one condition, read once: this pane can write, and `TF033` allows a workload here. */
-  const workloadLive = live && editing.onWorkload !== null && test !== null && door !== 'browser';
+  /* `M254` (`D1399`): the BROWSER door hid the workload clause, since a page test carries no
+     workload. Read at the file now, so it is hidden where the file is a page file and nothing that
+     carries load — the same answer on every single-kind file, and on a mixed one the clause shows. */
+  const pageOnly = kinds.has('browser') && !kinds.has('load');
+  const workloadLive = live && editing.onWorkload !== null && test !== null && !pageOnly;
   const workloadValues = editing.workload !== null && editing.workload.key === key
     ? editing.workload.values
     : workloadEditOf(test?.workload ?? null);
@@ -2785,7 +2789,7 @@ export function TestBand({ decl, door, editing, lastRun }: {
             <li className="band-add">
               <AddClause
                 what="test"
-                options={BAND_CLAUSES.filter((c) => c.key !== 'workload' || door !== 'browser').map((c) => ({
+                options={BAND_CLAUSES.filter((c) => c.key !== 'workload' || !pageOnly).map((c) => ({
                   key: c.key,
                   label: c.label,
                   title: c.title,

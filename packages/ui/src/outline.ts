@@ -337,8 +337,8 @@ export function requestsOf(body: OutlineBody): OutlineRequest[] {
 }
 
 /** Whether a statement is this door's to edit (`D1078`). Neutral vocabulary is everybody's. */
-export function isForeign(lens: StepLens | null, door: Lens): boolean {
-  return lens !== null && lens !== door;
+export function isForeign(lens: StepLens | null, kinds: ReadonlySet<Lens>): boolean {
+  return lens !== null && !kinds.has(lens);
 }
 
 /** Every note in a file, sorted into the three places a comment block can belong. */
