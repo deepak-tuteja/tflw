@@ -146,23 +146,40 @@ test "an order reads back the way it was placed"
 An `action` is the unit of reuse: steps with a name, called like a function, and able to `give` a
 value back. [Actions](/guide/actions) covers writing them by hand.
 
-## The language, from the terminal
+## The docs, from the terminal
 
-`tflw docs` prints the language's cheatsheet, one section at a time. With no topic it lists them:
+`tflw docs` prints these pages in the terminal, one at a time, with no network. With no topic it lists
+them, grouped as this site groups them:
 
 ```sh runbook
 npx tflw docs
 ```
 
 ```text runbook-output
-tflw docs <topic> — print a SPEC.md cheatsheet section. Topics:
+tflw docs <topic> [section] — print a page of tflw's documentation. Topics:
 …
-Assertions
+Reference
+  matchers     Matchers
+  generators   Generators
+  cli          CLI flags
+  diagnostics  Diagnostic codes
+
+run `tflw docs <topic>` to read one, e.g. `tflw docs matchers`, or `tflw docs <topic> <section>` for one part, e.g. `tflw docs cli run`.
+the same pages, with pictures, are at https://deepak-tuteja.github.io/tflw.
+```
+
+A topic and a word print one section of a page, and a word that is not a topic is looked for among
+every page's section titles. The Coffee Shelf's checkout tests make their keys with `unique`, and this
+is what it promises:
+
+```sh runbook
+npx tflw docs unique
+```
+
+```text runbook-output
+Variables, generators & expressions › `unique` vs. `random`
 …
-  matchers                       Matcher table
-…
-run `tflw docs <topic>` to read one, e.g. `tflw docs matchers`.
-the full SPEC lives at https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md.
+(part of `tflw docs variables`)
 ```
 
 And `tflw spec` lists every construct this build knows: each keyword, matcher, generator and

@@ -356,7 +356,7 @@ A violation writes a `.tflw` file under `report/authz-repro/`, named from the ru
 principal:
 
 ```tflw
-# emitted by tflw M130 — sec/authz-object-leak
+# emitted by tflw — sec/authz-object-leak
 # GET /orders/a1e3-9f served `shopper`'s resource to `peer`
 test "peer must not read shopper's /orders/a1e3-9f" as peer
   api GET /orders/a1e3-9f

@@ -490,11 +490,14 @@ terminal run would work, with the same `.env` beside the config.
 the project's `.env`. To reach it from another machine, tunnel it (`ssh -L 4141:127.0.0.1:4141`
 to that machine) rather than exposing it.
 
-## `tflw docs [topic]`
+## `tflw docs [topic] [section]`
 
-Prints one section of the SPEC as a terminal cheatsheet; with no topic, lists every section name.
-Takes no flags. The content is a static artifact regenerated from `SPEC.md` at build time rather
-than parsed at run time — `SPEC.md` itself is not shipped in the npm package.
+Prints a page of these docs in the terminal: the Guide and Reference pages, grouped as this site's
+sidebar groups them. With no topic it lists them; `tflw docs cli` prints this page, with every flag
+table filled in, and `tflw docs cli run` prints one section of it. A word that is not a topic is
+looked for among every page's section titles, so `tflw docs unique` prints *`unique` vs. `random`*.
+Links to another printed page read `(tflw docs <topic>)`; links anywhere else read as a URL. Takes
+no flags. The pages are rendered into the CLI at build time, so it needs no network.
 
 ## `tflw spec [--json]`
 

@@ -217,7 +217,7 @@ tflw run [files...] [--env <name>] [--seed <n>] [--now <iso>] [--tag <name>[,<na
          [--browser chromium|firefox|webkit] [--headed] [--update-snapshots]
 tflw check [files...] [--env <name>] [--no-color] [--format json]
 tflw init [--load]
-tflw docs [topic]
+tflw docs [topic] [section]
 tflw lsp
 tflw install-browsers [--browser chromium|firefox|webkit]
 tflw pick <url> [--browser chromium|firefox|webkit]

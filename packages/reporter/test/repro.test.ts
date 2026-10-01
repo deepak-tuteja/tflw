@@ -50,7 +50,7 @@ test('a collection leak asserts on contents, never on status — the whole reaso
 test('every repro names the rule that produced it and the principal it was served to', () => {
   for (const f of [objectLeak, collectionLeak]) {
     const src = renderAuthzRepro(f);
-    assert.match(src, /^# emitted by tflw M130 — sec\/authz-/);
+    assert.match(src, /^# emitted by tflw — sec\/authz-/);
     assert.match(src, /served `shopper`'s resource to `peer`/);
   }
 });

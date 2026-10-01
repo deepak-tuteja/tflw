@@ -2981,36 +2981,54 @@ test('--verbose --parallel 2 buffers each file\'s step lines into one contiguous
   }
 });
 
-// Track 3b (grill-me, 2026-07-07): `tflw docs [topic]`, a static SPEC.md-derived cheatsheet
-// bundled into dist/cli.cjs — no network, no cwd/tflw.config needed, so no fixture dir required.
-test('`tflw docs` with no topic lists every topic, one per line', async () => {
-  // `M125e`/`FU-29`/D281 widened the line: a topic still gets one line of its own, but under its
-  // SPEC `##` group heading and followed by its title. `quantifiers` and `subset` are the two the
-  // row named as unreadable slugs, so they are the two asserted to now say what they are — the
-  // `$`-anchored version of this test passed for as long as the listing taught nothing.
+// Track 3b (grill-me, 2026-07-07): `tflw docs [topic]`, bundled into dist/cli.cjs — no network, no
+// cwd/tflw.config needed, so no fixture dir required. Since `M263` it prints the docs site's Guide
+// and Reference pages rather than SPEC.md's sections.
+test('`tflw docs` with no topic lists every page under the site\'s own groups', async () => {
+  // `M125e`/`FU-29`/D281 gave each topic a line under a group heading, followed by what it is;
+  // `M263` made the topics the site's pages and the groups its sidebar's.
   const { stdout } = await execFileAsync('node', [cliEntry, 'docs']);
   assert.match(stdout, /Topics:/);
-  assert.match(stdout, /^ {2}quantifiers\s+Array quantifiers$/m);
-  assert.match(stdout, /^ {2}subset\s+Partial-object matching/m);
-  // `config` is a `##` section's own topic, whose title *is* the group heading printed directly
-  // above it — so it stays bare rather than repeating itself.
-  assert.match(stdout, /^ {2}config$/m);
-  assert.match(stdout, /^Assertions$/m);
+  assert.match(stdout, /^Functional testing$/m);
+  assert.match(stdout, /^ {2}assertions\s+Assertions in depth$/m);
+  // A group's overview page is named by the heading right above it, so it stays bare.
+  assert.match(stdout, /^ {2}functional$/m);
+  assert.match(stdout, /^Reference$/m);
+  assert.doesNotMatch(stdout, /P#|SPEC\.md cheatsheet/);
 });
 
-test('`tflw docs quantifiers` prints non-empty, recognizable SPEC.md content', async () => {
-  const { stdout } = await execFileAsync('node', [cliEntry, 'docs', 'quantifiers']);
-  assert.match(stdout, /Array quantifiers/);
-  assert.match(stdout, /expect any /);
-  assert.match(stdout, /expect all /);
+test('`tflw docs matchers` prints the page, its table rendered from the matcher manifest', async () => {
+  const { stdout } = await execFileAsync('node', [cliEntry, 'docs', 'matchers']);
+  assert.match(stdout, /^Matchers reference\n=+\n/);
+  assert.match(stdout, /^ {2}`equals`\n {6}Applies to: any value$/m);
+  assert.doesNotMatch(stdout, /<table|v-for|<td/);
+});
+
+test('`M263`: a topic and a word print one section; a word that is no topic finds the section it names', async () => {
+  const run = await execFileAsync('node', [cliEntry, 'docs', 'cli', 'run']);
+  assert.match(run.stdout, /^CLI flags reference › `tflw run`\n/);
+  assert.match(run.stdout, /^ {2}`--seed <n>`$/m);
+  const unique = await execFileAsync('node', [cliEntry, 'docs', 'unique']);
+  assert.match(unique.stdout, /^Variables, generators & expressions › `unique` vs\. `random`\n/);
+  assert.match(unique.stdout, /\(part of `tflw docs variables`\)\n$/);
 });
 
 test('`tflw docs` on an unknown topic is a usage error (exit 2) with a did-you-mean hint for a near miss', async () => {
   await assert.rejects(
-    execFileAsync('node', [cliEntry, 'docs', 'quantifier']),
+    execFileAsync('node', [cliEntry, 'docs', 'sesions']),
     (e: unknown) => {
       const { code, stderr } = e as { code?: number; stderr?: string };
-      return code === 2 && /unknown docs topic `quantifier`/.test(stderr ?? '') && /Did you mean `quantifiers`\?/.test(stderr ?? '');
+      return code === 2 && /unknown docs topic `sesions`/.test(stderr ?? '') && /Did you mean `sessions`\?/.test(stderr ?? '');
+    },
+  );
+});
+
+test('`M263`: a section a page does not have is a usage error that lists the sections it does', async () => {
+  await assert.rejects(
+    execFileAsync('node', [cliEntry, 'docs', 'matchers', 'nothing-like-this']),
+    (e: unknown) => {
+      const { code, stderr } = e as { code?: number; stderr?: string };
+      return code === 2 && /`tflw docs matchers` has no single section `nothing-like-this`/.test(stderr ?? '');
     },
   );
 });

@@ -178,7 +178,7 @@ mixed into it — named from the rule, the method, the path, the mutation site a
 matched:
 
 ```tflw
-# emitted by tflw M137d — sec/error-detail-disclosure
+# emitted by tflw — sec/error-detail-disclosure
 # GET /products?q=tflw%27 — query `q` carrying `injection/sql-quote` returned a stack frame
 # re-run: tflw run --env secureLocal input-repro/error-detail-disclosure--get--products-q-tflw-27--query-q--a-stack-frame.tflw
 test "GET /products?q=tflw%27 must not disclose a stack frame for query `q`"
