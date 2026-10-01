@@ -10205,7 +10205,7 @@ retire. *Not taken:* a `record` tab in the evidence column; the panel as a card 
 
 ### D1409
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/ui-budgets.mjs, tflw-tests/tests/.tflw-ui/authoring.tflw +3 more · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
 
 **`D1409` — Run is a tree by verdict.** (`D-RC-11`) The headline carries one verdict (`1 FAILED · 16
 passed · 1 inconclusive · 3.1 s`; a cancelled run says `cancelled` in that position — F8's
@@ -14713,7 +14713,7 @@ milestone it waits on. Both files are gitignored; the repositories are public.
 
 ### M257
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/ui-budgets.mjs · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
 
 **`M257` — Run and playback (`D-RC-9`, `D-RC-11`)**
 
