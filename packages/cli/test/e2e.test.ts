@@ -970,8 +970,12 @@ test('`M259` `A`: `SHOP_URL` moves the shop and the suite together — one varia
     const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'tests/checkout.tflw', '--no-color'], { cwd: dir, env });
     assert.match(stdout, /PASS \d+\/\d+ passed/, stdout);
   } finally {
+    // Wait for the shop to go before removing its directory: Windows refuses to delete a directory a
+    // live process has open (`EBUSY`), and the kill only asks (the `M252-02` class).
+    const gone = shop.exitCode !== null || shop.signalCode !== null ? Promise.resolve() : new Promise<void>((r) => shop.once('exit', () => r()));
     shop.kill();
-    await rm(dir, { recursive: true, force: true });
+    await gone;
+    await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   }
 });
 
@@ -993,8 +997,12 @@ test('`M259-06`: `node server.mjs` named through a symlinked directory still sta
     });
     assert.equal(announced.trim(), `the coffee shelf is on http://127.0.0.1:${port}`);
   } finally {
+    // Wait for the shop to go before removing its directory: Windows refuses to delete a directory a
+    // live process has open (`EBUSY`), and the kill only asks (the `M252-02` class).
+    const gone = shop.exitCode !== null || shop.signalCode !== null ? Promise.resolve() : new Promise<void>((r) => shop.once('exit', () => r()));
     shop.kill();
-    await rm(top, { recursive: true, force: true });
+    await gone;
+    await rm(top, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   }
 });
 
