@@ -429,7 +429,11 @@ export const INCLUDED_RECORDS = new Map([
  */
 export function roadmapFiles(root, included = INCLUDED_RECORDS) {
   const repo = join(root, '..', '..');
-  const files = findMarkdownFiles(root).map((path) => ({ key: path.slice(root.length + 1), path }));
+  // `relKey`, not a slice of the path (`M259-07`): `DECLARED_ROADMAP`'s page keys are written with
+  // `/`, and a slice carries Windows' `\`, so the first page entries (`runbook/install.md`, `M259`)
+  // matched nothing there and their declared sentences read as undeclared. `M243-16` fixed the
+  // repo-file keys below and missed this line, because no page had an entry yet.
+  const files = findMarkdownFiles(root).map((path) => ({ key: relKey(root, path), path }));
   // The shims, from the registry rather than by name (`D719`). `D706` already decided that these
   // two guards want opposite answers about an `@include` — that one skips the record's body, this
   // one must read it — and gave the reasoning. What it could not fix from where it sat is that one
