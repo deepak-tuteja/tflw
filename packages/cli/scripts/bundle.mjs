@@ -4,13 +4,14 @@
 // package.json read in the published artifact. A plain JS script (not a shell one-liner) so the
 // dist removal is portable across OSes (decision 79) and the version doesn't need shell quoting.
 
-import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, formatMessages } from 'esbuild';
 import { collectNotices, renderNotices } from '../../../scripts/third-party-notices.mjs';
+import { listExample } from './example-files.mjs';
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url));
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -92,6 +93,8 @@ const IMPORT_META_ALLOWED = new Map([
   // `buildStamp.ts` since `M240` `F` (`M239-10`), where the stamp moved so the page's server can
   // put it on the wire.
   ['src/buildStamp.ts', 1],
+  // `exampleRoot()` (`M259` `A`) — the same guard: the bundle's `__dirname` first.
+  ['src/example.ts', 1],
   // `resolveWorkerEntryPath()` — prefers the real `__dirname`, reaching `import.meta.url` only under
   // real ESM. Reached through the runtime's compiled `dist` from the CLI entry and through its `src`
   // from the worker entry, so both spellings are the same guarded site.
@@ -212,6 +215,16 @@ execFileSync(process.execPath, [viteBin, 'build', '--logLevel', 'warn'], {
 const uiMetafilePath = new URL('../dist/ui/metafile.json', import.meta.url);
 const uiMetafile = JSON.parse(readFileSync(uiMetafilePath, 'utf8'));
 rmSync(uiMetafilePath);
+
+// `M259` `A` (`D1417`) — the Coffee Shelf, for `tflw init --example`. Copied, never authored here:
+// `examples/storefront/` is the one source, and `example-files.mjs` is the one rule for which of it
+// ships. Its own files only — no package, so nothing it does reaches the notice below.
+const exampleSource = fileURLToPath(new URL('../../../examples/storefront/', import.meta.url));
+const exampleOut = fileURLToPath(new URL('../dist/example/', import.meta.url));
+for (const rel of listExample(exampleSource)) {
+  mkdirSync(dirname(join(exampleOut, rel)), { recursive: true });
+  copyFileSync(join(exampleSource, rel), join(exampleOut, rel));
+}
 
 // M92a (review `B6-06`) — third-party attribution, from the union of *all three* bundles' metafiles.
 //

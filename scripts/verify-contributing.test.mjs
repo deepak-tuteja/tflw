@@ -333,6 +333,28 @@ const CLASSIFIED = [
   {
     wf: 'ci.yml',
     job: 'test',
+    cmd: 'npm run verify:runbook:self-test',
+    class: 'gate',
+    local: 'npm run verify:runbook:self-test',
+    note: '†',
+    why: '`M259` `B` (`D1416`). The walkthrough gate\'s controls, against fixture pages: a flag that no longer exists, an output '
+      + 'fence that drifted and an untagged fence must each turn it red at the fence they were built for, and the unchanged '
+      + 'fixture and a `<Published>` twin read under the flag must stay green. Packs the built CLI; Node 22 leg only',
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
+    cmd: 'xvfb-run -a npm run verify:runbook',
+    class: 'gate',
+    local: 'xvfb-run -a npm run verify:runbook',
+    note: '†',
+    why: '`M259` `B` (`D1416`). Every `sh runbook` fence in the walkthrough, run in one fresh directory in chapter order against '
+      + 'the CLI packed from this tree, each output fence compared after the listed normalisations. Needs the network for '
+      + '`playwright` and a display for the browser tests; Node 22 leg only, since the page is the same page on every OS',
+  },
+  {
+    wf: 'ci.yml',
+    job: 'test',
     cmd: 'xvfb-run -a npm run coverage',
     class: 'gate',
     local: 'xvfb-run -a npm run coverage',

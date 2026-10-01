@@ -153,7 +153,7 @@ function scanBlindSpotLines(report: RunReport, c: typeof C): string[] {
   if (cov && cov.apiSteps > 0) {
     const pct = Math.floor((cov.withOwner / cov.apiSteps) * 100);
     lines.push(
-      `${c.dim}ℹ authz coverage: ${cov.withOwner} of ${cov.apiSteps} api step${cov.apiSteps === 1 ? '' : 's'} in the suite sit in a test that declares an owner (${pct}%) — the rest are unjudgeable by \`authorization violations\`, which needs \`as <session>\` (SPEC §3.3)${c.reset}`,
+      `${c.dim}ℹ authz coverage: ${cov.withOwner} of ${cov.apiSteps} api step${cov.apiSteps === 1 ? '' : 's'} in the suite run in a test signed in with \`as <session>\` (${pct}%) — only those can be judged by \`authorization violations\`${c.reset}`,
     );
   }
   // D418a — the scan is named because two tiers now report here, and `shopper` refused for CSRF

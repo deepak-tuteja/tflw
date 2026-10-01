@@ -243,6 +243,17 @@ export const DECLARED_ROADMAP = new Map([
       },
     ],
   ],
+  // `M259` `C` (`G1`, `D1419`): the runbook's install text said `npm install -D tflw` with no flag
+  // around it, and a reader following it got `E404`. Both pages now lead with the clone-and-pack
+  // path inside `<Published :when="false">`, the npm twin after it.
+  [
+    'runbook/install.md',
+    [{ includes: 'tflw is pre-1.0 and **not published to npm yet**. Until it is', why: '`D1419`: the tarball path leads because it is the one that works today' }],
+  ],
+  [
+    'runbook/start/install.md',
+    [{ includes: 'tflw is pre-1.0 and **not published to npm yet**, so the package is built', why: '`D1419`: the walkthrough installs the tarball, and `verify:runbook` runs that path' }],
+  ],
   /**
    * `M153a`. This file reached the guard for the first time when `D719` made `roadmapFiles()`
    * derive its `@include` set from `INCLUDED_RECORDS` — the grammar shim had been publishing onto

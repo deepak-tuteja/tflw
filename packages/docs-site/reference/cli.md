@@ -117,6 +117,13 @@ HTTP traffic and no secrets required. Exit `0` when every file is clean, `2` oth
 Scaffolds `tflw.config`, `example.tflw`, `.env.example`, and a `.gitignore` covering `.env` and
 `report/` — appending to an existing `.gitignore` rather than duplicating entries.
 
+`tflw init --example` writes the Coffee Shelf instead: a small shop (`server.mjs`, started with
+`npm run shop`), its order page, and twelve test files covering every kind tflw runs. It is the
+project [the walkthrough](/runbook/start/install) uses. Its `tflw.config` reads `SHOP_URL` for every
+address, and so does the shop, so one variable moves both off port 4720. It refuses to write over
+any file already there unless `--force`, and adds the `shop` script to an existing `package.json`
+rather than replacing the file.
+
 ## `tflw install-browsers`
 
 <table>

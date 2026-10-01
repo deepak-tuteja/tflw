@@ -4,7 +4,7 @@ A small shop, and a tflw suite that exercises **every door the page has** and **
 the language can write**. Two commands, no setup:
 
 ```
-npm run example        # the functional suite + the scan — 32 of 32 pass, ~2.7s
+npm run example        # the functional suite + the scan — 35 of 35 pass, ~2.7s
 npm run example:load   # the same work, run at a rate
 npm run example:pacing # one paced workload, on its own — see below for why it is not in :load
 npm run example:ui     # open it in `tflw ui`

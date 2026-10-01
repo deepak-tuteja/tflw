@@ -377,6 +377,19 @@ jobs:
           name: coverage-lcov
           path: coverage/lcov.info
 
+      # `M259` `B` (`D1416`): the walkthrough's commands, run as a reader runs them — one fresh
+      # directory, the CLI packed from this commit, `playwright` from the registry, the browser
+      # tests under the display `xvfb-run` gives. The self-test first: its controls are what make a
+      # green walkthrough mean something. Linux Node 22 only, because a page is the same page on
+      # every OS and the install it describes is a minute of network. Its static half (an untagged
+      # fence, a chapter missing from the order) is in `npm test` on every leg.
+      - name: The runbook's commands, run (self-test)
+        if: matrix.node-version == 22
+        run: npm run verify:runbook:self-test
+      - name: The runbook's commands, run
+        if: matrix.node-version == 22
+        run: xvfb-run -a npm run verify:runbook
+
   # ---------------------------------------------------------------------------
   # `M236` `B` (`M234-05`, `D-M236-1`) — **the four gates whose input is this tree.**
   #

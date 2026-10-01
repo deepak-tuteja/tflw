@@ -135,8 +135,8 @@ export function Findings({
       ))}
       {blind?.coverage && blind.coverage.apiSteps > 0 ? (
         <p className="muted" data-authz-coverage={`${blind.coverage.withOwner}/${blind.coverage.apiSteps}`}>
-          ℹ authz coverage: {blind.coverage.withOwner} of {blind.coverage.apiSteps} api step{blind.coverage.apiSteps === 1 ? '' : 's'} in the suite sit in a test that declares an owner (
-          {Math.floor((blind.coverage.withOwner / blind.coverage.apiSteps) * 100)}%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.
+          ℹ authz coverage: {blind.coverage.withOwner} of {blind.coverage.apiSteps} api step{blind.coverage.apiSteps === 1 ? '' : 's'} in the suite run in a test signed in with <code>as &lt;session&gt;</code> (
+          {Math.floor((blind.coverage.withOwner / blind.coverage.apiSteps) * 100)}%) — only those can be judged by <code>authorization violations</code>.
         </p>
       ) : null}
       {blind?.declines && blind.declines.length > 0 ? (
