@@ -27,7 +27,7 @@
 // The address is unchanged (`D1045`, `D1080`): `L<line>` names the row that is open, and a line with
 // no `L` is the file.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { workloadSeconds, workloadEditOf } from './workloadEdit';
 import { menuTrigger, type MenuItem, type MenuRequest, type MenuTrigger } from './ContextMenu';
 import type { CaptureSpec, ExpectSpec, ExpectStmt, Lens, MatcherName, Workload } from '@tflw/lang';
@@ -70,7 +70,7 @@ import { holds, moveOf, moveUnits, requestRemoval, statementRemoval } from './de
 import { isForeign, phaseOf, requestsOf, statementsOf, type Addressed, type FileOutline, type BodiedDecl, type OutlineDecl, type OutlineRequest, type OutlineSession, type OutlineStatement, type OutlineTest } from './outline';
 import type { Prefix, SendForm } from './outline';
 import { vocabularyOf, type AddGesture, type DoorVocabulary } from './vocabulary';
-import { groupFor } from './ran';
+import { groupFor, type PlayTrace } from './ran';
 import { bodyProblem, laidOut } from './jsonview';
 import { BodyText, SourceText } from './Source';
 import type { Authorization } from './ScanPanel';
@@ -169,9 +169,12 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
   const foreign = statement !== undefined && kinds !== undefined && isForeign(statement.lens, kinds);
   const Row = head === true ? 'div' : 'li';
   const editing = editor !== undefined && editor !== null;
+  /* `M257` `A` — the row the run is at is lit, and every row judged so far already has its mark. */
+  const lit = useContext(LiveAt) === line;
   return (
     <Row
-      className={`seq-row${selected ? ' on' : ''}${indent ? ' under' : ''}${foreign ? ' locked' : ''}${editing ? ' editing' : ''}`}
+      className={`seq-row${selected ? ' on' : ''}${indent ? ' under' : ''}${foreign ? ' locked' : ''}${editing ? ' editing' : ''}${lit ? ' live-at' : ''}`}
+      data-live-at={lit ? 'yes' : undefined}
       data-seq-row={kind}
       data-seq-line={line}
       data-seq-selected={selected ? 'yes' : 'no'}
@@ -212,6 +215,33 @@ function SeqRow({ line, selected, onLine, kind, lead, text, trailing, plus, inde
     </Row>
   );
 }
+
+/**
+ * **A run, as the pane draws it** — `M257` `A` (`D1407`). The door builds it from the stream the
+ * shell is following; the pane lights the row it is at, puts the status line under the bar, and
+ * lets the evidence column follow it.
+ */
+export interface PlayState {
+  /** The run's id — a new run follows again even after the reader stopped following the last. */
+  readonly id: string;
+  /** The test followed: the last of this file's the run has reached. */
+  readonly test: string;
+  readonly status: 'running' | 'passed' | 'failed' | 'cancelled';
+  /** Steps of that test judged so far, the imported action's own excluded. */
+  readonly judged: number;
+  /** The line of the step the column follows — the newest judged, or the one that failed. */
+  readonly at: number | null;
+  readonly startedAt: number | null;
+  readonly endedAt: number | null;
+  /** `D1394`'s one graceful stop; `null` once it has ended, or for a shell's run the page cannot stop. */
+  readonly onCancel: (() => void) | null;
+  readonly onOpenRun: () => void;
+  /** The play scratch's name when a ▶ here wrote it and `.gitignore` does not list it. */
+  readonly unignored: string | null;
+}
+
+/** The line the run is at — read by every `SeqRow` rather than threaded through each call site. */
+const LiveAt = createContext<number | null>(null);
 
 /**
  * **A row's verdict, as the row's last word** — `M256` `A` (`D1405`, `D1108`).
@@ -521,6 +551,11 @@ export interface ComposePaneProps {
   /** ▶ on the declaration row — `null` where the file does not play, and on a hook. */
   readonly onPlay: ((decl: OutlineTest) => void) | null;
   readonly playing: boolean;
+  /** The run the shell is following, where it reaches this file (`D1407`). */
+  readonly play: PlayState | null;
+  /** A test's trace in the last run of this file — `null` where the project has no viewer. */
+  readonly traceFor: ((name: string) => PlayTrace | null) | null;
+  readonly onOpenTrace: (reportId: string, path: string) => void;
   readonly onRemoveScoped: ((statement: OutlineStatement) => void) | null;
   readonly onUnscope: ((statement: OutlineStatement) => void) | null;
   readonly onScope: ((statement: OutlineStatement) => void) | null;
@@ -600,7 +635,7 @@ function useNarrow(): boolean {
 const STEPS_SHARE = 0.56;
 
 export function ComposePane(props: ComposePaneProps) {
-  const { path, outline, at, focusLine, onLine, onFile, onNew, onNewDecl, crawls, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, evidenceOf, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onMoveSteps, onReread, onPlay, playing, onRemoveScoped, onUnscope, onScope, provisional, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, folds, onFold, dirty, busy, problem, onWrite, onDiscard, kinds, vocab, authorization, onProjectTab } = props;
+  const { path, outline, at, focusLine, onLine, onFile, onNew, onNewDecl, crawls, scratchUnignored, edit, onEdit, editing, prefix, prefixAll, onSend, sending, sent, lastRun, ran, evidenceOf, onVerify, onCapture, onAdd, adds, recording, onAddAfter, onDuplicate, menuFor, onMenu, made, onRemoveSteps, onRemoveDecl, onMoveSteps, onReread, onPlay, playing, play, traceFor, onOpenTrace, onRemoveScoped, onUnscope, onScope, provisional, onKeepLine, onKeepAll, onPlaySession, onDropLine, onStopSession, folds, onFold, dirty, busy, problem, onWrite, onDiscard, kinds, vocab, authorization, onProjectTab } = props;
   const footAdds: readonly AddGesture[] =
     at === null || at.decl.kind === 'hook' ? [] : at.decl.kind === 'test' ? adds : at.decl.kind === 'action' ? adds.filter((a) => a.key !== 'record') : CRAWL_ADDS;
 
@@ -775,20 +810,53 @@ export function ComposePane(props: ComposePaneProps) {
     return { ran: own ?? strict, what: `line ${line}` };
   }, [at, browserStep, ran, evidenceOf]);
 
+  /**
+   * **The column follows a run** — `M257` `A` (`D1407`).
+   *
+   * While the picked test runs, the evidence column shows the step it has reached — the response
+   * of a request, the page a browser step left — and when the test fails it **rests on the failing
+   * step**, which is the one the reader would pick next. Picking a row is the reader taking the
+   * column back: it stops following that run and stays theirs until the next one starts.
+   */
+  const [unfollowed, setUnfollowed] = useState<string | null>(null);
+  const lastFocus = useRef(focusLine);
+  useEffect(() => {
+    if (lastFocus.current === focusLine) return;
+    lastFocus.current = focusLine;
+    if (play !== null) setUnfollowed(play.id);
+  }, [focusLine, play]);
+  const following =
+    play !== null && play.at !== null && at !== null && at.decl.kind === 'test' && play.test === at.decl.name && (play.status === 'running' || play.status === 'failed') && unfollowed !== play.id;
+  const followGroup: Ran | null = following && at !== null && play !== null && play.at !== null ? groupFor(ran, at.decl.line, play.at) : null;
+  const followRequest: OutlineRequest | null = followGroup === null || at === null ? null : requestsOf(at.decl.body).find((r) => r.line === followGroup.line) ?? null;
+  const followResponse = followRequest !== null && followGroup !== null && followGroup.response !== null;
+  const followShot = followGroup !== null && followRequest === null && tenants.includes('screenshot');
+  const shownNow: Ran | null = followResponse ? followGroup : shown;
+  const shownRequestNow: OutlineRequest | null = followResponse ? followRequest : shownRequest;
+  const tabNow: EvidenceTab = followResponse && tenants.includes('response') ? 'response' : followShot ? 'screenshot' : evidenceTab;
+  const shotNow = followShot && followGroup !== null ? { ran: followGroup, what: `line ${followGroup.line}` } : shot;
+  /** The row the run is at: while it runs, and on the failure while the column still follows it. */
+  const litLine: number | null = play === null ? null : play.status === 'running' || following ? play.at : null;
+  const trace = traceFor !== null && at !== null && at.decl.kind === 'test' ? traceFor(at.decl.name) : null;
+
   const decl = at?.decl ?? null;
 
   const evidence = outline === null ? null : (
     <Evidence
       path={path}
       tenants={tenants}
-      tab={evidenceTab}
-      onTab={setEvidencePick}
+      tab={tabNow}
+      onTab={(t) => {
+        if (play !== null) setUnfollowed(play.id);
+        setEvidencePick(t);
+      }}
+      following={followGroup === null || play === null ? null : { line: followGroup.line, status: play.status }}
       plan={planWorkload === null ? null : { workload: planWorkload, name: decl !== null && decl.kind === 'test' ? decl.name : null }}
       authorization={authorization}
       scanMatchers={scanMatchers}
       onProjectTab={onProjectTab}
-      shown={shown}
-      shownRequest={shownRequest}
+      shown={shownNow}
+      shownRequest={shownRequestNow}
       picked={forRequest}
       sentHere={sentHere}
       sent={sent === null ? null : { form: sent.form, at: sent.at }}
@@ -801,7 +869,8 @@ export function ComposePane(props: ComposePaneProps) {
       scratchUnignored={scratchUnignored}
       onVerify={onVerify}
       onCapture={onCapture}
-      shot={shot}
+      shot={shotNow}
+      trace={trace === null ? null : { path: trace.path, reportId: trace.reportId, open: () => onOpenTrace(trace.reportId, trace.path) }}
       recording={recordingHere && provisional !== null ? { into: provisional.into ?? '', pending: provisional.lines.filter((l) => l.kind === 'step').length } : null}
     />
   );
@@ -1203,7 +1272,8 @@ export function ComposePane(props: ComposePaneProps) {
   };
 
   return (
-    <div className="compose-pane" data-compose-pane={selected.kind} data-compose={at?.request ? 'request' : 'no-request'}>
+    <LiveAt.Provider value={litLine}>
+    <div className="compose-pane" data-compose-pane={selected.kind} data-compose={at?.request ? 'request' : 'no-request'} data-play={play?.status}>
       <div className="compose-pane-bar" data-compose-bar>
         <code className="compose-pane-path" data-compose-file={path}>{path}</code>
         <span className="muted" data-compose-summary data-compose-subject={at ? 'test' : 'file'} data-compose-decl-kind={at?.decl.kind} data-compose-decl-line={at?.decl.line}>
@@ -1250,6 +1320,7 @@ export function ComposePane(props: ComposePaneProps) {
           </span>
         ) : null}
       </div>
+      {play === null ? null : <PlayLine play={play} total={decl !== null && decl.kind === 'test' && decl.name === play.test ? rowCount : null} />}
 
       {/* **`data-seq-open` is the open request's line** — on the grid now, because the row that is
           its editor and the column that is its evidence are two children of it (`D1405`, `D1406`). */}
@@ -1407,6 +1478,7 @@ export function ComposePane(props: ComposePaneProps) {
         )}
       </div>
     </div>
+    </LiveAt.Provider>
   );
 }
 
@@ -1717,6 +1789,54 @@ function RequestInline({ request: r, status, folds, onFold, edit, onEdit, editin
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * **The run, in one line under the bar** — `M257` `A` (`D1407`).
+ *
+ * `running · step 3 of 7 · 1.2 s · cancel` while it goes; the verdict, the time and a way to the
+ * report once it has ended. It replaces the stage's bar and its four hints: what a run is doing is
+ * one sentence, and the rows and the evidence column are where it is shown.
+ */
+function PlayLine({ play, total }: { readonly play: PlayState; readonly total: number | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (play.status !== 'running') return undefined;
+    const tick = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(tick);
+  }, [play.status]);
+  const end = play.endedAt ?? (play.status === 'running' ? now : null);
+  const took = play.startedAt === null || end === null ? null : `${(Math.max(0, end - play.startedAt) / 1000).toFixed(1)} s`;
+  const step =
+    play.status === 'running'
+      ? total !== null && play.judged < total ? `step ${play.judged + 1} of ${total}` : `step ${play.judged + 1}`
+      : `${play.judged} step${play.judged === 1 ? '' : 's'}`;
+  const lead = play.status === 'failed' && play.at !== null ? `failed at line ${play.at}` : play.status;
+  return (
+    <div className={`play-line ${play.status}`} data-play-status={play.status} data-play-test={play.test} data-play-judged={play.judged}>
+      <span className={`dot ${play.status === 'passed' ? 'ok' : play.status === 'failed' ? 'fail' : play.status === 'running' ? 'running' : 'none'}`} />
+      <span data-play-lead>{lead}</span>
+      <span className="muted">
+        {' '}· {play.test} · {step}
+        {took === null ? null : <span data-play-took> · {took}</span>}
+      </span>
+      {play.onCancel === null ? null : (
+        <button type="button" className="linkish" onClick={play.onCancel} data-play-cancel data-tip="stops the run gracefully — what has run is kept, the rest stays not run">
+          cancel
+        </button>
+      )}
+      {play.status === 'running' ? null : (
+        <button type="button" className="linkish" onClick={play.onOpenRun} data-play-open-run>
+          open in Run
+        </button>
+      )}
+      {play.unignored === null ? null : (
+        <span className="muted play-unignored" data-play-unignored={play.unignored}>
+          ▶ writes <code>{play.unignored}</code> beside the test, and this project&rsquo;s <code>.gitignore</code> does not list it — add that line.
+        </span>
+      )}
     </div>
   );
 }

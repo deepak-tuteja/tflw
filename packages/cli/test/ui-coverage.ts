@@ -45,11 +45,9 @@
 // the corpus walkers skip it) and the entry's `url` names that copy. Vite's hashed filenames mean
 // two gates' bundles never collide.
 //
-// **Entries are merged, not appended.** With `resetOnNavigation: false` the suite's hundreds of
-// `page.goto` calls each produce another entry for the same script, and the `source` field alone is
-// 962 KB. Same bytes means the same function ranges every load, so counts are summed index-wise and
-// one entry per script is written; a structural mismatch falls back to appending, because a wrong
-// merge is worse than a large file.
+// **Each document is its own file** (`M257`), taken before the page leaves it — see
+// `startUiCoverage`. The first version merged one collection at the end, and that collection held
+// only the last document.
 //
 // **It refuses rather than under-reporting.** Running under c8 with no source map emitted would
 // produce a bundle c8 cannot remap — coverage lands on `coverage/.ui-bundle/index-HASH.js`, which
@@ -61,7 +59,7 @@ import assert from 'node:assert/strict';
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { Page } from 'playwright';
+import type { CDPSession, Page } from 'playwright';
 
 type Range = { startOffset: number; endOffset: number; count: number };
 type Fn = { functionName: string; isBlockCoverage: boolean; ranges: Range[] };
@@ -105,43 +103,80 @@ export const uiCoverageWanted = (): boolean => v8Dir() !== undefined;
 export const coverageBuildArgs = (): string[] =>
   uiCoverageWanted() ? ['--sourcemap', '--minify', 'false'] : [];
 
-/** Start collecting. `resetOnNavigation: false` because the gate navigates on nearly every test. */
-export async function startUiCoverage(page: Page): Promise<void> {
-  if (!uiCoverageWanted()) return;
-  await page.coverage.startJSCoverage({ resetOnNavigation: false });
+/**
+ * **One file per document, written before the document is left** (`M257`).
+ *
+ * The first version started Playwright's collector once with `resetOnNavigation: false` and stopped
+ * it in `after()`, on the reading that *not resetting* meant *keeping*. It does not: Chromium's
+ * precise coverage answers for the scripts of the document that is live when it is asked, and a
+ * document navigated away from takes its counts with it. Measured with a probe page — a function
+ * called five times, then a reload: **0**; the same calls in the document still on screen: **5**.
+ * So each gate's figure was the coverage of whatever its LAST test left on screen. `M256` measured
+ * `packages/ui` at 68.38% because its last test ended mid-interaction, and `M257`'s ended on a
+ * reload and measured **61.58%** with nothing in the page covered any less — `ComposePane` read
+ * zero calls in both gates while 200 tests drove it. A number about the wrong thing again, in
+ * `M86`'s and `M234`'s own words.
+ *
+ * Now the page's `goto`, `reload`, `goBack` and `goForward` take the live document's coverage
+ * first, over the DevTools protocol (`Profiler.takePreciseCoverage`, which also zeroes the
+ * counters, so no call is counted twice), and each document becomes its own file in c8's
+ * directory. c8 merges files from many processes already — the CLI's subprocesses write over a
+ * thousand — so a few hundred more is the arrangement it was built for, and no merge is written
+ * here. What it still cannot see: a navigation the page makes by itself (a full-page link), and
+ * every test that drives a page of its own rather than the shared one.
+ */
+type Collector = { readonly cdp: CDPSession; readonly tag: string; n: number; written: number };
+const collectors = new WeakMap<Page, Collector>();
+
+async function snapshot(page: Page): Promise<void> {
+  const c = collectors.get(page);
+  if (c === undefined) return;
+  const { result } = (await c.cdp.send('Profiler.takePreciseCoverage')) as unknown as { result: (Entry & { scriptId: string })[] };
+  const mine = result.flatMap((e) => {
+    const asset = e.url.split('/assets/')[1];
+    if (asset === undefined || !asset.endsWith('.js')) return []; // the index.html inline script, about:blank
+    return [{ scriptId: '0', url: pathToFileURL(join(BUNDLE_HOME, asset)).href, functions: e.functions }];
+  });
+  c.n += 1;
+  if (mine.length === 0) return;
+  c.written += 1;
+  await writeFile(join(v8Dir()!, `coverage-ui-${c.tag}-${c.n}.json`), JSON.stringify({ result: mine, timestamp: Date.now() }));
 }
 
-/** Same bytes every load, so the ranges line up and the counts add. */
-function mergeInto(into: Entry, next: Entry): boolean {
-  if (into.functions.length !== next.functions.length) return false;
-  for (let i = 0; i < into.functions.length; i += 1) {
-    const a = into.functions[i]!;
-    const b = next.functions[i]!;
-    if (a.ranges.length !== b.ranges.length || a.functionName !== b.functionName) return false;
+/** Start collecting on the gate's shared page. Inert unless this run is under `npm run coverage`. */
+export async function startUiCoverage(page: Page, tag: string): Promise<void> {
+  if (!uiCoverageWanted()) return;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Profiler.enable');
+  await cdp.send('Profiler.startPreciseCoverage', { callCount: true, detailed: true });
+  collectors.set(page, { cdp, tag, n: 0, written: 0 });
+  for (const method of ['goto', 'reload', 'goBack', 'goForward'] as const) {
+    const original = page[method].bind(page) as (...args: unknown[]) => Promise<unknown>;
+    (page as unknown as Record<string, unknown>)[method] = async (...args: unknown[]) => {
+      await snapshot(page);
+      return original(...args);
+    };
   }
-  for (let i = 0; i < into.functions.length; i += 1)
-    for (let j = 0; j < into.functions[i]!.ranges.length; j += 1)
-      into.functions[i]!.ranges[j]!.count += next.functions[i]!.ranges[j]!.count;
-  return true;
 }
 
 /**
- * Stop, persist the bundle, and hand c8 the result.
+ * Take the last document's coverage and persist the bundle c8 will remap it through.
  *
  * `staticDir` is the directory the gate ran `vite build --outDir` into — it is read here and may be
- * deleted by the caller the moment this returns. `tag` only names the output file.
+ * deleted by the caller the moment this returns.
  */
-export async function stopUiCoverage(page: Page, staticDir: string, tag: string): Promise<void> {
-  const dir = v8Dir();
-  if (dir === undefined) return;
-  const entries = (await page.coverage.stopJSCoverage()) as unknown as Entry[];
+export async function stopUiCoverage(page: Page, staticDir: string): Promise<void> {
+  const c = collectors.get(page);
+  if (c === undefined) return;
+  await snapshot(page);
+  await c.cdp.send('Profiler.stopPreciseCoverage');
 
   const assetDir = join(staticDir, 'assets');
   const assets = await readdir(assetDir);
   const maps = assets.filter((f) => f.endsWith('.js.map'));
   assert.ok(
     maps.length > 0,
-    `${tag}: running under c8 (NODE_V8_COVERAGE is set) and the page bundle in ${assetDir} carries no ` +
+    `${c.tag}: running under c8 (NODE_V8_COVERAGE is set) and the page bundle in ${assetDir} carries no ` +
       `source map, so every line the browser ran would be attributed to the bundle and then dropped by ` +
       `exclude-after-remap — the report would fall with nothing saying why. ` +
       `\`vite.config.ts\` emits one when TFLW_BUNDLE_SOURCEMAP=1; \`scripts/coverage.mjs\` sets it.`,
@@ -155,20 +190,6 @@ export async function stopUiCoverage(page: Page, staticDir: string, tag: string)
     map.sources = map.sources.map((src) => resolve(assetDir, src));
     await writeFile(join(BUNDLE_HOME, name), JSON.stringify(map));
   }
-
-  const merged = new Map<string, Entry>();
-  const extra: Entry[] = [];
-  for (const e of entries) {
-    const asset = e.url.split('/assets/')[1];
-    if (asset === undefined || !asset.endsWith('.js')) continue; // the index.html inline script
-    const url = pathToFileURL(join(BUNDLE_HOME, asset)).href;
-    const held = merged.get(url);
-    if (held === undefined) merged.set(url, { url, functions: e.functions });
-    else if (!mergeInto(held, { url, functions: e.functions })) extra.push({ url, functions: e.functions });
-  }
-
-  const result = [...merged.values(), ...extra].map((e) => ({ scriptId: '0', url: e.url, functions: e.functions }));
-  assert.ok(result.length > 0, `${tag}: the page was driven under c8 and Chromium reported no bundle script at all`);
-  await writeFile(join(dir, `coverage-ui-${tag}.json`), JSON.stringify({ result, timestamp: Date.now() }));
-  console.log(`# ui coverage: ${tag} — ${entries.length} script load(s) merged into ${result.length} entr(ies)`);
+  assert.ok(c.written > 0, `${c.tag}: the page was driven under c8 and Chromium reported no bundle script at all`);
+  console.log(`# ui coverage: ${c.tag} — ${c.written} document(s) of ${c.n} snapshot(s), one file each`);
 }

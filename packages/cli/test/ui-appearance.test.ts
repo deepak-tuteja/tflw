@@ -242,7 +242,7 @@ const setup = stagedSetup(async () => {
   page = await openPage();
   // `M234`. This file's module-scope page only; the two ad-hoc pages below (`:389`, `:1360`) are
   // viewport variants of the same paths and are deliberately not collected.
-  await startUiCoverage(page);
+  await startUiCoverage(page, 'appearance');
 });
 
 before(setup.begin);
@@ -250,7 +250,7 @@ before(setup.begin);
 after(async () => {
   await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
   // Before the page closes and before `rm(scratch)` takes the bundle with it (`M234`).
-  if (page !== undefined) await stopUiCoverage(page, staticDir, 'appearance');
+  if (page !== undefined) await stopUiCoverage(page, staticDir);
   await page?.close();
   await browser?.close();
   await server?.close();
@@ -1604,7 +1604,7 @@ test('no control on any door or tab lacks a tip', async () => {
   const READY: Readonly<Record<string, string>> = {
     landing: '[data-init-kinds]',
     compose: '[data-seq-col]',
-    run: '[data-runs]',
+    run: '[data-run-picker]', // `M257` `B`: the list is behind the picker; the picker is what is drawn
     auth: '[data-api-auth]',
     config: '[data-api-config="saved"], [data-api-config="unsaved"]',
   };
@@ -1789,7 +1789,7 @@ test('control: axe names an unlabelled `<nav>` when there is one', async () => {
 const BUDGET: Readonly<Record<string, number>> = { landing: 120, compose: 250, auth: 200, run: 150 };
 // `.cm-editor` since `M241` `A` (`D1321`): the Source and Config editors are CodeMirror, whose text
 // is a `div` where it was a `<textarea>`, and a file's words are the author's, never the page's.
-const THEIRS = 'code, pre, kbd, input, textarea, select, option, .cm-editor, .seq-text, [data-files], [data-user-data], .tip, [data-legend], [data-test], [data-finding], [data-finding-gone]';
+const THEIRS = 'code, pre, kbd, input, textarea, select, option, .cm-editor, .seq-text, [data-files], [data-user-data], .tip, [data-legend], [data-test], [data-tree-test], [data-finding], [data-finding-gone]';
 
 const wordsAtRest = (): Promise<{ readonly n: number; readonly text: string }> =>
   page.evaluate((skip) => {
@@ -1819,7 +1819,7 @@ const COPY_VIEWS: ReadonlyArray<readonly [string, string, string | null]> = [
   ['', 'landing', null],
   ...DOORS.flatMap((d) => [[d, 'compose', 'tests/catalog.tflw/L2'], [d, 'auth', null], [d, 'run', null], [d, 'config', null]] as Array<[string, string, string | null]>),
 ];
-const COPY_READY: Readonly<Record<string, string>> = { landing: '[data-init-kinds]', compose: '[data-seq-col]', run: '[data-runs]', auth: '[data-api-auth]', config: '[data-api-config="saved"], [data-api-config="unsaved"]' };
+const COPY_READY: Readonly<Record<string, string>> = { landing: '[data-init-kinds]', compose: '[data-seq-col]', run: '[data-run-picker]', auth: '[data-api-auth]', config: '[data-api-config="saved"], [data-api-config="unsaved"]' };
 
 test('`M240` `D` (`D1312`): words at rest stay inside each view’s budget, and every tip is one sentence of at most 90 characters', async () => {
   const over: string[] = [];

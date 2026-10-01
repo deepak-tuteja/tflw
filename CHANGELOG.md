@@ -17,6 +17,25 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — a run is read as a tree by verdict, and draws itself where you are (M257)
+
+- **Run is a tree by verdict** (`D1409`). One headline, one verdict — `1 FAILED · 16 passed ·
+  3.1 s`, `17 PASSED`, `INCONCLUSIVE` or `CANCELLED`, with every other group a count and no count of
+  zero. On the left the tests grouped **failed** (open) · **inconclusive** · **skipped** · **passed**
+  (folded, with a count); the page opens on the first failure with its failing step open. Picking a
+  test draws its steps on the right, the compared run's same step one line under each, with **open in
+  Compose** and **rerun this test**. The chip row of runs is a picker, `run 5 min ago ▾`; the filter
+  keeps the name and the file, and *failed* is the tree's own first group.
+- **`security` and `history` are rows of the tree** (`D1409`). The findings block opens from a
+  `security · 3 findings · worst high ▸` row that is there only when the run has something to say
+  about security; `history ▸` lists each test across the kept runs, failures first.
+- **A run draws itself in the rows** (`D1407`). While a run reaches the open file, a line under the
+  file's name reads `running · step 3 of 7 · 1.2 s · cancel`, each step's mark lands on its row as it
+  is judged, and the right-hand column follows the step the run has reached and stays on the one
+  that failed. A cancelled run leaves the steps it never reached *not run*. The playback region under
+  the columns is gone; a browser test's trace is a link in the **screenshot** tab and opens in the
+  Run tab's viewer.
+
 ### Changed — Compose edits a test where it is, and the right column shows what came back (M256)
 
 - **A picked step edits in place** (`D1405`). Clicking a row, or pressing Enter on it, turns that

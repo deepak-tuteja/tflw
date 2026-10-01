@@ -67,29 +67,6 @@ export const COMPOSE: GripSpec = {
   key: 'tflw.compose.width', label: 'steps column width',
 };
 
-/**
- * **The playback region** — `M223` `E` (`D1199`).
- *
- * The third instance, and the one the user asked for by pointing at a **gap**: with a trace up,
- * `.compose-pane` sits on its 320 px floor and the viewer on its 620 px one, which is 994 px of
- * want in a 900 px window — so the page scrolls and the two can never be seen together at a size
- * anybody chose. The 14 px between them is `.stage`'s own `margin-top` and reads as a seam because
- * the two columns' bottom borders run across the full width immediately above it: a line that is
- * not a control, which is the same misreading `.split` produced before `D1197`.
- *
- * **It sizes the FRAME and not the section**, so `Home` restores `M221`'s viewer exactly — 620 is
- * the number `.stage-frame`'s own `min-height` has carried since that round, and a fallback
- * measured in section height would have been a different picture wearing the same number.
- *
- * **`min` is 160 and deliberately below the viewer's measured 606 px floor.** `M221` refused to
- * squeeze the viewer on the reader's behalf and was right to, on a builder's default; this is not
- * a default, it is a drag. `D1135`'s whole claim is that the trade is the reader's per project and
- * per moment, and a clamp that enforced 606 would hand back the refusal the user has just taken.
- */
-export const STAGE: GripSpec = {
-  name: 'stage', axis: 'y', sizes: 'after', min: 160, max: 1600, fallback: 620,
-  key: 'tflw.compose.stage', label: 'playback height',
-};
 
 const clamp = (spec: GripSpec, n: number): number => Math.min(spec.max, Math.max(spec.min, Math.round(n)));
 

@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { evidenceFor, groupFor, indexFromReport, indexFromSend } from '../src/ran.ts';
+import { evidenceFor, groupFor, indexFromReport, indexFromSend, indexFromSteps } from '../src/ran.ts';
 import type { RunReport, StepResult } from '../src/contract.ts';
 
 const step = (over: Partial<StepResult> & Pick<StepResult, 'kind' | 'source' | 'line'>): StepResult => ({
@@ -426,4 +426,49 @@ test('`evidenceFor`: the run\'s evidence level and the group\'s screenshot trave
   ]);
   const buffer = ['test "cart"', '  open "/cart"', '  expect text "Cart" is visible', '  screenshot "cart"', ''].join('\n');
   assert.equal(evidenceFor(shot, 'tests/checkout.tflw', buffer, 2)?.screenshot, 'iVBOR', 'the screenshot a `screenshot` statement took is the group\'s, read to the next action');
+});
+
+test('`M257` `A`: a run in flight lands each mark as its step ends, and a row it has not reached has none', () => {
+  // `D1407` — the same join over the steps so far. The run was stopped after the first group's
+  // assertion: the second request and its assertion never ran.
+  const sofar = [
+    step({ kind: 'api', source: 'api GET /health', line: 2, response: { status: 200, bodyText: '{}' } as never }),
+    step({ kind: 'expect', source: 'expect status equals 200', line: 3, detail: 'status = 200' }),
+  ];
+  const live = indexFromSteps([{ file: 'tests/checkout.tflw', steps: sofar }], { at: '2026-10-01T10:00:00.000Z', evidence: null }, 'tests/checkout.tflw', BUFFER);
+  assert.deepEqual([...live.keys()], [2]);
+  assert.equal(live.get(2)!.steps.get(3)!.ok, true);
+  assert.equal(live.get(2)!.at, '2026-10-01T10:00:00.000Z');
+  // NEGATIVE CONTROL: the finished report of an EARLIER run marks line 5 passed — and the stream
+  // must not borrow it. The pane reads one or the other, never a merge, which is what leaves a
+  // cancelled run's unreached rows at *not run* (`M192`'s `cancel-forgets-to-mark-the-run`).
+  const earlier = indexFromReport(
+    report([...sofar, step({ kind: 'api', source: 'api POST /orders', line: 4 }), step({ kind: 'expect', source: 'expect status equals 201', line: 5 })]),
+    'tests/checkout.tflw',
+    BUFFER,
+  );
+  assert.equal(earlier.get(4)!.steps.get(5)!.ok, true);
+  assert.equal(groupFor(live, 1, 5), live.get(2), 'line 5 has no group of its own in the stream — it reads as its nearest opener, whose verdicts do not include it');
+  assert.equal(live.get(2)!.steps.has(5), false);
+});
+
+test('`M257` `A`: a step that opens a group and failed is its own row\'s mark; a passing one carries none', () => {
+  // An `open` that never loaded has nothing under it to judge, so without its own mark the one row
+  // that failed was the one row of the run with no mark at all.
+  const buffer = ['test "cart"', '  open "/cart"', '  expect text "Cart" is visible', ''].join('\n');
+  const failed = indexFromSteps(
+    [{ file: 'tests/checkout.tflw', steps: [step({ kind: 'open', source: 'open "/cart"', line: 2, ok: false, detail: 'net::ERR_CONNECTION_REFUSED' })] }],
+    { at: '2026-10-01T10:00:00.000Z', evidence: null },
+    'tests/checkout.tflw',
+    buffer,
+  );
+  assert.deepEqual([failed.get(2)!.steps.get(2)!.ok, failed.get(2)!.steps.get(2)!.detail], [false, 'net::ERR_CONNECTION_REFUSED']);
+  // NEGATIVE CONTROL: the same opener passing is read by what came back, and carries no mark.
+  const passed = indexFromSteps(
+    [{ file: 'tests/checkout.tflw', steps: [step({ kind: 'open', source: 'open "/cart"', line: 2 }), step({ kind: 'expect', source: 'expect text "Cart" is visible', line: 3 })] }],
+    { at: '2026-10-01T10:00:00.000Z', evidence: null },
+    'tests/checkout.tflw',
+    buffer,
+  );
+  assert.deepEqual([...passed.get(2)!.steps.keys()], [3]);
 });

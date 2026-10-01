@@ -31,23 +31,16 @@ import { ComposeDoor } from './ComposeDoor';
 import { kindsOfFile, vocabularyOf } from './vocabulary';
 import { AuthPanel } from './AuthPanel';
 import { ConfigPanel, documentsOf } from './ConfigPanel';
-import { addNoise, EMPTY_LIVE, liveCounts, reduceLive, type LiveState } from './live';
+import { addNoise, EMPTY_LIVE, reduceLive, type LiveRun } from './live';
 import { exitExplained, reportIdOf } from './format';
-import { LiveBody, ReportBody, ReportHeader } from './ReportView';
-import { Findings } from './Findings';
-import { RunList, type Selection } from './RunList';
+import { RunView, type RunSubject } from './RunView';
+import type { Selection } from './RunList';
 import { matchingFiles, parseQuery } from './search';
 import { Sidebar } from './Sidebar';
 import type { MenuTarget } from './Sidebar';
 import { NewThing, type NewMode } from './NewThing';
 import { fileOutline, pageOpeners, statementsOf } from './outline';
 
-interface LiveRun {
-  readonly id: string;
-  readonly state: LiveState;
-  readonly end: EndEvent | null;
-  readonly stderr: string | null;
-}
 
 /**
  * One project document as the shell holds it (`M208` `S2`) — `tflw.config` or a declared baseline.
@@ -719,8 +712,15 @@ export function App() {
     [refreshLists, notify, announce],
   );
 
-  /* A viewer is about one report; choosing another run is leaving it (`D1179`). */
-  useEffect(() => setTraceOpen(null), [selected]);
+  /* A viewer is about one report; choosing another run is leaving it (`D1179`) — unless the
+     choice was made BY opening a trace, which is Compose's `screenshot` tab asking for its run's
+     viewer (`M257` `A`, `D1407`): the selection and the viewer arrive together. */
+  const pendingTrace = useRef<{ readonly id: string; readonly path: string } | null>(null);
+  useEffect(() => {
+    const wanted = pendingTrace.current;
+    pendingTrace.current = null;
+    setTraceOpen(wanted !== null && selected?.kind === 'report' && selected.id === wanted.id ? wanted : null);
+  }, [selected]);
 
   // Selecting a run row that is still in flight (re)attaches to its stream — the server replays
   // every line first, so a page opened mid-run sees the whole of it.
@@ -969,6 +969,19 @@ export function App() {
   const openTest = useCallback((p: string, line: number) => {
     window.location.hash = hashFor('compose', p, line) + paneTail([p], query, kind, failedOnly);
   }, [kind, failedOnly, query]);
+
+  /** Where the project declares a test a run reported — `open in Compose` on the Run tree (`D1409`).
+   *  A run's `file` may carry a `./` the project's does not (`ran.ts`'s `sameFile` reason), and a
+   *  renamed test, or a row of a `with each` table, is declared under no such name: `null`. */
+  const lineOfTest = useCallback(
+    (file: string, name: string): number | null => {
+      const norm = (x: string): string => x.replace(/^\.\//, '');
+      const f = project?.files.find((x) => norm(x.path) === norm(file));
+      const t = f === undefined ? undefined : [...f.tests, ...f.crawls].find((x) => x.name === name);
+      return t === undefined ? null : t.line;
+    },
+    [project],
+  );
 
   /**
    * **The verdict index** — `M255` `A` (`D1404`). One value, read by the explorer, the header's ▶,
@@ -1247,20 +1260,17 @@ export function App() {
    * It is still built once and handed down, which is what kept two placements from becoming two
    * renderings for the three rounds they coexisted.
    */
+  const runSubject: RunSubject =
+    selected?.kind === 'report' && report && report.id === selected.id ? { kind: 'report', id: report.id, data: report.data }
+    : selected?.kind === 'run' && live && live.id === selected.id ? { kind: 'live', live }
+    : null;
   const runPane = (
     <>
-      <RunList runs={runs} reports={reports} selected={selected} onSelect={setSelected} />
-      {selected?.kind === 'run' && live && live.id === selected.id ? <LivePane live={live} /> : null}
-      {/* **The trace viewer, in the page** — `M220` `C` (`D1179`).
-          It is an `<iframe>` and that is *not* §2.1's refused idea: the viewer is served by this
-          same server under `/trace/`, so it is **same-origin**, and the thing §2.1 measured as
-          unreachable was an iframe of the application *under test*, on another port.
-          Measured: the viewer compresses to a floor of **606 px** and fits without overflow at
-          704. This pane is the main area — ~1100 px at 1440 — and, unlike the editor column
-          (460–860 px depending on where the reader has dragged `COMPOSE`'s grip), it is above that
-          floor at every width the grip can produce. That measurement is what chose this placement
-          over the column beside the sequence, and over a sixth tab, which `doors.ts`'s own rule
-          refuses: a tab is a stage of one file's life, and Run is already that stage. */}
+      {/* **The trace viewer, in the page** — `M220` `C` (`D1179`). Same-origin (`/trace/` is this
+          server's), so it is not §2.1's refused iframe of the application under test. It takes the
+          pane while it is open, because the viewer's floor is 606 px and the tree beside it would
+          leave it less. The viewer cannot be deep-linked to a step (`M220` §4 `C`, measured): its
+          bundle reads `trace`, `ws`, `isUnderTest` and `configuration`, nothing else. */}
       {traceOpen && selected?.kind === 'report' && selected.id === traceOpen.id ? (
         <section className="trace-pane" data-trace-pane={traceOpen.path}>
           <p className="trace-pane-bar">
@@ -1272,11 +1282,6 @@ export function App() {
             </a>
             <code className="muted">{traceOpen.path}</code>
           </p>
-          {/* **The viewer cannot be deep-linked to a step, measured.** Its bundle reads exactly
-              four query parameters — `trace`, `ws`, `isUnderTest`, `configuration`; the
-              `pointX`/`pointY`/`name`/`route` ones belong to the snapshot renderer and its service
-              worker, not to the top-level page. `M220` §4 `C` named this the round's one
-              unverified assumption and stated the fallback in advance: it opens at the top. */}
           <iframe
             className="trace-frame"
             data-trace-frame
@@ -1284,53 +1289,31 @@ export function App() {
             src={`/trace/index.html?trace=${encodeURIComponent(new URL(reportFileUrl(traceOpen.id, traceOpen.path), window.location.origin).toString())}`}
           />
         </section>
-      ) : null}
-      {selected?.kind === 'report' && report && report.id === selected.id && !traceOpen ? (
-        <article className="report" data-report={report.id}>
-          <ReportHeader report={report.data} />
-          {exitNote && exitNote.id === report.id ? (
-            <div className="warn run-exit" data-run-exit={exitNote.run.exitCode ?? ''} data-run-status={exitNote.run.status}>
-              ⚠ the run that wrote this report {exitNote.run.status === 'cancelled' ? 'was cancelled from this page' : 'ended'} with{' '}
-              {exitNote.run.exitCode !== null ? `exit ${exitNote.run.exitCode}` : `signal ${exitNote.run.signal}`} — the report is what it had written by then, and its verdict does not say so.
-              {exitNote.stderr ? (
-                <pre className="stderr" data-run-stderr>
-                  {exitNote.stderr}
-                </pre>
-              ) : null}
-            </div>
-          ) : null}
-          <p className="muted files-line">
-            {reports.length > 1 ? (
-              <label className="compare">
-                compare with{' '}
-                <select value={compareId ?? ''} onChange={(e) => setCompareId(e.target.value === '' ? null : e.target.value)} data-compare>
-                  <option value="">— nothing —</option>
-                  {reports
-                    .filter((r) => r.id !== report.id)
-                    .map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.id}
-                      </option>
-                    ))}
-                </select>
-              </label>
-            ) : null}
-            {reports
-              .find((r) => r.id === report.id)
-              ?.artefacts.map((f) => (
-                <a key={f} href={reportFileUrl(report.id, f)} target="_blank" rel="noreferrer" data-report-file={f}>
-                  {f}
-                </a>
-              ))}
-          </p>
-          <Findings report={report.data} compare={compare && compare.id === compareId ? compare : null} onAccept={(f) => void acceptFinding(f)} />
-          <ReportBody tests={report.data.tests} context={{ id: report.id, evidenceLevel: report.data.evidenceLevel, traceViewer: project?.traceViewer ?? false, compare: compare && compare.id === compareId ? compare : null, history, onOpenTrace: (p) => setTraceOpen({ id: report.id, path: p }) }} />
-        </article>
-      ) : null}
-      {selected === null && !error ? <p className="muted empty">select a run</p> : null}
+      ) : (
+        <RunView
+          subject={runSubject}
+          runs={runs}
+          reports={reports}
+          selected={selected}
+          onSelect={setSelected}
+          compareId={compareId}
+          compare={compare && compare.id === compareId ? compare : null}
+          onCompare={setCompareId}
+          exitNote={exitNote}
+          history={history}
+          traceViewer={project?.traceViewer ?? false}
+          onOpenTrace={(p) => {
+            if (selected?.kind === 'report') setTraceOpen({ id: selected.id, path: p });
+          }}
+          onAccept={(f) => void acceptFinding(f)}
+          lineOf={lineOfTest}
+          onCompose={openTest}
+          onRerun={(f, name) => void onRun({ ...runLevel(), files: [f], only: name })}
+          running={running}
+        />
+      )}
     </>
   );
-
 
   /**
    * The strip's two **project-fact** tabs, built here and handed to whichever door is open.
@@ -1559,6 +1542,17 @@ export function App() {
             running={running}
             /* `D1180` — the newest report's identity and its time. Either moving is a new run to
                read; neither moves when nothing has run, so the effect behind it stays quiet. */
+            liveRun={live}
+            liveRecord={live === null ? null : runs.find((r) => r.id === live.id) ?? null}
+            onCancel={onCancel}
+            onOpenTrace={(reportId, p) => {
+              if (selected?.kind === 'report' && selected.id === reportId) setTraceOpen({ id: reportId, path: p });
+              else {
+                pendingTrace.current = { id: reportId, path: p };
+                setSelected({ kind: 'report', id: reportId });
+              }
+              setTab('run');
+            }}
             reportsStamp={`${reports.length}:${reports[0]?.id ?? ''}:${reports[0]?.at ?? ''}`}
           />
         ) : null}
@@ -1605,21 +1599,3 @@ function Notices({ notices, onDismiss }: { readonly notices: readonly Notice[]; 
   );
 }
 
-function LivePane({ live }: { live: LiveRun }) {
-  const { done, failed } = liveCounts(live.state);
-  return (
-    <article className="report live" data-live={live.id} data-live-status={live.end ? live.end.status : 'running'}>
-      <header className="report-head">
-        <span className={`verdict ${live.end ? (live.end.status === 'cancelled' ? 'warn' : live.end.exitCode === 0 ? 'ok' : 'fail') : 'running'}`}>
-          {live.end ? (live.end.status === 'cancelled' ? 'CANCELLED' : `exit ${live.end.exitCode}`) : 'RUNNING'}
-        </span>
-        <span data-live-counts>
-          {done} of {live.state.announced || '?'} done · {failed} failed
-        </span>
-      </header>
-      {live.stderr ? <pre className="stderr" data-stderr>{live.stderr}</pre> : null}
-      {live.state.noise.length > 0 ? <pre className="stderr">{live.state.noise.join('\n')}</pre> : null}
-      <LiveBody tests={live.state.tests} />
-    </article>
-  );
-}

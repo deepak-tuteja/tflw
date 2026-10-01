@@ -83,11 +83,11 @@ import { pickLocators, recordActions, putFile, getFile, dropScratch, startRun, s
 import { diagnose } from './diagnose';
 import { lineOfStep } from './depends';
 import { matches, SHORTCUTS } from './shortcuts';
-import { evidenceFor, indexFromReport, indexFromSend, belongsTo, playScratchOf } from './ran';
+import { evidenceFor, indexFromReport, indexFromSend, indexFromSteps, belongsTo, playScratchOf, traceOf, type PlayTrace } from './ran';
+import { reportIdOf } from './format';
+import type { LiveRun } from './live';
 import type { DoorVocabulary } from './vocabulary';
 import { TabStrip } from './TabStrip';
-import { Stage, traceOf } from './Stage';
-import { Grip, STAGE, storedSize } from './Grip';
 import {
   carriedOver,
   declKey,
@@ -110,7 +110,7 @@ import {
   ELEMENT_DATALIST_ID,
 } from './parts';
 import { workloadSpecOf, type WorkloadEdit } from './workloadEdit';
-import { ComposePane, selectedAt, type RequestFold, type SeqTarget } from './ComposePane';
+import { ComposePane, type PlayState, selectedAt, type RequestFold, type SeqTarget } from './ComposePane';
 import { useLastWorkloadRun } from './PlanPanel';
 import { buildStatement } from './statements';
 import { AddStep, stepCatalogue } from './AddStep';
@@ -123,7 +123,7 @@ import { addressed, anchorAfter, fileOutline, pageOpeners, requestsOf, statement
 import { SourcePanel } from './SourcePanel';
 import { hashFor, tailOf, type TabId } from './doors';
 import { HeaderPanel } from './HeaderPanel';
-import type { EndEvent, ProjectView, RunReport, RunRequest, StepResult } from './contract';
+import type { EndEvent, ProjectView, RunReport, RunRecord, RunRequest, StepResult } from './contract';
 import type { FileOutline } from './outline';
 
 /**
@@ -252,6 +252,17 @@ export interface ComposeDoorProps {
   /** Whether a run is in flight, so ▶ can hold rather than queue (`D1177`). */
   readonly running: boolean;
   /**
+   * **The run the shell is following, and its record** — `M257` `A` (`D1407`). A run that reaches
+   * this file draws itself in the rows as it goes, whoever started it: ▶ here, ▶ in the header, or
+   * a shell the page is following. The record carries when it started and ended and whether the
+   * page may cancel it (a shell's run is not the page's to stop).
+   */
+  readonly liveRun: LiveRun | null;
+  readonly liveRecord: RunRecord | null;
+  readonly onCancel: () => void;
+  /** Open a kept run's trace in the Run tab's viewer — the `screenshot` tab's link (`D1407`). */
+  readonly onOpenTrace: (reportId: string, path: string) => void;
+  /**
    * **A stamp that moves whenever the report list does** — `M220` `C` (`D1180`).
    *
    * The report lookback below is an effect over `[path, project]`, and **neither of those changes
@@ -318,7 +329,7 @@ function reblock(
   return buildDownload({ name: owner.name, body });
 }
 
-export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, runVerdict = null, onRun, running, reportsStamp, empty, authPanel, configPanel, configMark }: ComposeDoorProps) {
+export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab, path, file, outline, draft, onDraft, fileProblem, onFileWritten, onNew, onMenu, addIntent, onAddIntentDone, focusLine, runPane, runMark, runVerdict = null, onRun, running, liveRun, liveRecord, onCancel, onOpenTrace, reportsStamp, empty, authPanel, configPanel, configMark }: ComposeDoorProps) {
   /** **Which actions open a page** (`M219` `B`, `D1161`) — the index's own answer, flattened by
    *  the one function `App` flattens it with. Every `fileOutline` in this component re-reads the
    *  file after an edit to find where a statement moved to, and a re-read that folded sessions
@@ -366,37 +377,11 @@ export function ComposeDoor({ kinds, vocab, kind, project, onWritten, tab, onTab
    */
   const [reportRan, setReportRan] = useState<{ report: RunReport; reportId: string } | null>(null);
   /**
-   * **The declaration the last ▶ in this pane was pressed on** (`M221` `A`, `D1182`).
-   *
-   * The stage is scoped to *this* gesture and not to "whatever the newest report holds": a
-   * whole-suite run from the Run tab writes traces for every browser test it touched, and drawing
-   * one of them under an editor nobody played would be the stage answering a question that was not
-   * asked. Run's own viewer (`D1179`) is where that report is read.
+   * **The declaration the last ▶ in this pane was pressed on** (`M221` `A`, `D1182`). Since the stage
+   * retired (`M257` `A`) it decides one thing: whether the status line owes the reader the sentence
+   * about a play scratch `.gitignore` does not list — a ▶ here wrote it, a run from elsewhere did not.
    */
   const [played, setPlayed] = useState<string | null>(null);
-
-  /**
-   * **How tall the playback frame is** — `M223` `E` (`D1199`).
-   *
-   * `null` is `M221`'s own answer — the stage takes the height it needs (`.stage-frame`'s 620 px
-   * floor) and the page scrolls to it. A number is the reader's, at which point the two regions
-   * share the window instead of queueing down a scroll.
-   *
-   * It lives HERE rather than in `ComposePane` because the boundary it moves is between two
-   * siblings this component owns, and a pane that reached out to size the region under it would
-   * be a pane that knows what is under it. `storedSize` is read lazily and compared to the
-   * fallback afterwards: `Grip` has no null in its vocabulary — it is a number and a clamp — so
-   * *never dragged* is expressed by the absence of the key and not by a sentinel it would have to
-   * carry through every clamp.
-   */
-  const [stageH, setStageH] = useState<number | null>(() => {
-    try {
-      return window.localStorage.getItem(STAGE.key) === null ? null : storedSize(STAGE);
-    } catch {
-      // A private window, or site data blocked — the accessor itself throws. `M221`'s layout.
-      return null;
-    }
-  });
 
   /**
    * The play scratch's hash, carried forward from each write's own response.
@@ -2433,6 +2418,22 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
   useEffect(() => setPlayed(null), [path]);
 
   /**
+   * **This file's tests in the run the shell is following** — `M257` `A` (`D1407`).
+   *
+   * A run draws itself in the rows: every `step:end` that reaches a test of this file lands its mark
+   * on the row it ran on, through `indexFromSteps` — the join `indexFromReport` makes, over the
+   * steps so far. The play scratch is the buffer verbatim, so a live step's `(line, source)` is the
+   * row's own, exactly as the finished report's will be.
+   *
+   * **Until the run's own report is here, the rows are the stream's**, not the last report's. A
+   * row the run has not reached yet has no mark — and a run cancelled at step 3 leaves steps 4 to 7
+   * *not run*, not showing the ✓ an older report gave them, which is the lie `M192`'s
+   * `cancel-forgets-to-mark-the-run` was filed about one surface over.
+   */
+  const liveTests = useMemo(() => (liveRun === null ? [] : liveRun.state.tests.filter((t) => belongsTo(t.file, path, project.playScratch))), [liveRun, path, project.playScratch]);
+  const useLive = liveRun !== null && liveTests.length > 0 && (liveRun.end === null || liveRun.end.kept === null || reportRan?.reportId !== reportIdOf(liveRun.end.kept));
+
+  /**
    * **The join, re-derived from the buffer on every keystroke** (`D1093`, `D1108`).
    *
    * This is the one place a verdict becomes visible, and it is a `useMemo` over the *text* rather
@@ -2444,14 +2445,17 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
   const ranIndex = useMemo((): RanIndex => {
     const text = draft ?? file?.text ?? '';
     if (text === '') return new Map();
-    const base = reportRan === null ? new Map<number, Ran>() : new Map(indexFromReport(reportRan.report, path, text, project.playScratch));
+    const base =
+      useLive && liveRun !== null ? new Map(indexFromSteps(liveTests, { at: liveRecord?.startedAt ?? new Date().toISOString(), evidence: null }, path, text, project.playScratch))
+      : reportRan === null ? new Map<number, Ran>()
+      : new Map(indexFromReport(reportRan.report, path, text, project.playScratch));
     if (sentRan !== null) {
       /* Every request the press issued, not the last one (`D1216`). The send still wins over the
          report for the lines it is about and leaves every other request's verdict alone. */
       for (const [line, ran] of indexFromSend({ steps: sentRan.steps, lines: sentRan.lines, bufferText: text, startedAt: sentRan.startedAt })) base.set(line, ran);
     }
     return base;
-  }, [reportRan, sentRan, draft, file, path, project.playScratch]);
+  }, [reportRan, sentRan, draft, file, path, project.playScratch, useLive, liveRun, liveTests, liveRecord]);
 
   /**
    * **The last run's evidence for one step, even when its words changed since** — `M256` `B`
@@ -2469,15 +2473,43 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
   );
 
   /**
-   * **What the stage is showing** (`M221` `A`).
+   * **The run, as the pane's status line and follow mode read it** — `M257` `A` (`D1407`).
    *
-   * Derived, never stored — the same shape as `ranIndex` above and for the same reason. The
-   * report is refetched when the report list moves (`D1180`), so a play's trace arrives here on
-   * its own, and the stage cannot hold a frame for a report that has been superseded.
+   * The test followed is the last of this file's the run has reached — the one running, or the one
+   * that ended last. The column follows its newest judged step while it runs and **rests on the
+   * failing one** when it fails, which is the step a reader would have picked next.
    */
-  const stageTrace = useMemo(
-    () => (played === null || reportRan === null ? null : traceOf(reportRan.report, played, reportRan.reportId)),
-    [played, reportRan],
+  const playState = useMemo((): PlayState | null => {
+    const followed = liveTests.at(-1);
+    if (liveRun === null || followed === undefined) return null;
+    const own = followed.steps.filter((x) => x.file === undefined);
+    const result = followed.result;
+    const failing = result !== null && !result.ok && 'steps' in result ? result.steps.find((x) => !x.ok && x.file === undefined) : undefined;
+    const status: PlayState['status'] =
+      liveRun.end === null ? 'running'
+      : liveRun.end.status === 'cancelled' || result === null ? 'cancelled'
+      : result.ok ? 'passed'
+      : 'failed';
+    const started = Date.parse(liveRecord?.startedAt ?? '');
+    const ended = Date.parse(liveRecord?.endedAt ?? '');
+    return {
+      id: liveRun.id,
+      test: followed.name,
+      status,
+      judged: own.length,
+      at: failing?.line ?? own.at(-1)?.line ?? null,
+      startedAt: Number.isNaN(started) ? null : started,
+      endedAt: liveRun.end === null ? null : Number.isNaN(ended) ? null : ended,
+      onCancel: liveRun.end === null && liveRecord?.followed !== true ? onCancel : null,
+      onOpenRun: () => onTab('run'),
+      unignored: played !== null && !project.playIgnored ? project.playScratch : null,
+    };
+  }, [liveRun, liveTests, liveRecord, onCancel, onTab, played, project.playIgnored, project.playScratch]);
+
+  /** A declaration's trace in the last run of this file, for the `screenshot` tab (`D1407`). */
+  const traceFor = useCallback(
+    (name: string): PlayTrace | null => (reportRan === null ? null : traceOf(reportRan.report, name, reportRan.reportId, path, project.playScratch)),
+    [reportRan, path, project.playScratch],
   );
 
   const sendPrefix = useCallback(async (form: SendForm) => {
@@ -2786,12 +2818,6 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
     <section
       className="doorpane"
       data-kinds={[...kinds].join(' ')}
-      /* `M223` `E` (`D1199`) — the reader's own playback height, on the element that owns both
-         regions. It is a custom property rather than an inline height on the frame because the
-         rules it feeds are in the stylesheet beside the ones they override, and `auto` is a state
-         a gate can read rather than the absence of an attribute. */
-      data-stage-fit={stageH === null ? 'auto' : String(stageH)}
-      style={stageH === null ? undefined : { ['--stage-h' as string]: `${stageH}px` }}
     >
       <datalist id={ELEMENT_DATALIST_ID} data-element-names={elementNames.join(',')}>
         {elementNames.map((n) => <option key={n} value={n} />)}
@@ -2926,6 +2952,9 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           /* `D1176` — ▶ is a vocabulary row, so the door asks the table rather than its own name. */
           onPlay={vocab.plays ? (d) => void play(d) : null}
           playing={running}
+          play={playState}
+          traceFor={project.traceViewer ? traceFor : null}
+          onOpenTrace={onOpenTrace}
           onRemoveScoped={removeScoped}
           onUnscope={unscope}
           onScope={scope}
@@ -2963,23 +2992,6 @@ function withoutAssertions(steps: readonly Step[]): readonly Step[] {
           onDiscard={() => { onDraft(null); setEdit(null); setExpectEdit(null); setHeader(null); setThreshold(null); setElementEdit(null); setRowsCount(null); setNoting(null); setEditProblem(null); }}
           kinds={kinds}
           vocab={vocab}
-        />
-        {/* **The third region** (`D1181`) — below both columns, full width of `main`, which is
-            1114 px at 1440 against the viewer's 606 px floor. `Stage` is always rendered and says
-            which of its four states it is in; it is never conditionally absent (`D1187`). */}
-        {/* **The third grip** — `M223` `E` (`D1199`), and it is drawn only when there is something
-            to share. With no trace the stage is a 17 px bar and a control that resizes a bar is a
-            control that does nothing, which is what `D1082` refuses; with one, this is the
-            boundary the user pointed at, where 14 px of `margin-top` had been reading as a seam
-            because the two columns' bottom borders run across the width right above it. */}
-        {stageTrace === null ? null : <Grip spec={STAGE} size={stageH ?? STAGE.fallback} onSize={setStageH} />}
-        <Stage
-          trace={stageTrace}
-          played={played}
-          running={running}
-          recording={recording !== null}
-          viewer={project.traceViewer}
-          unignored={project.playIgnored ? null : project.playScratch}
         />
         </>
       )}

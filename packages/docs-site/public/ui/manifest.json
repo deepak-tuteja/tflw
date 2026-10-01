@@ -1,16 +1,16 @@
 {
-  "inputs": "834cffa027f05aa6d79fa176667453f6ed3a6cbdecdfe0528af0e82d88d6240b",
+  "inputs": "2867a2843f63aecec7c8321c66fc8ae82f82e91da058967711ab007ecd93ee66",
   "inputCount": 110,
   "shots": [
     {
       "name": "shell-terminal.png",
       "width": 2880,
-      "height": 1800
+      "height": 1788
     },
     {
       "name": "shell-paper.png",
       "width": 2880,
-      "height": 1796
+      "height": 1776
     },
     {
       "name": "spine-terminal.png",
@@ -35,22 +35,22 @@
     {
       "name": "compose-api-terminal.png",
       "width": 2144,
-      "height": 826
+      "height": 888
     },
     {
       "name": "compose-api-paper.png",
       "width": 2120,
-      "height": 796
+      "height": 866
     },
     {
       "name": "compose-browser-terminal.png",
       "width": 2144,
-      "height": 826
+      "height": 888
     },
     {
       "name": "compose-browser-paper.png",
       "width": 2120,
-      "height": 796
+      "height": 866
     },
     {
       "name": "browser-menu-terminal.png",
@@ -65,32 +65,32 @@
     {
       "name": "compose-load-terminal.png",
       "width": 2144,
-      "height": 1506
+      "height": 1568
     },
     {
       "name": "compose-load-paper.png",
       "width": 2120,
-      "height": 1476
+      "height": 1546
     },
     {
       "name": "compose-scan-terminal.png",
       "width": 2144,
-      "height": 1506
+      "height": 1568
     },
     {
       "name": "compose-scan-paper.png",
       "width": 2120,
-      "height": 1476
+      "height": 1546
     },
     {
       "name": "run-terminal.png",
       "width": 2144,
-      "height": 1596
+      "height": 828
     },
     {
       "name": "run-paper.png",
       "width": 2120,
-      "height": 1582
+      "height": 798
     }
   ],
   "viewport": {
@@ -136,5 +136,5 @@
     }
   },
   "deviceScaleFactor": 2,
-  "cutAt": "2026-09-30T21:14:27.904Z"
+  "cutAt": "2026-10-01T01:10:46.626Z"
 }

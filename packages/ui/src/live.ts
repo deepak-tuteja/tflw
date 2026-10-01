@@ -3,7 +3,7 @@
 // (`D111`) and `run:end` carries that file's report, not the merged one; the merged report is
 // read from the kept directory once the server says the run ended. Pure, so a test can hold it.
 
-import type { ReportEntry, RunEvent, StepResult } from './contract';
+import type { EndEvent, ReportEntry, RunEvent, StepResult } from './contract';
 
 export interface LiveTest {
   readonly file: string | undefined;
@@ -21,6 +21,15 @@ export interface LiveState {
   /** What each file's `run:start` announced, summed. */
   readonly announced: number;
   readonly noise: readonly string[];
+}
+
+/** A run the page is following: its stream so far, how it ended, and what it said on stderr when
+ *  it ended without a report. `M257` shares it between the Run tab and Compose (`D1407`). */
+export interface LiveRun {
+  readonly id: string;
+  readonly state: LiveState;
+  readonly end: EndEvent | null;
+  readonly stderr: string | null;
 }
 
 export const EMPTY_LIVE: LiveState = { files: [], tests: [], announced: 0, noise: [] };

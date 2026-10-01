@@ -278,8 +278,8 @@ body:has(.row-grip.dragging) { cursor: row-resize; user-select: none; }
  * events belong to the frame's document and the page never hears another one. The handler is not
  * wrong and no amount of capture fixes it — the pointer has to stop being over the frame at all.
  */
-body:has(.col-grip.dragging) .stage-frame,
-body:has(.row-grip.dragging) .stage-frame { pointer-events: none; }
+body:has(.col-grip.dragging) iframe,
+body:has(.row-grip.dragging) iframe { pointer-events: none; }
 /* While a drag is live the pointer owns the window, so nothing under it should select or receive a
    hover — without this the file tree highlights row by row as the pane is widened. */
 body:has(.col-grip.dragging) { cursor: col-resize; user-select: none; }
@@ -434,6 +434,8 @@ button.chip:disabled { opacity: 0.5; cursor: default; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
 .dot.ok { background: var(--pass); }
 .dot.fail { background: var(--fail); }
+.dot.warn { background: var(--warn); }
+.dot.skip, .dot.none { background: transparent; border: 1px solid var(--muted); box-sizing: border-box; }
 /* `M249` `B` — a test's past, oldest on the left; a skip is hollow, not missing. */
 .history { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; vertical-align: middle; }
 .hdot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
@@ -1124,7 +1126,8 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 
 /* The shell stops being a scroll container for this one door and tab, so the regions below can own
    their own overflow. Every other door and every other tab keeps `.main` exactly as it was. */
-/* **`M223` `A` (`D1193`) — the authoring grid claims the window; the stage takes what it needs.**
+/* **`M223` `A` (`D1193`) — the authoring grid claims the window.** (The stage this block also
+   sized retired at `M257` `A`, `D1407`: a run draws itself in the rows and the evidence column.)
 
    This was `overflow: hidden` with `flex: 1; min-height: 0` on the pane, which held `D1110` (no
    vertical overflow at any height) by crushing everything into the window. That is right while the
@@ -1142,25 +1145,7 @@ button.run:disabled, button.cancel:disabled { background: var(--line); color: va
 .main-fill { display: flex; flex-direction: column; overflow: auto; padding-bottom: calc(var(--unit) * 2); }
 .main-fill > .doorpane { display: flex; flex-direction: column; flex: 1 0 auto; min-height: 0; }
 .main-fill > .doorpane > .compose-pane { flex: 1 1 0; min-height: 320px; }
-.main-fill > .doorpane > .stage { flex: none; }
 
-/* **`M223` `E` (`D1199`) — once the reader has set a playback height, the two regions share the
-   window instead of queueing down a scroll.**
-
-   The default above is `M221`'s and stays it: the frame keeps its 620 px floor, the pane keeps its
-   320, and at 900 px that is 994 px of want, so the page scrolls to the viewer. The user's own
-   report is what that costs — with a trace up you cannot see the lines you recorded and the
-   playback of them at the same time, at any size. A drag says what the share is, and from then on
-   the frame is sized rather than floored, the section stops being content-sized, and the pane
-   takes what is left down to its own floor.
-
-   **It is ONE rule, and the first draft was three.** The other two — `overflow: hidden` on the
-   doorpane and a shrinkable `.stage` — were both measured wrong on the live page: the pane is
-   already `flex: 1 1 0` against a doorpane that grows to fill, so it takes the remainder on its
-   own the moment the frame stops demanding 620, and the two extra rules only removed the scroll
-   that catches a frame taller than the window. Dropping the frame's floor is the whole change;
-   everything else was already arranged to do this. */
-.main-fill > .doorpane[data-stage-fit]:not([data-stage-fit="auto"]) .stage-frame { height: var(--stage-h); min-height: 0; flex: none; }
 
 .compose-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: calc(var(--unit) * 1.2); }
 .compose-pane.reading { padding: calc(var(--unit) * 2) 0; }
@@ -1820,24 +1805,6 @@ p.scan-probes::before { content: ''; }
 .trace-pane-bar { display: flex; align-items: center; gap: calc(var(--unit) * 1.5); margin: 0; font-size: 12px; flex-wrap: wrap; }
 .trace-frame { width: 100%; min-height: 70vh; flex: 1 1 auto; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
 
-/* **The stage** — `M221` `A` (`D1181`). A region of the Compose tab, under both columns, taking
-   the full width of `main`: measured 1114 px at 1440, against the viewer's 606 px floor. Unlike
-   `.trace-frame` above it does NOT take `70vh` of a pane it shares — the columns are above it and
-   the page scrolls to it, because 349 px of leftover height (measured) shows a timeline and no
-   snapshot. `min-height` is stated in `px` and not `vh` so the frame is the same size whatever the
-   window is, which is what the viewer's own floor is expressed in. */
-.stage { display: flex; flex-direction: column; gap: calc(var(--unit) * 1); margin-top: calc(var(--unit) * 2); }
-.stage-bar { display: flex; align-items: baseline; gap: calc(var(--unit) * 1.5); margin: 0; font-size: 12px; flex-wrap: wrap; }
-.stage-title { text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; color: var(--muted); }
-/* `M223` `A` (`D1194`) — what `.stage-hint`'s dashed 105 px box became: a member of the bar. It
-   wraps at a narrow window rather than being clipped, and it is the reason the region is 18 px
-   before a run instead of 183. */
-.stage-line { min-width: 0; }
-/* `M227` `E` (`D1236`) — the scratch notice closes the region instead of leading it, so it takes
-   the bar's size and the bar's zero margin: a `<p>`'s default margins are not collapsed inside a
-   flex column, and the region already spaces its children with `gap`. */
-.stage-foot { margin: 0; font-size: 12px; }
-.stage-frame { width: 100%; min-height: 620px; border: var(--border) solid var(--line); border-radius: var(--radius); background: var(--panel); }
 
 /* ── `M241` `E` (`D1325`): every control at least 24 px on a side, and no text under 11 px ──────────
    Last in the file on purpose: these are floors every earlier rule keeps its own padding and fonts
@@ -1857,3 +1824,50 @@ a[data-report-file], a[data-trace-download], a[data-version], a[data-open-trace]
 .row-plus, .seq-plus, .seq-x { display: inline-flex; align-items: center; justify-content: center; }
 /* `M241` `E` (`D1325`) — the report's filter strip: one line above the tests. */
 .report-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 12px; font-size: 12px; }
+
+/* ── `M257` — the run, in Compose and on Run (`D1407`, `D1409`) ─────────────────────────────────── */
+
+/* Compose: the status line under the bar, the row the run is at, the column following it. */
+.play-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; min-height: 24px; }
+.play-line.failed [data-play-lead] { color: var(--fail); }
+.play-line.passed [data-play-lead] { color: var(--pass); }
+.play-line .play-unignored { flex-basis: 100%; }
+.seq-row.live-at { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.evidence-follow { margin: 0 0 6px; font-size: 12px; }
+
+/* Run: one headline, a bar under it, the tree on the left and one test on the right. */
+.run-view { display: flex; flex-direction: column; gap: calc(var(--unit) * 1.2); min-height: 0; }
+.run-head { display: flex; flex-direction: column; gap: 4px; }
+.run-head > p { margin: 0; }
+.run-headline { margin: 0; font-weight: inherit; font-size: var(--title-size); display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; }
+.run-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 12px; }
+.run-bar a { color: var(--accent); text-decoration: none; }
+/* The picker: `run 7d ago ▾`, and `RunList` as its popover — one column, the newest first. */
+.run-picker { position: relative; }
+.run-picker > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; border: var(--border) solid var(--line); border-radius: var(--radius); padding: 2px 10px; background: var(--panel); }
+.run-picker > summary::-webkit-details-marker { display: none; }
+.run-picker > .runs { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; flex-direction: column; flex-wrap: nowrap; min-width: 300px; max-height: 60vh; overflow: auto; padding: 8px; margin: 0; background: var(--bg); border: var(--border) solid var(--line); border-radius: var(--radius); box-shadow: 0 6px 24px color-mix(in srgb, var(--fg) 18%, transparent); }
+.run-body { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: calc(var(--unit) * 2); align-items: start; }
+.run-tree { display: flex; flex-direction: column; gap: 6px; font-size: 13px; min-width: 0; }
+.tree-group > summary { cursor: pointer; font-weight: 600; }
+.tree-group.g-failed > summary { color: var(--fail); }
+.tree-group .count { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.tree-group ul { list-style: none; margin: 2px 0 6px; padding: 0; }
+.tree-test { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 0; border-radius: var(--radius); padding: 3px 6px; color: var(--fg); }
+.tree-test:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tree-test.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-row { text-align: left; background: none; border: var(--border) solid var(--line); border-radius: var(--radius); padding: 4px 8px; color: var(--fg); }
+.tree-row.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.run-detail { min-width: 0; }
+.test-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 6px; font-size: 12px; }
+.test-file { margin: 0 0 4px; font-size: 12px; font-family: var(--mono); }
+.compare-step { font-size: 12px; color: var(--muted); padding: 2px 0 0 22px; }
+.compare-step.bad { color: var(--fail); }
+.history-panel h2 { font-size: var(--title-size); margin: 0 0 8px; }
+.history-panel table { border-collapse: collapse; font-size: 13px; }
+.history-panel td { padding: 3px 12px 3px 0; vertical-align: middle; }
+/* Below 1100 px the tree sits above the test rather than beside it — `D1412`'s breakpoint. */
+@media (max-width: 1099px) {
+  .run-body { grid-template-columns: minmax(0, 1fr); }
+}

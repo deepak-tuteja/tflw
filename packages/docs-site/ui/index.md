@@ -131,5 +131,5 @@ Then one page per kind, each on a real test:
 
 And then:
 
-- **[Reading a run](/ui/a-run)** — verdicts, failures and traces, in place.
+- **[Reading a run](/ui/a-run)** — one verdict, the failures first, and the trace in place.
 - **[What the page will not do](/ui/limits)** — stated plainly, because some of it is deliberate.

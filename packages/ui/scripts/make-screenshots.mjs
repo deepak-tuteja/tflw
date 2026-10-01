@@ -285,6 +285,13 @@ try {
     //    the source that produced it and that is the whole of the claim.
     await page.locator('[data-tab="run"]').click();
     await page.locator('[data-tabstrip="run"]').waitFor();
+    // `M257` `C` (`D1409`) — the example run passes, so the tree opens on nothing; `ui/a-run.md`'s
+    // claim is about what a green run still reports, which is the `security` row's, so it is opened.
+    await page.locator('[data-run-tree]').waitFor();
+    const security = page.locator('[data-tree-security]');
+    if ((await security.count()) === 0) throw new Error('the example run has no security row — `ui/a-run.md` describes one in the picture');
+    await security.click();
+    await page.locator('[data-findings]').waitFor();
     await cut(page, `run-${theme}.png`, '[data-run-tab]');
 
     // 5-8. Compose, once per door, each on a file that belongs behind it (`D1294` as amended).
