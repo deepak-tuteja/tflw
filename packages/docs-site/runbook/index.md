@@ -18,7 +18,7 @@ on every change to tflw, exactly as written.
 | 4 | [An API test of your own](/runbook/start/api-test) | `capture`, `expect`, `fmt`, `check`, `refactor apply`, `docs`, `spec` |
 | 5 | [A browser test](/runbook/start/browser-test) | `pick`, `record`, `watch`, a trace |
 | 6 | [Load and scan](/runbook/start/load-and-scan) | a test at a rate, exit 3, a `crawl`, `authorized target` |
-| 7 | The page | `tflw ui`; still being written. Until then, [Working on the page](/runbook/page) |
+| 7 | [The page](/runbook/start/page) | `tflw ui`: a test changed in Compose, run with ▶, its failure read on Run, Config |
 | 8 | [The editor](/runbook/start/editor) | the VS Code extension, the Test Explorer, `tflw lsp` |
 | 9 | [CI](/runbook/start/ci) | the four lines, `--shard` and `merge`, `export` |
 | 10 | [Your own service](/runbook/start/your-service) | `api` and `web`, envs, secrets, `migrate` |

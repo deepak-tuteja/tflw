@@ -114,9 +114,7 @@ project is unchanged: this chapter only ran what the example already had.
 
 ## Next, or instead
 
-- **Next:** chapter 7, the page, is still being written. Until it lands,
-  [Working on the page](/runbook/page) covers `tflw ui`. After it comes
-  [8. The editor](/runbook/start/editor).
+- **Next:** [7. The page](/runbook/start/page), the same project in your browser.
 - Writing load tests: [Load testing](/guide/load-testing), and the report: [Load results](/guide/load-results).
 - Every rule a scan applies, and baselines for accepted findings: [Security scanning](/guide/security-scanning),
   [Crawling](/guide/crawling) and [Findings and baselines](/guide/findings-and-baselines).

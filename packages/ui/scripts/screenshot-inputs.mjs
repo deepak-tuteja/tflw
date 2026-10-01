@@ -67,6 +67,17 @@ export const VIEWS = /** @type {const} */ ([
   'compose-load', //    ui/load.md    — a load test: the plan panel its workload earned
   'compose-scan', //    ui/scans.md   — a scan test: the targets block its declaration earned
   'run', //             ui/a-run.md   — a run read in place
+  /* `M261` (`D1418` chapter 7) — **the walkthrough's page chapter, one state per step it narrates.**
+     The views above answer *what is this surface*; these answer *what happens when I do this*, so
+     they are shot in order, on one file, as a reader would reach them: an assertion changed in
+     Compose, the same file after ▶ ran it and it failed, that failure on the Run tab, and Config.
+     Shot after every view above and with the report directory put back between themes, because a
+     run from the page is kept under `report/runs/` and would otherwise move the explorer's dots
+     and the Run tab in every later picture. */
+  'walk-edit', //       runbook/start/page.md — an assertion's value changed, the draft not yet written
+  'walk-failed', //     runbook/start/page.md — the file after ▶: the marks on its rows, and where it failed
+  'walk-run', //        runbook/start/page.md — the same failure on the Run tab, expected against actual
+  'walk-config', //     runbook/start/page.md — Config: tflw.config in the page's own editor
 ]);
 
 /**

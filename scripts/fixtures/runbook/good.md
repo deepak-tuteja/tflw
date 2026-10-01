@@ -45,6 +45,17 @@ node -e "setTimeout(() => console.log('up on http://127.0.0.1:' + new URL(proces
 up on http://127.0.0.1:4720
 ```
 
+A background command that prints a page address is asked for its project, with the token it
+printed; this stand-in answers the way `tflw ui` does:
+
+```sh runbook background
+node -e "const s = require('node:http').createServer((q, r) => { r.setHeader('content-type', 'application/json'); r.end(q.url.includes('token=t0k') ? JSON.stringify({ files: [{ path: 'example.tflw' }] }) : '{}'); }).listen(0, '127.0.0.1', () => console.log('page at http://127.0.0.1:' + s.address().port + '/?token=t0k'))" &
+```
+
+```text runbook-output
+page at http://127.0.0.1:4720/?token=t0k
+```
+
 `…` elides any run of lines:
 
 ```sh runbook

@@ -1,5 +1,8 @@
 # Working on the page
 
+The reference companion to [7. The page](/runbook/start/page): the keys, what each part does, and
+what its messages mean. For a picture of every surface, see [The UI](/ui/).
+
 ```sh
 npx tflw ui            # serves the project in this directory, prints a URL with its token
 npx tflw ui --port 4700
@@ -10,6 +13,9 @@ request without it. It serves on loopback only; `ssh -L 4700:127.0.0.1:4700` rea
 another machine, and the pasted URL carries the token.
 
 ## Writing
+
+The header, the file list and the three tabs are the same on every file: [the spine](/ui/spine).
+The kind chips over the list filter it and ▶ by what each test is about: [the four kinds](/ui/kinds).
 
 **Compose** writes tests, hooks, actions and crawls in place: pick a row and it becomes its own
 editor. Each row of a test has **↑** and
@@ -26,6 +32,10 @@ what both show. A file changed on disk since the page read it is refused, not ov
 from disk** beside the refusal shows the file as it is now, and drops the draft.
 
 **Config** is the same editor over `tflw.config`: sessions, envs, `authorized target`.
+
+What Compose offers depends on the test: a request and its assertions in an [API test](/ui/api),
+the steps a person takes in a [BROWSER test](/ui/browser), the plan panel a workload earns in a
+[LOAD test](/ui/load), and the targets block of a [scan](/ui/scans).
 
 ## Running
 
@@ -46,6 +56,8 @@ and moves nothing on screen for a reader whose system asks for reduced motion. E
 reachable by keyboard; in the editor, **Tab** indents — press **Escape** first to move focus on.
 
 ## When something is wrong
+
+Some things the page does not do on purpose; [What it will not do](/ui/limits) lists them.
 
 | you see | it means |
 |---|---|

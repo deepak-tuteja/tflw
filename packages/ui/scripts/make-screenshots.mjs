@@ -32,7 +32,7 @@ import { createRequire } from 'node:module';
 import { mkdtemp, cp, open, readFile, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { DEFAULT_VIEWPORT, VIEWS, DOCS_PAGE_DIR, DOOR_FILES, MANIFEST, REPO, SHOTS, THEMES, UI_ROOT, screenshotInputs, screenshotInputsHash, viewOf, viewportFor } from './screenshot-inputs.mjs';
 
@@ -80,6 +80,7 @@ const SIZES = new Map();
 const scratch = await mkdtemp(join(tmpdir(), 'tflw-page-shots-'));
 let browser;
 let server;
+let shop;
 try {
   // The bundle, built from the checked-out page with the ui's own vite (the page gate's recipe) —
   // not the root's VitePress-pinned one.
@@ -359,8 +360,95 @@ try {
     }
 
     await page.close();
-    console.log(`  ${theme}: ${VIEWS.length} views, spine on ${shown}, compose on ${opened.join(' ')}, + step… offered ${menu}`);
+    console.log(`  ${theme}: ${VIEWS.filter((v) => !v.startsWith('walk-')).length} views, spine on ${shown}, compose on ${opened.join(' ')}, + step… offered ${menu}`);
     if (theme === THEMES[0][0]) console.log(`  + step… kinds (${kinds.length}): ${kinds.join(' ')}`);
+  }
+
+  /* `M261` — **the walkthrough's page chapter, one state per step, and the only views that run.**
+     Chapter 7 changes `expect status equals 202` to `200` in `fulfilment.tflw`, writes it, presses ▶,
+     reads the failure on Run, puts the line back and opens Config. A failure is the point: it is
+     the one run whose picture shows the page doing its job, and `202` is the shop's own answer, so
+     the run fails the same way on every cut.
+
+     **The shop is started here and nowhere above**, so the eleven views before this one are of a
+     page that has never reached it, as they always were. `SHOP_URL` is set for the run ▶ starts
+     (the server's child inherits this process's environment) and the config reads it, so the run
+     reaches the shop on whatever port it was given.
+
+     **The report directory is put back after each theme.** ▶ keeps its run under `report/runs/`,
+     and the second theme would otherwise open on the first theme's run: a different order id, two
+     kept runs in the history and a dot on every row the first run touched. */
+  const shopDir = join(root, 'server.mjs');
+  const { startStorefront } = await import(pathToFileURL(shopDir).href);
+  shop = await startStorefront(0);
+  process.env.SHOP_URL = `http://127.0.0.1:${shop.address().port}`;
+  const reportBefore = join(scratch, 'report-before');
+  await cp(join(root, 'report'), reportBefore, { recursive: true });
+  const WALK_FILE = 'tests/fulfilment.tflw';
+  const WALK_LINE = 10; // `expect status equals 202`, the fulfil request's own assertion
+  const walkSource = await readFile(join(root, WALK_FILE), 'utf8');
+  if (walkSource.split('\n')[WALK_LINE - 1]?.trim() !== 'expect status equals 202') {
+    throw new Error(`${WALK_FILE}:${WALK_LINE} is no longer \`expect status equals 202\` — chapter 7 narrates that line, so the chapter and these views move together`);
+  }
+  for (const [theme] of THEMES) {
+    const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: SCALE });
+    await page.context().addCookies([{ name: 'tflw-ui-token', value: TOKEN, domain: '127.0.0.1', path: '/' }]);
+    await page.addInitScript({ content: 'globalThis.__name = globalThis.__name || ((fn) => fn);' });
+    await page.addInitScript(([key, value]) => {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch {
+        // a page that cannot remember still renders; the attribute below is what paints
+      }
+      document.documentElement.setAttribute('data-tflw-theme', value);
+    }, ['tflw.theme', theme]);
+    await page.goto(`${base}/?token=${TOKEN}#/`);
+    await page.reload();
+    await page.locator('[data-kind-chips="all"]').waitFor();
+    await page.locator(`[data-file="${WALK_FILE}"]`).click();
+    await page.locator('[data-compose-pane]').waitFor();
+    const operand = () => page.locator(`[data-editor-line="${WALK_LINE}"] [data-expect-operand]`);
+    const change = async (value) => {
+      await page.locator(`[data-seq-pick="${WALK_LINE}"]`).click();
+      await operand().fill(value);
+      await page.locator('[data-compose-dirty]').waitFor();
+    };
+
+    // The edit, before it is written: the row open as its own editor, and `write` / `discard`.
+    await change('200');
+    await cut(page, `walk-edit-${theme}.png`, '[data-compose-pane]');
+
+    // Written with ⌘S, then ▶ in the header — which reads `run fulfilment.tflw · 1` here.
+    await page.keyboard.press('ControlOrMeta+s');
+    await page.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    await page.locator('[data-run]').click();
+    await page.locator('[data-play-status="failed"]').waitFor({ timeout: 60_000 });
+    await cut(page, `walk-failed-${theme}.png`, '[data-compose-pane]');
+
+    // The same run on Run, with its failed test picked — the tree opens on what failed.
+    await page.locator('[data-tab="run"]').click();
+    await page.locator('[data-tabstrip="run"]').waitFor();
+    await page.locator('[data-tree-test="failed"]').first().click();
+    await page.locator('[data-run-detail="test"]').waitFor();
+    await cut(page, `walk-run-${theme}.png`, '[data-run-tab]');
+
+    // Put back, as the chapter tells the reader to, before Config: the picture after it is of a
+    // project whose file is what it shipped as.
+    await page.locator('[data-tab="compose"]').click();
+    await page.locator('[data-tabstrip="compose"]').waitFor();
+    await change('202');
+    await page.keyboard.press('ControlOrMeta+s');
+    await page.locator('[data-compose-dirty]').waitFor({ state: 'detached' });
+    if ((await readFile(join(root, WALK_FILE), 'utf8')) !== walkSource) throw new Error(`${WALK_FILE} is not byte-identical after the chapter's edit was put back`);
+
+    await page.locator('[data-header-panel="config"]').click();
+    await page.locator('[data-panel="config"]').waitFor();
+    await cut(page, `walk-config-${theme}.png`, '[data-panel="config"]');
+
+    await page.close();
+    await rm(join(root, 'report'), { recursive: true, force: true });
+    await cp(reportBefore, join(root, 'report'), { recursive: true });
+    console.log(`  ${theme}: chapter 7 on ${WALK_FILE}:${WALK_LINE} — edited, ran and failed, put back, Config`);
   }
 
   await writeFile(
@@ -396,5 +484,6 @@ try {
 } finally {
   if (browser !== undefined) await browser.close();
   if (server !== undefined) await server.close();
+  if (shop !== undefined) shop.close();
   await rm(scratch, { recursive: true, force: true });
 }

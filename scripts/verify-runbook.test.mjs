@@ -5,8 +5,9 @@
 // anything** (an untagged fence, a page missing from the order) is caught here first.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import test from 'node:test';
-import { activeText, normalise, outputMatches, readChapter, readPublished, walkthroughFiles } from './verify-runbook.mjs';
+import { activeText, normalise, outputMatches, pageUnanswered, readChapter, readPublished, walkthroughFiles } from './verify-runbook.mjs';
 
 test('every walkthrough chapter exists, is in the order, and has no untagged shell fence (`D1416`)', () => {
   const { listed, unlisted } = walkthroughFiles();
@@ -73,3 +74,19 @@ test('`…` is any run of lines, including none; every other line must match exa
   assert.ok(!outputMatches('a\n…\nd', 'a\nb\ne'), 'and `…` does not excuse the line after it');
   assert.ok(!outputMatches('1 file checked', '2 files checked'));
 });
+
+test('`M261`: a printed page address is asked for its project with its token; no address, no question', async () => {
+  assert.equal(await pageUnanswered('opening http://127.0.0.1:4720/order — press Ctrl+C to stop.'), null, 'an address with no token is not a page');
+  const files = (q) => (q.url.includes('token=t0k') ? [{ path: 'a.tflw' }] : []);
+  const server = createServer((q, r) => r.end(JSON.stringify({ files: files(q) })));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    assert.equal(await pageUnanswered(`tflw ui — . at http://127.0.0.1:${port}/?token=t0k (loopback only)`), null);
+    assert.match(await pageUnanswered(`at http://127.0.0.1:${port}/?token=other`), /lists no files/, 'the token printed is the token sent');
+  } finally {
+    server.close();
+  }
+  assert.match(await pageUnanswered(`at http://127.0.0.1:${port}/?token=t0k`), /did not answer \/api\/project/, 'and a page that is gone is a failure');
+});
+
