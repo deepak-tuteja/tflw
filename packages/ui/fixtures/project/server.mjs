@@ -7,6 +7,8 @@
 // page gate passes a free one and rewrites its copy of the config, because two gates on one host
 // (`M194`'s parallel sweep) were the first to run this file twice at once, and both wanted 4717.
 import { createServer } from 'node:http';
+import { realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 export const PORT = 4717;
 
@@ -99,6 +101,7 @@ export function startFixtureServer(port = PORT) {
   });
 }
 
-if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file://').href) {
+// The storefront's guard, for the same reasons (`M259-06`).
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   startFixtureServer().then(() => process.stdout.write(`fixture server on http://127.0.0.1:${PORT}\n`));
 }
