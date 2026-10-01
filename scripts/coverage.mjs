@@ -140,6 +140,12 @@ console.log('› npm run test:raw, under NODE_V8_COVERAGE');
 // The 8192 still finishes it. Recorded rather than overwritten, because the 5.59 GB peak belongs to
 // the tree it was measured on and re-labelling it with today's file count would invent a reading.
 //
+// **Raised to 12288 at `M259` (2026-10-01)**, measured on the box: 2126 V8 files, 4.9 GB, and
+// `=8192` died in ineffective mark-compacts on the merge — 13 files after a 2113-file tree that it
+// finished the same morning. `M160d`'s shape again: the files that crossed the line were four
+// ordinary e2e tests, each spawning the bundled CLI a few times. 12 GB of a 16 GB runner, for a
+// merge that runs after the suite has exited.
+//
 // This ceiling moves with the suite, it does not stay fixed. When it is next hit, the honest
 // choices are to raise it again or to narrow what `.c8rc.json` instruments with `all: true` —
 // not to drop a floor, which measures something else entirely.
@@ -186,8 +192,15 @@ if (separated !== 0) process.exit(separated);
 
 console.log('> c8 report');
 const reported = run(process.execPath, [
-  '--max-old-space-size=8192', require.resolve('c8/bin/c8.js'), 'report', '--temp-directory', tmpDir,
+  '--max-old-space-size=12288', require.resolve('c8/bin/c8.js'), 'report', '--temp-directory', tmpDir,
 ]);
+// `M259-05`: a report that died leaves the PREVIOUS run's `lcov.info` in place, and everything below
+// reads that file — so the witness and the floors printed ✓ over a run that had measured nothing,
+// with only the exit code saying otherwise. Stop here instead.
+if (reported !== 0) {
+  console.error(`\n✗ c8 report exited ${reported}, so coverage/lcov.info is the previous run's — no floor is read from it.`);
+  process.exit(reported);
+}
 
 // `M234` — THE POST-CONDITION, because the way this instrument breaks is silent.
 //

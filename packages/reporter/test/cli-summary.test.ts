@@ -225,7 +225,10 @@ test('an ordinary run says nothing about authorized targets', () => {
 
 test('D331: the coverage line names the suite as its base, never this run', () => {
   const out = renderCliSummary({ ...baseReport, scanBlindSpot: { coverage: { apiSteps: 1035, withOwner: 41 } } }, false);
-  assert.match(out, /authz coverage: 41 of 1035 api steps in the suite sit in a test that declares an owner/);
+  assert.match(out, /authz coverage: 41 of 1035 api steps in the suite run in a test signed in with `as <session>` \(3%\) — only those can be judged by `authorization violations`/);
+  // `M259` `D` (`G6`): the reader's words, and the fix named in them — no spec section number and no
+  // "unjudgeable", which is how the line read to a new user's first run.
+  assert.doesNotMatch(out, /SPEC §|unjudgeable/);
   // The census is computed before `--tags`/`--only` narrow anything, so a reader must not take it
   // for a statement about what just ran.
   assert.match(out, /in the suite/);

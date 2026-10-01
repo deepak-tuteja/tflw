@@ -13,7 +13,8 @@
 // httponly` fires as a **critical** finding and `signin.tflw` goes red. That is the shortest round
 // trip from "the scan passes" to "the scan caught something" this repository has.
 //
-// stdlib only, one file, no build. `node server.mjs` and it is up.
+// stdlib only, one file, no build. `node server.mjs` and it is up — `npm run shop` in a project
+// `tflw init --example` wrote, which is this directory copied.
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -28,7 +29,11 @@ const ASSET = {
 };
 const ORDER_PAGE = readFileSync(join(here, 'order.html'), 'utf8');
 
-export const PORT = 4720;
+/** 4720 unless `SHOP_URL` says otherwise. **One variable for both ends**: `tflw.config` reads the
+ *  same `SHOP_URL` for `api`, `web` and `authorized target`, so a reader whose 4720 is taken exports
+ *  it once and the shop and the suite move together. A second variable for the server alone would
+ *  be one more thing to keep in step with the first. */
+export const PORT = process.env.SHOP_URL ? Number(new URL(process.env.SHOP_URL).port) : 4720;
 
 /** How long the warehouse takes to pack an order. Long enough that a poll polls more than once,
  *  short enough that the suite does not wait on it. */

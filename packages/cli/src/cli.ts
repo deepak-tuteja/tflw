@@ -23,6 +23,7 @@ import { parseHeader, reportToOtlp } from './otlp.js';
 import { UiServer, parseUiArgs, openInBrowser, SCRATCH_PATH, PLAY_SCRATCH } from './ui-server.js';
 import { buildStamp, getVersion, type BuildStamp } from './buildStamp.js';
 import { recordedLine } from './record.js';
+import { writeExample } from './example.js';
 import {
   parseSource,
   parseConfigSource,
@@ -2293,13 +2294,21 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // over `runnable`, which `--tags`/`--only`/`--failed` may have narrowed. That is deliberate and
   // the label says so: this is the *suite's* bound on what the tier can judge, not this run's, and
   // a number whose base moved with the filter would be a different sentence every invocation.
-  const census = parsedFiles.reduce(
-    (acc, { program }) => {
-      const c = identityCensus(program);
-      return { apiSteps: acc.apiSteps + c.apiSteps, withOwner: acc.withOwner + c.withOwner };
-    },
-    { apiSteps: 0, withOwner: 0 },
-  );
+  //
+  // `M259` `D` (`G6`): **only once the project declares a `session`.** Before that there is nothing to
+  // sign in as, so the line could only ever read 0% — and it did, on every new user's first run of
+  // `tflw init`'s one-test project, as the first sentence about security they saw. A zero census
+  // makes `buildScanBlindSpot` omit `coverage`, so the terminal, the report and the page all agree.
+  const census =
+    resolved.sessions.size === 0
+      ? { apiSteps: 0, withOwner: 0 }
+      : parsedFiles.reduce(
+          (acc, { program }) => {
+            const c = identityCensus(program);
+            return { apiSteps: acc.apiSteps + c.apiSteps, withOwner: acc.withOwner + c.withOwner };
+          },
+          { apiSteps: 0, withOwner: 0 },
+        );
   const scanBlindSpot = buildScanBlindSpot(census, scanDeclines);
   const scanCoverage = buildScanCoverage(censusByScan);
   const redacted = redactReport(
@@ -4187,13 +4196,28 @@ async function initCommand(argv: string[]): Promise<number> {
   // scaffolds the **open** (`ramp to N rps`) workload form, matching D17's "docs lead with it".
   // `initCommand` never inspected argv beyond this one `includes`, so `tflw init --lod` scaffolded
   // without `load.tflw` and exited 0 without mentioning the flag (B6-11's quiet variant).
-  for (const a of argv) if (a.startsWith('--') && a !== '--load' && a !== '--scan') unknownFlag('init', a);
+  for (const a of argv) if (a.startsWith('--') && !['--load', '--scan', '--example', '--force'].includes(a)) unknownFlag('init', a);
   const load = argv.includes('--load');
   const loadPath = join(cwd, 'load.tflw');
   // `tflw init --scan` (`M200` `A2-4`, `D1053`) — the SCANS door's scaffold. A second flag beside
   // `--load` and independent of it: the two write different files and a project may want both.
   const scan = argv.includes('--scan');
   const scanPath = join(cwd, 'scan.tflw');
+  // `tflw init --example` (`M259` `A`, `D1417`) — the Coffee Shelf instead of the one-test
+  // scaffold. A whole project, so `--load` and `--scan` have nothing to add to it, and `--force` is
+  // its alone: plain `init` never overwrites `tflw.config`, and a flag that made it would be a
+  // second meaning for a word that only ever needs one.
+  const example = argv.includes('--example');
+  const force = argv.includes('--force');
+  if (force && !example) {
+    err('`--force` only applies to `--example`; plain `tflw init` never overwrites a `tflw.config`.');
+    return EXIT_USAGE;
+  }
+  if (example && (load || scan)) {
+    err('`--example` writes a whole project, and its `tests/load.tflw` and `tests/scan.tflw` are already in it — drop `--load`/`--scan`.');
+    return EXIT_USAGE;
+  }
+  if (example) return initExampleCommand(cwd, force);
 
   if (await exists(configPath)) {
     err(`\`tflw.config\` already exists in ${cwd} — not overwriting.`);
@@ -4242,6 +4266,36 @@ async function initCommand(argv: string[]): Promise<number> {
   if (await ensureGitignore(cwd)) created.push('.gitignore');
 
   process.stdout.write(`created ${created.join(', ')}\n\nnext:\n  tflw run\n${load ? '  tflw run load.tflw\n' : ''}`);
+  return EXIT_OK;
+}
+
+/** The Coffee Shelf (`M259` `A`). What it prints after writing is the next three commands, in the
+ *  order a reader runs them — the shop first, because every test in it talks to the shop. */
+async function initExampleCommand(cwd: string, force: boolean): Promise<number> {
+  const outcome = await writeExample(cwd, force);
+  if (outcome.kind === 'missing') {
+    err(`this build carries no example at ${outcome.root} — \`npm run build\` puts it there.`);
+    return EXIT_USAGE;
+  }
+  if (outcome.kind === 'collision') {
+    const shown = outcome.existing.slice(0, 5).join(', ') + (outcome.existing.length > 5 ? ` and ${outcome.existing.length - 5} more` : '');
+    err(`the example would overwrite ${shown} in ${cwd}. Run it in an empty directory, or pass \`--force\` to overwrite.`);
+    return EXIT_USAGE;
+  }
+  await ensureGitignore(cwd);
+  const manifest = {
+    created: 'package.json, with an `npm run shop` script',
+    'script-added': 'an `npm run shop` script, added to your package.json',
+    'script-kept': 'your package.json already has a `shop` script, left as it is — the shop starts with `node server.mjs`',
+    unreadable: 'your package.json did not parse, so it was left alone — the shop starts with `node server.mjs`',
+  }[outcome.packageJson];
+  process.stdout.write(
+    `wrote the Coffee Shelf: ${outcome.files.length} files, and ${manifest}\n\n` +
+      `next:\n` +
+      `  npm run shop                 # the shop, on http://127.0.0.1:4720 — leave it running\n` +
+      `  tflw run --tag functional    # in a second terminal: the suite, against it\n` +
+      `  tflw ui                      # the same project, as a page\n`,
+  );
   return EXIT_OK;
 }
 
@@ -4527,6 +4581,8 @@ const VERB_HELP: readonly VerbHelp[] = [
         '  tflw init [--load] [--scan]                        scaffold tflw.config + example.tflw',
         '                                                      --load also scaffolds load.tflw (a workload-bearing `test`)',
         '                                                      --scan also scaffolds scan.tflw + a commented `authorized target`',
+        '  tflw init --example [--force]                      write the Coffee Shelf: a shop, its order page, and 37 tests',
+        '                                                      --force overwrites files of the same name',
     ],
   },
   {

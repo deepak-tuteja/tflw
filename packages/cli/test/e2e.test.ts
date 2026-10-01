@@ -830,6 +830,125 @@ test('FU-04: `tflw init` then `tflw run` is green in an empty directory — the 
   }
 });
 
+test('`M259` `D` (`G6`): a project with no `session` hears nothing about authz coverage, and one with a session does', async () => {
+  // The line read `0 of 1 api step … unjudgeable by authorization violations, which needs as <session>
+  // (SPEC §3.3)` on the first run of `tflw init`'s one-test project — a project with nothing to sign
+  // in as, told in a spec section number that it was failing to. The control is the same project
+  // with one `session` declared: the line is back, because now the number means something.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-g6-'));
+  try {
+    await execFileAsync('node', [cliEntry, 'init'], { cwd: dir });
+    const bare = (await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir })).stdout;
+    assert.match(bare, /PASS 1\/1 passed/, bare);
+    assert.doesNotMatch(bare, /authz coverage/, bare);
+    const config = await readFile(join(dir, 'tflw.config'), 'utf8');
+    await writeFile(join(dir, 'tflw.config'), `${config}\nsession reader\n  header "Authorization" is "Bearer demo"\n`, 'utf8');
+    const signed = (await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir })).stdout;
+    assert.match(signed, /authz coverage: 0 of 1 api step in the suite run in a test signed in with `as <session>` \(0%\) — only those can be judged by `authorization violations`/, signed);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/** A port nothing is listening on, from the OS. */
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const { port } = probe.address() as { port: number };
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
+}
+
+test('`M259` `A` (`D1417`): `tflw init --example` writes the Coffee Shelf byte for byte, refuses to overwrite it, and `--force` does', async () => {
+  // @ts-expect-error — the plain `.mjs` rule `bundle.mjs` copies with; the same one decides here.
+  const { listExample } = (await import('../scripts/example-files.mjs')) as { listExample: (dir: string) => string[] };
+  const source = join(repoRoot, 'examples', 'storefront');
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-example-'));
+  try {
+    const { stdout } = await execFileAsync('node', [cliEntry, 'init', '--example'], { cwd: dir });
+    const files = listExample(source);
+    assert.ok(files.includes('server.mjs') && files.includes('tflw.config') && files.includes('tests/checkout.tflw'), files.join(', '));
+    for (const f of files) assert.ok((await readFile(join(dir, f))).equals(await readFile(join(source, f))), `${f} differs from examples/storefront/${f}`);
+    // Nothing the repository keeps for itself, and no run's leftovers.
+    for (const absent of ['run.mjs', 'README.md', 'report']) await assert.rejects(access(join(dir, absent)), `${absent} should not ship`);
+    // The manifest `npm run shop` needs, and the next three commands, shop first.
+    const manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as { type?: string; scripts?: Record<string, string> };
+    assert.deepEqual([manifest.type, manifest.scripts?.shop], ['module', 'node server.mjs']);
+    assert.match(stdout, new RegExp(`wrote the Coffee Shelf: ${files.length} files`), stdout);
+    assert.match(stdout, /next:\n  npm run shop .*\n  tflw run --tag functional .*\n  tflw ui /, stdout);
+    assert.match(await readFile(join(dir, '.gitignore'), 'utf8'), /^report\/$/m);
+
+    // A second time refuses, names what is in the way, and changes nothing.
+    await writeFile(join(dir, 'tests', 'checkout.tflw'), '# mine now\n', 'utf8');
+    const refused = await execFileAsync('node', [cliEntry, 'init', '--example'], { cwd: dir }).then(
+      () => assert.fail('a second `init --example` over the first should refuse'),
+      (e: { code: number; stderr: string }) => e,
+    );
+    assert.equal(refused.code, 2);
+    assert.match(refused.stderr, /the example would overwrite order\.html, order\.js, \S+, server\.mjs, shelf\.css and \d+ more in .* Run it in an empty directory, or pass `--force`/, refused.stderr);
+    assert.equal(await readFile(join(dir, 'tests', 'checkout.tflw'), 'utf8'), '# mine now\n');
+    // `--force` writes it back.
+    await execFileAsync('node', [cliEntry, 'init', '--example', '--force'], { cwd: dir });
+    assert.ok((await readFile(join(dir, 'tests', 'checkout.tflw'))).equals(await readFile(join(source, 'tests', 'checkout.tflw'))));
+
+    // The flags it does not combine with.
+    for (const argv of [['init', '--force'], ['init', '--example', '--load']]) {
+      const bad = await mkdtemp(join(tmpdir(), 'tflw-e2e-example-'));
+      try {
+        await assert.rejects(execFileAsync('node', [cliEntry, ...argv], { cwd: bad }), (e: { code: number }) => e.code === 2);
+        assert.deepEqual(await readdir(bad), [], `${argv.join(' ')} wrote something before refusing`);
+      } finally {
+        await rm(bad, { recursive: true, force: true });
+      }
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`M259` `A`: an existing `package.json` gains the `shop` script and keeps everything else, in its own indent', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-example-pkg-'));
+  try {
+    await writeFile(join(dir, 'package.json'), '{\n    "name": "mine",\n    "scripts": {\n        "test": "echo"\n    }\n}\n', 'utf8');
+    const { stdout } = await execFileAsync('node', [cliEntry, 'init', '--example'], { cwd: dir });
+    assert.match(stdout, /an `npm run shop` script, added to your package\.json/, stdout);
+    assert.equal(
+      await readFile(join(dir, 'package.json'), 'utf8'),
+      '{\n    "name": "mine",\n    "scripts": {\n        "test": "echo",\n        "shop": "node server.mjs"\n    }\n}\n',
+    );
+    // A manifest that already has a `shop` is the reader's, and is not touched.
+    await writeFile(join(dir, 'package.json'), '{ "scripts": { "shop": "mine" } }\n', 'utf8');
+    const again = await execFileAsync('node', [cliEntry, 'init', '--example', '--force'], { cwd: dir });
+    assert.match(again.stdout, /already has a `shop` script, left as it is/, again.stdout);
+    assert.equal(await readFile(join(dir, 'package.json'), 'utf8'), '{ "scripts": { "shop": "mine" } }\n');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('`M259` `A`: `SHOP_URL` moves the shop and the suite together — one variable, both ends', async () => {
+  // §6 risk 4: a reader whose 4720 is taken. The shop is started the way `npm run shop` starts it,
+  // on a port the OS picked, and the API half of the suite is run against it with only `SHOP_URL`
+  // set. If either end ignored the variable, the run would reach nothing (or someone else's 4720).
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-example-url-'));
+  const port = await freePort();
+  const env = { ...process.env, SHOP_URL: `http://127.0.0.1:${port}` };
+  await execFileAsync('node', [cliEntry, 'init', '--example'], { cwd: dir });
+  const shop = spawn(process.execPath, ['server.mjs'], { cwd: dir, env, stdio: ['ignore', 'pipe', 'inherit'] });
+  try {
+    const announced = await new Promise<string>((resolve, reject) => {
+      shop.stdout!.once('data', (chunk: Buffer) => resolve(chunk.toString()));
+      shop.once('exit', (code) => reject(new Error(`the shop exited (${code}) before it said where it was`)));
+    });
+    assert.equal(announced.trim(), `the coffee shelf is on http://127.0.0.1:${port}`);
+    const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'tests/checkout.tflw', '--no-color'], { cwd: dir, env });
+    assert.match(stdout, /PASS \d+\/\d+ passed/, stdout);
+  } finally {
+    shop.kill();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('`M241` `E` (`D1325`, review E4): a report says who ran it, on which host, with which tflw', async () => {
   // Through the built CLI in an empty directory, for the quickstart test's reason above: the claim is
   // about the artifact a stranger's run leaves behind. The three facts are compared with the OS's own

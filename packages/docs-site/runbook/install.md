@@ -10,11 +10,28 @@ node --version   # v22.x or later
 
 ## 2. The package, and the browser if you need one
 
+<Published :when="false">
+
+tflw is pre-1.0 and **not published to npm yet**. Until it is, build and pack it from a clone and
+install the tarball — [the walkthrough's first chapter](/runbook/start/install) has the commands:
+
+```sh
+npm install -D /path/to/tflw-0.1.0.tgz   # the file `npm pack -w tflw` wrote in the clone
+npm install -D playwright                # only if a test opens a page
+npx tflw install-browsers                # downloads Chromium into that playwright
+```
+
+</Published>
+
+<Published>
+
 ```sh
 npm install -D tflw
 npm install -D playwright     # only if a test opens a page
 npx tflw install-browsers     # downloads Chromium into that playwright
 ```
+
+</Published>
 
 `install-browsers --browser firefox` or `--browser webkit` downloads another engine. It never installs
 `playwright` for you: without the peer it refuses and says how to add it, so the browser always lands
@@ -54,8 +71,22 @@ Two lines are worth reading even when doctor is green:
 
 ## 4. Upgrading
 
+<Published :when="false">
+
+Before 1.0, an upgrade is a fresh tarball: `git pull` in the clone, `npm pack -w tflw` again, and
+install the new file the way you installed the first. Then the same three commands as below.
+
+</Published>
+
+<Published>
+
 ```sh
 npm install -D tflw@latest
+```
+
+</Published>
+
+```sh
 npx tflw migrate              # rewrites deprecated syntax in place and prints what changed
 npx tflw check
 npx tflw install-browsers     # again, if the upgrade moved your playwright

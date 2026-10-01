@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitepress';
 import { PUBLISHED } from './published';
+import { WALKTHROUGH } from './walkthrough.mjs';
 import tflwGrammar from '../../vscode/syntaxes/tflw.tmLanguage.json' with { type: 'json' };
 
 // The top nav is Home · Guide · Reference · Grammar · Editor · Playground · Changelog. `appearance`
@@ -250,7 +251,11 @@ export default defineConfig({
       // screenshot, and the screenshot was cut at a door its caption did not name. The doors are
       // the axis this UI is organised on, and a reader who wants the LOAD door does not want the
       // other three first.
+      // `M259` (`D1415`): the walkthrough leads — one project, in a first day's order — and the
+      // topic pages follow it as how-tos. `walkthrough.mjs` is the order, shared with the gate
+      // that runs each chapter's commands.
       '/runbook/': [
+        { text: 'Start here', items: WALKTHROUGH },
         {
           text: 'Runbook',
           link: '/runbook/',

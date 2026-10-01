@@ -17,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 // `scripts/bundle.mjs` rather than reimplemented here (M92a).
 import { collectNotices } from '../../../scripts/third-party-notices.mjs';
 import { stagedSetup } from '../../../scripts/test-staging.mjs';
+// @ts-expect-error — the plain `.mjs` rule `bundle.mjs` copies the example with (`M259` `A`).
+import { listExample } from '../scripts/example-files.mjs';
 
 // `M243-02`: on Windows `npm` and an installed bin are `.cmd` shims, which Node spawns only
 // through a shell (`EINVAL`/`ENOENT` otherwise, since its fix for CVE-2024-27980).
@@ -122,7 +124,13 @@ test('the published tarball contains dist/cli.cjs + dist/mtls-worker.cjs + dist/
     assert.ok(noticeText.includes(pkgName), `the tarball ships ${pkgName}'s typeface and its notice names no such package`);
   }
   assert.equal((noticeText.match(/SIL Open Font License/g) ?? []).length, 5, 'one OFL text per vendored family');
-  assert.deepEqual(files.filter((f) => !f.startsWith('dist/ui/')), ['LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md', 'dist/artifact-contract.json', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
+  assert.deepEqual(files.filter((f) => !f.startsWith('dist/ui/') && !f.startsWith('dist/example/')), ['LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md', 'dist/artifact-contract.json', 'dist/cli.cjs', 'dist/mtls-worker.cjs', 'package.json']);
+  // `dist/example/` (`M259` `A`, `D1417`) — the Coffee Shelf `tflw init --example` writes: exactly
+  // what `example-files.mjs`'s rule picks out of `examples/storefront/`, and nothing a run left there.
+  assert.deepEqual(
+    files.filter((f) => f.startsWith('dist/example/')).map((f) => f.slice('dist/example/'.length)).sort(),
+    listExample(join(cliRoot, '..', '..', 'examples', 'storefront')).sort(),
+  );
 
   // The other half of the same property, and the half a file list cannot express (M86). Excluding
   // `.map` files from the tarball is not by itself correct: a bundle built with source maps carries

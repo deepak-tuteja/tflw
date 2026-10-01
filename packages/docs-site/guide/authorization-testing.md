@@ -376,12 +376,14 @@ This feature judges **what your suite declares an identity for**, and every run 
 your suite that is:
 
 ```console
-ℹ authz coverage: 41 of 1035 api steps in the suite sit in a test that declares an owner (3%) —
-  the rest are unjudgeable by `authorization violations`, which needs `as <session>`
+ℹ authz coverage: 41 of 1035 api steps in the suite run in a test signed in with `as <session>` (3%) —
+  only those can be judged by `authorization violations`
 ```
 
 That number is about the whole discovered suite, not about the tests this run selected, and it
-exists so that "we probed everything we asserted on" cannot be read as "we probed everything".
+exists so that "we probed everything we asserted on" cannot be read as "we probed everything". A
+project that declares no `session` gets no line: there is nothing yet to sign in as, so the number
+would only ever say 0%.
 
 Five more limits worth knowing:
 

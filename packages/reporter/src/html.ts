@@ -167,7 +167,7 @@ function renderScanBlindSpot(blind: RunReport['scanBlindSpot']): string {
   if (cov && cov.apiSteps > 0) {
     const pct = Math.floor((cov.withOwner / cov.apiSteps) * 100);
     rows.push(
-      `<div class="demo-badge">ℹ authz coverage: ${cov.withOwner} of ${cov.apiSteps} api step${cov.apiSteps === 1 ? '' : 's'} in the suite sit in a test that declares an owner (${pct}%) — the rest are unjudgeable by <code>authorization violations</code>, which needs <code>as &lt;session&gt;</code>.</div>`,
+      `<div class="demo-badge">ℹ authz coverage: ${cov.withOwner} of ${cov.apiSteps} api step${cov.apiSteps === 1 ? '' : 's'} in the suite run in a test signed in with <code>as &lt;session&gt;</code> (${pct}%) — only those can be judged by <code>authorization violations</code>.</div>`,
     );
   }
   // D418a — named by scan, because Tier 2's un-probed principal and Tier 3's un-granted payload

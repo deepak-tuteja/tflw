@@ -58,6 +58,8 @@
     "docs:decisions": "node scripts/gen-decisions.mjs",
     "docs:provenance": "node scripts/gen-decisions.mjs --provenance",
     "docs:demand": "node scripts/gen-decisions.mjs --demand",
+    "verify:runbook": "node scripts/verify-runbook.mjs",
+    "verify:runbook:self-test": "node scripts/verify-runbook.mjs --self-test",
     "example": "node examples/storefront/run.mjs --tag functional",
     "example:ui": "node packages/cli/dist/cli.cjs ui examples/storefront",
     "example:load": "node examples/storefront/run.mjs --tag workload",

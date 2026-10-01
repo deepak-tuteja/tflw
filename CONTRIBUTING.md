@@ -86,6 +86,8 @@ npm run verify:no-internal-refs:self-test
 npm run refresh:own-identifiers -- --check   # § needs the records
 npm run test:links -w @tflw/docs-site
 xvfb-run -a npm run coverage           # † conditional in CI
+npm run verify:runbook:self-test       # † conditional in CI
+xvfb-run -a npm run verify:runbook     # † conditional in CI
 node scripts/mutate.mjs <milestone>    # § the milestone's own mutations; CI does not run it
 TFLW_BIN=$PWD/packages/cli/dist/cli.cjs npm run regression --prefix ../testFlow-tests -- --parallel-groups   # § the sibling's sweep against THIS build, before a milestone closes
 npm run verify:ledger                  # § never runs in CI, by decision
@@ -250,6 +252,14 @@ npm run verify:ledger                  # § never runs in CI, by decision
   renders the sidebar it belongs to. Separate from `npm test` because it reads the **built**
   `.vitepress/dist`, so it needs `npm run build` first. This is the gate the ledger row that
   produced this file forgot to list.
+- **`npm run verify:runbook:self-test`** and **`xvfb-run -a npm run verify:runbook`** — **† conditional.**
+  The walkthrough under `docs-site/runbook/start/` is run as a reader runs it: every ` ```sh runbook `
+  fence, in chapter order, in one fresh directory, against the CLI packed from this tree, with each
+  ` ```text runbook-output ` fence compared to what the command printed. Needs `npm run build` first,
+  the network (it installs `playwright` the way chapter 1 says to) and a display. The self-test's
+  controls — a flag that no longer exists, an output that drifted, an untagged fence — must each turn
+  it red at the fence they were built for. In CI both run on the Node 22 leg only; their static half
+  (`scripts/verify-runbook.test.mjs`) is in `npm test` everywhere.
 - **`xvfb-run -a npm run coverage`** — **† conditional.** It gates: the floors are per package in
   `coverage-floors.json` (`M234`), each pinned one point under its own measured value, and their
   derivation is documented in `scripts/coverage-floors.mjs`. **Do not lower one to make a red run
