@@ -6,15 +6,31 @@ from being an `action`.
 
 ## Install
 
-Until 1.0 the extension is a `.vsix` attached to a
-[GitHub release](https://github.com/deepak-tuteja/tflw/releases): download it, then
+<Published :when="false">
+
+Until 1.0 the extension is not on a marketplace: package it from a clone of the repository, then
+install the `.vsix` that writes ([the walkthrough's chapter 8](/runbook/start/editor) does this
+step by step):
 
 ```sh
-code --install-extension tflw-vscode-0.1.0.vsix
+npm run package -w tflw-vscode -- -o tflw.vsix
+code --install-extension tflw.vsix
 ```
 
-or **Extensions: Install from VSIX…** in the command palette. On 1.0 day it is listed on the
-Visual Studio Marketplace and Open VSX, and this becomes one `ext install` line.
+or **Extensions: Install from VSIX…** in the command palette.
+
+</Published>
+
+<Published>
+
+```sh
+code --install-extension deepak-tuteja.tflw-vscode
+```
+
+or search for **tflw** in the Extensions view. It is listed on the Visual Studio Marketplace and
+Open VSX.
+
+</Published>
 
 The extension starts your project's own `tflw lsp` — `node_modules/.bin/tflw` under the nearest
 `tflw.config` — so the version that underlines a file is the one CI runs. Install tflw in the

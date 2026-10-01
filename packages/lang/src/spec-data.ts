@@ -636,6 +636,9 @@ export const CLI_FLAGS: readonly CliFlagEntry[] = [
   { flag: '`--log-file <path>`', command: 'run', effect: 'duplicates console output to a file, always plain text (ANSI stripped) regardless of stdout\'s own color state' },
   { flag: '`--browser <engine>`', command: 'run', effect: 'switches every browser step to one engine — chromium/firefox/webkit (default chromium)' },
   { flag: '`--headed`', command: 'run', effect: 'shows the browser window instead of running headless (local debugging only)' },
+  // `M260`: parsed since `RUN_FLAGS` gained it and described in `run --help`, but never a row here,
+  // so every gate that reads this table (the reference page, the docs' flag check) called it absent.
+  { flag: '`--trace`', command: 'run', effect: 'keeps the Playwright trace of every browser test, even when everything passed (needs evidence `full`); open it with `npx playwright show-trace`' },
   { flag: '`--update-snapshots`', command: 'run', effect: 'writes/overwrites `matches snapshot` baselines instead of just comparing against them' },
   { flag: '`--no-helpers`', command: 'run', effect: 'refuses every `use` before the first request, whatever `tflw.config`\'s `helpers` allows — for a run that must not execute a JS/TS module (`TF083`, `M239`)' },
   { flag: '`--log-output <dest>`', command: 'run', effect: 'overrides `tflw.config`\'s `log destination` key (`console`/`html`/`both`/`none`) for this run\'s bare `log "…"` calls only — a `log … to …` statement\'s own destination always wins' },

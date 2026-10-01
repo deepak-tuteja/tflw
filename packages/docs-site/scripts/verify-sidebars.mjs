@@ -173,6 +173,42 @@ for (const { page, link, group } of PILLAR_OVERVIEWS) {
   }
 }
 
+// `M260` (`D1418`): the walkthrough's chapters are in the rail **in chapter order**. Both halves are
+// read from somewhere other than `walkthrough.mjs`, which the rail is drawn from and which would
+// agree with itself: the pages from the directory, and each one's number from its own `# N. Title`.
+// A chapter left out of the order, or listed out of it, reddens here before a reader meets a
+// "chapter 4" that sends them on to chapter 6.
+{
+  const dir = join(ROOT, 'runbook', 'start');
+  const chapters = [];
+  for (const f of (await readdir(dir)).filter((x) => x.endsWith('.md'))) {
+    const number = /^# (\d+)\. /m.exec(await readFile(join(dir, f), 'utf8'))?.[1];
+    if (number === undefined) {
+      console.error(`✗ runbook/start/${f} — its title is not "# N. …", so its place in the walkthrough is unstated`);
+      failures++;
+      continue;
+    }
+    chapters.push({ page: f.replace(/\.md$/, ''), number: Number(number) });
+  }
+  let rail = '';
+  try {
+    rail = sidebarOf(await readFile(join(DIST, 'runbook/start/install.html'), 'utf8'));
+  } catch {
+    // no page to read the rail from — the missing list below says so
+  }
+  const at = (page) => [rail.indexOf(`/runbook/start/${page}.html"`), rail.indexOf(`/runbook/start/${page}"`)].filter((i) => i !== -1)[0] ?? -1;
+  const placed = chapters.map((c) => ({ ...c, at: at(c.page) }));
+  const missing = placed.filter((c) => c.at === -1).map((c) => c.page);
+  const railOrder = placed.filter((c) => c.at !== -1).sort((a, b) => a.at - b.at);
+  const outOfOrder = railOrder.filter((c, i) => i > 0 && c.number <= railOrder[i - 1].number).map((c) => `${c.number} after ${railOrder[railOrder.indexOf(c) - 1].number}`);
+  if (chapters.length === 0 || missing.length > 0 || outOfOrder.length > 0) {
+    console.error(`✗ runbook/start/ — ${chapters.length === 0 ? 'no chapters found' : missing.length > 0 ? `not in the rail: ${missing.join(', ')}` : `out of chapter order in the rail: ${outOfOrder.join(', ')}`}`);
+    failures++;
+  } else {
+    console.log(`✓ runbook/start/ — all ${chapters.length} chapters are in the rail, in chapter order (${railOrder.map((c) => c.number).join(', ')})`);
+  }
+}
+
 if (failures > 0) {
   console.error(`\n${failures} sidebar assertion(s) failed.`);
   process.exit(1);

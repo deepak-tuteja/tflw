@@ -1,6 +1,7 @@
 // `M241` `D` (`D1324`) — `tflw run`'s flags are one table, and the page reaches them through it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { CLI_FLAGS } from '@tflw/lang';
 import { pageRunFlags, readRunFlags, RUN_FLAGS } from '../src/run-flags.js';
 import { runArgv, runFlagsProblem } from '../src/ui-server.js';
 
@@ -19,6 +20,13 @@ test('every flag is one row, spelled once, landing on a field of its own', () =>
   assert.equal(new Set(RUN_FLAGS.map((f) => f.flag)).size, RUN_FLAGS.length, 'a flag spelled twice');
   assert.equal(new Set(RUN_FLAGS.map((f) => f.key)).size, RUN_FLAGS.length, 'two flags landing on one field');
   for (const f of RUN_FLAGS) assert.match(f.flag, /^--[a-z][a-z-]*$/, f.flag);
+});
+
+test('`M260`: every flag `run` parses has its row in `CLI_FLAGS`, the table the docs and their gates read', () => {
+  // `--trace` was parsed here and described in `run --help`, and had no row there, so the reference
+  // page omitted it and the docs' flag check refused the walkthrough's `tflw run … --trace`.
+  const documented = new Set(CLI_FLAGS.filter((f) => f.command === 'run').map((f) => /^`(--[a-z-]+)/.exec(f.flag)?.[1]));
+  assert.deepEqual(RUN_FLAGS.map((f) => f.flag).filter((flag) => !documented.has(flag)), []);
 });
 
 test('the table reads the three shapes, both spellings of a value, and refuses what it does not hold', () => {

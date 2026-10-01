@@ -14737,4 +14737,18 @@ milestone it waits on. Both files are gitignored; the repositories are public.
   reader is absent, which it will not be after `M253`).
 - **D docs.** `ui/a-run.md` re-cut; `runbook/page.md`'s run section.
 
+### M260
+
+<sub>cited from SPEC.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`M260` — the walkthrough, CLI half (`D1415`, `D1418` chapters 1–6, 8–10, `G2`, `G4`, `G5`, `G8`)**
+
+- One page per chapter, every command fenced `runbook`, and output fences where the output teaches
+  something.
+- Sidebar: *Start here* first; `runbook/index.md` becomes the contents page.
+- `verify-sidebars.mjs` asks for every `runbook/start/` page in chapter order.
+- **Green:** all 17 commands appear in a `runbook` fence or a declared `runbook-manual` one, and the
+  gate's manual count is printed and ≤ 3. `verify:runbook` passes the whole walkthrough in CI.
+  `tflw://demo` is explained where `init` introduces it.
+
 <!-- GENERATED:decisions:end -->
