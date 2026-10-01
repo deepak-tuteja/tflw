@@ -10216,6 +10216,17 @@ a test shows its steps on the right with the failing step open and the passing o
 the same step from the compared run one line below it; `open in Compose` and `rerun this test`
 under it. *Not taken:* by file with passing files folded; no list on Run at all.
 
+### D1411
+
+<sub>cited from tflw-tests/scripts/lib/ui-budgets.mjs · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1411` — Paper and Terminal ship; density is a switch.** (`D-RC-13`) The picker offers Paper (light,
+the stranger's default per `D1315`) and Terminal (dark). A `compact` toggle tightens `--unit` by
+2 px and the title size to 13 px on either. Instrument and Ribbon stay in the stylesheet as
+complete token sets behind `?theme=` (not in the picker, the docs or the gates); the appearance
+and contrast gates read two themes × two densities. *Reopens* `D1096`'s four. *Not taken:* four
+in the picker; two with no density axis.
+
 ### D1412
 
 <sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
