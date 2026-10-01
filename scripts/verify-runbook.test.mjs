@@ -32,6 +32,15 @@ test('an untagged fence is a problem, a manual one is counted, and an output fen
   assert.deepEqual(readChapter('```text runbook-output\nhi\n```', false).problems.map((p) => p.line), [1]);
 });
 
+test('`M260`: an output fence of only `…` is a placeholder, refused — it matches every output, an error\'s included', () => {
+  const fence = (body) => ['```sh runbook', 'npx tflw check', '```', '', '```text runbook-output', ...body, '```'].join('\n');
+  const vacuous = readChapter(fence(['…']), false);
+  assert.deepEqual(vacuous.problems.map((p) => [p.line, p.placeholder]), [[5, true]]);
+  assert.ok(outputMatches(normalise('…'), normalise('error: anything at all')), 'which is why: `…` alone matches a failure too');
+  assert.deepEqual(readChapter(fence(['…', '']), false).problems.length, 1, 'blank lines beside it do not make it a claim');
+  assert.deepEqual(readChapter(fence(['…', '12 files checked, no problems found.']), false).problems, [], 'one real line does');
+});
+
 test('only the `<Published>` twin the flag selects is read, and line numbers stay the file\'s', () => {
   const page = 'a\n<Published :when="false">\n\n```sh runbook\nbefore\n```\n\n</Published>\n\n<Published>\n\n```sh\nafter\n```\n\n</Published>\n';
   const before = readChapter(page, false);
@@ -48,6 +57,7 @@ test('the normalisations take what differs between two honest runs, and nothing 
     'PASS 32/32 passed · env local · seed <seed> · now <time> · <t>',
   );
   assert.equal(normalise('12:34:35.653 PASS 35/35 passed'), '<clock> PASS 35/35 passed');
+  assert.equal(normalise('kept: report/runs/2026-10-01T09-30-14-902Z'), 'kept: report/runs/<time>', 'a kept run\'s directory, milliseconds after a dash');
   assert.equal(normalise('the coffee shelf is on http://127.0.0.1:41873'), 'the coffee shelf is on http://127.0.0.1:<port>');
   assert.equal(normalise('wrote /tmp/x/reader/report/report.html', ['/tmp/x/reader']), 'wrote <dir>/report/report.html');
   assert.equal(normalise('tflw 0.1.0 · Node v22.11.0'), 'tflw <version> · Node v<node>');

@@ -152,7 +152,8 @@ works once the consuming project installs it.
 </table>
 
 Opens a real, visible browser at `<url>` and prints one verified locator per click; runs until the
-window is closed or Ctrl+C. `<url>` must be absolute — no `tflw.config` involved.
+window is closed or Ctrl+C. `<url>` is an absolute URL, or a path (`/order.html`) opened against
+`tflw.config`'s `web` for the default env, joined the way a test's `open` joins it.
 
 ## `tflw record <url>`
 
@@ -174,8 +175,8 @@ sequence and a sequence needs the page to advance.
 A field's keystrokes are coalesced into one `fill` rather than written per character; a checkbox
 prints `tick` or `untick`; a key press carries the control it was typed into. **Actions only** —
 a recorder can see that a page changed but not what about the change mattered, so expectations are
-yours to add afterwards. Runs until the window is closed or Ctrl+C. `<url>` must be absolute — no
-`tflw.config` involved.
+yours to add afterwards. Runs until the window is closed or Ctrl+C. `<url>` is an absolute URL, or a
+path opened against `tflw.config`'s `web`, as `pick`'s is.
 
 ### Tabs
 

@@ -3,7 +3,7 @@
 // There used to be two functions named `describeWorkload` over two different values, and one run
 // described itself two contradictory ways five seconds apart:
 //
-//     scenario "count-based" — run 50 iterations across 2 users
+//     workload "count-based" — run 50 iterations across 2 users
 //       ✓ count-based (workload — ramp to 2 users over 0ms)
 //
 // `cli.ts`'s version switched over all 10 AST kinds and was right; `cli-summary.ts` and `html.ts`

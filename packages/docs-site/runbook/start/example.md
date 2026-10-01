@@ -126,7 +126,6 @@ run you just made: `report.html` to open in a browser, `results.json`, `junit.xm
 
 ## Next, or instead
 
-- **Next:** chapter 3, the first run and its report, is still being written. Until it lands,
-  [Running a suite](/runbook/running) covers the run and its files.
+- **Next:** [3. The first run and its report](/runbook/start/first-run).
 - How a project grows past one directory: [Setting up a project](/runbook/project).
 - The same project on the page: `npx tflw ui`, and [the page's own section](/ui/).

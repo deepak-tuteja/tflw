@@ -526,6 +526,50 @@ function resolvePlaywrightCli(): { cli: string; version: string } {
 const ABSOLUTE_URL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 /**
+ * `M260` (`G9`) — the page `pick` and `record` open. An absolute URL is used as given; **a path is
+ * opened against the project's `web`**, joined exactly as a test's `open "/order.html"` is, so the
+ * locator printed is the one that test will resolve. Before this the walkthrough had to spell
+ * `http://127.0.0.1:4720` into a command whose project already says where its page is — wrong for a
+ * reader who moved the shop with `SHOP_URL`, which the config reads and the literal does not.
+ * The default env (or `TFLW_ENV`), and the environment `run` reads (`.env` under the process).
+ * `undefined` once it has said why it cannot.
+ */
+async function pageUrl(command: 'pick' | 'record', url: string): Promise<string | undefined> {
+  if (ABSOLUTE_URL_RE.test(url)) return url;
+  if (!url.startsWith('/')) {
+    err(`\`${url}\` is neither a URL nor a path — give an absolute URL (http://localhost:3000/${url}) or a path starting with \`/\`, opened against tflw.config's \`web\``);
+    return undefined;
+  }
+  const cwd = process.cwd();
+  const configPath = join(cwd, 'tflw.config');
+  if (!existsSync(configPath)) {
+    err(`\`${url}\` is a path, and there is no tflw.config here to say whose — run tflw ${command} from the project's directory, or give an absolute URL`);
+    return undefined;
+  }
+  const parsed = parseConfigSource(readFileSync(configPath, 'utf8'));
+  const broken = parsed.diagnostics.find((d) => d.severity === 'error');
+  if (broken) {
+    err(`tflw.config does not parse (${broken.code}: ${broken.message}) — \`tflw check\` shows every problem`);
+    return undefined;
+  }
+  let web: string | null;
+  let envName: string;
+  try {
+    const envBlock = selectEnv(parsed.config, { envVar: process.env.TFLW_ENV });
+    envName = envBlock.name;
+    web = resolveConfig(parsed.config, envBlock, await buildEnviron(cwd)).webBaseUrl;
+  } catch (e) {
+    err(`tflw.config does not resolve: ${(e as Error).message}`);
+    return undefined;
+  }
+  if (!web) {
+    err(`\`${url}\` is a path, and env ${envName} has no \`web\` line to open it against — add one, or give an absolute URL`);
+    return undefined;
+  }
+  return `${web}${url}`;
+}
+
+/**
  * `M252` (`D1398`, `G19`) — a file argument, spelled the way `cwd` is. `process.cwd()` is always
  * the real path, so a file named through a symlinked directory (macOS's `/var` for
  * `/private/var`, a symlinked checkout) made every `relative(cwd, file)` climb out and back in —
@@ -579,7 +623,7 @@ async function pickCommand(argv: string[]): Promise<number> {
     else if (a === '--cdp-port') cdpRaw = flagValue(argv, ++i, a);
     else if (a.startsWith('--cdp-port=')) cdpRaw = inlineFlagValue(a, '--cdp-port');
     // Before the `url === undefined` case, or a mistyped flag becomes the URL and is reported as
-    // "isn't an absolute URL" — B6-11's third shape.
+    // "is neither a URL nor a path" — B6-11's third shape.
     else if (a.startsWith('--')) unknownFlag('pick', a);
     else if (url === undefined) url = a;
     else {
@@ -591,10 +635,9 @@ async function pickCommand(argv: string[]): Promise<number> {
     err('tflw pick needs a URL. Usage: tflw pick <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]');
     return EXIT_USAGE;
   }
-  if (!ABSOLUTE_URL_RE.test(url)) {
-    err(`\`${url}\` isn't an absolute URL — include a scheme, e.g. http://localhost:3000${url.startsWith('/') ? url : `/${url}`}`);
-    return EXIT_USAGE;
-  }
+  const opened = await pageUrl('pick', url);
+  if (opened === undefined) return EXIT_USAGE;
+  url = opened;
   let engine: BrowserEngine = 'chromium';
   if (browserRaw !== undefined) {
     if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(browserRaw)) {
@@ -733,10 +776,9 @@ async function recordCommand(argv: string[]): Promise<number> {
     err('tflw record needs a URL. Usage: tflw record <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]');
     return EXIT_USAGE;
   }
-  if (!ABSOLUTE_URL_RE.test(url)) {
-    err(`\`${url}\` isn't an absolute URL — include a scheme, e.g. http://localhost:3000${url.startsWith('/') ? url : `/${url}`}`);
-    return EXIT_USAGE;
-  }
+  const opened = await pageUrl('record', url);
+  if (opened === undefined) return EXIT_USAGE;
+  url = opened;
   let engine: BrowserEngine = 'chromium';
   if (browserRaw !== undefined) {
     if (!(SUPPORTED_BROWSER_ENGINES as readonly string[]).includes(browserRaw)) {
@@ -1964,7 +2006,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   if (anyWorkload && !ndjsonActive) {
     for (const { program } of runnable) {
       for (const test of program.tests) {
-        if (test.workload) out.write(withTimestamps(`scenario "${test.name.value}" — ${describeWorkload(workloadOf(test.workload))}`, !args.noTimestamps) + '\n');
+        if (test.workload) out.write(withTimestamps(`workload "${test.name.value}" — ${describeWorkload(workloadOf(test.workload))}`, !args.noTimestamps) + '\n');
       }
     }
   }
@@ -3137,7 +3179,7 @@ async function checkCommand(argv: string[]): Promise<number> {
   // `M247` `D` (`D1356`) — the locator half, numbered on from the action half: one `RF` sequence.
   const hints: readonly { readonly diffPreview: string }[] = [...actionHints, ...detectElementReuse(entries, actionHints.length + 1)];
   if (hints.length > 0) {
-    process.stdout.write(`\n${hints.length} reuse ${hints.length === 1 ? 'hint' : 'hints'} found (P#2) — apply with \`tflw refactor apply <id>\`:\n\n`);
+    process.stdout.write(`\n${hints.length} reuse ${hints.length === 1 ? 'hint' : 'hints'} found — apply with \`tflw refactor apply <id>\`:\n\n`);
     process.stdout.write(hints.map((h) => h.diffPreview).join('\n\n') + '\n');
   }
 
@@ -4623,7 +4665,7 @@ const VERB_HELP: readonly VerbHelp[] = [
     lines: [
         '  tflw pick <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]',
         '                                                      click an element in a real browser window, print its best locator;',
-        '                                                      runs until the window is closed or Ctrl+C — <url> must be absolute',
+        '                                                      runs until the window is closed or Ctrl+C — <url> is absolute, or a path opened against tflw.config\'s web',
     ],
   },
   {
@@ -4633,7 +4675,8 @@ const VERB_HELP: readonly VerbHelp[] = [
         '  tflw record <url> [--browser chromium|firefox|webkit] [--cdp-port <n>]',
         '                                                      use a page in a real browser window, print one tflw step per action;',
         '                                                      `pick` is inert and this one is not — a click navigates, a form submits.',
-        '                                                      Actions only: expectations are yours to add. Runs until the window is closed or Ctrl+C',
+        '                                                      Actions only: expectations are yours to add. Runs until the window is closed or Ctrl+C;',
+        '                                                      <url> is absolute, or a path opened against tflw.config\'s web',
     ],
   },
   {

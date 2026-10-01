@@ -35,12 +35,14 @@
 //   node scripts/verify-runbook.mjs              run the walkthrough (needs `npm run build` first)
 //   node scripts/verify-runbook.mjs --self-test  the negative controls, against fixture pages
 //   node scripts/verify-runbook.mjs --keep       leave the temp directory behind, and say where
+//   node scripts/verify-runbook.mjs --show       print every step's output, normalised, as it runs —
+//                                                how an author reads what a fence should show
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { extractBlocks } from '../packages/docs-site/scripts/doc-blocks.mjs';
 import { WALKTHROUGH } from '../packages/docs-site/.vitepress/walkthrough.mjs';
 
@@ -60,7 +62,7 @@ const BACKGROUND_MS = 30_000;
 export const NORMALISE = [
   [/\x1b\[[0-9;]*m/g, '', 'colour — the gate sets `NO_COLOR`, and a tool that ignores it is not a docs defect'],
   [/[ \t]+$/gm, '', 'trailing whitespace, which a page cannot show'],
-  [/\b\d{4}-\d{2}-\d{2}T\d{2}[:-]\d{2}[:-]\d{2}(?:[.,]\d+)?Z?/g, '<time>', 'timestamps — `now`, run directory names'],
+  [/\b\d{4}-\d{2}-\d{2}T\d{2}[:-]\d{2}[:-]\d{2}(?:[.,-]\d+)?Z?/g, '<time>', 'timestamps — `now`, and a kept run\'s directory name, whose milliseconds follow a `-` (`…T09-30-14-902Z`)'],
   [/\b\d{2}:\d{2}:\d{2}\.\d{3}\b/g, '<clock>', 'the wall-clock prefix `tflw run` puts on every console line unless `--no-timestamps`'],
   [/\bseed \d+/g, 'seed <seed>', 'a run mints a fresh seed unless `--seed` fixes one'],
   [/\b\d+(?:\.\d+)? ?(?:ms|s)\b/g, '<t>', 'durations — the run line, `npm install`, a test that waited'],
@@ -120,6 +122,10 @@ export function readChapter(page, published) {
     if (isOutput) {
       const prev = blocks[i - 1];
       if (!prev || prev.lang !== 'sh' || !prev.directives.runbook) problems.push({ line: b.startLine, why: 'a `runbook-output` fence must follow a `sh runbook` fence directly' });
+      // `M260`: a fence of nothing but `…` matches every output, including an error's, so it is a
+      // claim that cannot fail — the placeholder an author meant to fill. Show the line that
+      // teaches, or drop the fence.
+      else if (b.source.split('\n').every((l) => l.trim() === '…' || l.trim() === '')) problems.push({ line: b.startLine, why: 'a `runbook-output` fence of only `…` asserts nothing — show at least one line the command prints, or drop the fence', placeholder: true });
       return;
     }
     if (b.lang !== 'sh' && b.lang !== 'bash' && b.lang !== 'shell') return;
@@ -182,7 +188,7 @@ function readerEnv(extra) {
  * A failure is `{ file, line, why, output }`; the first one stops the run, because every fence after
  * it would be running in a directory the page never described.
  */
-export async function runWalkthrough(chapters, { tgz, keep = false, published = readPublished(), log = () => {} } = {}) {
+export async function runWalkthrough(chapters, { tgz, keep = false, show = false, published = readPublished(), log = () => {} } = {}) {
   const problems = [];
   const manual = [];
   const plan = [];
@@ -192,7 +198,10 @@ export async function runWalkthrough(chapters, { tgz, keep = false, published = 
     for (const m of ch.manual) manual.push({ file, ...m });
     for (const s of ch.steps) plan.push({ file, ...s });
   }
-  if (problems.length > 0) return { ok: false, failures: problems.map((p) => ({ ...p, output: '' })), ran: 0, manual, problems };
+  // Under `--show` an author is reading outputs in order to write the fences, so a placeholder is
+  // reported but does not stop the run; it still fails the result.
+  const blocking = show ? problems.filter((p) => !p.placeholder) : problems;
+  if (blocking.length > 0) return { ok: false, failures: blocking.map((p) => ({ ...p, output: '' })), ran: 0, manual, problems };
 
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'tflw-runbook-')));
   const work = join(scratch, 'reader');
@@ -236,7 +245,14 @@ export async function runWalkthrough(chapters, { tgz, keep = false, published = 
         failures.push({ file: step.file, line: step.line, why: r.error ? `did not finish: ${r.error.message}` : `exited ${r.status ?? r.signal}`, output: read() });
         break;
       }
-      if (step.expected === undefined) continue;
+      const shown = () => show && log(read().split('\n').map((l) => `    │ ${l}`).join('\n'));
+      // A background command has only begun when its fence returns; under `--show` give it time to
+      // print what an author needs to see (a watch's first run, a browser's banner).
+      if (show && step.background) await new Promise((resolve) => setTimeout(resolve, BACKGROUND_MS / 2));
+      if (step.expected === undefined) {
+        shown();
+        continue;
+      }
       const expected = normalise(step.expected, workDirs);
       const deadline = Date.now() + (step.background ? BACKGROUND_MS : 0);
       let actual = read();
@@ -244,8 +260,12 @@ export async function runWalkthrough(chapters, { tgz, keep = false, published = 
         await new Promise((resolve) => setTimeout(resolve, 200));
         actual = read();
       }
+      shown();
       if (!outputMatches(expected, actual)) {
         failures.push({ file: step.file, line: step.line, why: 'its output is not what the page shows', output: `--- the page shows\n${expected}\n--- the run printed\n${actual}` });
+        // An author reading every output under `--show` wants the rest of the walkthrough too; an
+        // output that differs leaves the directory as a reader's would be, unlike a failed command.
+        if (show) continue;
         break;
       }
     }
@@ -260,7 +280,8 @@ export async function runWalkthrough(chapters, { tgz, keep = false, published = 
     if (keep) log(`  kept ${scratch}`);
     else rmSync(scratch, { recursive: true, force: true });
   }
-  return { ok: failures.length === 0, failures, ran, manual, problems };
+  const placeholders = problems.filter((p) => p.placeholder).map((p) => ({ ...p, output: '' }));
+  return { ok: failures.length === 0 && placeholders.length === 0, failures: [...failures, ...placeholders], ran, manual, problems };
 }
 
 function report(result, label) {
@@ -278,6 +299,7 @@ function report(result, label) {
 
 async function main(argv) {
   const keep = argv.includes('--keep');
+  const show = argv.includes('--show');
   const tgz = process.env.TFLW_TGZ ?? pack();
   if (argv.includes('--self-test')) return selfTest(tgz);
   const { listed, unlisted } = walkthroughFiles();
@@ -290,7 +312,7 @@ async function main(argv) {
     return 1;
   }
   const chapters = listed.map((file) => ({ file, text: readFileSync(file, 'utf8') }));
-  const result = await runWalkthrough(chapters, { tgz, keep, log: (l) => process.stdout.write(`${l}\n`) });
+  const result = await runWalkthrough(chapters, { tgz, keep, show, log: (l) => process.stdout.write(`${l}\n`) });
   process.stdout.write(`${report(result, `the walkthrough, ${chapters.length} chapter(s)`)}\n`);
   return result.ok ? 0 : 1;
 }
@@ -328,7 +350,8 @@ async function selfTest(tgz) {
   return bad === 0 ? 0 : 1;
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${realpathSync(process.argv[1])}`).href) {
+// `pathToFileURL`, not a `file://` string: the hand-built form is `M243-18`'s and `M259-06`'s defect.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (e) => {

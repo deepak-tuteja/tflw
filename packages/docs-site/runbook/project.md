@@ -8,16 +8,18 @@ command that tells you it worked.
 
 ```text
 tflw.config          # environments, sessions, the rules a run obeys
-tests/
-  shared/
-    elements.tflw    # named locators — `element` lines
-    orders.tflw      # actions more than one file calls
-  api/
-  browser/
+.env                 # local secrets, never committed
+tests/               # the tests, in as many subdirectories as you like
+shared/
+  elements.tflw      # named locators — `element` lines
+  orders.tflw        # actions more than one file calls
+payloads/            # request bodies and files a test sends
+report/              # what each run writes; not committed
 ```
 
-`npx tflw init` starts you with a `tflw.config` and one passing `example.tflw`; the layout above is
-where a project grows from there. `npx tflw check` reads every `.tflw` file under the directory and
+`npx tflw init --example` writes this layout, and `tflw refactor apply` writes what it extracts into
+`shared/`. Plain `npx tflw init` starts smaller, with a `tflw.config` and one passing
+`example.tflw`; the layout above is where a project grows from there. `npx tflw check` reads every `.tflw` file under the directory and
 says nothing when all is well. Run it before every commit; it needs no secrets and sends no
 request.
 
@@ -88,7 +90,8 @@ Three things get written once and imported:
 - **Rows** of test data longer than a few lines, as a `.csv` or `.json` beside the tests:
   `with each from "./data/orders.csv"`.
 
-A file says `import "./shared/elements.tflw"` to use what another declares. Imports are one level
+A file says `import "../shared/elements.tflw"` to use what another declares; the path is relative
+to the importing file, so a test under `tests/` reaches `shared/` with `../`. Imports are one level
 deep: a shared file's own imports are not followed, so a test imports everything it names.
 
 ## 5. Tests that do not run everywhere

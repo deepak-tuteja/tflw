@@ -451,12 +451,38 @@ test('`tflw pick` with no url is a usage error', async () => {
   );
 });
 
-test('`tflw pick <bare-path>` (no scheme) is a usage error, not a silent misinterpretation', async () => {
+test('`tflw pick <word>` (no scheme, no `/`) is a usage error, not a silent misinterpretation', async () => {
   await assert.rejects(
-    execFileAsync('node', [cliEntry, 'pick', '/checkout']),
+    execFileAsync('node', [cliEntry, 'pick', 'checkout']),
     (e: unknown) =>
-      (e as { code?: number; stderr?: string }).code === 2 && /isn't an absolute URL/.test((e as { stderr: string }).stderr),
+      (e as { code?: number; stderr?: string }).code === 2 && /is neither a URL nor a path/.test((e as { stderr: string }).stderr),
   );
+});
+
+test('`M260` `G9`: `tflw pick /path` and `tflw record /path` need a config with a `web` to open the path against, and say which is missing', async () => {
+  // The resolving half — `/order.html` opened at the config's `web` — launches a browser, so it is
+  // the walkthrough's to show (chapter 5 runs `tflw pick /order.html` and matches the URL it
+  // announces). What returns before a launch is tested here: no config, and a config with no `web`.
+  const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-pick-path-'));
+  try {
+    for (const verb of ['pick', 'record']) {
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, verb, '/checkout'], { cwd: dir }),
+        (e: unknown) => (e as { code?: number }).code === 2 && /is a path, and there is no tflw\.config here/.test((e as { stderr: string }).stderr),
+        `${verb} with no config`,
+      );
+    }
+    await writeFile(join(dir, 'tflw.config'), 'env local default\n  api "http://127.0.0.1:1"\n', 'utf8');
+    for (const verb of ['pick', 'record']) {
+      await assert.rejects(
+        execFileAsync('node', [cliEntry, verb, '/checkout'], { cwd: dir }),
+        (e: unknown) => (e as { code?: number }).code === 2 && /env local has no `web` line/.test((e as { stderr: string }).stderr),
+        `${verb} with no web`,
+      );
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('`tflw pick <url> --browser <unknown>` is a usage error', async () => {
@@ -2484,7 +2510,7 @@ test "checkout as bob"
 
     const { stdout } = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir });
     assert.match(stdout, /1 file checked, no problems found\./);
-    assert.match(stdout, /1 reuse hint found \(P#2\) — apply with `tflw refactor apply <id>`:/);
+    assert.match(stdout, /1 reuse hint found — apply with `tflw refactor apply <id>`:/);
     assert.match(stdout, /reuse\[RF001\]: 2 occurrences of a similar 5-step sequence/);
     // M27 (PLAN_LOG.md): "log" is now a real statement keyword, so the reuse pass's own generic
     // keyword-collision guard (reuse.ts:615-634) prefixes the generated action name with "the" —
@@ -4038,7 +4064,7 @@ test('`tflw load` runs a real scenario end-to-end: passes, prints a summary, wri
       );
 
       const { stdout } = await runWorkload(['run', 'load.tflw', '--no-color'], { cwd: dir });
-      assert.match(stdout, /scenario "health burst"/);
+      assert.match(stdout, /workload "health burst"/);
       assert.match(stdout, /iterations: \d+/);
       assert.match(stdout, /PASS 1\/1 passed/);
       assert.doesNotMatch(stdout, /results:.*load-results\.json/);
@@ -4262,8 +4288,8 @@ test('`tflw run` runs two `parallel`-tagged workload-bearing tests concurrently:
 
       const failure = await execFileAsync('node', [cliEntry, 'run', 'load.tflw', '--no-color'], { cwd: dir }).then(withCode).catch((e) => e as CliOutcome);
       assert.equal(failure.code, 1);
-      assert.match(failure.stdout, /scenario "healthy"/);
-      assert.match(failure.stdout, /scenario "unhealthy"/);
+      assert.match(failure.stdout, /workload "healthy"/);
+      assert.match(failure.stdout, /workload "unhealthy"/);
       // D117: no more pooled "combined:" view — each workload test renders standalone, like a
       // functional test; both still appear, each with its own metrics/threshold lines.
       assert.doesNotMatch(failure.stdout, /combined:/);
@@ -4347,7 +4373,7 @@ test('`tflw load` runs a `hold` workload end-to-end: passes, prints a summary, w
       await writeFile(join(dir, 'load.tflw'), 'test "steady load"\n  hold 4 users for 200ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
       const { stdout } = await runWorkload(['run', 'load.tflw', '--no-color'], { cwd: dir });
-      assert.match(stdout, /scenario "steady load" — hold 4 users for 200ms \(closed\)/);
+      assert.match(stdout, /workload "steady load" — hold 4 users for 200ms \(closed\)/);
       // M89b (`B3-03`) — the summary line used to read `ramp to 4 users over 200ms`, contradicting
       // the pre-run line five seconds above it. Both now come from one `describeWorkload` over one
       // `LoadWorkloadReport`.
@@ -4371,7 +4397,7 @@ test('`tflw load` runs a `run N iterations across M users` workload end-to-end, 
       await writeFile(join(dir, 'load.tflw'), 'test "fixed batch"\n  run 12 iterations across 3 users\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
       const { stdout } = await runWorkload(['run', 'load.tflw', '--no-color'], { cwd: dir });
-      assert.match(stdout, /scenario "fixed batch" — run 12 iterations across 3 users/);
+      assert.match(stdout, /workload "fixed batch" — run 12 iterations across 3 users/);
       assert.match(stdout, /PASS 1\/1 passed/);
 
       const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
@@ -4421,7 +4447,7 @@ test('every workload kind describes itself distinctly, and the pre-run line is t
       const summary = new Map<string, string>();
       for (const raw of stdout.split('\n')) {
         const line = raw.trim();
-        const p = /^scenario "([^"]+)" — (.+)$/.exec(line);
+        const p = /^workload "([^"]+)" — (.+)$/.exec(line);
         if (p) preRun.set(p[1]!, p[2]!);
         const s = /^✓ (\S+) \(workload — (.+)\)$/.exec(line);
         if (s) summary.set(s[1]!, s[2]!);
@@ -4469,7 +4495,7 @@ test('`tflw run` with no file argument auto-discovers a workload-bearing test to
       await writeFile(join(dir, 'load.tflw'), 'test "health burst"\n  ramp to 3 users over 150ms\n  api GET /health\n  expect status equals 200\n  threshold error rate is less than 1%\n', 'utf8');
 
       const { stdout } = await runWorkload(['run', '--no-color'], { cwd: dir });
-      assert.match(stdout, /scenario "health burst"/);
+      assert.match(stdout, /workload "health burst"/);
       assert.match(stdout, /PASS 1\/1 passed/);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -4553,7 +4579,7 @@ test('`tflw load --workers 3` really forks 3 OS processes and merges their resul
 
       const { stdout } = await runWorkload(['run', 'load.tflw', '--workers', '3', '--no-color'], { cwd: dir });
       assert.match(stdout, /running across 3 generator processes/);
-      assert.match(stdout, /scenario "health burst"/);
+      assert.match(stdout, /workload "health burst"/);
       assert.match(stdout, /PASS 1\/1 passed/);
       assert.match(stdout, /generator:/);
 
@@ -4839,7 +4865,7 @@ test('`tflw run --skip-workload` skips every workload-bearing test regardless of
 
       const { stdout } = await execFileAsync('node', [cliEntry, 'run', 'mixed.tflw', '--skip-workload', '--no-color'], { cwd: dir });
       assert.match(stdout, /PASS 1\/1 passed/);
-      assert.doesNotMatch(stdout, /scenario "burst"/);
+      assert.doesNotMatch(stdout, /workload "burst"/);
       const results = JSON.parse(await readFile(join(dir, 'report', 'results.json'), 'utf8')) as UnifiedResultsJson;
       assert.equal(workloadEntries(results).length, 0, 'no workload entry should appear once the workload-bearing test is skipped');
     } finally {

@@ -54,10 +54,13 @@ test "the whole checkout — who is ordering, where it goes, and how it is paid"
   api POST /baskets body { customer: { email: "ada@example.com", name: "Ada Whitfield" }, lines: [{ itemId: 2, qty: 4 }], coupon: "SHELF10" }
   expect status equals 201
   capture body.id as basketId
+  # A key of its own each run (`M260`): a literal one made the second run against the same shop a
+  # replay — `200`, not `201` — so this file passed once per shop and then read as flaky.
+  let orderKey = unique("ada-order")
 
   api POST /orders/checkout body { basketId: "{basketId}", contact: { email: "ada@example.com", phone: "+44 7700 900123" }, shipping: { line1: "14 Bridge Street", city: "Bristol", postcode: "BS1 4ST", country: "GB" }, payment: { method: "card", last4: "4242" }, notes: "leave with the neighbour at number 16" }
     header "Authorization" is "Bearer shelf-demo-token"
-    header "Idempotency-Key" is "ada-first-order"
+    header "Idempotency-Key" is "{orderKey}"
     header "X-Request-Id" is "req-4821"
     header "Accept" is "application/json"
   expect status equals 201
@@ -82,16 +85,17 @@ test "pressing pay twice is one order, not two"
   api POST /baskets body { customer: { email: "raj@example.com", name: "Raj Mehta" }, lines: [{ itemId: 1, qty: 1 }, { itemId: 3, qty: 2 }] }
   expect status equals 201
   capture body.id as basketId
+  let pressKey = unique("raj-press")
 
   api POST /orders/checkout body { basketId: {basketId}, contact: { email: "raj@example.com", phone: "+44 7700 900456" }, shipping: { line1: "2 Kiln Lane", city: "Leeds", postcode: "LS1 2AB", country: "GB" }, payment: { method: "card", last4: "1881" } }
     header "Authorization" is "Bearer shelf-demo-token"
-    header "Idempotency-Key" is "raj-double-press"
+    header "Idempotency-Key" is "{pressKey}"
   expect status equals 201
   capture body.ref as firstRef
 
   api POST /orders/checkout body { basketId: {basketId}, contact: { email: "raj@example.com", phone: "+44 7700 900456" }, shipping: { line1: "2 Kiln Lane", city: "Leeds", postcode: "LS1 2AB", country: "GB" }, payment: { method: "card", last4: "1881" } }
     header "Authorization" is "Bearer shelf-demo-token"
-    header "Idempotency-Key" is "raj-double-press"
+    header "Idempotency-Key" is "{pressKey}"
   # 200, not 201 — nothing was created the second time, and the status is where that is said.
   expect status equals 200
   expect header "Idempotent-Replay" equals "true"
