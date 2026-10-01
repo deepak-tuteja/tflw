@@ -2504,7 +2504,7 @@ Materially larger than the old M3/M4. Slotted so as not to inflate the core:
 
 ### D18
 
-<sub>cited from SPEC.md · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
+<sub>cited inside a range only · lifted from `PLAN_BROWSER_PERF_SECURITY.md`</sub>
 
 **Language semantics under load (D18)**
 
@@ -3893,7 +3893,7 @@ for a pattern matching nothing. Shipped at `M58`. The six clauses below are this
 
 ### D137
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/action-call-cycle.tflw, tflw-tests/tests/.checkonly/invalid-literal-operand.tflw +1 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/action-call-cycle.tflw, tflw-tests/tests/.checkonly/invalid-literal-operand.tflw, tflw-tests/tests/.checkonly/missing-referenced-file.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **D137 — the checker's contract is two-way conformance with the runtime**
 
@@ -3944,7 +3944,7 @@ four regression groups, 21 of 30 phases, one root cause.
 
 ### D165
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/hidden-character.tflw · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/hidden-character.tflw · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **D165. Flag them as errors, not warnings.** For a general-purpose language a lint is the norm; for a
 testing DSL it is not. A reviewed `.tflw` in a pull request can render as asserting one thing and
@@ -3955,28 +3955,13 @@ tool's own security in scope; the `0.4.0` pentest arc will make `.tflw` a securi
 
 ### D166
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/hidden-character.tflw, tflw-tests/tests/.checkonly/unknown-escape.tflw · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/hidden-character.tflw, tflw-tests/tests/.checkonly/unknown-escape.tflw · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **D166. `TF049` is not implementable without an escape hatch, and the hatch is `\u{…}`.** This is the
 dependency worth not re-deriving: after **D157** an unknown escape is an error, and tflw has no
 `\u` escape today, so once `TF049` rejects a literal zero-width character there is **no way at all**
 to write one in a `.tflw` string. A rule with no legal alternative is not a lint, it is a removed
 capability.
-
-### D168
-
-<sub>cited from SPEC.md · lifted from `PLAN_M99_VALUE_TERMINATION.md`</sub>
-
-**D168. `TF010`'s teaching moves to where the mistake is actually visible**
-
-Backing off costs something, and the cost was measured rather than argued. What the enclosing
-production says today when handed a token it cannot use:
-
-| written | error today | error after back-off |
-|---|---|---|
-| `select {size} extra from field "Size"` | ``TF010: expected `from`, found `extra` `` | same — **sharper than `TF010`'s paren advice** |
-| `give create widget({id} extra)` | ``TF010: expected `)` to close the call`` | same — **sharper** |
-| `let a = {foo} order` | ``TF010: unexpected `order` at end of step`` / ``help: expected end of line`` | same — **worse than today's `TF010`** |
 
 ### D174
 
@@ -4014,7 +3999,7 @@ Four sites, all reading `.value`, all on a `StringLit` the checker passes to `ch
 
 ### D178
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **D178 — the unit is one word, not one string**
 
@@ -4023,7 +4008,7 @@ is legitimately multilingual.
 
 ### D179
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **D179 — only scripts that have Latin lookalikes**
 
@@ -4032,7 +4017,7 @@ Cyrillic, Greek, Cherokee or Armenian.
 
 ### D180
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **D180 — strings only; comments are out of scope**
 
@@ -4189,7 +4174,7 @@ next to it is still a landmine, and the sign is in a file the next session may n
 
 ### D245
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D245 — an absolute URL is legal in `api` and `open`, and `allow hosts` governs it**
 
@@ -4198,7 +4183,7 @@ convenience; the allowlist becomes the boundary, which is what M85 built it to b
 
 ### D246
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D246 — no allowlist plus an absolute URL: the runtime refuses, the checker warns**
 
@@ -4217,7 +4202,7 @@ At ~3 s with nothing matched, run the nearest-candidate scan and print it as pro
 
 ### D266
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/service-with-absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/service-with-absolute-url.tflw · lifted from `PLAN_M125_FIRST_USE.md`</sub>
 
 **D266 — `FU-21`: one query, and the caller's count is kept only to name the race**
 
@@ -4502,7 +4487,7 @@ A violation is: **a resource id from the owner's response appears in a probe's r
 
 ### D306
 
-<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tflw-acceptance/security/tflw.config · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tflw-acceptance/security/tflw.config · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D306 — `anonymous` is a built-in principal, always probed**
 
@@ -4617,7 +4602,7 @@ this.
 
 ### D315
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/VULNS.md +1 more · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/VULNS.md, tflw-tests/tests/.checkonly/authz-assertion-in-wait-until.tflw · lifted from `PLAN_M130_PENTEST_TIER2.md`</sub>
 
 **D315 — applicability, and what "not applicable" means here**
 
@@ -4788,7 +4773,7 @@ request then carries admin's `Authorization` **and** shopper's `Cookie` simultan
 
 ### D328
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tests/.checkonly/authz-step-names-own-credential.tflw · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.checkonly/authz-step-names-own-credential.tflw · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D328 — `TF062` is a lexical refusal plus an exact runtime guard**
 
@@ -4800,7 +4785,7 @@ that boundary deliberately (*"a frame whose registry is knowable: a `test` or ho
 
 ### D329
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/tests/.checkonly/authz-assertion-without-owner.tflw · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/tests/.checkonly/authz-assertion-without-owner.tflw · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
 
 **D329 — `TF063` uses the same split, and `before file` hooks are refused**
 
@@ -4854,26 +4839,6 @@ collection leak**, where the correct behaviour is a filtered `200` — so a sing
 regression test that goes red once the bug is fixed, handing whoever fixes it an artifact that fails
 after they succeed.
 
-### D333
-
-<sub>cited from SPEC.md · lifted from `PLAN_M130B_AUTHZ_ENGINE.md`</sub>
-
-**D333 — `anonymous` is a reserved principal name**
-
-`session anonymous` is a checker error (`TF063`'s sibling case, reusing `TF020`'s unknown-key
-machinery is not appropriate — this is a name collision, and it gets `TF062`'s severity and its own
-sentence). D306 makes `anonymous` a built-in principal in every probe set; a declared session by that
-name would either shadow it or be shadowed by it, and both are silent.
-
-### D338
-
-<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
-
-**D338 — address classification is literal; `getaddrinfo` is never called**
-
-A target's address class is judged from the URL's host **as written**. No DNS resolution, ever,
-in either the checker or the runtime.
-
 ### D340
 
 <sub>cited from SPEC.md, tflw-tests/tests/.checkonly/authz-scan-public-target.tflw · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
@@ -4901,7 +4866,7 @@ tflw run --allow-public-target https://staging.example.com
 
 ### D341
 
-<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D341 — the flag follows the packet, not the matcher**
 
@@ -4910,7 +4875,7 @@ tflw run --allow-public-target https://staging.example.com
 
 ### D342
 
-<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D342 — two doors: the checker refuses what it can prove, the runtime refuses what is true**
 
@@ -4930,7 +4895,7 @@ ungated** — no `authorized target` required, and under a naive reading of D340
 
 ### D344
 
-<sub>cited from SPEC.md · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
+<sub>cited inside a range only · lifted from `PLAN_M131_SAFETY_COMPLETION.md`</sub>
 
 **D344 — two new codes, one repair each; the runtime twin reuses the checker's code**
 
@@ -5577,15 +5542,6 @@ enough for a maintainer to confirm it is real.*
 | **`M135b`** | tflw | the SARIF exporter (D403–D407, D410–D413), `report/findings.sarif` write condition (D404), `report/repros/`, `@types/sarif` + `ajv` + schema test (D414), docs-site + SPEC corrections | no | no |
 | **`M135c`** | tflw-tests | acceptance over the emitted document (D415) | no | no |
 
-### D419
-
-<sub>cited from SPEC.md · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
-
-**D419 — `not-asked` never fails an assertion, and is never silent either**
-
-The assertion still **passes**. `finalizeVerdict` remains the one derivation of `RunReport.ok`
-(`D386`), and nothing here is a second gate axis.
-
 ### D421
 
 <sub>cited from tflw-tests/scripts/verify-sarif-acceptance.mjs · lifted from `PLAN_M136_ARC_DEBT.md`</sub>
@@ -5824,7 +5780,7 @@ structural rather than a filter.
 
 ### D463
 
-<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/crawl-body-not-an-assertion.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/crawl-body-not-an-assertion.tflw · lifted from `PLAN_M137_PENTEST_TIER4.md`</sub>
 
 **`D463` — `TF069` is skipped permanently, and the crawl-body rule is `TF070`**
 
@@ -6204,7 +6160,7 @@ spelling.**
 
 ### D633
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/duplicate-table-column.tflw · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/duplicate-table-column.tflw · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D633 — a duplicate `with each` column is `TF072`, refused in the production that reads the
   header, and the duplicated name is kept.** New code because `TF027` means *a `{col}` the table
@@ -6214,29 +6170,6 @@ spelling.**
   header's width is what every data row is matched against — de-duplicating it answers one repeated
   word with a ragged-row complaint per row, and dropping the name discards the table outright. Both
   alternatives were built and measured before this one.
-
-### D634
-
-<sub>cited from SPEC.md · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
-
-- **D634 — the imported-file rules: `TF073` for an import that does not parse, `TF037` reused for a
-  call inside an imported body, and `import` does not recurse.** Three answers, one boundary.
-  `TF073` is new because `MISSING_FILE` would be false about a file that is present — `M97a-01`
-  →`TF056`'s argument a second time — and it is raised in `@tflw/lang` from an answer the resolver
-  hands over, the `missingFiles` shape, because a diagnostic built inside `@tflw/runtime` cannot
-  carry a probe SPEC §17 executes. `TF037` is **reused** for `A4-21` under §6's rule: the call
-  really is unknown in the registry that will resolve it, so only the location differs, and
-  location is what the message and the caret are for. And recursion was **built far enough to be
-  rejected**: `import` shares one flat namespace where a collision is a hard refusal, so following
-  an imported file's own imports would make the most reusable library in a suite the one that
-  cannot be imported twice — and it would make the checker more permissive than the runtime, which
-  the resolver's own docstring has forbidden since M87.
-
-  The ruling's **reopen condition was measured rather than imagined**, per `M131`: an importer that
-  already declares the missing name is told by `TF037` to add an import that `TF035` then refuses.
-  Both diagnostics are correct and the program genuinely cannot run flat. That fixture is two files
-  wide and reproduces today; if the shape turns up in real use rather than in a fixture, flat
-  non-recursive imports are the thing to revisit.
 
 ### D637
 
@@ -6294,7 +6227,7 @@ spelling.**
 
 ### D643
 
-<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 - **D643** — *the parser bounds its own recursion, and refuses past the bound with a diagnostic
   rather than a stack overflow.* `parseSource` is documented as never throwing for a syntax error and
@@ -6308,7 +6241,7 @@ spelling.**
 
 ### D647
 
-<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **Decisions taken:** `D647` — a `header … for <service>` is checked against the union of every service
 the file declares rather than the active env, `TF076`, with the under-approximation named and
@@ -7051,7 +6984,7 @@ One rule: *an HTTP request uses `timeout api` if set, otherwise `timeout step`; 
 
 ### D770
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
 
 **D770 — the `0s` floor is a property of the target family, not a list of names**
 
@@ -7096,7 +7029,7 @@ the config dialect and is not introduced here.
 
 ### D774
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +4 more · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +3 more · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D774` — the disposition is reversed: the code changes, and the sentence changes because the code did**
 
@@ -7133,7 +7066,7 @@ has to exist for the redactor to pre-register it (`SPEC:431`), is an ordinary sh
 
 ### D777
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D777` — `P#75` forbids touching a live API, not touching the filesystem**
 
@@ -7148,7 +7081,7 @@ what that reading needs it to say, and the codebase already settled this twice:
 
 ### D778
 
-<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/config-directives/require.config · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.checkonly/config-directives/require.config · lifted from `PLAN_M156_REQUIRE_ENV.md`</sub>
 
 **`D778` — `TF078`: `"{env(NAME)}"` in a string literal is reported, at warning severity**
 
@@ -7424,15 +7357,6 @@ to grade the queue.
 *(`M159c`, taken during the build. Numbered `D806a` rather than `D807` because `D807` is `M160`'s
 and already spent; this is an amendment to `D801`, not a new decision of its own.)*
 
-### D806b
-
-<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
-
-**D806b — `TF079` reports per arming, at its line, and only on a test that passed**
-
-*(`M159d`, taken during the build. An amendment to `D802`, numbered beside `D806a` for the same
-reason: `D807` is `M160`'s and already spent.)*
-
 ### D806d
 
 <sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/.constructs/dialog-one-shot.tflw · lifted from `PLAN_M159_DIALOGS.md`</sub>
@@ -7671,29 +7595,9 @@ turns it into a checked property.
     error[TF081]: `timeout step` is declared twice in this `defaults` block — the first is discarded
       note: remove one, or move it into the `env` block it belongs to
 
-### D830
-
-<sub>cited inside a range only · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
-
-**D830 — the four accumulating keys are exempt by name, not by shape**
-
-`header`, `allow hosts`, `authorized target` and `redact` are excluded in one place with the reason
-beside them. Not by a heuristic ("does the case body call `.push`?"), which would silently start
-flagging a key the day someone changes an implementation detail, and would silently stop flagging
-one the day someone writes an accumulating key as an assignment.
-
-### D831
-
-<sub>cited inside a range only · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
-
-**D831 — reported at the second occurrence, once per extra occurrence**
-
-Exactly `TF072`'s rule, for exactly `TF072`'s reason: the second is the one to delete, and three
-declarations of the same key are two mistakes, not one.
-
 ### D832
 
-<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M165_CONFIG_DUPLICATES.md`</sub>
 
 **D832 — the check is per block, and a repeat across `defaults` and `env` is legal**
 
@@ -9705,7 +9609,7 @@ that failed or the bound that held — and stays as a header if the intermittent
 
 ### D1345
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +5 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +4 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1345` — placement.** A named `signer` is declared in `tflw.config`, secrets through `env(…)`,
   optionally per env like `cert`/`key`. A request uses one with a `sign with <name>` sub-line under
@@ -9717,7 +9621,7 @@ that failed or the bound that held — and stays as a header if the intermittent
 
 ### D1346
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +4 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/scripts/verify-check-diagnostics.mjs +3 more · lifted from `PLAN_M246_REQUEST_SIGNING.md`</sub>
 
 - **`D1346` — HMAC is templates, with no vendor presets.** One general form:
 
@@ -9809,7 +9713,7 @@ that failed or the bound that held — and stays as a header if the intermittent
 
 ### D1354
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +3 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, packages/lang/GRAMMAR.md, tflw-tests/scripts/verify-check-diagnostics.mjs +2 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 | id | row | decision |
 |---|---|---|
@@ -11257,7 +11161,7 @@ workaround.
 
 ### M59
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from CHANGELOG.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/hidden-character.tflw · lifted from `PROGRESS.md`</sub>
 
 **M59 shipped 2026-08-03 — 3 lexer S1s from the launch review's A1 pass (`REVIEW_FINDINGS_A1.md`)**
 
@@ -11462,7 +11366,7 @@ same push.
 
 ### M87
 
-<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +5 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs, tflw-tests/tests/.checkonly/assert-before-any-request.tflw +4 more · lifted from `PROGRESS.md`</sub>
 
 **M87 — the checker resolves names (cluster C6: `A4-03`, `FU-08`, `A4-16`, `FU-12`)**
 
@@ -11601,7 +11505,7 @@ carried, proved by 46 tests and 15 assertions.
 
 ### M92
 
-<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M92_SHIP_SURFACE.md`</sub>
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M92_SHIP_SURFACE.md`</sub>
 
 **M92 — the ship surface tells the truth about what it ships (cluster C15)**
 
@@ -11675,7 +11579,7 @@ not started.
 
 ### M97a
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/capture-uncapturable-subject.tflw, tflw-tests/tests/.checkonly/data-table-extension.tflw +4 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/capture-uncapturable-subject.tflw, tflw-tests/tests/.checkonly/data-table-extension.tflw, tflw-tests/tests/.checkonly/hold-exceeds-wait-timeout.tflw +3 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **`M97a` — shipped 2026-08-06**
 
@@ -11731,7 +11635,7 @@ statements *about* those files.
 
 ### M98b
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/empty-tag.tflw +2 more · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/empty-tag.tflw, tflw-tests/tests/.checkonly/unbalanced-bracket.tflw +1 more · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **M98b — the facts the lexer withholds**
 
@@ -11740,7 +11644,7 @@ statements *about* those files.
 
 ### M98c
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/tab-indent.tflw +1 more · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/tab-indent.tflw, tflw-tests/tests/.checkonly/unknown-escape.tflw · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **M98c — the diagnostics that fire and teach nothing**
 
@@ -11752,7 +11656,7 @@ conditions with two different fixes under one code while documenting only the ot
 
 ### M98d
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/confusable-word.tflw +2 more · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
+<sub>cited from packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/confusable-word.tflw, tflw-tests/tests/.checkonly/hidden-character.tflw +1 more · lifted from `PLAN_M98_LEXER_POSITIONS.md`</sub>
 
 **M98d — Trojan Source, and the escape hatch it requires**
 
@@ -11869,7 +11773,7 @@ Closes `A4-OS-11` (S2) and `A4-OS-13` (S4), the two rows the M101 audit turned u
 
 ### M103
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
+<sub>cited from packages/lang/GRAMMAR.md, tflw-tests/tests/.checkonly/confusable-word.tflw · lifted from `PLAN_M103_CONFUSABLE_WORDS.md`</sub>
 
 **M103 — the characters that are visible and lie**
 
@@ -11894,7 +11798,7 @@ measurement did not support.
 
 ### M106
 
-<sub>cited from CONTRIBUTING.md, SPEC.md · lifted from `PLAN_M106_ZERO_EXTENT_CARET.md`</sub>
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M106_ZERO_EXTENT_CARET.md`</sub>
 
 **M106 — a caret with nothing under it**
 
@@ -11979,7 +11883,7 @@ read past for four milestones because the verdict beside it was right.
 
 ### M116
 
-<sub>cited from SPEC.md, tflw-tests/tests/.checkonly/capture-uncapturable-subject.tflw, tflw-tests/tests/.checkonly/mask-without-snapshot.tflw +1 more · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
+<sub>cited from tflw-tests/tests/.checkonly/capture-uncapturable-subject.tflw, tflw-tests/tests/.checkonly/mask-without-snapshot.tflw, tflw-tests/tests/.checkonly/missing-base-url.tflw · lifted from `PLAN_M97_CHECKER_CONTRACT.md`</sub>
 
 **M116 — the five open rows this cluster left behind (D148–D152, 2026-08-09)**
 
@@ -12039,7 +11943,7 @@ file (`packages/lsp-server/src/server.ts`), and the same verification setup.
 
 ### M124
 
-<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/CONTRIBUTING.md +8 more · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/tflw-acceptance/perf/README.md +7 more · lifted from `PLAN_M124_LITERAL_DECIDABILITY.md`</sub>
 
 **`M124` — a literal the run will reject is a checker sentence**
 
@@ -12662,7 +12566,7 @@ milestone's expensive half is not the one the seed predicted.
 
 ### M147
 
-<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **Plan: M147 — the last order**
 
@@ -12697,7 +12601,7 @@ number lands on a statement rather than on a story.
 
 ### M147e
 
-<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **9.2c The two decisions `M147e` has taken, stated**
 
@@ -12713,7 +12617,7 @@ number lands on a statement rather than on a story.
 
 ### M147f
 
-<sub>cited from CONTRIBUTING.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs +1 more · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-check-diagnostics.mjs, tflw-tests/tests/api/identity/authz.tflw · lifted from `PLAN_M147_LAST_ORDER.md`</sub>
 
 **9.2f `M147f` — the last part, and what the finish line actually cost**
 
@@ -12893,23 +12797,6 @@ purpose.
 **Closes:** `M154g-10`.
 **Numbering:** takes `D768`–`D773`. Next free after this plan: **`D774`**, **`TF077`** (unchanged —
 this milestone mints no diagnostic), milestone **`M156`**.
-
-### M155a
-
-<sub>cited from SPEC.md · lifted from `PLAN_M155_TIMEOUT_TRANSPORT.md`</sub>
-
-**M155a — grammar and resolution**
-
-- `ast.ts:1686` — `TimeoutTarget` gains `'api' | 'browser'`.
-- `parser.ts:628` — `TIMEOUT_TARGETS = ['step', 'api', 'browser', 'expect', 'wait']`. Order is
-  budget family first, then poll family; `TF010`'s message interpolates the array, so it updates
-  itself to *"expected a timeout target (step/api/browser/expect/wait)"*.
-- `parser.ts:2001` — the `0s` guard keys on the budget family (`D770`), and its hint names the
-  target the author actually wrote rather than `step`.
-- `types.ts:59/154` — `ResolvedTimeouts` becomes `{ api, browser, expect, wait }` (`D769`);
-  `DEFAULT_TIMEOUTS` becomes `{ api: 30_000, browser: 30_000, expect: 5_000, wait: 30_000 }`.
-- `resolve.ts:50/77` — track which of `step`/`api`/`browser` were explicitly set across both tiers,
-  then resolve `api = explicitApi ?? explicitStep ?? 30_000`, likewise `browser`.
 
 ### M156
 
@@ -13095,7 +12982,7 @@ Gitignored by `.gitignore:35`.
 
 ### M159
 
-<sub>cited from SPEC.md, packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md +4 more · lifted from `PLAN_M159_DIALOGS.md`</sub>
+<sub>cited from packages/lang/GRAMMAR.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/verify-check-diagnostics.mjs +3 more · lifted from `PLAN_M159_DIALOGS.md`</sub>
 
 **`M159` — native dialogs: the whole surface, and something to assert about each kind**
 
@@ -13121,18 +13008,6 @@ Gitignored by `.gitignore:35`.
 
 **`M159b` — `D798`/`D799`.** The two value subjects: parser, subject-kind manifest, `MATCHERS`
 `subjects` field, SPEC, docs.
-
-### M159c
-
-<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
-
-**`M159c` — `D800`/`D801`.** `accept dialog with`, `TF080`.
-
-### M159d
-
-<sub>cited from SPEC.md · lifted from `PLAN_M159_DIALOGS.md`</sub>
-
-**`M159d` — `D802`.** `TF079` and the end-of-test check.
 
 ### M159f
 
@@ -14205,7 +14080,7 @@ pointers resolve.
 
 ### M200
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M200_UI_AUTHORING.md`</sub>
 
 **`M200` — the page learns to write: four modes over one language**
 
@@ -14846,7 +14721,7 @@ tflw-tests#132).
 
 ### M263
 
-<sub>cited from CHANGELOG.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-cli-flags.mjs · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
 
 **`M263` — `tflw docs` prints the user's pages, not SPEC (added 2026-10-01, owner's word)**
 
@@ -14855,5 +14730,25 @@ cite `§` numbers, 43 name `M…`/PLAN, 40 carry `D…` ids and 34 `P#`. Strippi
 `tflw docs unique` explains M181's repair and the dogfood suite's thirteen degraded tests, which is
 how tflw was built, not how to use it. Taken over the two alternatives (§11 item 5): a third body of
 hand-written cheatsheet prose would drift; relabelling SPEC leaves the new user where they are.
+
+### M264
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`M264` — the manifests' user strings carry no design ids (added 2026-10-01, split from `M263`)**
+
+**Why.** `M263`'s gate found that `spec-data.ts`'s user-facing strings carry the same ids SPEC did.
+Measured at the start: 119 strings across five manifests — `CLI_FLAGS` effects, `DIAGNOSTICS`
+meanings, `GENERATORS` notes, and the `STEP_KEYWORDS`/`DECLARATIONS` summaries LSP completion shows
+— carrying milestone, decision and review-finding ids. `tflw --help`, LSP hover and completion, the
+site's reference pages, `tflw docs` and SPEC's generated tables all print them. About a quarter sat
+in id-only parentheticals; the rest were woven into sentences, many of them narrating how a rule
+came to be rather than stating it.
+- Rewrite each affected string as the rule: what triggers it, why it matters, how to fix it. The
+  history stays in DECISIONS.md and the changelog; it is not moved into a new field.
+- SPEC's generated tables and DECISIONS.md are regenerated from the result.
+- Delete `docs-topics.test.ts`'s stated exclusion, so the id check reads the rendered tables too,
+  and widen its `D` pattern to two digits.
+- **Green:** zero ids in the five manifests' user strings, the exclusion gone, the box suite green.
 
 <!-- GENERATED:decisions:end -->
